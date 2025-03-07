@@ -14,7 +14,7 @@ import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.RouteBlindingDecryptedData
 import fr.acinq.eclair.wire.protocol.{BlindedRouteData, OfferTypes, RouteBlindingEncryptedDataCodecs}
-import fr.acinq.eclair.{EncodedNodeId, Logs, MilliSatoshiLong, NodeParams, ShortChannelId}
+import fr.acinq.eclair.{EncodedNodeId, Logs, NodeParams, ShortChannelId}
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec

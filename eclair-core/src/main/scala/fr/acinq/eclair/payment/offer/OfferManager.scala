@@ -34,7 +34,7 @@ import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, InvoiceTlv, Offer}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, TimestampSecond, nodeFee, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams, TimestampMilli, TimestampSecond, nodeFee, randomBytes32}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
@@ -47,14 +47,17 @@ object OfferManager {
   sealed trait Command
 
   /**
-   * Register an offer and its handler.
+   * Register an offer so that we can respond to invoice requests for it using the handler provided.
    *
-   * @param offer      The offer.
-   * @param nodeKey    The private key corresponding to the node id used in the offer.
-   * @param pathId_opt If the offer uses a blinded path, the path id of this blinded path.
-   * @param handler    An actor that will be in charge of accepting or rejecting invoice requests and payments for this offer.
+   * @param offer       The offer to register.
+   * @param nodeKey_opt If the offer has a node id, this must be the associated private key.
+   * @param pathId_opt  If the offer uses a blinded path, the path id of this blinded path.
+   * @param handler     An actor that will be in charge of accepting or rejecting invoice requests and payments for this offer.
    */
-  case class RegisterOffer(offer: Offer, nodeKey: Option[PrivateKey], pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand]) extends Command
+  case class RegisterOffer(offer: Offer, nodeKey_opt: Option[PrivateKey], pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand]) extends Command {
+    require(offer.nodeId.isEmpty || nodeKey_opt.nonEmpty, "offers including the node_id field must be registered with the corresponding private key")
+    require(!offer.contactInfos.exists(_.isInstanceOf[OfferTypes.BlindedPath]) || pathId_opt.nonEmpty, "offers including a blinded path must be registered with the corresponding path_id")
+  }
 
   /**
    * Forget about an offer. Invoice requests and payment attempts for this offer will be ignored.
@@ -91,12 +94,8 @@ object OfferManager {
   case class HandlePayment(replyTo: ActorRef[PaymentActor.Command], offer: Offer, invoiceData: MinimalInvoiceData) extends HandlerCommand
 
   /**
-   * Register an offer so that we can respond to invoice requests for it.
-   *
-   * @param offer       The offer to register.
-   * @param nodeKey_opt If the offer has a node id, this must be the associated private key.
-   * @param pathId_opt  If this offer has a blinded path, this must be its path id.
-   * @param handler     Handler for invoice requests and payments for this offer.
+   * An active offer, for which we handle invoice requests.
+   * See [[RegisterOffer]] for more details about the fields.
    */
   private case class RegisteredOffer(offer: Offer, nodeKey_opt: Option[PrivateKey], pathId_opt: Option[ByteVector32], handler: ActorRef[HandlerCommand])
 
@@ -168,16 +167,20 @@ object OfferManager {
                               customTlvs: Set[GenericTlv] = Set.empty) extends Command
 
     /**
-     * @param feeOverride           fees that will be published for this route, the difference between these and the
+     * Route used in payment blinded paths: [[feeOverride_opt]] and [[cltvOverride_opt]] allow hiding the routing
+     * parameters of the route's intermediate hops, which provides better privacy.
+     *
+     * @param feeOverride_opt       fees that will be published for this route, the difference between these and the
      *                              actual fees of the route will be paid by the recipient.
-     * @param cltvOverride          Cltv expiry delta to publish for the route.
+     * @param cltvOverride_opt      cltv_expiry_delta to publish for the route, which must be greater than the route's
+     *                              real cltv_expiry_delta.
      * @param shortChannelIdDir_opt short channel id and direction to use for the first node instead of its node id.
      */
-    case class Route(hops: Seq[Router.ChannelHop], maxFinalExpiryDelta: CltvExpiryDelta, feeOverride: Option[RelayFees] = None, cltvOverride: Option[CltvExpiryDelta] = None, shortChannelIdDir_opt: Option[ShortChannelIdDir] = None) {
+    case class Route(hops: Seq[Router.ChannelHop], maxFinalExpiryDelta: CltvExpiryDelta, feeOverride_opt: Option[RelayFees] = None, cltvOverride_opt: Option[CltvExpiryDelta] = None, shortChannelIdDir_opt: Option[ShortChannelIdDir] = None) {
       def finalize(nodePriv: PrivateKey, preimage: ByteVector32, amount: MilliSatoshi, invoiceRequest: InvoiceRequest, minFinalExpiryDelta: CltvExpiryDelta, pluginData_opt: Option[ByteVector]): ReceivingRoute = {
         val aggregatedPaymentInfo = aggregatePaymentInfo(amount, hops, minFinalExpiryDelta)
-        val fees = feeOverride.getOrElse(RelayFees(aggregatedPaymentInfo.feeBase, aggregatedPaymentInfo.feeProportionalMillionths))
-        val cltvExpiryDelta = cltvOverride.getOrElse(aggregatedPaymentInfo.cltvExpiryDelta)
+        val fees = feeOverride_opt.getOrElse(RelayFees(aggregatedPaymentInfo.feeBase, aggregatedPaymentInfo.feeProportionalMillionths))
+        val cltvExpiryDelta = cltvOverride_opt.getOrElse(aggregatedPaymentInfo.cltvExpiryDelta)
         val paymentInfo = aggregatedPaymentInfo.copy(feeBase = fees.feeBase, feeProportionalMillionths = fees.feeProportionalMillionths, cltvExpiryDelta = cltvExpiryDelta)
         val recipientFees = RelayFees(aggregatedPaymentInfo.feeBase - paymentInfo.feeBase, aggregatedPaymentInfo.feeProportionalMillionths - paymentInfo.feeProportionalMillionths)
         val metadata = MinimalInvoiceData(preimage, invoiceRequest.payerId, TimestampSecond.now(), invoiceRequest.quantity, amount, recipientFees, pluginData_opt)

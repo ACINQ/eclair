@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.payment.offer
 
-import akka.actor.{ActorRef, typed}
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.message.OnionMessages
@@ -29,29 +29,38 @@ import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.TlvStream
 import fr.acinq.eclair.{MilliSatoshi, NodeParams, TimestampSecond, randomBytes32, randomKey}
 
+/**
+ * A short-lived actor that creates an offer based on the parameters provided.
+ * It will ask the router for a blinded path when [[OfferCreator.Create.blindedPathsFirstNodeId_opt]] is provided.
+ */
 object OfferCreator {
-  sealed trait Command
 
+  // @formatter:off
+  sealed trait Command
   case class Create(replyTo: typed.ActorRef[CreateOfferResult],
                     description_opt: Option[String],
                     amount_opt: Option[MilliSatoshi],
                     expiry_opt: Option[TimestampSecond],
                     issuer_opt: Option[String],
                     blindedPathsFirstNodeId_opt: Option[PublicKey]) extends Command
-
   private case class WrappedRouterResponse(response: Router.MessageRouteResponse) extends Command
+  // @formatter:on
 
+  // @formatter:off
   sealed trait CreateOfferResult
-
   case class CreatedOffer(offer: Offer) extends CreateOfferResult
-
   case class CreateOfferError(reason: String) extends CreateOfferResult
+  // @formatter:on
 
-  def apply(nodeParams: NodeParams, router: ActorRef, offerManager: typed.ActorRef[OfferManager.Command], defaultOfferHandler: typed.ActorRef[OfferManager.HandlerCommand]): Behavior[Command] =
-    Behaviors.receivePartial {
-      case (context, Create(replyTo, description_opt, amount_opt, expiry_opt, issuer_opt, blindedPathsFirstNodeId_opt)) =>
-        new OfferCreator(context, replyTo, nodeParams, router, offerManager, defaultOfferHandler).init(description_opt, amount_opt, expiry_opt, issuer_opt, blindedPathsFirstNodeId_opt)
+  def apply(nodeParams: NodeParams, router: ActorRef, offerManager: typed.ActorRef[OfferManager.Command], defaultOfferHandler: typed.ActorRef[OfferManager.HandlerCommand]): Behavior[Command] = {
+    Behaviors.setup { context =>
+      Behaviors.receiveMessagePartial {
+        case Create(replyTo, description_opt, amount_opt, expiry_opt, issuer_opt, blindedPathsFirstNodeId_opt) =>
+          val actor = new OfferCreator(context, replyTo, nodeParams, router, offerManager, defaultOfferHandler)
+          actor.createOffer(description_opt, amount_opt, expiry_opt, issuer_opt, blindedPathsFirstNodeId_opt)
+      }
     }
+  }
 }
 
 private class OfferCreator(context: ActorContext[OfferCreator.Command],
@@ -62,11 +71,11 @@ private class OfferCreator(context: ActorContext[OfferCreator.Command],
 
   import OfferCreator._
 
-  private def init(description_opt: Option[String],
-                   amount_opt: Option[MilliSatoshi],
-                   expiry_opt: Option[TimestampSecond],
-                   issuer_opt: Option[String],
-                   blindedPathsFirstNodeId_opt: Option[PublicKey]): Behavior[Command] = {
+  private def createOffer(description_opt: Option[String],
+                          amount_opt: Option[MilliSatoshi],
+                          expiry_opt: Option[TimestampSecond],
+                          issuer_opt: Option[String],
+                          blindedPathsFirstNodeId_opt: Option[PublicKey]): Behavior[Command] = {
     if (amount_opt.nonEmpty && description_opt.isEmpty) {
       replyTo ! CreateOfferError("Description is mandatory for offers with set amount.")
       Behaviors.stopped
@@ -83,6 +92,7 @@ private class OfferCreator(context: ActorContext[OfferCreator.Command],
           router ! Router.MessageRouteRequest(context.messageAdapter(WrappedRouterResponse(_)), firstNodeId, nodeParams.nodeId, Set.empty)
           waitForRoute(firstNodeId, tlvs)
         case None =>
+          // When not using a blinded path, we use our public nodeId for the offer (no privacy).
           val offer = Offer(TlvStream(tlvs + OfferNodeId(nodeParams.nodeId)))
           registerOffer(offer, Some(nodeParams.privateKey), None)
       }
@@ -93,6 +103,7 @@ private class OfferCreator(context: ActorContext[OfferCreator.Command],
     Behaviors.receiveMessagePartial {
       case WrappedRouterResponse(Router.MessageRoute(intermediateNodes, _)) =>
         val pathId = randomBytes32()
+        // We add dummy hops to the route if it is too short, which provides better privacy.
         val nodes = firstNode +: (intermediateNodes ++ Seq.fill(nodeParams.offersConfig.messagePathMinLength - intermediateNodes.length - 1)(nodeParams.nodeId))
         val paths = Seq(OnionMessages.buildRoute(randomKey(), nodes.map(IntermediateNode(_)), Recipient(nodeParams.nodeId, Some(pathId))).route)
         val offer = Offer(TlvStream(tlvs + OfferPaths(paths)))
@@ -103,9 +114,9 @@ private class OfferCreator(context: ActorContext[OfferCreator.Command],
     }
   }
 
-  private def registerOffer(offer: Offer, nodeKey: Option[PrivateKey], pathId_opt: Option[ByteVector32]): Behavior[Command] = {
+  private def registerOffer(offer: Offer, nodeKey_opt: Option[PrivateKey], pathId_opt: Option[ByteVector32]): Behavior[Command] = {
     nodeParams.db.offers.addOffer(offer, pathId_opt)
-    offerManager ! OfferManager.RegisterOffer(offer, nodeKey, pathId_opt, defaultOfferHandler)
+    offerManager ! OfferManager.RegisterOffer(offer, nodeKey_opt, pathId_opt, defaultOfferHandler)
     replyTo ! CreatedOffer(offer)
     Behaviors.stopped
   }

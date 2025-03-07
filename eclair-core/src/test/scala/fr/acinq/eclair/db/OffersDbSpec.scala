@@ -17,10 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Block
-import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
 import fr.acinq.eclair._
-import fr.acinq.eclair.db.pg.PgOffersDb
-import fr.acinq.eclair.db.sqlite.SqliteOffersDb
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -28,42 +25,25 @@ class OffersDbSpec extends AnyFunSuite {
 
   import fr.acinq.eclair.TestDatabases.forAllDbs
 
-  test("init database two times in a row") {
-    forAllDbs {
-      case sqlite: TestSqliteDatabases =>
-        new SqliteOffersDb(sqlite.connection)
-        new SqliteOffersDb(sqlite.connection)
-      case pg: TestPgDatabases =>
-        new PgOffersDb()(pg.datasource, pg.lock)
-        new PgOffersDb()(pg.datasource, pg.lock)
-    }
-  }
-
   test("add/disable/enable/list offers") {
     forAllDbs { dbs =>
       val db = dbs.offers
 
       assert(db.listOffers(onlyActive = false).isEmpty)
-      val offer1 = Offer(None, Some("test 1"), randomKey().publicKey, Features(), Block.LivenetGenesisBlock.hash)
-      db.addOffer(offer1, None)
-      val listed1 = db.listOffers(onlyActive = true)
-      assert(listed1.length == 1)
-      assert(listed1.head.offer == offer1)
-      assert(listed1.head.pathId_opt == None)
-      assert(listed1.head.disabledAt == None)
-      val offer2 = Offer(None, Some("test 2"), randomKey().publicKey, Features(), Block.LivenetGenesisBlock.hash)
+      val offer1 = OfferData(Offer(None, Some("test 1"), randomKey().publicKey, Features(), Block.LivenetGenesisBlock.hash), None, TimestampMilli(100), None)
+      db.addOffer(offer1.offer, None, offer1.createdAt)
+      assert(db.listOffers(onlyActive = true) == Seq(offer1))
       val pathId = randomBytes32()
-      db.addOffer(offer2, Some(pathId))
-      assert(db.listOffers(onlyActive = true).length == 2)
-      db.disableOffer(offer1)
-      assert(db.listOffers(onlyActive = false).length == 2)
-      val listed2 = db.listOffers(onlyActive = true)
-      assert(listed2.length == 1)
-      assert(listed2.head.offer == offer2)
-      assert(listed2.head.pathId_opt == Some(pathId))
-      assert(listed2.head.disabledAt == None)
-      db.disableOffer(offer2)
+      val offer2 = OfferData(Offer(Some(15_000 msat), Some("test 2"), randomKey().publicKey, Features(), Block.LivenetGenesisBlock.hash), Some(pathId), TimestampMilli(200), None)
+      db.addOffer(offer2.offer, Some(pathId), offer2.createdAt)
+      assert(db.listOffers(onlyActive = true) == Seq(offer2, offer1))
+      db.disableOffer(offer1.offer, disabledAt = TimestampMilli(250))
+      assert(db.listOffers(onlyActive = true) == Seq(offer2))
+      assert(db.listOffers(onlyActive = false) == Seq(offer2, offer1.copy(disabledAt_opt = Some(TimestampMilli(250)))))
+      db.disableOffer(offer2.offer, disabledAt = TimestampMilli(300))
       assert(db.listOffers(onlyActive = true).isEmpty)
+      assert(db.listOffers(onlyActive = false) == Seq(offer2.copy(disabledAt_opt = Some(TimestampMilli(300))), offer1.copy(disabledAt_opt = Some(TimestampMilli(250)))))
     }
   }
+
 }

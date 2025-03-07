@@ -20,8 +20,8 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.TimestampMilli
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
-import fr.acinq.eclair.db.{OfferData, OffersDb}
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
+import fr.acinq.eclair.db.{OfferData, OffersDb}
 import fr.acinq.eclair.wire.protocol.OfferTypes
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import grizzled.slf4j.Logging
@@ -56,7 +56,7 @@ class PgOffersDb(implicit ds: DataSource, lock: PgLock) extends OffersDb with Lo
     }
   }
 
-  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Unit = withMetrics("offers/add", DbBackends.Postgres){
+  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Unit = withMetrics("offers/add", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO payments.offers (offer_id, offer, path_id, created_at, is_active, disabled_at) VALUES (?, ?, ?, ?, TRUE, NULL)")) { statement =>
         statement.setString(1, offer.offerId.toHex)
@@ -68,7 +68,7 @@ class PgOffersDb(implicit ds: DataSource, lock: PgLock) extends OffersDb with Lo
     }
   }
 
-  override def disableOffer(offer: OfferTypes.Offer, disabledAt: TimestampMilli = TimestampMilli.now()): Unit = withMetrics("offers/disable", DbBackends.Postgres){
+  override def disableOffer(offer: OfferTypes.Offer, disabledAt: TimestampMilli = TimestampMilli.now()): Unit = withMetrics("offers/disable", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("UPDATE payments.offers SET disabled_at = ?, is_active = FALSE WHERE offer_id = ?")) { statement =>
         statement.setTimestamp(1, disabledAt.toSqlTimestamp)
@@ -79,17 +79,15 @@ class PgOffersDb(implicit ds: DataSource, lock: PgLock) extends OffersDb with Lo
   }
 
   private def parseOfferData(rs: ResultSet): OfferData = {
-    val disabledAt = rs.getTimestamp("disabled_at")
-    val disabledAt_opt = if (rs.wasNull()) None else Some(TimestampMilli.fromSqlTimestamp(disabledAt))
     OfferData(
       Offer.decode(rs.getString("offer")).get,
       rs.getStringNullable("path_id").map(ByteVector32.fromValidHex),
       TimestampMilli.fromSqlTimestamp(rs.getTimestamp("created_at")),
-      disabledAt_opt
+      rs.getTimestampNullable("disabled_at").map(TimestampMilli.fromSqlTimestamp)
     )
   }
 
-  override def listOffers(onlyActive: Boolean): Seq[OfferData] = withMetrics("offers/list", DbBackends.Postgres){
+  override def listOffers(onlyActive: Boolean): Seq[OfferData] = withMetrics("offers/list", DbBackends.Postgres) {
     withLock { pg =>
       if (onlyActive) {
         using(pg.prepareStatement("SELECT * FROM payments.offers WHERE is_active = TRUE ORDER BY created_at DESC")) { statement =>

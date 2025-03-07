@@ -250,7 +250,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(amount, Seq(bob.nodeId, carol.nodeId)))
     val route = sender.expectMsgType[Router.RouteResponse].routes.head
 
-    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta, feeOverride = Some(RelayFees.zero)))
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta, feeOverride_opt = Some(RelayFees.zero)))
     val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 1)
@@ -286,8 +286,8 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val route = sender.expectMsgType[Router.RouteResponse].routes.head
 
     val routes = Seq(
-      InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta, feeOverride = Some(RelayFees.zero)),
-      InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta, feeOverride = Some(RelayFees.zero)),
+      InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta, feeOverride_opt = Some(RelayFees.zero)),
+      InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta, feeOverride_opt = Some(RelayFees.zero)),
     )
     val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes, maxAttempts = 3)
     val payment = verifyPaymentSuccess(offer, amount, result)
@@ -369,8 +369,8 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val amount = 125_000_000 msat
     val routes = Seq(
-      InvoiceRequestActor.Route(route.hops :+ ChannelHop.dummy(carol.nodeId, 150 msat, 0, CltvExpiryDelta(50)), maxFinalExpiryDelta, feeOverride = Some(RelayFees.zero)),
-      InvoiceRequestActor.Route(route.hops ++ Seq(ChannelHop.dummy(carol.nodeId, 50 msat, 0, CltvExpiryDelta(20)), ChannelHop.dummy(carol.nodeId, 100 msat, 0, CltvExpiryDelta(30))), maxFinalExpiryDelta, feeOverride = Some(RelayFees.zero)),
+      InvoiceRequestActor.Route(route.hops :+ ChannelHop.dummy(carol.nodeId, 150 msat, 0, CltvExpiryDelta(50)), maxFinalExpiryDelta, feeOverride_opt = Some(RelayFees.zero)),
+      InvoiceRequestActor.Route(route.hops ++ Seq(ChannelHop.dummy(carol.nodeId, 50 msat, 0, CltvExpiryDelta(20)), ChannelHop.dummy(carol.nodeId, 100 msat, 0, CltvExpiryDelta(30))), maxFinalExpiryDelta, feeOverride_opt = Some(RelayFees.zero)),
     )
     val (offer, result) = sendOfferPayment(f, alice, carol, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
@@ -402,7 +402,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(amount, Seq(bob.nodeId, carol.nodeId)))
     val route = sender.expectMsgType[Router.RouteResponse].routes.head
 
-    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta, feeOverride = Some(RelayFees.zero)))
+    val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta, feeOverride_opt = Some(RelayFees.zero)))
     val (offer, result) = sendPrivateOfferPayment(f, alice, carol, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.forall(_.feesPaid == 0.msat))
@@ -433,7 +433,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     import f._
 
     val amount = 250_000_000 msat
-    val routes = Seq(InvoiceRequestActor.Route(Seq(ChannelHop.dummy(bob.nodeId, 10 msat, 25, CltvExpiryDelta(24)), ChannelHop.dummy(bob.nodeId, 5 msat, 10, CltvExpiryDelta(36))), maxFinalExpiryDelta, feeOverride = Some(RelayFees.zero)))
+    val routes = Seq(InvoiceRequestActor.Route(Seq(ChannelHop.dummy(bob.nodeId, 10 msat, 25, CltvExpiryDelta(24)), ChannelHop.dummy(bob.nodeId, 5 msat, 10, CltvExpiryDelta(36))), maxFinalExpiryDelta, feeOverride_opt = Some(RelayFees.zero)))
     val (offer, result) = sendOfferPayment(f, alice, bob, amount, routes)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 1)

@@ -122,7 +122,11 @@ class OfferTypesSpec extends AnyFunSuite {
     val request = InvoiceRequest(offer, 500 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.isValid)
     assert(request.offer == offer)
-    assertThrows[Exception](signInvoiceRequest(request.copy(records = TlvStream(request.records.records.filter { case InvoiceRequestAmount(_) => false case _ => true })), payerKey))
+    // Since the offer doesn't contain an amount, the invoice_request must contain one to be valid.
+    assertThrows[Exception](request.copy(records = TlvStream(request.records.records.filter {
+      case InvoiceRequestAmount(_) => false
+      case _ => true
+    })))
   }
 
   test("check that invoice request matches offer (chain compatibility)") {

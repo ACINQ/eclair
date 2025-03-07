@@ -26,6 +26,7 @@ import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 trait OffersDb {
   /**
    * Add an offer managed by eclair.
+   *
    * @param pathId_opt If the offer uses a blinded path, this is the corresponding pathId.
    */
   def addOffer(offer: Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Unit
@@ -38,9 +39,12 @@ trait OffersDb {
 
   /**
    * List offers managed by eclair.
+   *
    * @param onlyActive Whether to return only active offers or also disabled ones.
    */
   def listOffers(onlyActive: Boolean): Seq[OfferData]
 }
 
-case class OfferData(offer: Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli, disabledAt: Option[TimestampMilli])
+case class OfferData(offer: Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli, disabledAt_opt: Option[TimestampMilli]) {
+  val disabled: Boolean = disabledAt_opt.nonEmpty
+}

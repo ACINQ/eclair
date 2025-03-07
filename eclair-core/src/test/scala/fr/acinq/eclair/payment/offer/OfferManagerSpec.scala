@@ -77,7 +77,8 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val handleInvoiceRequest = handler.expectMessageType[HandleInvoiceRequest]
     assert(handleInvoiceRequest.invoiceRequest.isValid)
     assert(handleInvoiceRequest.invoiceRequest.payerId == payerKey.publicKey)
-    handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, Seq(InvoiceRequestActor.Route(hops, CltvExpiryDelta(1000), feeOverride = if (hideFees) Some(RelayFees.zero) else None)), pluginData_opt)
+    val feeOverride_opt = if (hideFees) Some(RelayFees.zero) else None
+    handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, Seq(InvoiceRequestActor.Route(hops, CltvExpiryDelta(1000), feeOverride_opt)), pluginData_opt)
     val invoiceMessage = postman.expectMessageType[Postman.SendMessage]
     val Right(invoice) = Bolt12Invoice.validate(invoiceMessage.message.get[OnionMessagePayloadTlv.Invoice].get.tlvs)
     assert(invoice.validateFor(handleInvoiceRequest.invoiceRequest, pathNodeId).isRight)

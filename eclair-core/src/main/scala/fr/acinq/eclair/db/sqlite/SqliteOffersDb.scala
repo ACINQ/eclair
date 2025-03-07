@@ -34,13 +34,14 @@ object SqliteOffersDb {
 }
 
 class SqliteOffersDb(val sqlite: Connection) extends OffersDb with Logging {
+
   import SqliteOffersDb._
   import SqliteUtils.ExtendedResultSet._
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
     getVersion(statement, DB_NAME) match {
       case None =>
-        statement.executeUpdate("CREATE TABLE offers (offer_id BLOB NOT NULL PRIMARY KEY, offer TEXT NOT NULL, path_id BLOB, created_at INTEGER NOT NULL, is_active INTEGER NOT NULL, disabled_at INTEGER)")
+        statement.executeUpdate("CREATE TABLE offers (offer_id BLOB NOT NULL PRIMARY KEY, offer TEXT NOT NULL, path_id BLOB, created_at INTEGER NOT NULL, is_active BOOLEAN NOT NULL, disabled_at INTEGER)")
         statement.executeUpdate("CREATE INDEX offer_created_at_idx ON offers(created_at)")
         statement.executeUpdate("CREATE INDEX offer_is_active_idx ON offers(is_active)")
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
@@ -69,13 +70,11 @@ class SqliteOffersDb(val sqlite: Connection) extends OffersDb with Logging {
   }
 
   private def parseOfferData(rs: ResultSet): OfferData = {
-    val disabledAt = rs.getLong("disabled_at")
-    val disabledAt_opt = if (rs.wasNull()) None else Some(TimestampMilli(disabledAt))
     OfferData(
       Offer.decode(rs.getString("offer")).get,
       rs.getByteVector32Nullable("path_id"),
       TimestampMilli(rs.getLong("created_at")),
-      disabledAt_opt
+      rs.getLongNullable("disabled_at").map(TimestampMilli(_))
     )
   }
 
