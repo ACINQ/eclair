@@ -321,10 +321,8 @@ zmqpubrawtx=tcp://127.0.0.1:29001
 ## Tools
 
 * [Demo Shop](https://starblocks.acinq.co/) - an example testnet Lightning web shop.
-* [Network Explorer](https://explorer.acinq.co/) - a Lightning network visualization tool.
 
 ## Resources
 
 * [1] [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
 * [2] [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
-* [3] [Lightning Network Explorer](https://explorer.acinq.co) - Explore testnet LN nodes you can connect to
