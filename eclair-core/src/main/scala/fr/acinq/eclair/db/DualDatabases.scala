@@ -36,6 +36,7 @@ case class DualDatabases(primary: Databases, secondary: Databases) extends Datab
   override val channels: ChannelsDb = DualChannelsDb(primary.channels, secondary.channels)
   override val peers: PeersDb = DualPeersDb(primary.peers, secondary.peers)
   override val payments: PaymentsDb = DualPaymentsDb(primary.payments, secondary.payments)
+  override val offers: OffersDb = DualOffersDb(primary.offers, secondary.offers)
   override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(primary.pendingCommands, secondary.pendingCommands)
   override val liquidity: LiquidityDb = DualLiquidityDb(primary.liquidity, secondary.liquidity)
 
@@ -402,6 +403,26 @@ case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends Pa
   override def listOutgoingPaymentsToOffer(offerId: ByteVector32): Seq[OutgoingPayment] = {
     runAsync(secondary.listOutgoingPaymentsToOffer(offerId))
     primary.listOutgoingPaymentsToOffer(offerId)
+  }
+}
+
+case class DualOffersDb(primary: OffersDb, secondary: OffersDb) extends OffersDb {
+
+  private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-offers").build()))
+
+  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Unit = {
+    runAsync(secondary.addOffer(offer, pathId_opt, createdAt))
+    primary.addOffer(offer, pathId_opt, createdAt)
+  }
+
+  override def disableOffer(offer: OfferTypes.Offer, disabledAt: TimestampMilli = TimestampMilli.now()): Unit = {
+    runAsync(secondary.disableOffer(offer, disabledAt))
+    primary.disableOffer(offer, disabledAt)
+  }
+
+  override def listOffers(onlyActive: Boolean): Seq[OfferData] = {
+    runAsync(secondary.listOffers(onlyActive))
+    primary.listOffers(onlyActive)
   }
 }
 

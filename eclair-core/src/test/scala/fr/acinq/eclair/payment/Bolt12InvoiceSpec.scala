@@ -185,6 +185,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val tlvs = Set[InvoiceTlv](
       InvoiceRequestMetadata(hex"012345"),
       OfferNodeId(nodeKey.publicKey),
+      InvoiceRequestAmount(1684 msat),
       InvoiceRequestPayerId(randomKey().publicKey),
       InvoicePaths(Seq(createPaymentBlindedRoute(randomKey().publicKey).route)),
       InvoiceBlindedPay(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 765432 msat, Features.empty))),

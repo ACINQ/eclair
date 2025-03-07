@@ -9,6 +9,39 @@
 With this release, eclair requires using Bitcoin Core 28.1.
 Newer versions of Bitcoin Core may be used, but have not been extensively tested.
 
+### Offers
+
+You can now create an offer with
+
+```
+./eclair-cli createoffer --description=coffee --amountMsat=20000 --expireInSeconds=3600 --issuer=me@example.com --blindedPathsFirstNodeId=03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f
+```
+
+All parameters are optional and omitting all of them will create a minimal offer with your public node id.
+You can also disable offers and list offers with
+
+```
+./eclair-cli disableoffer --offer=lnoxxx
+./eclair-cli listoffers
+```
+
+If you specify `--blindedPathsFirstNodeId`, your public node id will not be in the offer, you will instead be hidden behind a blinded path starting at the node that you have chosen.
+You can configure the number and length of blinded paths used in `eclair.conf`:
+
+```
+offers {
+  // Minimum length of an offer blinded path
+  message-path-min-length = 2
+
+  // Number of payment paths to put in Bolt12 invoices
+  payment-path-count = 2
+  // Length of payment paths to put in Bolt12 invoices
+  payment-path-length = 4
+  // Expiry delta of payment paths to put in Bolt12 invoices
+  payment-path-expiry-delta = 500
+}
+```
+
 ### Simplified mutual close
 
 This release includes support for the latest [mutual close protocol](https://github.com/lightning/bolts/pull/1205).

@@ -292,9 +292,7 @@ object MultiPartHandler {
                                  paymentPreimage: ByteVector32,
                                  additionalTlvs: Set[InvoiceTlv] = Set.empty,
                                  customTlvs: Set[GenericTlv] = Set.empty) extends ReceivePayment {
-    require(invoiceRequest.offer.amount.nonEmpty || invoiceRequest.amount.nonEmpty, "an amount must be specified in the offer or in the invoice request")
-
-    val amount = invoiceRequest.amount.orElse(invoiceRequest.offer.amount.map(_ * invoiceRequest.quantity)).get
+    val amount = invoiceRequest.amount
   }
 
   object CreateInvoiceActor {

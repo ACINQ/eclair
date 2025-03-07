@@ -49,6 +49,7 @@ object Logs {
           parentPaymentId_opt: Option[UUID] = None,
           paymentId_opt: Option[UUID] = None,
           paymentHash_opt: Option[ByteVector32] = None,
+          offerId_opt: Option[ByteVector32] = None,
           txPublishId_opt: Option[UUID] = None,
           messageId_opt: Option[ByteVector32] = None,
           nodeAlias_opt: Option[String] = None): Map[String, String] =
@@ -60,6 +61,7 @@ object Logs {
       parentPaymentId_opt.map(p => "parentPaymentId" -> s" p:$p"),
       paymentId_opt.map(i => "paymentId" -> s" i:$i"),
       paymentHash_opt.map(h => "paymentHash" -> s" h:$h"),
+      offerId_opt.map(o => "offerId" -> s" o:$o"),
       txPublishId_opt.map(t => "txPublishId" -> s" t:$t"),
       messageId_opt.map(m => "messageId" -> s" m:$m"),
       nodeAlias_opt.map(a => "nodeAlias" -> s" a:$a"),

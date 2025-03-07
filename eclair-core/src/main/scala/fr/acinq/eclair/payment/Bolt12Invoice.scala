@@ -60,7 +60,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
       Left("Wrong node id")
     } else if (isExpired()) {
       Left("Invoice expired")
-    } else if (!request.amount.forall(_ == amount)) {
+    } else if (request.amount != amount) {
       Left("Incompatible amount")
     } else if (!Features.areCompatible(request.features, features.bolt12Features())) {
       Left("Incompatible features")
@@ -106,8 +106,7 @@ object Bolt12Invoice {
             paths: Seq[PaymentBlindedRoute],
             additionalTlvs: Set[InvoiceTlv] = Set.empty,
             customTlvs: Set[GenericTlv] = Set.empty): Bolt12Invoice = {
-    require(request.amount.nonEmpty || request.offer.amount.nonEmpty)
-    val amount = request.amount.orElse(request.offer.amount.map(_ * request.quantity)).get
+    val amount = request.amount
     val tlvs: Set[InvoiceTlv] = removeSignature(request.records).records ++ Set(
       Some(InvoicePaths(paths.map(_.route))),
       Some(InvoiceBlindedPay(paths.map(_.paymentInfo))),
