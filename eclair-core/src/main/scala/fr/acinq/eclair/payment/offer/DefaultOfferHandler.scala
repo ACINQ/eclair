@@ -34,7 +34,7 @@ object DefaultOfferHandler {
     Behaviors.setup(context =>
       Behaviors.receiveMessage {
         case OfferManager.HandleInvoiceRequest(replyTo, invoiceRequest) =>
-          val amount = invoiceRequest.amount.getOrElse(10_000_000 msat)
+          val amount = invoiceRequest.amount
           invoiceRequest.offer.contactInfos.head match {
             case OfferTypes.RecipientNodeId(_) =>
               val route = InvoiceRequestActor.Route(Nil, nodeParams.channelConf.maxExpiryDelta)
