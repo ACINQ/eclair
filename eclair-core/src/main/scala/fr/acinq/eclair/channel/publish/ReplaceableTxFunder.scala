@@ -457,9 +457,9 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
           val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(changeOutput))
           Future.successful(anchorTx.updateTx(txSingleOutput), fundTxResponse.amountIn)
         case None =>
-          bitcoinClient.getP2wpkhPubkeyHashForChange().map(pubkeyHash => {
+          bitcoinClient.getChangePublicKeyScript().map(changeScript => {
             // We must have a change output, otherwise the transaction is invalid: we replace the PlaceHolderPubKey with a real wallet key.
-            val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(TxOut(dustLimit, Script.pay2wpkh(pubkeyHash))))
+            val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(TxOut(dustLimit, changeScript)))
             (anchorTx.updateTx(txSingleOutput), fundTxResponse.amountIn)
           })
       }

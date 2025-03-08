@@ -16,12 +16,15 @@
 
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
+import fr.acinq.bitcoin.scalacompat.BlockHash
 import org.json4s.JsonAST.JValue
 
 import java.io.IOException
 import scala.concurrent.{ExecutionContext, Future}
 
 trait BitcoinJsonRPCClient {
+  def chainHash: BlockHash
+
   def wallet: Option[String]
 
   def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue]
