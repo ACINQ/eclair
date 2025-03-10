@@ -1028,10 +1028,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             val parentCommitment = d.commitments.latest.commitment
             val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey
             val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubKey, msg.fundingPubKey, d.commitments.latest.params.commitmentFormat)
-            val sharedInput = if (d.commitments.latest.commitInput.isP2tr) {
-              Musig2Input(parentCommitment)
-            } else {
-              Multisig2of2Input(parentCommitment)
+            val sharedInput = d.commitments.latest.commitInput match {
+              case _: Transactions.InputInfo.TaprootInput => Musig2Input(parentCommitment)
+              case _ => Multisig2of2Input(parentCommitment)
             }
             LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = false, msg.requestFunding_opt, nodeParams.liquidityAdsConfig.rates_opt, msg.useFeeCredit_opt) match {
               case Left(t) =>
@@ -1090,10 +1089,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
           val parentCommitment = d.commitments.latest.commitment
-          val sharedInput = if (d.commitments.latest.commitInput.isP2tr) {
-            Musig2Input(parentCommitment)
-          } else {
-            Multisig2of2Input(parentCommitment)
+          val sharedInput = d.commitments.latest.commitInput match {
+            case _: Transactions.InputInfo.TaprootInput => Musig2Input(parentCommitment)
+            case _ => Multisig2of2Input(parentCommitment)
           }
           val fundingParams = InteractiveTxParams(
             channelId = d.channelId,
