@@ -2275,9 +2275,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         }
         case _ => Set.empty
       }
-      val lastFundingLockedTlvs: Set[ChannelReestablishTlv] =
+      val lastFundingLockedTlvs: Set[ChannelReestablishTlv] = if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype)) {
           d.commitments.lastLocalLocked_opt.map(c => ChannelReestablishTlv.MyCurrentFundingLockedTlv(c.fundingTxId)).toSet ++
             d.commitments.lastRemoteLocked_opt.map(c => ChannelReestablishTlv.YourLastFundingLockedTlv(c.fundingTxId)).toSet
+      } else Set.empty
 
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
