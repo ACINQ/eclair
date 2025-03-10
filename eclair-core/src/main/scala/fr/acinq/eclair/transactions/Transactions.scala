@@ -112,7 +112,6 @@ object Transactions {
   sealed trait InputInfo {
     val outPoint: OutPoint
     val txOut: TxOut
-    val isP2tr: Boolean = Try(Script.isPay2tr(Script.parse(txOut.publicKeyScript))).getOrElse(false)
   }
 
   object InputInfo {
@@ -121,11 +120,6 @@ object Transactions {
       def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]) = new SegwitInput(outPoint, txOut,  Script.write(redeemScript))
     }
     case class TaprootInput(outPoint: OutPoint, txOut: TxOut, internalKey: XonlyPublicKey, scriptTree_opt: Option[ScriptTree], leaf: ByteVector32) extends InputInfo
-
-
-    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector): SegwitInput = SegwitInput(outPoint, txOut, redeemScript)
-    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]): SegwitInput = SegwitInput(outPoint, txOut, Script.write(redeemScript))
-    //def apply(outPoint: OutPoint, txOut: TxOut, internalKey: XonlyPublicKey, scriptTree_opt: Option[ScriptTree]): TaprootInput = TaprootInput(outPoint, txOut, internalKey, scriptTree_opt)
   }
 
   /** Owner of a given transaction (local/remote). */
@@ -756,7 +750,7 @@ object Transactions {
           )
           Right(HtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong))))
         case s: CommitmentOutputLink.SegwitLink[InHtlc] =>
-          val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), s.redeemScript)
+          val input = InputInfo.SegwitInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), s.redeemScript)
           val tx = Transaction(
             version = 2,
             txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
@@ -882,7 +876,7 @@ object Transactions {
     findPubKeyScriptIndex(commitTx, pubkeyScript) match {
       case Left(skip) => Left(skip)
       case Right(outputIndex) =>
-        val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
+        val input = InputInfo.SegwitInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
         // unsigned tx
         val tx = Transaction(
           version = 2,
@@ -1167,7 +1161,7 @@ object Transactions {
    * We already have the redeemScript, no need to build it
    */
   def makeHtlcPenaltyTx(commitTx: Transaction, htlcOutputIndex: Int, redeemScript: ByteVector, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, HtlcPenaltyTx] = {
-    val input = InputInfo(OutPoint(commitTx, htlcOutputIndex), commitTx.txOut(htlcOutputIndex), redeemScript)
+    val input = InputInfo.SegwitInput(OutPoint(commitTx, htlcOutputIndex), commitTx.txOut(htlcOutputIndex), redeemScript)
     // unsigned transaction
     val tx = Transaction(
       version = 2,
