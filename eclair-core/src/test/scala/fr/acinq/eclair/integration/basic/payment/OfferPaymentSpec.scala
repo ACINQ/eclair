@@ -756,66 +756,91 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     assert(payment.parts.length == 1)
   }
 
-  test("basic offer") { f =>
+  test("create offer using public node id") { f =>
     import f._
 
     val amount = 20_000_000 msat
     val offer = createOffer(carol, description_opt = Some("test offer"), amount_opt = Some(amount), issuer_opt = None, blindedPathsFirstNodeId_opt = None)
-
-    assert(offer.nodeId == Some(carol.nodeId))
-    assert(offer.description == Some("test offer"))
-    assert(offer.amount == Some(amount))
+    assert(offer.nodeId.contains(carol.nodeId))
+    assert(offer.description.contains("test offer"))
+    assert(offer.amount.contains(amount))
 
     val payment = payOffer(alice, offer, amount)
     assert(payment.isInstanceOf[PaymentSent])
+    // Alice must pay fees for the non-blinded Bob->Carol channel.
     assert(payment.asInstanceOf[PaymentSent].feesPaid > 0.msat)
   }
 
-  test("offer without node id (dummy hops only)") { f =>
+  test("create offer without public node id (dummy hops only)") { f =>
     import f._
 
     val amount = 20_000_000 msat
     val offer = createOffer(carol, description_opt = Some("test offer"), amount_opt = Some(amount), issuer_opt = None, blindedPathsFirstNodeId_opt = Some(carol.nodeId))
-
-    assert(offer.nodeId == None)
+    assert(offer.nodeId.isEmpty)
+    assert(offer.contactInfos.size == 1)
     assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.firstNodeId == EncodedNodeId.WithPublicKey.Plain(carol.nodeId))
-    assert(offer.description == Some("test offer"))
-    assert(offer.amount == Some(amount))
+    assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.length == carol.nodeParams.offersConfig.messagePathMinLength)
+    assert(offer.description.contains("test offer"))
+    assert(offer.amount.contains(amount))
 
     val payment = payOffer(alice, offer, amount)
     assert(payment.isInstanceOf[PaymentSent])
+    // Alice must pay fees for the non-blinded Bob->Carol channel.
     assert(payment.asInstanceOf[PaymentSent].feesPaid > 0.msat)
   }
 
-  test("offer without node id (real and dummy blinded hops)") { f =>
+  test("create offer without node id (real and dummy blinded hops)") { f =>
     import f._
 
     val amount = 20_000_000 msat
     val offer = createOffer(carol, description_opt = Some("test offer"), amount_opt = Some(amount), issuer_opt = None, blindedPathsFirstNodeId_opt = Some(bob.nodeId))
-
-    assert(offer.nodeId == None)
+    assert(offer.nodeId.isEmpty)
+    assert(offer.contactInfos.size == 1)
     assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.firstNodeId == EncodedNodeId.WithPublicKey.Plain(bob.nodeId))
-    assert(offer.description == Some("test offer"))
-    assert(offer.amount == Some(amount))
+    assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.length == carol.nodeParams.offersConfig.messagePathMinLength)
+    assert(offer.description.contains("test offer"))
+    assert(offer.amount.contains(amount))
 
     val payment = payOffer(alice, offer, amount)
     assert(payment.isInstanceOf[PaymentSent])
+    // For offers managed by eclair, the fees of the blinded path are paid by the recipient, not by the payer.
     assert(payment.asInstanceOf[PaymentSent].feesPaid == 0.msat)
+    assert(payment.asInstanceOf[PaymentSent].parts.nonEmpty)
+    payment.asInstanceOf[PaymentSent].parts.foreach(p => {
+      val blinded = p.route.flatMap(_.lastOption).get
+      assert(blinded.isInstanceOf[Router.BlindedHop])
+      // Carol added dummy hops to pad blinded paths.
+      assert(blinded.asInstanceOf[Router.BlindedHop].resolved.route.blindedNodeIds.size == carol.nodeParams.offersConfig.paymentPathLength + 1)
+    })
   }
 
-  test("offer without node id (payer is first node of blinded path)") { f =>
+  test("create offer without node id (payer is first node of blinded path)") { f =>
     import f._
 
     val amount = 20_000_000 msat
     val offer = createOffer(carol, description_opt = Some("test offer"), amount_opt = Some(amount), issuer_opt = None, blindedPathsFirstNodeId_opt = Some(alice.nodeId))
-
-    assert(offer.nodeId == None)
+    assert(offer.nodeId.isEmpty)
     assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.firstNodeId == EncodedNodeId.WithPublicKey.Plain(alice.nodeId))
-    assert(offer.description == Some("test offer"))
-    assert(offer.amount == Some(amount))
+    assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.length == carol.nodeParams.offersConfig.messagePathMinLength)
+    assert(offer.description.contains("test offer"))
+    assert(offer.amount.contains(amount))
 
     val payment = payOffer(alice, offer, amount)
     assert(payment.isInstanceOf[PaymentSent])
+    // For offers managed by eclair, the fees of the blinded path are paid by the recipient, not by the payer.
+    // If the payer is part of the blinded path, it means that the recipient is refunding the fees of the payer's
+    // first hop: but this hop is not part of the payer fees, since the channel belongs to the payer, so it looks
+    // like the payment used negative fees. In reality, this simply means that we obtained the preimage while paying
+    // less than the invoice amount, which is fine.
     assert(payment.asInstanceOf[PaymentSent].feesPaid < 0.msat)
+    assert(payment.asInstanceOf[PaymentSent].parts.nonEmpty)
+    payment.asInstanceOf[PaymentSent].parts.foreach(p => {
+      val blinded = p.route.flatMap(_.lastOption).get
+      assert(blinded.isInstanceOf[Router.BlindedHop])
+      // Alice resolves the first (blinded) node as being Bob.
+      assert(blinded.asInstanceOf[Router.BlindedHop].resolved.route.firstNodeId == bob.nodeId)
+      // Carol added dummy hops to pad blinded paths.
+      assert(blinded.asInstanceOf[Router.BlindedHop].resolved.route.blindedNodeIds.size == carol.nodeParams.offersConfig.paymentPathLength)
+    })
   }
 }
