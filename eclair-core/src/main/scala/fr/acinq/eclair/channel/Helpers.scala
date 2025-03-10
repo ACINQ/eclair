@@ -368,7 +368,7 @@ object Helpers {
       case SimpleTaprootChannelCommitmentFormat =>
         val fundingScript = Taproot.musig2FundingScript(fundingPubkey1, fundingPubkey2)
         val fundingTxOut = TxOut(fundingSatoshis, fundingScript)
-        InputInfo.TaprootInput(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, Taproot.musig2Aggregate(fundingPubkey1, fundingPubkey2), None)
+        InputInfo.TaprootInput(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, Taproot.musig2Aggregate(fundingPubkey1, fundingPubkey2), None, ByteVector32.Zeroes)
       case _ =>
         val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
         val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
