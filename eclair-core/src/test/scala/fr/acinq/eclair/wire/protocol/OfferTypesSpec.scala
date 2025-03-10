@@ -122,8 +122,11 @@ class OfferTypesSpec extends AnyFunSuite {
     val request = InvoiceRequest(offer, 500 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.isValid)
     assert(request.offer == offer)
-    val withoutAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.filter { case InvoiceRequestAmount(_) => false case _ => true })), payerKey)
-    assert(!withoutAmount.isValid)
+    // Since the offer doesn't contain an amount, the invoice_request must contain one to be valid.
+    assertThrows[Exception](request.copy(records = TlvStream(request.records.records.filter {
+      case InvoiceRequestAmount(_) => false
+      case _ => true
+    })))
   }
 
   test("check that invoice request matches offer (chain compatibility)") {
@@ -188,11 +191,12 @@ class OfferTypesSpec extends AnyFunSuite {
       InvoiceRequestMetadata(hex"abcdef"),
       OfferNodeId(nodeId),
       InvoiceRequestPayerId(payerKey.publicKey),
+      InvoiceRequestAmount(21000 msat)
     )
     val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream[InvoiceRequestTlv](tlvsWithoutSignature), OfferCodecs.invoiceRequestTlvCodec), payerKey)
     val tlvs = tlvsWithoutSignature + Signature(signature)
     val invoiceRequest = InvoiceRequest(TlvStream(tlvs))
-    val encoded = "lnr1qqp6hn00zcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupetqssynwewhp70gwlp4chhm53g90jt9fpnx7rpmrzla3zd0nvxymm8e0p7pq06rwacy8756zgl3hdnsyfepq573astyz94rgn9uhxlyqj4gdyk6q8q0yrv6al909v3435amuvjqvkuq6k8fyld78r8srdyx7wnmwsdu"
+    val encoded = "lnr1qqp6hn00zcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe2gp9yzzcyypymkt4c0n6rhcdw9a7ay2ptuje2gvehscwcchlvgntump3x7e7tc0sgp9k43qeu892gfnz2hrr7akh2x8erh7zm2tv52884vyl462dm5tfcahgtuzt7j0npy7getf4trv5d4g78a9fkwu3kke6hcxdr6t2n7vz"
     assert(InvoiceRequest.decode(encoded).get == invoiceRequest)
     assert(invoiceRequest.offer.amount.isEmpty)
     assert(invoiceRequest.offer.description.isEmpty)

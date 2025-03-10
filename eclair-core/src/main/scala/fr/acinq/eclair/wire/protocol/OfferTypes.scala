@@ -347,22 +347,18 @@ object OfferTypes {
 
     val metadata: ByteVector = records.get[InvoiceRequestMetadata].get.data
     val chain: BlockHash = records.get[InvoiceRequestChain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
-    val amount: Option[MilliSatoshi] = records.get[InvoiceRequestAmount].map(_.amount)
+    private val amount_opt: Option[MilliSatoshi] = records.get[InvoiceRequestAmount].map(_.amount)
     val features: Features[Bolt12Feature] = records.get[InvoiceRequestFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
     val quantity_opt: Option[Long] = records.get[InvoiceRequestQuantity].map(_.quantity)
     val quantity: Long = quantity_opt.getOrElse(1)
+    private val baseInvoiceAmount_opt = offer.amount.map(_ * quantity)
+    val amount: MilliSatoshi = amount_opt.orElse(baseInvoiceAmount_opt).get
     val payerId: PublicKey = records.get[InvoiceRequestPayerId].get.publicKey
     val payerNote: Option[String] = records.get[InvoiceRequestPayerNote].map(_.note)
     private val signature: ByteVector64 = records.get[Signature].get.signature
 
     def isValid: Boolean = {
-      val amountOk = offer.amount match {
-        case Some(offerAmount) =>
-          val baseInvoiceAmount = offerAmount * quantity
-          amount.forall(baseInvoiceAmount <= _)
-        case None => amount.nonEmpty
-      }
-      amountOk &&
+      amount_opt.forall(a => baseInvoiceAmount_opt.forall(b => a >= b)) &&
         offer.chains.contains(chain) &&
         offer.quantityMax.forall(max => quantity_opt.nonEmpty && quantity <= max) &&
         quantity_opt.forall(_ => offer.quantityMax.nonEmpty) &&
@@ -426,6 +422,7 @@ object OfferTypes {
         _ -> ()
       )
       if (records.get[InvoiceRequestMetadata].isEmpty) return Left(MissingRequiredTlv(UInt64(0)))
+      if (records.get[InvoiceRequestAmount].isEmpty && records.get[OfferAmount].isEmpty) return Left(MissingRequiredTlv(UInt64(82)))
       if (records.get[InvoiceRequestPayerId].isEmpty) return Left(MissingRequiredTlv(UInt64(88)))
       if (records.get[Signature].isEmpty) return Left(MissingRequiredTlv(UInt64(240)))
       if (records.unknown.exists(!isInvoiceRequestTlv(_))) return Left(ForbiddenTlv(records.unknown.find(!isInvoiceRequestTlv(_)).get.tag))

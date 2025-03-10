@@ -30,6 +30,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.{PeerConnection, PeerReadyNotifier}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
+import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
@@ -92,7 +93,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       liquidityAdsConfig: LiquidityAds.Config,
                       peerWakeUpConfig: PeerReadyNotifier.WakeUpConfig,
                       onTheFlyFundingConfig: OnTheFlyFunding.Config,
-                      peerStorageConfig: PeerStorageConfig) {
+                      peerStorageConfig: PeerStorageConfig,
+                      offersConfig: OffersConfig) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -705,6 +707,12 @@ object NodeParams extends Logging {
         writeDelay = FiniteDuration(config.getDuration("peer-storage.write-delay").getSeconds, TimeUnit.SECONDS),
         removalDelay = FiniteDuration(config.getDuration("peer-storage.removal-delay").getSeconds, TimeUnit.SECONDS),
         cleanUpFrequency = FiniteDuration(config.getDuration("peer-storage.cleanup-frequency").getSeconds, TimeUnit.SECONDS),
+      ),
+      offersConfig = OffersConfig(
+        messagePathMinLength = config.getInt("offers.message-path-min-length"),
+        paymentPathCount = config.getInt("offers.payment-path-count"),
+        paymentPathLength = config.getInt("offers.payment-path-length"),
+        paymentPathCltvExpiryDelta = CltvExpiryDelta(config.getInt("offers.payment-path-expiry-delta")),
       )
     )
   }

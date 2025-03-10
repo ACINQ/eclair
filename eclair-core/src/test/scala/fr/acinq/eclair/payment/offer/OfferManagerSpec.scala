@@ -28,6 +28,7 @@ import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.payment.offer.OfferManager._
 import fr.acinq.eclair.payment.receive.MultiPartHandler
 import fr.acinq.eclair.payment.receive.MultiPartHandler.GetIncomingPaymentActor.{ProcessPayment, RejectPayment}
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.RouteBlindingDecryptedData
@@ -76,7 +77,8 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val handleInvoiceRequest = handler.expectMessageType[HandleInvoiceRequest]
     assert(handleInvoiceRequest.invoiceRequest.isValid)
     assert(handleInvoiceRequest.invoiceRequest.payerId == payerKey.publicKey)
-    handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, Seq(InvoiceRequestActor.Route(hops, hideFees, CltvExpiryDelta(1000))), pluginData_opt)
+    val feeOverride_opt = if (hideFees) Some(RelayFees.zero) else None
+    handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, Seq(InvoiceRequestActor.Route(hops, CltvExpiryDelta(1000), feeOverride_opt)), pluginData_opt)
     val invoiceMessage = postman.expectMessageType[Postman.SendMessage]
     val Right(invoice) = Bolt12Invoice.validate(invoiceMessage.message.get[OnionMessagePayloadTlv.Invoice].get.tlvs)
     assert(invoice.validateFor(handleInvoiceRequest.invoiceRequest, pathNodeId).isRight)
@@ -126,8 +128,8 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val paymentPayload = createPaymentPayload(f, invoice)
     offerManager ! ReceivePayment(paymentHandler.ref, invoice.paymentHash, paymentPayload, amount)
     val handlePayment = handler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.contains(hex"deadbeef"))
+    assert(handlePayment.offer == offer)
+    assert(handlePayment.invoiceData.pluginData_opt.contains(hex"deadbeef"))
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
     val ProcessPayment(incomingPayment, _) = paymentHandler.expectMessageType[ProcessPayment]
     assert(Crypto.sha256(incomingPayment.paymentPreimage) == invoice.paymentHash)
@@ -298,7 +300,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     offerManager ! ReceivePayment(paymentHandler.ref, invoice.paymentHash, paymentPayload, amount)
 
     val handlePayment = handler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
+    assert(handlePayment.offer == offer)
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
     val ProcessPayment(incomingPayment, maxRecipientPathFees) = paymentHandler.expectMessageType[ProcessPayment]
     assert(Crypto.sha256(incomingPayment.paymentPreimage) == invoice.paymentHash)
@@ -324,7 +326,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     offerManager ! ReceivePayment(paymentHandler.ref, invoice.paymentHash, paymentPayload, amountReceived)
 
     val handlePayment = handler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
+    assert(handlePayment.offer == offer)
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
     val ProcessPayment(incomingPayment, maxRecipientPathFees) = paymentHandler.expectMessageType[ProcessPayment]
     assert(Crypto.sha256(incomingPayment.paymentPreimage) == invoice.paymentHash)

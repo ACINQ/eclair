@@ -50,7 +50,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     using(pg.createStatement()) { statement =>
 
       def migration45(statement: Statement): Unit = {
-        statement.executeUpdate("CREATE SCHEMA payments")
+        statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS payments")
         statement.executeUpdate("ALTER TABLE received_payments RENAME TO received")
         statement.executeUpdate("ALTER TABLE received SET SCHEMA payments")
         statement.executeUpdate("ALTER TABLE sent_payments RENAME TO sent")
@@ -79,7 +79,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
 
       getVersion(statement, DB_NAME) match {
         case None =>
-          statement.executeUpdate("CREATE SCHEMA payments")
+          statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS payments")
 
           statement.executeUpdate("CREATE TABLE payments.received (payment_hash TEXT NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage TEXT NOT NULL, path_ids BYTEA, payment_request TEXT NOT NULL, received_msat BIGINT, created_at TIMESTAMP WITH TIME ZONE NOT NULL, expire_at TIMESTAMP WITH TIME ZONE NOT NULL, received_at TIMESTAMP WITH TIME ZONE)")
           statement.executeUpdate("CREATE TABLE payments.sent (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash TEXT NOT NULL, payment_preimage TEXT, payment_type TEXT NOT NULL, amount_msat BIGINT NOT NULL, fees_msat BIGINT, recipient_amount_msat BIGINT NOT NULL, recipient_node_id TEXT NOT NULL, payment_request TEXT, offer_id TEXT, payer_key TEXT, payment_route BYTEA, failures BYTEA, created_at TIMESTAMP WITH TIME ZONE NOT NULL, completed_at TIMESTAMP WITH TIME ZONE)")
