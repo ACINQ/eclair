@@ -340,6 +340,15 @@
                     <a href="#payinvoice" class="toc-h2 toc-link" data-title="PayInvoice">PayInvoice</a>
                   </li>
                   <li>
+                    <a href="#createoffer" class="toc-h2 toc-link" data-title="CreateOffer">CreateOffer</a>
+                  </li>
+                  <li>
+                    <a href="#listoffers" class="toc-h2 toc-link" data-title="ListOffers">ListOffers</a>
+                  </li>
+                  <li>
+                    <a href="#disableoffer" class="toc-h2 toc-link" data-title="DisableOffer">DisableOffer</a>
+                  </li>
+                  <li>
                     <a href="#payoffer" class="toc-h2 toc-link" data-title="PayOffer">PayOffer</a>
                   </li>
                   <li>
@@ -2358,6 +2367,121 @@ It will then return full details about the payment (succeeded or failed).</p>
 <td>Boolean</td>
 </tr>
 </tbody></table>
+<h2 id='createoffer'>CreateOffer</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount_msat&gt; <span class="s2">"http://localhost:8080/createoffer"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli createoffer --amountMsat<span class="o">=</span>&lt;amount_msat&gt;
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="s2">"lnoxxx"</span><span class="w">
+</span></code></pre>
+<p>Create a <strong>BOLT12</strong> offer, allowing recurring payments.
+This offer will be active until <code>disableoffer</code> is called.</p>
+
+<p>All parameters are optional: when none are specified, this will create the smallest possible offer associated with your public <code>node_id</code>.</p>
+
+<p>If you specify <code>blindedPathsFirstNodeId</code>, your public node id will not appear in the offer: you will instead be hidden behind a blinded path starting at the node that you have chosen.
+You can configure the number and length of blinded paths used in <code>eclair.conf</code> in the <code>offers</code> section.</p>
+<h3 id='http-request-24'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/createoffer</code></p>
+<h3 id='parameters-22'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Optional</th>
+<th>Type</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>amountMsat</td>
+<td>Amount that should be paid</td>
+<td>Yes</td>
+<td>Millisatoshi (Integer)</td>
+</tr>
+<tr>
+<td>issuer</td>
+<td>Public information about the offer issuer (e.g. merchant website)</td>
+<td>Yes</td>
+<td>String</td>
+</tr>
+<tr>
+<td>description</td>
+<td>Offer description</td>
+<td>Yes</td>
+<td>String</td>
+</tr>
+<tr>
+<td>expireInSeconds</td>
+<td>Duration (in seconds) after which this offer automatically expires</td>
+<td>Yes</td>
+<td>Integer</td>
+</tr>
+<tr>
+<td>blindedPathsFirstNodeId</td>
+<td>Introduction node that must be used for blinded paths to hide the node&#39;s identity</td>
+<td>Yes</td>
+<td>33-bytes-HexString (String)</td>
+</tr>
+</tbody></table>
+<h2 id='listoffers'>ListOffers</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">activeOnly</span><span class="o">=</span>&lt;active_only&gt; <span class="s2">"http://localhost:8080/listoffers"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli listoffers --activeOnly<span class="o">=</span><span class="nb">false</span>
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">[</span><span class="w">
+  </span><span class="s2">"lnoxxxxxx1"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"lnoxxxxxx2"</span><span class="w">
+</span><span class="p">]</span><span class="w">
+</span></code></pre>
+<p>List <strong>BOLT12</strong> offers.</p>
+<h3 id='http-request-25'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/listoffers</code></p>
+<h3 id='parameters-23'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Optional</th>
+<th>Type</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>activeOnly</td>
+<td>If false, also includes disabled offers</td>
+<td>Yes</td>
+<td>Boolean</td>
+</tr>
+</tbody></table>
+<h2 id='disableoffer'>DisableOffer</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">offer</span><span class="o">=</span>&lt;lnoxxx&gt; <span class="s2">"http://localhost:8080/disableoffer"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli disableoffer --offer<span class="o">=</span>lnoxxx
+</code></pre>
+<p>Disable a <strong>BOLT12</strong> offer, which means that future payments to this offer will be rejected.</p>
+<h3 id='http-request-26'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/disableoffer</code></p>
+<h3 id='parameters-24'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Optional</th>
+<th>Type</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>offer</td>
+<td>Offer that should be disabled</td>
+<td>No</td>
+<td>String</td>
+</tr>
+</tbody></table>
 <h2 id='payoffer'>PayOffer</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">offer</span><span class="o">=</span>&lt;some_offer&gt; <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount_msat&gt; <span class="s2">"http://localhost:8080/payoffer"</span>
 
 <span class="c"># with eclair-cli</span>
@@ -2375,9 +2499,9 @@ It&#39;s possible to add an extra <code>externalId</code> and this will be retur
 
 <p>When <code>--blocking=true</code> is provided, the API will instead block until the payment completes.
 It will then return full details about the payment (succeeded or failed).</p>
-<h3 id='http-request-24'>HTTP Request</h3>
+<h3 id='http-request-27'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/payoffer</code></p>
-<h3 id='parameters-22'>Parameters</h3>
+<h3 id='parameters-25'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2466,9 +2590,9 @@ It&#39;s possible to add an extra <code>externalId</code> and this will be retur
 
 <p>Note that this feature isn&#39;t specified in the BOLTs, so it may be removed or updated in the future.
 If the recipient has given you an invoice, you should instead of the <code>payinvoice</code> API.</p>
-<h3 id='http-request-25'>HTTP Request</h3>
+<h3 id='http-request-28'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtonode</code></p>
-<h3 id='parameters-23'>Parameters</h3>
+<h3 id='parameters-26'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2556,9 +2680,9 @@ It&#39;s possible to add an extra <code>externalId</code> and this will be retur
 
 <p>This command may also be used to send multipart payments with your own splitting algorithm.
 Go to the <a href="https://github.com/ACINQ/eclair/wiki">wiki</a> for details on how to do that.</p>
-<h3 id='http-request-26'>HTTP Request</h3>
+<h3 id='http-request-29'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtoroute</code></p>
-<h3 id='parameters-24'>Parameters</h3>
+<h3 id='parameters-27'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2790,9 +2914,9 @@ The API can be queried by <code>paymentHash</code> OR by <code>uuid</code>.</p>
 
 <p>Note that when you provide the <code>id</code> instead of the <code>payment_hash</code>, eclair will only return results for this particular attempt.
 For multi-part payments, the <code>id</code> provided must be the <code>parentId</code>, not the <code>paymentId</code> of a partial payment.</p>
-<h3 id='http-request-27'>HTTP Request</h3>
+<h3 id='http-request-30'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getsentinfo</code></p>
-<h3 id='parameters-25'>Parameters</h3>
+<h3 id='parameters-28'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2889,9 +3013,9 @@ eclair-cli getreceivedinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt
 </span></code></pre>
 <p>Checks whether a payment corresponding to the given <code>paymentHash</code> has been received.
 It is possible to use a <strong>BOLT11</strong> invoice as parameter instead of the <code>paymentHash</code> but at least one of the two must be specified.</p>
-<h3 id='http-request-28'>HTTP Request</h3>
+<h3 id='http-request-31'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getreceivedinfo</code></p>
-<h3 id='parameters-26'>Parameters</h3>
+<h3 id='parameters-29'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3005,9 +3129,9 @@ eclair-cli listreceivedpayments
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Returns the list of payments received by your node.</p>
-<h3 id='http-request-29'>HTTP Request</h3>
+<h3 id='http-request-32'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/listreceivedpayments</code></p>
-<h3 id='parameters-27'>Parameters</h3>
+<h3 id='parameters-30'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3091,9 +3215,9 @@ eclair-cli getinvoice --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Queries the payment DB for a stored invoice with the given <code>paymentHash</code>. If none is found, it responds HTTP 404.</p>
-<h3 id='http-request-30'>HTTP Request</h3>
+<h3 id='http-request-33'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getinvoice</code></p>
-<h3 id='parameters-28'>Parameters</h3>
+<h3 id='parameters-31'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3181,9 +3305,9 @@ eclair-cli listinvoices
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Returns all the <strong>BOLT11</strong> invoices stored.</p>
-<h3 id='http-request-31'>HTTP Request</h3>
+<h3 id='http-request-34'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/listinvoices</code></p>
-<h3 id='parameters-29'>Parameters</h3>
+<h3 id='parameters-32'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3290,9 +3414,9 @@ eclair-cli listpendinginvoices
 </span></code></pre>
 <p>Returns all non-paid, non-expired <strong>BOLT11</strong> invoices stored.
 The invoices can be filtered by date and are output in descending order.</p>
-<h3 id='http-request-32'>HTTP Request</h3>
+<h3 id='http-request-35'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/listpendinginvoices</code></p>
-<h3 id='parameters-30'>Parameters</h3>
+<h3 id='parameters-33'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3404,9 +3528,9 @@ When using <code>format=shortChannelId</code>, the above command would return:</
 
 </span></code></pre>
 <p>The formats currently supported are <code>nodeId</code>, <code>shortChannelId</code> and <code>full</code>.</p>
-<h3 id='http-request-33'>HTTP Request</h3>
+<h3 id='http-request-36'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroute</code></p>
-<h3 id='parameters-31'>Parameters</h3>
+<h3 id='parameters-34'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3487,9 +3611,9 @@ eclair-cli --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span c
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Finds a route to the given node.</p>
-<h3 id='http-request-34'>HTTP Request</h3>
+<h3 id='http-request-37'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroutetonode</code></p>
-<h3 id='parameters-32'>Parameters</h3>
+<h3 id='parameters-35'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3570,9 +3694,9 @@ eclair-cli --sourceNodeId<span class="o">=</span>&lt;some_node&gt; --targetNodeI
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Finds a route between two nodes.</p>
-<h3 id='http-request-35'>HTTP Request</h3>
+<h3 id='http-request-38'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroutebetweennodes</code></p>
-<h3 id='parameters-33'>Parameters</h3>
+<h3 id='parameters-36'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3649,7 +3773,7 @@ eclair-cli getnewaddress
 <p>Get a new on-chain address from the wallet. This can be used to deposit funds that will later be used
 to fund channels. The API is only available with the bitcoin-core watcher type, and the resulting addresses
 depend on the configured address-type in <code>bitcoin.conf</code>.</p>
-<h3 id='http-request-36'>HTTP Request</h3>
+<h3 id='http-request-39'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getnewaddress</code></p>
 <h2 id='sendonchain'>SendOnChain</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">address</span><span class="o">=</span>&lt;bitcoin_address&gt; <span class="se">\</span>
      -F <span class="nv">amountSatoshis</span><span class="o">=</span>&lt;amount&gt; -F <span class="nv">confirmationTarget</span><span class="o">=</span>&lt;number_of_blocks&gt; <span class="s2">"http://localhost:8080/sendonchain"</span>
@@ -3664,9 +3788,9 @@ eclair-cli sendonchain --address<span class="o">=</span>2NEDjKwa56LFcFVjPefuwkN3
 </span></code></pre>
 <p>Send an on-chain transaction to the given address. The API is only available with the bitcoin-core watcher type.
 The API returns the txid of the bitcoin transaction sent.</p>
-<h3 id='http-request-37'>HTTP Request</h3>
+<h3 id='http-request-40'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendonchain</code></p>
-<h3 id='parameters-34'>Parameters</h3>
+<h3 id='parameters-37'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3765,9 +3889,9 @@ eclair-cli onchaintransactions --count<span class="o">=</span>2 --skip<span clas
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about the latest on-chain transactions made by our Bitcoin wallet (most recent transactions first).</p>
-<h3 id='http-request-38'>HTTP Request</h3>
+<h3 id='http-request-41'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/onchaintransactions</code></p>
-<h3 id='parameters-35'>Parameters</h3>
+<h3 id='parameters-38'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3846,9 +3970,9 @@ If that fails, or if you don&#39;t want to expose your <code>nodeId</code> by di
 <p>If you expect a response, you should provide a route from the recipient back to you in the <code>--replyPath</code> field.
 Eclair will automatically create a corresponding blinded route to ensure that the recipient doesn&#39;t learn your <code>nodeId</code>.
 The API will then wait for a response (or timeout if it doesn&#39;t receive a response).</p>
-<h3 id='http-request-39'>HTTP Request</h3>
+<h3 id='http-request-42'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendonionmessage</code></p>
-<h3 id='parameters-36'>Parameters</h3>
+<h3 id='parameters-39'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3905,9 +4029,9 @@ eclair-cli signmessage --msg<span class="o">=</span><span class="k">$(</span><sp
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Sign a base64-encoded message with the node&#39;s private key.</p>
-<h3 id='http-request-40'>HTTP Request</h3>
+<h3 id='http-request-43'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/signmessage</code></p>
-<h3 id='parameters-37'>Parameters</h3>
+<h3 id='parameters-40'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -3940,9 +4064,9 @@ eclair-cli verifymessage --msg<span class="o">=</span><span class="k">$(</span><
 </span></code></pre>
 <p>Verify a base64-encoded message signature.
 The public key of the signing node will be identified and returned.</p>
-<h3 id='http-request-41'>HTTP Request</h3>
+<h3 id='http-request-44'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/verifymessage</code></p>
-<h3 id='parameters-38'>Parameters</h3>
+<h3 id='parameters-41'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -4079,9 +4203,9 @@ eclair-cli audit
 </span></code></pre>
 <p>Retrieves information about payments handled by this node such as: sent, received and relayed payments.
 All monetary values are expressed in millisatoshi.</p>
-<h3 id='http-request-42'>HTTP Request</h3>
+<h3 id='http-request-45'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/audit</code></p>
-<h3 id='parameters-39'>Parameters</h3>
+<h3 id='parameters-42'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -4138,9 +4262,9 @@ eclair-cli networkfees
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about on-chain fees paid during channel operations (currency values are in satoshis).</p>
-<h3 id='http-request-43'>HTTP Request</h3>
+<h3 id='http-request-46'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/networkfees</code></p>
-<h3 id='parameters-40'>Parameters</h3>
+<h3 id='parameters-43'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -4207,9 +4331,9 @@ eclair-cli channelstats
 </span></code></pre>
 <p>Retrieves information about local channels. The information is then aggregated in order to display
 statistics about the routing activity of the channels. Values are in Satoshis.</p>
-<h3 id='http-request-44'>HTTP Request</h3>
+<h3 id='http-request-47'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/channelstats</code></p>
-<h3 id='parameters-41'>Parameters</h3>
+<h3 id='parameters-44'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -4270,7 +4394,7 @@ eclair-cli usablebalances
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about the available balance of local channels, excluding channels that are disabled or empty.</p>
-<h3 id='http-request-45'>HTTP Request</h3>
+<h3 id='http-request-48'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/usablebalances</code></p>
 <h2 id='channelbalances'>ChannelBalances</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/channelbalances"</span>
 
@@ -4314,7 +4438,7 @@ eclair-cli channelbalances
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about the available balance of all local channels, including channels that are disabled or empty.</p>
-<h3 id='http-request-46'>HTTP Request</h3>
+<h3 id='http-request-49'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/channelbalances</code></p>
 <h2 id='globalbalance'>GlobalBalance</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/globalbalance"</span>
 
@@ -4370,7 +4494,7 @@ This API can be used to regularly check that your node is not losing funds.
 However, it is computationally intensive, so you should not call it too often to avoid disrupting your node&#39;s operations.</p>
 
 <p>All amounts are in bitcoin.</p>
-<h3 id='http-request-47'>HTTP Request</h3>
+<h3 id='http-request-50'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/globalbalance</code></p>
 <h2 id='getmasterxpub'>GetMasterXpub</h2><pre class="highlight shell tab-shell"><code>curl -s -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/getmasterxpub"</span>
 
@@ -4386,9 +4510,9 @@ eclair-cli getmasterxpub
 </span></code></pre>
 <p>Returns the master BIP32 extended public key of your on-chain wallet.
 This is useful when eclair manages the on-chain keys instead of delegating that to Bitcoin Core.</p>
-<h3 id='http-request-48'>HTTP Request</h3>
+<h3 id='http-request-51'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getmasterxpub</code></p>
-<h3 id='parameters-42'>Parameters</h3>
+<h3 id='parameters-45'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -4429,9 +4553,9 @@ eclair-cli getdescriptors
 </span></code></pre>
 <p>Returns output script descriptors for the main and change addresses of your on-chain wallet.
 This is useful when eclair manages the on-chain keys instead of delegating that to Bitcoin Core.</p>
-<h3 id='http-request-49'>HTTP Request</h3>
+<h3 id='http-request-52'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getdescriptors</code></p>
-<h3 id='parameters-43'>Parameters</h3>
+<h3 id='parameters-46'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -4660,7 +4784,7 @@ several types covering all the possible outcomes. All monetary values are expres
 <td>An onion message was received</td>
 </tr>
 </tbody></table>
-<h3 id='http-request-50'>HTTP Request</h3>
+<h3 id='http-request-53'>HTTP Request</h3>
 <p><code>GET ws://localhost:8080/ws</code></p>
 <h1 id='errors'>Errors</h1>
 <blockquote>
