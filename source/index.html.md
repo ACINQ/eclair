@@ -1620,6 +1620,94 @@ externalId                | Extra payment identifier specified by the caller    
 pathFindingExperimentName | Name of the path-finding configuration that should be used                                     | Yes      | String
 blocking                  | Block until the payment completes                                                              | Yes      | Boolean
 
+## CreateOffer
+
+```shell
+curl -s -u :<eclair_api_password> -X POST -F amountMsat=<amount_msat> "http://localhost:8080/createoffer"
+
+# with eclair-cli
+eclair-cli createoffer --amountMsat=<amount_msat>
+```
+
+> The above command returns:
+
+```json
+"lnoxxx"
+```
+
+Create a **BOLT12** offer, allowing recurring payments.
+This offer will be active until `disableoffer` is called.
+
+All parameters are optional: when none are specified, this will create the smallest possible offer associated with your public `node_id`.
+
+If you specify `blindedPathsFirstNodeId`, your public node id will not appear in the offer: you will instead be hidden behind a blinded path starting at the node that you have chosen.
+You can configure the number and length of blinded paths used in `eclair.conf` in the `offers` section.
+
+### HTTP Request
+
+`POST http://localhost:8080/createoffer`
+
+### Parameters
+
+Parameter               | Description                                                                       | Optional | Type
+----------------------- | --------------------------------------------------------------------------------- | -------- | ----------------------
+amountMsat              | Amount that should be paid                                                        | Yes      | Millisatoshi (Integer)
+issuer                  | Public information about the offer issuer (e.g. merchant website)                 | Yes      | String
+description             | Offer description                                                                 | Yes      | String
+expireInSeconds         | Duration (in seconds) after which this offer automatically expires                | Yes      | Integer
+blindedPathsFirstNodeId | Introduction node that must be used for blinded paths to hide the node's identity | Yes      | 33-bytes-HexString (String)
+
+## ListOffers
+
+```shell
+curl -s -u :<eclair_api_password> -X POST -F activeOnly=<active_only> "http://localhost:8080/listoffers"
+
+# with eclair-cli
+eclair-cli listoffers --activeOnly=false
+```
+
+> The above command returns:
+
+```json
+[
+  "lnoxxxxxx1",
+  "lnoxxxxxx2"
+]
+```
+
+List **BOLT12** offers.
+
+### HTTP Request
+
+`POST http://localhost:8080/listoffers`
+
+### Parameters
+
+Parameter               | Description                                | Optional | Type
+----------------------- | ------------------------------------------ | -------- | -------
+activeOnly              | If false, also includes disabled offers    | Yes      | Boolean
+
+## DisableOffer
+
+```shell
+curl -s -u :<eclair_api_password> -X POST -F offer=<lnoxxx> "http://localhost:8080/disableoffer"
+
+# with eclair-cli
+eclair-cli disableoffer --offer=lnoxxx
+```
+
+Disable a **BOLT12** offer, which means that future payments to this offer will be rejected.
+
+### HTTP Request
+
+`POST http://localhost:8080/disableoffer`
+
+### Parameters
+
+Parameter          | Description                      | Optional | Type
+------------------ | -------------------------------- | -------- | -------
+offer              | Offer that should be disabled    | No       | String
+
 ## PayOffer
 
 ```shell
