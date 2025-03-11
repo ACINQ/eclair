@@ -1296,20 +1296,27 @@ object Helpers {
      *           - add is the htlc in the downstream channel from which we extracted the preimage
      *           - preimage needs to be sent to the upstream channel
      */
-    def extractPreimages(localCommit: LocalCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[(UpdateAddHtlc, ByteVector32)] = {
+    def extractPreimages(commitment: FullCommitment, tx: Transaction)(implicit log: LoggingAdapter): Set[(UpdateAddHtlc, ByteVector32)] = {
       val htlcSuccess = tx.txIn.map(_.witness).collect(Scripts.extractPreimageFromHtlcSuccess)
       htlcSuccess.foreach(r => log.info(s"extracted paymentPreimage=$r from tx=$tx (htlc-success)"))
       val claimHtlcSuccess = tx.txIn.map(_.witness).collect(Scripts.extractPreimageFromClaimHtlcSuccess)
       claimHtlcSuccess.foreach(r => log.info(s"extracted paymentPreimage=$r from tx=$tx (claim-htlc-success)"))
       val paymentPreimages = (htlcSuccess ++ claimHtlcSuccess).toSet
       paymentPreimages.flatMap { paymentPreimage =>
-        // we only consider htlcs in our local commitment, because we only care about outgoing htlcs, which disappear first in the remote commitment
-        // if an outgoing htlc is in the remote commitment, then:
-        // - either it is in the local commitment (it was never fulfilled)
-        // - or we have already received the fulfill and forwarded it upstream
-        localCommit.spec.htlcs.collect {
-          case OutgoingHtlc(add) if add.paymentHash == sha256(paymentPreimage) => (add, paymentPreimage)
+        val paymentHash = sha256(paymentPreimage)
+        // We only care about outgoing HTLCs when we're trying to learn a preimage to relay upstream.
+        // Note that we may have already relayed the fulfill upstream if we already saw the preimage.
+        val fromLocal = commitment.localCommit.spec.htlcs.collect {
+          case OutgoingHtlc(add) if add.paymentHash == paymentHash => (add, paymentPreimage)
         }
+        // From the remote point of view, those are incoming HTLCs.
+        val fromRemote = commitment.remoteCommit.spec.htlcs.collect {
+          case IncomingHtlc(add) if add.paymentHash == paymentHash => (add, paymentPreimage)
+        }
+        val fromNextRemote = commitment.nextRemoteCommit_opt.map(_.commit.spec.htlcs).getOrElse(Set.empty).collect {
+          case IncomingHtlc(add) if add.paymentHash == paymentHash => (add, paymentPreimage)
+        }
+        fromLocal ++ fromRemote ++ fromNextRemote
       }
     }
 

@@ -2023,7 +2023,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
       log.debug(s"processing bitcoin output spent by txid=${tx.txid} tx=$tx")
-      val extracted = Closing.extractPreimages(d.commitments.latest.localCommit, tx)
+      val extracted = Closing.extractPreimages(d.commitments.latest, tx)
       extracted.foreach { case (htlc, preimage) =>
         d.commitments.originChannels.get(htlc.id) match {
           case Some(origin) =>
@@ -2243,7 +2243,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val nextFundingTlv: Set[ChannelReestablishTlv] = Set(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTx.txId))
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
-        nextLocalCommitmentNumber = 1,
+        nextLocalCommitmentNumber = d.signingSession.nextLocalCommitmentNumber,
         nextRemoteRevocationNumber = 0,
         yourLastPerCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
         myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
@@ -2258,6 +2258,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val yourLastPerCommitmentSecret = remotePerCommitmentSecrets.lastIndex.flatMap(remotePerCommitmentSecrets.getHash).getOrElse(ByteVector32.Zeroes)
       val channelKeyPath = keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
       val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommitIndex)
+      // If we disconnected while signing a funding transaction, we may need our peer to retransmit their commit_sig.
+      val nextLocalCommitmentNumber = d match {
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.status match {
+          case DualFundingStatus.RbfWaitingForSigs(status) => status.nextLocalCommitmentNumber
+          case _ => d.commitments.localCommitIndex + 1
+        }
+        case d: DATA_NORMAL => d.spliceStatus match {
+          case SpliceStatus.SpliceWaitingForSigs(status) => status.nextLocalCommitmentNumber
+          case _ => d.commitments.localCommitIndex + 1
+        }
+        case _ => d.commitments.localCommitIndex + 1
+      }
+      // If we disconnected while signing a funding transaction, we may need our peer to (re)transmit their tx_signatures.
       val rbfTlv: Set[ChannelReestablishTlv] = d match {
         case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.status match {
           case DualFundingStatus.RbfWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId))
@@ -2282,7 +2295,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
-        nextLocalCommitmentNumber = d.commitments.localCommitIndex + 1,
+        nextLocalCommitmentNumber = nextLocalCommitmentNumber,
         nextRemoteRevocationNumber = d.commitments.remoteCommitIndex,
         yourLastPerCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
         myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
@@ -2323,8 +2336,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
       channelReestablish.nextFundingTxId_opt match {
-        case Some(fundingTxId) if fundingTxId == d.signingSession.fundingTx.txId =>
-          // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
+        case Some(fundingTxId) if fundingTxId == d.signingSession.fundingTx.txId && channelReestablish.nextLocalCommitmentNumber == 0 =>
+          // They haven't received our commit_sig: we retransmit it, and will send our tx_signatures once we've received
+          // their commit_sig or their tx_signatures (depending on who must send tx_signatures first).
           val commitSig = d.signingSession.remoteCommit.sign(keyManager, d.channelParams, d.signingSession.fundingTxIndex, d.signingSession.fundingParams.remoteFundingPubKey, d.signingSession.commitInput)
           goto(WAIT_FOR_DUAL_FUNDING_SIGNED) sending commitSig
         case _ => goto(WAIT_FOR_DUAL_FUNDING_SIGNED)
@@ -2335,20 +2349,25 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case Some(fundingTxId) =>
           d.status match {
             case DualFundingStatus.RbfWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
-              // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
-              val commitSig = signingSession.remoteCommit.sign(keyManager, d.commitments.params, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubKey, signingSession.commitInput)
-              goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending commitSig
-            case _ if d.latestFundingTx.sharedTx.txId == fundingTxId =>
-              val toSend = d.latestFundingTx.sharedTx match {
-                case fundingTx: InteractiveTxBuilder.PartiallySignedSharedTransaction =>
-                  // We have not received their tx_signatures: we retransmit our commit_sig because we don't know if they received it.
-                  val commitSig = d.commitments.latest.remoteCommit.sign(keyManager, d.commitments.params, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput)
-                  Seq(commitSig, fundingTx.localSigs)
-                case fundingTx: InteractiveTxBuilder.FullySignedSharedTransaction =>
-                  // We've already received their tx_signatures, which means they've received and stored our commit_sig, we only need to retransmit our tx_signatures.
-                  Seq(fundingTx.localSigs)
+              if (channelReestablish.nextLocalCommitmentNumber == 0) {
+                // They haven't received our commit_sig: we retransmit it.
+                // We're also waiting for signatures from them, and will send our tx_signatures once we receive them.
+                val commitSig = signingSession.remoteCommit.sign(keyManager, d.commitments.params, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubKey, signingSession.commitInput)
+                goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending commitSig
+              } else {
+                // They have already received our commit_sig, but we were waiting for them to send either commit_sig or
+                // tx_signatures first. We wait for their message before sending our tx_signatures.
+                goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED)
               }
-              goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending toSend
+            case _ if d.latestFundingTx.sharedTx.txId == fundingTxId =>
+              // We've already received their commit_sig and sent our tx_signatures. We retransmit our tx_signatures
+              // and our commit_sig if they haven't received it already.
+              if (channelReestablish.nextLocalCommitmentNumber == 0) {
+                val commitSig = d.commitments.latest.remoteCommit.sign(keyManager, d.commitments.params, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput)
+                goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending Seq(commitSig, d.latestFundingTx.sharedTx.localSigs)
+              } else {
+                goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending d.latestFundingTx.sharedTx.localSigs
+              }
             case _ =>
               // The fundingTxId must be for an RBF attempt that we didn't store (we got disconnected before receiving
               // their tx_complete): we tell them to abort that RBF attempt.
@@ -2362,10 +2381,27 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val channelReady = createChannelReady(d.aliases, d.commitments.params)
       goto(WAIT_FOR_CHANNEL_READY) sending channelReady
 
-    case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
+    case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
       log.debug("re-sending channel_ready")
       val channelReady = createChannelReady(d.aliases, d.commitments.params)
-      goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
+      // We've already received their commit_sig and sent our tx_signatures. We retransmit our tx_signatures
+      // and our commit_sig if they haven't received it already.
+      channelReestablish.nextFundingTxId_opt match {
+        case Some(fundingTxId) if fundingTxId == d.commitments.latest.fundingTxId =>
+          d.commitments.latest.localFundingStatus.localSigs_opt match {
+            case Some(txSigs) if channelReestablish.nextLocalCommitmentNumber == 0 =>
+              log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
+              val commitSig = d.commitments.latest.remoteCommit.sign(keyManager, d.commitments.params, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput)
+              goto(WAIT_FOR_DUAL_FUNDING_READY) sending Seq(commitSig, txSigs, channelReady)
+            case Some(txSigs) =>
+              log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
+              goto(WAIT_FOR_DUAL_FUNDING_READY) sending Seq(txSigs, channelReady)
+            case None =>
+              log.warning("cannot retransmit tx_signatures, we don't have them (status={})", d.commitments.latest.localFundingStatus)
+              goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
+          }
+        case _ => goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
+      }
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
       Syncing.checkSync(keyManager, d.commitments, channelReestablish) match {
@@ -2413,23 +2449,26 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             case Some(fundingTxId) =>
               d.spliceStatus match {
                 case SpliceStatus.SpliceWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
-                  // We retransmit our commit_sig, and will send our tx_signatures once we've received their commit_sig.
-                  log.info("re-sending commit_sig for splice attempt with fundingTxIndex={} fundingTxId={}", signingSession.fundingTxIndex, signingSession.fundingTx.txId)
-                  val commitSig = signingSession.remoteCommit.sign(keyManager, d.commitments.params, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubKey, signingSession.commitInput)
-                  sendQueue = sendQueue :+ commitSig
+                  if (channelReestablish.nextLocalCommitmentNumber == d.commitments.remoteCommitIndex) {
+                    // They haven't received our commit_sig: we retransmit it.
+                    // We're also waiting for signatures from them, and will send our tx_signatures once we receive them.
+                    log.info("re-sending commit_sig for splice attempt with fundingTxIndex={} fundingTxId={}", signingSession.fundingTxIndex, signingSession.fundingTx.txId)
+                    val commitSig = signingSession.remoteCommit.sign(keyManager, d.commitments.params, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubKey, signingSession.commitInput)
+                    sendQueue = sendQueue :+ commitSig
+                  }
                   d.spliceStatus
                 case _ if d.commitments.latest.fundingTxId == fundingTxId =>
                   d.commitments.latest.localFundingStatus match {
                     case dfu: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
-                      dfu.sharedTx match {
-                        case fundingTx: InteractiveTxBuilder.PartiallySignedSharedTransaction =>
-                          // If we have not received their tx_signatures, we can't tell whether they had received our commit_sig, so we need to retransmit it
-                          log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
-                          val commitSig = d.commitments.latest.remoteCommit.sign(keyManager, d.commitments.params, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput)
-                          sendQueue = sendQueue :+ commitSig :+ fundingTx.localSigs
-                        case fundingTx: InteractiveTxBuilder.FullySignedSharedTransaction =>
-                          log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
-                          sendQueue = sendQueue :+ fundingTx.localSigs
+                      // We've already received their commit_sig and sent our tx_signatures. We retransmit our
+                      // tx_signatures and our commit_sig if they haven't received it already.
+                      if (channelReestablish.nextLocalCommitmentNumber == d.commitments.remoteCommitIndex) {
+                        log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
+                        val commitSig = d.commitments.latest.remoteCommit.sign(keyManager, d.commitments.params, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput)
+                        sendQueue = sendQueue :+ commitSig :+ dfu.sharedTx.localSigs
+                      } else {
+                        log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
+                        sendQueue = sendQueue :+ dfu.sharedTx.localSigs
                       }
                     case fundingStatus =>
                       // They have not received our tx_signatures, but they must have received our commit_sig, otherwise we would be in the case above.

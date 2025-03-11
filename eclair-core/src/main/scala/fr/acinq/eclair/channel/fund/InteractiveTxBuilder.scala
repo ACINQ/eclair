@@ -1082,6 +1082,11 @@ object InteractiveTxSigningSession {
                             liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends InteractiveTxSigningSession {
     val commitInput: InputInfo = localCommit.fold(_.commitTx.input, _.commitTxAndRemoteSig.commitTx.input)
     val localCommitIndex: Long = localCommit.fold(_.index, _.index)
+    // This value tells our peer whether we need them to retransmit their commit_sig on reconnection or not.
+    val nextLocalCommitmentNumber: Long = localCommit match {
+      case Left(unsignedCommit) => unsignedCommit.index
+      case Right(commit) => commit.index + 1
+    }
 
     def receiveCommitSig(nodeParams: NodeParams, channelParams: ChannelParams, remoteCommitSig: CommitSig)(implicit log: LoggingAdapter): Either[ChannelException, InteractiveTxSigningSession] = {
       localCommit match {
