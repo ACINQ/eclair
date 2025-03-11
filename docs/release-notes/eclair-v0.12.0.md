@@ -95,15 +95,15 @@ You must also use `router.sync.whitelist` instead of `sync-whitelist`.
 
 ## Verifying signatures
 
-You will need `gpg` and our release signing key 7A73FE77DE2C4027. Note that you can get it:
+You will need `gpg` and our release signing key E04E48E72C205463. Note that you can get it:
 
-- from our website: https://acinq.co/pgp/drouinf.asc
+- from our website: https://acinq.co/pgp/drouinf2.asc
 - from github user @sstone, a committer on eclair: https://api.github.com/users/sstone/gpg_keys
 
 To import our signing key:
 
 ```sh
-$ gpg --import drouinf.asc
+$ gpg --import drouinf2.asc
 ```
 
 To verify the release file checksums and signatures:
@@ -128,7 +128,7 @@ Use the following command to generate the eclair-node package:
 
 That should generate `eclair-node/target/eclair-node-<version>-XXXXXXX-bin.zip` with sha256 checksums that match the one we provide and sign in `SHA256SUMS.asc`
 
-(*) You may be able to build the exact same artefacts with other operating systems or versions of JDK 11, we have not tried everything.
+(*) You may be able to build the exact same artefacts with other operating systems or versions of JDK 21, we have not tried everything.
 
 ## Upgrading
 
