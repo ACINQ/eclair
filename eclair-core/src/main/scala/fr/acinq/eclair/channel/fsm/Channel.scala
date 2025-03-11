@@ -20,7 +20,6 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.Logs.LogCategory
@@ -2690,7 +2689,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 // caution!
                 log.warning("force-closing with fundingTxIndex reset to {} (concurrent funding transactions: {})", resetFundingTxIndex, data.commitments.active.filter(_.fundingTxIndex > resetFundingTxIndex).map(_.fundingTxId).mkString(", "))
                 replyTo ! RES_SUCCESS(c, data.channelId)
-                val resetData = data.modify(_.commitments.active).using(_.filter(_.fundingTxIndex <= resetFundingTxIndex))
+                val commitments1 = data.commitments.copy(active = data.commitments.active.filter(_.fundingTxIndex <= resetFundingTxIndex))
+                val resetData = data match {
+                  case data: DATA_WAIT_FOR_FUNDING_CONFIRMED => data.copy(commitments = commitments1)
+                  case data: DATA_WAIT_FOR_CHANNEL_READY => data.copy(commitments = commitments1)
+                  case data: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => data.copy(commitments = commitments1)
+                  case data: DATA_WAIT_FOR_DUAL_FUNDING_READY => data.copy(commitments = commitments1)
+                  case data: DATA_NORMAL => data.copy(commitments = commitments1)
+                  case data: DATA_SHUTDOWN => data.copy(commitments = commitments1)
+                  case data: DATA_NEGOTIATING => data.copy(commitments = commitments1)
+                  case data: DATA_NEGOTIATING_SIMPLE => data.copy(commitments = commitments1)
+                  case data: DATA_CLOSING => data.copy(commitments = commitments1)
+                  case data: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => data.copy(commitments = commitments1)
+                }
                 handleLocalError(failure, resetData, Some(c))
               } else {
                 handleCommandError(CommandUnavailableInThisState(d.channelId, "forcecloseresetfundingindex", stateName), c)
