@@ -8,7 +8,7 @@
 
 ### API changes
 
-<insert changes>
+- `listoffers` now returns more details about each offer.
 
 ### Miscellaneous improvements and bug fixes
 

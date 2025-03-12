@@ -27,12 +27,14 @@ import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.db.OfferData
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.{Invoice, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs
+import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.AnyFunSuiteLike
 import org.scalatest.matchers.should.Matchers
@@ -329,6 +331,18 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val ref = "lni1qqsf4h8fsnpjkj057gjg9c3eqhv889440xh0z6f5kng9vsaad8pgq7sgqsdjuqsqpgxk66twd9kkzmpqdanxvetjzcss83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh42qsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqzjqsdjupkjtqssx05572ha26x39rczan5yft22pgwa72jw8gytavkm5ydn7yf5kpgh5zsq83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh4q2rd3ny0elv9m7mh38xxwe6ypfheeqeqlwgft05r6dhc50gtw0nv2qgrrl9x2qzzqvwukam32mhkdqrvwwcp5l6jcnnnezdq69vz8gdvvgmsqwk3efqf3f6gmf0ul63940awz429rdhhsts86s0r30e5nffwhrqw90xgxf7f60sm7tcclvyqwz7cer5q9223madstdy2p5q6y8qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqf2qheqqqqq2gprrgshynfszqyk2sgpvkrnmq53kv7r52rpnmtmd9ukredsnygsnymsurdy6e9la6l4hyz4qgxewqmftqggrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet6lqsx4k5r7rsld3hhe87psyy5cnhhzt4dz838f75734mted7pdsrflpvys23tkafmhctf3musnsaa42h6qjdggyqlhtevutzzpzlnwd8alq"
     val pr = Invoice.fromString(ref).get
     JsonSerializers.serialization.write(pr)(JsonSerializers.formats) shouldBe """{"amount":456001234,"nodeId":"03c48ac97e09f3cbbaeb35b02aaa6d072b57726841a34d25952157caca60a1caf5","paymentHash":"2cb0e7b052366787450c33daf6d2f2c3cb6132221326e1c1b49ac97fdd7eb720","description":"minimal offer","features":{"activated":{},"unknown":[]},"blindedPaths":[{"introductionNodeId":"03c48ac97e09f3cbbaeb35b02aaa6d072b57726841a34d25952157caca60a1caf5","blindedNodeIds":["031fca650042031dcb777156ef66806c73b01a7f52c4e73c89a0d15823a1ac6237"]}],"createdAt":1665412681,"expiresAt":1665412981,"serialized":"lni1qqsf4h8fsnpjkj057gjg9c3eqhv889440xh0z6f5kng9vsaad8pgq7sgqsdjuqsqpgxk66twd9kkzmpqdanxvetjzcss83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh42qsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqzjqsdjupkjtqssx05572ha26x39rczan5yft22pgwa72jw8gytavkm5ydn7yf5kpgh5zsq83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh4q2rd3ny0elv9m7mh38xxwe6ypfheeqeqlwgft05r6dhc50gtw0nv2qgrrl9x2qzzqvwukam32mhkdqrvwwcp5l6jcnnnezdq69vz8gdvvgmsqwk3efqf3f6gmf0ul63940awz429rdhhsts86s0r30e5nffwhrqw90xgxf7f60sm7tcclvyqwz7cer5q9223madstdy2p5q6y8qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqf2qheqqqqq2gprrgshynfszqyk2sgpvkrnmq53kv7r52rpnmtmd9ukredsnygsnymsurdy6e9la6l4hyz4qgxewqmftqggrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet6lqsx4k5r7rsld3hhe87psyy5cnhhzt4dz838f75734mted7pdsrflpvys23tkafmhctf3musnsaa42h6qjdggyqlhtevutzzpzlnwd8alq"}"""
+  }
+
+  test("Bolt 12 offer data") {
+    val ref = "lno1pqzqzltcgq9q6urvv4shxefqv3hkuct5v58qxrp4qqfquctvd93k2srpvd5kuufwvdh3vggzg2hd49ueds8phzcahvh4p2m3pnen649dza2h3k6gxpaequr8fhtq"
+    val offer = OfferData(Offer.decode(ref).get, None, createdAt = TimestampMilli(100), disabledAt_opt = None)
+    JsonSerializers.serialization.write(offer)(JsonSerializers.formats) shouldBe """{"amountMsat":25000000,"description":"please donate","issuer":"alice@acinq.co","nodeId":"0242aeda97996c0e1b8b1dbb2f50ab710cf33d54ad175578db48307b9070674dd6","createdAt":{"iso":"1970-01-01T00:00:00.100Z","unix":0},"expiry":{"iso":"1970-01-10T06:13:20Z","unix":800000},"disabled":false,"encoded":"lno1pqzqzltcgq9q6urvv4shxefqv3hkuct5v58qxrp4qqfquctvd93k2srpvd5kuufwvdh3vggzg2hd49ueds8phzcahvh4p2m3pnen649dza2h3k6gxpaequr8fhtq"}"""
+    val disabledOffer = offer.copy(disabledAt_opt = Some(TimestampMilli(200)))
+    JsonSerializers.serialization.write(disabledOffer)(JsonSerializers.formats) shouldBe """{"amountMsat":25000000,"description":"please donate","issuer":"alice@acinq.co","nodeId":"0242aeda97996c0e1b8b1dbb2f50ab710cf33d54ad175578db48307b9070674dd6","createdAt":{"iso":"1970-01-01T00:00:00.100Z","unix":0},"expiry":{"iso":"1970-01-10T06:13:20Z","unix":800000},"disabled":true,"disabledAt":{"iso":"1970-01-01T00:00:00.200Z","unix":0},"encoded":"lno1pqzqzltcgq9q6urvv4shxefqv3hkuct5v58qxrp4qqfquctvd93k2srpvd5kuufwvdh3vggzg2hd49ueds8phzcahvh4p2m3pnen649dza2h3k6gxpaequr8fhtq"}"""
+    val pathId = ByteVector32.fromValidHex("5d370c0e1c64280acce1638bc6f225360d8219e572394e8077b4bb07da867926")
+    val privateRef = "lno1pqzqzltcgq9pwurvv4shxefqv3hkuct5v5s8qunfweshgetv0yggwqunzcwg835jzj83htxa3gh850kht0epmvl82skjqfdgwuwxukmv4ypp7yufyhnq0tygxh2g98tdjx2hzerf2rs4dqum8xlcd5eu56s0s3cpqtas0eecjjn25r5jstankpp7rw4wr3wtefyjffhsnmr4ekjfzw2dcqpp8g9rm5cmsv02e6jmfe40hg6uxnwkalt5cc2l0zx8ju7xazfycrw5j"
+    val privateOffer = OfferData(Offer.decode(privateRef).get, Some(pathId), createdAt = TimestampMilli(150), disabledAt_opt = None)
+    JsonSerializers.serialization.write(privateOffer)(JsonSerializers.formats) shouldBe """{"amountMsat":25000000,"description":"please donate privately","blindedPathFirstNodeId":"0393161c83c692148f1bacdd8a2e7a3ed75bf21db3e7542d2025a8771c6e5b6ca9","createdAt":{"iso":"1970-01-01T00:00:00.150Z","unix":0},"disabled":false,"encoded":"lno1pqzqzltcgq9pwurvv4shxefqv3hkuct5v5s8qunfweshgetv0yggwqunzcwg835jzj83htxa3gh850kht0epmvl82skjqfdgwuwxukmv4ypp7yufyhnq0tygxh2g98tdjx2hzerf2rs4dqum8xlcd5eu56s0s3cpqtas0eecjjn25r5jstankpp7rw4wr3wtefyjffhsnmr4ekjfzw2dcqpp8g9rm5cmsv02e6jmfe40hg6uxnwkalt5cc2l0zx8ju7xazfycrw5j"}"""
   }
 
   test("GlobalBalance serializer") {
