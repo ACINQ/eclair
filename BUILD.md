@@ -95,5 +95,5 @@ To re-create the trusted checksums file, run:
 
 ```shell
 $ rm ~/.m2/wrapper ~/.sbt -rf
-$ ./mvnw clean install scoverage:report -DskipTests -Daether.artifactResolver.postProcessor.trustedChecksums.record
+$ ./mvnw clean install -DskipTests -Daether.artifactResolver.postProcessor.trustedChecksums.record
 ```

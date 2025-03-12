@@ -21,7 +21,6 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.{TypedActorContextOps, TypedActorRefOps}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.{ActorRef, typed}
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
@@ -140,11 +139,15 @@ object NodeRelay {
 
   /** Compute route params that honor our fee and cltv requirements. */
   private def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
-    nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
-      .modify(_.boundaries.maxFeeProportional).setTo(0) // we disable percent-based max fee calculation, we're only interested in collecting our node fee
-      .modify(_.boundaries.maxCltv).setTo(expiryIn - expiryOut)
-      .modify(_.boundaries.maxFeeFlat).setTo(amountIn - amountOut)
-      .modify(_.includeLocalChannelCost).setTo(true)
+    val routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
+    routeParams.copy(
+      boundaries = routeParams.boundaries.copy(
+        maxFeeProportional = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee
+        maxFeeFlat = amountIn - amountOut,
+        maxCltv = expiryIn - expiryOut
+      ),
+      includeLocalChannelCost = true
+    )
   }
 
   /** If we fail to relay a payment, we may want to attempt on-the-fly funding if it makes sense. */

@@ -18,14 +18,13 @@ package fr.acinq.eclair.router
 
 import akka.actor.{ActorContext, ActorRef}
 import akka.event.DiagnosticLoggingAdapter
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{InfiniteLoop, MessagePathWeight, NegativeProbability, PaymentPathWeight, WeightedPath}
+import fr.acinq.eclair.router.Graph._
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import kamon.tag.TagSet
@@ -229,16 +228,14 @@ object RouteCalculation {
     }
   }
 
-  def handleBlindedRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: BlindedRouteRequest)(implicit log: DiagnosticLoggingAdapter): Data = {
+  def handleBlindedRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: BlindedRouteRequest): Data = {
     val maxFee = r.routeParams.getMaxFee(r.amount)
-
     val boundaries: PaymentPathWeight => Boolean = { weight =>
       weight.amount - r.amount <= maxFee &&
         weight.length <= r.routeParams.boundaries.maxRouteLength &&
         weight.length <= ROUTE_MAX_LENGTH &&
         weight.cltv <= r.routeParams.boundaries.maxCltv
     }
-
     val routes = Graph.routeBlindingPaths(d.graphWithBalances.graph, r.source, r.target, r.amount, r.ignore.channels, r.ignore.nodes, r.pathsToFind, r.routeParams.heuristics, currentBlockHeight, boundaries)
     if (routes.isEmpty) {
       r.replyTo ! PaymentRouteNotFound(RouteNotFound)
@@ -355,9 +352,12 @@ object RouteCalculation {
       Right(routes)
     } else if (routeParams.boundaries.maxRouteLength < ROUTE_MAX_LENGTH) {
       // if not found within the constraints we relax and repeat the search
-      val relaxedRouteParams = routeParams
-        .modify(_.boundaries.maxRouteLength).setTo(ROUTE_MAX_LENGTH)
-        .modify(_.boundaries.maxCltv).setTo(DEFAULT_ROUTE_MAX_CLTV)
+      val relaxedRouteParams = routeParams.copy(
+        boundaries = routeParams.boundaries.copy(
+          maxRouteLength = ROUTE_MAX_LENGTH,
+          maxCltv = DEFAULT_ROUTE_MAX_CLTV,
+        )
+      )
       findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, relaxedRouteParams, currentBlockHeight)
     } else {
       Left(RouteNotFound)
