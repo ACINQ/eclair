@@ -22,13 +22,12 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.psbt.{Psbt, UpdateFailure}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, der2compact}
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BlockId, Btc, BtcDouble, Crypto, DeterministicWallet, KotlinUtils, MilliBtcDouble, MnemonicCode, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressFromPublicKeyScript, addressToPublicKeyScript, computeBIP84Address, computeP2PkhAddress, computeP2WpkhAddress}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BlockId, Btc, BtcDouble, Crypto, DeterministicWallet, KotlinUtils, MilliBtcDouble, MnemonicCode, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressToPublicKeyScript, computeBIP84Address, computeP2WpkhAddress}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.{BitcoinReq, SignTransactionResponse}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType.P2wpkh
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCClient, JsonRPCError}
@@ -39,7 +38,7 @@ import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, TimestampS
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, Formats}
-import org.scalatest.{BeforeAndAfterAll, Tag}
+import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -55,7 +54,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   val defaultAddressType_opt: Option[String] = Some("bech32")
 
   override def beforeAll(): Unit = {
-    startBitcoind(defaultAddressType_opt = defaultAddressType_opt, changeAddressType_opt = defaultAddressType_opt, mempoolSize_opt = Some(5 /* MB */), mempoolMinFeerate_opt = Some(FeeratePerByte(2 sat)))
+    // Note that we don't specify a default change address type, allowing bitcoind to choose between p2wpkh and p2tr.
+    startBitcoind(defaultAddressType_opt = defaultAddressType_opt, changeAddressType_opt = None, mempoolSize_opt = Some(5 /* MB */), mempoolMinFeerate_opt = Some(FeeratePerByte(2 sat)))
     waitForBitcoindReady()
   }
 
@@ -90,15 +90,15 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // wallet is configured with address_type=bech32
     bitcoinClient.getReceiveAddress(None).pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
-    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).map(Script.isPay2wpkh) == Right(true))
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).map(Script.isPay2wpkh).contains(true))
 
     bitcoinClient.getReceiveAddress(Some(AddressType.P2wpkh)).pipeTo(sender.ref)
     val address1 = sender.expectMsgType[String]
-    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address1).map(Script.isPay2wpkh) == Right(true))
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address1).map(Script.isPay2wpkh).contains(true))
 
     bitcoinClient.getReceiveAddress(Some(AddressType.P2tr)).pipeTo(sender.ref)
     val address2 = sender.expectMsgType[String]
-    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address2).map(Script.isPay2tr) == Right(true))
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address2).map(Script.isPay2tr).contains(true))
   }
 
   test("get change addresses") {
@@ -108,15 +108,15 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // wallet is configured with address_type=bech32
     bitcoinClient.getChangeAddress(None).pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
-    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).map(Script.isPay2wpkh) == Right(true))
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).map(Script.isPay2wpkh).contains(true))
 
     bitcoinClient.getChangeAddress(Some(AddressType.P2wpkh)).pipeTo(sender.ref)
     val address1 = sender.expectMsgType[String]
-    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address1).map(Script.isPay2wpkh) == Right(true))
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address1).map(Script.isPay2wpkh).contains(true))
 
     bitcoinClient.getChangeAddress(Some(AddressType.P2tr)).pipeTo(sender.ref)
     val address2 = sender.expectMsgType[String]
-    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address2).map(Script.isPay2tr) == Right(true))
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address2).map(Script.isPay2tr).contains(true))
   }
 
   test("fund transactions") {
@@ -199,7 +199,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       def makeEvilBitcoinClient(changePosMod: Int => Int, txMod: Transaction => Transaction): BitcoinCoreClient = {
         val badRpcClient = new BitcoinJsonRPCClient {
           override def chainHash: BlockHash = bitcoinClient.rpcClient.chainHash
-          
+
           override def wallet: Option[String] = if (useEclairSigner) Some("eclair") else None
 
           override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
@@ -380,6 +380,50 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val actualFee = mempoolTx.ancestorFees
       val expectedFee = Transactions.weight2fee(targetFeerate, signedTx.weight() + tx2.weight())
       assert(expectedFee * 0.9 <= actualFee && actualFee <= expectedFee * 1.1, s"expected fee=$expectedFee actual fee=$actualFee")
+    }
+  }
+
+  test("generate change outputs that match the transaction being funded") {
+    import KotlinUtils._
+    val sender = TestProbe()
+    val bitcoinClient = makeBitcoinCoreClient()
+    val pubKey = randomKey().publicKey
+
+    {
+      // When sending to a p2wpkh, bitcoin core should add a p2wpkh change output.
+      val pubkeyScript = Script.pay2wpkh(pubKey)
+      val unsignedTx = Transaction(version = 2, Nil, Seq(TxOut(150_000 sat, pubkeyScript)), lockTime = 0)
+      bitcoinClient.fundTransaction(unsignedTx, feeRate = FeeratePerKw(FeeratePerByte(3 sat)), changePosition = Some(1)).pipeTo(sender.ref)
+      val tx = sender.expectMsgType[FundTransactionResponse].tx
+      // We have a change output.
+      assert(tx.txOut.length == 2)
+      assert(tx.txOut.count(txOut => txOut.publicKeyScript == Script.write(pubkeyScript)) == 1)
+      assert(tx.txOut.count(txOut => Script.isPay2wpkh(Script.parse(txOut.publicKeyScript))) == 2)
+      val psbt = new Psbt(tx)
+      bitcoinClient.signPsbt(psbt, tx.txIn.indices, Seq(1)).pipeTo(sender.ref)
+      val response = sender.expectMsgType[ProcessPsbtResponse]
+      assert(response.complete && response.finalTx_opt.isRight)
+      bitcoinClient.publishTransaction(response.finalTx_opt.toOption.get).pipeTo(sender.ref)
+      sender.expectMsgType[TxId]
+      generateBlocks(1)
+    }
+    {
+      // When sending to a p2tr, bitcoin core should add a p2tr change output.
+      val pubkeyScript = Script.pay2tr(pubKey.xOnly)
+      val unsignedTx = Transaction(version = 2, Nil, Seq(TxOut(150_000 sat, pubkeyScript)), lockTime = 0)
+      bitcoinClient.fundTransaction(unsignedTx, feeRate = FeeratePerKw(FeeratePerByte(3 sat)), changePosition = Some(1)).pipeTo(sender.ref)
+      val tx = sender.expectMsgType[FundTransactionResponse].tx
+      // We have a change output.
+      assert(tx.txOut.length == 2)
+      assert(tx.txOut.count(txOut => txOut.publicKeyScript == Script.write(pubkeyScript)) == 1)
+      assert(tx.txOut.count(txOut => Script.isPay2tr(Script.parse(txOut.publicKeyScript))) == 2)
+      val psbt = new Psbt(tx)
+      bitcoinClient.signPsbt(psbt, tx.txIn.indices, Seq(1)).pipeTo(sender.ref)
+      val response = sender.expectMsgType[ProcessPsbtResponse]
+      assert(response.complete && response.finalTx_opt.isRight)
+      bitcoinClient.publishTransaction(response.finalTx_opt.toOption.get).pipeTo(sender.ref)
+      sender.expectMsgType[TxId]
+      generateBlocks(1)
     }
   }
 
@@ -1532,23 +1576,6 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     assert(Btc(receivedAmount.values).toMilliBtc == amount)
   }
 
-  test("generate segwit change outputs") {
-    val sender = TestProbe()
-    val bitcoinClient = makeBitcoinCoreClient()
-
-    // Even when we pay a legacy address, our change output must use segwit, otherwise it won't be usable for lightning channels.
-    val pubKey = randomKey().publicKey
-    val legacyAddress = computeP2PkhAddress(pubKey, Block.RegtestGenesisBlock.hash)
-    bitcoinClient.sendToPubkeyScript(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, legacyAddress).toOption.get, 150_000 sat, FeeratePerKw(FeeratePerByte(3.sat))).pipeTo(sender.ref)
-    val txId = sender.expectMsgType[TxId]
-    bitcoinClient.getTransaction(txId).pipeTo(sender.ref)
-    val tx = sender.expectMsgType[Transaction]
-    // We have a change output.
-    assert(tx.txOut.length == 2)
-    assert(tx.txOut.count(txOut => txOut.publicKeyScript == Script.write(Script.pay2pkh(pubKey))) == 1)
-    assert(tx.txOut.count(txOut => Script.isNativeWitnessScript(txOut.publicKeyScript)) == 1)
-  }
-
   test("does not double-spend inputs of evicted transactions") {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
@@ -1780,6 +1807,12 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     (new BitcoinCoreClient(jsonRpcClient, onChainKeyManager_opt = Some(onChainKeyManager)), onChainKeyManager)
   }
 
+  private def getBip32Path(wallet: BitcoinCoreClient, address: String, sender: TestProbe): DeterministicWallet.KeyPath = {
+    wallet.rpcClient.invoke("getaddressinfo", address).pipeTo(sender.ref)
+    val JString(bip32path) = sender.expectMsgType[JValue] \ "hdkeypath"
+    DeterministicWallet.KeyPath(bip32path)
+  }
+
   test("wallets managed by eclair implement BIP84") {
     val sender = TestProbe()
     val entropy = randomBytes32()
@@ -1790,24 +1823,18 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
 
     // this account xpub can be used to create a watch-only wallet
     val accountXPub = master.derivePrivateKey("m/84'/1'/0'").extendedPublicKey.encode(DeterministicWallet.vpub)
-    assert(wallet.onChainKeyManager_opt.get.masterPubKey(0, P2wpkh) == accountXPub)
-
-    def getBip32Path(address: String): DeterministicWallet.KeyPath = {
-      wallet.rpcClient.invoke("getaddressinfo", address).pipeTo(sender.ref)
-      val JString(bip32path) = sender.expectMsgType[JValue] \ "hdkeypath"
-      DeterministicWallet.KeyPath(bip32path)
-    }
+    assert(wallet.onChainKeyManager_opt.get.masterPubKey(0, AddressType.P2wpkh) == accountXPub)
 
     (0 to 10).foreach { _ =>
       wallet.getReceiveAddress().pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
-      val bip32path = getBip32Path(address)
+      val bip32path = getBip32Path(wallet, address, sender)
       assert(bip32path.path.length == 5 && bip32path.toString().startsWith("m/84'/1'/0'/0"))
       assert(computeBIP84Address(master.derivePrivateKey(bip32path).publicKey, Block.RegtestGenesisBlock.hash) == address)
 
       wallet.getChangeAddress().pipeTo(sender.ref)
       val changeAddress = sender.expectMsgType[String]
-      val bip32ChangePath = getBip32Path(changeAddress)
+      val bip32ChangePath = getBip32Path(wallet, changeAddress, sender)
       assert(bip32ChangePath.path.length == 5 && bip32ChangePath.toString().startsWith("m/84'/1'/0'/1"))
       assert(computeBIP84Address(master.derivePrivateKey(bip32ChangePath).publicKey, Block.RegtestGenesisBlock.hash) == changeAddress)
     }
@@ -1828,22 +1855,16 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     val accountXPub = master.derivePrivateKey("m/86'/1'/0'").extendedPublicKey.encode(DeterministicWallet.tpub)
     assert(wallet.onChainKeyManager_opt.get.masterPubKey(0, AddressType.P2tr) == accountXPub)
 
-    def getBip32Path(address: String): DeterministicWallet.KeyPath = {
-      wallet.rpcClient.invoke("getaddressinfo", address).pipeTo(sender.ref)
-      val JString(bip32path) = sender.expectMsgType[JValue] \ "hdkeypath"
-      DeterministicWallet.KeyPath(bip32path)
-    }
-
     (0 to 10).foreach { _ =>
       wallet.getReceiveAddress(Some(AddressType.P2tr)).pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
-      val bip32path = getBip32Path(address)
+      val bip32path = getBip32Path(wallet, address, sender)
       assert(bip32path.path.length == 5 && bip32path.toString().startsWith("m/86'/1'/0'/0"))
       assert(computeBIP86Address(master.derivePrivateKey(bip32path).publicKey, Block.RegtestGenesisBlock.hash) == address)
 
       wallet.getChangeAddress(Some(AddressType.P2tr)).pipeTo(sender.ref)
       val changeAddress = sender.expectMsgType[String]
-      val bip32ChangePath = getBip32Path(changeAddress)
+      val bip32ChangePath = getBip32Path(wallet, changeAddress, sender)
       assert(bip32ChangePath.path.length == 5 && bip32ChangePath.toString().startsWith("m/86'/1'/0'/1"))
       assert(computeBIP86Address(master.derivePrivateKey(bip32ChangePath).publicKey, Block.RegtestGenesisBlock.hash) == changeAddress)
     }
@@ -1855,7 +1876,8 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     (1 to 10).foreach { _ =>
       val (wallet, keyManager) = createWallet(randomBytes32())
       createEclairBackedWallet(wallet.rpcClient, keyManager)
-      wallet.getReceiveAddress().pipeTo(sender.ref)
+      val addressType = if (Random.nextBoolean()) AddressType.P2tr else AddressType.P2wpkh
+      wallet.getReceiveAddress(Some(addressType)).pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
 
       // we can send to an on-chain address if eclair signs the transactions
@@ -1871,66 +1893,4 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       sender.expectMsgType[TxId]
     }
   }
-}
-
-class BitcoinCoreClientChangeOutputSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
-
-  implicit val formats: Formats = DefaultFormats
-
-  val defaultAddressType_opt: Option[String] = Some("bech32")
-
-  // We do not specify a default change address type
-  val changeAddressType_opt: Option[String] = None
-
-  override def beforeAll(): Unit = {
-    startBitcoind(defaultAddressType_opt = defaultAddressType_opt, changeAddressType_opt = changeAddressType_opt, mempoolSize_opt = Some(5 /* MB */), mempoolMinFeerate_opt = Some(FeeratePerByte(2 sat)))
-    waitForBitcoindReady()
-  }
-
-  override def afterAll(): Unit = {
-    stopBitcoind()
-  }
-
-  test("generate change outputs that match the transaction being funded") {
-    import KotlinUtils._
-    val sender = TestProbe()
-    val bitcoinClient = makeBitcoinCoreClient()
-
-    val pubKey = randomKey().publicKey
-
-    {
-      // send to a p2wpkh: bitcoin core should add a p2wpkh change output
-      val pubkeyScript = Script.pay2wpkh(pubKey)
-      val unsignedTx = Transaction(version = 2, Nil, Seq(TxOut(150_000 sat, pubkeyScript)), lockTime = 0)
-      bitcoinClient.fundTransaction(unsignedTx, feeRate = FeeratePerKw(FeeratePerByte(3.sat)), changePosition = Some(1)).pipeTo(sender.ref)
-      val tx = sender.expectMsgType[FundTransactionResponse].tx
-      // We have a change output.
-      assert(tx.txOut.length == 2)
-      assert(tx.txOut.count(txOut => txOut.publicKeyScript == Script.write(pubkeyScript)) == 1)
-      assert(tx.txOut.count(txOut => Script.isPay2wpkh(Script.parse(txOut.publicKeyScript))) == 2)
-      val psbt = new Psbt(tx)
-      bitcoinClient.signPsbt(psbt, tx.txIn.indices, Seq(1)).pipeTo(sender.ref)
-      val response = sender.expectMsgType[ProcessPsbtResponse]
-      assert(response.complete && response.finalTx_opt.isRight)
-    }
-    {
-      // send to a p2tr: bitcoin core should add a p2tr change output
-      val pubkeyScript = Script.pay2tr(pubKey.xOnly)
-      val unsignedTx = Transaction(version = 2, Nil, Seq(TxOut(150_000 sat, pubkeyScript)), lockTime = 0)
-      bitcoinClient.fundTransaction(unsignedTx, feeRate = FeeratePerKw(FeeratePerByte(3.sat)), changePosition = Some(1)).pipeTo(sender.ref)
-      val tx = sender.expectMsgType[FundTransactionResponse].tx
-      // We have a change output.
-      assert(tx.txOut.length == 2)
-      assert(tx.txOut.count(txOut => txOut.publicKeyScript == Script.write(pubkeyScript)) == 1)
-      assert(tx.txOut.count(txOut => Script.isPay2tr(Script.parse(txOut.publicKeyScript))) == 2)
-      val psbt = new Psbt(tx)
-      bitcoinClient.signPsbt(psbt, tx.txIn.indices, Seq(1)).pipeTo(sender.ref)
-      val response = sender.expectMsgType[ProcessPsbtResponse]
-      assert(response.complete && response.finalTx_opt.isRight)
-    }
-  }
-}
-
-class BitcoinCoreClientWithEclairSignerChangeOutputSpec extends BitcoinCoreClientChangeOutputSpec {
-  override def useEclairSigner = true
 }

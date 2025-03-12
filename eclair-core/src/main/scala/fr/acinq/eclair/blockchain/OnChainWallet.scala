@@ -117,21 +117,27 @@ trait OnChainChannelFunder {
 /** This trait lets users generate on-chain addresses and public keys. */
 trait OnChainAddressGenerator {
 
-  def getReceivePublicKeyScript(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]]
+  /** Generate the public key script for a new wallet address. */
+  def getReceivePublicKeyScript(addressType_opt: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]]
 
   /** Generate a p2wpkh wallet address and return the corresponding public key. */
   def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[PublicKey]
 
 }
 
-trait OnchainPubkeyCache {
+/** A caching layer for [[OnChainAddressGenerator]] that provides synchronous access to wallet addresses and keys. */
+trait OnChainPubkeyCache {
 
   /**
-   * @param renew applies after requesting the current pubkey, and is asynchronous
+   * @param renew applies after requesting the current pubkey, and is asynchronous.
    */
-  def getP2wpkhPubkey(renew: Boolean = true): PublicKey
+  def getP2wpkhPubkey(renew: Boolean): PublicKey
 
-  def getReceivePubkeyScript(renew: Boolean = true): Seq[ScriptElt]
+  /**
+   * @param renew applies after requesting the current script, and is asynchronous.
+   */
+  def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt]
+
 }
 
 /** This trait lets users check the wallet's on-chain balance. */

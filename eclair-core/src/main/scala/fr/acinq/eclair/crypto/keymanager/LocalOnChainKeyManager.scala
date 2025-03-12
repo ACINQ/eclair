@@ -18,16 +18,16 @@ package fr.acinq.eclair.crypto.keymanager
 
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.ScriptTree
-import fr.acinq.bitcoin.psbt.{Psbt, UpdateFailure}
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, DeterministicWallet, MnemonicCode, Satoshi, Script, ScriptWitness, computeBIP84Address}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector64, Crypto, DeterministicWallet, MnemonicCode, Satoshi, Script, computeBIP84Address}
 import fr.acinq.eclair.TimestampSecond
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{AddressType, Descriptor, Descriptors}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
 import java.io.File
-import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsScala}
+import scala.jdk.CollectionConverters.MapHasAsScala
 import scala.util.{Failure, Success, Try}
 
 object LocalOnChainKeyManager extends Logging {
@@ -50,7 +50,7 @@ object LocalOnChainKeyManager extends Logging {
       val passphrase = config.getString("eclair.signer.passphrase")
       val timestamp = config.getLong("eclair.signer.timestamp")
       val keyManager = new LocalOnChainKeyManager(wallet, MnemonicCode.toSeed(mnemonics, passphrase), TimestampSecond(timestamp), chainHash)
-      logger.info(s"using on-chain key manager wallet=$wallet xpub=${keyManager.masterPubKey(0)}")
+      logger.info("using on-chain key manager wallet={} with xpub: bip84={}, bip86={}", wallet, keyManager.masterPubKey(0, AddressType.P2wpkh), keyManager.masterPubKey(0, AddressType.P2tr))
       Some(keyManager)
     } else {
       None
@@ -66,8 +66,8 @@ object LocalOnChainKeyManager extends Logging {
  */
 class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, val walletTimestamp: TimestampSecond, chainHash: BlockHash) extends OnChainKeyManager with Logging {
 
-  // Master key derived from our seed. We use it to generate a BIP84 wallet that can be used:
-  // - to generate a watch-only wallet with any BIP84-compatible bitcoin wallet
+  // Master key derived from our seed. We use it to generate BIP84 and BIP86 wallets that can be used:
+  // - to generate watch-only wallets with any BIP84/BIP86-compatible bitcoin wallet
   // - to generate descriptors that can be imported into Bitcoin Core to create a watch-only wallet which can be used
   //   by Eclair to fund transactions (only Eclair will be able to sign wallet inputs)
   private val master = DeterministicWallet.generate(seed)
@@ -82,6 +82,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
   }
   private val rootKeyBIP84 = DeterministicWallet.derivePrivateKey(master, KeyPath(rootPathBIP84))
 
+  // Root BIP32 on-chain path: we use BIP86 (p2tr) paths: m/86h/{0h/1h}
   private val rootPathBIP86 = chainHash match {
     case Block.RegtestGenesisBlock.hash | Block.Testnet3GenesisBlock.hash | Block.Testnet4GenesisBlock.hash | Block.SignetGenesisBlock.hash => "86h/1h"
     case Block.LivenetGenesisBlock.hash => "86h/0h"
@@ -89,12 +90,9 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
   }
   private val rootKeyBIP86 = DeterministicWallet.derivePrivateKey(master, KeyPath(rootPathBIP86))
 
-  private def addressType(keyPath: KeyPath): AddressType = {
-    if (keyPath.path.nonEmpty && keyPath.path.head == hardened(86)) {
-      AddressType.P2tr
-    } else {
-      AddressType.P2wpkh
-    }
+  private def addressType(keyPath: KeyPath): AddressType = keyPath.path.headOption match {
+    case Some(prefix) if prefix == hardened(86) => AddressType.P2tr
+    case _ => AddressType.P2wpkh
   }
 
   override def masterPubKey(account: Long, addressType: AddressType): String = addressType match {
@@ -195,6 +193,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
 
   /** Check that an output belongs to us (i.e. we can recompute its public key from its bip32 path). */
   private def isOurOutput(psbt: Psbt, outputIndex: Int): Boolean = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
     if (psbt.outputs.size() <= outputIndex || psbt.global.tx.txOut.size() <= outputIndex) {
@@ -203,31 +202,36 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     val output = psbt.outputs.get(outputIndex)
     val txOut = psbt.global.tx.txOut.get(outputIndex)
 
-    def expectedPubKey(keyPath: KeyPath): fr.acinq.bitcoin.PublicKey = derivePublicKey(keyPath)._1
-
-    def expectedBIP84Script(keyPath: KeyPath): fr.acinq.bitcoin.ByteVector = Script.write(Script.pay2wpkh(expectedPubKey(keyPath)))
-
-    def expectedBIP86Script(keyPath: KeyPath): fr.acinq.bitcoin.ByteVector = Script.write(Script.pay2tr(expectedPubKey(keyPath).xOnly, None))
-
+    // We first check segwit v0.
     output.getDerivationPaths.asScala.headOption match {
-      case Some((pub, keypath)) if pub != expectedPubKey(keypath.keyPath) =>
-        logger.warn(s"public key mismatch (expected=${expectedPubKey(keypath.keyPath)}, actual=$pub): bitcoin core may be malicious")
-        false
-      case Some((_, keypath)) if txOut.publicKeyScript != expectedBIP84Script(keypath.keyPath) =>
-        logger.warn(s"script mismatch (expected=${expectedBIP84Script(keypath.keyPath)}, actual=${txOut.publicKeyScript}): bitcoin core may be malicious")
-        false
-      case Some((_, _)) =>
-        true
+      case Some((pub, keypath)) =>
+        val expectedKey = derivePublicKey(keypath.keyPath)._1
+        if (pub != KotlinUtils.scala2kmp(expectedKey)) {
+          logger.warn(s"public key mismatch (expected=$expectedKey, actual=$pub): bitcoin core may be malicious")
+          false
+        } else if (txOut.publicKeyScript != KotlinUtils.scala2kmp(Script.write(Script.pay2wpkh(expectedKey)))) {
+          logger.warn(s"script mismatch (expected=${Script.write(Script.pay2wpkh(expectedKey))}, actual=${txOut.publicKeyScript}): bitcoin core may be malicious")
+          false
+        } else {
+          true
+        }
       case None =>
+        // Otherwise, this may be a taproot input.
         output.getTaprootDerivationPaths.asScala.headOption match {
-          case Some((pub, _)) if pub != output.getTaprootInternalKey =>
-            logger.warn("internal key mismatch: bitcoin core may be malicious")
-            false
-          case Some((_, keyPath)) if txOut.publicKeyScript != expectedBIP86Script(keyPath.keyPath) =>
-            logger.warn(s"script mismatch (expected=${expectedBIP86Script(keyPath.keyPath)}, actual=${txOut.publicKeyScript}): bitcoin core may be malicious")
-            false
-          case Some((_, _)) =>
-            true
+          case Some((pub, keypath)) =>
+            val expectedKey = derivePublicKey(keypath.keyPath)._1
+            if (pub != output.getTaprootInternalKey) {
+              logger.warn("internal key mismatch: bitcoin core may be malicious")
+              false
+            } else if (pub != KotlinUtils.scala2kmp(expectedKey.xOnly)) {
+              logger.warn(s"public key mismatch (expected=$expectedKey, actual=$pub): bitcoin core may be malicious")
+              false
+            } else if (txOut.publicKeyScript != KotlinUtils.scala2kmp(Script.write(Script.pay2tr(expectedKey.xOnly, None)))) {
+              logger.warn(s"script mismatch (expected=${Script.write(Script.pay2tr(expectedKey.xOnly, None))}, actual=${txOut.publicKeyScript}): bitcoin core may be malicious")
+              false
+            } else {
+              true
+            }
           case None =>
             logger.warn("derivation path is missing: bitcoin core may be malicious")
             false
@@ -270,22 +274,21 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     require(kmp2scala(input.getWitnessUtxo.publicKeyScript) == expectedScript, s"script mismatch (expected=$expectedScript, actual=${input.getWitnessUtxo.publicKeyScript}): bitcoin core may be malicious")
 
     // Update the input with the right script for a p2wpkh input, which is a *p2pkh* script, then sign and finalize.
-    val updated: Either[UpdateFailure, Psbt] = psbt.updateWitnessInput(
-      psbt.global.tx.txIn.get(pos).outPoint,
-      input.getWitnessUtxo,
-      null,
-      Script.pay2pkh(pub),
-      SigHash.SIGHASH_ALL,
-      input.getDerivationPaths,
-      null,
-      null,
-      java.util.Map.of())
-    val signed = updated.flatMap(_.sign(priv, pos))
-    val finalized = signed.flatMap(s => {
-      require(s.getSig.last.toInt == SigHash.SIGHASH_ALL, "signature must end with SIGHASH_ALL")
-      s.getPsbt.finalizeWitnessInput(pos, Script.witnessPay2wpkh(pub, s.getSig))
-    })
-    finalized match {
+    psbt.updateWitnessInput(
+        psbt.global.tx.txIn.get(pos).outPoint,
+        input.getWitnessUtxo,
+        null,
+        Script.pay2pkh(pub),
+        SigHash.SIGHASH_ALL,
+        input.getDerivationPaths,
+        null,
+        null,
+        java.util.Map.of())
+      .flatMap(_.sign(priv, pos))
+      .flatMap(s => {
+        require(s.getSig.last.toInt == SigHash.SIGHASH_ALL, "signature must end with SIGHASH_ALL")
+        s.getPsbt.finalizeWitnessInput(pos, Script.witnessPay2wpkh(pub, s.getSig))
+      }) match {
       case Right(psbt) => psbt
       case Left(failure) => throw new RuntimeException(s"cannot sign psbt input, error = $failure")
     }
@@ -307,9 +310,10 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     val expectedScript = ByteVector(Script.write(Script.pay2tr(pub, null.asInstanceOf[ScriptTree])))
     require(kmp2scala(input.getWitnessUtxo.publicKeyScript) == expectedScript, s"script mismatch (expected=$expectedScript, actual=${input.getWitnessUtxo.publicKeyScript}): bitcoin core may be malicious")
 
-    val signed = psbt.sign(priv, pos)
-    val finalized = signed.flatMap(s => s.getPsbt.finalizeWitnessInput(pos, ScriptWitness(List(s.getSig))))
-    finalized match {
+    // No need to update the input, we can directly sign and finalize.
+    psbt
+      .sign(priv, pos)
+      .flatMap(s => s.getPsbt.finalizeWitnessInput(pos, Script.witnessKeyPathPay2tr(ByteVector64(s.getSig), SigHash.SIGHASH_DEFAULT))) match {
       case Right(psbt) => psbt
       case Left(failure) => throw new RuntimeException(s"cannot sign psbt input, error = $failure")
     }

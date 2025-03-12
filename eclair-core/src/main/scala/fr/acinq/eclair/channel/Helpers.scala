@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.OnchainPubkeyCache
+import fr.acinq.eclair.blockchain.OnChainPubkeyCache
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
@@ -629,14 +629,14 @@ object Helpers {
 
     object MutualClose {
 
-      def generateFinalScriptPubKey(wallet: OnchainPubkeyCache, allowAnySegwit: Boolean, renew: Boolean = true): ByteVector = {
-        val finalScriptPubkey = if (!allowAnySegwit) {
+      def generateFinalScriptPubKey(wallet: OnChainPubkeyCache, allowAnySegwit: Boolean, renew: Boolean = true): ByteVector = {
+        if (!allowAnySegwit) {
+          // If our peer only supports segwit v0, we cannot let bitcoind choose the address type: we always use p2wpkh.
           val finalPubKey = wallet.getP2wpkhPubkey(renew)
           Script.write(Script.pay2wpkh(finalPubKey))
         } else {
-          Script.write(wallet.getReceivePubkeyScript(renew))
+          Script.write(wallet.getReceivePublicKeyScript(renew))
         }
-        finalScriptPubkey
       }
 
       def isValidFinalScriptPubkey(scriptPubKey: ByteVector, allowAnySegwit: Boolean, allowOpReturn: Boolean): Boolean = {

@@ -24,7 +24,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{BtcDouble, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.Wumbo
-import fr.acinq.eclair.blockchain.OnchainPubkeyCache
+import fr.acinq.eclair.blockchain.OnChainPubkeyCache
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.Peer.{OpenChannelResponse, SpawnChannelNonInitiator}
@@ -77,7 +77,7 @@ object OpenChannelInterceptor {
                            toSelfDelay: CltvExpiryDelta,
                            maxAcceptedHtlcs: Int)
 
-  def apply(peer: ActorRef[Any], nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, pendingChannelsRateLimiter: ActorRef[PendingChannelsRateLimiter.Command], pluginTimeout: FiniteDuration = 1 minute): Behavior[Command] =
+  def apply(peer: ActorRef[Any], nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainPubkeyCache, pendingChannelsRateLimiter: ActorRef[PendingChannelsRateLimiter.Command], pluginTimeout: FiniteDuration = 1 minute): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
         new OpenChannelInterceptor(peer, pendingChannelsRateLimiter, pluginTimeout, nodeParams, wallet, context).waitForRequest()
@@ -120,7 +120,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
                                      pendingChannelsRateLimiter: ActorRef[PendingChannelsRateLimiter.Command],
                                      pluginTimeout: FiniteDuration,
                                      nodeParams: NodeParams,
-                                     wallet: OnchainPubkeyCache,
+                                     wallet: OnChainPubkeyCache,
                                      context: ActorContext[OpenChannelInterceptor.Command]) {
 
   import OpenChannelInterceptor._
@@ -326,8 +326,12 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
   private def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript: Boolean, channelType: SupportedChannelType, isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, disableMaxHtlcValueInFlight: Boolean): LocalParams = {
     makeChannelParams(
       nodeParams, initFeatures,
-      if (upfrontShutdownScript) Some(Script.write(wallet.getReceivePubkeyScript())) else None,
-      if (channelType.paysDirectlyToWallet) Some(wallet.getP2wpkhPubkey()) else None,
+      // Note that if our bitcoin node is configured to use taproot, this will generate a taproot script.
+      // If our peer doesn't support option_shutdown_anysegwit, the channel open will fail.
+      // This is fine: "serious" nodes should support option_shutdown_anysegwit, and if we want to use taproot, we
+      // most likely don't want to open channels with nodes that don't support it. 
+      if (upfrontShutdownScript) Some(Script.write(wallet.getReceivePublicKeyScript(renew = true))) else None,
+      if (channelType.paysDirectlyToWallet) Some(wallet.getP2wpkhPubkey(renew = true)) else None,
       isChannelOpener = isChannelOpener,
       paysCommitTxFees = paysCommitTxFees,
       dualFunded = dualFunded,
