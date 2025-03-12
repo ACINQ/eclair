@@ -20,7 +20,6 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystemOps}
 import akka.testkit.TestProbe
-import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
@@ -33,8 +32,8 @@ import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.offer.{OfferCreator, OfferManager}
 import fr.acinq.eclair.payment.offer.OfferManager.InvoiceRequestActor
+import fr.acinq.eclair.payment.offer.{OfferCreator, OfferManager}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.OfferPayment
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendSpontaneousPayment}
@@ -49,7 +48,6 @@ import org.scalatest.{Tag, TestData}
 import scodec.bits.HexStringSyntax
 
 import java.util.UUID
-import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 
 class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
@@ -171,7 +169,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val sender = TestProbe("sender")(recipient.system)
     val offerCreator = recipient.system.spawnAnonymous(OfferCreator(recipient.nodeParams, recipient.router, recipient.offerManager, recipient.defaultOfferHandler))
     offerCreator ! OfferCreator.Create(sender.ref.toTyped, description_opt, amount_opt, None, issuer_opt, blindedPathsFirstNodeId_opt)
-    sender.expectMsgType[OfferCreator.CreatedOffer].offer
+    sender.expectMsgType[OfferCreator.CreatedOffer].offerData.offer
   }
 
   def payOffer(payer: MinimalNodeFixture, offer: Offer, amount: MilliSatoshi, maxAttempts: Int = 1): PaymentEvent = {

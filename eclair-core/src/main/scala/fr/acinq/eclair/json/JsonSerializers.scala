@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
-import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
+import fr.acinq.eclair.db.{IncomingPaymentStatus, OfferData, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.message.OnionMessages
@@ -35,7 +35,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, FeatureSupport, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -492,6 +492,29 @@ object InvoiceSerializer extends MinimalSerializer({
     JObject(fieldList)
 })
 
+private case class OfferDataJson(amountMsat: Option[MilliSatoshi],
+                                 description: Option[String],
+                                 issuer: Option[String],
+                                 nodeId: Option[PublicKey],
+                                 blindedPathFirstNodeId: Option[PublicKey],
+                                 createdAt: TimestampMilli,
+                                 expiry: Option[TimestampSecond],
+                                 disabled: Boolean,
+                                 disabledAt: Option[TimestampMilli],
+                                 encoded: String)
+object OfferDataSerializer extends ConvertClassSerializer[OfferData](o => OfferDataJson(
+  amountMsat = o.offer.amount,
+  description = o.offer.description,
+  issuer = o.offer.issuer,
+  nodeId = o.offer.nodeId,
+  blindedPathFirstNodeId = o.offer.contactInfos.collect { case OfferTypes.BlindedPath(path) => path.firstNodeId }.collectFirst { case p: EncodedNodeId.WithPublicKey => p.publicKey },
+  createdAt = o.createdAt,
+  expiry = o.offer.expiry,
+  disabled = o.disabled,
+  disabledAt = o.disabledAt_opt,
+  encoded = o.offer.encode()
+))
+
 object JavaUUIDSerializer extends MinimalSerializer({
   case id: UUID => JString(id.toString)
 })
@@ -726,6 +749,7 @@ object JsonSerializers {
     NodeAddressSerializer +
     DirectedHtlcSerializer +
     InvoiceSerializer +
+    OfferDataSerializer +
     JavaUUIDSerializer +
     OriginSerializer +
     ByteVector32KeySerializer +

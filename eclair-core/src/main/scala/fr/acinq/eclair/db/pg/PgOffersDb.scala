@@ -56,7 +56,7 @@ class PgOffersDb(implicit ds: DataSource, lock: PgLock) extends OffersDb with Lo
     }
   }
 
-  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Unit = withMetrics("offers/add", DbBackends.Postgres) {
+  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): OfferData = withMetrics("offers/add", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO payments.offers (offer_id, offer, path_id, created_at, is_active, disabled_at) VALUES (?, ?, ?, ?, TRUE, NULL)")) { statement =>
         statement.setString(1, offer.offerId.toHex)
@@ -64,6 +64,7 @@ class PgOffersDb(implicit ds: DataSource, lock: PgLock) extends OffersDb with Lo
         statement.setString(3, pathId_opt.map(_.toHex).orNull)
         statement.setTimestamp(4, createdAt.toSqlTimestamp)
         statement.executeUpdate()
+        OfferData(offer, pathId_opt, createdAt, disabledAt_opt = None)
       }
     }
   }
