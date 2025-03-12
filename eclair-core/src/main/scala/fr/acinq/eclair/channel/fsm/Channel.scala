@@ -2690,18 +2690,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 log.warning("force-closing with fundingTxIndex reset to {} (concurrent funding transactions: {})", resetFundingTxIndex, data.commitments.active.filter(_.fundingTxIndex > resetFundingTxIndex).map(_.fundingTxId).mkString(", "))
                 replyTo ! RES_SUCCESS(c, data.channelId)
                 val commitments1 = data.commitments.copy(active = data.commitments.active.filter(_.fundingTxIndex <= resetFundingTxIndex))
-                val resetData = data match {
-                  case data: DATA_WAIT_FOR_FUNDING_CONFIRMED => data.copy(commitments = commitments1)
-                  case data: DATA_WAIT_FOR_CHANNEL_READY => data.copy(commitments = commitments1)
-                  case data: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => data.copy(commitments = commitments1)
-                  case data: DATA_WAIT_FOR_DUAL_FUNDING_READY => data.copy(commitments = commitments1)
-                  case data: DATA_NORMAL => data.copy(commitments = commitments1)
-                  case data: DATA_SHUTDOWN => data.copy(commitments = commitments1)
-                  case data: DATA_NEGOTIATING => data.copy(commitments = commitments1)
-                  case data: DATA_NEGOTIATING_SIMPLE => data.copy(commitments = commitments1)
-                  case data: DATA_CLOSING => data.copy(commitments = commitments1)
-                  case data: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => data.copy(commitments = commitments1)
-                }
+                val resetData = Helpers.updateCommitments(data, commitments1)
                 handleLocalError(failure, resetData, Some(c))
               } else {
                 handleCommandError(CommandUnavailableInThisState(d.channelId, "forcecloseresetfundingindex", stateName), c)

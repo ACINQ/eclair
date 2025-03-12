@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.wire.internal.channel.version0
 
-import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
@@ -103,6 +102,12 @@ private[channel] object ChannelTypes0 {
     }
   }
 
+  def setFundingStatus(commitments: fr.acinq.eclair.channel.Commitments, status: LocalFundingStatus): fr.acinq.eclair.channel.Commitments = {
+    commitments.copy(
+      active = commitments.active.head.copy(localFundingStatus = status) +: commitments.active.tail
+    )
+  }
+
   /**
    * Starting with version2, we store a complete ClosingTx object for mutual close scenarios instead of simply storing
    * the raw transaction. It provides more information for auditing but is not used for business logic, so we can safely
@@ -120,14 +125,14 @@ private[channel] object ChannelTypes0 {
   case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs) {
     def migrate(remoteFundingPubKey: PublicKey): channel.LocalCommit = {
       val remoteSig = extractRemoteSig(publishableTxs.commitTx, remoteFundingPubKey)
-      val unsignedCommitTx = publishableTxs.commitTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
+      val unsignedCommitTx = publishableTxs.commitTx.copy(tx = removeWitnesses(publishableTxs.commitTx.tx))
       val commitTxAndRemoteSig = CommitTxAndRemoteSig(unsignedCommitTx, remoteSig)
       val htlcTxsAndRemoteSigs = publishableTxs.htlcTxsAndSigs map {
         case HtlcTxAndSigs(htlcTx: HtlcSuccessTx, _, remoteSig) =>
-          val unsignedHtlcTx = htlcTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
+          val unsignedHtlcTx = htlcTx.copy(tx = removeWitnesses(htlcTx.tx))
           HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
         case HtlcTxAndSigs(htlcTx: HtlcTimeoutTx, _, remoteSig) =>
-          val unsignedHtlcTx = htlcTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
+          val unsignedHtlcTx = htlcTx.copy(tx = removeWitnesses(htlcTx.tx))
           HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
       }
       channel.LocalCommit(index, spec, commitTxAndRemoteSig, htlcTxsAndRemoteSigs)
@@ -145,6 +150,8 @@ private[channel] object ChannelTypes0 {
       }
     }
   }
+
+  private def removeWitnesses(tx: Transaction): Transaction = tx.copy(txIn = tx.txIn.map(_.copy(witness = ScriptWitness.empty)))
 
   // Before version3, we had a ChannelVersion field describing what channel features were activated. It was mixing
   // official features (static_remotekey, anchor_outputs) and internal features (channel key derivation scheme).

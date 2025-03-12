@@ -17,7 +17,6 @@
 package fr.acinq.eclair.channel
 
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat.Script._
@@ -51,17 +50,32 @@ object Helpers {
    */
   def updateFeatures(data: PersistentChannelData, localInit: Init, remoteInit: Init): PersistentChannelData = {
     data match {
-      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED => d.modify(_.channelParams).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_CHANNEL_READY => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_NORMAL => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_SHUTDOWN => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_NEGOTIATING => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_NEGOTIATING_SIMPLE => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_CLOSING => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
-      case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.modify(_.commitments.params).using(_.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED => d.copy(channelParams = d.channelParams.updateFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
+      case d: DATA_NORMAL => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
+      case d: DATA_SHUTDOWN => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
+      case d: DATA_NEGOTIATING => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
+      case d: DATA_NEGOTIATING_SIMPLE => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
+      case d: DATA_CLOSING => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
+      case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
+    }
+  }
+
+  def updateCommitments(data: ChannelDataWithCommitments, commitments: Commitments): PersistentChannelData = {
+    data match {
+      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = commitments)
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(commitments = commitments)
+      case d: DATA_WAIT_FOR_CHANNEL_READY => d.copy(commitments = commitments)
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => d.copy(commitments = commitments)
+      case d: DATA_NORMAL => d.copy(commitments = commitments)
+      case d: DATA_SHUTDOWN => d.copy(commitments = commitments)
+      case d: DATA_NEGOTIATING => d.copy(commitments = commitments)
+      case d: DATA_NEGOTIATING_SIMPLE => d.copy(commitments = commitments)
+      case d: DATA_CLOSING => d.copy(commitments = commitments)
+      case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments)
     }
   }
 

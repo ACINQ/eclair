@@ -1,6 +1,5 @@
 package fr.acinq.eclair.balance
 
-import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, OutPoint, Satoshi, SatoshiLong, Script, TxId}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.Utxo
@@ -26,12 +25,12 @@ object CheckBalance {
   }
 
   /** if local has preimage of an incoming htlc, then we know it will get the funds */
-  def localHasPreimage(c: CommitmentChanges, htlcId: Long): Boolean = {
+  private def localHasPreimage(c: CommitmentChanges, htlcId: Long): Boolean = {
     c.localChanges.all.collectFirst { case u: UpdateFulfillHtlc if u.id == htlcId => true }.isDefined
   }
 
   /** if remote proved it had the preimage of an outgoing htlc, then we know it won't timeout */
-  def remoteHasPreimage(c: CommitmentChanges, htlcId: Long): Boolean = {
+  private def remoteHasPreimage(c: CommitmentChanges, htlcId: Long): Boolean = {
     c.remoteChanges.all.collectFirst { case u: UpdateFulfillHtlc if u.id == htlcId => true }.isDefined
   }
 
@@ -57,8 +56,8 @@ object CheckBalance {
   }
 
   case class PossiblyPublishedMainAndHtlcBalance(toLocal: Map[OutPoint, Btc] = Map.empty, htlcs: Map[OutPoint, Btc] = Map.empty, htlcsUnpublished: Btc = 0.sat) {
-    val totalToLocal: Btc = toLocal.values.map(_.toSatoshi).sum
-    val totalHtlcs: Btc = htlcs.values.map(_.toSatoshi).sum
+    private val totalToLocal: Btc = toLocal.values.map(_.toSatoshi).sum
+    private val totalHtlcs: Btc = htlcs.values.map(_.toSatoshi).sum
     val total: Btc = totalToLocal + totalHtlcs + htlcsUnpublished
   }
 
@@ -87,12 +86,12 @@ object CheckBalance {
     val total: Btc = waitForFundingConfirmed + waitForChannelReady + normal.total + shutdown.total + negotiating + closing.total + waitForPublishFutureCommitment
   }
 
-  def updateMainBalance(localCommit: LocalCommit): Btc => Btc = { v: Btc =>
+  private def updateMainBalance(current: Btc, localCommit: LocalCommit): Btc = {
     val toLocal = localCommit.spec.toLocal.truncateToSatoshi
-    v + toLocal
+    current + toLocal
   }
 
-  def updateMainAndHtlcBalance(c: Commitments, knownPreimages: Set[(ByteVector32, Long)]): MainAndHtlcBalance => MainAndHtlcBalance = { b: MainAndHtlcBalance =>
+  private def updateMainAndHtlcBalance(current: MainAndHtlcBalance, c: Commitments, knownPreimages: Set[(ByteVector32, Long)]): MainAndHtlcBalance = {
     // We take the last commitment into account: it's the most likely to (eventually) confirm.
     val commitment = c.latest
     val toLocal = commitment.localCommit.spec.toLocal.truncateToSatoshi
@@ -101,14 +100,18 @@ object CheckBalance {
       .filter(add => knownPreimages.contains((add.channelId, add.id)) || localHasPreimage(c.changes, add.id))
       .sumAmount
     val htlcOut = commitment.localCommit.spec.htlcs.collect(outgoing).sumAmount
-    b.modify(_.toLocal).using(_ + toLocal)
-      .modify(_.htlcs).using(_ + htlcIn + htlcOut)
+    current.copy(
+      toLocal = current.toLocal + toLocal,
+      htlcs = current.htlcs + htlcIn + htlcOut
+    )
   }
 
-  def updatePossiblyPublishedBalance(b1: PossiblyPublishedMainAndHtlcBalance): PossiblyPublishedMainAndHtlcBalance => PossiblyPublishedMainAndHtlcBalance = { b: PossiblyPublishedMainAndHtlcBalance =>
-    b.modify(_.toLocal).using(_ ++ b1.toLocal)
-      .modify(_.htlcs).using(_ ++ b1.htlcs)
-      .modify(_.htlcsUnpublished).using(_ + b1.htlcsUnpublished)
+  private def updatePossiblyPublishedBalance(current: PossiblyPublishedMainAndHtlcBalance, b1: PossiblyPublishedMainAndHtlcBalance): PossiblyPublishedMainAndHtlcBalance = {
+    current.copy(
+      toLocal = current.toLocal ++ b1.toLocal,
+      htlcs = current.htlcs ++ b1.htlcs,
+      htlcsUnpublished = current.htlcsUnpublished + b1.htlcsUnpublished
+    )
   }
 
   def computeLocalCloseBalance(changes: CommitmentChanges, l: LocalClose, originChannels: Map[Long, Origin], knownPreimages: Set[(ByteVector32, Long)]): PossiblyPublishedMainAndHtlcBalance = {
@@ -188,15 +191,15 @@ object CheckBalance {
   }
 
   def computeOffChainBalance(knownPreimages: Set[(ByteVector32, Long)]): (OffChainBalance, PersistentChannelData) => OffChainBalance = {
-    case (r, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.commitments.latest.localCommit))
-    case (r, d: DATA_WAIT_FOR_CHANNEL_READY) => r.modify(_.waitForChannelReady).using(updateMainBalance(d.commitments.latest.localCommit))
+    case (r, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => r.copy(waitForFundingConfirmed = updateMainBalance(r.waitForFundingConfirmed, d.commitments.latest.localCommit))
+    case (r, d: DATA_WAIT_FOR_CHANNEL_READY) => r.copy(waitForChannelReady = updateMainBalance(r.waitForChannelReady, d.commitments.latest.localCommit))
     case (r, _: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) => r // we ignore our balance from unsigned commitments
-    case (r, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.commitments.latest.localCommit))
-    case (r, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) => r.modify(_.waitForChannelReady).using(updateMainBalance(d.commitments.latest.localCommit))
-    case (r, d: DATA_NORMAL) => r.modify(_.normal).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
-    case (r, d: DATA_SHUTDOWN) => r.modify(_.shutdown).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
-    case (r, d: DATA_NEGOTIATING) => r.modify(_.negotiating).using(updateMainBalance(d.commitments.latest.localCommit))
-    case (r, d: DATA_NEGOTIATING_SIMPLE) => r.modify(_.negotiating).using(updateMainBalance(d.commitments.latest.localCommit))
+    case (r, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) => r.copy(waitForFundingConfirmed = updateMainBalance(r.waitForFundingConfirmed, d.commitments.latest.localCommit))
+    case (r, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) => r.copy(waitForChannelReady = updateMainBalance(r.waitForChannelReady, d.commitments.latest.localCommit))
+    case (r, d: DATA_NORMAL) => r.copy(normal = updateMainAndHtlcBalance(r.normal, d.commitments, knownPreimages))
+    case (r, d: DATA_SHUTDOWN) => r.copy(shutdown = updateMainAndHtlcBalance(r.shutdown, d.commitments, knownPreimages))
+    case (r, d: DATA_NEGOTIATING) => r.copy(negotiating = updateMainBalance(r.negotiating, d.commitments.latest.localCommit))
+    case (r, d: DATA_NEGOTIATING_SIMPLE) => r.copy(negotiating = updateMainBalance(r.negotiating, d.commitments.latest.localCommit))
     case (r, d: DATA_CLOSING) =>
       Closing.isClosingTypeAlreadyKnown(d) match {
         case None if d.mutualClosePublished.nonEmpty && d.localCommitPublished.isEmpty && d.remoteCommitPublished.isEmpty && d.nextRemoteCommitPublished.isEmpty && d.revokedCommitPublished.isEmpty =>
@@ -218,8 +221,11 @@ object CheckBalance {
                 case _ => None // either we don't have an output (below dust), or we have used a non-default pubkey script
               }
           }
-          r.modify(_.closing.mutualCloseBalance.toLocal).usingIf(outputInfo_opt.isDefined)(_ + (OutPoint(mutualClose.tx.txid, outputInfo_opt.get.index) -> outputInfo_opt.get.amount))
-        case Some(localClose: LocalClose) => r.modify(_.closing.localCloseBalance).using(updatePossiblyPublishedBalance(computeLocalCloseBalance(d.commitments.changes, localClose, d.commitments.originChannels, knownPreimages)))
+          outputInfo_opt match {
+            case Some(outputInfo) => r.copy(closing = r.closing.copy(mutualCloseBalance = r.closing.mutualCloseBalance.copy(toLocal = r.closing.mutualCloseBalance.toLocal + (OutPoint(mutualClose.tx.txid, outputInfo.index) -> outputInfo.amount))))
+            case None => r
+          }
+        case Some(localClose: LocalClose) => r.copy(closing = r.closing.copy(localCloseBalance = updatePossiblyPublishedBalance(r.closing.localCloseBalance, computeLocalCloseBalance(d.commitments.changes, localClose, d.commitments.originChannels, knownPreimages))))
         case _ if d.remoteCommitPublished.nonEmpty || d.nextRemoteCommitPublished.nonEmpty =>
           // We have seen the remote commit, it may or may not have been confirmed. We may have published our own
           // local commit too, which may take precedence. But if we are aware of the remote commit, it means that
@@ -230,10 +236,10 @@ object CheckBalance {
           } else {
             NextRemoteClose(d.commitments.latest.nextRemoteCommit_opt.get.commit, d.nextRemoteCommitPublished.get)
           }
-          r.modify(_.closing.remoteCloseBalance).using(updatePossiblyPublishedBalance(computeRemoteCloseBalance(d.commitments, remoteClose, knownPreimages)))
-        case _ => r.modify(_.closing.unknownCloseBalance).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
+          r.copy(closing = r.closing.copy(remoteCloseBalance = updatePossiblyPublishedBalance(r.closing.remoteCloseBalance, computeRemoteCloseBalance(d.commitments, remoteClose, knownPreimages))))
+        case _ => r.copy(closing = r.closing.copy(unknownCloseBalance = updateMainAndHtlcBalance(r.closing.unknownCloseBalance, d.commitments, knownPreimages)))
       }
-    case (r, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => r.modify(_.waitForPublishFutureCommitment).using(updateMainBalance(d.commitments.latest.localCommit))
+    case (r, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => r.copy(waitForPublishFutureCommitment = updateMainBalance(r.waitForPublishFutureCommitment, d.commitments.latest.localCommit))
   }
 
   def computeOffChainBalance(knownPreimages: Set[(ByteVector32, Long)], channel: PersistentChannelData): OffChainBalance = {
@@ -275,14 +281,19 @@ object CheckBalance {
         .map(outPoint => bitcoinClient.getTxConfirmations(outPoint.txid).map(_ map { confirmations => outPoint.txid -> confirmations })))
       txMap: Map[TxId, Int] = txs.flatten.toMap
     } yield {
-      br
-        .modifyAll(
-          _.closing.localCloseBalance.toLocal,
-          _.closing.localCloseBalance.htlcs,
-          _.closing.remoteCloseBalance.toLocal,
-          _.closing.remoteCloseBalance.htlcs,
-          _.closing.mutualCloseBalance.toLocal)
-        .using(map => map.filterNot { case (outPoint, _) => txMap.contains(outPoint.txid) })
+      br.copy(closing = br.closing.copy(
+        localCloseBalance = br.closing.localCloseBalance.copy(
+          toLocal = br.closing.localCloseBalance.toLocal.filterNot { case (outPoint, _) => txMap.contains(outPoint.txid) },
+          htlcs = br.closing.localCloseBalance.htlcs.filterNot { case (outPoint, _) => txMap.contains(outPoint.txid) },
+        ),
+        remoteCloseBalance = br.closing.remoteCloseBalance.copy(
+          toLocal = br.closing.remoteCloseBalance.toLocal.filterNot { case (outPoint, _) => txMap.contains(outPoint.txid) },
+          htlcs = br.closing.remoteCloseBalance.htlcs.filterNot { case (outPoint, _) => txMap.contains(outPoint.txid) },
+        ),
+        mutualCloseBalance = br.closing.mutualCloseBalance.copy(
+          toLocal = br.closing.mutualCloseBalance.toLocal.filterNot { case (outPoint, _) => txMap.contains(outPoint.txid) },
+        )
+      ))
     }
   }
 
@@ -297,11 +308,11 @@ object CheckBalance {
    * Confirmed swap-in transactions are counted, because we can spend them, but we keep track of what we still owe to our
    * users.
    */
-  def computeOnChainBalance(bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[DetailedOnChainBalance] = for {
+  private def computeOnChainBalance(bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[DetailedOnChainBalance] = for {
     utxos <- bitcoinClient.listUnspent()
     detailed = utxos.foldLeft(DetailedOnChainBalance(utxos = utxos)) {
-      case (total, utxo) if utxo.confirmations == 0 => total.modify(_.unconfirmed).using(_ + (utxo.outPoint -> utxo.amount))
-      case (total, utxo) => total.modify(_.confirmed).using(_ + (utxo.outPoint -> utxo.amount))
+      case (total, utxo) if utxo.confirmations == 0 => total.copy(unconfirmed = total.unconfirmed + (utxo.outPoint -> utxo.amount))
+      case (total, utxo) => total.copy(confirmed = total.confirmed + (utxo.outPoint -> utxo.amount))
     }
   } yield detailed
 

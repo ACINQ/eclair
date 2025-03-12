@@ -22,7 +22,6 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystem
 import akka.actor.{ActorRef, typed}
 import akka.pattern._
 import akka.util.Timeout
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction, TxId, addressToPublicKeyScript}
 import fr.acinq.eclair.ApiTypes.ChannelNotFound
@@ -39,7 +38,6 @@ import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, OpenChannelResponse, PeerInfo}
 import fr.acinq.eclair.io._
-import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.offer.{OfferCreator, OfferManager}
@@ -49,7 +47,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.{ClearRecipient, OfferPayment, PaymentIdentifier}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferAbsoluteExpiry, OfferIssuer, OfferQuantityMax, OfferTlv}
+import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -514,9 +512,10 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
     getRouteParams(pathFindingExperimentName_opt) match {
       case Right(defaultRouteParams) =>
-        val routeParams = defaultRouteParams
-          .modify(_.boundaries.maxFeeProportional).setToIfDefined(maxFeePct_opt.map(_ / 100))
-          .modify(_.boundaries.maxFeeFlat).setToIfDefined(maxFeeFlat_opt.map(_.toMilliSatoshi))
+        val routeParams = defaultRouteParams.copy(boundaries = defaultRouteParams.boundaries.copy(
+          maxFeeProportional = maxFeePct_opt.map(_ / 100).getOrElse(defaultRouteParams.boundaries.maxFeeProportional),
+          maxFeeFlat = maxFeeFlat_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.boundaries.maxFeeFlat)
+        ))
         externalId_opt match {
           case Some(externalId) if externalId.length > externalIdMaxLength => Left(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
           case _ if invoice.isExpired() => Left(new IllegalArgumentException("invoice has expired"))
@@ -544,9 +543,10 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
     getRouteParams(pathFindingExperimentName_opt) match {
       case Right(defaultRouteParams) =>
-        val routeParams = defaultRouteParams
-          .modify(_.boundaries.maxFeeProportional).setToIfDefined(maxFeePct_opt.map(_ / 100))
-          .modify(_.boundaries.maxFeeFlat).setToIfDefined(maxFeeFlat_opt.map(_.toMilliSatoshi))
+        val routeParams = defaultRouteParams.copy(boundaries = defaultRouteParams.boundaries.copy(
+          maxFeeProportional = maxFeePct_opt.map(_ / 100).getOrElse(defaultRouteParams.boundaries.maxFeeProportional),
+          maxFeeFlat = maxFeeFlat_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.boundaries.maxFeeFlat)
+        ))
         val sendPayment = SendSpontaneousPayment(amount, recipientNodeId, paymentPreimage, maxAttempts, externalId_opt, routeParams)
         (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
       case Left(t) => Future.failed(t)
@@ -779,9 +779,10 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     }
     val routeParams = getRouteParams(pathFindingExperimentName_opt) match {
       case Right(defaultRouteParams) =>
-        defaultRouteParams
-          .modify(_.boundaries.maxFeeProportional).setToIfDefined(maxFeePct_opt.map(_ / 100))
-          .modify(_.boundaries.maxFeeFlat).setToIfDefined(maxFeeFlat_opt.map(_.toMilliSatoshi))
+        defaultRouteParams.copy(boundaries = defaultRouteParams.boundaries.copy(
+          maxFeeProportional = maxFeePct_opt.map(_ / 100).getOrElse(defaultRouteParams.boundaries.maxFeeProportional),
+          maxFeeFlat = maxFeeFlat_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.boundaries.maxFeeFlat)
+        ))
       case Left(t) => return Future.failed(t)
     }
     val sendPaymentConfig = OfferPayment.SendPaymentConfig(externalId_opt, connectDirectly, maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts), routeParams, blocking, trampolineNodeId_opt)

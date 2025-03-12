@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.wire.internal.channel.version1
 
-import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
@@ -242,7 +241,7 @@ private[channel] object ChannelCodecs1 {
         ("deferred" | optional(bool8, lengthDelimited(channelReadyCodec))) ::
         ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).map {
       case commitments :: fundingTx :: waitingSince :: deferred :: lastSent :: HNil =>
-        val commitments1 = commitments.modify(_.active.at(0).localFundingStatus).setTo(SingleFundedUnconfirmedFundingTx(fundingTx))
+        val commitments1 = ChannelTypes0.setFundingStatus(commitments, SingleFundedUnconfirmedFundingTx(fundingTx))
         DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments1, waitingSince, deferred, lastSent)
     }.decodeOnly
 
@@ -293,7 +292,7 @@ private[channel] object ChannelCodecs1 {
         ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
       case commitments :: fundingTx_opt :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
-        val commitments1 = commitments.modify(_.active.at(0).localFundingStatus).setTo(SingleFundedUnconfirmedFundingTx(fundingTx_opt))
+        val commitments1 = ChannelTypes0.setFundingStatus(commitments, SingleFundedUnconfirmedFundingTx(fundingTx_opt))
         DATA_CLOSING(commitments1, waitingSince, commitments1.params.localParams.upfrontShutdownScript_opt.get, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
 

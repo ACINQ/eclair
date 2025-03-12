@@ -891,6 +891,8 @@ case class Commitments(params: ChannelParams,
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = active.head.getIncomingHtlcCrossSigned(htlcId)
   // @formatter:on
 
+  def updateInitFeatures(localInit: Init, remoteInit: Init): Commitments = this.copy(params = params.updateFeatures(localInit, remoteInit))
+
   /**
    * @param cmd add HTLC command
    * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right(new commitments, updateAddHtlc)

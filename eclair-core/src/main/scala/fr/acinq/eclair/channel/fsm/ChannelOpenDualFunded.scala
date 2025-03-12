@@ -17,7 +17,6 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
-import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -467,7 +466,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           case Right(fundingTx) =>
             log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
             val dfu1 = d.latestFundingTx.copy(sharedTx = fundingTx)
-            val d1 = d.modify(_.commitments.active.at(0).localFundingStatus).setTo(dfu1)
+            val d1 = d.copy(commitments = d.commitments.updateLocalFundingStatus(fundingTx.txId, dfu1, None) match {
+              case Left(commitments) => commitments
+              case Right((commitments, _)) => commitments
+            })
             stay() using d1 storing() calling publishFundingTx(dfu1)
         }
         case _: FullySignedSharedTransaction =>
