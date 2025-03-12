@@ -128,7 +128,7 @@ trait Eclair {
 
   def createOffer(description_opt: Option[String], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], issuer_opt: Option[String], blindedPathsFirstNodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[OfferData]
 
-  def disableOffer(offer: Offer)(implicit timeout: Timeout): Future[Unit]
+  def disableOffer(offer: Offer)(implicit timeout: Timeout): Future[Map[ByteVector32, Boolean]]
 
   def listOffers(onlyActive: Boolean = true)(implicit timeout: Timeout): Future[Seq[OfferData]]
 
@@ -404,8 +404,9 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
       }
   }
 
-  override def disableOffer(offer: Offer)(implicit timeout: Timeout): Future[Unit] = Future {
+  override def disableOffer(offer: Offer)(implicit timeout: Timeout): Future[Map[ByteVector32, Boolean]] = Future {
     appKit.offerManager ! OfferManager.DisableOffer(offer)
+    Map(offer.offerId -> true)
   }
 
   override def listOffers(onlyActive: Boolean = true)(implicit timeout: Timeout): Future[Seq[OfferData]] = Future {

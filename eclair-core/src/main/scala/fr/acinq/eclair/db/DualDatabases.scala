@@ -410,7 +410,7 @@ case class DualOffersDb(primary: OffersDb, secondary: OffersDb) extends OffersDb
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-offers").build()))
 
-  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): OfferData = {
+  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Option[OfferData] = {
     runAsync(secondary.addOffer(offer, pathId_opt, createdAt))
     primary.addOffer(offer, pathId_opt, createdAt)
   }

@@ -116,9 +116,13 @@ private class OfferCreator(context: ActorContext[OfferCreator.Command],
   }
 
   private def registerOffer(offer: Offer, nodeKey_opt: Option[PrivateKey], pathId_opt: Option[ByteVector32]): Behavior[Command] = {
-    val offerData = nodeParams.db.offers.addOffer(offer, pathId_opt)
-    offerManager ! OfferManager.RegisterOffer(offer, nodeKey_opt, pathId_opt, defaultOfferHandler)
-    replyTo ! CreatedOffer(offerData)
+    nodeParams.db.offers.addOffer(offer, pathId_opt) match {
+      case Some(offerData) =>
+        offerManager ! OfferManager.RegisterOffer(offer, nodeKey_opt, pathId_opt, defaultOfferHandler)
+        replyTo ! CreatedOffer(offerData)
+      case None =>
+        replyTo ! CreateOfferError("This offer is already registered")
+    }
     Behaviors.stopped
   }
 }

@@ -50,14 +50,17 @@ class SqliteOffersDb(val sqlite: Connection) extends OffersDb with Logging {
     setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
-  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): OfferData = withMetrics("offers/add", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO offers (offer_id, offer, path_id, created_at, is_active, disabled_at) VALUES (?, ?, ?, ?, TRUE, NULL)")) { statement =>
+  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Option[OfferData] = withMetrics("offers/add", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO offers (offer_id, offer, path_id, created_at, is_active, disabled_at) VALUES (?, ?, ?, ?, TRUE, NULL)")) { statement =>
       statement.setBytes(1, offer.offerId.toArray)
       statement.setString(2, offer.toString)
       statement.setBytes(3, pathId_opt.map(_.toArray).orNull)
       statement.setLong(4, createdAt.toLong)
-      statement.executeUpdate()
-      OfferData(offer, pathId_opt, createdAt, disabledAt_opt = None)
+      if (statement.executeUpdate() == 1) {
+        Some(OfferData(offer, pathId_opt, createdAt, disabledAt_opt = None))
+      } else {
+        None
+      }
     }
   }
 
