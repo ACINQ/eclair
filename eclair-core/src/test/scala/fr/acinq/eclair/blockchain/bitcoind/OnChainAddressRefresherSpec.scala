@@ -35,16 +35,28 @@ class OnChainAddressRefresherSpec extends TestKitBaseClass with AnyFunSuiteLike 
     }
 
     val manager = system.spawnAnonymous(OnChainAddressRefresher(generator, finalPubkey, finalPubkeyScript, 1 second))
-    val initialPublicKey = finalPubkey.get()
-    val initialScript = finalPubkeyScript.get()
-    // We send a batch of requests to renew our public key and public key script.
+
+    // We send a batch of requests to renew our public key.
+    val publicKey1 = finalPubkey.get()
     (1 to 7).foreach(_ => manager ! OnChainAddressRefresher.RenewPubkey)
-    (1 to 5).foreach(_ => manager ! OnChainAddressRefresher.RenewPubkeyScript)
-    // After a delay, we will have renewed the public key and script only once.
-    awaitCond(finalPubkey.get() != initialPublicKey)
-    awaitCond(finalPubkeyScript.get() != initialScript)
+    awaitCond(finalPubkey.get() != publicKey1)
     assert(renewedPublicKeyCount.get() == 1)
+
+    // We send a batch of requests to renew our public key script.
+    val script1 = finalPubkeyScript.get()
+    (1 to 5).foreach(_ => manager ! OnChainAddressRefresher.RenewPubkeyScript)
+    awaitCond(finalPubkeyScript.get() != script1)
     assert(renewedPublicKeyScriptCount.get() == 1)
+
+    // If we mix the two types of renew requests, only the first one will be renewed.
+    val publicKey2 = finalPubkey.get()
+    val script2 = finalPubkeyScript.get()
+    manager ! OnChainAddressRefresher.RenewPubkeyScript
+    manager ! OnChainAddressRefresher.RenewPubkey
+    awaitCond(finalPubkeyScript.get() != script2)
+    assert(renewedPublicKeyCount.get() == 1)
+    assert(renewedPublicKeyScriptCount.get() == 2)
+    assert(finalPubkey.get() == publicKey2)
   }
 
 }

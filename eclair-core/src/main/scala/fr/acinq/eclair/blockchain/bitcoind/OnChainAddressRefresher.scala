@@ -27,20 +27,11 @@ object OnChainAddressRefresher {
   private case object Done extends Command
   // @formatter:on
 
-  // @formatter:off
-  sealed trait Renewing[T]
-  private object Renewing {
-    case class Idle[T]() extends Renewing[T]
-    case class Pending[T](current: T) extends Renewing[T]
-    case class Renewed[T](next: T) extends Renewing[T]
-  }
-  // @formatter:on
-
   def apply(generator: OnChainAddressGenerator, finalPubkey: AtomicReference[PublicKey], finalPubkeyScript: AtomicReference[Seq[ScriptElt]], delay: FiniteDuration): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         val refresher = new OnChainAddressRefresher(generator, finalPubkey, finalPubkeyScript, context, timers, delay)
-        refresher.waiting(Renewing.Idle(), Renewing.Idle())
+        refresher.idle()
       }
     }
   }
@@ -54,66 +45,71 @@ private class OnChainAddressRefresher(generator: OnChainAddressGenerator,
 
   import OnChainAddressRefresher._
 
-  /**
-   * We rate-limit renewing our public key or script: whenever we initiate a renew, we will ignore additional renew
-   * requests until we've received the new value from bitcoind and waited for a configurable [[delay]].
-   * This ensures that a burst of requests during a mass force-close use the same final on-chain address instead of
-   * creating a lot of address churn on our bitcoin wallet.
-   */
-  def waiting(pubkeyStatus: Renewing[PublicKey], scriptStatus: Renewing[Seq[ScriptElt]]): Behavior[Command] = Behaviors.receiveMessage {
+  /** In that state, we're ready to renew our on-chain address whenever requested. */
+  def idle(): Behavior[Command] = Behaviors.receiveMessage {
     case RenewPubkey =>
-      pubkeyStatus match {
-        case _: Renewing.Idle[_] =>
-          val current = finalPubkey.get()
-          context.log.debug("renewing pubkey (current={})", current)
-          context.pipeToSelf(generator.getP2wpkhPubkey()) {
-            case Success(pubkey) => SetPubkey(pubkey)
-            case Failure(reason) => Error(reason)
-          }
-          waiting(Renewing.Pending(current), scriptStatus)
-        case Renewing.Pending(_) => Behaviors.same
-        case Renewing.Renewed(_) => Behaviors.same
+      context.log.debug("renewing pubkey (current={})", finalPubkey.get())
+      context.pipeToSelf(generator.getP2wpkhPubkey()) {
+        case Success(pubkey) => SetPubkey(pubkey)
+        case Failure(reason) => Error(reason)
       }
+      renewing()
     case RenewPubkeyScript =>
-      scriptStatus match {
-        case _: Renewing.Idle[_] =>
-          val current = finalPubkeyScript.get()
-          context.log.debug("renewing script (current={})", Script.write(current).toHex)
-          context.pipeToSelf(generator.getReceivePublicKeyScript()) {
-            case Success(script) => SetPubkeyScript(script)
-            case Failure(reason) => Error(reason)
-          }
-          waiting(pubkeyStatus, Renewing.Pending(current))
-        case Renewing.Pending(_) => Behaviors.same
-        case Renewing.Renewed(_) => Behaviors.same
+      context.log.debug("renewing script (current={})", Script.write(finalPubkeyScript.get()).toHex)
+      context.pipeToSelf(generator.getReceivePublicKeyScript()) {
+        case Success(script) => SetPubkeyScript(script)
+        case Failure(reason) => Error(reason)
       }
+      renewing()
+    case cmd =>
+      context.log.debug("ignoring command={} while idle", cmd)
+      Behaviors.same
+  }
+
+  /** We ignore concurrent requests while waiting for bitcoind to respond. */
+  private def renewing(): Behavior[Command] = Behaviors.receiveMessage {
     case SetPubkey(pubkey) =>
       timers.startSingleTimer(Done, delay)
-      waiting(Renewing.Renewed(pubkey), scriptStatus)
+      delaying(Some(pubkey), None)
     case SetPubkeyScript(script) =>
       timers.startSingleTimer(Done, delay)
-      waiting(pubkeyStatus, Renewing.Renewed(script))
+      delaying(None, Some(script))
     case Error(reason) =>
       context.log.error("cannot renew public key or script", reason)
-      waiting(Renewing.Idle(), Renewing.Idle())
+      idle()
+    case cmd =>
+      context.log.debug("ignoring command={} while waiting for bitcoin core's response", cmd)
+      Behaviors.same
+  }
+
+  /**
+   * After receiving our new script or pubkey from bitcoind, we wait before updating our current values.
+   * While waiting, we ignore additional requests to renew.
+   *
+   * This ensures that a burst of requests during a mass force-close use the same final on-chain address instead of
+   * creating a lot of address churn on our bitcoin wallet.
+   *
+   * Note that while we're updating our final script, we will ignore requests to update our final public key (and the
+   * other way around). This is fine, since the public key is only used:
+   *  - when opening static_remotekey channels, which is disabled by default
+   *  - when closing channels with peers that don't support shutdown_anysegwit (which should be widely supported)
+   *
+   * In practice, we most likely always use [[RenewPubkeyScript]].
+   */
+  private def delaying(nextPubkey_opt: Option[PublicKey], nextScript_opt: Option[Seq[ScriptElt]]): Behavior[Command] = Behaviors.receiveMessage {
     case Done =>
-      val pubkeyStatus1 = pubkeyStatus match {
-        case _: Renewing.Idle[_] => pubkeyStatus
-        case Renewing.Pending(_) => pubkeyStatus
-        case Renewing.Renewed(next) =>
-          context.log.info("setting pubkey to {}", next)
-          finalPubkey.set(next)
-          Renewing.Idle[PublicKey]()
+      nextPubkey_opt.foreach { nextPubkey =>
+        context.log.info("setting pubkey to {}", nextPubkey)
+        finalPubkey.set(nextPubkey)
       }
-      val scriptStatus1 = scriptStatus match {
-        case _: Renewing.Idle[_] => scriptStatus
-        case Renewing.Pending(_) => scriptStatus
-        case Renewing.Renewed(next) =>
-          context.log.info("setting script to {}", Script.write(next).toHex)
-          finalPubkeyScript.set(next)
-          Renewing.Idle[Seq[ScriptElt]]()
+      nextScript_opt.foreach { nextScript =>
+        context.log.info("setting script to {}", Script.write(nextScript).toHex)
+        finalPubkeyScript.set(nextScript)
       }
-      waiting(pubkeyStatus1, scriptStatus1)
+      idle()
+    case cmd =>
+      context.log.debug("rate-limiting command={}", cmd)
+      Behaviors.same
   }
 
 }
