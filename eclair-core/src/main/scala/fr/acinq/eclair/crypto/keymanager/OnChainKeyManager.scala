@@ -30,7 +30,7 @@ trait OnChainKeyManager {
    * @param account account number (0 is used by most wallets)
    * @return the on-chain pubkey for this account, which can then be imported into a BIP39-compatible wallet such as Electrum
    */
-  def masterPubKey(account: Long, addressType: AddressType = AddressType.P2wpkh): String
+  def masterPubKey(account: Long, addressType: AddressType): String
 
   /**
    * @param keyPath BIP32 path

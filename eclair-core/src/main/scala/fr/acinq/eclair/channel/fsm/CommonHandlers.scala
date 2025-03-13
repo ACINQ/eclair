@@ -118,16 +118,18 @@ trait CommonHandlers {
             upfrontShutdownScript
           } else {
             log.info("ignoring pre-generated shutdown script, because option_upfront_shutdown_script is disabled")
-            val finalScriptPubkey = Helpers.Closing.MutualClose.generateFinalScriptPubKey(wallet, allowAnySegwit)
-            log.info(s"using finalScriptPubkey=$finalScriptPubkey")
-            finalScriptPubkey
+            generateFinalScriptPubKey(allowAnySegwit)
           }
         case None =>
           // normal case: we don't pre-generate shutdown scripts
-          val finalScriptPubkey = Helpers.Closing.MutualClose.generateFinalScriptPubKey(wallet, allowAnySegwit)
-          log.info(s"using finalScriptPubkey=$finalScriptPubkey")
-          finalScriptPubkey
+          generateFinalScriptPubKey(allowAnySegwit)
       }
+  }
+
+  private def generateFinalScriptPubKey(allowAnySegwit: Boolean): ByteVector = {
+    val finalScriptPubkey = Helpers.Closing.MutualClose.generateFinalScriptPubKey(wallet, allowAnySegwit)
+    log.info("using finalScriptPubkey={}", finalScriptPubkey.toHex)
+    finalScriptPubkey
   }
 
   def startSimpleClose(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]): (DATA_NEGOTIATING_SIMPLE, Option[ClosingComplete]) = {

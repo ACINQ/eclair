@@ -24,7 +24,7 @@ import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxId, addressFromPublicKeyScript, computeBIP84Address}
+import fr.acinq.bitcoin.scalacompat.{Block, BtcDouble, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxId, addressFromPublicKeyScript}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, JsonRPCError}
 import fr.acinq.eclair.channel._
@@ -148,11 +148,11 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     assert(dataC.commitments.params.commitmentFormat == commitmentFormat)
-    val Right(finalAddressC) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, nodes("C").wallet.getReceivePubkeyScript(false))
+    val Right(finalAddressC) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, nodes("C").wallet.getReceivePublicKeyScript(renew = false))
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     assert(dataF.commitments.params.commitmentFormat == commitmentFormat)
-    val Right(finalAddressF) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, nodes("F").wallet.getReceivePubkeyScript(false))
+    val Right(finalAddressF) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, nodes("F").wallet.getReceivePublicKeyScript(renew = false))
     ForceCloseFixture(sender, paymentSender, stateListenerC, stateListenerF, paymentId, htlc, preimage, minerAddress, finalAddressC, finalAddressF)
   }
 
@@ -434,7 +434,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we retrieve C's default final address
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], commitmentsF.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]]
-    val Right(finalAddressC) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, nodes("C").wallet.getReceivePubkeyScript(false))
+    val Right(finalAddressC) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, nodes("C").wallet.getReceivePublicKeyScript(renew = false))
     // we prepare the revoked transactions F will publish
     val keyManagerF = nodes("F").nodeParams.channelKeyManager
     val channelKeyPathF = keyManagerF.keyPath(commitmentsF.params.localParams, commitmentsF.params.channelConfig)
@@ -566,8 +566,8 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     sender.send(funder.register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val commitmentsC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data.commitments
     val fundingOutpoint = commitmentsC.latest.commitInput.outPoint
-    val finalPubKeyScriptC = Helpers.Closing.MutualClose.generateFinalScriptPubKey(nodes("C").wallet, true, false)
-    val finalPubKeyScriptF = Helpers.Closing.MutualClose.generateFinalScriptPubKey(nodes("F").wallet, true, false)
+    val finalPubKeyScriptC = Helpers.Closing.MutualClose.generateFinalScriptPubKey(nodes("C").wallet, allowAnySegwit = true, renew = false)
+    val finalPubKeyScriptF = Helpers.Closing.MutualClose.generateFinalScriptPubKey(nodes("F").wallet, allowAnySegwit = true, renew = false)
 
     fundee.register ! Register.Forward(sender.ref.toTyped[Any], channelId, CMD_CLOSE(sender.ref, None, None))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]

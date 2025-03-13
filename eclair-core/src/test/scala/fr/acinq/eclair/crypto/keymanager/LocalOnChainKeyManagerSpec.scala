@@ -3,7 +3,7 @@ package fr.acinq.eclair.crypto.keymanager
 import fr.acinq.bitcoin.psbt.{KeyPathWithMaster, Psbt, TaprootBip32DerivationPath}
 import fr.acinq.bitcoin.scalacompat.{Block, DeterministicWallet, MnemonicCode, OutPoint, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
 import fr.acinq.bitcoin.{ScriptFlags, SigHash}
-import fr.acinq.eclair.TimestampSecond
+import fr.acinq.eclair.{TimestampSecond, randomBytes32}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
@@ -17,7 +17,6 @@ class LocalOnChainKeyManagerSpec extends AnyFunSuite {
   import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
   implicit def scala2kmpScript(input: Seq[ScriptElt]): java.util.List[fr.acinq.bitcoin.ScriptElt] = input.map(scala2kmp).asJava
-
 
   test("sign psbt (non-reg test)") {
     val entropy = ByteVector.fromValidHex("01" * 32)
@@ -33,14 +32,12 @@ class LocalOnChainKeyManagerSpec extends AnyFunSuite {
     assert(tx.isRight)
   }
 
-  test("sign psbt (BIP84") {
-    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
-
-    val seed = ByteVector.fromValidHex("01" * 32)
+  test("sign psbt (BIP84)") {
+    val seed = randomBytes32()
     val onChainKeyManager = new LocalOnChainKeyManager("eclair", seed, TimestampSecond.now(), Block.Testnet3GenesisBlock.hash)
 
     // create a watch-only BIP84 wallet from our key manager xpub
-    val (_, accountPub) = DeterministicWallet.ExtendedPublicKey.decode(onChainKeyManager.masterPubKey(0))
+    val (_, accountPub) = DeterministicWallet.ExtendedPublicKey.decode(onChainKeyManager.masterPubKey(0, AddressType.P2wpkh))
     val mainPub = DeterministicWallet.derivePublicKey(accountPub, 0)
 
     def getPublicKey(index: Long) = DeterministicWallet.derivePublicKey(mainPub, index).publicKey
@@ -122,10 +119,8 @@ class LocalOnChainKeyManagerSpec extends AnyFunSuite {
     }
   }
 
-  test("sign psbt (BIP86") {
-    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
-
-    val seed = ByteVector.fromValidHex("01" * 32)
+  test("sign psbt (BIP86)") {
+    val seed = randomBytes32()
     val onChainKeyManager = new LocalOnChainKeyManager("eclair", seed, TimestampSecond.now(), Block.Testnet3GenesisBlock.hash)
 
     // create a watch-only BIP84 wallet from our key manager xpub

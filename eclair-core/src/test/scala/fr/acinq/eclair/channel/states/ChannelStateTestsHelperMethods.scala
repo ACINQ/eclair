@@ -27,7 +27,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, OnchainPubkeyCache, SingleKeyOnChainWallet}
+import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, OnChainPubkeyCache, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
@@ -113,7 +113,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
                           alice2relayer: TestProbe,
                           bob2relayer: TestProbe,
                           channelUpdateListener: TestProbe,
-                          wallet: OnChainWallet with OnchainPubkeyCache,
+                          wallet: OnChainWallet with OnChainPubkeyCache,
                           alicePeer: TestProbe,
                           bobPeer: TestProbe) {
     def currentBlockHeight: BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
@@ -126,7 +126,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   system.registerOnTermination(TestKit.shutdownActorSystem(systemA))
   system.registerOnTermination(TestKit.shutdownActorSystem(systemB))
 
-  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet_opt: Option[OnChainWallet with OnchainPubkeyCache] = None, tags: Set[String] = Set.empty): SetupFixture = {
+  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet_opt: Option[OnChainWallet with OnChainPubkeyCache] = None, tags: Set[String] = Set.empty): SetupFixture = {
     val aliceOpenReplyTo = TestProbe()
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
