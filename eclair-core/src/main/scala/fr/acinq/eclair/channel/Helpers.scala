@@ -274,7 +274,7 @@ object Helpers {
 
     for {
       script_opt <- extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt)
-      fundingScript = Funding.makeFundingPubKeyScript(open.fundingPubkey, accept.fundingPubkey)
+      fundingScript = Funding.makeFundingPubKeyScript(open.fundingPubkey, accept.fundingPubkey, channelType.commitmentFormat)
       liquidityPurchase_opt <- LiquidityAds.validateRemoteFunding(open.requestFunding_opt, remoteNodeId, accept.temporaryChannelId, fundingScript, accept.fundingAmount, open.fundingFeerate, isChannelCreation = true, accept.willFund_opt)
     } yield {
       val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
@@ -371,13 +371,22 @@ object Helpers {
   }
 
   object Funding {
+    def makeFundingPubKeyScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat): ByteVector = commitmentFormat match {
+      case SimpleTaprootChannelCommitmentFormat =>
+        write(Taproot.musig2FundingScript(localFundingKey, remoteFundingKey))
+      case _ =>
+        write(pay2wsh(multiSig2of2(localFundingKey, remoteFundingKey)))
+    }
 
-    def makeFundingPubKeyScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey): ByteVector = write(pay2wsh(multiSig2of2(localFundingKey, remoteFundingKey)))
-
-    def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo.SegwitInput = {
-      val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
-      val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
-      InputInfo.SegwitInput(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, write(fundingScript))
+    def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey, commitmentFormat: CommitmentFormat): InputInfo = commitmentFormat match {
+      case SimpleTaprootChannelCommitmentFormat =>
+        val fundingScript = Taproot.musig2FundingScript(fundingPubkey1, fundingPubkey2)
+        val fundingTxOut = TxOut(fundingSatoshis, fundingScript)
+        InputInfo.TaprootInput(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, Taproot.musig2Aggregate(fundingPubkey1, fundingPubkey2), None, ByteVector32.Zeroes)
+      case _ =>
+        val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
+        val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
+        InputInfo.SegwitInput(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, write(fundingScript))
     }
 
     /**
@@ -440,7 +449,7 @@ object Helpers {
 
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex)
       val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-      val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteFundingPubKey)
+      val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteFundingPubKey, params.commitmentFormat)
       val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, localCommitmentIndex)
       val (localCommitTx, _) = Commitment.makeLocalTxs(keyManager, channelConfig, channelFeatures, localCommitmentIndex, localParams, remoteParams, fundingTxIndex, remoteFundingPubKey, commitmentInput, localPerCommitmentPoint, localSpec)
       val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, channelConfig, channelFeatures, remoteCommitmentIndex, localParams, remoteParams, fundingTxIndex, remoteFundingPubKey, commitmentInput, remotePerCommitmentPoint, remoteSpec)
@@ -668,7 +677,7 @@ object Helpers {
           case DefaultCommitmentFormat =>
             // we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
             requestedFeerate.min(commitment.localCommit.spec.commitTxFeerate)
-          case _: AnchorOutputsCommitmentFormat => requestedFeerate
+          case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => requestedFeerate
         }
         // NB: we choose a minimum fee that ensures the tx will easily propagate while allowing low fees since we can
         // always use CPFP to speed up confirmation if necessary.
@@ -899,12 +908,25 @@ object Helpers {
       def claimAnchors(keyManager: ChannelKeyManager, commitment: FullCommitment, lcp: LocalCommitPublished, confirmationTarget: ConfirmationTarget)(implicit log: LoggingAdapter): LocalCommitPublished = {
         if (shouldUpdateAnchorTxs(lcp.claimAnchorTxs, confirmationTarget)) {
           val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
+          val localPaymentKey = commitment.params.commitmentFormat match {
+            case SimpleTaprootChannelCommitmentFormat =>
+              val channelKeyPath = keyManager.keyPath(commitment.localParams, commitment.params.channelConfig)
+              val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitment.localCommit.index)
+              val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
+              localDelayedPaymentPubkey
+            case _ =>
+              localFundingPubKey
+          }
+          val remotePaymentKey = commitment.params.commitmentFormat match {
+            case SimpleTaprootChannelCommitmentFormat => commitment.remoteParams.paymentBasepoint
+            case _ => commitment.remoteFundingPubKey
+          }
           val claimAnchorTxs = List(
             withTxGenerationLog("local-anchor") {
-              Transactions.makeClaimLocalAnchorOutputTx(lcp.commitTx, localFundingPubKey, confirmationTarget)
+              Transactions.makeClaimLocalAnchorOutputTx(lcp.commitTx, localPaymentKey, confirmationTarget)
             },
             withTxGenerationLog("remote-anchor") {
-              Transactions.makeClaimRemoteAnchorOutputTx(lcp.commitTx, commitment.remoteFundingPubKey)
+              Transactions.makeClaimRemoteAnchorOutputTx(lcp.commitTx, remotePaymentKey)
             }
           ).flatten
           lcp.copy(claimAnchorTxs = claimAnchorTxs)
@@ -1020,12 +1042,28 @@ object Helpers {
       def claimAnchors(keyManager: ChannelKeyManager, commitment: FullCommitment, rcp: RemoteCommitPublished, confirmationTarget: ConfirmationTarget)(implicit log: LoggingAdapter): RemoteCommitPublished = {
         if (shouldUpdateAnchorTxs(rcp.claimAnchorTxs, confirmationTarget)) {
           val localFundingPubkey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
+
+          // taproot channels do not re-use the funding pubkeys for anchor outputs
+          val localPaymentKey = commitment.params.commitmentFormat match {
+            case SimpleTaprootChannelCommitmentFormat =>
+              val channelKeyPath = keyManager.keyPath(commitment.localParams, commitment.params.channelConfig)
+              commitment.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
+            case _ =>
+              localFundingPubkey
+          }
+          val remotePaymentKey = commitment.params.commitmentFormat match {
+            case SimpleTaprootChannelCommitmentFormat =>
+              val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitment.remoteParams.delayedPaymentBasepoint, commitment.remoteCommit.remotePerCommitmentPoint)
+              remoteDelayedPaymentPubkey
+            case _ =>
+              commitment.remoteFundingPubKey
+          }
           val claimAnchorTxs = List(
             withTxGenerationLog("local-anchor") {
-              Transactions.makeClaimLocalAnchorOutputTx(rcp.commitTx, localFundingPubkey, confirmationTarget)
+              Transactions.makeClaimLocalAnchorOutputTx(rcp.commitTx, localPaymentKey, confirmationTarget)
             },
             withTxGenerationLog("remote-anchor") {
-              Transactions.makeClaimRemoteAnchorOutputTx(rcp.commitTx, commitment.remoteFundingPubKey)
+              Transactions.makeClaimRemoteAnchorOutputTx(rcp.commitTx, remotePaymentKey)
             }
           ).flatten
           rcp.copy(claimAnchorTxs = claimAnchorTxs)
@@ -1058,7 +1096,7 @@ object Helpers {
                 Transactions.addSigs(claimMain, localPubkey, sig)
               })
             }
-            case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
+            case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
               Transactions.makeClaimRemoteDelayedOutputTx(tx, params.localParams.dustLimit, localPaymentPoint, finalScriptPubKey, feeratePerKwMain).map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, params.commitmentFormat)
                 Transactions.addSigs(claimMain, sig)
@@ -1194,7 +1232,7 @@ object Helpers {
                 Transactions.addSigs(claimMain, localPaymentPubkey, sig)
               })
             }
-            case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
+            case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
               Transactions.makeClaimRemoteDelayedOutputTx(commitTx, localParams.dustLimit, localPaymentPoint, finalScriptPubKey, feerateMain).map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitmentFormat)
                 Transactions.addSigs(claimMain, sig)
