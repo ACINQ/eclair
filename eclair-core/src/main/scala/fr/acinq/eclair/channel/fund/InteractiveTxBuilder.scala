@@ -109,6 +109,13 @@ object InteractiveTxBuilder {
     // @formatter:on
   }
 
+  object SharedFundingInput {
+    def apply(commitment: Commitment): SharedFundingInput = commitment.commitInput match {
+      case inputInfo: InputInfo.SegwitInput => Multisig2of2Input(inputInfo, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
+      case inputInfo: InputInfo.TaprootInput => Musig2Input(inputInfo, commitment.fundingTxIndex, commitment.remoteFundingPubKey, commitment.localCommit.index)
+    }
+  }
+
   case class Multisig2of2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
     override val weight: Int = 388
 
@@ -118,29 +125,12 @@ object InteractiveTxBuilder {
     }
   }
 
-  object Multisig2of2Input {
-    def apply(commitment: Commitment): Multisig2of2Input = Multisig2of2Input(
-      info = commitment.commitInput,
-      fundingTxIndex = commitment.fundingTxIndex,
-      remoteFundingPubkey = commitment.remoteFundingPubKey
-    )
-  }
-
   case class Musig2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, commitIndex: Long) extends SharedFundingInput {
     override val weight: Int = 234
 
     override def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction): ByteVector64 = ByteVector64.Zeroes
   }
-
-  object Musig2Input {
-    def apply(commitment: Commitment): Musig2Input = Musig2Input(
-      info = commitment.commitInput,
-      fundingTxIndex = commitment.fundingTxIndex,
-      remoteFundingPubkey = commitment.remoteFundingPubKey,
-      commitIndex = commitment.localCommit.index
-    )
-  }
-
+  
   /**
    * @param channelId              id of the channel.
    * @param isInitiator            true if we initiated the protocol, in which case we will pay fees for the shared parts of the transaction.
