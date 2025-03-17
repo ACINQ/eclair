@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningS
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureMessage, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureReason, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, TimestampMilli, UInt64}
 import scodec.bits.ByteVector
 
@@ -72,6 +72,7 @@ case object WAIT_FOR_DUAL_FUNDING_READY extends ChannelState
 case object NORMAL extends ChannelState
 case object SHUTDOWN extends ChannelState
 case object NEGOTIATING extends ChannelState
+case object NEGOTIATING_SIMPLE extends ChannelState
 case object CLOSING extends ChannelState
 case object CLOSED extends ChannelState
 case object OFFLINE extends ChannelState
@@ -105,7 +106,6 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         channelFlags: ChannelFlags,
                                         channelConfig: ChannelConfig,
                                         channelType: SupportedChannelType,
-                                        channelOrigin: ChannelOrigin = ChannelOrigin.Default,
                                         replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) {
   require(!(channelType.features.contains(Features.ScidAlias) && channelFlags.announceChannel), "option_scid_alias is not compatible with public channels")
 }
@@ -215,7 +215,7 @@ final case class CMD_ADD_HTLC(replyTo: ActorRef,
 
 sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent { def id: Long }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
-final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], delay_opt: Option[FiniteDuration] = None, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
+final case class CMD_FAIL_HTLC(id: Long, reason: FailureReason, delay_opt: Option[FiniteDuration] = None, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
 final case class CMD_SIGN(replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandWhenQuiescent
@@ -227,7 +227,7 @@ final case class ClosingFeerates(preferred: FeeratePerKw, min: FeeratePerKw, max
 
 sealed trait CloseCommand extends HasReplyToCommand
 final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], feerates: Option[ClosingFeerates]) extends CloseCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
-final case class CMD_FORCECLOSE(replyTo: ActorRef) extends CloseCommand
+final case class CMD_FORCECLOSE(replyTo: ActorRef, resetFundingTxIndex_opt: Option[Int] = None) extends CloseCommand
 final case class CMD_BUMP_FORCE_CLOSE_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]], confirmationTarget: ConfirmationTarget) extends Command
 
 sealed trait ChannelFundingCommand extends Command {
@@ -416,27 +416,16 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
   }
 }
 
-sealed trait RealScidStatus { def toOption: Option[RealShortChannelId] }
-object RealScidStatus {
-  /** The funding transaction has been confirmed but hasn't reached min_depth, we must be ready for a reorg. */
-  case class Temporary(realScid: RealShortChannelId) extends RealScidStatus { override def toOption: Option[RealShortChannelId] = Some(realScid) }
-  /** The funding transaction has been deeply confirmed. */
-  case class Final(realScid: RealShortChannelId) extends RealScidStatus { override def toOption: Option[RealShortChannelId] = Some(realScid) }
-  /** We don't know the status of the funding transaction. */
-  case object Unknown extends RealScidStatus { override def toOption: Option[RealShortChannelId] = None }
-}
-
 /**
- * Short identifiers for the channel
+ * Short identifiers for the channel that aren't related to the on-chain utxo.
  *
- * @param real            the real scid, it may change if a reorg happens before the channel reaches 6 conf
  * @param localAlias      we must remember the alias that we sent to our peer because we use it to:
  *                          - identify incoming [[ChannelUpdate]] at the connection level
  *                          - route outgoing payments to that channel
  * @param remoteAlias_opt we only remember the last alias received from our peer, we use this to generate
  *                        routing hints in [[fr.acinq.eclair.payment.Bolt11Invoice]]
  */
-case class ShortIds(real: RealScidStatus, localAlias: Alias, remoteAlias_opt: Option[Alias])
+case class ShortIdAliases(localAlias: Alias, remoteAlias_opt: Option[Alias])
 
 sealed trait LocalFundingStatus {
   def signedTx_opt: Option[Transaction]
@@ -467,7 +456,7 @@ object LocalFundingStatus {
   case class ZeroconfPublishedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends UnconfirmedFundingTx with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
-  case class ConfirmedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
+  case class ConfirmedFundingTx(tx: Transaction, shortChannelId: RealShortChannelId, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
 }
@@ -599,7 +588,7 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  lastSent: Either[FundingCreated, FundingSigned]) extends ChannelDataWithCommitments {
   def fundingTx_opt: Option[Transaction] = commitments.latest.localFundingStatus.signedTx_opt
 }
-final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments, shortIds: ShortIds) extends ChannelDataWithCommitments
+final case class DATA_WAIT_FOR_CHANNEL_READY(commitments: Commitments, aliases: ShortIdAliases) extends ChannelDataWithCommitments
 
 final case class DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
   val channelId: ByteVector32 = init.temporaryChannelId
@@ -632,16 +621,18 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
   def latestFundingTx: DualFundedUnconfirmedFundingTx = commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx]
   def previousFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = allFundingTxs diff Seq(latestFundingTx)
 }
-final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments, shortIds: ShortIds) extends ChannelDataWithCommitments
+final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments, aliases: ShortIdAliases) extends ChannelDataWithCommitments
 
 final case class DATA_NORMAL(commitments: Commitments,
-                             shortIds: ShortIds,
-                             channelAnnouncement: Option[ChannelAnnouncement],
+                             aliases: ShortIdAliases,
+                             lastAnnouncement_opt: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
                              closingFeerates: Option[ClosingFeerates],
                              spliceStatus: SpliceStatus) extends ChannelDataWithCommitments {
+  val lastAnnouncedCommitment_opt: Option[AnnouncedCommitment] = lastAnnouncement_opt.flatMap(ann => commitments.resolveCommitment(ann.shortChannelId).map(c => AnnouncedCommitment(c, ann)))
+  val lastAnnouncedFundingTxId_opt: Option[TxId] = lastAnnouncedCommitment_opt.map(_.fundingTxId)
   val isNegotiatingQuiescence: Boolean = spliceStatus.isNegotiatingQuiescence
   val isQuiescent: Boolean = spliceStatus.isQuiescent
 }
@@ -652,6 +643,16 @@ final case class DATA_NEGOTIATING(commitments: Commitments,
                                   bestUnpublishedClosingTx_opt: Option[ClosingTx]) extends ChannelDataWithCommitments {
   require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
   require(!commitments.params.localParams.paysClosingFees || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
+}
+final case class DATA_NEGOTIATING_SIMPLE(commitments: Commitments,
+                                         lastClosingFeerate: FeeratePerKw,
+                                         localScriptPubKey: ByteVector, remoteScriptPubKey: ByteVector,
+                                         // Closing transactions we created, where we pay the fees (unsigned).
+                                         proposedClosingTxs: List[ClosingTxs],
+                                         // Closing transactions we published: this contains our local transactions for
+                                         // which they sent a signature, and their closing transactions that we signed.
+                                         publishedClosingTxs: List[ClosingTx]) extends ChannelDataWithCommitments {
+  def findClosingTx(tx: Transaction): Option[ClosingTx] = publishedClosingTxs.find(_.tx.txid == tx.txid).orElse(proposedClosingTxs.flatMap(_.all).find(_.tx.txid == tx.txid))
 }
 final case class DATA_CLOSING(commitments: Commitments,
                               waitingSince: BlockHeight, // how long since we initiated the closing
@@ -719,11 +720,5 @@ case class ChannelFlags(nonInitiatorPaysCommitFees: Boolean, announceChannel: Bo
 
 object ChannelFlags {
   def apply(announceChannel: Boolean): ChannelFlags = ChannelFlags(nonInitiatorPaysCommitFees = false, announceChannel = announceChannel)
-}
-
-/** Information about what triggered the opening of the channel */
-sealed trait ChannelOrigin
-object ChannelOrigin {
-  case object Default extends ChannelOrigin
 }
 // @formatter:on

@@ -44,7 +44,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe, listener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init(nodeParamsB = Bob.nodeParams, tags = test.tags)
+    val setup = init(tags = test.tags)
     import setup._
 
     val channelConfig = ChannelConfig.standard

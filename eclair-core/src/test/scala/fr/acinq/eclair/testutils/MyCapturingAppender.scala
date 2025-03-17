@@ -19,7 +19,7 @@ class MyCapturingAppender extends AppenderBase[ILoggingEvent] {
 
   /**
    * Flush buffered logging events to the output appenders
-   * Also clears the buffer..
+   * Also clears the buffer.
    */
   def flush(): Unit = synchronized {
     val deferredTestLogger = this.getContext.asInstanceOf[LoggerContext].getLogger("MyCapturingAppenderDelegate")

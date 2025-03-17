@@ -42,6 +42,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UpdateFee}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
 import org.scalatest.BeforeAndAfterAll
+import org.scalatest.Inside.inside
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -340,9 +341,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       publisher ! Publish(probe.ref, anchorTx)
       val result = probe.expectMsgType[TxRejected]
       assert(result.cmd == anchorTx)
-      // When the remote commit tx is still unconfirmed, we want to retry in case it is evicted from the mempool and our
-      // commit is then published.
-      assert(result.reason == TxSkipped(retryNextBlock = true))
+      assert(result.reason == TxSkipped(retryNextBlock = false))
     }
   }
 
@@ -422,7 +421,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val actualFee = mempoolTxs.map(_.fees).sum
       assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
 
-      generateBlocks(5)
+      generateBlocks(6)
       system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
       val result = probe.expectMsgType[TxConfirmed]
       assert(result.cmd == anchorTx)
@@ -467,7 +466,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val actualFee = mempoolTxs.map(_.fees).sum
     assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
 
-    generateBlocks(5)
+    generateBlocks(6)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
     val result = probe.expectMsgType[TxConfirmed]
     assert(result.cmd == anchorTx)
@@ -509,7 +508,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val actualFee = mempoolTxs.map(_.fees).sum
       assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
 
-      generateBlocks(5)
+      generateBlocks(6)
       system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
       val result = probe.expectMsgType[TxConfirmed]
       assert(result.cmd == anchorTx)
@@ -562,7 +561,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val actualFee = mempoolTxs.map(_.fees).sum
       assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
 
-      generateBlocks(5)
+      generateBlocks(6)
       system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
       val result = probe.expectMsgType[TxConfirmed]
       assert(result.cmd == anchorTx)
@@ -571,7 +570,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
-  test("remote commit tx not published, not spending remote anchor output") {
+  test("remote commit tx not published, publishing it and spending anchor output") {
     withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
@@ -579,14 +578,28 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // Note that we don't publish the remote commit, to simulate the case where the watch triggers but the remote commit is then evicted from our mempool.
       probe.send(alice, WatchFundingSpentTriggered(commitTx))
       val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
+      assert(publishAnchor.commitTx == commitTx)
       assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.txid)
       assert(publishAnchor.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+
+      val targetFeerate = FeeratePerKw(3000 sat)
+      setFeerate(targetFeerate)
       val anchorTx = publishAnchor.copy(txInfo = publishAnchor.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 6)))
       publisher ! Publish(probe.ref, anchorTx)
+      // wait for the commit tx and anchor tx to be published
+      val mempoolTxs = getMempoolTxs(2)
+      assert(mempoolTxs.map(_.txid).contains(commitTx.txid))
 
-      val result = probe.expectMsgType[TxRejected]
+      val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
+      val actualFee = mempoolTxs.map(_.fees).sum
+      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+
+      generateBlocks(6)
+      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+      val result = probe.expectMsgType[TxConfirmed]
       assert(result.cmd == anchorTx)
-      assert(result.reason == TxSkipped(retryNextBlock = true))
+      assert(result.tx.txIn.map(_.outPoint.txid).contains(commitTx.txid))
+      assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
     }
   }
 
@@ -616,7 +629,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val actualFee = mempoolTxs.map(_.fees).sum
       assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
 
-      generateBlocks(5)
+      generateBlocks(6)
       system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
       val result = probe.expectMsgType[TxConfirmed]
       assert(result.cmd == anchorTx)
@@ -869,7 +882,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       })
 
       // the first publishing attempt succeeds
-      generateBlocks(5)
+      generateBlocks(6)
       system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
       assert(probe.expectMsgType[TxConfirmed].cmd == anchorTx)
     }
@@ -920,27 +933,47 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val htlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
       assert(htlcTimeout.txInfo.isInstanceOf[HtlcTimeoutTx])
 
-      // Ensure remote commit tx confirms.
+      // The remote commit tx has a few confirmations, but isn't deeply confirmed yet.
       val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
       wallet.publishTransaction(remoteCommitTx.tx).pipeTo(probe.ref)
       probe.expectMsg(remoteCommitTx.tx.txid)
-      generateBlocks(5)
+      generateBlocks(2)
 
-      // Verify that HTLC transactions immediately fail to publish.
+      // Verify that HTLC transactions aren't published, but are retried in case a reorg makes the local commit confirm.
       setFeerate(FeeratePerKw(15_000 sat))
-      val htlcSuccessPublisher = createPublisher()
-      htlcSuccessPublisher ! Publish(probe.ref, htlcSuccess)
-      val result1 = probe.expectMsgType[TxRejected]
-      assert(result1.cmd == htlcSuccess)
-      assert(result1.reason == ConflictingTxConfirmed)
-      htlcSuccessPublisher ! Stop
+      val htlcSuccessPublisher1 = createPublisher()
+      htlcSuccessPublisher1 ! Publish(probe.ref, htlcSuccess)
+      inside(probe.expectMsgType[TxRejected]) { result =>
+        assert(result.cmd == htlcSuccess)
+        assert(result.reason == TxSkipped(retryNextBlock = true))
+      }
+      htlcSuccessPublisher1 ! Stop
 
-      val htlcTimeoutPublisher = createPublisher()
-      htlcTimeoutPublisher ! Publish(probe.ref, htlcTimeout)
-      val result2 = probe.expectMsgType[TxRejected]
-      assert(result2.cmd == htlcTimeout)
-      assert(result2.reason == ConflictingTxConfirmed)
-      htlcTimeoutPublisher ! Stop
+      val htlcTimeoutPublisher1 = createPublisher()
+      htlcTimeoutPublisher1 ! Publish(probe.ref, htlcTimeout)
+      inside(probe.expectMsgType[TxRejected]) { result =>
+        assert(result.cmd == htlcTimeout)
+        assert(result.reason == TxSkipped(retryNextBlock = true))
+      }
+      htlcTimeoutPublisher1 ! Stop
+
+      // Once the remote commit is deeply confirmed, we stop trying to publish HTLC transactions.
+      generateBlocks(4)
+      val htlcSuccessPublisher2 = createPublisher()
+      htlcSuccessPublisher2 ! Publish(probe.ref, htlcSuccess)
+      inside(probe.expectMsgType[TxRejected]) { result =>
+        assert(result.cmd == htlcSuccess)
+        assert(result.reason == ConflictingTxConfirmed)
+      }
+      htlcSuccessPublisher2 ! Stop
+
+      val htlcTimeoutPublisher2 = createPublisher()
+      htlcTimeoutPublisher2 ! Publish(probe.ref, htlcTimeout)
+      inside(probe.expectMsgType[TxRejected]) { result =>
+        assert(result.cmd == htlcTimeout)
+        assert(result.reason == ConflictingTxConfirmed)
+      }
+      htlcTimeoutPublisher2 ! Stop
     }
   }
 
@@ -976,7 +1009,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(nextRemoteCommitTx.tx.txOut.length == 6) // 2 main outputs + 2 anchor outputs + 2 htlcs
       wallet.publishTransaction(nextRemoteCommitTx.tx).pipeTo(probe.ref)
       probe.expectMsg(nextRemoteCommitTx.tx.txid)
-      generateBlocks(5)
+      generateBlocks(6)
 
       // Verify that HTLC transactions immediately fail to publish.
       setFeerate(FeeratePerKw(15_000 sat))
@@ -1055,9 +1088,9 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val htlcSuccessTx = getMempoolTxs(1).head
     val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx.weight.toInt)
     assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.2, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
-    assert(htlcSuccessTx.fees <= htlcSuccess.txInfo.input.txOut.amount)
+    assert(htlcSuccessTx.fees <= htlcSuccess.txInfo.amountIn)
 
-    generateBlocks(4)
+    generateBlocks(6)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
     val htlcSuccessResult = probe.expectMsgType[TxConfirmed]
     assert(htlcSuccessResult.cmd == htlcSuccess)
@@ -1083,9 +1116,9 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val htlcTimeoutTx = getMempoolTxs(1).head
     val htlcTimeoutTargetFee = Transactions.weight2fee(targetFeerate, htlcTimeoutTx.weight.toInt)
     assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= htlcTimeoutTargetFee * 1.2, s"actualFee=${htlcTimeoutTx.fees} targetFee=$htlcTimeoutTargetFee")
-    assert(htlcTimeoutTx.fees <= htlcTimeout.txInfo.input.txOut.amount)
+    assert(htlcTimeoutTx.fees <= htlcTimeout.txInfo.amountIn)
 
-    generateBlocks(4)
+    generateBlocks(6)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
     val htlcTimeoutResult = probe.expectMsgType[TxConfirmed]
     assert(htlcTimeoutResult.cmd == htlcTimeout)
@@ -1423,7 +1456,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       })
 
       // the first publishing attempt succeeds
-      generateBlocks(5)
+      generateBlocks(6)
       system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
       assert(probe.expectMsgType[TxConfirmed].cmd == htlcSuccess)
       publisher1 ! Stop
@@ -1472,26 +1505,46 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
       assert(claimHtlcSuccess.txInfo.isInstanceOf[ClaimHtlcSuccessTx])
 
-      // Ensure local commit tx confirms.
+      // The local commit tx has a few confirmations, but isn't deeply confirmed yet.
       wallet.publishTransaction(localCommitTx.tx).pipeTo(probe.ref)
       probe.expectMsg(localCommitTx.tx.txid)
-      generateBlocks(5)
+      generateBlocks(3)
 
-      // Verify that Claim-HTLC transactions immediately fail to publish.
+      // Verify that Claim-HTLC transactions aren't published, but are retried in case a reorg makes the remote commit confirm.
       setFeerate(FeeratePerKw(5_000 sat))
-      val claimHtlcSuccessPublisher = createPublisher()
-      claimHtlcSuccessPublisher ! Publish(probe.ref, claimHtlcSuccess)
-      val result1 = probe.expectMsgType[TxRejected]
-      assert(result1.cmd == claimHtlcSuccess)
-      assert(result1.reason == ConflictingTxConfirmed)
-      claimHtlcSuccessPublisher ! Stop
+      val claimHtlcSuccessPublisher1 = createPublisher()
+      claimHtlcSuccessPublisher1 ! Publish(probe.ref, claimHtlcSuccess)
+      inside(probe.expectMsgType[TxRejected]) { result =>
+        assert(result.cmd == claimHtlcSuccess)
+        assert(result.reason == TxSkipped(retryNextBlock = true))
+      }
+      claimHtlcSuccessPublisher1 ! Stop
 
-      val claimHtlcTimeoutPublisher = createPublisher()
-      claimHtlcTimeoutPublisher ! Publish(probe.ref, claimHtlcTimeout)
-      val result2 = probe.expectMsgType[TxRejected]
-      assert(result2.cmd == claimHtlcTimeout)
-      assert(result2.reason == ConflictingTxConfirmed)
-      claimHtlcTimeoutPublisher ! Stop
+      val claimHtlcTimeoutPublisher1 = createPublisher()
+      claimHtlcTimeoutPublisher1 ! Publish(probe.ref, claimHtlcTimeout)
+      inside(probe.expectMsgType[TxRejected]) { result =>
+        assert(result.cmd == claimHtlcTimeout)
+        assert(result.reason == TxSkipped(retryNextBlock = true))
+      }
+      claimHtlcTimeoutPublisher1 ! Stop
+
+      // Once the local commit is deeply confirmed, we stop trying to publish Claim-HTLC transactions.
+      generateBlocks(3)
+      val claimHtlcSuccessPublisher2 = createPublisher()
+      claimHtlcSuccessPublisher2 ! Publish(probe.ref, claimHtlcSuccess)
+      inside(probe.expectMsgType[TxRejected]) { result =>
+        assert(result.cmd == claimHtlcSuccess)
+        assert(result.reason == ConflictingTxConfirmed)
+      }
+      claimHtlcSuccessPublisher2 ! Stop
+
+      val claimHtlcTimeoutPublisher2 = createPublisher()
+      claimHtlcTimeoutPublisher2 ! Publish(probe.ref, claimHtlcTimeout)
+      inside(probe.expectMsgType[TxRejected]) { result =>
+        assert(result.cmd == claimHtlcTimeout)
+        assert(result.reason == ConflictingTxConfirmed)
+      }
+      claimHtlcTimeoutPublisher2 ! Stop
     }
   }
 
@@ -1558,7 +1611,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val claimHtlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, claimHtlcSuccessTx.weight.toInt)
     assert(claimHtlcSuccessTargetFee * 0.9 <= claimHtlcSuccessTx.fees && claimHtlcSuccessTx.fees <= claimHtlcSuccessTargetFee * 1.1, s"actualFee=${claimHtlcSuccessTx.fees} targetFee=$claimHtlcSuccessTargetFee")
 
-    generateBlocks(4)
+    generateBlocks(6)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
     val claimHtlcSuccessResult = probe.expectMsgType[TxConfirmed]
     assert(claimHtlcSuccessResult.cmd == claimHtlcSuccess)
@@ -1585,7 +1638,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val claimHtlcTimeoutTargetFee = Transactions.weight2fee(targetFeerate, claimHtlcTimeoutTx.weight.toInt)
     assert(claimHtlcTimeoutTargetFee * 0.9 <= claimHtlcTimeoutTx.fees && claimHtlcTimeoutTx.fees <= claimHtlcTimeoutTargetFee * 1.1, s"actualFee=${claimHtlcTimeoutTx.fees} targetFee=$claimHtlcTimeoutTargetFee")
 
-    generateBlocks(4)
+    generateBlocks(6)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
     val claimHtlcTimeoutResult = probe.expectMsgType[TxConfirmed]
     assert(claimHtlcTimeoutResult.cmd == claimHtlcTimeout)
@@ -1650,7 +1703,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val claimHtlcSuccessTx = getMempoolTxs(1).head
       val claimHtlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, claimHtlcSuccessTx.weight.toInt)
       assert(claimHtlcSuccessTargetFee * 0.9 <= claimHtlcSuccessTx.fees && claimHtlcSuccessTx.fees <= claimHtlcSuccessTargetFee * 1.1, s"actualFee=${claimHtlcSuccessTx.fees} targetFee=$claimHtlcSuccessTargetFee")
-      generateBlocks(4)
+      generateBlocks(6)
       system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
       val claimHtlcSuccessResult = probe.expectMsgType[TxConfirmed]
       assert(claimHtlcSuccessResult.cmd == claimHtlcSuccess)
@@ -1667,7 +1720,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val claimHtlcTimeoutTargetFee = Transactions.weight2fee(targetFeerate, claimHtlcTimeoutTx.weight.toInt)
       assert(claimHtlcTimeoutTargetFee * 0.9 <= claimHtlcTimeoutTx.fees && claimHtlcTimeoutTx.fees <= claimHtlcTimeoutTargetFee * 1.1, s"actualFee=${claimHtlcTimeoutTx.fees} targetFee=$claimHtlcTimeoutTargetFee")
 
-      generateBlocks(4)
+      generateBlocks(6)
       system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
       val claimHtlcTimeoutResult = probe.expectMsgType[TxConfirmed]
       assert(claimHtlcTimeoutResult.cmd == claimHtlcTimeout)
@@ -1802,7 +1855,7 @@ class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherS
     val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), walletName)
     val keyManager = new LocalOnChainKeyManager(walletName, seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
     val walletRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
-    val walletClient = new BitcoinCoreClient(walletRpcClient, Some(keyManager)) with OnchainPubkeyCache {
+    val walletClient = new BitcoinCoreClient(walletRpcClient, onChainKeyManager_opt = Some(keyManager)) with OnchainPubkeyCache {
       lazy val pubkey = {
         getP2wpkhPubkey().pipeTo(probe.ref)
         probe.expectMsgType[PublicKey]

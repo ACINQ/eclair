@@ -41,6 +41,12 @@ import scodec.codecs._
 object LiquidityAds {
 
   /**
+   * @param rates_opt funding rates if offering to sell liquidity.
+   * @param lockUtxos whether utxos should be locked during funding, which may expose to liquidity griefing.
+   */
+  case class Config(rates_opt: Option[WillFundRates], lockUtxos: Boolean)
+
+  /**
    * @param miningFee  we refund the liquidity provider for some of the fee they paid to miners for the underlying on-chain transaction.
    * @param serviceFee fee paid to the liquidity provider for the inbound liquidity.
    */

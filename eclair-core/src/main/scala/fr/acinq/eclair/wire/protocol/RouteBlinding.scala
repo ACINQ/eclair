@@ -18,10 +18,10 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{cltvExpiry, cltvExpiryDelta, featuresCodec}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{catchAllCodec, cltvExpiry, cltvExpiryDelta, featuresCodec}
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{fixedLengthTlvField, tlvField, tmillisatoshi, tmillisatoshi32}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, amountAfterFee}
 import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success}
@@ -98,23 +98,20 @@ object BlindedRouteData {
   }
 
   case class PaymentRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]) {
-    // This is usually a channel, unless the next node is a mobile wallet connected to our node.
-    val outgoing: Either[PublicKey, ShortChannelId] = records.get[RouteBlindingEncryptedDataTlv.OutgoingChannelId] match {
+    val outgoing: Either[EncodedNodeId.WithPublicKey, ShortChannelId] = records.get[RouteBlindingEncryptedDataTlv.OutgoingChannelId] match {
       case Some(r) => Right(r.shortChannelId)
-      case None => Left(records.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].get.nodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey)
+      case None => Left(records.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].get.nodeId.asInstanceOf[EncodedNodeId.WithPublicKey])
     }
     val paymentRelay: PaymentRelay = records.get[RouteBlindingEncryptedDataTlv.PaymentRelay].get
     val paymentConstraints: PaymentConstraints = records.get[RouteBlindingEncryptedDataTlv.PaymentConstraints].get
     val allowedFeatures: Features[Feature] = records.get[RouteBlindingEncryptedDataTlv.AllowedFeatures].map(_.features).getOrElse(Features.empty)
 
-    def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi =
-      ((incomingAmount - paymentRelay.feeBase).toLong * 1_000_000 + 1_000_000 + paymentRelay.feeProportionalMillionths - 1).msat / (1_000_000 + paymentRelay.feeProportionalMillionths)
+    def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi = amountAfterFee(paymentRelay.feeBase, paymentRelay.feeProportionalMillionths, incomingAmount)
 
     def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = incomingCltv - paymentRelay.cltvExpiryDelta
   }
 
   def validatePaymentRelayData(records: TlvStream[RouteBlindingEncryptedDataTlv]): Either[InvalidTlvPayload, PaymentRelayData] = {
-    // Note that the BOLTs require using an OutgoingChannelId, but we optionally support using a node_id.
     if (records.get[OutgoingChannelId].isEmpty && records.get[OutgoingNodeId].isEmpty) return Left(MissingRequiredTlv(UInt64(2)))
     if (records.get[OutgoingNodeId].nonEmpty && !records.get[OutgoingNodeId].get.nodeId.isInstanceOf[EncodedNodeId.WithPublicKey]) return Left(ForbiddenTlv(UInt64(4)))
     if (records.get[PaymentRelay].isEmpty) return Left(MissingRequiredTlv(UInt64(10)))
@@ -158,7 +155,7 @@ object RouteBlindingEncryptedDataCodecs {
     .typecase(UInt64(12), paymentConstraints)
     .typecase(UInt64(14), allowedFeatures)
 
-  val blindedRouteDataCodec = TlvCodecs.tlvStream[RouteBlindingEncryptedDataTlv](encryptedDataTlvCodec).complete
+  val blindedRouteDataCodec: Codec[TlvStream[RouteBlindingEncryptedDataTlv]] = catchAllCodec(TlvCodecs.tlvStream[RouteBlindingEncryptedDataTlv](encryptedDataTlvCodec).complete)
 
   // @formatter:off
   case class RouteBlindingDecryptedData(tlvs: TlvStream[RouteBlindingEncryptedDataTlv], nextPathKey: PublicKey)
@@ -171,7 +168,7 @@ object RouteBlindingEncryptedDataCodecs {
    * Decrypt and decode the contents of an encrypted_recipient_data TLV field.
    *
    * @param nodePrivKey   this node's private key.
-   * @param pathKey   path key (usually provided in the lightning message).
+   * @param pathKey       path key (usually provided in the lightning message).
    * @param encryptedData encrypted route blinding data (usually provided inside an onion).
    */
   def decode(nodePrivKey: PrivateKey, pathKey: PublicKey, encryptedData: ByteVector): Either[InvalidEncryptedData, RouteBlindingDecryptedData] = {

@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
@@ -12,10 +13,11 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.SharedTransaction
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, payment}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, payment}
 import scodec.bits.ByteVector
 
 /** Static channel parameters shared by all commitments. */
@@ -47,16 +49,16 @@ case class ChannelParams(channelId: ByteVector32,
   )
 
   /**
-   * As funder we trust ourselves to not double spend funding txs: we could always use a zero-confirmation watch,
-   * but we need a scid to send the initial channel_update and remote may not provide an alias. That's why we always
-   * wait for one conf, except if the channel has the zero-conf feature (because presumably the peer will send an
-   * alias in that case).
+   * Returns the number of confirmations needed to safely handle a funding transaction that we unilaterally funded.
+   * As funder we trust ourselves to not double spend funding txs, so we don't need to scale the number of confirmations
+   * based on the funding amount. We want to wait a few blocks though to ensure that the short_channel_id we obtain will
+   * not be invalidated by a reorg.
    */
-  def minDepthFunder: Option[Long] = {
+  def minDepthFunder(defaultMinDepth: Int): Option[Long] = {
     if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
       None
     } else {
-      Some(1)
+      Some(defaultMinDepth.toLong)
     }
   }
 
@@ -112,10 +114,11 @@ case class ChannelParams(channelId: ByteVector32,
     // README: if we set our bitcoin node to generate taproot addresses and our peer does not support option_shutdown_anysegwit, we will not be able to mutual-close
     // channels as the isValidFinalScriptPubkey() check would fail.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
+    val allowOpReturn = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.SimpleClose)
     val mustUseUpfrontShutdownScript = channelFeatures.hasFeature(Features.UpfrontShutdownScript)
     // we only enforce using the pre-generated shutdown script if option_upfront_shutdown_script is set
     if (mustUseUpfrontShutdownScript && localParams.upfrontShutdownScript_opt.exists(_ != localScriptPubKey)) Left(InvalidFinalScript(channelId))
-    else if (!Closing.MutualClose.isValidFinalScriptPubkey(localScriptPubKey, allowAnySegwit)) Left(InvalidFinalScript(channelId))
+    else if (!Closing.MutualClose.isValidFinalScriptPubkey(localScriptPubKey, allowAnySegwit, allowOpReturn)) Left(InvalidFinalScript(channelId))
     else Right(localScriptPubKey)
   }
 
@@ -126,10 +129,11 @@ case class ChannelParams(channelId: ByteVector32,
   def validateRemoteShutdownScript(remoteScriptPubKey: ByteVector): Either[ChannelException, ByteVector] = {
     // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
+    val allowOpReturn = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.SimpleClose)
     val mustUseUpfrontShutdownScript = channelFeatures.hasFeature(Features.UpfrontShutdownScript)
     // we only enforce using the pre-generated shutdown script if option_upfront_shutdown_script is set
     if (mustUseUpfrontShutdownScript && remoteParams.upfrontShutdownScript_opt.exists(_ != remoteScriptPubKey)) Left(InvalidFinalScript(channelId))
-    else if (!Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit)) Left(InvalidFinalScript(channelId))
+    else if (!Closing.MutualClose.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit, allowOpReturn)) Left(InvalidFinalScript(channelId))
     else Right(remoteScriptPubKey)
   }
 
@@ -141,8 +145,8 @@ object ChannelParams {
       // small amount: not scaled
       defaultMinDepth
     } else {
-      val blockReward = 6.25 // this is true as of ~May 2020, but will be too large after 2024
-      val scalingFactor = 15
+      val blockReward = 3.125 // this will be too large after the halving in 2028
+      val scalingFactor = 10
       val blocksToReachFunding = (((scalingFactor * amount.toBtc.toDouble) / blockReward).ceil + 1).toInt
       defaultMinDepth.max(blocksToReachFunding)
     }
@@ -215,7 +219,23 @@ object CommitmentChanges {
 case class HtlcTxAndRemoteSig(htlcTx: HtlcTx, remoteSig: ByteVector64)
 
 /** We don't store the fully signed transaction, otherwise someone with read access to our database could force-close our channels. */
-case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: ByteVector64)
+sealed trait RemoteSignature
+
+object RemoteSignature {
+  case class FullSignature(sig: ByteVector64) extends RemoteSignature
+
+  case class PartialSignatureWithNonce(partialSig: ByteVector32, nonce: IndividualNonce) extends RemoteSignature
+
+  def apply(sig: ByteVector64): RemoteSignature = FullSignature(sig)
+
+  def apply(partialSig: ByteVector32, nonce: IndividualNonce): RemoteSignature = PartialSignatureWithNonce(partialSig: ByteVector32, nonce: IndividualNonce)
+}
+
+case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: RemoteSignature)
+
+object CommitTxAndRemoteSig {
+  def apply(commitTx: CommitTx, remoteSig: ByteVector64): CommitTxAndRemoteSig = CommitTxAndRemoteSig(commitTx, RemoteSignature(remoteSig))
+}
 
 /** The local commitment maps to a commitment transaction that we can sign and broadcast if necessary. */
 case class LocalCommit(index: Long, spec: CommitmentSpec, commitTxAndRemoteSig: CommitTxAndRemoteSig, htlcTxsAndRemoteSigs: List[HtlcTxAndRemoteSig])
@@ -225,7 +245,7 @@ object LocalCommit {
                     fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo,
                     commit: CommitSig, localCommitIndex: Long, spec: CommitmentSpec, localPerCommitmentPoint: PublicKey): Either[ChannelException, LocalCommit] = {
     val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(keyManager, params.channelConfig, params.channelFeatures, localCommitIndex, params.localParams, params.remoteParams, fundingTxIndex, remoteFundingPubKey, commitInput, localPerCommitmentPoint, spec)
-    if (!checkSig(localCommitTx, commit.signature, remoteFundingPubKey, TxOwner.Remote, params.commitmentFormat)) {
+    if (!localCommitTx.checkSig(commit.signature, remoteFundingPubKey, TxOwner.Remote, params.commitmentFormat)) {
       return Left(InvalidCommitmentSignature(params.channelId, fundingTxId, fundingTxIndex, localCommitTx.tx))
     }
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
@@ -235,12 +255,12 @@ object LocalCommit {
     val remoteHtlcPubkey = Generators.derivePubKey(params.remoteParams.htlcBasepoint, localPerCommitmentPoint)
     val htlcTxsAndRemoteSigs = sortedHtlcTxs.zip(commit.htlcSignatures).toList.map {
       case (htlcTx: HtlcTx, remoteSig) =>
-        if (!checkSig(htlcTx, remoteSig, remoteHtlcPubkey, TxOwner.Remote, params.commitmentFormat)) {
+        if (!htlcTx.checkSig(remoteSig, remoteHtlcPubkey, TxOwner.Remote, params.commitmentFormat)) {
           return Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
         }
         HtlcTxAndRemoteSig(htlcTx, remoteSig)
     }
-    Right(LocalCommit(localCommitIndex, spec, CommitTxAndRemoteSig(localCommitTx, commit.signature), htlcTxsAndRemoteSigs))
+    Right(LocalCommit(localCommitIndex, spec, CommitTxAndRemoteSig(localCommitTx, RemoteSignature.FullSignature(commit.signature)), htlcTxsAndRemoteSigs))
   }
 }
 
@@ -278,6 +298,11 @@ case class Commitment(fundingTxIndex: Long,
   val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
   val fundingTxId: TxId = commitInput.outPoint.txid
   val capacity: Satoshi = commitInput.txOut.amount
+  /** Once the funding transaction is confirmed, short_channel_id matching this transaction. */
+  val shortChannelId_opt: Option[RealShortChannelId] = localFundingStatus match {
+    case f: LocalFundingStatus.ConfirmedFundingTx => Some(f.shortChannelId)
+    case _ => None
+  }
 
   /** Channel reserve that applies to our funds. */
   def localChannelReserve(params: ChannelParams): Satoshi = params.localChannelReserveForCapacity(capacity, fundingTxIndex > 0)
@@ -364,6 +389,28 @@ case class Commitment(fundingTxIndex: Long,
         val amountToReserve1 = commitFees1.max(funderFeeBuffer1)
         (balanceNoFees - amountToReserve1).max(0 msat)
       }
+    }
+  }
+
+  /** Sign the announcement for this commitment, if the funding transaction is confirmed. */
+  def signAnnouncement(nodeParams: NodeParams, params: ChannelParams): Option[AnnouncementSignatures] = {
+    localFundingStatus match {
+      case funding: LocalFundingStatus.ConfirmedFundingTx if params.announceChannel =>
+        val features = Features.empty[Feature] // empty features for now
+        val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex)
+        val witness = Announcements.generateChannelAnnouncementWitness(
+          nodeParams.chainHash,
+          funding.shortChannelId,
+          nodeParams.nodeKeyManager.nodeId,
+          params.remoteParams.nodeId,
+          fundingPubKey.publicKey,
+          remoteFundingPubKey,
+          features
+        )
+        val localBitcoinSig = nodeParams.channelKeyManager.signChannelAnnouncement(witness, fundingPubKey.path)
+        val localNodeSig = nodeParams.nodeKeyManager.signChannelAnnouncement(witness)
+        Some(AnnouncementSignatures(params.channelId, funding.shortChannelId, localNodeSig, localBitcoinSig))
+      case _ => None
     }
   }
 
@@ -663,7 +710,7 @@ case class Commitment(fundingTxIndex: Long,
   def fullySignedLocalCommitTx(params: ChannelParams, keyManager: ChannelKeyManager): CommitTx = {
     val unsignedCommitTx = localCommit.commitTxAndRemoteSig.commitTx
     val localSig = keyManager.sign(unsignedCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex), TxOwner.Local, params.commitmentFormat)
-    val remoteSig = localCommit.commitTxAndRemoteSig.remoteSig
+    val RemoteSignature.FullSignature(remoteSig) = localCommit.commitTxAndRemoteSig.remoteSig
     val commitTx = addSigs(unsignedCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex).publicKey, remoteFundingPubKey, localSig, remoteSig)
     // We verify the remote signature when receiving their commit_sig, so this check should always pass.
     require(checkSpendable(commitTx).isSuccess, "commit signatures are invalid")
@@ -732,6 +779,13 @@ object Commitment {
   }
 }
 
+/** A commitment for which a channel announcement has been created. */
+case class AnnouncedCommitment(commitment: Commitment, announcement: ChannelAnnouncement) {
+  val shortChannelId: RealShortChannelId = announcement.shortChannelId
+  val fundingTxId: TxId = commitment.fundingTxId
+  val fundingTxIndex: Long = commitment.fundingTxIndex
+}
+
 /** Subset of Commitments when we want to work with a single, specific commitment. */
 case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
                           fundingTxIndex: Long,
@@ -740,6 +794,10 @@ case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
                           localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
                           localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
   val channelId = params.channelId
+  val shortChannelId_opt = localFundingStatus match {
+    case f: LocalFundingStatus.ConfirmedFundingTx => Some(f.shortChannelId)
+    case _ => None
+  }
   val localParams = params.localParams
   val remoteParams = params.remoteParams
   val commitInput = localCommit.commitTxAndRemoteSig.commitTx.input
@@ -805,13 +863,18 @@ case class Commitments(params: ChannelParams,
   val remoteCommitIndex = active.head.remoteCommit.index
   val nextRemoteCommitIndex = remoteCommitIndex + 1
 
+  // While we have multiple active commitments, we use the most restrictive one.
+  val capacity = active.map(_.capacity).min
   lazy val availableBalanceForSend: MilliSatoshi = active.map(_.availableBalanceForSend(params, changes)).min
   lazy val availableBalanceForReceive: MilliSatoshi = active.map(_.availableBalanceForReceive(params, changes)).min
+
+  val all: Seq[Commitment] = active ++ inactive
 
   // We always use the last commitment that was created, to make sure we never go back in time.
   val latest = FullCommitment(params, changes, active.head.fundingTxIndex, active.head.firstRemoteCommitIndex, active.head.remoteFundingPubKey, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
 
-  val all: Seq[Commitment] = active ++ inactive
+  val lastLocalLocked_opt: Option[Commitment] = active.filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).sortBy(_.fundingTxIndex).lastOption
+  val lastRemoteLocked_opt: Option[Commitment] = active.filter(c => c.remoteFundingStatus == RemoteFundingStatus.Locked).sortBy(_.fundingTxIndex).lastOption
 
   def add(commitment: Commitment): Commitments = copy(active = commitment +: active)
 
@@ -1140,20 +1203,23 @@ case class Commitments(params: ChannelParams,
       val localFundingKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
       val remoteFundingKey = commitment.remoteFundingPubKey
       val fundingScript = Script.write(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
-      commitment.commitInput.redeemScript == fundingScript
+      commitment.commitInput match {
+        case InputInfo.SegwitInput(_, _, redeemScript) => redeemScript == fundingScript
+        case _: InputInfo.TaprootInput => false
+      }
     }
   }
 
   /** This function should be used to ignore a commit_sig that we've already received. */
   def ignoreRetransmittedCommitSig(commitSig: CommitSig): Boolean = {
-    val latestRemoteSig = latest.localCommit.commitTxAndRemoteSig.remoteSig
+    val RemoteSignature.FullSignature(latestRemoteSig) = latest.localCommit.commitTxAndRemoteSig.remoteSig
     params.channelFeatures.hasFeature(Features.DualFunding) && commitSig.batchSize == 1 && latestRemoteSig == commitSig.signature
   }
 
   def localFundingSigs(fundingTxId: TxId): Option[TxSignatures] = {
     all.find(_.fundingTxId == fundingTxId).flatMap(_.localFundingStatus.localSigs_opt)
   }
-  
+
   def liquidityPurchase(fundingTxId: TxId): Option[LiquidityAds.PurchaseBasicInfo] = {
     all.find(_.fundingTxId == fundingTxId).flatMap(_.localFundingStatus.liquidityPurchase_opt)
   }
@@ -1164,7 +1230,7 @@ case class Commitments(params: ChannelParams,
    * @param updateMethod This method is tricky: it passes the fundingTxIndex of the commitment corresponding to the
    *                     fundingTxId, because in the remote case we may update several commitments.
    */
-  private def updateFundingStatus(fundingTxId: TxId, updateMethod: Long => PartialFunction[Commitment, Commitment])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] = {
+  private def updateFundingStatus(fundingTxId: TxId, lastAnnouncedFundingTxId_opt: Option[TxId], updateMethod: Long => PartialFunction[Commitment, Commitment])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] = {
     all.find(_.fundingTxId == fundingTxId) match {
       case Some(commitment) =>
         val commitments1 = copy(
@@ -1172,7 +1238,7 @@ case class Commitments(params: ChannelParams,
           inactive = inactive.map(updateMethod(commitment.fundingTxIndex))
         )
         val commitment1 = commitments1.all.find(_.fundingTxId == fundingTxId).get // NB: this commitment might be pruned at the next line
-        val commitments2 = commitments1.deactivateCommitments().pruneCommitments()
+        val commitments2 = commitments1.deactivateCommitments().pruneCommitments(lastAnnouncedFundingTxId_opt)
         Right(commitments2, commitment1)
       case None =>
         log.warning(s"fundingTxId=$fundingTxId doesn't match any of our funding txs")
@@ -1180,16 +1246,16 @@ case class Commitments(params: ChannelParams,
     }
   }
 
-  def updateLocalFundingStatus(fundingTxId: TxId, status: LocalFundingStatus)(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
-    updateFundingStatus(fundingTxId, _ => {
+  def updateLocalFundingStatus(fundingTxId: TxId, status: LocalFundingStatus, lastAnnouncedFundingTxId_opt: Option[TxId])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
+    updateFundingStatus(fundingTxId, lastAnnouncedFundingTxId_opt, _ => {
       case c if c.fundingTxId == fundingTxId =>
         log.info(s"setting localFundingStatus=${status.getClass.getSimpleName} for fundingTxId=${c.fundingTxId} fundingTxIndex=${c.fundingTxIndex}")
         c.copy(localFundingStatus = status)
       case c => c
     })
 
-  def updateRemoteFundingStatus(fundingTxId: TxId)(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
-    updateFundingStatus(fundingTxId, fundingTxIndex => {
+  def updateRemoteFundingStatus(fundingTxId: TxId, lastAnnouncedFundingTxId_opt: Option[TxId])(implicit log: LoggingAdapter): Either[Commitments, (Commitments, Commitment)] =
+    updateFundingStatus(fundingTxId, lastAnnouncedFundingTxId_opt, fundingTxIndex => {
       // all funding older than this one are considered locked
       case c if c.fundingTxId == fundingTxId || c.fundingTxIndex < fundingTxIndex =>
         log.info(s"setting remoteFundingStatus=${RemoteFundingStatus.Locked.getClass.getSimpleName} for fundingTxId=${c.fundingTxId} fundingTxIndex=${c.fundingTxIndex}")
@@ -1207,8 +1273,6 @@ case class Commitments(params: ChannelParams,
     // This ensures that we only have to send splice_locked for the latest commitment instead of sending it for every commitment.
     // A side-effect is that previous commitments that are implicitly locked don't necessarily have their status correctly set.
     // That's why we look at locked commitments separately and then select the one with the oldest fundingTxIndex.
-    val lastLocalLocked_opt = active.find(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked])
-    val lastRemoteLocked_opt = active.find(_.remoteFundingStatus == RemoteFundingStatus.Locked)
     val lastLocked_opt = (lastLocalLocked_opt, lastRemoteLocked_opt) match {
       // We select the locked commitment with the smaller value for fundingTxIndex, but both have to be defined.
       // If both have the same fundingTxIndex, they must actually be the same commitment, because:
@@ -1217,13 +1281,13 @@ case class Commitments(params: ChannelParams,
       //  - we don't allow creating a splice on top of an unconfirmed transaction that has RBF attempts (because it
       //    would become invalid if another of the RBF attempts end up being confirmed)
       case (Some(lastLocalLocked), Some(lastRemoteLocked)) => Some(Seq(lastLocalLocked, lastRemoteLocked).minBy(_.fundingTxIndex))
-      // Special case for the initial funding tx, we only require a local lock because channel_ready doesn't explicitly reference a funding tx.
+      // Special case for the initial funding tx, we only require a local lock because our peer may have never sent channel_ready.
       case (Some(lastLocalLocked), None) if lastLocalLocked.fundingTxIndex == 0 => Some(lastLocalLocked)
       case _ => None
     }
     lastLocked_opt match {
       case Some(lastLocked) =>
-        // all commitments older than this one are inactive
+        // All commitments older than this one, and RBF alternatives, become inactive.
         val inactive1 = active.filter(c => c.fundingTxId != lastLocked.fundingTxId && c.fundingTxIndex <= lastLocked.fundingTxIndex)
         inactive1.foreach(c => log.info("deactivating commitment fundingTxIndex={} fundingTxId={}", c.fundingTxIndex, c.fundingTxId))
         copy(
@@ -1237,19 +1301,33 @@ case class Commitments(params: ChannelParams,
 
   /**
    * We can prune commitments in two cases:
-   * - their funding tx has been permanently double-spent by the funding tx of a concurrent commitment (happens when using RBF)
-   * - their funding tx has been permanently spent by a splice tx
+   *  - their funding tx has been permanently double-spent by the funding tx of a concurrent commitment (happens when using RBF)
+   *  - their funding tx has been permanently spent by a splice tx
+   *
+   * But we need to keep our last announced commitment if the channel is public, even if it has been permanently spent
+   * by a newer splice tx that hasn't been announced yet, otherwise we won't know which short_channel_id to use when
+   * creating channel_updates.
    */
-  private def pruneCommitments()(implicit log: LoggingAdapter): Commitments = {
+  private def pruneCommitments(lastAnnouncedFundingTxId_opt: Option[TxId])(implicit log: LoggingAdapter): Commitments = {
     all
       .filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
       .sortBy(_.fundingTxIndex)
       .lastOption match {
       case Some(lastConfirmed) =>
-        // We can prune all other commitments with the same or lower funding index.
         // NB: we cannot prune active commitments, even if we know that they have been double-spent, because our peer
         // may not yet be aware of it, and will expect us to send commit_sig.
-        val pruned = inactive.filter(c => c.fundingTxId != lastConfirmed.fundingTxId && c.fundingTxIndex <= lastConfirmed.fundingTxIndex)
+        val pruned = if (params.announceChannel) {
+          // If the most recently confirmed commitment isn't announced yet, we cannot prune the last commitment we
+          // announced, because our channel updates are based on its announcement (and its short_channel_id).
+          // If we never announced the channel, we don't need to announce old commitments, we will directly announce the last one.
+          val lastAnnouncedFundingTxIndex_opt = lastAnnouncedFundingTxId_opt.flatMap(txId => all.find(_.fundingTxId == txId).map(_.fundingTxIndex))
+          val pruningIndex = lastAnnouncedFundingTxIndex_opt.getOrElse(lastConfirmed.fundingTxIndex)
+          // We can prune all RBF candidates, and commitments that came before the last announced one.
+          inactive.filter(c => c.fundingTxIndex < pruningIndex || (c.fundingTxIndex == lastConfirmed.fundingTxIndex && c.fundingTxId != lastConfirmed.fundingTxId))
+        } else {
+          // We can prune all other commitments with the same or lower funding index.
+          inactive.filter(c => c.fundingTxIndex <= lastConfirmed.fundingTxIndex && c.fundingTxId != lastConfirmed.fundingTxId)
+        }
         pruned.foreach(c => log.info("pruning commitment fundingTxIndex={} fundingTxId={}", c.fundingTxIndex, c.fundingTxId))
         copy(inactive = inactive diff pruned)
       case _ =>
@@ -1264,6 +1342,11 @@ case class Commitments(params: ChannelParams,
    */
   def resolveCommitment(spendingTx: Transaction): Option[Commitment] = {
     all.find(c => spendingTx.txIn.map(_.outPoint).contains(c.commitInput.outPoint))
+  }
+
+  /** Find the corresponding commitment based on its short_channel_id (once funding transaction is confirmed). */
+  def resolveCommitment(shortChannelId: RealShortChannelId): Option[Commitment] = {
+    all.find(c => c.shortChannelId_opt.contains(shortChannelId))
   }
 }
 

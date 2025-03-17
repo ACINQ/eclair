@@ -8,7 +8,7 @@ import fr.acinq.eclair.payment.PaymentPacketSpec.{paymentHash, paymentSecret}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.ClearRecipient
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Graph.PaymentWeightRatios
 import fr.acinq.eclair.router.RouteCalculation.{findMultiPartRoute, findRoute}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Transactions
@@ -32,7 +32,7 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       makeEdge(10L, a, b, minHtlc = 2 msat, feeBase = 0 msat, feeProportionalMillionth = 120, inboundFeeBase_opt = Some(0.msat), inboundFeeProportionalMillionth_opt = Some(-71)),
     ))
 
-    val Success(route :: Nil) = findRoute(g, a, b, 10_000_000 msat, 10_000_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(includeLocalChannelCost = true), currentBlockHeight = BlockHeight(400000))
+    val Success(route :: Nil) = findRoute(g, a, b, 10_000_000 msat, 10_000_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(includeLocalChannelCost = true), currentBlockHeight = BlockHeight(400000), blip18InboundFees = true, excludePositiveInboundFees = true)
 
     assert(route.channelFee(true) == 1200.msat)
   }
@@ -53,7 +53,7 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       makeEdge(13L, e, d, minHtlc = 2 msat, inboundFeeBase_opt = Some(2000 msat), inboundFeeProportionalMillionth_opt = Some(80_000)),
     ))
 
-    val Success(route :: Nil) = findRoute(g, a, e, 100_000 msat, 100_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+    val Success(route :: Nil) = findRoute(g, a, e, 100_000 msat, 100_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18InboundFees = true, excludePositiveInboundFees = false)
 
     assert(route.channelFee(false) == 15_302.msat)
 
@@ -106,7 +106,7 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       makeEdge(13L, e, d, minHtlc = 2 msat, inboundFeeBase_opt = Some(2000 msat), inboundFeeProportionalMillionth_opt = Some(80_000)),
     ))
 
-    val Success(route :: Nil) = findRoute(g, a, e, 100_000 msat, 100_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(blip18InboundFees = false), currentBlockHeight = BlockHeight(400000))
+    val Success(route :: Nil) = findRoute(g, a, e, 100_000 msat, 100_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18InboundFees = false, excludePositiveInboundFees = false)
 
     assert(route.channelFee(false) == 32_197.msat)
 
@@ -159,7 +159,7 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       makeEdge(13L, e, d, minHtlc = 2 msat, inboundFeeBase_opt = Some(2000 msat), inboundFeeProportionalMillionth_opt = Some(80_000)),
     ))
 
-    val Success(route :: Nil) = findMultiPartRoute(g, a, e, 100_000 msat, 100_000 msat, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+    val Success(route :: Nil) = findMultiPartRoute(g, a, e, 100_000 msat, 100_000 msat, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18InboundFees = true, excludePositiveInboundFees = false)
 
     assert(route.channelFee(false) == 15_302.msat)
 
@@ -212,7 +212,7 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       makeEdge(13L, e, d, minHtlc = 2 msat, inboundFeeBase_opt = Some(2000 msat), inboundFeeProportionalMillionth_opt = Some(80_000)),
     ))
 
-    val Success(route :: Nil) = findMultiPartRoute(g, a, e, 100_000 msat, 100_000 msat, routeParams = DEFAULT_ROUTE_PARAMS.copy(blip18InboundFees = false), currentBlockHeight = BlockHeight(400000))
+    val Success(route :: Nil) = findMultiPartRoute(g, a, e, 100_000 msat, 100_000 msat, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18InboundFees = false, excludePositiveInboundFees = false)
 
     assert(route.channelFee(false) == 32_197.msat)
 
@@ -251,7 +251,6 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
 
   test("calculate Blip18 simple route with a positive inbound fees channel") {
     // channels with positive (greater than 0) inbound fees should be automatically excluded from path finding
-    val ROUTE_PARAMS = DEFAULT_ROUTE_PARAMS.copy(excludePositiveInboundFees = true)
 
     {
       val g = DirectedGraph(List(
@@ -262,7 +261,7 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
         makeEdge(4L, d, e, 1 msat, 10, cltvDelta = CltvExpiryDelta(1))
       ))
 
-      val res = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+      val res = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18InboundFees = true, excludePositiveInboundFees = true)
       assert(res == Failure(RouteNotFound))
     }
     {
@@ -274,7 +273,7 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
         makeEdge(4L, d, e, 1 msat, 10, cltvDelta = CltvExpiryDelta(1))
       ))
 
-      val res = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+      val res = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18InboundFees = true, excludePositiveInboundFees = true)
       assert(res == Failure(RouteNotFound))
     }
     {
@@ -286,7 +285,7 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
         makeEdge(4L, d, e, 1 msat, 10, cltvDelta = CltvExpiryDelta(1))
       ))
 
-      val res = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+      val res = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18InboundFees = true, excludePositiveInboundFees = true)
       assert(res == Failure(RouteNotFound))
     }
     {
@@ -298,7 +297,7 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
         makeEdge(4L, d, e, 1 msat, 10, cltvDelta = CltvExpiryDelta(1))
       ))
 
-      val res = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+      val res = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18InboundFees = true, excludePositiveInboundFees = true)
       assert(res == Failure(RouteNotFound))
     }
     {
@@ -310,7 +309,7 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
         makeEdge(4L, d, e, 1 msat, 10, cltvDelta = CltvExpiryDelta(1))
       ))
 
-      val res = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
+      val res = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18InboundFees = true, excludePositiveInboundFees = true)
       assert(res == Failure(RouteNotFound))
     }
   }
@@ -324,15 +323,14 @@ object Blip18RouteCalculationSpec {
   val DEFAULT_EXPIRY = CltvExpiry(TestConstants.defaultBlockHeight)
   val DEFAULT_CAPACITY = 100_000 sat
 
-  val NO_WEIGHT_RATIOS: WeightRatios = WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))
+  val NO_WEIGHT_RATIOS: PaymentWeightRatios = PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))
   val DEFAULT_ROUTE_PARAMS = PathFindingConf(
     randomize = false,
     boundaries = SearchBoundaries(21000 msat, 0.03, 6, CltvExpiryDelta(2016)),
-    Left(NO_WEIGHT_RATIOS),
+    NO_WEIGHT_RATIOS,
     MultiPartParams(1000 msat, 10),
     experimentName = "my-test-experiment",
-    experimentPercentage = 100,
-    blip18InboundFees = true).getDefaultRouteParams
+    experimentPercentage = 100).getDefaultRouteParams
 
   val DUMMY_SIG = Transactions.PlaceHolderSig
 

@@ -77,11 +77,11 @@ object Sync {
     // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
     val shortChannelIds: SortedSet[RealShortChannelId] = channels.keySet.filter(keep(q.firstBlock, q.numberOfBlocks, _))
     log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlock, q.numberOfBlocks)
-    val chunks = split(shortChannelIds, q.firstBlock, q.numberOfBlocks, routerConf.channelRangeChunkSize)
+    val chunks = split(shortChannelIds, q.firstBlock, q.numberOfBlocks, routerConf.syncConf.channelRangeChunkSize)
     Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
     chunks.zipWithIndex.foreach { case (chunk, i) =>
       val syncComplete = i == chunks.size - 1
-      val reply = buildReplyChannelRange(chunk, syncComplete, q.chainHash, routerConf.encodingType, q.queryFlags_opt, channels)
+      val reply = buildReplyChannelRange(chunk, syncComplete, q.chainHash, routerConf.syncConf.encodingType, q.queryFlags_opt, channels)
       origin.peerConnection ! reply
       Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
       Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
@@ -111,7 +111,7 @@ object Sync {
           ids match {
             case Nil => acc.reverse
             case head :: tail =>
-              val flag = computeFlag(d.channels)(head, timestamps.headOption, checksums.headOption, routerConf.requestNodeAnnouncements)
+              val flag = computeFlag(d.channels)(head, timestamps.headOption, checksums.headOption, routerConf.syncConf.requestNodeAnnouncements)
               // 0 means nothing to query, just don't include it
               val acc1 = if (flag != 0) ShortChannelIdAndFlag(head, flag) :: acc else acc
               loop(tail, timestamps.drop(1), checksums.drop(1), acc1)
@@ -144,7 +144,7 @@ object Sync {
 
         // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
         val replies = shortChannelIdAndFlags
-          .grouped(routerConf.channelQueryChunkSize)
+          .grouped(routerConf.syncConf.channelQueryChunkSize)
           .map(buildQuery)
           .toList
 

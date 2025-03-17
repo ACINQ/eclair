@@ -125,14 +125,10 @@
     "remotePerCommitmentSecrets" : null,
     "originChannels" : { }
   },
-  "shortIds" : {
-    "real" : {
-      "status" : "final",
-      "realScid" : "2026958x1x0"
-    },
+  "aliases" : {
     "localAlias" : "0x1eedce0000010000"
   },
-  "channelAnnouncement" : {
+  "lastAnnouncement_opt" : {
     "nodeSignature1" : "98d7a81bc1aa92fcfb74ced2213e85e0d92ae8ac622bf294b3551c7c27f6f84f782f3b318e4d0eb2c67ac719a7c65afcf85bf159f6ceea9427be549201341969",
     "nodeSignature2" : "92f6ed0e059db72105a13ec0e799bb08896cad8b4feb7e9ec7283c309b5f43123af1bd9e913fc2db018edadde8932d6992408f10c1ad020504361972dfa7fef0",
     "bitcoinSignature1" : "9bbc2b568cef3c8c006f7860106fd5984bcc271ff06c4829db2a665e59b7c0b22c311a340ff2ab9bcb74a50db10ed85503ad2d248d95af8151aca8ef96248e8f",

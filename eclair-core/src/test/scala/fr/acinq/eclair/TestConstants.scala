@@ -26,10 +26,11 @@ import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
 import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection, PeerReadyNotifier}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
+import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
-import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
-import fr.acinq.eclair.router.PathFindingExperimentConf
+import fr.acinq.eclair.router.Graph.{MessageWeightRatios, PaymentWeightRatios}
+import fr.acinq.eclair.router.{PathFindingExperimentConf, Router}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Tag
@@ -108,12 +109,12 @@ object TestConstants {
           Features.StaticRemoteKey -> FeatureSupport.Mandatory,
           Features.Quiescence -> FeatureSupport.Optional,
           Features.SplicePrototype -> FeatureSupport.Optional,
+          Features.ProvideStorage -> FeatureSupport.Optional,
         ),
         unknown = Set(UnknownFeature(TestFeature.optional))
       ),
       pluginParams = List(pluginParams),
       overrideInitFeatures = Map.empty,
-      syncWhitelist = Set.empty,
       channelConf = ChannelConf(
         dustLimit = 1100 sat,
         maxRemoteDustLimit = 1500 sat,
@@ -127,9 +128,10 @@ object TestConstants {
         maxRestartWatchDelay = 0 millis,
         maxBlockProcessingDelay = 10 millis,
         maxTxPublishRetryDelay = 10 millis,
+        scanPreviousBlocksDepth = 3,
         maxChannelSpentRescanBlocks = 144,
         htlcMinimum = 0 msat,
-        minDepthBlocks = 3,
+        minDepth = 6,
         toRemoteDelay = CltvExpiryDelta(144),
         maxToLocalDelay = CltvExpiryDelta(1000),
         reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -143,6 +145,7 @@ object TestConstants {
         channelOpenerWhitelist = Set.empty,
         maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99,
+        channelFundingTimeout = 30 seconds,
         remoteRbfLimits = RemoteRbfLimits(5, 0),
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
@@ -194,10 +197,14 @@ object TestConstants {
         watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
-        requestNodeAnnouncements = true,
-        encodingType = EncodingType.COMPRESSED_ZLIB,
-        channelRangeChunkSize = 20,
-        channelQueryChunkSize = 5,
+        syncConf = Router.SyncConf(
+          requestNodeAnnouncements = true,
+          encodingType = EncodingType.COMPRESSED_ZLIB,
+          channelRangeChunkSize = 20,
+          channelQueryChunkSize = 5,
+          peerLimit = 10,
+          whitelist = Set.empty,
+        ),
         pathFindingExperimentConf = PathFindingExperimentConf(Map("alice-test-experiment" -> PathFindingConf(
           randomize = false,
           boundaries = SearchBoundaries(
@@ -205,21 +212,23 @@ object TestConstants {
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          heuristics = Left(WeightRatios(
+          heuristics = PaymentWeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
             capacityFactor = 0.0,
-            hopCost = RelayFees(0 msat, 0),
-          )),
+            hopFees = RelayFees(0 msat, 0),
+          ),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
             maxParts = 10,
           ),
           experimentName = "alice-test-experiment",
           experimentPercentage = 100))),
-        messageRouteParams = MessageRouteParams(8, MessagePath.WeightRatios(0.7, 0.1, 0.2)),
+        messageRouteParams = MessageRouteParams(8, MessageWeightRatios(0.7, 0.1, 0.2)),
         balanceEstimateHalfLife = 1 day,
+        blip18InboundFees = false,
+        excludePositiveInboundFees = false,
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
@@ -237,9 +246,11 @@ object TestConstants {
       ),
       purgeInvoicesInterval = None,
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
-      willFundRates_opt = Some(defaultLiquidityRates),
+      liquidityAdsConfig = LiquidityAds.Config(Some(defaultLiquidityRates), lockUtxos = true),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
+      peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour),
+      offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -289,7 +300,6 @@ object TestConstants {
       ),
       pluginParams = Nil,
       overrideInitFeatures = Map.empty,
-      syncWhitelist = Set.empty,
       channelConf = ChannelConf(
         dustLimit = 1000 sat,
         maxRemoteDustLimit = 1500 sat,
@@ -303,9 +313,10 @@ object TestConstants {
         maxRestartWatchDelay = 5 millis,
         maxBlockProcessingDelay = 10 millis,
         maxTxPublishRetryDelay = 10 millis,
+        scanPreviousBlocksDepth = 3,
         maxChannelSpentRescanBlocks = 144,
         htlcMinimum = 1000 msat,
-        minDepthBlocks = 3,
+        minDepth = 3,
         toRemoteDelay = CltvExpiryDelta(144),
         maxToLocalDelay = CltvExpiryDelta(1000),
         reserveToFundingRatio = 0.01, // note: not used (overridden below)
@@ -319,6 +330,7 @@ object TestConstants {
         channelOpenerWhitelist = Set.empty,
         maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99,
+        channelFundingTimeout = 30 seconds,
         remoteRbfLimits = RemoteRbfLimits(10, 0),
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
@@ -370,10 +382,14 @@ object TestConstants {
         watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
-        requestNodeAnnouncements = true,
-        encodingType = EncodingType.UNCOMPRESSED,
-        channelRangeChunkSize = 20,
-        channelQueryChunkSize = 5,
+        syncConf = Router.SyncConf(
+          requestNodeAnnouncements = true,
+          encodingType = EncodingType.UNCOMPRESSED,
+          channelRangeChunkSize = 20,
+          channelQueryChunkSize = 5,
+          peerLimit = 20,
+          whitelist = Set.empty
+        ),
         pathFindingExperimentConf = PathFindingExperimentConf(Map("bob-test-experiment" -> PathFindingConf(
           randomize = false,
           boundaries = SearchBoundaries(
@@ -381,21 +397,23 @@ object TestConstants {
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          heuristics = Left(WeightRatios(
+          heuristics = PaymentWeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
             capacityFactor = 0.0,
-            hopCost = RelayFees(0 msat, 0),
-          )),
+            hopFees = RelayFees(0 msat, 0),
+          ),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
             maxParts = 10,
           ),
           experimentName = "bob-test-experiment",
           experimentPercentage = 100))),
-        messageRouteParams = MessageRouteParams(9, MessagePath.WeightRatios(0.5, 0.2, 0.3)),
+        messageRouteParams = MessageRouteParams(9, MessageWeightRatios(0.5, 0.2, 0.3)),
         balanceEstimateHalfLife = 1 day,
+        blip18InboundFees = false,
+        excludePositiveInboundFees = false,
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
@@ -413,9 +431,11 @@ object TestConstants {
       ),
       purgeInvoicesInterval = None,
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
-      willFundRates_opt = Some(defaultLiquidityRates),
+      liquidityAdsConfig = LiquidityAds.Config(Some(defaultLiquidityRates), lockUtxos = true),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
+      peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour),
+      offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(

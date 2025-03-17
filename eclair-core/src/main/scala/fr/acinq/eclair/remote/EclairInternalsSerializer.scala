@@ -24,7 +24,7 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentPathWeight, PaymentWeightRatios, WeightRatios}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
@@ -57,18 +57,23 @@ object EclairInternalsSerializer {
     ("feeBase" | millisatoshi) ::
       ("feeProportionalMillionths" | int64)).as[RelayFees]
 
-  val weightRatiosCodec: Codec[WeightRatios] = (
+  val paymentWeightRatiosCodec: Codec[PaymentWeightRatios] = (
     ("baseFactor" | double) ::
       ("cltvDeltaFactor" | double) ::
       ("ageFactor" | double) ::
       ("capacityFactor" | double) ::
-      ("hopCost" | relayFeesCodec)).as[WeightRatios]
+      ("hopCost" | relayFeesCodec)).as[PaymentWeightRatios]
 
   val heuristicsConstantsCodec: Codec[HeuristicsConstants] = (
     ("lockedFundsRisk" | double) ::
       ("failureCost" | relayFeesCodec) ::
       ("hopCost" | relayFeesCodec) ::
       ("useLogProbability" | bool(8))).as[HeuristicsConstants]
+
+  val weightRatiosCodec: Codec[WeightRatios[PaymentPathWeight]] =
+    discriminated[WeightRatios[PaymentPathWeight]].by(uint8)
+      .typecase(0x00, paymentWeightRatiosCodec)
+      .typecase(0xff, heuristicsConstantsCodec)
 
   val multiPartParamsCodec: Codec[MultiPartParams] = (
     ("minPartAmount" | millisatoshi) ::
@@ -77,12 +82,10 @@ object EclairInternalsSerializer {
   val pathFindingConfCodec: Codec[PathFindingConf] = (
     ("randomize" | bool(8)) ::
       ("boundaries" | searchBoundariesCodec) ::
-      ("heuristicsParams" | either(bool(8), weightRatiosCodec, heuristicsConstantsCodec)) ::
+      ("heuristicsParams" | weightRatiosCodec) ::
       ("mpp" | multiPartParamsCodec) ::
       ("experimentName" | utf8_32) ::
-      ("experimentPercentage" | int32) ::
-      ("blip18InboundFees" | bool(8)) ::
-      ("excludePositiveInboundFees" | bool(8))).as[PathFindingConf]
+      ("experimentPercentage" | int32)).as[PathFindingConf]
 
   val pathFindingExperimentConfCodec: Codec[PathFindingExperimentConf] = (
     "experiments" | listOfN(int32, pathFindingConfCodec).xmap[Map[String, PathFindingConf]](_.map(e => e.experimentName -> e).toMap, _.values.toList)
@@ -92,21 +95,28 @@ object EclairInternalsSerializer {
     ("maxRouteLength" | int32) ::
       (("baseFactor" | double) ::
       ("ageFactor" | double) ::
-      ("capacityFactor" | double)).as[Graph.MessagePath.WeightRatios]).as[MessageRouteParams]
+      ("capacityFactor" | double)).as[Graph.MessageWeightRatios]).as[MessageRouteParams]
 
-  val routerConfCodec: Codec[RouterConf] = (
-    ("watchSpentWindow" | finiteDurationCodec) ::
-      ("channelExcludeDuration" | finiteDurationCodec) ::
-      ("routerBroadcastInterval" | finiteDurationCodec) ::
-      ("requestNodeAnnouncements" | bool(8)) ::
+  val syncConfCodec: Codec[Router.SyncConf] = (
+    ("requestNodeAnnouncements" | bool(8)) ::
       ("encodingType" | discriminated[EncodingType].by(uint8)
         .typecase(0, provide(EncodingType.UNCOMPRESSED))
         .typecase(1, provide(EncodingType.COMPRESSED_ZLIB))) ::
       ("channelRangeChunkSize" | int32) ::
       ("channelQueryChunkSize" | int32) ::
+      ("peerLimit" | int32) ::
+      ("whitelist" | listOfN(uint16, publicKey).xmap[Set[PublicKey]](_.toSet, _.toList))).as[Router.SyncConf]
+
+  val routerConfCodec: Codec[RouterConf] = (
+    ("watchSpentWindow" | finiteDurationCodec) ::
+      ("channelExcludeDuration" | finiteDurationCodec) ::
+      ("routerBroadcastInterval" | finiteDurationCodec) ::
+      ("syncConf" | syncConfCodec) ::
       ("pathFindingExperimentConf" | pathFindingExperimentConfCodec) ::
       ("messageRouteParams" | messageRouteParamsCodec) ::
-      ("balanceEstimateHalfLife" | finiteDurationCodec)).as[RouterConf]
+      ("balanceEstimateHalfLife" | finiteDurationCodec) ::
+      ("blip18InboundFees" | bool(8)) ::
+      ("excludePositiveInboundFees" | bool(8))).as[RouterConf]
 
   val overrideFeaturesListCodec: Codec[List[(PublicKey, Features[Feature])]] = listOfN(uint16, publicKey ~ lengthPrefixedFeaturesCodec)
 

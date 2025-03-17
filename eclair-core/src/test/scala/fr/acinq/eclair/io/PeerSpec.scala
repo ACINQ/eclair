@@ -28,6 +28,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentFeerates, DummyOnChainWallet}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
@@ -38,7 +39,7 @@ import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Inside.inside
 import org.scalatest.{Tag, TestData}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.net.InetSocketAddress
 import java.nio.channels.ServerSocketChannel
@@ -76,6 +77,7 @@ class PeerSpec extends FixtureSpec {
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.DualFunding))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional))
       .modify(_.channelConf.maxHtlcValueInFlightMsat).setToIf(testData.tags.contains("max-htlc-value-in-flight-percent"))(100_000_000 msat)
       .modify(_.channelConf.maxHtlcValueInFlightPercent).setToIf(testData.tags.contains("max-htlc-value-in-flight-percent"))(25)
+      .modify(_.channelConf.channelFundingTimeout).setToIf(testData.tags.contains("channel_funding_timeout"))(100 millis)
       .modify(_.autoReconnect).setToIf(testData.tags.contains("auto_reconnect"))(true)
 
     if (testData.tags.contains("with_node_announcement")) {
@@ -108,11 +110,14 @@ class PeerSpec extends FixtureSpec {
 
   def cleanupFixture(fixture: FixtureParam): Unit = fixture.cleanup()
 
-  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[PersistentChannelData] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()))(implicit system: ActorSystem): Unit = {
+  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[PersistentChannelData] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()), initializePeer: Boolean = true, peerStorage: Option[ByteVector] = None)(implicit system: ActorSystem): Unit = {
     // let's simulate a connection
-    switchboard.send(peer, Peer.Init(channels, Map.empty))
+    if (initializePeer) {
+      switchboard.send(peer, Peer.Init(channels, Map.empty))
+    }
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress, outgoing = true, localInit, remoteInit))
+    peerStorage.foreach(data => peerConnection.expectMsg(PeerStorageRetrieval(data)))
     peerConnection.expectMsgType[RecommendedFeerates]
     val probe = TestProbe()
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
@@ -554,7 +559,7 @@ class PeerSpec extends FixtureSpec {
     assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
-    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentBitcoinCoreFeerates))
+    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing))
   }
 
   test("use correct on-chain fee rates when spawning a channel (anchor outputs zero fee htlc)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -572,7 +577,7 @@ class PeerSpec extends FixtureSpec {
     assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
-    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentBitcoinCoreFeerates))
+    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing))
   }
 
   test("use correct final script if option_static_remotekey is negotiated", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
@@ -715,6 +720,17 @@ class PeerSpec extends FixtureSpec {
     assert(channelAborted.channelId == open.temporaryChannelId)
   }
 
+  test("abort incoming channel after funding timeout", Tag(ChannelStateTestsTags.DualFunding), Tag("channel_funding_timeout")) { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional)))
+    val open = createOpenDualFundedChannelMessage()
+    peerConnection.send(peer, open)
+    assert(channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR].dualFunded)
+    channel.expectMsg(open)
+    channel.expectMsg(Channel.TickChannelOpenTimeout)
+  }
+
   test("kill peer with no channels if connection dies before receiving `ConnectionReady`") { f =>
     import f._
     val probe = TestProbe()
@@ -752,6 +768,114 @@ class PeerSpec extends FixtureSpec {
     channel.expectMsg(open)
   }
 
+  test("store remote peer storage once we have channels") { f =>
+    import f._
+
+    // We connect with a previous backup.
+    val channel = ChannelCodecsSpec.normal
+    val peerConnection1 = peerConnection
+    nodeParams.db.peers.updateStorage(remoteNodeId, hex"abcdef")
+    connect(remoteNodeId, peer, peerConnection1, switchboard, channels = Set(channel), peerStorage = Some(hex"abcdef"))
+    peer ! ChannelReadyForPayments(ActorRef.noSender, channel.remoteNodeId, channel.channelId, channel.commitments.latest.fundingTxIndex)
+    peerConnection1.send(peer, PeerStorageStore(hex"deadbeef"))
+    peerConnection1.send(peer, PeerStorageStore(hex"0123456789"))
+
+    // We disconnect and reconnect, sending the last backup we received.
+    val peerConnection2 = TestProbe()
+    connect(remoteNodeId, peer, peerConnection2, switchboard, channels = Set(ChannelCodecsSpec.normal), initializePeer = false, peerStorage = Some(hex"0123456789"))
+    peerConnection2.send(peer, PeerStorageStore(hex"1111"))
+
+    // We reconnect again.
+    val peerConnection3 = TestProbe()
+    connect(remoteNodeId, peer, peerConnection3, switchboard, channels = Set(ChannelCodecsSpec.normal), initializePeer = false, peerStorage = Some(hex"1111"))
+    // Because of the delayed writes, we may not have stored the latest value immediately, but we will eventually store it.
+    eventually {
+      assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111"))
+    }
+
+    // Our channel closes, so we stop storing backups for that peer.
+    peer ! LocalChannelDown(ActorRef.noSender, channel.channelId, channel.lastAnnouncement_opt.map(_.shortChannelId).toSeq, channel.aliases, channel.remoteNodeId)
+    peerConnection3.send(peer, PeerStorageStore(hex"2222"))
+    assert(!peer.isTimerActive("peer-storage-write"))
+    assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111"))
+  }
+
+  test("store remote features when channel confirms") { f =>
+    import f._
+
+    // When we make an outgoing connection, we store the peer details in our DB.
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).isEmpty)
+    connect(remoteNodeId, peer, peerConnection, switchboard)
+    val Some(nodeInfo1) = nodeParams.db.peers.getPeer(remoteNodeId)
+    assert(nodeInfo1.features == TestConstants.Bob.nodeParams.features.initFeatures())
+    assert(nodeInfo1.address_opt.contains(fakeIPAddress))
+
+    // We disconnect and our peer connects to us: we don't have any channel, so we don't update the DB entry.
+    val peerConnection2 = TestProbe()
+    val address2 = Tor3("of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad", 9735)
+    val remoteFeatures2 = Features(Features.ChannelType -> FeatureSupport.Mandatory).initFeatures()
+    switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection2.ref, remoteNodeId, address2, outgoing = false, protocol.Init(Features.empty), protocol.Init(remoteFeatures2)))
+    val probe = TestProbe()
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    assert(probe.expectMsgType[Peer.PeerInfo].address.contains(address2))
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).contains(nodeInfo1))
+
+    // A channel is created, so we update the remote features in our DB.
+    // We don't update the address because this was an incoming connection.
+    peer ! ChannelReadyForPayments(ActorRef.noSender, remoteNodeId, randomBytes32(), 0)
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    assert(probe.expectMsgType[Peer.PeerInfo].features.contains(remoteFeatures2))
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).contains(nodeInfo1.copy(features = remoteFeatures2)))
+  }
+
+  test("store remote features when channel confirms while disconnected") { f =>
+    import f._
+
+    // When we receive an incoming connection, we don't store the peer details in our DB.
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).isEmpty)
+    switchboard.send(peer, Peer.Init(Set.empty, Map.empty))
+    val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
+    val remoteInit = protocol.Init(TestConstants.Bob.nodeParams.features.initFeatures())
+    switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress, outgoing = false, localInit, remoteInit))
+    val probe = TestProbe()
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.CONNECTED)
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).isEmpty)
+
+    // Our peer wants to open a channel to us, but we disconnect before we have a confirmed channel.
+    peer ! SpawnChannelNonInitiator(Left(createOpenChannelMessage()), ChannelConfig.standard, ChannelTypes.Standard(), None, localParams, peerConnection.ref)
+    peer ! Peer.ConnectionDown(peerConnection.ref)
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.DISCONNECTED)
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).isEmpty)
+
+    // The channel confirms, so we store the remote features in our DB.
+    // We don't store the remote address because this was an incoming connection.
+    peer ! ChannelReadyForPayments(ActorRef.noSender, remoteNodeId, randomBytes32(), 0)
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.DISCONNECTED)
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).contains(NodeInfo(remoteInit.features, None)))
+  }
+
+  test("get remote features from DB") { f =>
+    import f._
+
+    // We have information about one of our peers in our DB.
+    val nodeInfo = NodeInfo(TestConstants.Bob.nodeParams.features.initFeatures(), None)
+    nodeParams.db.peers.addOrUpdatePeerFeatures(remoteNodeId, nodeInfo.features)
+
+    // We initialize ourselves after a restart, but our peer doesn't reconnect immediately to us.
+    switchboard.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal), Map.empty))
+    // When we request information about the peer, we will fetch it from the DB.
+    val probe = TestProbe()
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    val peerInfo = probe.expectMsgType[Peer.PeerInfo]
+    assert(peerInfo.state == Peer.DISCONNECTED)
+    assert(peerInfo.address.isEmpty)
+    assert(peerInfo.features.contains(nodeInfo.features))
+    assert(nodeParams.db.peers.getPeer(remoteNodeId).contains(nodeInfo))
+  }
+
 }
 
 object PeerSpec {
@@ -767,11 +891,11 @@ object PeerSpec {
   }
 
   def createOpenChannelMessage(openTlv: TlvStream[OpenChannelTlv] = TlvStream.empty): protocol.OpenChannel = {
-    protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, ChannelFlags(announceChannel = false), openTlv)
+    protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 250_000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, ChannelFlags(announceChannel = false), openTlv)
   }
 
   def createOpenDualFundedChannelMessage(): protocol.OpenDualFundedChannel = {
-    protocol.OpenDualFundedChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), TestConstants.feeratePerKw, TestConstants.anchorOutputsFeeratePerKw, 25000 sat, 483 sat, UInt64(100), 1 msat, CltvExpiryDelta(144), 10, 0, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, ChannelFlags(announceChannel = false))
+    protocol.OpenDualFundedChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), TestConstants.feeratePerKw, TestConstants.anchorOutputsFeeratePerKw, 250_000 sat, 483 sat, UInt64(100), 1 msat, CltvExpiryDelta(144), 10, 0, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, ChannelFlags(announceChannel = false))
   }
 
 }

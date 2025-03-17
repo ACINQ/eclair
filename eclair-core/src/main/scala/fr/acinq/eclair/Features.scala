@@ -275,6 +275,11 @@ object Features {
     val mandatory = 38
   }
 
+  case object ProvideStorage extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_provide_storage"
+    val mandatory = 42
+  }
+
   case object ChannelType extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_channel_type"
     val mandatory = 44
@@ -298,6 +303,17 @@ object Features {
   case object KeySend extends Feature with NodeFeature {
     val rfcName = "keysend"
     val mandatory = 54
+  }
+
+  case object SimpleClose extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_simple_close"
+    val mandatory = 60
+  }
+
+  /** This feature bit indicates that the node is a mobile wallet that can be woken up via push notifications. */
+  case object WakeUpNotificationClient extends Feature with InitFeature {
+    val rfcName = "wake_up_notification_client"
+    val mandatory = 132
   }
 
   // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
@@ -358,11 +374,14 @@ object Features {
     DualFunding,
     Quiescence,
     OnionMessages,
+    ProvideStorage,
     ChannelType,
     ScidAlias,
     PaymentMetadata,
     ZeroConf,
     KeySend,
+    SimpleClose,
+    WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
     SplicePrototype,
@@ -380,6 +399,7 @@ object Features {
     RouteBlinding -> (VariableLengthOnion :: Nil),
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
+    SimpleClose -> (ShutdownAnySegwit :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
     OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)

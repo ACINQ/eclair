@@ -23,19 +23,20 @@ import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{BalanceThreshold, ChannelConf, UnhandledExceptionStrategy}
-import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelType, ChannelTypes}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.{PeerConnection, PeerReadyNotifier}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
+import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentWeightRatios}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf}
+import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf, Router}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
@@ -66,7 +67,6 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       torAddress_opt: Option[NodeAddress],
                       features: Features[Feature],
                       private val overrideInitFeatures: Map[PublicKey, Features[InitFeature]],
-                      syncWhitelist: Set[PublicKey],
                       pluginParams: Seq[PluginParams],
                       channelConf: ChannelConf,
                       onChainFeeConf: OnChainFeeConf,
@@ -90,9 +90,11 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       onionMessageConfig: OnionMessageConfig,
                       purgeInvoicesInterval: Option[FiniteDuration],
                       revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config,
-                      willFundRates_opt: Option[LiquidityAds.WillFundRates],
+                      liquidityAdsConfig: LiquidityAds.Config,
                       peerWakeUpConfig: PeerReadyNotifier.WakeUpConfig,
-                      onTheFlyFundingConfig: OnTheFlyFunding.Config) {
+                      onTheFlyFundingConfig: OnTheFlyFunding.Config,
+                      peerStorageConfig: PeerStorageConfig,
+                      offersConfig: OffersConfig) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -107,6 +109,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   def currentBitcoinCoreFeerates: FeeratesPerKw = bitcoinCoreFeerates.get()
 
+  def currentFeeratesForFundingClosing: FeeratesPerKw = currentBitcoinCoreFeerates
+
   /** Only to be used in tests. */
   def setBitcoinCoreFeerates(value: FeeratesPerKw): Unit = bitcoinCoreFeerates.set(value)
 
@@ -118,7 +122,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
     // Independently of target and tolerance ratios, our transactions must be publishable in our local mempool
     val minimumFeerate = currentBitcoinCoreFeerates.minimum
     val feerateTolerance = onChainFeeConf.feerateToleranceFor(remoteNodeId)
-    val fundingFeerate = onChainFeeConf.getFundingFeerate(currentBitcoinCoreFeerates)
+    val fundingFeerate = onChainFeeConf.getFundingFeerate(currentFeeratesForFundingClosing)
     val fundingRange = RecommendedFeeratesTlv.FundingFeerateRange(
       min = (fundingFeerate * feerateTolerance.ratioLow).max(minimumFeerate),
       max = (fundingFeerate * feerateTolerance.ratioHigh).max(minimumFeerate),
@@ -153,6 +157,18 @@ case class PaymentFinalExpiryConf(min: CltvExpiryDelta, max: CltvExpiryDelta) {
       max
     }
     (minFinalExpiryDelta + additionalDelta).toCltvExpiry(currentBlockHeight)
+  }
+}
+
+/**
+ * @param writeDelay       delay before writing the peer's data to disk, which avoids doing multiple writes during bursts of storage updates.
+ * @param removalDelay     we keep our peer's data in our DB even after closing all of our channels with them, up to this duration.
+ * @param cleanUpFrequency frequency at which we go through the DB to remove unused storage.
+ */
+case class PeerStorageConfig(writeDelay: FiniteDuration, removalDelay: FiniteDuration, cleanUpFrequency: FiniteDuration) {
+  // NB: we don't use the arguments here, but they can be used in feature branches to override the default value.
+  def getWriteDelay(nodeId: PublicKey, remoteFeatures_opt: Option[Features[InitFeature]]): FiniteDuration = {
+    writeDelay
   }
 }
 
@@ -306,9 +322,12 @@ object NodeParams extends Logging {
       "channel.min-funding-satoshis" -> "channel.min-public-funding-satoshis, channel.min-private-funding-satoshis",
       // v0.8.0
       "bitcoind.batch-requests" -> "bitcoind.batch-watcher-requests",
-      // vx.x.x
+      // v0.9.0
       "on-chain-fees.target-blocks.safe-utxos-threshold" -> "on-chain-fees.safe-utxos-threshold",
-      "on-chain-fees.target-blocks" -> "on-chain-fees.confirmation-priority"
+      "on-chain-fees.target-blocks" -> "on-chain-fees.confirmation-priority",
+      // v0.12.0
+      "channel.mindepth-blocks" -> "channel.min-depth-blocks",
+      "sync-whitelist" -> "router.sync.whitelist",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -350,6 +369,7 @@ object NodeParams extends Logging {
     require(fulfillSafetyBeforeTimeout * 2 < expiryDelta, "channel.fulfill-safety-before-timeout-blocks must be smaller than channel.expiry-delta-blocks / 2 because it effectively reduces that delta; if you want to increase this value, you may want to increase expiry-delta-blocks as well")
     val minFinalExpiryDelta = CltvExpiryDelta(config.getInt("channel.min-final-expiry-delta-blocks"))
     require(minFinalExpiryDelta > fulfillSafetyBeforeTimeout, "channel.min-final-expiry-delta-blocks must be strictly greater than channel.fulfill-safety-before-timeout-blocks; otherwise it may lead to undesired channel closure")
+    require(config.getInt("channel.min-depth-blocks") >= 6, "channel.min-depth-blocks must be at least 6 to ensure that channels are safe from reorgs, otherwise funds can be stolen")
 
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
@@ -402,8 +422,6 @@ object NodeParams extends Logging {
       p -> (f.copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature)): Features[InitFeature])
     }.toMap
 
-    val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
-
     val socksProxy_opt = parseSocks5ProxyParams(config)
 
     val publicTorAddress_opt = if (config.getBoolean("tor.publish-onion-address")) torAddress_opt else None
@@ -442,28 +460,26 @@ object NodeParams extends Logging {
         maxFeeFlat = Satoshi(config.getLong("boundaries.max-fee-flat-sat")).toMilliSatoshi,
         maxFeeProportional = config.getDouble("boundaries.max-fee-proportional-percent") / 100.0),
       heuristics = if (config.getBoolean("use-ratios")) {
-        Left(WeightRatios(
+        PaymentWeightRatios(
           baseFactor = config.getDouble("ratios.base"),
           cltvDeltaFactor = config.getDouble("ratios.cltv"),
           ageFactor = config.getDouble("ratios.channel-age"),
           capacityFactor = config.getDouble("ratios.channel-capacity"),
-          hopCost = getRelayFees(config.getConfig("hop-cost")),
-        ))
+          hopFees = getRelayFees(config.getConfig("hop-cost")),
+        )
       } else {
-        Right(HeuristicsConstants(
+        HeuristicsConstants(
           lockedFundsRisk = config.getDouble("locked-funds-risk"),
-          failureCost = getRelayFees(config.getConfig("failure-cost")),
-          hopCost = getRelayFees(config.getConfig("hop-cost")),
+          failureFees = getRelayFees(config.getConfig("failure-cost")),
+          hopFees = getRelayFees(config.getConfig("hop-cost")),
           useLogProbability = config.getBoolean("use-log-probability"),
-        ))
+        )
       },
       mpp = MultiPartParams(
         Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
         config.getInt("mpp.max-parts")),
       experimentName = name,
-      experimentPercentage = config.getInt("percentage"),
-      blip18InboundFees = config.getBoolean("blip18-inbound-fees"),
-      excludePositiveInboundFees = config.getBoolean("exclude-channels-with-positive-inbound-fees"))
+      experimentPercentage = config.getInt("percentage"))
 
     def getPathFindingExperimentConf(config: Config): PathFindingExperimentConf = {
       val experiments = config.root.asScala.keys.map(name => name -> getPathFindingConf(config.getConfig(name), name))
@@ -475,7 +491,7 @@ object NodeParams extends Logging {
       val ratioBase = config.getDouble("ratios.base")
       val ratioAge = config.getDouble("ratios.channel-age")
       val ratioCapacity = config.getDouble("ratios.channel-capacity")
-      MessageRouteParams(maxRouteLength, Graph.MessagePath.WeightRatios(ratioBase, ratioAge, ratioCapacity))
+      MessageRouteParams(maxRouteLength, Graph.MessageWeightRatios(ratioBase, ratioAge, ratioCapacity))
     }
 
     val unhandledExceptionStrategy = config.getString("channel.unhandled-exception-strategy") match {
@@ -551,7 +567,6 @@ object NodeParams extends Logging {
       features = coreAndPluginFeatures,
       pluginParams = pluginParams,
       overrideInitFeatures = overrideInitFeatures,
-      syncWhitelist = syncWhitelist,
       channelConf = ChannelConf(
         channelFlags = channelFlags,
         dustLimit = dustLimitSatoshis,
@@ -566,7 +581,7 @@ object NodeParams extends Logging {
         minFundingPrivateSatoshis = Satoshi(config.getLong("channel.min-private-funding-satoshis")),
         toRemoteDelay = offeredCLTV,
         maxToLocalDelay = maxToLocalCLTV,
-        minDepthBlocks = config.getInt("channel.mindepth-blocks"),
+        minDepth = config.getInt("channel.min-depth-blocks"),
         expiryDelta = expiryDelta,
         maxExpiryDelta = maxExpiryDelta,
         fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
@@ -574,6 +589,7 @@ object NodeParams extends Logging {
         maxRestartWatchDelay = FiniteDuration(config.getDuration("channel.max-restart-watch-delay").getSeconds, TimeUnit.SECONDS),
         maxBlockProcessingDelay = FiniteDuration(config.getDuration("channel.max-block-processing-delay").getSeconds, TimeUnit.SECONDS),
         maxTxPublishRetryDelay = FiniteDuration(config.getDuration("channel.max-tx-publish-retry-delay").getSeconds, TimeUnit.SECONDS),
+        scanPreviousBlocksDepth = config.getInt("channel.scan-previous-blocks-depth"),
         maxChannelSpentRescanBlocks = config.getInt("channel.max-channel-spent-rescan-blocks"),
         unhandledExceptionStrategy = unhandledExceptionStrategy,
         revocationTimeout = FiniteDuration(config.getDuration("channel.revocation-timeout").getSeconds, TimeUnit.SECONDS),
@@ -581,6 +597,7 @@ object NodeParams extends Logging {
         channelOpenerWhitelist = channelOpenerWhitelist,
         maxPendingChannelsPerPeer = maxPendingChannelsPerPeer,
         maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes,
+        channelFundingTimeout = FiniteDuration(config.getDuration("channel.funding.timeout").getSeconds, TimeUnit.SECONDS),
         remoteRbfLimits = Channel.RemoteRbfLimits(config.getInt("channel.funding.remote-rbf-limits.max-attempts"), config.getInt("channel.funding.remote-rbf-limits.attempt-delta-blocks")),
         quiescenceTimeout = FiniteDuration(config.getDuration("channel.quiescence-timeout").getSeconds, TimeUnit.SECONDS),
         balanceThresholds = config.getConfigList("channel.channel-update.balance-thresholds").asScala.map(conf => BalanceThreshold(Satoshi(conf.getLong("available-sat")), Satoshi(conf.getLong("max-htlc-sat")))).toSeq,
@@ -647,14 +664,20 @@ object NodeParams extends Logging {
         watchSpentWindow = watchSpentWindow,
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
-        requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
-        encodingType = EncodingType.UNCOMPRESSED,
-        channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
-        channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
+        syncConf = Router.SyncConf(
+          requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
+          encodingType = EncodingType.UNCOMPRESSED,
+          channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
+          channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
+          peerLimit = config.getInt("router.sync.peer-limit"),
+          whitelist = config.getStringList("router.sync.whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
+        ),
         pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments")),
         messageRouteParams = getMessageRouteParams(config.getConfig("router.message-path-finding")),
         balanceEstimateHalfLife = FiniteDuration(config.getDuration("router.balance-estimate-half-life").getSeconds, TimeUnit.SECONDS),
-      ),
+        blip18InboundFees = config.getBoolean("router.path-finding.blip18-inbound-fees"),
+        excludePositiveInboundFees = config.getBoolean("router.path-finding.exclude-channels-with-positive-inbound-fees"),
+    ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
       paymentFinalExpiry = PaymentFinalExpiryConf(CltvExpiryDelta(config.getInt("send.recipient-final-expiry.min-delta")), CltvExpiryDelta(config.getInt("send.recipient-final-expiry.max-delta"))),
@@ -673,7 +696,7 @@ object NodeParams extends Logging {
         batchSize = config.getInt("db.revoked-htlc-info-cleaner.batch-size"),
         interval = FiniteDuration(config.getDuration("db.revoked-htlc-info-cleaner.interval").getSeconds, TimeUnit.SECONDS)
       ),
-      willFundRates_opt = willFundRates_opt,
+      liquidityAdsConfig = LiquidityAds.Config(rates_opt = willFundRates_opt, lockUtxos = config.getBoolean("liquidity-ads.lock-utxos-during-funding")),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(
         enabled = config.getBoolean("peer-wake-up.enabled"),
         timeout = FiniteDuration(config.getDuration("peer-wake-up.timeout").getSeconds, TimeUnit.SECONDS),
@@ -681,6 +704,17 @@ object NodeParams extends Logging {
       onTheFlyFundingConfig = OnTheFlyFunding.Config(
         proposalTimeout = FiniteDuration(config.getDuration("on-the-fly-funding.proposal-timeout").getSeconds, TimeUnit.SECONDS),
       ),
+      peerStorageConfig = PeerStorageConfig(
+        writeDelay = FiniteDuration(config.getDuration("peer-storage.write-delay").getSeconds, TimeUnit.SECONDS),
+        removalDelay = FiniteDuration(config.getDuration("peer-storage.removal-delay").getSeconds, TimeUnit.SECONDS),
+        cleanUpFrequency = FiniteDuration(config.getDuration("peer-storage.cleanup-frequency").getSeconds, TimeUnit.SECONDS),
+      ),
+      offersConfig = OffersConfig(
+        messagePathMinLength = config.getInt("offers.message-path-min-length"),
+        paymentPathCount = config.getInt("offers.payment-path-count"),
+        paymentPathLength = config.getInt("offers.payment-path-length"),
+        paymentPathCltvExpiryDelta = CltvExpiryDelta(config.getInt("offers.payment-path-expiry-delta")),
+      )
     )
   }
 }

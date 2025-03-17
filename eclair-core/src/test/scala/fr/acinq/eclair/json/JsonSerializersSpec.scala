@@ -139,7 +139,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
           ShaChain.init,
           Map.empty,
         ),
-        ShortIds(RealScidStatus.Unknown, Alias(42), None),
+        ShortIdAliases(Alias(42), None),
         None,
         ChannelUpdate(ByteVector64(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 100 msat, 0, 2_000_000 msat),
         None, None, None, SpliceStatus.NoSplice
@@ -220,7 +220,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |     "remotePerCommitmentSecrets": null,
         |     "originChannels": {}
         |   },
-        |   "shortIds": { "real": { "status": "unknown" }, "localAlias": "0x2a" },
+        |   "aliases": { "localAlias": "0x2a" },
         |   "channelUpdate": {
         |     "signature": "345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f",
         |     "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
@@ -333,20 +333,28 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
 
   test("GlobalBalance serializer") {
     val gb = GlobalBalance(
-      onChain = CheckBalance.CorrectedOnChainBalance(Btc(0.4), Btc(0.05)),
+      onChain = CheckBalance.DetailedOnChainBalance(
+        confirmed = Map(OutPoint(TxId.fromValidHex("9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3) -> Btc(1.4)),
+        unconfirmed = Map(OutPoint(TxId.fromValidHex("345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 1) -> Btc(0.05)),
+        utxos = Seq.empty
+      ),
       offChain = CheckBalance.OffChainBalance(normal = MainAndHtlcBalance(
         toLocal = Btc(0.2),
         htlcs = Btc(0.05)
       ), closing = ClosingBalance(
         localCloseBalance = PossiblyPublishedMainAndHtlcBalance(
-          toLocal = Map(TxId.fromValidHex("4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2") -> Btc(0.1)),
-          htlcs = Map(TxId.fromValidHex("94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71") -> Btc(0.03), TxId.fromValidHex("a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13") -> Btc(0.06)),
+          toLocal = Map(OutPoint(TxId.fromValidHex("4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2"), 0) -> Btc(0.1)),
+          htlcs = Map(OutPoint(TxId.fromValidHex("94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71"), 1) -> Btc(0.03), OutPoint(TxId.fromValidHex("a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13"), 3) -> Btc(0.06)),
           htlcsUnpublished = Btc(0.01)),
         mutualCloseBalance = PossiblyPublishedMainBalance(
-          toLocal = Map(TxId.fromValidHex("7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247") -> Btc(0.1)))
-      ))
+          toLocal = Map(OutPoint(TxId.fromValidHex("7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247"), 4) -> Btc(0.1)))
+      )
+      ),
+      channels = Map.empty, // not used by json serializer
+      knownPreimages = Set.empty, // not used by json serializer
+
     )
-    JsonSerializers.serialization.write(gb)(JsonSerializers.formats) shouldBe """{"total":1.0,"onChain":{"confirmed":0.4,"unconfirmed":0.05},"offChain":{"waitForFundingConfirmed":0.0,"waitForChannelReady":0.0,"normal":{"toLocal":0.2,"htlcs":0.05},"shutdown":{"toLocal":0.0,"htlcs":0.0},"negotiating":0.0,"closing":{"localCloseBalance":{"toLocal":{"4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2":0.1},"htlcs":{"94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71":0.03,"a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13":0.06},"htlcsUnpublished":0.01},"remoteCloseBalance":{"toLocal":{},"htlcs":{},"htlcsUnpublished":0.0},"mutualCloseBalance":{"toLocal":{"7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247":0.1}},"unknownCloseBalance":{"toLocal":0.0,"htlcs":0.0}},"waitForPublishFutureCommitment":0.0}}"""
+    JsonSerializers.serialization.write(gb)(JsonSerializers.formats) shouldBe """{"total":2.0,"onChain":{"total":1.45,"confirmed":{"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692:3":1.4},"unconfirmed":{"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f:1":0.05}},"offChain":{"waitForFundingConfirmed":0.0,"waitForChannelReady":0.0,"normal":{"toLocal":0.2,"htlcs":0.05},"shutdown":{"toLocal":0.0,"htlcs":0.0},"negotiating":0.0,"closing":{"localCloseBalance":{"toLocal":{"4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2:0":0.1},"htlcs":{"94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71:1":0.03,"a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13:3":0.06},"htlcsUnpublished":0.01},"remoteCloseBalance":{"toLocal":{},"htlcs":{},"htlcsUnpublished":0.0},"mutualCloseBalance":{"toLocal":{"7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247:4":0.1}},"unknownCloseBalance":{"toLocal":0.0,"htlcs":0.0}},"waitForPublishFutureCommitment":0.0}}"""
   }
 
   test("type hints") {
@@ -447,14 +455,10 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     JsonSerializers.serialization.write(map)(JsonSerializers.formats) shouldBe s"""{"e2fc57221cfb1942224082174022f3f70a32005aa209956f9c94c6903f7669ff":"ok","8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3":"cannot execute command=CMD_UPDATE_RELAY_FEE in state=CLOSING","74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8":"channel 74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8 not found"}"""
   }
 
-  test("serialize short ids") {
+  test("serialize short id aliases") {
     val testCases = Map(
-      ShortIds(real = RealScidStatus.Unknown, localAlias = Alias(0x4455), remoteAlias_opt = Some(Alias(0x88888888L))) ->
-        """{"real":{"status":"unknown"},"localAlias":"0x4455","remoteAlias":"0x88888888"}""",
-      ShortIds(real = RealScidStatus.Temporary(RealShortChannelId(BlockHeight(500000), 42, 1)), localAlias = Alias(0x4455), remoteAlias_opt = None) ->
-        """{"real":{"status":"temporary","realScid":"500000x42x1"},"localAlias":"0x4455"}""",
-      ShortIds(real = RealScidStatus.Final(RealShortChannelId(BlockHeight(500000), 42, 1)), localAlias = Alias(0x4455), remoteAlias_opt = None) ->
-        """{"real":{"status":"final","realScid":"500000x42x1"},"localAlias":"0x4455"}""",
+      ShortIdAliases(localAlias = Alias(0x4455), remoteAlias_opt = Some(Alias(0x88888888L))) -> """{"localAlias":"0x4455","remoteAlias":"0x88888888"}""",
+      ShortIdAliases(localAlias = Alias(0x4455), remoteAlias_opt = None) -> """{"localAlias":"0x4455"}""",
     )
     for ((obj, json) <- testCases) {
       JsonSerializers.serialization.write(obj)(JsonSerializers.formats) shouldBe json

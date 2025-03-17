@@ -17,7 +17,7 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
 
   type FixtureParam = TwoNodesFixture
 
-  import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{confirmChannel, confirmChannelDeep, connect, getChannelData, getChannelState, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, sendSuccessfulPayment, watcherAutopilot}
+  import fr.acinq.eclair.integration.basic.fixtures.MinimalNodeFixture.{confirmChannel, connect, getChannelData, getRouterData, knownFundingTxs, nodeParamsFor, openChannel, sendSuccessfulPayment, watcherAutopilot}
 
   override def createFixture(testData: TestData): FixtureParam = {
     // seeds have been chosen so that node ids start with 02aaaa for alice, 02bbbb for bob, etc.
@@ -40,8 +40,8 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
     connect(alice, bob)
     val channelId = openChannel(alice, bob, 100_000 sat).channelId
     confirmChannel(alice, bob, channelId, BlockHeight(420_000), 21)
-    assert(getChannelState(alice, channelId) == NORMAL)
-    assert(getChannelState(bob, channelId) == NORMAL)
+    assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
+    assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
   }
 
   test("open multiple channels alice-bob") { f =>
@@ -51,7 +51,7 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
     val channelId2 = openChannel(bob, alice, 110_000 sat).channelId
     val channels = getPeerChannels(alice, bob.nodeId)
     assert(channels.map(_.data.channelId).toSet == Set(channelId1, channelId2))
-    channels.foreach(c => assert(c.state == WAIT_FOR_DUAL_FUNDING_SIGNED || c.state == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
+    channels.foreach(c => assert(c.state == WAIT_FOR_DUAL_FUNDING_CREATED || c.state == WAIT_FOR_DUAL_FUNDING_SIGNED || c.state == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
     confirmChannel(alice, bob, channelId1, BlockHeight(420_000), 21)
     confirmChannel(bob, alice, channelId2, BlockHeight(420_000), 22)
     getPeerChannels(bob, alice.nodeId).foreach(c => assert(c.data.isInstanceOf[DATA_NORMAL]))
@@ -64,30 +64,8 @@ class TwoNodesIntegrationSpec extends FixtureSpec with IntegrationPatience {
     connect(alice, bob)
     val channelId = openChannel(alice, bob, 100_000 sat).channelId
     eventually {
-      assert(getChannelState(alice, channelId) == NORMAL)
-      assert(getChannelState(bob, channelId) == NORMAL)
-    }
-  }
-
-  test("open a channel alice-bob and confirm deeply") { f =>
-    import f._
-    connect(alice, bob)
-    val channelId = openChannel(alice, bob, 100_000 sat).channelId
-    confirmChannel(alice, bob, channelId, BlockHeight(420_000), 21)
-    confirmChannelDeep(alice, bob, channelId, BlockHeight(420_000), 21)
-    assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
-    assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
-  }
-
-  test("open a channel alice-bob and confirm deeply (autoconfirm)") { f =>
-    import f._
-    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice)))
-    bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice)))
-    connect(alice, bob)
-    val channelId = openChannel(alice, bob, 100_000 sat).channelId
-    eventually {
-      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
-      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].shortIds.real.isInstanceOf[RealScidStatus.Final])
+      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
+      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
     }
   }
 

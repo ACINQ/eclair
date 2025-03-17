@@ -227,6 +227,22 @@ object LightningMessageCodecs {
       ("signature" | bytes64) ::
       ("tlvStream" | ClosingSignedTlv.closingSignedTlvCodec)).as[ClosingSigned]
 
+  val closingCompleteCodec: Codec[ClosingComplete] = (
+    ("channelId" | bytes32) ::
+      ("closerScriptPubKey" | varsizebinarydata) ::
+      ("closeeScriptPubKey" | varsizebinarydata) ::
+      ("fees" | satoshi) ::
+      ("lockTime" | uint32) ::
+      ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingComplete]
+
+  val closingSigCodec: Codec[ClosingSig] = (
+    ("channelId" | bytes32) ::
+      ("closerScriptPubKey" | varsizebinarydata) ::
+      ("closeeScriptPubKey" | varsizebinarydata) ::
+      ("fees" | satoshi) ::
+      ("lockTime" | uint32) ::
+      ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingSig]
+
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
       ("id" | uint64overflow) ::
@@ -389,6 +405,14 @@ object LightningMessageCodecs {
       ("onionPacket" | MessageOnionCodecs.messageOnionPacketCodec) ::
       ("tlvStream" | OnionMessageTlv.onionMessageTlvCodec)).as[OnionMessage]
 
+  val peerStorageStore: Codec[PeerStorageStore] = (
+    ("blob" | variableSizeBytes(uint16, bytes)) ::
+      ("tlvStream" | PeerStorageTlv.peerStorageTlvCodec)).as[PeerStorageStore]
+
+  val peerStorageRetrieval: Codec[PeerStorageRetrieval] = (
+    ("blob" | variableSizeBytes(uint16, bytes)) ::
+      ("tlvStream" | PeerStorageTlv.peerStorageTlvCodec)).as[PeerStorageRetrieval]
+
   // NB: blank lines to minimize merge conflicts
 
   //
@@ -473,9 +497,11 @@ object LightningMessageCodecs {
       ("message" | bytes)
     ).as[UnknownMessage]
 
-  val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
+  val lightningMessageCodec = catchAllCodec(discriminated[LightningMessage].by(uint16)
     .typecase(1, warningCodec)
     .typecase(2, stfuCodec)
+    .typecase(7, peerStorageStore)
+    .typecase(9, peerStorageRetrieval)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
     .typecase(18, pingCodec)
@@ -487,6 +513,8 @@ object LightningMessageCodecs {
     .typecase(36, channelReadyCodec)
     .typecase(38, shutdownCodec)
     .typecase(39, closingSignedCodec)
+    .typecase(40, closingCompleteCodec)
+    .typecase(41, closingSigCodec)
     .typecase(64, openDualFundedChannelCodec)
     .typecase(65, acceptDualFundedChannelCodec)
     .typecase(66, txAddInputCodec)
@@ -545,9 +573,9 @@ object LightningMessageCodecs {
   //
 
   //
+  )
 
-  val lightningMessageCodecWithFallback: Codec[LightningMessage] =
-    discriminatorWithDefault(lightningMessageCodec, unknownMessageCodec.upcast)
+  val lightningMessageCodecWithFallback: Codec[LightningMessage] = discriminatorWithDefault(lightningMessageCodec, catchAllCodec(unknownMessageCodec.upcast))
 
   val meteredLightningMessageCodec = Codec[LightningMessage](
     (msg: LightningMessage) => KamonExt.time(Metrics.EncodeDuration.withTag(Tags.MessageType, msg.getClass.getSimpleName))(lightningMessageCodecWithFallback.encode(msg)),

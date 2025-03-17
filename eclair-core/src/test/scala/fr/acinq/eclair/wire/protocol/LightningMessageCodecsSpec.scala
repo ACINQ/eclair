@@ -153,6 +153,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point),
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"00 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.NextFundingTlv(txId))),
+      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"01 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.YourLastFundingLockedTlv(txId))),
+      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"03 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.MyCurrentFundingLockedTlv(txId))),
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 00" -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream[ChannelReestablishTlv](Set.empty[ChannelReestablishTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 07 bbbbbbbbbbbbbb" -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream[ChannelReestablishTlv](Set.empty[ChannelReestablishTlv], Set(GenericTlv(tlvTag, hex"bbbbbbbbbbbbbb")))),
 
@@ -519,6 +521,33 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     }
   }
 
+  test("encode/decode closing messages") {
+    val channelId = ByteVector32(hex"58a00a6f14e69a2e97b18cf76f755c8551fea9947cf7b6ece9d641013eba5f86")
+    val sig1 = ByteVector64(hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101")
+    val sig2 = ByteVector64(hex"02020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202")
+    val sig3 = ByteVector64(hex"03030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303")
+    val closerScript = hex"deadbeef"
+    val closeeScript = hex"d43db3ef1234"
+    val testCases = Seq(
+      hex"0028 58a00a6f14e69a2e97b18cf76f755c8551fea9947cf7b6ece9d641013eba5f86 0004deadbeef 0006d43db3ef1234 0000000000000451 00000000" -> ClosingComplete(channelId, closerScript, closeeScript, 1105 sat, 0),
+      hex"0028 58a00a6f14e69a2e97b18cf76f755c8551fea9947cf7b6ece9d641013eba5f86 0004deadbeef 0006d43db3ef1234 0000000000000451 000c96a8 024001010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101" -> ClosingComplete(channelId, closerScript, closeeScript, 1105 sat, 825_000, TlvStream(ClosingTlv.CloseeOutputOnly(sig1))),
+      hex"0028 58a00a6f14e69a2e97b18cf76f755c8551fea9947cf7b6ece9d641013eba5f86 0004deadbeef 0006d43db3ef1234 0000000000000451 00000000 034001010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101" -> ClosingComplete(channelId, closerScript, closeeScript, 1105 sat, 0, TlvStream(ClosingTlv.CloserAndCloseeOutputs(sig1))),
+      hex"0028 58a00a6f14e69a2e97b18cf76f755c8551fea9947cf7b6ece9d641013eba5f86 0004deadbeef 0006d43db3ef1234 0000000000000451 00000000 014001010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101 034002020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202" -> ClosingComplete(channelId, closerScript, closeeScript, 1105 sat, 0, TlvStream(ClosingTlv.CloserOutputOnly(sig1), ClosingTlv.CloserAndCloseeOutputs(sig2))),
+      hex"0028 58a00a6f14e69a2e97b18cf76f755c8551fea9947cf7b6ece9d641013eba5f86 0004deadbeef 0006d43db3ef1234 0000000000000451 00000000 014001010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101 024002020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202 034003030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303" -> ClosingComplete(channelId, closerScript, closeeScript, 1105 sat, 0, TlvStream(ClosingTlv.CloserOutputOnly(sig1), ClosingTlv.CloseeOutputOnly(sig2), ClosingTlv.CloserAndCloseeOutputs(sig3))),
+      hex"0029 58a00a6f14e69a2e97b18cf76f755c8551fea9947cf7b6ece9d641013eba5f86 0004deadbeef 0006d43db3ef1234 0000000000000451 00000000" -> ClosingSig(channelId, closerScript, closeeScript, 1105 sat, 0),
+      hex"0029 58a00a6f14e69a2e97b18cf76f755c8551fea9947cf7b6ece9d641013eba5f86 0004deadbeef 0006d43db3ef1234 0000000000000451 00000000 024001010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101" -> ClosingSig(channelId, closerScript, closeeScript, 1105 sat, 0, TlvStream(ClosingTlv.CloseeOutputOnly(sig1))),
+      hex"0029 58a00a6f14e69a2e97b18cf76f755c8551fea9947cf7b6ece9d641013eba5f86 0004deadbeef 0006d43db3ef1234 0000000000000451 00000000 034001010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101" -> ClosingSig(channelId, closerScript, closeeScript, 1105 sat, 0, TlvStream(ClosingTlv.CloserAndCloseeOutputs(sig1))),
+      hex"0029 58a00a6f14e69a2e97b18cf76f755c8551fea9947cf7b6ece9d641013eba5f86 0004deadbeef 0006d43db3ef1234 0000000000000451 00000000 014001010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101 034002020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202" -> ClosingSig(channelId, closerScript, closeeScript, 1105 sat, 0, TlvStream(ClosingTlv.CloserOutputOnly(sig1), ClosingTlv.CloserAndCloseeOutputs(sig2))),
+      hex"0029 58a00a6f14e69a2e97b18cf76f755c8551fea9947cf7b6ece9d641013eba5f86 0004deadbeef 0006d43db3ef1234 0000000000000451 00000000 014001010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101 024002020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202 034003030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303" -> ClosingSig(channelId, closerScript, closeeScript, 1105 sat, 0, TlvStream(ClosingTlv.CloserOutputOnly(sig1), ClosingTlv.CloseeOutputOnly(sig2), ClosingTlv.CloserAndCloseeOutputs(sig3))),
+    )
+    for ((encoded, expected) <- testCases) {
+      val decoded = lightningMessageCodec.decode(encoded.bits).require.value
+      assert(decoded == expected)
+      val reEncoded = lightningMessageCodec.encode(expected).require.bytes
+      assert(reEncoded == encoded)
+    }
+  }
+
   test("encode/decode all channel messages") {
     val unknownTlv = GenericTlv(UInt64(5), ByteVector.fromValidHex("deadbeef"))
     val msgs = List(
@@ -775,6 +804,19 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       assert(decoded.value == ref)
       assert(decoded.remainder.isEmpty)
       assert(updateAddHtlcCodec.encode(decoded.value).require.bytes == bin)
+    }
+  }
+
+  test("encode/decode peer storage messages") {
+    val testCases = Seq(
+      hex"0007 0003 012345" -> PeerStorageStore(hex"012345"),
+      hex"0009 0002 abcd" -> PeerStorageRetrieval(hex"abcd"),
+    )
+    for ((bin, ref) <- testCases) {
+      val decoded = lightningMessageCodec.decode(bin.bits).require
+      assert(decoded.value == ref)
+      assert(decoded.remainder.isEmpty)
+      assert(lightningMessageCodec.encode(ref).require.bytes == bin)
     }
   }
 }

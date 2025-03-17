@@ -185,6 +185,8 @@ case class ChannelReestablish(channelId: ByteVector32,
                               myCurrentPerCommitmentPoint: PublicKey,
                               tlvStream: TlvStream[ChannelReestablishTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val nextFundingTxId_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].map(_.txId)
+  val myCurrentFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.MyCurrentFundingLockedTlv].map(_.txId)
+  val yourLastFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.YourLastFundingLockedTlv].map(_.txId)
 }
 
 case class OpenChannel(chainHash: BlockHash,
@@ -362,6 +364,18 @@ case class ClosingSigned(channelId: ByteVector32,
   val feeRange_opt = tlvStream.get[ClosingSignedTlv.FeeRange]
 }
 
+case class ClosingComplete(channelId: ByteVector32, closerScriptPubKey: ByteVector, closeeScriptPubKey: ByteVector, fees: Satoshi, lockTime: Long, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val closerOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserOutputOnly].map(_.sig)
+  val closeeOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloseeOutputOnly].map(_.sig)
+  val closerAndCloseeOutputsSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserAndCloseeOutputs].map(_.sig)
+}
+
+case class ClosingSig(channelId: ByteVector32, closerScriptPubKey: ByteVector, closeeScriptPubKey: ByteVector, fees: Satoshi, lockTime: Long, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val closerOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserOutputOnly].map(_.sig)
+  val closeeOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloseeOutputOnly].map(_.sig)
+  val closerAndCloseeOutputsSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserAndCloseeOutputs].map(_.sig)
+}
+
 case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,
                          amountMsat: MilliSatoshi,
@@ -491,7 +505,11 @@ object NodeAddress {
 }
 
 object IPAddress {
-  def apply(inetAddress: InetAddress, port: Int): IPAddress = inetAddress match {
+  def apply(inetAddress: InetAddress, port: Int): IPAddress = (inetAddress: @unchecked) match {
+    // we need the @unchecked annotation to suppress a "matching not exhaustive". Before JDK21, InetAddress was a regular class so scalac would not check anything (it only checks sealed patterns)
+    // with JDK21 InetAddress is defined as `public sealed class InetAddress implements Serializable permits Inet4Address, Inet6Address` and scalac complains because in theory there could be
+    // an InetAddress() instance, though it is not possible in practice because the constructor is package private :(
+    // remove @unchecked if we upgrade to a newer JDK that does not have this pb, or if scalac pattern matching becomes more clever
     case address: Inet4Address => IPv4(address, port)
     case address: Inet6Address => IPv6(address, port)
   }
@@ -504,6 +522,8 @@ case class Tor2(tor2: String, port: Int) extends OnionAddress { override def hos
 case class Tor3(tor3: String, port: Int) extends OnionAddress { override def host: String = tor3 + ".onion" }
 case class DnsHostname(dnsHostname: String, port: Int) extends IPAddress {override def host: String = dnsHostname}
 // @formatter:on
+
+case class NodeInfo(features: Features[InitFeature], address_opt: Option[NodeAddress])
 
 case class NodeAnnouncement(signature: ByteVector64,
                             features: Features[Feature],
@@ -604,6 +624,10 @@ object ReplyChannelRange {
 case class GossipTimestampFilter(chainHash: BlockHash, firstTimestamp: TimestampSecond, timestampRange: Long, tlvStream: TlvStream[GossipTimestampFilterTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash
 
 case class OnionMessage(pathKey: PublicKey, onionRoutingPacket: OnionRoutingPacket, tlvStream: TlvStream[OnionMessageTlv] = TlvStream.empty) extends LightningMessage
+
+case class PeerStorageStore(blob: ByteVector, tlvStream: TlvStream[PeerStorageTlv] = TlvStream.empty) extends SetupMessage
+
+case class PeerStorageRetrieval(blob: ByteVector, tlvStream: TlvStream[PeerStorageTlv] = TlvStream.empty) extends SetupMessage
 
 // NB: blank lines to minimize merge conflicts
 

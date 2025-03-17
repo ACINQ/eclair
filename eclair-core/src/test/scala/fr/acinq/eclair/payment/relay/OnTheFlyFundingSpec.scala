@@ -61,6 +61,9 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   )
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe, register: TestProbe, rateLimiter: TestProbe, probe: TestProbe) {
+    // Shared secrets used for the outgoing will_add_htlc onion.
+    val onionSharedSecrets = Sphinx.SharedSecret(randomBytes32(), remoteNodeId) :: Nil
+
     def connect(peer: TestFSMRef[Peer.State, Peer.Data, Peer], remoteInit: protocol.Init = protocol.Init(remoteFeatures.initFeatures()), channelCount: Int = 0): Unit = {
       val localInit = protocol.Init(nodeParams.features.initFeatures())
       val address = NodeAddress.fromParts("0.0.0.0", 9735).get
@@ -93,7 +96,12 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
         case u: Upstream.Hot.Trampoline if u.received.exists(_.add.pathKey_opt.nonEmpty) => Some(randomKey().publicKey)
         case _ => None
       }
-      ProposeOnTheFlyFunding(probe.ref, amount, paymentHash, expiry, TestConstants.emptyOnionPacket, pathKey, upstream)
+      val sharedSecrets = upstream match {
+        // Shared secrets are only useful in the trampoline case, where we created an outgoing onion.
+        case _: Upstream.Hot.Trampoline => onionSharedSecrets
+        case _ => Nil
+      }
+      ProposeOnTheFlyFunding(probe.ref, amount, paymentHash, expiry, TestConstants.emptyOnionPacket, sharedSecrets, pathKey, upstream)
     }
 
     def proposeFunding(amount: MilliSatoshi, expiry: CltvExpiry, paymentHash: ByteVector32 = randomBytes32(), upstream: Upstream.Hot = Upstream.Local(UUID.randomUUID())): WillAddHtlc = {
@@ -155,10 +163,10 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     }
 
     def makeChannelData(htlcMinimum: MilliSatoshi = 1 msat, localChanges: LocalChanges = LocalChanges(Nil, Nil, Nil)): DATA_NORMAL = {
-      val commitments = CommitmentsSpec.makeCommitments(500_000_000 msat, 500_000_000 msat, nodeParams.nodeId, remoteNodeId, announceChannel = false)
+      val commitments = CommitmentsSpec.makeCommitments(500_000_000 msat, 500_000_000 msat, nodeParams.nodeId, remoteNodeId, announcement_opt = None)
         .modify(_.params.remoteParams.htlcMinimum).setTo(htlcMinimum)
         .modify(_.changes.localChanges).setTo(localChanges)
-      DATA_NORMAL(commitments, ShortIds(RealScidStatus.Unknown, Alias(42), None), None, null, None, None, None, SpliceStatus.NoSplice)
+      DATA_NORMAL(commitments, ShortIdAliases(Alias(42), None), None, null, None, None, None, SpliceStatus.NoSplice)
     }
   }
 
@@ -230,7 +238,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fwd1 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd1.channelId == upstream1.add.channelId)
     assert(fwd1.message.id == upstream1.add.id)
-    assert(fwd1.message.reason == Left(fail1.reason))
+    assert(fwd1.message.reason == FailureReason.EncryptedDownstreamFailure(fail1.reason))
     register.expectNoMessage(100 millis)
 
     val fail2 = WillFailHtlc(willAdd2.id, paymentHash, randomBytes(50))
@@ -238,31 +246,31 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fwd2 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd2.channelId == upstream2.add.channelId)
     assert(fwd2.message.id == upstream2.add.id)
-    assert(fwd2.message.reason == Right(InvalidOnionBlinding(Sphinx.hash(upstream2.add.onionRoutingPacket))))
+    assert(fwd2.message.reason == FailureReason.LocalFailure(InvalidOnionBlinding(Sphinx.hash(upstream2.add.onionRoutingPacket))))
 
     val fail3 = WillFailMalformedHtlc(willAdd3.id, paymentHash, randomBytes32(), InvalidOnionHmac(randomBytes32()).code)
     peerConnection.send(peer, fail3)
     val fwd3 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd3.channelId == upstream3.add.channelId)
     assert(fwd3.message.id == upstream3.add.id)
-    assert(fwd3.message.reason == Right(InvalidOnionHmac(fail3.onionHash)))
+    assert(fwd3.message.reason == FailureReason.LocalFailure(InvalidOnionHmac(fail3.onionHash)))
 
-    val fail4 = WillFailHtlc(willAdd4.id, paymentHash, randomBytes(75))
+    val fail4 = WillFailHtlc(willAdd4.id, paymentHash, randomBytes(292))
     peerConnection.send(peer, fail4)
     upstream4.received.map(_.add).foreach(add => {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == add.channelId)
       assert(fwd.message.id == add.id)
-      assert(fwd.message.reason == Right(TemporaryNodeFailure()))
+      assert(fwd.message.reason == FailureReason.LocalFailure(TemporaryNodeFailure()))
     })
 
-    val fail5 = WillFailHtlc(willAdd5.id, paymentHash, randomBytes(75))
+    val fail5 = WillFailHtlc(willAdd5.id, paymentHash, randomBytes(292))
     peerConnection.send(peer, fail5)
     upstream5.received.map(_.add).foreach(add => {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == add.channelId)
       assert(fwd.message.id == add.id)
-      assert(fwd.message.reason == Right(TemporaryNodeFailure()))
+      assert(fwd.message.reason == FailureReason.LocalFailure(TemporaryNodeFailure()))
     })
   }
 
@@ -322,7 +330,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == u.add.channelId)
       assert(fwd.message.id == u.add.id)
-      assert(fwd.message.reason == Right(InvalidOnionBlinding(Sphinx.hash(u.add.onionRoutingPacket))))
+      assert(fwd.message.reason == FailureReason.LocalFailure(InvalidOnionBlinding(Sphinx.hash(u.add.onionRoutingPacket))))
       assert(fwd.message.commit)
     })
     peerConnection.expectMsgType[Warning]
@@ -332,7 +340,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == u.add.channelId)
       assert(fwd.message.id == u.add.id)
-      assert(fwd.message.reason == Right(UnknownNextPeer()))
+      assert(fwd.message.reason == FailureReason.LocalFailure(UnknownNextPeer()))
       assert(fwd.message.commit)
     })
     peerConnection.expectMsgType[Warning]
@@ -402,7 +410,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fwds = (0 until 5).map(_ => register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]])
     register.expectNoMessage(100 millis)
     fwds.foreach(fwd => {
-      assert(fwd.message.reason == Right(UnknownNextPeer()))
+      assert(fwd.message.reason == FailureReason.LocalFailure(UnknownNextPeer()))
       assert(fwd.message.commit)
     })
     assert(fwds.map(_.channelId).toSet == (upstream1 ++ upstream2.slice(0, 1) ++ upstream3.received).map(_.add.channelId).toSet)
@@ -556,7 +564,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
     assert(!init.localParams.isChannelOpener)
     assert(init.localParams.paysCommitTxFees)
-    assert(init.fundingContribution_opt.contains(LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.willFundRates_opt)))
+    assert(init.fundingContribution_opt.contains(LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.liquidityAdsConfig.rates_opt)))
 
     // The preimage was provided, so we fulfill upstream HTLCs.
     verifyFulfilledUpstream(upstream, preimage)
@@ -609,7 +617,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
     assert(!init.localParams.isChannelOpener)
     assert(init.localParams.paysCommitTxFees)
-    assert(init.fundingContribution_opt.contains(LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.willFundRates_opt)))
+    assert(init.fundingContribution_opt.contains(LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.liquidityAdsConfig.rates_opt)))
     assert(channel.expectMsgType[OpenDualFundedChannel].useFeeCredit_opt.contains(3_000_000 msat))
 
     // Once the funding transaction is signed, we remove the fee credit consumed.
@@ -1151,7 +1159,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == add.channelId)
       assert(fwd.message.id == add.id)
-      assert(fwd.message.reason == Right(UnknownNextPeer()))
+      assert(fwd.message.reason == FailureReason.LocalFailure(UnknownNextPeer()))
       assert(fwd.message.commit)
     })
     register.expectNoMessage(100 millis)
@@ -1176,7 +1184,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.channelId == upstream1.add.channelId)
     assert(fwd.message.id == upstream1.add.id)
-    assert(fwd.message.reason == Right(UnknownNextPeer()))
+    assert(fwd.message.reason == FailureReason.LocalFailure(UnknownNextPeer()))
     assert(fwd.message.commit)
     register.expectNoMessage(100 millis)
     probe.expectNoMessage(100 millis)

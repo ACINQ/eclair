@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, DeterministicWallet, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee._
@@ -25,9 +25,9 @@ import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.LocalChannelKeyManager
-import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc, UpdateFailHtlc}
+import fr.acinq.eclair.transactions.{CommitmentSpec, Scripts, Transactions}
+import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -199,7 +199,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc4.availableBalanceForSend == b)
     assert(bc4.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val cmdFail = CMD_FAIL_HTLC(0, Right(IncorrectOrUnknownPaymentDetails(p, BlockHeight(42))))
+    val cmdFail = CMD_FAIL_HTLC(0, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(p, BlockHeight(42))))
     val Right((bc5, fail: UpdateFailHtlc)) = bc4.sendFail(cmdFail, bob.underlyingActor.nodeParams.privateKey)
     assert(bc5.availableBalanceForSend == b)
     assert(bc5.availableBalanceForReceive == a - p - htlcOutputFee) // a's balance won't return to previous before she acknowledges the fail
@@ -322,7 +322,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc8.availableBalanceForSend == b + p1 - p3) // as soon as we have the fulfill, the balance increases
     assert(bc8.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
-    val cmdFail2 = CMD_FAIL_HTLC(1, Right(IncorrectOrUnknownPaymentDetails(p2, BlockHeight(42))))
+    val cmdFail2 = CMD_FAIL_HTLC(1, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(p2, BlockHeight(42))))
     val Right((bc9, fail2: UpdateFailHtlc)) = bc8.sendFail(cmdFail2, bob.underlyingActor.nodeParams.privateKey)
     assert(bc9.availableBalanceForSend == b + p1 - p3)
     assert(bc9.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // a's balance won't return to previous before she acknowledges the fail
@@ -485,18 +485,24 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
 object CommitmentsSpec {
 
-  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isOpener: Boolean = true, announceChannel: Boolean = true): Commitments = {
+  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isOpener: Boolean = true, announcement_opt: Option[ChannelAnnouncement] = None): Commitments = {
     val channelReserve = (toLocal + toRemote).truncateToSatoshi * 0.01
     val localParams = LocalParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, Long.MaxValue.msat, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, isOpener, isOpener, None, None, Features.empty)
     val remoteParams = RemoteParams(randomKey().publicKey, dustLimit, UInt64.MaxValue, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
+    val localFundingPubKey = randomKey().publicKey
     val remoteFundingPubKey = randomKey().publicKey
-    val commitmentInput = Funding.makeFundingInputInfo(randomTxId(), 0, (toLocal + toRemote).truncateToSatoshi, randomKey().publicKey, remoteFundingPubKey)
+    val fundingTx = Transaction(2, Nil, Seq(TxOut((toLocal + toRemote).truncateToSatoshi, Funding.makeFundingPubKeyScript(localFundingPubKey, remoteFundingPubKey))), 0)
+    val commitmentInput = Transactions.InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, Scripts.multiSig2of2(localFundingPubKey, remoteFundingPubKey))
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomTxId(), randomKey().publicKey)
+    val localFundingStatus = announcement_opt match {
+      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(fundingTx, ann.shortChannelId, None, None)
+      case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
+    }
     Commitments(
-      ChannelParams(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = announceChannel)),
+      ChannelParams(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = announcement_opt.nonEmpty)),
       CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
-      List(Commitment(0, 0, remoteFundingPubKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+      List(Commitment(0, 0, remoteFundingPubKey, localFundingStatus, RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
       inactive = Nil,
       Right(randomKey().publicKey),
       ShaChain.init,
@@ -504,18 +510,24 @@ object CommitmentsSpec {
     )
   }
 
-  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments = {
+  def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announcement_opt: Option[ChannelAnnouncement]): Commitments = {
     val channelReserve = (toLocal + toRemote).truncateToSatoshi * 0.01
     val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, Long.MaxValue.msat, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
     val remoteParams = RemoteParams(remoteNodeId, 0 sat, UInt64.MaxValue, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
+    val localFundingPubKey = randomKey().publicKey
     val remoteFundingPubKey = randomKey().publicKey
-    val commitmentInput = Funding.makeFundingInputInfo(randomTxId(), 0, (toLocal + toRemote).truncateToSatoshi, randomKey().publicKey, remoteFundingPubKey)
+    val fundingTx = Transaction(2, Nil, Seq(TxOut((toLocal + toRemote).truncateToSatoshi, Funding.makeFundingPubKeyScript(localFundingPubKey, remoteFundingPubKey))), 0)
+    val commitmentInput = Transactions.InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, Scripts.multiSig2of2(localFundingPubKey, remoteFundingPubKey))
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toRemote, toLocal), randomTxId(), randomKey().publicKey)
+    val localFundingStatus = announcement_opt match {
+      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(fundingTx, ann.shortChannelId, None, None)
+      case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
+    }
     Commitments(
-      ChannelParams(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = announceChannel)),
+      ChannelParams(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = announcement_opt.nonEmpty)),
       CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
-      List(Commitment(0, 0, remoteFundingPubKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+      List(Commitment(0, 0, remoteFundingPubKey, localFundingStatus, RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
       inactive = Nil,
       Right(randomKey().publicKey),
       ShaChain.init,

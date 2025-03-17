@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong}
 import fr.acinq.eclair.payment.Invoice
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router.{ChannelDesc, HopRelayParams}
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecond, randomKey}
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -85,6 +85,67 @@ class BalanceEstimateSpec extends AnyFunSuite {
     assert(isValid(balance2))
     assert(balance2.maxCapacity == 0.sat)
     assert(balance2.capacities.isEmpty)
+  }
+
+  test("update channels after a splice") {
+    val a = makeEdge(0, 200 sat)
+    val b = makeEdge(1, 100 sat)
+    val unknownDesc = ChannelDesc(ShortChannelId(3), randomKey().publicKey, randomKey().publicKey)
+    val balance = BalanceEstimate.empty(1 day)
+      .addEdge(a)
+      .addEdge(b)
+      .couldNotSend(140_000 msat, TimestampSecond.now())
+      .couldSend(60_000 msat, TimestampSecond.now())
+
+    // a splice-in that increases channel capacity increases high but not low bounds
+    val balance1 = balance.updateEdge(a.desc, RealShortChannelId(5), 250 sat)
+    assert(balance1.maxCapacity == 250.sat)
+    assert(balance1.low == 60_000.msat)
+    assert(balance1.high == 190_000.msat)
+
+    // a splice-in that increases channel capacity of smaller channel does not increase high more than max capacity
+    val balance2 = balance
+      .updateEdge(b.desc, RealShortChannelId(5), 300 sat)
+    assert(balance2.maxCapacity == 300.sat)
+    assert(balance2.low == 60_000.msat)
+    assert(balance2.high == 300_000.msat)
+
+    // a splice-out that decreases channel capacity decreases low bounds but not high bounds
+    val balance3 = balance
+      .updateEdge(a.desc, RealShortChannelId(5), 150 sat)
+    assert(balance3.maxCapacity == 150.sat)
+    assert(balance3.low == 10_000.msat)
+    assert(balance3.high == 140_000.msat)
+
+    // a splice-out that decreases channel capacity of largest channel does not decrease low bounds below zero
+    val balance4 = balance
+      .updateEdge(a.desc, RealShortChannelId(5), 50 sat)
+    assert(balance4.maxCapacity == 100.sat)
+    assert(balance4.low == 0.msat)
+    assert(balance4.high == 100_000.msat)
+
+    // a splice-out that does not decrease the largest channel only decreases low bounds
+    val balance5 = balance
+      .updateEdge(b.desc, RealShortChannelId(5), 50 sat)
+    assert(balance5.maxCapacity == 200.sat)
+    assert(balance5.low == 10_000.msat)
+    assert(balance5.high == 140_000.msat)
+
+    // a splice of an unknown channel that increases max capacity does not change the low/high bounds
+    val balance6 = balance
+      .updateEdge(unknownDesc, RealShortChannelId(5), 900 sat)
+    assert(isValid(balance6))
+    assert(balance6.maxCapacity == 900.sat)
+    assert(balance6.low == 60_000.msat)
+    assert(balance6.high == 140_000.msat)
+
+    // a splice of an unknown channel below max capacity does not change max capacity or low/high bounds
+    val balance7 = balance
+      .updateEdge(unknownDesc, RealShortChannelId(5), 150 sat)
+    assert(isValid(balance7))
+    assert(balance7.maxCapacity == 200.sat)
+    assert(balance7.low == 60_000.msat)
+    assert(balance7.high == 140_000.msat)
   }
 
   test("update bounds based on what could then could not be sent (increasing amounts)") {

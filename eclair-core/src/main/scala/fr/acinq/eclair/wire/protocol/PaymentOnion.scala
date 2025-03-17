@@ -23,7 +23,7 @@ import fr.acinq.eclair.wire.protocol.BlindedRouteData.PaymentRelayData
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
-import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, EncodedNodeId, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
 
 /**
@@ -228,7 +228,7 @@ object PaymentOnion {
     sealed trait ChannelRelay extends IntermediatePayload {
       // @formatter:off
       /** The outgoing channel, or the nodeId of one of our peers. */
-      def outgoing: Either[PublicKey, ShortChannelId]
+      def outgoing: Either[EncodedNodeId.WithPublicKey, ShortChannelId]
       def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi
       def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry
       // @formatter:on
@@ -431,6 +431,7 @@ object PaymentOnion {
       val paymentSecret = records.get[PaymentData].map(_.secret).orElse(records.get[KeySend].map(_.paymentPreimage)).get
       val paymentPreimage = records.get[KeySend].map(_.paymentPreimage)
       val paymentMetadata = records.get[PaymentMetadata].map(_.data)
+      val isTrampoline = records.get[TrampolineOnion].nonEmpty
     }
 
     object Standard {
@@ -442,12 +443,13 @@ object PaymentOnion {
         Right(Standard(records))
       }
 
-      def createPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty): Standard = {
+      def createPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector] = None, trampolineOnion_opt: Option[OnionRoutingPacket] = None, customTlvs: Set[GenericTlv] = Set.empty): Standard = {
         val tlvs: Set[OnionPaymentPayloadTlv] = Set(
           Some(AmountToForward(amount)),
           Some(OutgoingCltv(expiry)),
           Some(PaymentData(paymentSecret, totalAmount)),
-          paymentMetadata.map(m => PaymentMetadata(m))
+          paymentMetadata.map(m => PaymentMetadata(m)),
+          trampolineOnion_opt.map(o => TrampolineOnion(o)),
         ).flatten
         Standard(TlvStream(tlvs, customTlvs))
       }
@@ -603,6 +605,6 @@ object PaymentOnionCodecs {
     .typecase(UInt64(181324718L), asyncPayment)
     .typecase(UInt64(5482373484L), keySend)
 
-  val perHopPayloadCodec: Codec[TlvStream[OnionPaymentPayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionPaymentPayloadTlv](onionTlvCodec).complete
+  val perHopPayloadCodec: Codec[TlvStream[OnionPaymentPayloadTlv]] = catchAllCodec(TlvCodecs.lengthPrefixedTlvStream[OnionPaymentPayloadTlv](onionTlvCodec).complete)
 
 }

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.{Satoshi, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, Satoshi, TxId}
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tmillisatoshi}
@@ -235,13 +235,24 @@ sealed trait ChannelReestablishTlv extends Tlv
 object ChannelReestablishTlv {
 
   case class NextFundingTlv(txId: TxId) extends ChannelReestablishTlv
+  case class YourLastFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
+  case class MyCurrentFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
 
   object NextFundingTlv {
     val codec: Codec[NextFundingTlv] = tlvField(txIdAsHash)
   }
 
+  object YourLastFundingLockedTlv {
+    val codec: Codec[YourLastFundingLockedTlv] = tlvField("your_last_funding_locked_txid" | txIdAsHash)
+  }
+  object MyCurrentFundingLockedTlv {
+    val codec: Codec[MyCurrentFundingLockedTlv] = tlvField("my_current_funding_locked_txid" | txIdAsHash)
+  }
+
   val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
     .typecase(UInt64(0), NextFundingTlv.codec)
+    .typecase(UInt64(1), YourLastFundingLockedTlv.codec)
+    .typecase(UInt64(3), MyCurrentFundingLockedTlv.codec)
   )
 }
 
@@ -267,6 +278,26 @@ object ClosingSignedTlv {
 
   val closingSignedTlvCodec: Codec[TlvStream[ClosingSignedTlv]] = tlvStream(discriminated[ClosingSignedTlv].by(varint)
     .typecase(UInt64(1), feeRange)
+  )
+
+}
+
+sealed trait ClosingTlv extends Tlv
+
+object ClosingTlv {
+  /** Signature for a closing transaction containing only the closer's output. */
+  case class CloserOutputOnly(sig: ByteVector64) extends ClosingTlv
+
+  /** Signature for a closing transaction containing only the closee's output. */
+  case class CloseeOutputOnly(sig: ByteVector64) extends ClosingTlv
+
+  /** Signature for a closing transaction containing the closer and closee's outputs. */
+  case class CloserAndCloseeOutputs(sig: ByteVector64) extends ClosingTlv
+
+  val closingTlvCodec: Codec[TlvStream[ClosingTlv]] = tlvStream(discriminated[ClosingTlv].by(varint)
+    .typecase(UInt64(1), tlvField(bytes64.as[CloserOutputOnly]))
+    .typecase(UInt64(2), tlvField(bytes64.as[CloseeOutputOnly]))
+    .typecase(UInt64(3), tlvField(bytes64.as[CloserAndCloseeOutputs]))
   )
 
 }

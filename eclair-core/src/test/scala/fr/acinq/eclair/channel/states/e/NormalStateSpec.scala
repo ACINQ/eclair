@@ -28,7 +28,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
-import fr.acinq.eclair.channel.RealScidStatus.Final
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
@@ -42,7 +41,8 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryNodeFailure, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, Warning}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryNodeFailure, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, Warning}
+import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
@@ -556,7 +556,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
 
     val sender = TestProbe()
-    bob.setFeerate(FeeratePerKw(20000 sat))
+    bob.setBitcoinCoreFeerate(FeeratePerKw(20000 sat))
     bob ! CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(20000 sat)))
     bob2alice.expectNoMessage(100 millis) // we don't close because the commitment doesn't contain any HTLC
 
@@ -569,7 +569,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectNoMessage(100 millis) // we don't close the channel, we can simply avoid using it while we disagree on feerate
 
     // we now agree on feerate so we can send HTLCs
-    bob.setFeerate(FeeratePerKw(11000 sat))
+    bob.setBitcoinCoreFeerate(FeeratePerKw(11000 sat))
     bob ! CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
     bob2alice.expectNoMessage(100 millis)
     bob ! add
@@ -801,8 +801,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(Alice.nodeParams.channelConf.dustLimit > Bob.nodeParams.channelConf.dustLimit)
     // and a low feerate to avoid messing with dust exposure limits
     val currentFeerate = FeeratePerKw(2500 sat)
-    alice.setFeerate(currentFeerate)
-    bob.setFeerate(currentFeerate)
+    alice.setBitcoinCoreFeerate(currentFeerate)
+    bob.setBitcoinCoreFeerate(currentFeerate)
     updateFee(currentFeerate, alice, bob, alice2bob, bob2alice)
     // we're gonna exchange two htlcs in each direction, the goal is to have bob's commitment have 4 htlcs, and alice's
     // commitment only have 3. We will then check that alice indeed persisted 4 htlcs, and bob only 3.
@@ -911,7 +911,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo == Left(waitForRevocation))
   }
 
-  test("recv CMD_SIGN (going above balance threshold)", Tag(ChannelStateTestsTags.NoPushAmount), Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.AdaptMaxHtlcAmount)) { f =>
+  test("recv CMD_SIGN (going above balance threshold)", Tag(ChannelStateTestsTags.NoPushAmount), Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip), Tag(ChannelStateTestsTags.AdaptMaxHtlcAmount)) { f =>
     import f._
 
     val aliceListener = TestProbe()
@@ -919,22 +919,26 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val bobListener = TestProbe()
     bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[LocalChannelUpdate])
 
-    // We make sure the funding transaction is deeply buried: before that, we won't broadcast channel updates to the network.
-    val fundingTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(42), 0, fundingTx)
+    // Alice and Bob exchange announcement_signatures and a first channel update using scid aliases.
     alice2bob.expectMsgType[AnnouncementSignatures]
     alice2bob.forward(bob)
-    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(42), 0, fundingTx)
+    assert(alice2bob.expectMsgType[ChannelUpdate].shortChannelId.isInstanceOf[Alias])
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
+    assert(bob2alice.expectMsgType[ChannelUpdate].shortChannelId.isInstanceOf[Alias])
 
-    // The channel starts with all funds on alice's side, so htlcMaximumMsat will be initially set to 0 on bob's side.
-    // A second channel update sets the scid after funding confirmation.
-    assert(aliceListener.expectMsgType[LocalChannelUpdate].channelUpdate.htlcMaximumMsat == 500_000_000.msat)
-    assert(aliceListener.expectMsgType[LocalChannelUpdate].channelUpdate.shortChannelId.isInstanceOf[RealShortChannelId])
+    // The channel starts with all funds on alice's side, so htlc_maximum_msat will be initially set to 0 on bob's side.
+    inside(aliceListener.expectMsgType[LocalChannelUpdate]) { lcu =>
+      assert(lcu.channelUpdate.htlcMaximumMsat == 500_000_000.msat)
+      assert(lcu.channelUpdate.shortChannelId.isInstanceOf[RealShortChannelId])
+      assert(lcu.channelUpdate.channelFlags.isEnabled)
+    }
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
-    assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.htlcMaximumMsat == 0.msat)
-    assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.shortChannelId.isInstanceOf[RealShortChannelId])
+    inside(bobListener.expectMsgType[LocalChannelUpdate]) { lcu =>
+      assert(lcu.channelUpdate.htlcMaximumMsat == 0.msat)
+      assert(lcu.channelUpdate.shortChannelId.isInstanceOf[RealShortChannelId])
+      assert(lcu.channelUpdate.channelFlags.isEnabled)
+    }
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
 
     // Alice and Bob use the following balance thresholds:
@@ -1527,7 +1531,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val (_, htlc) = addHtlc(150000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    bob ! CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure()))
+    bob ! CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(PermanentChannelFailure()))
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     bob2alice.forward(alice)
     bob ! CMD_SIGN()
@@ -1811,7 +1815,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val cmd = CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure()))
+    val cmd = CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(PermanentChannelFailure()))
     val Right(fail) = OutgoingPaymentPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc)
     assert(fail.id == htlc.id)
     bob ! cmd
@@ -1841,7 +1845,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val cmd = CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure()), delay_opt = Some(50 millis))
+    val cmd = CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(PermanentChannelFailure()), delay_opt = Some(50 millis))
     val Right(fail) = OutgoingPaymentPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc)
     assert(fail.id == htlc.id)
     bob ! cmd
@@ -1854,7 +1858,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-    val c = CMD_FAIL_HTLC(42, Right(PermanentChannelFailure()), replyTo_opt = Some(sender.ref))
+    val c = CMD_FAIL_HTLC(42, FailureReason.LocalFailure(PermanentChannelFailure()), replyTo_opt = Some(sender.ref))
     bob ! c
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
@@ -1874,7 +1878,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[CommitSig]
 
     // We cannot fail the HTLC, we must wait for the fulfill to be acked.
-    val c = CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure()), replyTo_opt = Some(sender.ref))
+    val c = CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(TemporaryNodeFailure()), replyTo_opt = Some(sender.ref))
     bob ! c
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), htlc.id)))
   }
@@ -1884,7 +1888,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-    val c = CMD_FAIL_HTLC(42, Right(PermanentChannelFailure()), replyTo_opt = Some(sender.ref))
+    val c = CMD_FAIL_HTLC(42, FailureReason.LocalFailure(PermanentChannelFailure()), replyTo_opt = Some(sender.ref))
     sender.send(bob, c) // this will fail
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     awaitCond(bob.underlyingActor.nodeParams.db.pendingCommands.listSettlementCommands(initialState.channelId).isEmpty)
@@ -1938,7 +1942,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    bob ! CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure()))
+    bob ! CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(PermanentChannelFailure()))
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
 
     // actual test begins
@@ -2045,7 +2049,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     // Bob receives a failure with a completely invalid onion error (missing mac)
-    bob ! CMD_FAIL_HTLC(htlc.id, Left(ByteVector.fill(561)(42)))
+    bob ! CMD_FAIL_HTLC(htlc.id, FailureReason.EncryptedDownstreamFailure(ByteVector.fill(561)(42)))
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     assert(fail.id == htlc.id)
     // We propagate failure upstream (hopefully the sender knows how to unwrap them).
@@ -2115,8 +2119,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     // We start with a low feerate.
     val initialFeerate = FeeratePerKw(500 sat)
-    alice.setFeerate(initialFeerate)
-    bob.setFeerate(initialFeerate)
+    alice.setBitcoinCoreFeerate(initialFeerate)
+    bob.setBitcoinCoreFeerate(initialFeerate)
     updateFee(initialFeerate, alice, bob, alice2bob, bob2alice)
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     assert(alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(bob.underlyingActor.nodeParams.nodeId).dustTolerance.maxExposure == 25_000.sat)
@@ -2147,8 +2151,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // A feerate increase makes these HTLCs become dust in one of the commitments but not the other.
     val cmd = CMD_UPDATE_FEE(updatedFeerate, replyTo_opt = Some(sender.ref))
-    alice.setFeerate(updatedFeerate)
-    bob.setFeerate(updatedFeerate)
+    alice.setBitcoinCoreFeerate(updatedFeerate)
+    bob.setBitcoinCoreFeerate(updatedFeerate)
     alice ! cmd
     if (higherDustLimit == aliceCommitments.params.localParams.dustLimit) {
       sender.expectMsg(RES_FAILURE(cmd, LocalDustHtlcExposureTooHigh(channelId(alice), 25000 sat, 29600000 msat)))
@@ -2236,7 +2240,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(100000000 sat))
     // we first update the feerates so that we don't trigger a 'fee too different' error
-    bob.setFeerate(fee.feeratePerKw)
+    bob.setBitcoinCoreFeerate(fee.feeratePerKw)
     bob ! fee
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) == CannotAffordFees(channelId(bob), missing = 71620000L sat, reserve = 20000L sat, fees = 72400000L sat).getMessage)
@@ -2340,7 +2344,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
 
     // A large feerate increase would make these HTLCs overflow Bob's dust exposure, so he force-closes:
-    bob.setFeerate(FeeratePerKw(20000 sat))
+    bob.setBitcoinCoreFeerate(FeeratePerKw(20000 sat))
     bob ! UpdateFee(channelId(bob), FeeratePerKw(20000 sat))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) == LocalDustHtlcExposureTooHigh(channelId(bob), 30000 sat, 40500000 msat).getMessage)
@@ -2369,7 +2373,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // A large feerate increase would make these HTLCs overflow Bob's dust exposure, so he force-close:
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    bob.setFeerate(FeeratePerKw(20000 sat))
+    bob.setBitcoinCoreFeerate(FeeratePerKw(20000 sat))
     bob ! UpdateFee(channelId(bob), FeeratePerKw(20000 sat))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) == LocalDustHtlcExposureTooHigh(channelId(bob), 30000 sat, 40500000 msat).getMessage)
@@ -2382,8 +2386,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     // We start with a low feerate.
     val initialFeerate = FeeratePerKw(500 sat)
-    alice.setFeerate(initialFeerate)
-    bob.setFeerate(initialFeerate)
+    alice.setBitcoinCoreFeerate(initialFeerate)
+    bob.setBitcoinCoreFeerate(initialFeerate)
     updateFee(initialFeerate, alice, bob, alice2bob, bob2alice)
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val aliceCommitments = initialState.commitments
@@ -2415,7 +2419,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // A feerate increase makes these HTLCs become dust in one of the commitments but not the other.
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    bob.setFeerate(updatedFeerate)
+    bob.setBitcoinCoreFeerate(updatedFeerate)
     bob ! UpdateFee(channelId(bob), updatedFeerate)
     val error = bob2alice.expectMsgType[Error]
     // NB: we don't need to distinguish local and remote, the error message is exactly the same.
@@ -2974,7 +2978,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw(minimum = FeeratePerKw(250 sat), fastest = FeeratePerKw(10_000 sat), fast = FeeratePerKw(5_000 sat), medium = FeeratePerKw(1000 sat), slow = FeeratePerKw(500 sat)))
-    alice.setFeerates(event.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
     alice ! event
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, alice.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.remoteNodeId, initialState.commitments.params.commitmentFormat, initialState.commitments.latest.capacity)))
   }
@@ -2984,13 +2988,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(initialState.commitments.latest.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
     val event1 = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw / 2).copy(minimum = FeeratePerKw(250 sat)))
-    alice.setFeerates(event1.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event1.feeratesPerKw)
     alice ! event1
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, TestConstants.anchorOutputsFeeratePerKw / 2))
     alice2bob.expectMsgType[CommitSig]
     // The configured maximum feerate is bypassed if it's below the propagation threshold.
     val event2 = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = TestConstants.anchorOutputsFeeratePerKw))
-    alice.setFeerates(event2.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event2.feeratesPerKw)
     alice ! event2
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, TestConstants.anchorOutputsFeeratePerKw * 1.25))
   }
@@ -2998,7 +3002,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
     import f._
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(10010 sat)))
-    alice.setFeerates(event.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
     alice ! event
     alice2bob.expectNoMessage(500 millis)
   }
@@ -3008,7 +3012,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(initialState.commitments.latest.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = FeeratePerKw(250 sat)))
-    alice.setFeerates(event.feeratesPerKw)
+    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
     alice ! event
     alice2bob.expectNoMessage(500 millis)
   }
@@ -3016,7 +3020,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are close)") { f =>
     import f._
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
-    bob.setFeerates(event.feeratesPerKw)
+    bob.setBitcoinCoreFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectNoMessage(500 millis)
   }
@@ -3028,7 +3032,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(14000 sat)))
-    bob.setFeerates(event.feeratesPerKw)
+    bob.setBitcoinCoreFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishTx] // commit tx
@@ -3041,8 +3045,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
 
     // We start with a feerate lower than the 10 sat/byte threshold.
-    alice.setFeerate(TestConstants.anchorOutputsFeeratePerKw / 2)
-    bob.setFeerate(TestConstants.anchorOutputsFeeratePerKw / 2)
+    alice.setBitcoinCoreFeerate(TestConstants.anchorOutputsFeeratePerKw / 2)
+    bob.setBitcoinCoreFeerate(TestConstants.anchorOutputsFeeratePerKw / 2)
     alice ! CMD_UPDATE_FEE(TestConstants.anchorOutputsFeeratePerKw / 2)
     alice2bob.expectMsgType[UpdateFee]
     alice2bob.forward(bob)
@@ -3052,7 +3056,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // The network fees spike, but Bob doesn't close the channel because we're using anchor outputs.
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 10))
-    bob.setFeerates(event.feeratesPerKw)
+    bob.setBitcoinCoreFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectNoMessage(250 millis)
     assert(bob.stateName == NORMAL)
@@ -3062,7 +3066,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
 
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(15_000 sat)))
-    bob.setFeerates(event.feeratesPerKw)
+    bob.setBitcoinCoreFeerates(event.feeratesPerKw)
     bob ! event
     bob2alice.expectNoMessage(250 millis) // we don't close because the commitment doesn't contain any HTLC
 
@@ -3119,8 +3123,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(amountClaimed == 823680.sat)
 
     // alice sets the confirmation targets to the HTLC expiry
-    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcSuccessTx, _) => (tx.htlcId, tx.confirmationTarget.confirmBefore) }.toMap == Map(htlcb1.id -> htlcb1.cltvExpiry.blockHeight))
-    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _) => (tx.htlcId, tx.confirmationTarget.confirmBefore) }.toMap == Map(htlca1.id -> htlca1.cltvExpiry.blockHeight, htlca2.id -> htlca2.cltvExpiry.blockHeight))
+    assert(claimHtlcTxs.map(_.commitTx.txid).toSet == Set(bobCommitTx.txid))
+    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcSuccessTx, _, _) => (tx.htlcId, tx.confirmationTarget.confirmBefore) }.toMap == Map(htlcb1.id -> htlcb1.cltvExpiry.blockHeight))
+    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _, _) => (tx.htlcId, tx.confirmationTarget.confirmBefore) }.toMap == Map(htlca1.id -> htlca1.cltvExpiry.blockHeight, htlca2.id -> htlca2.cltvExpiry.blockHeight))
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.txid)
@@ -3211,7 +3216,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(amountClaimed == 829850.sat)
 
     // alice sets the confirmation targets to the HTLC expiry
-    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _) => (tx.htlcId, tx.confirmationTarget.confirmBefore) }.toMap == Map(htlca1.id -> htlca1.cltvExpiry.blockHeight, htlca2.id -> htlca2.cltvExpiry.blockHeight))
+    assert(claimHtlcTxs.map(_.commitTx.txid).toSet == Set(bobCommitTx.txid))
+    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _, _) => (tx.htlcId, tx.confirmationTarget.confirmBefore) }.toMap == Map(htlca1.id -> htlca1.cltvExpiry.blockHeight, htlca2.id -> htlca2.cltvExpiry.blockHeight))
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.txid) // claim-main
@@ -3433,15 +3439,15 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // - 1 tx to claim the main delayed output
     // - 3 txs for each htlc
     // NB: 3rd-stage txs will only be published once the htlc txs confirm
-    val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
-    val htlcTx1 = alice2blockchain.expectMsgType[PublishFinalTx].tx
-    val htlcTx2 = alice2blockchain.expectMsgType[PublishFinalTx].tx
-    val htlcTx3 = alice2blockchain.expectMsgType[PublishFinalTx].tx
+    val claimMain = alice2blockchain.expectMsgType[PublishFinalTx]
+    val htlcTx1 = alice2blockchain.expectMsgType[PublishFinalTx]
+    val htlcTx2 = alice2blockchain.expectMsgType[PublishFinalTx]
+    val htlcTx3 = alice2blockchain.expectMsgType[PublishFinalTx]
     // the main delayed output and htlc txs spend the commitment transaction
-    Seq(claimMain, htlcTx1, htlcTx2, htlcTx3).foreach(tx => Transaction.correctlySpends(tx, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    Seq(claimMain, htlcTx1, htlcTx2, htlcTx3).foreach(tx => Transaction.correctlySpends(tx.tx, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.txid) // main-delayed
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.tx.txid) // main-delayed
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 1
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 2
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 3
@@ -3450,11 +3456,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // 3rd-stage txs are published when htlc txs confirm
     Seq(htlcTx1, htlcTx2, htlcTx3).foreach { htlcTimeoutTx =>
-      alice ! WatchOutputSpentTriggered(htlcTimeoutTx)
-      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == htlcTimeoutTx.txid)
-      alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTimeoutTx)
+      alice ! WatchOutputSpentTriggered(htlcTimeoutTx.amount, htlcTimeoutTx.tx)
+      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == htlcTimeoutTx.tx.txid)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTimeoutTx.tx)
       val claimHtlcDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx].tx
-      Transaction.correctlySpends(claimHtlcDelayedTx, htlcTimeoutTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(claimHtlcDelayedTx, htlcTimeoutTx.tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcDelayedTx.txid)
     }
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 3)
@@ -3590,193 +3596,99 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(addSettled.htlc == htlc1)
   }
 
-  test("recv WatchFundingDeeplyBuriedTriggered (public channel)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv WatchFundingConfirmedTriggered (public channel, zero-conf)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
-    val aliceIds = alice.stateData.asInstanceOf[DATA_NORMAL].shortIds
-    val realShortChannelId = aliceIds.real.asInstanceOf[RealScidStatus.Temporary].realScid
-    // existing funding tx coordinates
-    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
-    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
-    val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
-    assert(annSigs.shortChannelId == realShortChannelId)
-    // alice updates her internal state
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(realShortChannelId))
-    alice2bob.expectNoMessage(100 millis)
-    channelUpdateListener.expectNoMessage(100 millis)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceIds.localAlias)
-  }
-
-  test("recv WatchFundingDeeplyBuriedTriggered (public channel, dual funding)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
-    import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-    val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
-    // public channel: we don't send the channel_update directly to the peer
-    alice2bob.expectNoMessage(1 second)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(annSigs.shortChannelId))
-    // we don't re-publish the same channel_update if there was no change
-    channelUpdateListener.expectNoMessage(1 second)
-  }
-
-  test("recv WatchFundingDeeplyBuriedTriggered (public channel, zero-conf)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
-    import f._
-    // in zero-conf channel we don't have a real short channel id when going to NORMAL state
+    // For zero-conf channels we don't have a real short_channel_id when going to the NORMAL state.
     val aliceState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(aliceState.shortIds.real == RealScidStatus.Unknown)
-    // funding tx coordinates (unknown before)
-    val (blockHeight, txIndex) = (BlockHeight(400000), 42)
-    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
+    assert(alice2bob.expectMsgType[ChannelUpdate].shortChannelId == bob.stateData.asInstanceOf[DATA_NORMAL].aliases.localAlias)
+    assert(bob2alice.expectMsgType[ChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].aliases.localAlias)
+    // When the funding transaction confirms, we obtain a real short_channel_id.
+    val fundingTx = aliceState.commitments.latest.localFundingStatus.signedTx_opt.get
+    val (blockHeight, txIndex) = (BlockHeight(400_000), 42)
+    alice ! WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx)
     val realShortChannelId = RealShortChannelId(blockHeight, txIndex, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.commitInput.outPoint.index.toInt)
-    val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
-    assert(annSigs.shortChannelId == realShortChannelId)
-    // alice updates her internal state
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(realShortChannelId))
+    val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
+    assert(annSigsA.shortChannelId == realShortChannelId)
+    // Alice updates her internal state wih the real scid.
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.contains(realShortChannelId))
+    alice2bob.forward(bob, annSigsA)
     alice2bob.expectNoMessage(100 millis)
-    // we emit a new local channel update containing the same channel_update, but also the new real scid
+    // Bob doesn't know that the funding transaction is confirmed, so he doesn't send his announcement_signatures yet.
+    bob2alice.expectNoMessage(100 millis)
+    bob ! WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx)
+    val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
+    assert(annSigsB.shortChannelId == realShortChannelId)
+    bob2alice.forward(alice, annSigsB)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.map(_.shortChannelId).contains(realShortChannelId))
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.map(_.shortChannelId).contains(realShortChannelId))
+    // We emit a new local channel update containing the same channel_update, but with the new real scid.
     val lcu = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(lcu.shortIds.real == Final(realShortChannelId))
-    assert(lcu.channelUpdate == aliceState.channelUpdate)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceState.shortIds.localAlias)
+    assert(lcu.announcement_opt.map(_.shortChannelId).contains(realShortChannelId))
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == realShortChannelId)
   }
 
-  test("recv WatchFundingDeeplyBuriedTriggered (public channel, short channel id changed)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
-    import f._
-    val aliceState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val realShortChannelId = aliceState.shortIds.real.asInstanceOf[RealScidStatus.Temporary].realScid
-    // existing funding tx coordinates
-    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
-    // new funding tx coordinates (there was a reorg)
-    val (blockHeight1, txIndex1) = (blockHeight + 10, txIndex + 10)
-    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight1, txIndex1, null)
-    val newRealShortChannelId = RealShortChannelId(blockHeight1, txIndex1, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.commitInput.outPoint.index.toInt)
-    val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
-    assert(annSigs.shortChannelId == newRealShortChannelId)
-    // update data with real short channel id
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(newRealShortChannelId))
-    // we emit a new local channel update containing the same channel_update, but also the new real scid
-    val lcu = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(lcu.shortIds.real == Final(newRealShortChannelId))
-    assert(lcu.channelUpdate == aliceState.channelUpdate)
-    channelUpdateListener.expectNoMessage(100 millis)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceState.shortIds.localAlias)
-  }
-
-  test("recv WatchFundingDeeplyBuriedTriggered (private channel)") { f =>
-    import f._
-    val aliceIds = alice.stateData.asInstanceOf[DATA_NORMAL].shortIds
-    val realShortChannelId = alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real.asInstanceOf[RealScidStatus.Temporary].realScid
-    // existing funding tx coordinates
-    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
-    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
-    // update data with real short channel id
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(realShortChannelId))
-    // private channel: we'll use the remote alias in the channel_update we sent to our peer, so there is no change and we don't send a new one
-    alice2bob.expectNoMessage(100 millis)
-    channelUpdateListener.expectNoMessage(100 millis)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceIds.localAlias)
-  }
-
-  test("recv WatchFundingDeeplyBuriedTriggered (private channel, zero-conf)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("recv WatchFundingConfirmedTriggered (private channel, zero-conf)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
     // we create a new listener that registers after alice has published the funding tx
     val listener = TestProbe()
     alice.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
     // zero-conf channel: the funding tx isn't confirmed
     val aliceState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(aliceState.shortIds.real == RealScidStatus.Unknown)
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(42000), 42, null)
-    val realShortChannelId = RealShortChannelId(BlockHeight(42000), 42, 0)
+    val fundingTx = aliceState.commitments.latest.localFundingStatus.signedTx_opt.get
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(400_000), 42, fundingTx)
+    val realShortChannelId = RealShortChannelId(BlockHeight(400_000), 42, 0)
     // update data with real short channel id
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(realShortChannelId))
-    // private channel: we'll use the remote alias in the channel_update we sent to our peer, so there is no change and we don't send a new one
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.contains(realShortChannelId))
+    // private channel: we'll use the remote alias in the channel_update we sent to our peer, there is no change so we don't create a new channel_update
     alice2bob.expectNoMessage(100 millis)
-    // we emit a new local channel update containing the same channel_update, but also the new real scid
-    val lcu = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(lcu.shortIds.real == Final(realShortChannelId))
-    assert(lcu.channelUpdate == aliceState.channelUpdate)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceState.shortIds.localAlias)
+    channelUpdateListener.expectNoMessage(100 millis)
     // this is the first time we know the funding tx has been confirmed
     listener.expectMsgType[TransactionConfirmed]
   }
 
-  test("recv WatchFundingDeeplyBuriedTriggered (private channel, short channel id changed)") { f =>
-    import f._
-    val aliceState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val realShortChannelId = aliceState.shortIds.real.asInstanceOf[RealScidStatus.Temporary].realScid
-    // existing funding tx coordinates
-    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
-    // new funding tx coordinates (there was a reorg)
-    val (blockHeight1, txIndex1) = (blockHeight + 10, txIndex + 10)
-    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight1, txIndex1, null)
-    val newRealShortChannelId = RealShortChannelId(blockHeight1, txIndex1, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.commitInput.outPoint.index.toInt)
-    // update data with real short channel id
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortIds.real == RealScidStatus.Final(newRealShortChannelId))
-    // private channel: we'll use the remote alias in the channel_update we sent to our peer, so there is no change and we don't send a new one
-    alice2bob.expectNoMessage(100 millis)
-    // we emit a new local channel update containing the same channel_update, but also the new real scid
-    val lcu = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(lcu.shortIds.real == Final(newRealShortChannelId))
-    assert(lcu.channelUpdate == aliceState.channelUpdate)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceState.shortIds.localAlias)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceState.shortIds.localAlias)
-  }
-
-  test("recv AnnouncementSignatures", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv AnnouncementSignatures", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val realShortChannelId = initialState.shortIds.real.asInstanceOf[RealScidStatus.Temporary].realScid
-    // existing funding tx coordinates
-    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
-
-    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
+    val realShortChannelId = initialState.commitments.latest.shortChannelId_opt.get
+    // Alice and Bob exchange announcement_signatures.
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
-    bob ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
+    assert(annSigsA.shortChannelId == realShortChannelId)
+    alice2bob.expectMsgType[ChannelUpdate]
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
-    import initialState.commitments.latest.{localParams, remoteParams}
-    val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.channelKeyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex = 0).publicKey, initialState.commitments.latest.remoteFundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
+    assert(annSigsB.shortChannelId == realShortChannelId)
+    bob2alice.expectMsgType[ChannelUpdate]
+    val aliceFundingKey = Alice.channelKeyManager.fundingPublicKey(initialState.commitments.params.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
+    val bobFundingKey = initialState.commitments.latest.remoteFundingPubKey
+    val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, Bob.nodeParams.nodeId, aliceFundingKey, bobFundingKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
     // actual test starts here
+    val listener = TestProbe()
+    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ShortChannelIdAssigned])
     bob2alice.forward(alice, annSigsB)
     awaitAssert {
       val normal = alice.stateData.asInstanceOf[DATA_NORMAL]
-      assert(normal.shortIds.real == RealScidStatus.Final(annSigsA.shortChannelId) && normal.channelAnnouncement.contains(channelAnn) && normal.channelUpdate.shortChannelId == annSigsA.shortChannelId)
+      assert(normal.lastAnnouncement_opt.contains(channelAnn))
+      assert(normal.channelUpdate.shortChannelId == realShortChannelId)
     }
-    // we use the real scid instead of remote alias as soon as the channel is announced
+    assert(listener.expectMsgType[ShortChannelIdAssigned].announcement_opt.contains(channelAnn))
+    // We use the real scid in channel updates instead of the remote alias as soon as the channel is announced.
     val lcu = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(lcu.channelUpdate.shortChannelId == realShortChannelId)
-    assert(lcu.channelAnnouncement_opt.contains(channelAnn))
-    // we don't send directly the channel_update to our peer, public announcements are handled by the router
+    assert(lcu.announcement_opt.map(_.announcement).contains(channelAnn))
+    // We don't send directly the channel_update to our peer, public announcements are handled by the router.
     alice2bob.expectNoMessage(100 millis)
+    // We ignore redundant announcement_signatures.
+    bob2alice.forward(alice, annSigsB)
+    alice2bob.expectNoMessage(100 millis)
+    channelUpdateListener.expectNoMessage(100 millis)
   }
 
-  test("recv AnnouncementSignatures (re-send)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
-    import f._
-    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val realShortChannelId = initialState.shortIds.real.asInstanceOf[RealScidStatus.Temporary].realScid
-    // existing funding tx coordinates
-    val TxCoordinates(blockHeight, txIndex, _) = ShortChannelId.coordinates(realShortChannelId)
-
-    alice ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
-    val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
-    bob ! WatchFundingDeeplyBuriedTriggered(blockHeight, txIndex, null)
-    val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
-    import initialState.commitments.latest.{localParams, remoteParams}
-    val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.channelKeyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex = 0).publicKey, initialState.commitments.latest.remoteFundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
-    bob2alice.forward(alice)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement.contains(channelAnn))
-
-    // actual test starts here
-    // simulate bob re-sending its sigs
-    bob2alice.send(alice, annSigsA)
-    // alice re-sends her sigs
-    alice2bob.expectMsg(annSigsA)
-  }
-
-  test("recv AnnouncementSignatures (invalid)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv AnnouncementSignatures (invalid)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
     import f._
     val channelId = alice.stateData.asInstanceOf[DATA_NORMAL].channelId
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     alice2bob.expectMsgType[AnnouncementSignatures]
-    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
+    alice2bob.expectMsgType[ChannelUpdate]
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.expectMsgType[ChannelUpdate]
     // actual test starts here - Bob sends an invalid signature
     val annSigsB_invalid = annSigsB.copy(bitcoinSignature = annSigsB.nodeSignature, nodeSignature = annSigsB.bitcoinSignature)
     bob2alice.forward(alice, annSigsB_invalid)
@@ -3786,10 +3698,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
   }
 
-  test("recv BroadcastChannelUpdate", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv BroadcastChannelUpdate", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     val realScid = bob2alice.expectMsgType[AnnouncementSignatures].shortChannelId
     bob2alice.forward(alice)
     val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
@@ -3803,10 +3713,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
   }
 
-  test("recv BroadcastChannelUpdate (no changes)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv BroadcastChannelUpdate (no changes)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
@@ -3852,10 +3760,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == OFFLINE)
   }
 
-  test("recv INPUT_DISCONNECTED (public channel)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv INPUT_DISCONNECTED (public channel)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
     import f._
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
@@ -3867,18 +3773,19 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     channelUpdateListener.expectNoMessage(1 second)
   }
 
-  test("recv INPUT_DISCONNECTED (public channel, with pending unsigned htlcs)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv INPUT_DISCONNECTED (public channel, with pending unsigned htlcs)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
     import f._
     val sender = TestProbe()
-    alice ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
-    bob ! WatchFundingDeeplyBuriedTriggered(BlockHeight(400000), 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
+    bob2alice.expectMsgType[ChannelUpdate]
     alice2bob.expectMsgType[AnnouncementSignatures]
     alice2bob.forward(bob)
+    alice2bob.expectMsgType[ChannelUpdate]
     val update1a = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     val update1b = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(update1a.channelUpdate.channelFlags.isEnabled)
+    assert(update1b.channelUpdate.channelFlags.isEnabled)
     val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val (_, htlc2) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)

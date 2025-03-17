@@ -242,7 +242,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
       assert(newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.forall(_.witness.stack.isEmpty))
       assert(newnormal.commitments.latest.localCommit.htlcTxsAndRemoteSigs.forall(_.htlcTx.tx.txIn.forall(_.witness.stack.isEmpty)))
       // make sure that we have extracted the remote sig of the local tx
-      Transactions.checkSig(newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx, newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.remoteSig, newnormal.commitments.remoteNodeId, TxOwner.Remote, newnormal.commitments.params.commitmentFormat)
+      val RemoteSignature.FullSignature(remoteSig) = newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.remoteSig
+      newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.checkSig(remoteSig, newnormal.commitments.remoteNodeId, TxOwner.Remote, newnormal.commitments.params.commitmentFormat)
     }
   }
 
@@ -335,7 +336,7 @@ object ChannelCodecsSpec {
       remoteNextCommitInfo = Right(randomKey().publicKey),
       remotePerCommitmentSecrets = ShaChain.init,
       originChannels = origins)
-    DATA_NORMAL(commitments, ShortIds(RealScidStatus.Final(RealShortChannelId(42)), ShortChannelId.generateLocalAlias(), None), None, channelUpdate, None, None, None, SpliceStatus.NoSplice)
+    DATA_NORMAL(commitments, ShortIdAliases(ShortChannelId.generateLocalAlias(), None), None, channelUpdate, None, None, None, SpliceStatus.NoSplice)
   }
 
 }

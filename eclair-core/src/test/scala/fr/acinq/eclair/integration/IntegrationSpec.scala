@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Graph.PaymentWeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
@@ -57,13 +57,13 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       maxFeeProportional = 0.03,
       maxCltv = CltvExpiryDelta(Int.MaxValue),
       maxRouteLength = ROUTE_MAX_LENGTH),
-    heuristics = Left(WeightRatios(
+    heuristics = PaymentWeightRatios(
       baseFactor = 0,
       cltvDeltaFactor = 1,
       ageFactor = 0,
       capacityFactor = 0,
-      hopCost = RelayFees(0 msat, 0),
-    )),
+      hopFees = RelayFees(0 msat, 0),
+    ),
     mpp = MultiPartParams(15000000 msat, 6),
     experimentName = "my-test-experiment",
     experimentPercentage = 100
@@ -81,7 +81,6 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     "eclair.bitcoind.zmqblock" -> s"tcp://127.0.0.1:$bitcoindZmqBlockPort",
     "eclair.bitcoind.zmqtx" -> s"tcp://127.0.0.1:$bitcoindZmqTxPort",
     "eclair.bitcoind.wallet" -> defaultWallet,
-    "eclair.channel.mindepth-blocks" -> 2,
     "eclair.channel.max-htlc-value-in-flight-msat" -> 100000000000L,
     "eclair.channel.max-htlc-value-in-flight-percent" -> 100,
     "eclair.channel.max-block-processing-delay" -> "2 seconds",

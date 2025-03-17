@@ -14,8 +14,8 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
-import fr.acinq.eclair.wire.protocol.{LiquidityAds, TxSignatures, UpdateAddHtlc, UpdateMessage}
-import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, PermanentChannelFeature, channel}
+import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{Alias, BlockHeight, FeatureSupport, Features, MilliSatoshiLong, PermanentChannelFeature, RealShortChannelId, channel}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -109,10 +109,11 @@ private[channel] object ChannelCodecs4 {
 
     val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
+    // all v4-encoded channels use segwit inputs, support for taproot inputs will be added later in v5 codecs
     val inputInfoCodec: Codec[InputInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo]
+        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo.SegwitInput].upcast[InputInfo]
 
     val outputInfoCodec: Codec[OutputInfo] = (
       ("index" | uint32) ::
@@ -182,10 +183,10 @@ private[channel] object ChannelCodecs4 {
     val htlcTxsAndRemoteSigsCodec: Codec[HtlcTxAndRemoteSig] = (
       ("txinfo" | htlcTxCodec) ::
         ("remoteSig" | bytes64)).as[HtlcTxAndRemoteSig]
-
+    
     val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = (
       ("commitTx" | commitTxCodec) ::
-        ("remoteSig" | bytes64)).as[CommitTxAndRemoteSig]
+        ("remoteSig" | bytes64.as[RemoteSignature.FullSignature].upcast[RemoteSignature])).as[CommitTxAndRemoteSig]
 
     val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage](f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g))
 
@@ -423,15 +424,16 @@ private[channel] object ChannelCodecs4 {
     }
 
     val fundingTxStatusCodec: Codec[LocalFundingStatus] = discriminated[LocalFundingStatus].by(uint8)
+      .typecase(0x0a, (txCodec :: realshortchannelid :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[ConfirmedFundingTx])
       .typecase(0x01, optional(bool8, txCodec).as[SingleFundedUnconfirmedFundingTx])
       .typecase(0x07, dualFundedUnconfirmedFundingTxCodec)
       .typecase(0x08, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[ZeroconfPublishedFundingTx])
-      .typecase(0x09, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[ConfirmedFundingTx])
+      .typecase(0x09, (txCodec :: provide(RealShortChannelId(0)) :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[ConfirmedFundingTx])
       .typecase(0x02, dualFundedUnconfirmedFundingTxWithoutLiquidityPurchaseCodec)
       .typecase(0x05, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ZeroconfPublishedFundingTx])
-      .typecase(0x06, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ConfirmedFundingTx])
+      .typecase(0x06, (txCodec :: provide(RealShortChannelId(0)) :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ConfirmedFundingTx])
       .typecase(0x03, (txCodec :: provide(Option.empty[TxSignatures]) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ZeroconfPublishedFundingTx])
-      .typecase(0x04, (txCodec :: provide(Option.empty[TxSignatures]) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ConfirmedFundingTx])
+      .typecase(0x04, (txCodec :: provide(RealShortChannelId(0)) :: provide(Option.empty[TxSignatures]) :: provide(Option.empty[LiquidityAds.PurchaseBasicInfo])).as[ConfirmedFundingTx])
 
     val remoteFundingStatusCodec: Codec[RemoteFundingStatus] = discriminated[RemoteFundingStatus].by(uint8)
       .typecase(0x01, provide(RemoteFundingStatus.NotLocked))
@@ -646,6 +648,12 @@ private[channel] object ChannelCodecs4 {
       .\(0x03) { case status: SpliceStatus.SpliceWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[channel.SpliceStatus.SpliceWaitingForSigs])
       .\(0x02) { case status: SpliceStatus.SpliceWaitingForSigs => status }(interactiveTxWaitingForSigsWithoutLiquidityPurchaseCodec.as[channel.SpliceStatus.SpliceWaitingForSigs])
 
+    private val shortids: Codec[ChannelTypes4.ShortIds] = (
+      ("real_opt" | optional(bool8, realshortchannelid)) ::
+        ("localAlias" | discriminated[Alias].by(uint16).typecase(1, alias)) ::
+        ("remoteAlias_opt" | optional(bool8, alias))
+      ).as[ChannelTypes4.ShortIds].decodeOnly
+
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_00_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
         ("waitingSince" | blockHeight) ::
@@ -660,11 +668,15 @@ private[channel] object ChannelCodecs4 {
 
     val DATA_WAIT_FOR_CHANNEL_READY_01_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
-        ("shortIds" | shortids)).as[DATA_WAIT_FOR_CHANNEL_READY]
+        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_CHANNEL_READY_0b].map(_.migrate()).decodeOnly
 
     val DATA_WAIT_FOR_CHANNEL_READY_0b_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
       ("commitments" | versionedCommitmentsCodec) ::
-        ("shortIds" | shortids)).as[DATA_WAIT_FOR_CHANNEL_READY]
+        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_CHANNEL_READY_0b].map(_.migrate()).decodeOnly
+
+    val DATA_WAIT_FOR_CHANNEL_READY_15_Codec: Codec[DATA_WAIT_FOR_CHANNEL_READY] = (
+      ("commitments" | versionedCommitmentsCodec) ::
+        ("aliases" | aliases)).as[DATA_WAIT_FOR_CHANNEL_READY]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_SIGNED_09_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED] = (
       ("channelParams" | paramsCodec) ::
@@ -681,7 +693,7 @@ private[channel] object ChannelCodecs4 {
         ("remotePushAmount" | millisatoshi) ::
         ("status" | interactiveTxWaitingForSigsCodec) ::
         ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))).as[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED]
-    
+
     val DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED_02_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
         ("localPushAmount" | millisatoshi) ::
@@ -702,11 +714,15 @@ private[channel] object ChannelCodecs4 {
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_03_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
-        ("shortIds" | shortids)).as[DATA_WAIT_FOR_DUAL_FUNDING_READY]
+        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_DUAL_FUNDING_READY_0d].map(_.migrate()).decodeOnly
 
     val DATA_WAIT_FOR_DUAL_FUNDING_READY_0d_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
       ("commitments" | versionedCommitmentsCodec) ::
-        ("shortIds" | shortids)).as[DATA_WAIT_FOR_DUAL_FUNDING_READY]
+        ("shortIds" | shortids)).as[ChannelTypes4.DATA_WAIT_FOR_DUAL_FUNDING_READY_0d].map(_.migrate()).decodeOnly
+
+    val DATA_WAIT_FOR_DUAL_FUNDING_READY_16_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_READY] = (
+      ("commitments" | versionedCommitmentsCodec) ::
+        ("aliases" | aliases)).as[DATA_WAIT_FOR_DUAL_FUNDING_READY]
 
     val DATA_NORMAL_04_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
@@ -716,11 +732,21 @@ private[channel] object ChannelCodecs4 {
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("closingFeerates" | optional(bool8, closingFeeratesCodec)) ::
-        ("spliceStatus" | spliceStatusCodec)).as[DATA_NORMAL]
+        ("spliceStatus" | spliceStatusCodec)).as[ChannelTypes4.DATA_NORMAL_0e].map(_.migrate()).decodeOnly
 
     val DATA_NORMAL_0e_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | versionedCommitmentsCodec) ::
         ("shortids" | shortids) ::
+        ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
+        ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
+        ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("closingFeerates" | optional(bool8, closingFeeratesCodec)) ::
+        ("spliceStatus" | spliceStatusCodec)).as[ChannelTypes4.DATA_NORMAL_0e].map(_.migrate()).decodeOnly
+
+    val DATA_NORMAL_14_Codec: Codec[DATA_NORMAL] = (
+      ("commitments" | versionedCommitmentsCodec) ::
+        ("aliases" | aliases) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
@@ -753,6 +779,19 @@ private[channel] object ChannelCodecs4 {
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
         ("closingTxProposed" | listOfN(uint16, listOfN(uint16, lengthDelimited(closingTxProposedCodec)))) ::
         ("bestUnpublishedClosingTx_opt" | optional(bool8, closingTxCodec))).as[DATA_NEGOTIATING]
+
+    private val closingTxsCodec: Codec[ClosingTxs] = (
+      ("localAndRemote_opt" | optional(bool8, closingTxCodec)) ::
+        ("localOnly_opt" | optional(bool8, closingTxCodec)) ::
+        ("remoteOnly_opt" | optional(bool8, closingTxCodec))).as[ClosingTxs]
+
+    val DATA_NEGOTIATING_SIMPLE_17_Codec: Codec[DATA_NEGOTIATING_SIMPLE] = (
+      ("commitments" | commitmentsCodec) ::
+        ("lastClosingFeerate" | feeratePerKw) ::
+        ("localScriptPubKey" | varsizebinarydata) ::
+        ("remoteScriptPubKey" | varsizebinarydata) ::
+        ("proposedClosingTxs" | listOfN(uint16, closingTxsCodec)) ::
+        ("publishedClosingTxs" | listOfN(uint16, closingTxCodec))).as[DATA_NEGOTIATING_SIMPLE]
 
     val DATA_CLOSING_07_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
@@ -789,6 +828,10 @@ private[channel] object ChannelCodecs4 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x17, Codecs.DATA_NEGOTIATING_SIMPLE_17_Codec)
+    .typecase(0x16, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_READY_16_Codec)
+    .typecase(0x15, Codecs.DATA_WAIT_FOR_CHANNEL_READY_15_Codec)
+    .typecase(0x14, Codecs.DATA_NORMAL_14_Codec)
     .typecase(0x13, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_SIGNED_13_Codec)
     .typecase(0x12, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_12_Codec)
     .typecase(0x11, Codecs.DATA_CLOSING_11_Codec)

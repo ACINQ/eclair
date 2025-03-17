@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
-import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated, typed}
+import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
@@ -32,6 +32,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates, OnChainChannelFunder, OnchainPubkeyCache}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.MessageRelay.Status
 import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
@@ -44,7 +45,8 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
-import fr.acinq.eclair.wire.protocol.{AddFeeCredit, ChannelTlv, CurrentFeeCredit, Error, HasChannelId, HasTemporaryChannelId, LightningMessage, LiquidityAds, NodeAddress, OnTheFlyFundingFailureMessage, OnionMessage, OnionRoutingPacket, RecommendedFeerates, RoutingMessage, SpliceInit, TemporaryChannelFailure, TlvStream, TxAbort, UnknownMessage, Warning, WillAddHtlc, WillFailHtlc, WillFailMalformedHtlc}
+import fr.acinq.eclair.wire.protocol.{AddFeeCredit, ChannelTlv, CurrentFeeCredit, Error, FailureReason, HasChannelId, HasTemporaryChannelId, LightningMessage, LiquidityAds, NodeAddress, OnTheFlyFundingFailureMessage, OnionMessage, OnionRoutingPacket, PeerStorageRetrieval, PeerStorageStore, RecommendedFeerates, RoutingMessage, SpliceInit, TlvStream, TxAbort, UnknownMessage, Warning, WillAddHtlc, WillFailHtlc, WillFailMalformedHtlc}
+import scodec.bits.ByteVector
 
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
@@ -72,6 +74,7 @@ class Peer(val nodeParams: NodeParams,
 
   context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
   context.system.eventStream.subscribe(self, classOf[CurrentBlockHeight])
+  context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
 
   startWith(INSTANTIATING, Nothing)
 
@@ -84,7 +87,14 @@ class Peer(val nodeParams: NodeParams,
         FinalChannelId(state.channelId) -> channel
       }.toMap
       context.system.eventStream.publish(PeerCreated(self, remoteNodeId))
-      goto(DISCONNECTED) using DisconnectedData(channels) // when we restart, we will attempt to reconnect right away, but then we'll wait
+      val peerStorageData = if (nodeParams.features.hasFeature(Features.ProvideStorage)) {
+        nodeParams.db.peers.getStorage(remoteNodeId)
+      } else {
+        None
+      }
+      // When we restart, we will attempt to reconnect right away, but then we'll wait.
+      // We don't fetch our peer's features from the DB: if the connection succeeds, we will get them from their init message, which saves a DB call.
+      goto(DISCONNECTED) using DisconnectedData(channels, activeChannels = Set.empty, PeerStorage(peerStorageData, written = true), remoteFeatures_opt = None)
   }
 
   when(DISCONNECTED) {
@@ -93,18 +103,22 @@ class Peer(val nodeParams: NodeParams,
       stay()
 
     case Event(connectionReady: PeerConnection.ConnectionReady, d: DisconnectedData) =>
-      gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) })
+      gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) }, d.activeChannels, d.peerStorage)
 
-    case Event(Terminated(actor), d: DisconnectedData) if d.channels.values.toSet.contains(actor) =>
-      // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
-      val channelIds = d.channels.filter(_._2 == actor).keys
-      log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
-      val channels1 = d.channels -- channelIds
+    case Event(ChannelTerminated(actor), d: DisconnectedData) =>
+      val channels1 = if (d.channels.values.toSet.contains(actor)) {
+        // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
+        val channelIds = d.channels.filter(_._2 == actor).keys
+        log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
+        d.channels -- channelIds
+      } else {
+        d.channels
+      }
       if (channels1.isEmpty && canForgetPendingOnTheFlyFunding()) {
         log.info("that was the last open channel")
         context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
         // We have no existing channels or pending signed transaction, we can forget about this peer.
-        stopPeer()
+        stopPeer(d.peerStorage)
       } else {
         stay() using d.copy(channels = channels1)
       }
@@ -115,7 +129,7 @@ class Peer(val nodeParams: NodeParams,
       }
       if (d.channels.isEmpty && canForgetPendingOnTheFlyFunding()) {
         // We have no existing channels or pending signed transaction, we can forget about this peer.
-        stopPeer()
+        stopPeer(d.peerStorage)
       } else {
         stay()
       }
@@ -133,6 +147,26 @@ class Peer(val nodeParams: NodeParams,
     case Event(_: SpawnChannelNonInitiator, _) => stay() // we got disconnected before creating the channel actor
 
     case Event(_: LightningMessage, _) => stay() // we probably just got disconnected and that's the last messages we received
+
+    case Event(WritePeerStorage, d: DisconnectedData) =>
+      d.peerStorage.data.foreach(nodeParams.db.peers.updateStorage(remoteNodeId, _))
+      stay() using d.copy(peerStorage = d.peerStorage.copy(written = true))
+
+    case Event(e: ChannelReadyForPayments, d: DisconnectedData) =>
+      if (!d.peerStorage.written && !isTimerActive(WritePeerStorageTimerKey)) {
+        startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.getWriteDelay(remoteNodeId, d.remoteFeatures_opt.map(_.features)))
+      }
+      val remoteFeatures_opt = d.remoteFeatures_opt match {
+        case Some(remoteFeatures) if !remoteFeatures.written =>
+          // We have a channel, so we can write to the DB without any DoS risk.
+          nodeParams.db.peers.addOrUpdatePeerFeatures(remoteNodeId, remoteFeatures.features)
+          Some(remoteFeatures.copy(written = true))
+        case _ => d.remoteFeatures_opt
+      }
+      stay() using d.copy(activeChannels = d.activeChannels + e.channelId, remoteFeatures_opt = remoteFeatures_opt)
+
+    case Event(e: LocalChannelDown, d: DisconnectedData) =>
+      stay() using d.copy(activeChannels = d.activeChannels - e.channelId)
   }
 
   when(CONNECTED) {
@@ -173,7 +207,7 @@ class Peer(val nodeParams: NodeParams,
 
       case Event(SpawnChannelInitiator(replyTo, c, channelConfig, channelType, localParams), d: ConnectedData) =>
         val channel = spawnChannel()
-        c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
+        context.system.scheduler.scheduleOnce(c.timeout_opt.map(_.duration).getOrElse(nodeParams.channelConf.channelFundingTimeout), channel, Channel.TickChannelOpenTimeout)(context.dispatcher)
         val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
         val requireConfirmedInputs = c.requireConfirmedInputsOverride_opt.getOrElse(nodeParams.channelConf.requireConfirmedInputsForDualFunding)
         val temporaryChannelId = if (dualFunded) {
@@ -181,10 +215,10 @@ class Peer(val nodeParams: NodeParams,
         } else {
           randomBytes32()
         }
-        val fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentBitcoinCoreFeerates))
+        val fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing))
         val commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelType.commitmentFormat, c.fundingAmount)
         log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=$fundingTxFeerate temporaryChannelId=$temporaryChannelId localParams=$localParams")
-        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.fundingTxFeeBudget_opt, c.pushAmount_opt, requireConfirmedInputs, c.requestFunding_opt, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, c.channelOrigin, replyTo)
+        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.fundingTxFeeBudget_opt, c.pushAmount_opt, requireConfirmedInputs, c.requestFunding_opt, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, replyTo)
         stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
@@ -227,6 +261,7 @@ class Peer(val nodeParams: NodeParams,
               stay()
             case accept: OnTheFlyFunding.ValidationResult.Accept =>
               val channel = spawnChannel()
+              context.system.scheduler.scheduleOnce(nodeParams.channelConf.channelFundingTimeout, channel, Channel.TickChannelOpenTimeout)(context.dispatcher)
               log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
               open match {
                 case Left(open) =>
@@ -267,27 +302,27 @@ class Peer(val nodeParams: NodeParams,
                 status.timer.cancel()
                 val timer = context.system.scheduler.scheduleOnce(nodeParams.onTheFlyFundingConfig.proposalTimeout, self, OnTheFlyFundingTimeout(cmd.paymentHash))(context.dispatcher)
                 pending.copy(
-                  proposed = pending.proposed :+ OnTheFlyFunding.Proposal(htlc, cmd.upstream),
+                  proposed = pending.proposed :+ OnTheFlyFunding.Proposal(htlc, cmd.upstream, cmd.onionSharedSecrets),
                   status = OnTheFlyFunding.Status.Proposed(timer)
                 )
               case status: OnTheFlyFunding.Status.AddedToFeeCredit =>
                 log.info("received extra payment for on-the-fly funding that was added to fee credit (payment_hash={}, amount={})", cmd.paymentHash, cmd.amount)
-                val proposal = OnTheFlyFunding.Proposal(htlc, cmd.upstream)
+                val proposal = OnTheFlyFunding.Proposal(htlc, cmd.upstream, cmd.onionSharedSecrets)
                 proposal.createFulfillCommands(status.preimage).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
                 pending.copy(proposed = pending.proposed :+ proposal)
               case status: OnTheFlyFunding.Status.Funded =>
                 log.info("rejecting extra payment for on-the-fly funding that has already been funded with txId={} (payment_hash={}, amount={})", status.txId, cmd.paymentHash, cmd.amount)
                 // The payer is buggy and is paying the same payment_hash multiple times. We could simply claim that
                 // extra payment for ourselves, but we're nice and instead immediately fail it.
-                val proposal = OnTheFlyFunding.Proposal(htlc, cmd.upstream)
-                proposal.createFailureCommands(None).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+                val proposal = OnTheFlyFunding.Proposal(htlc, cmd.upstream, cmd.onionSharedSecrets)
+                proposal.createFailureCommands(None)(log).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
                 pending
             }
           case None =>
             self ! Peer.OutgoingMessage(htlc, d.peerConnection)
             Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.Proposed).increment()
             val timer = context.system.scheduler.scheduleOnce(nodeParams.onTheFlyFundingConfig.proposalTimeout, self, OnTheFlyFundingTimeout(cmd.paymentHash))(context.dispatcher)
-            OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(htlc, cmd.upstream)), OnTheFlyFunding.Status.Proposed(timer))
+            OnTheFlyFunding.Pending(Seq(OnTheFlyFunding.Proposal(htlc, cmd.upstream, cmd.onionSharedSecrets)), OnTheFlyFunding.Status.Proposed(timer))
         }
         pendingOnTheFlyFunding += (htlc.paymentHash -> pending)
         stay()
@@ -300,10 +335,10 @@ class Peer(val nodeParams: NodeParams,
                 pending.proposed.find(_.htlc.id == msg.id) match {
                   case Some(htlc) =>
                     val failure = msg match {
-                      case msg: WillFailHtlc => Left(msg.reason)
-                      case msg: WillFailMalformedHtlc => Right(createBadOnionFailure(msg.onionHash, msg.failureCode))
+                      case msg: WillFailHtlc => FailureReason.EncryptedDownstreamFailure(msg.reason)
+                      case msg: WillFailMalformedHtlc => FailureReason.LocalFailure(createBadOnionFailure(msg.onionHash, msg.failureCode))
                     }
-                    htlc.createFailureCommands(Some(failure)).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+                    htlc.createFailureCommands(Some(failure))(log).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
                     val proposed1 = pending.proposed.filterNot(_.htlc.id == msg.id)
                     if (proposed1.isEmpty) {
                       Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.Rejected).increment()
@@ -335,7 +370,7 @@ class Peer(val nodeParams: NodeParams,
             pending.status match {
               case _: OnTheFlyFunding.Status.Proposed =>
                 log.warning("on-the-fly funding proposal timed out for payment_hash={}", timeout.paymentHash)
-                pending.createFailureCommands().foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+                pending.createFailureCommands(log).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
                 Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.Expired).increment()
                 pendingOnTheFlyFunding -= timeout.paymentHash
                 self ! Peer.OutgoingMessage(Warning(s"on-the-fly funding proposal timed out for payment_hash=${timeout.paymentHash}"), d.peerConnection)
@@ -407,7 +442,7 @@ class Peer(val nodeParams: NodeParams,
         }
         stay()
 
-      case Event(e: ChannelReadyForPayments, _: ConnectedData) =>
+      case Event(e: ChannelReadyForPayments, d: ConnectedData) =>
         pendingOnTheFlyFunding.foreach {
           case (paymentHash, pending) =>
             pending.status match {
@@ -423,7 +458,17 @@ class Peer(val nodeParams: NodeParams,
                 }
             }
         }
-        stay()
+        if (!d.peerStorage.written && !isTimerActive(WritePeerStorageTimerKey)) {
+          startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.getWriteDelay(remoteNodeId, Some(d.remoteFeatures)))
+        }
+        if (!d.remoteFeaturesWritten) {
+          // We have a channel, so we can write to the DB without any DoS risk.
+          nodeParams.db.peers.addOrUpdatePeerFeatures(remoteNodeId, d.remoteFeatures)
+        }
+        stay() using d.copy(activeChannels = d.activeChannels + e.channelId, remoteFeaturesWritten = true)
+
+      case Event(e: LocalChannelDown, d: ConnectedData) =>
+        stay() using d.copy(activeChannels = d.activeChannels - e.channelId)
 
       case Event(msg: HasChannelId, d: ConnectedData) =>
         d.channels.get(FinalChannelId(msg.channelId)) match {
@@ -462,29 +507,34 @@ class Peer(val nodeParams: NodeParams,
         }
         if (d.channels.isEmpty && canForgetPendingOnTheFlyFunding()) {
           // We have no existing channels or pending signed transaction, we can forget about this peer.
-          stopPeer()
+          stopPeer(d.peerStorage)
         } else {
           d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
+          val lastRemoteFeatures = LastRemoteFeatures(d.remoteFeatures, d.remoteFeaturesWritten)
+          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, d.activeChannels, d.peerStorage, Some(lastRemoteFeatures))
         }
 
-      case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
-        // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
-        val channelIds = d.channels.filter(_._2 == actor).keys
-        log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
-        val channels1 = d.channels -- channelIds
-        if (channels1.isEmpty) {
-          log.info("that was the last open channel, closing the connection")
-          context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
-          d.peerConnection ! PeerConnection.Kill(KillReason.NoRemainingChannel)
+      case Event(ChannelTerminated(actor), d: ConnectedData) =>
+        if (d.channels.values.toSet.contains(actor)) {
+          // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
+          val channelIds = d.channels.filter(_._2 == actor).keys
+          log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
+          val channels1 = d.channels -- channelIds
+          if (channels1.isEmpty) {
+            log.info("that was the last open channel, closing the connection")
+            context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
+            d.peerConnection ! PeerConnection.Kill(KillReason.NoRemainingChannel)
+          }
+          stay() using d.copy(channels = channels1)
+        } else {
+          stay()
         }
-        stay() using d.copy(channels = channels1)
 
       case Event(connectionReady: PeerConnection.ConnectionReady, d: ConnectedData) =>
         log.debug(s"got new connection, killing current one and switching")
         d.peerConnection ! PeerConnection.Kill(KillReason.ConnectionReplaced)
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        gotoConnected(connectionReady, d.channels)
+        gotoConnected(connectionReady, d.channels, d.activeChannels, d.peerStorage)
 
       case Event(msg: OnionMessage, _: ConnectedData) =>
         OnionMessages.process(nodeParams.privateKey, msg) match {
@@ -508,6 +558,10 @@ class Peer(val nodeParams: NodeParams,
         replyTo_opt.foreach(_ ! MessageRelay.Sent(messageId))
         stay()
 
+      case Event(msg: RecommendedFeerates, _) =>
+        log.info("our peer recommends the following feerates: funding={}, commitment={}", msg.fundingFeerate, msg.commitmentFeerate)
+        stay()
+
       case Event(unknownMsg: UnknownMessage, d: ConnectedData) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
         context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg, d.connectionInfo))
         stay()
@@ -516,6 +570,27 @@ class Peer(val nodeParams: NodeParams,
         logMessage(unknownMsg, "OUT")
         d.peerConnection forward unknownMsg
         stay()
+
+      case Event(store: PeerStorageStore, d: ConnectedData) =>
+        if (nodeParams.features.hasFeature(Features.ProvideStorage)) {
+          // If we don't have any pending write operations, we write the updated peer storage to disk after a delay.
+          // This ensures that when we receive a burst of peer storage updates, we will rate-limit our IO disk operations.
+          // If we already have a pending write operation, we must not reset the timer, otherwise we may indefinitely delay
+          // writing to the DB and may never store our peer's backup.
+          if (d.activeChannels.isEmpty) {
+            log.debug("received peer storage from peer with no active channel")
+          } else if (!isTimerActive(WritePeerStorageTimerKey)) {
+            startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.getWriteDelay(remoteNodeId, Some(d.remoteFeatures)))
+          }
+          stay() using d.copy(peerStorage = PeerStorage(Some(store.blob), written = false))
+        } else {
+          log.debug("ignoring peer storage, feature disabled")
+          stay()
+        }
+
+      case Event(WritePeerStorage, d: ConnectedData) =>
+        d.peerStorage.data.foreach(nodeParams.db.peers.updateStorage(remoteNodeId, _))
+        stay() using d.copy(peerStorage = d.peerStorage.copy(written = true))
 
       case Event(unhandledMsg: LightningMessage, _) =>
         log.warning("ignoring message {}", unhandledMsg)
@@ -539,12 +614,20 @@ class Peer(val nodeParams: NodeParams,
 
     case Event(r: GetPeerInfo, d) =>
       val replyTo = r.replyTo.getOrElse(sender().toTyped)
-      val peerInfo = d match {
-        case c: ConnectedData => PeerInfo(self, remoteNodeId, stateName, Some(c.remoteFeatures), Some(c.address), c.channels.values.toSet)
-        case _ => PeerInfo(self, remoteNodeId, stateName, None, None, d.channels.values.toSet)
+      d match {
+        case c: ConnectedData =>
+          replyTo ! PeerInfo(self, remoteNodeId, stateName, Some(c.remoteFeatures), Some(c.address), c.channels.values.toSet)
+          stay()
+        case d: DisconnectedData =>
+          // If we haven't reconnected since our last restart, we fetch the latest remote features from our DB.
+          val remoteFeatures_opt = d.remoteFeatures_opt
+            .orElse(nodeParams.db.peers.getPeer(remoteNodeId).map(nodeInfo => LastRemoteFeatures(nodeInfo.features, written = true)))
+          replyTo ! PeerInfo(self, remoteNodeId, stateName, remoteFeatures_opt.map(_.features), None, d.channels.values.toSet)
+          stay() using d.copy(remoteFeatures_opt = remoteFeatures_opt)
+        case _ =>
+          replyTo ! PeerInfo(self, remoteNodeId, stateName, None, None, d.channels.values.toSet)
+          stay()
       }
-      replyTo ! peerInfo
-      stay()
 
     case Event(r: GetPeerChannels, d) =>
       if (d.channels.isEmpty) {
@@ -567,10 +650,6 @@ class Peer(val nodeParams: NodeParams,
           stay()
       }
 
-    case Event(msg: RecommendedFeerates, _) =>
-      log.info("our peer recommends the following feerates: funding={}, commitment={}", msg.fundingFeerate, msg.commitmentFeerate)
-      stay()
-
     case Event(current: CurrentBlockHeight, d) =>
       // If we have pending will_add_htlc that are timing out, it doesn't make any sense to keep them, even if we have
       // already funded the corresponding channel: our peer will force-close if we relay them.
@@ -584,20 +663,20 @@ class Peer(val nodeParams: NodeParams,
           case _: OnTheFlyFunding.Status.Proposed =>
             log.warning("proposed will_add_htlc expired for payment_hash={}", paymentHash)
             Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.Timeout).increment()
-            pending.createFailureCommands().foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+            pending.createFailureCommands(log).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
           case _: OnTheFlyFunding.Status.AddedToFeeCredit =>
             // Nothing to do, we already fulfilled the upstream HTLCs.
             log.debug("forgetting will_add_htlc added to fee credit for payment_hash={}", paymentHash)
           case _: OnTheFlyFunding.Status.Funded =>
             log.warning("funded will_add_htlc expired for payment_hash={}, our peer may be malicious", paymentHash)
             Metrics.OnTheFlyFunding.withTag(Tags.OnTheFlyFundingState, Tags.OnTheFlyFundingStates.Timeout).increment()
-            pending.createFailureCommands().foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+            pending.createFailureCommands(log).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
             nodeParams.db.liquidity.removePendingOnTheFlyFunding(remoteNodeId, paymentHash)
         }
       }
       pendingOnTheFlyFunding = pendingOnTheFlyFunding.removedAll(expired.keys)
       d match {
-        case d: DisconnectedData if d.channels.isEmpty && pendingOnTheFlyFunding.isEmpty => stopPeer()
+        case d: DisconnectedData if d.channels.isEmpty && pendingOnTheFlyFunding.isEmpty => stopPeer(d.peerStorage)
         case _ => stay()
       }
 
@@ -675,7 +754,7 @@ class Peer(val nodeParams: NodeParams,
               // We emit a relay event: since we waited for on-chain funding before relaying the payment, the timestamps
               // won't be accurate, but everything else is.
               pending.proposed.foreach {
-                case OnTheFlyFunding.Proposal(htlc, upstream) => upstream match {
+                case OnTheFlyFunding.Proposal(htlc, upstream, _) => upstream match {
                   case _: Upstream.Local => ()
                   case u: Upstream.Hot.Channel =>
                     val incoming = PaymentRelayed.IncomingPart(u.add.amountMsat, u.add.channelId, u.receivedAt)
@@ -748,15 +827,18 @@ class Peer(val nodeParams: NodeParams,
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
   }
 
-  private def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef]): State = {
+  private def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef], activeChannels: Set[ByteVector32], peerStorage: PeerStorage): State = {
     require(remoteNodeId == connectionReady.remoteNodeId, s"invalid nodeId: $remoteNodeId != ${connectionReady.remoteNodeId}")
     log.debug("got authenticated connection to address {}", connectionReady.address)
 
     if (connectionReady.outgoing) {
-      // we store the node address upon successful outgoing connection, so we can reconnect later
-      // any previous address is overwritten
-      nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, connectionReady.address)
+      // We store the node address and features upon successful outgoing connection, so we can reconnect later.
+      // The previous address is overwritten: we don't need it since the current one works.
+      nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, connectionReady.address, connectionReady.remoteInit.features)
     }
+
+    // If we have some data stored from our peer, we send it to them before doing anything else.
+    peerStorage.data.foreach(connectionReady.peerConnection ! PeerStorageRetrieval(_))
 
     // let's bring existing/requested channels online
     channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
@@ -768,14 +850,14 @@ class Peer(val nodeParams: NodeParams,
     if (Features.canUseFeature(connectionReady.localInit.features, connectionReady.remoteInit.features, Features.FundingFeeCredit)) {
       if (feeCredit.isEmpty) {
         // We read the fee credit from the database on the first connection attempt.
-        // We keep track of the latest credit afterwards and don't need to read it from the DB at every reconnection. 
+        // We keep track of the latest credit afterwards and don't need to read it from the DB at every reconnection.
         feeCredit = Some(nodeParams.db.liquidity.getFeeCredit(remoteNodeId))
       }
       log.info("reconnecting with fee credit = {}", feeCredit)
       connectionReady.peerConnection ! CurrentFeeCredit(nodeParams.chainHash, feeCredit.getOrElse(0 msat))
     }
 
-    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, feerates, None)
+    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, activeChannels, feerates, None, peerStorage, remoteFeaturesWritten = connectionReady.outgoing)
   }
 
   /**
@@ -792,7 +874,7 @@ class Peer(val nodeParams: NodeParams,
 
   private def spawnChannel(): ActorRef = {
     val channel = channelFactory.spawn(context, remoteNodeId)
-    context watch channel
+    context.watchWith(channel, ChannelTerminated(channel.ref))
     channel
   }
 
@@ -810,7 +892,7 @@ class Peer(val nodeParams: NodeParams,
           case status: OnTheFlyFunding.Status.Proposed =>
             log.info("cancelling on-the-fly funding for payment_hash={}", paymentHash)
             status.timer.cancel()
-            pending.createFailureCommands().foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+            pending.createFailureCommands(log).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
             true
           // We keep proposals that have been added to fee credit until we reach the HTLC expiry or we restart. This
           // guarantees that our peer cannot concurrently add to their fee credit a payment for which we've signed a
@@ -848,7 +930,10 @@ class Peer(val nodeParams: NodeParams,
   // resume the openChannelInterceptor in case of failure, we always want the open channel request to succeed or fail
   private val openChannelInterceptor = context.spawnAnonymous(Behaviors.supervise(OpenChannelInterceptor(context.self.toTyped, nodeParams, remoteNodeId, wallet, pendingChannelsRateLimiter)).onFailure(typed.SupervisorStrategy.resume))
 
-  private def stopPeer(): State = {
+  private def stopPeer(peerStorage: PeerStorage): State = {
+    if (!peerStorage.written) {
+      peerStorage.data.foreach(nodeParams.db.peers.updateStorage(remoteNodeId, _))
+    }
     log.info("removing peer from db")
     cancelUnsignedOnTheFlyFunding()
     nodeParams.db.peers.removePeer(remoteNodeId)
@@ -883,6 +968,7 @@ class Peer(val nodeParams: NodeParams,
     Logs.mdc(LogCategory(currentMessage), Some(remoteNodeId), Logs.channelId(currentMessage), nodeAlias_opt = Some(nodeParams.alias))
   }
 
+  private val WritePeerStorageTimerKey = "peer-storage-write"
 }
 
 object Peer {
@@ -910,12 +996,22 @@ object Peer {
   case class TemporaryChannelId(id: ByteVector32) extends ChannelId
   case class FinalChannelId(id: ByteVector32) extends ChannelId
 
+  case class PeerStorage(data: Option[ByteVector], written: Boolean)
+
+  case class LastRemoteFeatures(features: Features[InitFeature], written: Boolean)
+
   sealed trait Data {
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
+    def activeChannels: Set[ByteVector32] // channels that are available to process payments
+    def peerStorage: PeerStorage
   }
-  case object Nothing extends Data { override def channels = Map.empty }
-  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef]) extends Data
-  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates]) extends Data {
+  case object Nothing extends Data {
+    override def channels = Map.empty
+    override def activeChannels: Set[ByteVector32] = Set.empty
+    override def peerStorage: PeerStorage = PeerStorage(None, written = true)
+  }
+  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef], activeChannels: Set[ByteVector32], peerStorage: PeerStorage, remoteFeatures_opt: Option[LastRemoteFeatures]) extends Data
+  case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], activeChannels: Set[ByteVector32], currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates], peerStorage: PeerStorage, remoteFeaturesWritten: Boolean) extends Data {
     val connectionInfo: ConnectionInfo = ConnectionInfo(address, peerConnection, localInit, remoteInit)
     def localFeatures: Features[InitFeature] = localInit.features
     def remoteFeatures: Features[InitFeature] = remoteInit.features
@@ -953,8 +1049,7 @@ object Peer {
                          channelFlags_opt: Option[ChannelFlags],
                          timeout_opt: Option[Timeout],
                          requireConfirmedInputsOverride_opt: Option[Boolean] = None,
-                         disableMaxHtlcValueInFlight: Boolean = false,
-                         channelOrigin: ChannelOrigin = ChannelOrigin.Default) extends PossiblyHarmful {
+                         disableMaxHtlcValueInFlight: Boolean = false) extends PossiblyHarmful {
     require(!(channelType_opt.exists(_.features.contains(Features.ScidAlias)) && channelFlags_opt.exists(_.announceChannel)), "option_scid_alias is not compatible with public channels")
     require(fundingAmount > 0.sat, s"funding amount must be positive")
     pushAmount_opt.foreach(pushAmount => {
@@ -983,7 +1078,7 @@ object Peer {
   case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, addFunding_opt: Option[LiquidityAds.AddFunding], localParams: LocalParams, peerConnection: ActorRef)
 
   /** If [[Features.OnTheFlyFunding]] is supported and we're connected, relay a funding proposal to our peer. */
-  case class ProposeOnTheFlyFunding(replyTo: typed.ActorRef[ProposeOnTheFlyFundingResponse], amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, onion: OnionRoutingPacket, nextPathKey_opt: Option[PublicKey], upstream: Upstream.Hot)
+  case class ProposeOnTheFlyFunding(replyTo: typed.ActorRef[ProposeOnTheFlyFundingResponse], amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, onion: OnionRoutingPacket, onionSharedSecrets: Seq[Sphinx.SharedSecret], nextPathKey_opt: Option[PublicKey], upstream: Upstream.Hot)
 
   sealed trait ProposeOnTheFlyFundingResponse
   object ProposeOnTheFlyFundingResponse {
@@ -1025,8 +1120,13 @@ object Peer {
    */
   case class ConnectionDown(peerConnection: ActorRef) extends RemoteTypes
 
+  /** A child channel actor has been terminated. */
+  case class ChannelTerminated(channel: ActorRef) extends RemoteTypes
+
   case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]])
 
   case class RelayUnknownMessage(unknownMessage: UnknownMessage)
+
+  case object WritePeerStorage
   // @formatter:on
 }

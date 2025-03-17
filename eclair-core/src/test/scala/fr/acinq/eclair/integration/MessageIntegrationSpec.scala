@@ -231,6 +231,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     eventListener.expectNoMessage()
   }
 
+  // TODO: fails...
   test("open channels") {
     val probe = TestProbe()
 

@@ -108,6 +108,9 @@ object Sphinx extends Logging {
     val isLastPacket: Boolean = nextPacket.hmac == ByteVector32.Zeroes
   }
 
+  /** Shared secret used to encrypt the payload for a given node. */
+  case class SharedSecret(secret: ByteVector32, remoteNodeId: PublicKey)
+
   /**
    * A encrypted onion packet with all the associated shared secrets.
    *
@@ -115,7 +118,7 @@ object Sphinx extends Logging {
    * @param sharedSecrets shared secrets (one per node in the route). Known (and needed) only if you're creating the
    *                      packet. Empty if you're just forwarding the packet to the next node.
    */
-  case class PacketAndSecrets(packet: OnionRoutingPacket, sharedSecrets: Seq[(ByteVector32, PublicKey)])
+  case class PacketAndSecrets(packet: OnionRoutingPacket, sharedSecrets: Seq[SharedSecret])
 
   /**
    * Generate a deterministic filler to prevent intermediate nodes from knowing their position in the route.
@@ -239,12 +242,12 @@ object Sphinx extends Logging {
    */
   def create(sessionKey: PrivateKey, packetPayloadLength: Int, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector], associatedData: Option[ByteVector32]): Try[PacketAndSecrets] = Try {
     require(payloadsTotalSize(payloads) <= packetPayloadLength, s"packet per-hop payloads cannot exceed $packetPayloadLength bytes")
-    val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
-    val filler = generateFiller("rho", packetPayloadLength, sharedsecrets.dropRight(1), payloads.dropRight(1))
+    val (ephemeralPublicKeys, sharedSecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
+    val filler = generateFiller("rho", packetPayloadLength, sharedSecrets.dropRight(1), payloads.dropRight(1))
 
     // We deterministically-derive the initial payload bytes: see https://github.com/lightningnetwork/lightning-rfc/pull/697
     val startingBytes = generateStream(generateKey("pad", sessionKey.value), packetPayloadLength)
-    val lastPacket = wrap(payloads.last, associatedData, ephemeralPublicKeys.last, sharedsecrets.last, Left(startingBytes), filler)
+    val lastPacket = wrap(payloads.last, associatedData, ephemeralPublicKeys.last, sharedSecrets.last, Left(startingBytes), filler)
 
     @tailrec
     def loop(hopPayloads: Seq[ByteVector], ephKeys: Seq[PublicKey], sharedSecrets: Seq[ByteVector32], packet: OnionRoutingPacket): OnionRoutingPacket = {
@@ -254,8 +257,8 @@ object Sphinx extends Logging {
       }
     }
 
-    val packet = loop(payloads.dropRight(1), ephemeralPublicKeys.dropRight(1), sharedsecrets.dropRight(1), lastPacket)
-    PacketAndSecrets(packet, sharedsecrets.zip(publicKeys))
+    val packet = loop(payloads.dropRight(1), ephemeralPublicKeys.dropRight(1), sharedSecrets.dropRight(1), lastPacket)
+    PacketAndSecrets(packet, sharedSecrets.zip(publicKeys).map { case (secret, remoteNodeId) => SharedSecret(secret, remoteNodeId) })
   }
 
   /**
@@ -271,6 +274,13 @@ object Sphinx extends Logging {
    * @param failureMessage friendly failure message.
    */
   case class DecryptedFailurePacket(originNode: PublicKey, failureMessage: FailureMessage)
+
+  /**
+   * The downstream failure could not be decrypted.
+   *
+   * @param unwrapped encrypted failure packet after unwrapping using our shared secrets.
+   */
+  case class CannotDecryptFailurePacket(unwrapped: ByteVector)
 
   object FailurePacket {
 
@@ -314,23 +324,21 @@ object Sphinx extends Logging {
      *
      * @param packet        failure packet.
      * @param sharedSecrets nodes shared secrets.
-     * @return Success(secret, failure message) if the origin of the packet could be identified and the packet
-     *         decrypted, Failure otherwise.
+     * @return failure message if the origin of the packet could be identified and the packet decrypted, the unwrapped
+     *         failure packet otherwise.
      */
-    def decrypt(packet: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): Try[DecryptedFailurePacket] = Try {
-      @tailrec
-      def loop(packet: ByteVector, secrets: Seq[(ByteVector32, PublicKey)]): DecryptedFailurePacket = secrets match {
-        case Nil => throw new RuntimeException(s"couldn't parse error packet=$packet with sharedSecrets=$sharedSecrets")
-        case (secret, pubkey) :: tail =>
-          val packet1 = wrap(packet, secret)
-          val um = generateKey("um", secret)
+    @tailrec
+    def decrypt(packet: ByteVector, sharedSecrets: Seq[SharedSecret]): Either[CannotDecryptFailurePacket, DecryptedFailurePacket] = {
+      sharedSecrets match {
+        case Nil => Left(CannotDecryptFailurePacket(packet))
+        case ss :: tail =>
+          val packet1 = wrap(packet, ss.secret)
+          val um = generateKey("um", ss.secret)
           FailureMessageCodecs.failureOnionCodec(Hmac256(um)).decode(packet1.toBitVector) match {
-            case Attempt.Successful(value) => DecryptedFailurePacket(pubkey, value.value)
-            case _ => loop(packet1, tail)
+            case Attempt.Successful(value) => Right(DecryptedFailurePacket(ss.remoteNodeId, value.value))
+            case _ => decrypt(packet1, tail)
           }
       }
-
-      loop(packet, sharedSecrets)
     }
 
   }
@@ -359,10 +367,10 @@ object Sphinx extends Logging {
     case class BlindedHop(blindedPublicKey: PublicKey, encryptedPayload: ByteVector)
 
     /**
-     * @param firstNodeId        the first node, not blinded so that the sender can locate it.
-     * @param firstPathKey       blinding tweak that can be used by the introduction node to derive the private key that
-     *                           matches the blinded public key.
-     * @param blindedHops       blinded nodes (including the introduction node).
+     * @param firstNodeId  the first node, not blinded so that the sender can locate it.
+     * @param firstPathKey blinding tweak that can be used by the introduction node to derive the private key that
+     *                     matches the blinded public key.
+     * @param blindedHops  blinded nodes (including the introduction node).
      */
     case class BlindedRoute(firstNodeId: EncodedNodeId, firstPathKey: PublicKey, blindedHops: Seq[BlindedHop]) {
       require(blindedHops.nonEmpty, "blinded route must not be empty")

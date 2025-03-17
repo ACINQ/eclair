@@ -38,7 +38,7 @@ object MempoolTxMonitor {
 
   // @formatter:off
   sealed trait Command
-  case class Publish(replyTo: ActorRef[TxResult], tx: Transaction, input: OutPoint, desc: String, fee: Satoshi) extends Command
+  case class Publish(replyTo: ActorRef[TxResult], tx: Transaction, input: OutPoint, minDepth: Int, desc: String, fee: Satoshi) extends Command
   private case object PublishOk extends Command
   private case class PublishFailed(reason: Throwable) extends Command
   private case class InputStatus(spentConfirmed: Boolean, spentUnconfirmed: Boolean) extends Command
@@ -152,7 +152,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
             case Failure(reason) => GetTxConfirmationsFailed(reason)
           }
           Behaviors.same
-        } else if (confirmations < nodeParams.channelConf.minDepthBlocks) {
+        } else if (confirmations < cmd.minDepth) {
           log.debug("txid={} has {} confirmations, waiting to reach min depth", cmd.tx.txid, confirmations)
           cmd.replyTo ! TxRecentlyConfirmed(cmd.tx.txid, confirmations)
           Behaviors.same

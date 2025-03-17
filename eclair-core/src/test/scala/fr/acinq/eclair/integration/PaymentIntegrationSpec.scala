@@ -37,13 +37,14 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.payment.offer.OfferManager._
-import fr.acinq.eclair.payment.receive.MultiPartHandler.{DummyBlindedHop, ReceiveStandardPayment, ReceivingRoute}
+import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTrampolinePayment}
-import fr.acinq.eclair.router.Graph.WeightRatios
-import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel}
+import fr.acinq.eclair.router.Graph.PaymentWeightRatios
+import fr.acinq.eclair.router.Router.{ChannelHop, GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails}
@@ -109,7 +110,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }, max = 20 seconds, interval = 1 second)
 
     // confirming the funding tx
-    generateBlocks(2)
+    generateBlocks(6)
 
     within(60 seconds) {
       var count = 0
@@ -138,8 +139,6 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("wait for network announcements") {
-    // generating more blocks so that all funding txes are buried under at least 6 blocks
-    generateBlocks(4)
     // A requires private channels, as a consequence:
     // - only A and B know about channel A-B (and there is no channel_announcement)
     // - A is not announced (no node_announcement)
@@ -189,7 +188,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // we then forge a new channel_update for B-C...
     val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.channelConf.expiryDelta + 1, nodes("C").nodeParams.channelConf.htlcMinimum, nodes("B").nodeParams.relayParams.publicChannelFees.feeBase, nodes("B").nodeParams.relayParams.publicChannelFees.feeProportionalMillionths, 500000000 msat)
     // ...and notify B's relayer
-    nodes("B").system.eventStream.publish(LocalChannelUpdate(system.deadLetters, normalBC.channelId, normalBC.shortIds, normalBC.commitments.remoteNodeId, normalBC.channelAnnouncement, channelUpdateBC, normalBC.commitments))
+    nodes("B").system.eventStream.publish(LocalChannelUpdate(system.deadLetters, normalBC.channelId, normalBC.aliases, normalBC.commitments.remoteNodeId, normalBC.lastAnnouncedCommitment_opt, channelUpdateBC, normalBC.commitments))
     // we retrieve a payment hash from D
     val amountMsat = 4200000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("1 coffee")))
@@ -335,7 +334,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val invoice = sender.expectMsgType[Bolt11Invoice]
 
     // the payment is requesting to use a capacity-optimized route which will select node G even though it's a bit more expensive
-    sender.send(nodes("A").paymentInitiator, SendPaymentToNode(sender.ref, amountMsat, invoice, Nil, maxAttempts = 1, routeParams = integrationTestRouteParams.copy(heuristics = Left(WeightRatios(0, 0, 0, 1, RelayFees(0 msat, 0))))))
+    sender.send(nodes("A").paymentInitiator, SendPaymentToNode(sender.ref, amountMsat, invoice, Nil, maxAttempts = 1, routeParams = integrationTestRouteParams.copy(heuristics = PaymentWeightRatios(0, 0, 0, 1, RelayFees(0 msat, 0)))))
     sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent]
     ps.parts.foreach(part => assert(part.route.getOrElse(Nil).exists(_.nodeId == nodes("G").nodeParams.nodeId)))
@@ -626,17 +625,24 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val bob = new EclairImpl(nodes("B"))
     bob.payOfferBlocking(offer, amount, 1, maxAttempts_opt = Some(3))(30 seconds).pipeTo(sender.ref)
 
+    nodes("D").router ! Router.FinalizeRoute(sender.ref, Router.PredefinedNodeRoute(amount, Seq(nodes("G").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId)))
+    val route1 = sender.expectMsgType[Router.RouteResponse].routes.head
+    nodes("D").router ! Router.FinalizeRoute(sender.ref, Router.PredefinedNodeRoute(amount, Seq(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId)))
+    val route2 = sender.expectMsgType[Router.RouteResponse].routes.head
+    nodes("D").router ! Router.FinalizeRoute(sender.ref, Router.PredefinedNodeRoute(amount, Seq(nodes("E").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId)))
+    val route3 = sender.expectMsgType[Router.RouteResponse].routes.head
+
     val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
     val receivingRoutes = Seq(
-      ReceivingRoute(Seq(nodes("G").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId), CltvExpiryDelta(1000)),
-      ReceivingRoute(Seq(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId), CltvExpiryDelta(1000)),
-      ReceivingRoute(Seq(nodes("E").nodeParams.nodeId, nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId), CltvExpiryDelta(1000)),
+      OfferManager.InvoiceRequestActor.Route(route1.hops, CltvExpiryDelta(1000)),
+      OfferManager.InvoiceRequestActor.Route(route2.hops, CltvExpiryDelta(1000)),
+      OfferManager.InvoiceRequestActor.Route(route3.hops, CltvExpiryDelta(1000)),
     )
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, pluginData_opt = Some(hex"abcd"))
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.contains(hex"abcd"))
+    assert(handlePayment.offer == offer)
+    assert(handlePayment.invoiceData.pluginData_opt.contains(hex"abcd"))
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]
@@ -662,14 +668,14 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
     // C uses a 0-hop blinded route and signs the invoice with its public nodeId.
     val receivingRoutes = Seq(
-      ReceivingRoute(Seq(nodes("C").nodeParams.nodeId), CltvExpiryDelta(1000)),
-      ReceivingRoute(Seq(nodes("C").nodeParams.nodeId), CltvExpiryDelta(1000)),
+      OfferManager.InvoiceRequestActor.Route(Nil, CltvExpiryDelta(1000)),
+      OfferManager.InvoiceRequestActor.Route(Nil, CltvExpiryDelta(1000)),
     )
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, pluginData_opt = Some(hex"0123"))
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.contains(hex"0123"))
+    assert(handlePayment.offer == offer)
+    assert(handlePayment.invoiceData.pluginData_opt.contains(hex"0123"))
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]
@@ -697,13 +703,13 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
     val receivingRoutes = Seq(
-      ReceivingRoute(Seq(nodes("A").nodeParams.nodeId), CltvExpiryDelta(1000), Seq(DummyBlindedHop(100 msat, 100, CltvExpiryDelta(48)), DummyBlindedHop(150 msat, 50, CltvExpiryDelta(36))))
+      OfferManager.InvoiceRequestActor.Route(Seq(ChannelHop.dummy(nodes("A").nodeParams.nodeId, 100 msat, 100, CltvExpiryDelta(48)), ChannelHop.dummy(nodes("A").nodeParams.nodeId, 150 msat, 50, CltvExpiryDelta(36))), CltvExpiryDelta(1000))
     )
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes)
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.isEmpty)
+    assert(handlePayment.offer == offer)
+    assert(handlePayment.invoiceData.pluginData_opt.isEmpty)
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]
@@ -729,15 +735,18 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val bob = new EclairImpl(nodes("B"))
     bob.payOfferBlocking(offer, amount, 1, maxAttempts_opt = Some(3))(30 seconds).pipeTo(sender.ref)
 
+    nodes("C").router ! Router.FinalizeRoute(sender.ref, Router.PredefinedNodeRoute(amount, Seq(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
     val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
     val receivingRoutes = Seq(
-      ReceivingRoute(Seq(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId), CltvExpiryDelta(555), Seq(DummyBlindedHop(55 msat, 55, CltvExpiryDelta(55))))
+      OfferManager.InvoiceRequestActor.Route(route.hops :+ ChannelHop.dummy(nodes("C").nodeParams.nodeId, 55 msat, 55, CltvExpiryDelta(55)), CltvExpiryDelta(555))
     )
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, pluginData_opt = Some(hex"eff0"))
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.contains(hex"eff0"))
+    assert(handlePayment.offer == offer)
+    assert(handlePayment.invoiceData.pluginData_opt.contains(hex"eff0"))
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]
@@ -760,13 +769,16 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val alice = new EclairImpl(nodes("A"))
     alice.payOfferTrampoline(offer, amount, 1, nodes("B").nodeParams.nodeId, maxAttempts_opt = Some(1))(30 seconds).pipeTo(sender.ref)
 
+    nodes("D").router ! Router.FinalizeRoute(sender.ref, Router.PredefinedNodeRoute(amount, Seq(nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
     val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
-    val receivingRoutes = Seq(ReceivingRoute(Seq(nodes("C").nodeParams.nodeId, nodes("D").nodeParams.nodeId), CltvExpiryDelta(500)))
+    val receivingRoutes = Seq(OfferManager.InvoiceRequestActor.Route(route.hops, CltvExpiryDelta(500)))
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes, pluginData_opt = Some(hex"0123"))
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
-    assert(handlePayment.pluginData_opt.contains(hex"0123"))
+    assert(handlePayment.offer == offer)
+    assert(handlePayment.invoiceData.pluginData_opt.contains(hex"0123"))
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]
@@ -799,6 +811,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val alice = new EclairImpl(nodes("A"))
     alice.payOfferBlocking(offer, amount, 1, maxAttempts_opt = Some(3))(30 seconds).pipeTo(sender.ref)
 
+    nodes("C").router ! Router.FinalizeRoute(sender.ref, Router.PredefinedNodeRoute(amount, Seq(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)))
+    val route = sender.expectMsgType[Router.RouteResponse].routes.head
+
     val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
     val scidDirCB = {
       probe.send(nodes("B").router, Router.GetChannels)
@@ -806,12 +821,12 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       ShortChannelIdDir(channelBC.nodeId1 == nodes("B").nodeParams.nodeId, channelBC.shortChannelId)
     }
     val receivingRoutes = Seq(
-      ReceivingRoute(Seq(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId), CltvExpiryDelta(555), Seq(DummyBlindedHop(55 msat, 55, CltvExpiryDelta(55))), Some(scidDirCB))
+      OfferManager.InvoiceRequestActor.Route(route.hops :+ ChannelHop.dummy(nodes("C").nodeParams.nodeId, 55 msat, 55, CltvExpiryDelta(55)), CltvExpiryDelta(555), shortChannelIdDir_opt = Some(scidDirCB))
     )
     handleInvoiceRequest.replyTo ! InvoiceRequestActor.ApproveRequest(amount, receivingRoutes)
 
     val handlePayment = offerHandler.expectMessageType[HandlePayment]
-    assert(handlePayment.offerId == offer.offerId)
+    assert(handlePayment.offer == offer)
     handlePayment.replyTo ! PaymentActor.AcceptPayment()
 
     val paymentSent = sender.expectMsgType[PaymentSent]

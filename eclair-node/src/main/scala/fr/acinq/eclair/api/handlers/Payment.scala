@@ -55,11 +55,11 @@ trait Payment {
 
   val sendToRoute: Route = postRequest("sendtoroute") { implicit t =>
     withRoute { hops =>
-      formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam, "externalId".?, "parentId".as[UUID].?, maxFeeMsatFormParam.?, "blip18InboundFees".as[Boolean].?, "excludePositiveInboundFees".as[Boolean].?) {
-        (amountMsat, recipientAmountMsat_opt, invoice, externalId_opt, parentId_opt, maxFee_opt, blip18InboundFees_opt, excludePositiveInboundFees_opt) => {
+      formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam, "externalId".?, "parentId".as[UUID].?, maxFeeMsatFormParam.?) {
+        (amountMsat, recipientAmountMsat_opt, invoice, externalId_opt, parentId_opt, maxFee_opt) => {
           val route = hops match {
-            case Left(shortChannelIds) => PredefinedChannelRoute(amountMsat, invoice.nodeId, shortChannelIds, maxFee_opt, blip18InboundFees_opt.getOrElse(false), excludePositiveInboundFees_opt.getOrElse(false))
-            case Right(nodeIds) => PredefinedNodeRoute(amountMsat, nodeIds, maxFee_opt, blip18InboundFees_opt.getOrElse(false), excludePositiveInboundFees_opt.getOrElse(false))
+            case Left(shortChannelIds) => PredefinedChannelRoute(amountMsat, invoice.nodeId, shortChannelIds, maxFee_opt)
+            case Right(nodeIds) => PredefinedNodeRoute(amountMsat, nodeIds, maxFee_opt)
           }
           complete(eclairApi.sendToRoute(recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, route))
         }

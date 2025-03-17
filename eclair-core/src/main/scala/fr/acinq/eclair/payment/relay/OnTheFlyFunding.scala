@@ -20,6 +20,7 @@ import akka.actor.Cancellable
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, StashBuffer}
 import akka.actor.typed.{ActorRef, Behavior}
+import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -29,7 +30,6 @@ import fr.acinq.eclair.payment.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol.LiquidityAds.PaymentDetails
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, ToMilliSatoshiConversion}
-import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -88,27 +88,37 @@ object OnTheFlyFunding {
   // @formatter:on
 
   /** An on-the-fly funding proposal sent to our peer. */
-  case class Proposal(htlc: WillAddHtlc, upstream: Upstream.Hot) {
+  case class Proposal(htlc: WillAddHtlc, upstream: Upstream.Hot, onionSharedSecrets: Seq[Sphinx.SharedSecret]) {
     /** Maximum fees that can be collected from this HTLC. */
     def maxFees(htlcMinimum: MilliSatoshi): MilliSatoshi = htlc.amount - htlcMinimum
 
     /** Create commands to fail all upstream HTLCs. */
-    def createFailureCommands(failure_opt: Option[Either[ByteVector, FailureMessage]]): Seq[(ByteVector32, CMD_FAIL_HTLC)] = upstream match {
+    def createFailureCommands(failure_opt: Option[FailureReason])(implicit log: LoggingAdapter): Seq[(ByteVector32, CMD_FAIL_HTLC)] = upstream match {
       case _: Upstream.Local => Nil
       case u: Upstream.Hot.Channel =>
         val failure = htlc.pathKey_opt match {
-          case Some(_) => Right(InvalidOnionBlinding(Sphinx.hash(u.add.onionRoutingPacket)))
-          case None => failure_opt.getOrElse(Right(UnknownNextPeer()))
+          case Some(_) => FailureReason.LocalFailure(InvalidOnionBlinding(Sphinx.hash(u.add.onionRoutingPacket)))
+          case None => failure_opt.getOrElse(FailureReason.LocalFailure(UnknownNextPeer()))
         }
         Seq(u.add.channelId -> CMD_FAIL_HTLC(u.add.id, failure, commit = true))
       case u: Upstream.Hot.Trampoline =>
-        // In the trampoline case, we currently ignore downstream failures: we should add dedicated failures to the
-        // BOLTs to better handle those cases.
         val failure = failure_opt match {
-          case Some(f) => f.getOrElse(TemporaryNodeFailure())
-          case None => UnknownNextPeer()
+          case Some(f) => f match {
+            case f: FailureReason.EncryptedDownstreamFailure =>
+              // In the trampoline case, we currently ignore downstream failures: we should add dedicated failures to
+              // the BOLTs to better handle those cases.
+              Sphinx.FailurePacket.decrypt(f.packet, onionSharedSecrets) match {
+                case Left(Sphinx.CannotDecryptFailurePacket(_)) =>
+                  log.warning("couldn't decrypt downstream on-the-fly funding failure")
+                case Right(f) =>
+                  log.warning("downstream on-the-fly funding failure: {}", f.failureMessage.message)
+              }
+              FailureReason.LocalFailure(TemporaryNodeFailure())
+            case _: FailureReason.LocalFailure => f
+          }
+          case None => FailureReason.LocalFailure(UnknownNextPeer())
         }
-        u.received.map(_.add).map(add => add.channelId -> CMD_FAIL_HTLC(add.id, Right(failure), commit = true))
+        u.received.map(_.add).map(add => add.channelId -> CMD_FAIL_HTLC(add.id, failure, commit = true))
     }
 
     /** Create commands to fulfill all upstream HTLCs. */
@@ -129,7 +139,7 @@ object OnTheFlyFunding {
     def maxFees(htlcMinimum: MilliSatoshi): MilliSatoshi = proposed.map(_.maxFees(htlcMinimum)).sum
 
     /** Create commands to fail all upstream HTLCs. */
-    def createFailureCommands(): Seq[(ByteVector32, CMD_FAIL_HTLC)] = proposed.flatMap(_.createFailureCommands(None))
+    def createFailureCommands(implicit log: LoggingAdapter): Seq[(ByteVector32, CMD_FAIL_HTLC)] = proposed.flatMap(_.createFailureCommands(None))
 
     /** Create commands to fulfill all upstream HTLCs. */
     def createFulfillCommands(preimage: ByteVector32): Seq[(ByteVector32, CMD_FULFILL_HTLC)] = proposed.flatMap(_.createFulfillCommands(preimage))
@@ -353,7 +363,13 @@ object OnTheFlyFunding {
       .typecase(0x01, upstreamChannel)
       .typecase(0x02, upstreamTrampoline)
 
-    val proposal: Codec[Proposal] = (("willAddHtlc" | lengthDelimited(willAddHtlcCodec)) :: ("upstream" | upstream)).as[Proposal]
+    val proposal: Codec[Proposal] = (
+      ("willAddHtlc" | lengthDelimited(willAddHtlcCodec)) ::
+        ("upstream" | upstream) ::
+        // We don't need to persist the onion shared secrets: we only persist on-the-fly funding proposals once they
+        // have been funded, at which point we will ignore downstream failures.
+        ("onionSharedSecrets" | provide(Seq.empty[Sphinx.SharedSecret]))
+      ).as[Proposal]
 
     val proposals: Codec[Seq[Proposal]] = listOfN(uint16, proposal).xmap(_.toSeq, _.toList)
 

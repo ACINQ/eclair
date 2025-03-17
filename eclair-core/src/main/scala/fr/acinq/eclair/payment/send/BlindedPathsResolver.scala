@@ -14,7 +14,7 @@ import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.RouteBlindingDecryptedData
 import fr.acinq.eclair.wire.protocol.{BlindedRouteData, OfferTypes, RouteBlindingEncryptedDataCodecs}
-import fr.acinq.eclair.{EncodedNodeId, Logs, MilliSatoshiLong, NodeParams, ShortChannelId}
+import fr.acinq.eclair.{EncodedNodeId, Logs, NodeParams, ShortChannelId}
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
@@ -112,8 +112,7 @@ private class BlindedPathsResolver(nodeParams: NodeParams,
                   )
                   paymentRelayData.outgoing match {
                     case Left(outgoingNodeId) =>
-                      // The next node seems to be a wallet node directly connected to us.
-                      validateRelay(EncodedNodeId.WithPublicKey.Wallet(outgoingNodeId), nextPaymentInfo, paymentRelayData, nextPathKey, paymentRoute.route.subsequentNodes, toResolve.tail, resolved)
+                      validateRelay(outgoingNodeId, nextPaymentInfo, paymentRelayData, nextPathKey, paymentRoute.route.subsequentNodes, toResolve.tail, resolved)
                     case Right(outgoingChannelId) =>
                       register ! Register.GetNextNodeId(context.messageAdapter(WrappedNodeId), outgoingChannelId)
                       waitForNextNodeId(outgoingChannelId, nextPaymentInfo, paymentRelayData, nextPathKey, paymentRoute.route.subsequentNodes, toResolve.tail, resolved)
@@ -165,10 +164,7 @@ private class BlindedPathsResolver(nodeParams: NodeParams,
     val relayFees = getRelayFees(nodeParams, nextNodeId.publicKey, announceChannel = false)
     val shouldRelay = paymentRelayData.paymentRelay.feeBase >= relayFees.feeBase &&
       paymentRelayData.paymentRelay.feeProportionalMillionths >= relayFees.feeProportionalMillionths &&
-      paymentRelayData.paymentRelay.cltvExpiryDelta >= nodeParams.channelConf.expiryDelta &&
-      nextPaymentInfo.feeBase >= 0.msat &&
-      nextPaymentInfo.feeProportionalMillionths >= 0 &&
-      nextPaymentInfo.cltvExpiryDelta.toInt >= 0
+      paymentRelayData.paymentRelay.cltvExpiryDelta >= nodeParams.channelConf.expiryDelta
     if (shouldRelay) {
       context.log.debug("unwrapped blinded path starting at our node: next_node={}", nextNodeId.publicKey)
       val path = ResolvedPath(PartialBlindedRoute(nextNodeId, nextPathKey, nextBlindedNodes), nextPaymentInfo)

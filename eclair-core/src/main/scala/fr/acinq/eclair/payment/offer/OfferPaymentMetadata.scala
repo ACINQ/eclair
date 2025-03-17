@@ -18,6 +18,7 @@ package fr.acinq.eclair.payment.offer
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto}
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.{MilliSatoshi, TimestampSecond}
 import scodec.bits.ByteVector
 
@@ -33,22 +34,28 @@ import scodec.bits.ByteVector
  * We instead include payment metadata in the blinded route's path_id field which lets us generate a minimal invoice
  * once we receive the payment, that is similar to the one that was actually sent to the payer. It will not be exactly
  * the same (notably the blinding route will be missing) but it will contain what we need to fulfill the payment.
+ *
+ * Since the recipient is selecting the blinded route to themselves, it may be unfair to the payer if the blinded route
+ * requires a high routing fee. The recipient can instead opt into having some of those routing fees deducted from the
+ * amount they receive by setting [[MinimalInvoiceData.recipientPathFees]] to a non-zero value.
  */
 object OfferPaymentMetadata {
 
   /**
-   * @param preimage       preimage for that payment.
-   * @param payerKey       payer key (from their invoice request).
-   * @param createdAt      creation time of the invoice.
-   * @param quantity       quantity of items requested.
-   * @param amount         amount that must be paid.
-   * @param pluginData_opt optional data from the offer plugin.
+   * @param preimage          preimage for that payment.
+   * @param payerKey          payer key (from their invoice request).
+   * @param createdAt         creation time of the invoice.
+   * @param quantity          quantity of items requested.
+   * @param amount            amount that must be paid.
+   * @param recipientPathFees the payment recipient may choose to pay part of the blinded path relay fees themselves.
+   * @param pluginData_opt    optional data from the offer plugin.
    */
   case class MinimalInvoiceData(preimage: ByteVector32,
                                 payerKey: PublicKey,
                                 createdAt: TimestampSecond,
                                 quantity: Long,
                                 amount: MilliSatoshi,
+                                recipientPathFees: RelayFees,
                                 pluginData_opt: Option[ByteVector])
 
   /**
@@ -69,6 +76,7 @@ object OfferPaymentMetadata {
         ("createdAt" | timestampSecond) ::
         ("quantity" | uint64overflow) ::
         ("amount" | millisatoshi) ::
+        ("recipientPathFees" | (millisatoshi :: int64).as[RelayFees]) ::
         ("pluginData" | optional(bitsRemaining, bytes))).as[MinimalInvoiceData]
 
     private val signedDataCodec: Codec[SignedMinimalInvoiceData] =

@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Route}
 import fr.acinq.eclair.wire.protocol.NodeAnnouncement
-import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion}
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
@@ -195,6 +195,18 @@ case class BalanceEstimate private(low: MilliSatoshi,
     )
   }
 
+  def updateEdge(desc: ChannelDesc, newShortChannelId: RealShortChannelId, newCapacity: Satoshi): BalanceEstimate = {
+    val newCapacities = capacities - desc.shortChannelId + (newShortChannelId -> newCapacity)
+    val capacityDelta = (newCapacity - capacities.getOrElse(desc.shortChannelId, newCapacity)).toMilliSatoshi
+    copy(
+      // a capacity decrease will decrease the low bound, but not below 0
+      low = (low + capacityDelta.min(0 msat)).max(0 msat),
+      // a capacity increase will increase the high bound, but not above the capacity of the largest channel
+      high = (high + capacityDelta.max(0 msat)).min(newCapacities.values.maxOption.getOrElse(0 sat).toMilliSatoshi),
+      capacities = newCapacities
+    )
+  }
+
   /**
    * Estimate the probability that we can successfully send `amount` through the channel
    *
@@ -263,7 +275,16 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
     defaultHalfLife
   )
 
+  def updateEdge(desc: ChannelDesc, newShortChannelId: RealShortChannelId, newCapacity: Satoshi): BalancesEstimates = BalancesEstimates(
+    balances.updatedWith((desc.a, desc.b)) {
+      case None => None
+      case Some(balance) => Some(balance.updateEdge(desc, newShortChannelId, newCapacity))
+    },
+    defaultHalfLife
+  )
+
   def channelCouldSend(hop: ChannelHop, amount: MilliSatoshi)(implicit log: LoggingAdapter): BalancesEstimates = {
+    log.info("channelCouldSend: amount={} scid={} from={} to={}", amount, hop.shortChannelId, hop.nodeId, hop.nextNodeId)
     get(hop.nodeId, hop.nextNodeId).foreach { balance =>
       val estimatedProbability = balance.canSend(amount, TimestampSecond.now())
       Monitoring.Metrics.remoteEdgeRelaySuccess(estimatedProbability)
@@ -272,6 +293,7 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
   }
 
   def channelCouldNotSend(hop: ChannelHop, amount: MilliSatoshi)(implicit log: LoggingAdapter): BalancesEstimates = {
+    log.info("channelCouldNotSend: amount={} scid={} from={} to={}", amount, hop.shortChannelId, hop.nodeId, hop.nextNodeId)
     get(hop.nodeId, hop.nextNodeId).foreach { balance =>
       val estimatedProbability = balance.canSend(amount, TimestampSecond.now())
       Monitoring.Metrics.remoteEdgeRelayFailure(estimatedProbability)
@@ -280,6 +302,7 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
   }
 
   def channelDidSend(hop: ChannelHop, amount: MilliSatoshi)(implicit log: LoggingAdapter): BalancesEstimates = {
+    log.info("channelDidSend: amount={} scid={} from={} to={}", amount, hop.shortChannelId, hop.nodeId, hop.nextNodeId)
     get(hop.nodeId, hop.nextNodeId).foreach { balance =>
       val estimatedProbability = balance.canSend(amount, TimestampSecond.now())
       Monitoring.Metrics.remoteEdgeRelaySuccess(estimatedProbability)
@@ -305,8 +328,16 @@ case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances:
     descList.foldLeft(balances)((acc, edge) => acc.removeEdge(edge).removeEdge(edge.reversed)),
   )
 
+  def updateChannel(desc: ChannelDesc, newShortChannelId: RealShortChannelId, newCapacity: Satoshi): GraphWithBalanceEstimates = {
+    GraphWithBalanceEstimates(
+      graph.updateChannel(desc, newShortChannelId, newCapacity),
+      balances.updateEdge(desc, newShortChannelId, newCapacity).updateEdge(desc.reversed, newShortChannelId, newCapacity)
+    )
+  }
+
   def routeCouldRelay(route: Route)(implicit log: LoggingAdapter): GraphWithBalanceEstimates = {
-    val (balances1, _) = route.hops.foldRight((balances, route.amount)) {
+    // We drop the first hop which is a local channel, we already have perfect balance information for local channels.
+    val (balances1, _) = route.hops.drop(1).foldRight((balances, route.amount)) {
       case (hop, (balances, amount)) =>
         (balances.channelCouldSend(hop, amount), amount + hop.fee(amount))
     }
@@ -314,7 +345,8 @@ case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances:
   }
 
   def routeDidRelay(route: Route)(implicit log: LoggingAdapter): GraphWithBalanceEstimates = {
-    val (balances1, _) = route.hops.foldRight((balances, route.amount)) {
+    // We drop the first hop which is a local channel, we already have perfect balance information for local channels.
+    val (balances1, _) = route.hops.drop(1).foldRight((balances, route.amount)) {
       case (hop, (balances, amount)) =>
         (balances.channelDidSend(hop, amount), amount + hop.fee(amount))
     }

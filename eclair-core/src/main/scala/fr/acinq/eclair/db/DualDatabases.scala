@@ -12,9 +12,10 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli}
+import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{CltvExpiry, Features, InitFeature, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond}
 import grizzled.slf4j.Logging
+import scodec.bits.ByteVector
 
 import java.io.File
 import java.util.UUID
@@ -35,6 +36,7 @@ case class DualDatabases(primary: Databases, secondary: Databases) extends Datab
   override val channels: ChannelsDb = DualChannelsDb(primary.channels, secondary.channels)
   override val peers: PeersDb = DualPeersDb(primary.peers, secondary.peers)
   override val payments: PaymentsDb = DualPaymentsDb(primary.payments, secondary.payments)
+  override val offers: OffersDb = DualOffersDb(primary.offers, secondary.offers)
   override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(primary.pendingCommands, secondary.pendingCommands)
   override val liquidity: LiquidityDb = DualLiquidityDb(primary.liquidity, secondary.liquidity)
 
@@ -263,9 +265,14 @@ case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-peers").build()))
 
-  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: NodeAddress): Unit = {
-    runAsync(secondary.addOrUpdatePeer(nodeId, address))
-    primary.addOrUpdatePeer(nodeId, address)
+  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: NodeAddress, features: Features[InitFeature]): Unit = {
+    runAsync(secondary.addOrUpdatePeer(nodeId, address, features))
+    primary.addOrUpdatePeer(nodeId, address, features)
+  }
+
+  override def addOrUpdatePeerFeatures(nodeId: Crypto.PublicKey, features: Features[InitFeature]): Unit = {
+    runAsync(secondary.addOrUpdatePeerFeatures(nodeId, features))
+    primary.addOrUpdatePeerFeatures(nodeId, features)
   }
 
   override def removePeer(nodeId: Crypto.PublicKey): Unit = {
@@ -273,12 +280,12 @@ case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
     primary.removePeer(nodeId)
   }
 
-  override def getPeer(nodeId: Crypto.PublicKey): Option[NodeAddress] = {
+  override def getPeer(nodeId: Crypto.PublicKey): Option[NodeInfo] = {
     runAsync(secondary.getPeer(nodeId))
     primary.getPeer(nodeId)
   }
 
-  override def listPeers(): Map[Crypto.PublicKey, NodeAddress] = {
+  override def listPeers(): Map[Crypto.PublicKey, NodeInfo] = {
     runAsync(secondary.listPeers())
     primary.listPeers()
   }
@@ -291,6 +298,21 @@ case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
   override def getRelayFees(nodeId: Crypto.PublicKey): Option[RelayFees] = {
     runAsync(secondary.getRelayFees(nodeId))
     primary.getRelayFees(nodeId)
+  }
+
+  override def updateStorage(nodeId: PublicKey, data: ByteVector): Unit = {
+    runAsync(secondary.updateStorage(nodeId, data))
+    primary.updateStorage(nodeId, data)
+  }
+
+  override def getStorage(nodeId: PublicKey): Option[ByteVector] = {
+    runAsync(secondary.getStorage(nodeId))
+    primary.getStorage(nodeId)
+  }
+
+  override def removePeerStorage(peerRemovedBefore: TimestampSecond): Unit = {
+    runAsync(secondary.removePeerStorage(peerRemovedBefore))
+    primary.removePeerStorage(peerRemovedBefore)
   }
 }
 
@@ -381,6 +403,26 @@ case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends Pa
   override def listOutgoingPaymentsToOffer(offerId: ByteVector32): Seq[OutgoingPayment] = {
     runAsync(secondary.listOutgoingPaymentsToOffer(offerId))
     primary.listOutgoingPaymentsToOffer(offerId)
+  }
+}
+
+case class DualOffersDb(primary: OffersDb, secondary: OffersDb) extends OffersDb {
+
+  private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-offers").build()))
+
+  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Unit = {
+    runAsync(secondary.addOffer(offer, pathId_opt, createdAt))
+    primary.addOffer(offer, pathId_opt, createdAt)
+  }
+
+  override def disableOffer(offer: OfferTypes.Offer, disabledAt: TimestampMilli = TimestampMilli.now()): Unit = {
+    runAsync(secondary.disableOffer(offer, disabledAt))
+    primary.disableOffer(offer, disabledAt)
+  }
+
+  override def listOffers(onlyActive: Boolean): Seq[OfferData] = {
+    runAsync(secondary.listOffers(onlyActive))
+    primary.listOffers(onlyActive)
   }
 }
 

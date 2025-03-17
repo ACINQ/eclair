@@ -43,6 +43,7 @@ trait Databases {
   def channels: ChannelsDb
   def peers: PeersDb
   def payments: PaymentsDb
+  def offers: OffersDb
   def pendingCommands: PendingCommandsDb
   def liquidity: LiquidityDb
   //@formatter:on
@@ -66,6 +67,7 @@ object Databases extends Logging {
                                      channels: SqliteChannelsDb,
                                      peers: SqlitePeersDb,
                                      payments: SqlitePaymentsDb,
+                                     offers: SqliteOffersDb,
                                      pendingCommands: SqlitePendingCommandsDb,
                                      private val backupConnection: Connection) extends Databases with FileBackup {
     override def backup(backupFile: File): Unit = SqliteUtils.using(backupConnection.createStatement()) {
@@ -85,6 +87,7 @@ object Databases extends Logging {
         channels = new SqliteChannelsDb(eclairJdbc),
         peers = new SqlitePeersDb(eclairJdbc),
         payments = new SqlitePaymentsDb(eclairJdbc),
+        offers = new SqliteOffersDb(eclairJdbc),
         pendingCommands = new SqlitePendingCommandsDb(eclairJdbc),
         backupConnection = eclairJdbc
       )
@@ -97,6 +100,7 @@ object Databases extends Logging {
                                        channels: PgChannelsDb,
                                        peers: PgPeersDb,
                                        payments: PgPaymentsDb,
+                                       offers: PgOffersDb,
                                        pendingCommands: PgPendingCommandsDb,
                                        dataSource: HikariDataSource,
                                        lock: PgLock) extends Databases with ExclusiveLock {
@@ -157,6 +161,7 @@ object Databases extends Logging {
         channels = new PgChannelsDb,
         peers = new PgPeersDb,
         payments = new PgPaymentsDb,
+        offers = new PgOffersDb,
         pendingCommands = new PgPendingCommandsDb,
         dataSource = ds,
         lock = lock)

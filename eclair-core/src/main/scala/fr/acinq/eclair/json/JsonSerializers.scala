@@ -20,7 +20,7 @@ import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
-import fr.acinq.eclair.balance.CheckBalance.{CorrectedOnChainBalance, GlobalBalance, OffChainBalance}
+import fr.acinq.eclair.balance.CheckBalance.{DetailedOnChainBalance, GlobalBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
@@ -35,7 +35,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -333,6 +333,17 @@ object ColorSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
+private case class CommitTxAndRemoteSigJson(commitTx: CommitTx, remoteSig: ByteVector64)
+private case class CommitTxAndRemotePartialSigJson(commitTx: CommitTx, remoteSig: RemoteSignature.PartialSignatureWithNonce)
+object CommitTxAndRemoteSigSerializer extends ConvertClassSerializer[CommitTxAndRemoteSig](
+  i => i.remoteSig match {
+    case f: RemoteSignature.FullSignature => CommitTxAndRemoteSigJson(i.commitTx, f.sig)
+    case p: RemoteSignature.PartialSignatureWithNonce => CommitTxAndRemotePartialSigJson(i.commitTx, p)
+    }
+)
+// @formatter:on
+
+// @formatter:off
 private sealed trait HopJson
 private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: HopRelayParams) extends HopJson
 private case class BlindedHopJson(nodeId: PublicKey, nextNodeId: PublicKey, paymentInfo: OfferTypes.PaymentInfo) extends HopJson
@@ -553,7 +564,9 @@ object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => Comm
 // @formatter:on
 
 // @formatter:off
-private case class GlobalBalanceJson(total: Btc, onChain: CorrectedOnChainBalance, offChain: OffChainBalance)
+private case class DetailedOnChainBalanceJson(total: Btc, confirmed: Map[OutPoint, Btc], unconfirmed: Map[OutPoint, Btc])
+object DetailedOnChainBalanceSerializer extends ConvertClassSerializer[DetailedOnChainBalance](b => DetailedOnChainBalanceJson(b.total, confirmed = b.confirmed, unconfirmed = b.unconfirmed))
+private case class GlobalBalanceJson(total: Btc, onChain: DetailedOnChainBalance, offChain: OffChainBalance)
 object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b => GlobalBalanceJson(b.total, b.onChain, b.offChain))
 
 private case class PeerInfoJson(nodeId: PublicKey, state: String, address: Option[String], channels: Int)
@@ -565,15 +578,15 @@ object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessag
 
 // @formatter:off
 /** this is cosmetic, just to not have a '_opt' field in json, which will only appear if the option is defined anyway */
-private case class ShortIdsJson(real: RealScidStatus, localAlias: Alias, remoteAlias: Option[ShortChannelId])
-object ShortIdsSerializer extends ConvertClassSerializer[ShortIds](s => ShortIdsJson(s.real, s.localAlias, s.remoteAlias_opt))
+private case class ShortIdAliasesJson(localAlias: Alias, remoteAlias: Option[ShortChannelId])
+object ShortIdAliasesSerializer extends ConvertClassSerializer[ShortIdAliases](s => ShortIdAliasesJson(s.localAlias, s.remoteAlias_opt))
 // @formatter:on
 
 // @formatter:off
-private case class FundingTxStatusJson(status: String, txid: Option[TxId])
+private case class FundingTxStatusJson(status: String, txid: Option[TxId], shortChannelId: Option[RealShortChannelId])
 object FundingTxStatusSerializer extends ConvertClassSerializer[LocalFundingStatus]({
-  case s: LocalFundingStatus.UnconfirmedFundingTx => FundingTxStatusJson("unconfirmed", s.signedTx_opt.map(_.txid))
-  case s: LocalFundingStatus.ConfirmedFundingTx => FundingTxStatusJson("confirmed", s.signedTx_opt.map(_.txid))
+  case s: LocalFundingStatus.UnconfirmedFundingTx => FundingTxStatusJson("unconfirmed", s.signedTx_opt.map(_.txid), None)
+  case s: LocalFundingStatus.ConfirmedFundingTx => FundingTxStatusJson("confirmed", s.signedTx_opt.map(_.txid), Some(s.shortChannelId))
 })
 // @formatter:on
 
@@ -643,15 +656,10 @@ object CustomTypeHints {
       classOf[DATA_NORMAL],
       classOf[DATA_SHUTDOWN],
       classOf[DATA_NEGOTIATING],
+      classOf[DATA_NEGOTIATING_SIMPLE],
       classOf[DATA_CLOSING],
       classOf[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
     ), typeHintFieldName = "type")
-
-  val realScidStatuses: CustomTypeHints = CustomTypeHints(Map(
-    classOf[RealScidStatus.Unknown.type] -> "unknown",
-    classOf[RealScidStatus.Temporary] -> "temporary",
-    classOf[RealScidStatus.Final] -> "final",
-  ), typeHintFieldName = "status")
 
   val remoteFundingStatuses: CustomTypeHints = CustomTypeHints(Map(
     classOf[RemoteFundingStatus.NotLocked.type] -> "not-locked",
@@ -670,7 +678,6 @@ object JsonSerializers {
     CustomTypeHints.onionMessageEvent +
     CustomTypeHints.channelSources +
     CustomTypeHints.channelStates +
-    CustomTypeHints.realScidStatuses +
     CustomTypeHints.remoteFundingStatuses +
     ActorRefSerializer +
     TypedActorRefSerializer +
@@ -711,6 +718,7 @@ object JsonSerializers {
     OpenChannelResponseSerializer +
     CommandResponseSerializer +
     InputInfoSerializer +
+    CommitTxAndRemoteSigSerializer +
     ColorSerializer +
     ThrowableSerializer +
     FailureMessageSerializer +
@@ -722,11 +730,12 @@ object JsonSerializers {
     OriginSerializer +
     ByteVector32KeySerializer +
     TxIdKeySerializer +
+    DetailedOnChainBalanceSerializer +
     GlobalBalanceSerializer +
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +
     OnionMessageReceivedSerializer +
-    ShortIdsSerializer +
+    ShortIdAliasesSerializer +
     FundingTxStatusSerializer +
     CommitmentSerializer +
     TlvStreamSerializer +

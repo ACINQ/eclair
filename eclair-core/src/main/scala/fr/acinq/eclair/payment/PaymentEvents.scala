@@ -150,7 +150,7 @@ case class LocalFailure(amount: MilliSatoshi, route: Seq[Hop], t: Throwable) ext
 case class RemoteFailure(amount: MilliSatoshi, route: Seq[Hop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
 
 /** A remote node failed the payment but we couldn't decrypt the failure (e.g. a malicious node tampered with the message). */
-case class UnreadableRemoteFailure(amount: MilliSatoshi, route: Seq[Hop]) extends PaymentFailure
+case class UnreadableRemoteFailure(amount: MilliSatoshi, route: Seq[Hop], failurePacket: ByteVector) extends PaymentFailure
 
 object PaymentFailure {
 
@@ -235,7 +235,7 @@ object PaymentFailure {
       }
     case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
       ignoreNodeOutgoingEdge(nodeId, hops, ignore)
-    case UnreadableRemoteFailure(_, hops) =>
+    case UnreadableRemoteFailure(_, hops, _) =>
       // We don't know which node is sending garbage, let's blacklist all nodes except:
       //  - the one we are directly connected to: it would be too restrictive for retries
       //  - the final recipient: they have no incentive to send garbage since they want that payment

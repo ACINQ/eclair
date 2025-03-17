@@ -3,16 +3,19 @@ package fr.acinq.eclair.io
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{Actor, ActorContext, ActorRef, Props}
 import akka.testkit.{TestActorRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.ByteVector64
+import com.softwaremill.quicklens.ModifyPimp
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OutPoint, Satoshi, TxHash, TxOut}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
-import fr.acinq.eclair.channel.{ChannelIdAssigned, PersistentChannelData, Upstream}
+import fr.acinq.eclair.channel.SpliceStatus.NoSplice
+import fr.acinq.eclair.channel.{ChannelFeatures, ChannelFlags, ChannelIdAssigned, ChannelParams, CommitTxAndRemoteSig, Commitment, Commitments, DATA_NORMAL, LocalCommit, LocalParams, PersistentChannelData, RemoteCommit, RemoteParams, Upstream}
 import fr.acinq.eclair.io.Peer.PeerNotFound
 import fr.acinq.eclair.io.Switchboard._
 import fr.acinq.eclair.payment.relay.{OnTheFlyFunding, OnTheFlyFundingSpec}
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, Features, InitFeature, MilliSatoshiLong, NodeParams, TestKitBaseClass, TimestampSecondLong, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, Features, InitFeature, MilliSatoshiLong, NodeParams, TestKitBaseClass, TimestampSecondLong, UInt64, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
@@ -43,7 +46,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val remoteNodeId1 = channel.remoteNodeId
     val paymentHash1 = randomBytes32()
     val pendingOnTheFly1 = OnTheFlyFunding.Pending(
-      proposed = Seq(OnTheFlyFunding.Proposal(OnTheFlyFundingSpec.createWillAdd(10_000_000 msat, paymentHash1, CltvExpiry(600)), Upstream.Local(UUID.randomUUID()))),
+      proposed = Seq(OnTheFlyFunding.Proposal(OnTheFlyFundingSpec.createWillAdd(10_000_000 msat, paymentHash1, CltvExpiry(600)), Upstream.Local(UUID.randomUUID()), Nil)),
       status = OnTheFlyFundingSpec.createStatus()
     )
     nodeParams.db.liquidity.addPendingOnTheFlyFunding(remoteNodeId1, pendingOnTheFly1)
@@ -52,7 +55,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val remoteNodeId2 = randomKey().publicKey
     val paymentHash2 = randomBytes32()
     val pendingOnTheFly2 = OnTheFlyFunding.Pending(
-      proposed = Seq(OnTheFlyFunding.Proposal(OnTheFlyFundingSpec.createWillAdd(5_000_000 msat, paymentHash2, CltvExpiry(600)), Upstream.Local(UUID.randomUUID()))),
+      proposed = Seq(OnTheFlyFunding.Proposal(OnTheFlyFundingSpec.createWillAdd(5_000_000 msat, paymentHash2, CltvExpiry(600)), Upstream.Local(UUID.randomUUID()), Nil)),
       status = OnTheFlyFundingSpec.createStatus()
     )
     nodeParams.db.liquidity.addPendingOnTheFlyFunding(remoteNodeId2, pendingOnTheFly2)
@@ -116,13 +119,13 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
   }
 
   test("sync if no whitelist is defined and peer has channels") {
-    val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set.empty)
+    val nodeParams = Alice.nodeParams.modify(_.routerConf.syncConf.whitelist).setTo(Set.empty)
     val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteNodeId
     sendFeatures(nodeParams, List(ChannelCodecsSpec.normal), remoteNodeId, nodeParams.features.initFeatures(), expectedSync = true)
   }
 
   test("sync if no whitelist is defined and peer creates a channel") {
-    val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set.empty)
+    val nodeParams = Alice.nodeParams.modify(_.routerConf.syncConf.whitelist).setTo(Set.empty)
     val (probe, peer, peerConnection) = (TestProbe(), TestProbe(), TestProbe())
     val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteNodeId
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
@@ -146,20 +149,78 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
   }
 
   test("don't sync if no whitelist is defined and peer does not have channels") {
-    val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set.empty)
+    val nodeParams = Alice.nodeParams.modify(_.routerConf.syncConf.whitelist).setTo(Set.empty)
     sendFeatures(nodeParams, Nil, randomKey().publicKey, nodeParams.features.initFeatures(), expectedSync = false)
   }
 
   test("sync if whitelist contains peer") {
     val remoteNodeId = randomKey().publicKey
-    val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set(remoteNodeId, randomKey().publicKey, randomKey().publicKey))
+    val nodeParams = Alice.nodeParams.modify(_.routerConf.syncConf.whitelist).setTo(Set(remoteNodeId, randomKey().publicKey, randomKey().publicKey))
     sendFeatures(nodeParams, Nil, remoteNodeId, nodeParams.features.initFeatures(), expectedSync = true)
   }
 
   test("don't sync if whitelist doesn't contain peer") {
-    val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey))
+    val nodeParams = Alice.nodeParams.modify(_.routerConf.syncConf.whitelist).setTo(Set(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey)).modify(_.routerConf.syncConf.peerLimit).setTo(0)
     val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteNodeId
     sendFeatures(nodeParams, List(ChannelCodecsSpec.normal), remoteNodeId, nodeParams.features.initFeatures(), expectedSync = false)
+  }
+
+  def dummyDataNormal(remoteNodeId: PublicKey, capacity: Satoshi): DATA_NORMAL = {
+    val data = ChannelCodecsSpec.normal.modify(_.commitments.params.remoteParams.nodeId).setTo(remoteNodeId)
+      .modify(_.commitments.active).apply(_.map(_.modify(_.localCommit.commitTxAndRemoteSig.commitTx.input.txOut.amount).setTo(capacity)))
+    assert(data.remoteNodeId == remoteNodeId)
+    assert(data.commitments.capacity == capacity)
+    data
+  }
+
+  test("only sync with top peers if no whitelist") {
+    val (alice, bob, carol, dave) = (randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey)
+    val nodeParams = Alice.nodeParams.modify(_.routerConf.syncConf.whitelist).setTo(Set.empty).modify(_.routerConf.syncConf.peerLimit).setTo(2)
+    val (probe, peer, peerConnection) = (TestProbe(), TestProbe(), TestProbe())
+    val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
+    switchboard ! Switchboard.Init(List(
+      dummyDataNormal(alice, Satoshi(500)),
+      dummyDataNormal(alice, Satoshi(600)),
+      dummyDataNormal(bob, Satoshi(1000)),
+      dummyDataNormal(carol, Satoshi(2000)),
+    ))
+
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, alice, outgoing = true)
+    assert(peerConnection.expectMsgType[PeerConnection.InitializeConnection].doSync)
+
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, bob, outgoing = true)
+    assert(!peerConnection.expectMsgType[PeerConnection.InitializeConnection].doSync)
+
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, carol, outgoing = true)
+    assert(peerConnection.expectMsgType[PeerConnection.InitializeConnection].doSync)
+
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, dave, outgoing = true)
+    assert(!peerConnection.expectMsgType[PeerConnection.InitializeConnection].doSync)
+  }
+
+  test("sync with top peers and whitelisted peers") {
+    val (alice, bob, carol, dave) = (randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey)
+    val nodeParams = Alice.nodeParams.modify(_.routerConf.syncConf.whitelist).setTo(Set(dave)).modify(_.routerConf.syncConf.peerLimit).setTo(1)
+    val (probe, peer, peerConnection) = (TestProbe(), TestProbe(), TestProbe())
+    val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
+    switchboard ! Switchboard.Init(List(
+      dummyDataNormal(alice, Satoshi(500)),
+      dummyDataNormal(alice, Satoshi(600)),
+      dummyDataNormal(bob, Satoshi(1000)),
+      dummyDataNormal(carol, Satoshi(2000)),
+    ))
+
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, alice, outgoing = true)
+    assert(!peerConnection.expectMsgType[PeerConnection.InitializeConnection].doSync)
+
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, bob, outgoing = true)
+    assert(!peerConnection.expectMsgType[PeerConnection.InitializeConnection].doSync)
+
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, carol, outgoing = true)
+    assert(peerConnection.expectMsgType[PeerConnection.InitializeConnection].doSync)
+
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, dave, outgoing = true)
+    assert(peerConnection.expectMsgType[PeerConnection.InitializeConnection].doSync)
   }
 
   test("get peer info") {

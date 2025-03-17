@@ -178,8 +178,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
               case ConfirmationTarget.Absolute(confirmBefore) => log.debug("publishing {} with confirmation target in {} blocks", cmd.desc, confirmBefore - nodeParams.currentBlockHeight)
               case ConfirmationTarget.Priority(priority) => log.debug("publishing {} with priority {}", cmd.desc, priority)
             }
+            val minDepth = nodeParams.channelConf.minDepthScaled(cmd.txInfo.amountIn)
             val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), s"mempool-tx-monitor-${tx.signedTx.txid}")
-            txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, cmd.desc, tx.fee)
+            txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, minDepth, cmd.desc, tx.fee)
             wait(tx)
           case ReplaceableTxFunder.FundingFailed(reason) => sendResult(TxPublisher.TxRejected(txPublishContext.id, cmd, reason), None)
         }
@@ -286,8 +287,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   // Only one of them can be in the mempool, so we wait for the other to be rejected. Once that's done, we're back to a
   // situation where we have one transaction in the mempool and wait for it to confirm.
   def publishReplacement(previousTx: FundedTx, bumpedTx: FundedTx): Behavior[Command] = {
+    val minDepth = nodeParams.channelConf.minDepthScaled(cmd.txInfo.amountIn)
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), s"mempool-tx-monitor-${bumpedTx.signedTx.txid}")
-    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), bumpedTx.signedTx, cmd.input, cmd.desc, bumpedTx.fee)
+    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), bumpedTx.signedTx, cmd.input, minDepth, cmd.desc, bumpedTx.fee)
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(txResult) =>
         txResult match {

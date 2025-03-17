@@ -31,7 +31,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.OpenChannelInterceptor.{DefaultParams, OpenChannelInitiator, OpenChannelNonInitiator}
-import fr.acinq.eclair.io.Peer.{OpenChannelResponse, OutgoingMessage, SpawnChannelNonInitiator}
+import fr.acinq.eclair.io.Peer.{OpenChannelResponse, OutgoingMessage, SpawnChannelInitiator, SpawnChannelNonInitiator}
 import fr.acinq.eclair.io.PeerSpec.{createOpenChannelMessage, createOpenDualFundedChannelMessage}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.transactions.Transactions.{ClosingTx, InputInfo}
@@ -82,7 +82,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   case class FixtureParam(openChannelInterceptor: ActorRef[OpenChannelInterceptor.Command], peer: TestProbe[Any], pluginInterceptor: TestProbe[InterceptOpenChannelCommand], pendingChannelsRateLimiter: TestProbe[PendingChannelsRateLimiter.Command], peerConnection: TestProbe[Any], eventListener: TestProbe[ChannelAborted], wallet: DummyOnChainWallet)
 
   private def commitments(isOpener: Boolean = false): Commitments = {
-    val commitments = CommitmentsSpec.makeCommitments(500_000 msat, 400_000 msat, TestConstants.Alice.nodeParams.nodeId, remoteNodeId, announceChannel = false)
+    val commitments = CommitmentsSpec.makeCommitments(500_000 msat, 400_000 msat, TestConstants.Alice.nodeParams.nodeId, remoteNodeId, announcement_opt = None)
     commitments.copy(params = commitments.params.copy(localParams = commitments.params.localParams.copy(isChannelOpener = isOpener, paysCommitTxFees = isOpener)))
   }
 
@@ -146,8 +146,21 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val result = peer.expectMessageType[SpawnChannelNonInitiator]
     assert(!result.localParams.isChannelOpener)
     assert(result.localParams.paysCommitTxFees)
+    assert(result.localParams.maxHtlcValueInFlightMsat == 500_000_000.msat)
     assert(result.addFunding_opt.map(_.fundingAmount).contains(250_000 sat))
     assert(result.addFunding_opt.flatMap(_.rates_opt).contains(TestConstants.defaultLiquidityRates))
+  }
+
+  test("expect remote funding contribution in max_htlc_value_in_flight") { f =>
+    import f._
+
+    val probe = TestProbe[Any]()
+    val requestFunding = LiquidityAds.RequestFunding(150_000 sat, LiquidityAds.FundingRate(0 sat, 200_000 sat, 400, 100, 0 sat, 0 sat), LiquidityAds.PaymentDetails.FromChannelBalance)
+    val openChannelInitiator = OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, 300_000 sat, None, None, None, None, Some(requestFunding), None, None), defaultFeatures, defaultFeatures)
+    openChannelInterceptor ! openChannelInitiator
+    val result = peer.expectMessageType[SpawnChannelInitiator]
+    assert(result.cmd == openChannelInitiator.open)
+    assert(result.localParams.maxHtlcValueInFlightMsat == 450_000_000.msat)
   }
 
   test("continue channel open if no interceptor plugin registered and pending channels rate limiter accepts it") { f =>

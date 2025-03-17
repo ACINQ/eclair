@@ -42,7 +42,7 @@ object OfferCodecs {
   private val offerAbsoluteExpiry: Codec[OfferAbsoluteExpiry] = tlvField(tu64overflow.as[TimestampSecond])
 
   /** A 32-bytes codec for public keys where the first byte is set manually. */
-  private def tweakFirstByteCodec(prefix: Byte): Codec[PublicKey] = bytes(32).xmap(b => PublicKey(prefix +: b), _.value.drop(1))
+  private def tweakFirstByteCodec(prefix: Byte): Codec[PublicKey] = catchAllCodec(bytes(32).xmap(b => PublicKey(prefix +: b), _.value.drop(1)))
 
   // The first byte encodes what type of identifier is used.
   val encodedNodeIdCodec: Codec[EncodedNodeId] = discriminated[EncodedNodeId].by(uint8)
@@ -76,7 +76,7 @@ object OfferCodecs {
 
   private val offerNodeId: Codec[OfferNodeId] = tlvField(publicKey)
 
-  val offerTlvCodec: Codec[TlvStream[OfferTlv]] = TlvCodecs.tlvStream[OfferTlv](discriminated[OfferTlv].by(varint)
+  val offerTlvCodec: Codec[TlvStream[OfferTlv]] = catchAllCodec(TlvCodecs.tlvStream[OfferTlv](discriminated[OfferTlv].by(varint)
     .typecase(UInt64(2), offerChains)
     .typecase(UInt64(4), offerMetadata)
     .typecase(UInt64(6), offerCurrency)
@@ -88,7 +88,7 @@ object OfferCodecs {
     .typecase(UInt64(18), offerIssuer)
     .typecase(UInt64(20), offerQuantityMax)
     .typecase(UInt64(22), offerNodeId)
-  ).complete
+  ).complete)
 
   private val invoiceRequestMetadata: Codec[InvoiceRequestMetadata] = tlvField(bytes)
 
@@ -106,7 +106,7 @@ object OfferCodecs {
 
   private val signature: Codec[Signature] = tlvField(bytes64)
 
-  val invoiceRequestTlvCodec: Codec[TlvStream[InvoiceRequestTlv]] = TlvCodecs.tlvStream[InvoiceRequestTlv](discriminated[InvoiceRequestTlv].by(varint)
+  val invoiceRequestTlvCodec: Codec[TlvStream[InvoiceRequestTlv]] = catchAllCodec(TlvCodecs.tlvStream[InvoiceRequestTlv](discriminated[InvoiceRequestTlv].by(varint)
     .typecase(UInt64(0), invoiceRequestMetadata)
     // Offer part that must be copy-pasted from above
     .typecase(UInt64(2), offerChains)
@@ -128,7 +128,7 @@ object OfferCodecs {
     .typecase(UInt64(88), invoiceRequestPayerId)
     .typecase(UInt64(89), invoiceRequestPayerNote)
     .typecase(UInt64(240), signature)
-  ).complete
+  ).complete)
 
   private val invoicePaths: Codec[InvoicePaths] = tlvField(list(blindedRouteCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList))
 
@@ -158,7 +158,7 @@ object OfferCodecs {
 
   private val invoiceNodeId: Codec[InvoiceNodeId] = tlvField(publicKey)
 
-  val invoiceTlvCodec: Codec[TlvStream[InvoiceTlv]] = TlvCodecs.tlvStream[InvoiceTlv](discriminated[InvoiceTlv].by(varint)
+  val invoiceTlvCodec: Codec[TlvStream[InvoiceTlv]] = catchAllCodec(TlvCodecs.tlvStream[InvoiceTlv](discriminated[InvoiceTlv].by(varint)
     // Invoice request part that must be copy-pasted from above
     .typecase(UInt64(0), invoiceRequestMetadata)
     .typecase(UInt64(2), offerChains)
@@ -189,13 +189,13 @@ object OfferCodecs {
     .typecase(UInt64(174), invoiceFeatures)
     .typecase(UInt64(176), invoiceNodeId)
     .typecase(UInt64(240), signature)
-  ).complete
+  ).complete)
 
-  private val invoiceErrorTlvCodec: Codec[TlvStream[InvoiceErrorTlv]] = TlvCodecs.tlvStream[InvoiceErrorTlv](discriminated[InvoiceErrorTlv].by(varint)
+  private val invoiceErrorTlvCodec: Codec[TlvStream[InvoiceErrorTlv]] = catchAllCodec(TlvCodecs.tlvStream[InvoiceErrorTlv](discriminated[InvoiceErrorTlv].by(varint)
     .typecase(UInt64(1), tlvField(tu64overflow.as[ErroneousField]))
     .typecase(UInt64(3), tlvField(bytes.as[SuggestedValue]))
     .typecase(UInt64(5), tlvField(utf8.as[Error]))
-  ).complete
+  ).complete)
 
   val invoiceRequestCodec: Codec[OnionMessagePayloadTlv.InvoiceRequest] = tlvField(invoiceRequestTlvCodec)
   val invoiceCodec: Codec[OnionMessagePayloadTlv.Invoice] = tlvField(invoiceTlvCodec)

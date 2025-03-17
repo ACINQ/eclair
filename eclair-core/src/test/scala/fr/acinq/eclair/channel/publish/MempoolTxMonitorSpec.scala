@@ -79,7 +79,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     import f._
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 1_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 50 sat)
+    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, 3, "test-tx", 50 sat)
     assert(eventListener.expectMsgType[TransactionPublished].tx == tx)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
 
@@ -97,7 +97,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     generateBlocks(1)
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 1_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 50 sat)
+    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, 6, "test-tx", 50 sat)
     assert(eventListener.expectMsgType[TransactionPublished].tx == tx)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
 
@@ -106,13 +106,17 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     probe.expectMsg(TxInMempool(tx.txid, currentBlockHeight(), parentConfirmed = true))
     probe.expectNoMessage(100 millis)
 
-    assert(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks > 1)
     generateBlocks(1)
     monitor ! WrappedCurrentBlockHeight(currentBlockHeight())
     probe.expectMsg(TxRecentlyConfirmed(tx.txid, 1))
-    probe.expectNoMessage(100 millis) // we wait for more than one confirmation to protect against reorgs
+    probe.expectNoMessage(100 millis) // we wait for more confirmations to protect against reorgs
 
-    generateBlocks(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks - 1)
+    generateBlocks(4)
+    monitor ! WrappedCurrentBlockHeight(currentBlockHeight())
+    probe.expectMsg(TxRecentlyConfirmed(tx.txid, 5))
+    probe.expectNoMessage(100 millis) // we wait for more confirmations to protect against reorgs
+
+    generateBlocks(1)
     monitor ! WrappedCurrentBlockHeight(currentBlockHeight())
     probe.expectMsg(TxDeeplyBuried(tx))
   }
@@ -126,10 +130,10 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     probe.expectMsg(tx1.txid)
 
     val tx2 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 10_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx2, tx2.txIn.head.outPoint, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, tx2, tx2.txIn.head.outPoint, 3, "test-tx", 10 sat)
     waitTxInMempool(bitcoinClient, tx2.txid, probe)
 
-    generateBlocks(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks)
+    generateBlocks(3)
     monitor ! WrappedCurrentBlockHeight(currentBlockHeight())
     probe.expectMsg(TxDeeplyBuried(tx2))
   }
@@ -143,7 +147,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     probe.expectMsg(tx1.txid)
 
     val tx2 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 7_500 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx2, tx2.txIn.head.outPoint, "test-tx", 25 sat)
+    monitor ! Publish(probe.ref, tx2, tx2.txIn.head.outPoint, 3, "test-tx", 25 sat)
     probe.expectMsg(TxRejected(tx2.txid, ConflictingTxUnconfirmed))
   }
 
@@ -157,7 +161,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     generateBlocks(1)
 
     val tx2 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 15_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx2, tx2.txIn.head.outPoint, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, tx2, tx2.txIn.head.outPoint, 3, "test-tx", 10 sat)
     probe.expectMsg(TxRejected(tx2.txid, ConflictingTxConfirmed))
   }
 
@@ -167,7 +171,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
     val txUnknownInput = tx.copy(txIn = tx.txIn ++ Seq(TxIn(OutPoint(randomTxId(), 13), Nil, 0)))
-    monitor ! Publish(probe.ref, txUnknownInput, txUnknownInput.txIn.head.outPoint, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, txUnknownInput, txUnknownInput.txIn.head.outPoint, 3, "test-tx", 10 sat)
     probe.expectMsg(TxRejected(txUnknownInput.txid, InputGone))
   }
 
@@ -180,7 +184,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
     val txUnknownInput = tx.copy(txIn = tx.txIn ++ Seq(TxIn(OutPoint(randomTxId(), 13), Nil, 0)))
-    monitor ! Publish(probe.ref, txUnknownInput, txUnknownInput.txIn.head.outPoint, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, txUnknownInput, txUnknownInput.txIn.head.outPoint, 3, "test-tx", 10 sat)
     probe.expectMsg(TxRejected(txUnknownInput.txid, InputGone))
   }
 
@@ -195,7 +199,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     generateBlocks(1) // we ensure the wallet input is already spent by a confirmed transaction
 
     val tx = createSpendManyP2WPKH(Seq(parentTx, walletTx), priv, priv.publicKey, 5_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, 3, "test-tx", 10 sat)
     probe.expectMsg(TxRejected(tx.txid, InputGone))
   }
 
@@ -204,7 +208,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     import f._
 
     val tx1 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx1, tx1.txIn.head.outPoint, "test-tx", 0 sat)
+    monitor ! Publish(probe.ref, tx1, tx1.txIn.head.outPoint, 3, "test-tx", 0 sat)
     waitTxInMempool(bitcoinClient, tx1.txid, probe)
 
     val tx2 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 15_000 sat, 0, 0)
@@ -221,7 +225,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     import f._
 
     val tx1 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx1, tx1.txIn.head.outPoint, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, tx1, tx1.txIn.head.outPoint, 3, "test-tx", 10 sat)
     waitTxInMempool(bitcoinClient, tx1.txid, probe)
 
     val tx2 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 15_000 sat, 0, 0)
@@ -244,7 +248,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     probe.expectMsg(walletTx.txid)
 
     val tx = createSpendManyP2WPKH(Seq(parentTx, walletTx), priv, priv.publicKey, 1_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, 3, "test-tx", 10 sat)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
 
     // A transaction replaces our unconfirmed wallet input.
@@ -266,14 +270,14 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     generateBlocks(1)
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 1_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 15 sat)
+    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, 2, "test-tx", 15 sat)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
     val txPublished = eventListener.expectMsgType[TransactionPublished]
     assert(txPublished.tx == tx)
     assert(txPublished.miningFee == 15.sat)
     assert(txPublished.desc == "test-tx")
 
-    generateBlocks(TestConstants.Alice.nodeParams.channelConf.minDepthBlocks)
+    generateBlocks(2)
     monitor ! WrappedCurrentBlockHeight(currentBlockHeight())
     eventListener.expectMsg(TransactionConfirmed(txPublished.channelId, txPublished.remoteNodeId, tx))
   }

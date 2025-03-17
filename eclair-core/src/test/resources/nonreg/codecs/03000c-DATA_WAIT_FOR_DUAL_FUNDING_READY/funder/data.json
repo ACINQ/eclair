@@ -126,11 +126,7 @@
     "remotePerCommitmentSecrets" : null,
     "originChannels" : { }
   },
-  "shortIds" : {
-    "real" : {
-      "status" : "temporary",
-      "realScid" : "400000x42x0"
-    },
+  "aliases" : {
     "localAlias" : "0x2d1583d8409d217"
   }
 }

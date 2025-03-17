@@ -23,7 +23,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UnknownNextPeer, UpdateAddHtlc}
+import fr.acinq.eclair.wire.protocol.{CommitSig, FailureReason, RevokeAndAck, UnknownNextPeer, UpdateAddHtlc}
 import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
@@ -248,7 +248,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     // at this point the pending incoming htlc is waiting for a preimage
     assert(lcp4.htlcTxs(remainingHtlcOutpoint) == None)
 
-    alice ! CMD_FAIL_HTLC(1, Right(UnknownNextPeer()), replyTo_opt = Some(probe.ref))
+    alice ! CMD_FAIL_HTLC(1, FailureReason.LocalFailure(UnknownNextPeer()), replyTo_opt = Some(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FAIL_HTLC]]
     val aliceClosing1 = alice.stateData.asInstanceOf[DATA_CLOSING]
     val lcp5 = aliceClosing1.localCommitPublished.get.copy(irrevocablySpent = lcp4.irrevocablySpent, claimHtlcDelayedTxs = lcp4.claimHtlcDelayedTxs)
@@ -378,7 +378,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     }
     assert(!rcp3.isDone)
 
-    bob ! CMD_FAIL_HTLC(bobPendingHtlc.htlc.id, Right(UnknownNextPeer()), replyTo_opt = Some(probe.ref))
+    bob ! CMD_FAIL_HTLC(bobPendingHtlc.htlc.id, FailureReason.LocalFailure(UnknownNextPeer()), replyTo_opt = Some(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FAIL_HTLC]]
     val bobClosing1 = bob.stateData.asInstanceOf[DATA_CLOSING]
     val rcp4 = bobClosing1.remoteCommitPublished.get.copy(irrevocablySpent = rcp3.irrevocablySpent)

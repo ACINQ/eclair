@@ -21,7 +21,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.13</artifactId>
-        <version>0.11.0</version>
+        <version>0.12.0</version>
     </parent>
 
     <artifactId>eclair-front_2.13</artifactId>
@@ -80,7 +80,7 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.2.13</version>
+            <version>1.5.16</version>
         </dependency>
         <dependency>
             <groupId>org.codehaus.janino</groupId>
@@ -114,6 +114,14 @@
                     <groupId>org.jetbrains.kotlin</groupId>
                     <artifactId>kotlin-stdlib</artifactId>
                 </exclusion>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-stdlib-common</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-stdlib-jdk8</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
         <!-- agents -->
@@ -121,7 +129,7 @@
             <groupId>io.kamon</groupId>
             <artifactId>kanela-agent</artifactId>
             <!-- if you change this make sure to also update the lib version in eclair-front.sh and eclair-node.sh -->
-            <version>1.0.17</version>
+            <version>${kanela-agent.version}</version>
         </dependency>
         <!-- tests -->
         <dependency>

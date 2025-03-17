@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.scalacompat.{Satoshi, TxId}
 import fr.acinq.eclair.ShortChannelId.outputIndex
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
@@ -113,7 +113,18 @@ object Validation {
             log.debug("validation successful for shortChannelId={}", c.shortChannelId)
             remoteOrigins.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c)))
             val capacity = tx.txOut(outputIndex).amount
-            Some(addPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, None))
+            // A single transaction may splice multiple channels (batching), in which case we have multiple parent
+            // channels. We cannot know which parent channel this announcement corresponds to, but it doesn't matter.
+            // We only need to update one of the parent channels between the same set of nodes to correctly update
+            // our graph.
+            val parentChannel_opt = d0.spentChannels
+              .getOrElse(tx.txid, Set.empty)
+              .flatMap(d0.channels.get)
+              .find(parent => parent.nodeId1 == c.nodeId1 && parent.nodeId2 == c.nodeId2)
+            parentChannel_opt match {
+              case Some(parentChannel) => Some(updateSplicedPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, parentChannel))
+              case None => Some(addPublicChannel(d0, nodeParams, watcher, c, tx.txid, capacity, None))
+            }
           }
         case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
           if (fundingTxStatus.spendingTxConfirmed) {
@@ -156,6 +167,49 @@ object Validation {
     }
   }
 
+  private def updateSplicedPublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, spliceTxId: TxId, capacity: Satoshi, parentChannel: PublicChannel)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+    implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
+    val fundingOutputIndex = outputIndex(ann.shortChannelId)
+    watcher ! WatchExternalChannelSpent(ctx.self, spliceTxId, fundingOutputIndex, ann.shortChannelId)
+    watcher ! UnwatchExternalChannelSpent(parentChannel.fundingTxId, outputIndex(parentChannel.ann.shortChannelId))
+    // we notify front nodes that the channel has been replaced
+    ctx.system.eventStream.publish(ChannelsDiscovered(SingleChannelDiscovered(ann, capacity, None, None) :: Nil))
+    ctx.system.eventStream.publish(ChannelLost(parentChannel.shortChannelId))
+    nodeParams.db.network.addChannel(ann, spliceTxId, capacity)
+    nodeParams.db.network.removeChannel(parentChannel.shortChannelId)
+    val newPubChan = parentChannel.copy(
+      ann = ann,
+      fundingTxId = spliceTxId,
+      capacity = capacity,
+      // we keep the previous channel updates to ensure that the channel is still used until we receive the new ones
+      update_1_opt = parentChannel.update_1_opt,
+      update_2_opt = parentChannel.update_2_opt,
+    )
+    log.debug("replacing parent channel scid={} with splice channel scid={}; splice channel={}", parentChannel.shortChannelId, ann.shortChannelId, newPubChan)
+    // we need to update the graph because the edge identifiers and capacity change from the parent scid to the new splice scid
+    log.debug("updating the graph for shortChannelId={}", newPubChan.shortChannelId)
+    val graph1 = d.graphWithBalances.updateChannel(ChannelDesc(parentChannel.shortChannelId, parentChannel.nodeId1, parentChannel.nodeId2), ann.shortChannelId, capacity)
+    val spentChannels1 = d.spentChannels.collect {
+      case (txId, parentScids) if (parentScids - parentChannel.shortChannelId).nonEmpty =>
+        txId -> (parentScids - parentChannel.shortChannelId)
+    }
+    // No need to keep watching transactions that have been removed from spentChannels.
+    (d.spentChannels.keySet -- spentChannels1.keys).foreach(txId => watcher ! UnwatchTxConfirmed(txId))
+    d.copy(
+      // we also add the splice scid -> channelId and remove the parent scid -> channelId mappings
+      channels = d.channels + (newPubChan.shortChannelId -> newPubChan) - parentChannel.shortChannelId,
+      // remove the parent channel from the pruned channels
+      prunedChannels = d.prunedChannels - parentChannel.shortChannelId,
+      // we also add the newly validated channels to the rebroadcast queue
+      rebroadcast = d.rebroadcast.copy(
+        // we rebroadcast the splice channel to our peers
+        channels = d.rebroadcast.channels + (newPubChan.ann -> d.awaiting.getOrElse(newPubChan.ann, if (isRelatedTo(ann, nodeParams.nodeId)) Seq(LocalGossip) else Nil).toSet),
+      ),
+      graphWithBalances = graph1,
+      spentChannels = spentChannels1
+    )
+  }
+
   private def addPublicChannel(d: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], ann: ChannelAnnouncement, fundingTxId: TxId, capacity: Satoshi, privChan_opt: Option[PrivateChannel])(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val fundingOutputIndex = outputIndex(ann.shortChannelId)
@@ -179,7 +233,7 @@ object Validation {
         // mutable variable is simpler here
         var graph = d.graphWithBalances
         // remove previous private edges
-        graph = graph.removeChannel(ChannelDesc(privateChannel.shortIds.localAlias, privateChannel.nodeId1, privateChannel.nodeId2))
+        graph = graph.removeChannel(ChannelDesc(privateChannel.aliases.localAlias, privateChannel.nodeId1, privateChannel.nodeId2))
         // add new public edges
         pubChan.update_1_opt.foreach(u => graph = graph.addEdge(GraphEdge(u, pubChan)))
         pubChan.update_2_opt.foreach(u => graph = graph.addEdge(GraphEdge(u, pubChan)))
@@ -196,7 +250,7 @@ object Validation {
       // we remove the corresponding unannounced channel that we may have until now
       privateChannels = d.privateChannels -- privChan_opt.map(_.channelId).toSeq,
       // we also remove the scid -> channelId mappings
-      scid2PrivateChannels = d.scid2PrivateChannels - pubChan.shortChannelId.toLong -- privChan_opt.map(_.shortIds.localAlias.toLong),
+      scid2PrivateChannels = d.scid2PrivateChannels - pubChan.shortChannelId.toLong -- privChan_opt.map(_.aliases.localAlias.toLong),
       // we also add the newly validated channels to the rebroadcast queue
       rebroadcast = d.rebroadcast.copy(
         // we rebroadcast the channel to our peers
@@ -209,34 +263,50 @@ object Validation {
     // in case this was our first local channel, we make a node announcement
     if (!d.nodes.contains(nodeParams.nodeId) && isRelatedTo(ann, nodeParams.nodeId)) {
       log.info("first local channel validated, announcing local node")
-      val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features.nodeAnnouncementFeatures(), fundingRates_opt = nodeParams.willFundRates_opt)
+      val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features.nodeAnnouncementFeatures(), fundingRates_opt = nodeParams.liquidityAdsConfig.rates_opt)
       handleNodeAnnouncement(d1, nodeParams.db.network, Set(LocalGossip), nodeAnn)
     } else d1
   }
 
-  def handleChannelSpent(d: Data, db: NetworkDb, shortChannelId: RealShortChannelId)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleChannelSpent(d: Data, watcher: typed.ActorRef[ZmqWatcher.Command], db: NetworkDb, spendingTxId: TxId, shortChannelIds: Set[RealShortChannelId])(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    val lostChannel = d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)).get.ann
-    log.info("funding tx of channelId={} has been spent", shortChannelId)
+    val lostChannels = shortChannelIds.flatMap(shortChannelId => d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)))
+    log.info("funding tx for channelIds={} was spent", shortChannelIds.mkString(","))
     // we need to remove nodes that aren't tied to any channels anymore
-    val channels1 = d.channels - shortChannelId
-    val prunedChannels1 = d.prunedChannels - shortChannelId
-    val lostNodes = Seq(lostChannel.nodeId1, lostChannel.nodeId2).filterNot(nodeId => hasChannels(nodeId, channels1.values))
+    val channels1 = d.channels -- shortChannelIds
+    val prunedChannels1 = d.prunedChannels -- shortChannelIds
+    val lostNodes = lostChannels.flatMap(lostChannel => Seq(lostChannel.nodeId1, lostChannel.nodeId2).filterNot(nodeId => hasChannels(nodeId, channels1.values)))
     // let's clean the db and send the events
-    log.info("pruning shortChannelId={} (spent)", shortChannelId)
-    db.removeChannel(shortChannelId) // NB: this also removes channel updates
+      log.info("pruning shortChannelIds={} (spent)", shortChannelIds.mkString(","))
+    shortChannelIds.foreach(db.removeChannel(_)) // NB: this also removes channel updates
     // we also need to remove updates from the graph
-    val graphWithBalances1 = d.graphWithBalances
-      .removeChannel(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
+    val graphWithBalances1 = lostChannels.foldLeft(d.graphWithBalances) { (graph, lostChannel) =>
+      graph.removeChannel(ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
+    }
     // we notify front nodes
-    ctx.system.eventStream.publish(ChannelLost(shortChannelId))
+    shortChannelIds.foreach(shortChannelId => ctx.system.eventStream.publish(ChannelLost(shortChannelId)))
     lostNodes.foreach {
       nodeId =>
         log.info("pruning nodeId={} (spent)", nodeId)
         db.removeNode(nodeId)
         ctx.system.eventStream.publish(NodeLost(nodeId))
     }
-    d.copy(nodes = d.nodes -- lostNodes, channels = channels1, prunedChannels = prunedChannels1, graphWithBalances = graphWithBalances1)
+    lostChannels.foreach {
+      lostChannel =>
+        // we no longer need to track this or alternative transactions that spent the parent channel
+        // either this channel was really closed, or it was spliced and the announcement was not received in time
+        // we will re-add a spliced channel as a new channel later when we receive the announcement
+        watcher ! UnwatchExternalChannelSpent(lostChannel.fundingTxId, outputIndex(lostChannel.ann.shortChannelId))
+    }
+
+    // We may have received RBF candidates for this splice: we can find them by looking at transactions that spend one
+    // of the channels we're removing (note that they may spend a slightly different set of channels).
+    // Those transactions cannot confirm anymore (they have been double-spent by the current one), so we should stop
+    // watching them.
+    val spendingTxs = d.spentChannels.filter(_._2.intersect(shortChannelIds).nonEmpty).keySet
+    (spendingTxs - spendingTxId).foreach(txId => watcher ! UnwatchTxConfirmed(txId))
+    val spentChannels1 = d.spentChannels -- spendingTxs
+    d.copy(nodes = d.nodes -- lostNodes, channels = channels1, prunedChannels = prunedChannels1, graphWithBalances = graphWithBalances1, spentChannels = spentChannels1)
   }
 
   def handleNodeAnnouncement(d: Data, db: NetworkDb, origins: Set[GossipOrigin], n: NodeAnnouncement, wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
@@ -302,7 +372,7 @@ object Validation {
   def handleChannelUpdate(d: Data, db: NetworkDb, currentBlockHeight: BlockHeight, update: Either[LocalChannelUpdate, RemoteChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val (pc_opt: Option[KnownChannel], u: ChannelUpdate, origins: Set[GossipOrigin]) = update match {
-      case Left(lcu) => (d.resolve(lcu.channelId, lcu.shortIds.real.toOption), lcu.channelUpdate, Set(LocalGossip))
+      case Left(lcu) => (d.resolve(lcu.channelId, lcu.announcement_opt.map(_.shortChannelId)), lcu.channelUpdate, Set(LocalGossip))
       case Right(rcu) =>
         rcu.origins.collect {
           case RemoteGossip(peerConnection, _) if !wasStashed => // stashed changes have already been acknowledged
@@ -474,26 +544,36 @@ object Validation {
   }
 
   /**
-   * We will receive this event before [[LocalChannelUpdate]] or [[ChannelUpdate]]
+   * Note that we may receive this event before [[ChannelAnnouncement]], [[LocalChannelUpdate]] or [[ChannelUpdate]].
+   * This function must correctly handle cases where the channel isn't yet in the public graph but will be soon.
    */
   def handleShortChannelIdAssigned(d: Data, localNodeId: PublicKey, scia: ShortChannelIdAssigned)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    // NB: we don't map remote aliases because they are decided by our peer and could overlap with ours
-    val mappings = scia.shortIds.real.toOption match {
-      case Some(realScid) => Map(realScid.toLong -> scia.channelId, scia.shortIds.localAlias.toLong -> scia.channelId)
-      case None => Map(scia.shortIds.localAlias.toLong -> scia.channelId)
+    // NB: we don't map remote aliases because they are decided by our peer and could overlap with ours.
+    val mappings = scia.announcement_opt.map(_.shortChannelId) match {
+      case Some(realScid) => Map(realScid.toLong -> scia.channelId, scia.aliases.localAlias.toLong -> scia.channelId)
+      case None => Map(scia.aliases.localAlias.toLong -> scia.channelId)
     }
     log.debug("handleShortChannelIdAssigned scia={} mappings={}", scia, mappings)
     val d1 = d.copy(scid2PrivateChannels = d.scid2PrivateChannels ++ mappings)
-    d1.resolve(scia.channelId, scia.shortIds.real.toOption) match {
+    d1.resolve(scia.channelId, scia.announcement_opt.map(_.shortChannelId)) match {
       case Some(_) =>
-        // channel is known, nothing more to do
+        // This channel is already known, nothing more to do.
+        d1
+      case None if scia.announcement_opt.nonEmpty =>
+        // This channel has been announced: it must be a public channel for which we haven't processed the announcement
+        // yet (or a splice that updates the real scid). We don't have anything to do, the scid will be updated in the
+        // public channels map when we process the announcement.
         d1
       case None =>
-        // this is a local channel that hasn't yet been announced (maybe it is a private channel or maybe it is a public
-        // channel that doesn't yet have 6 confirmations), we create a corresponding private channel
-        val pc = PrivateChannel(scia.channelId, scia.shortIds, localNodeId, scia.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat))
-        log.debug("adding unannounced local channel to remote={} channelId={} localAlias={}", scia.remoteNodeId, scia.channelId, scia.shortIds.localAlias)
+        // This is either:
+        //  - a private channel that hasn't been added yet
+        //  - a public channel that hasn't reached enough confirmations
+        // This is a local channel that hasn't yet been announced (maybe it is a private channel or maybe it is a public
+        // channel that doesn't yet have enough confirmations). We create a corresponding private channel in both cases,
+        // which will be converted to a public channel later if it is announced.
+        log.debug("adding unannounced local channel to remote={} channelId={} localAlias={}", scia.remoteNodeId, scia.channelId, scia.aliases.localAlias)
+        val pc = PrivateChannel(scia.channelId, scia.aliases, localNodeId, scia.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat))
         d1.copy(privateChannels = d1.privateChannels + (scia.channelId -> pc))
     }
   }
@@ -502,55 +582,70 @@ object Validation {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     import nodeParams.db.{network => db}
     log.debug("handleLocalChannelUpdate lcu={}", lcu)
-    d.resolve(lcu.channelId, lcu.shortIds.real.toOption) match {
+    d.resolve(lcu.channelId, lcu.announcement_opt.map(_.shortChannelId)) match {
       case Some(publicChannel: PublicChannel) =>
-        // this a known public channel, we can process the channel_update
+        // This a known public channel, we only need to process the channel_update.
         log.debug("this is a known public channel, processing channel_update publicChannel={}", publicChannel)
         handleChannelUpdate(d, db, nodeParams.currentBlockHeight, Left(lcu))
       case Some(privateChannel: PrivateChannel) =>
-        lcu.channelAnnouncement_opt match {
+        lcu.announcement_opt match {
           case Some(ann) =>
             log.debug("private channel graduating to public privateChannel={}", privateChannel)
-            // channel is graduating from private to public
-            // since this is a local channel, we can trust the announcement, no need to go through the full
-            // verification process and make calls to bitcoin core
-            val fundingTxId = lcu.commitments.latest.fundingTxId
-            val d1 = addPublicChannel(d, nodeParams, watcher, ann, fundingTxId, lcu.commitments.latest.capacity, Some(privateChannel))
-            log.debug("processing channel_update")
+            // This channel is now being announced and thus graduating from private to public.
+            // Since this is a local channel, we can trust the announcement, no need to verify the utxo.
+            val d1 = addPublicChannel(d, nodeParams, watcher, ann.announcement, ann.fundingTxId, lcu.commitments.capacity, Some(privateChannel))
             handleChannelUpdate(d1, db, nodeParams.currentBlockHeight, Left(lcu))
           case None =>
             log.debug("this is a known private channel, processing channel_update privateChannel={}", privateChannel)
-            // this a known private channel, we update the short ids (we now may have the remote_alias) and the balances
-            val pc1 = privateChannel.copy(shortIds = lcu.shortIds).updateBalances(lcu.commitments)
+            // This a known private channel, we update the short ids and the balances.
+            val pc1 = privateChannel.copy(aliases = lcu.aliases).updateBalances(lcu.commitments)
             val d1 = d.copy(privateChannels = d.privateChannels + (privateChannel.channelId -> pc1))
-            // then we can process the channel_update
             handleChannelUpdate(d1, db, nodeParams.currentBlockHeight, Left(lcu))
         }
       case None =>
-        lcu.shortIds.real.toOption match {
-          case Some(realScid) if d.prunedChannels.contains(realScid) =>
-            log.debug("this is a known pruned local channel, processing channel_update for channelId={} scid={}", lcu.channelId, realScid)
-          case _ =>
-            // should never happen
-            log.warning("unrecognized local channel update for channelId={} localAlias={}", lcu.channelId, lcu.shortIds.localAlias)
+        lcu.announcement_opt match {
+          case Some(ann) if d.prunedChannels.contains(ann.shortChannelId) =>
+            log.debug("this is a known pruned local channel, processing channel_update for channelId={} scid={}", lcu.channelId, ann.shortChannelId)
+            handleChannelUpdate(d, db, nodeParams.currentBlockHeight, Left(lcu))
+          case Some(ann) =>
+            // A single transaction may splice multiple channels (batching), in which case we have multiple parent
+            // channels. We cannot know which parent channel this announcement corresponds to, but it doesn't matter.
+            // We only need to update one of the parent channels between the same set of nodes to correctly update
+            // our graph.
+            val d1 = d.spentChannels
+              .getOrElse(ann.fundingTxId, Set.empty)
+              .flatMap(d.channels.get)
+              .find(parent => parent.nodeId1 == ann.announcement.nodeId1 && parent.nodeId2 == ann.announcement.nodeId2) match {
+              case Some(parentChannel) =>
+                // This is a splice for which we haven't processed the (local) channel_announcement yet.
+                log.debug("processing channel_announcement for local splice with fundingTxId={} channelId={} scid={} (previous={})", ann.fundingTxId, lcu.channelId, ann.shortChannelId, parentChannel.shortChannelId)
+                updateSplicedPublicChannel(d, nodeParams, watcher, ann.announcement, ann.fundingTxId, lcu.commitments.capacity, parentChannel)
+              case None =>
+                // This is a public channel for which we haven't processed the (local) channel_announcement yet.
+                log.debug("processing channel_announcement for unknown local channel with fundingTxId={} channelId={} scid={}", ann.fundingTxId, lcu.channelId, ann.shortChannelId)
+                addPublicChannel(d, nodeParams, watcher, ann.announcement, ann.fundingTxId, lcu.commitments.capacity, None)
+            }
+            handleChannelUpdate(d1, db, nodeParams.currentBlockHeight, Left(lcu))
+          case None =>
+            log.warning("unrecognized local channel update for private channelId={} localAlias={}", lcu.channelId, lcu.aliases.localAlias)
+            // Process the update: it will be rejected if there is no related channel.
+            handleChannelUpdate(d, db, nodeParams.currentBlockHeight, Left(lcu))
         }
-        // handle the update: it will be rejected if there is no related channel
-        handleChannelUpdate(d, db, nodeParams.currentBlockHeight, Left(lcu))
     }
   }
 
   def handleLocalChannelDown(d: Data, localNodeId: PublicKey, lcd: LocalChannelDown)(implicit log: LoggingAdapter): Data = {
     import lcd.{channelId, remoteNodeId}
     log.debug("handleLocalChannelDown lcd={}", lcd)
-    val scid2PrivateChannels1 = d.scid2PrivateChannels - lcd.shortIds.localAlias.toLong -- lcd.shortIds.real.toOption.map(_.toLong)
+    val scid2PrivateChannels1 = d.scid2PrivateChannels - lcd.aliases.localAlias.toLong -- lcd.realScids.map(_.toLong)
     // a local channel has permanently gone down
-    if (lcd.shortIds.real.toOption.exists(d.channels.contains)) {
-      // the channel was public, we will receive (or have already received) a WatchEventSpentBasic event, that will trigger a clean up of the channel
+    if (lcd.realScids.exists(d.channels.contains)) {
+      // the channel was public, we will receive (or have already received) a WatchSpent event, that will trigger a clean up of the channel
       // so let's not do anything here
       d.copy(scid2PrivateChannels = scid2PrivateChannels1)
     } else if (d.privateChannels.contains(lcd.channelId)) {
       // the channel was private or public-but-not-yet-announced, let's do the clean up
-      val localAlias = d.privateChannels(channelId).shortIds.localAlias
+      val localAlias = d.privateChannels(channelId).aliases.localAlias
       log.debug("removing private local channel and channel_update for channelId={} localAlias={}", channelId, localAlias)
       // we remove the corresponding updates from the graph
       val graphWithBalances1 = d.graphWithBalances
@@ -563,7 +658,7 @@ object Validation {
   }
 
   def handleAvailableBalanceChanged(d: Data, e: AvailableBalanceChanged)(implicit log: LoggingAdapter): Data = {
-    val (publicChannels1, graphWithBalances1) = e.shortIds.real.toOption.flatMap(d.channels.get) match {
+    val (publicChannels1, graphWithBalances1) = e.lastAnnouncement_opt.map(_.shortChannelId).flatMap(d.channels.get) match {
       case Some(pc) =>
         val pc1 = pc.updateBalances(e.commitments)
         log.debug("public channel balance updated: {}", pc1)
