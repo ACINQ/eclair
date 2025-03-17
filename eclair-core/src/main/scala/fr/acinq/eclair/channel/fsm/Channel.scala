@@ -48,7 +48,7 @@ import fr.acinq.eclair.io.Peer.LiquidityPurchaseSigned
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSettlingOnChain}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.ClosingTx
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, ClosingTx, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 
@@ -2152,7 +2152,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(c: CMD_BUMP_FORCE_CLOSE_FEE, d: DATA_CLOSING) =>
       d.commitments.params.commitmentFormat match {
-        case _: Transactions.AnchorOutputsCommitmentFormat =>
+        case SimpleTaprootChannelCommitmentFormat | _: Transactions.AnchorOutputsCommitmentFormat =>
           val lcp1 = d.localCommitPublished.map(lcp => Closing.LocalClose.claimAnchors(keyManager, d.commitments.latest, lcp, c.confirmationTarget))
           val rcp1 = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.claimAnchors(keyManager, d.commitments.latest, rcp, c.confirmationTarget))
           val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.claimAnchors(keyManager, d.commitments.latest, nrcp, c.confirmationTarget))
@@ -2174,7 +2174,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf-force-close", stateName))
             stay()
           }
-        case _ =>
+        case DefaultCommitmentFormat =>
           log.warning("cannot bump force-close fees, channel is not using anchor outputs")
           c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf-force-close", stateName))
           stay()
