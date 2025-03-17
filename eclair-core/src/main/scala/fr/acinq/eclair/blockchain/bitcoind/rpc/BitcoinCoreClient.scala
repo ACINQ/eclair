@@ -644,7 +644,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       actualFeerate = Transactions.fee2rate(actualFees, signedTx.weight())
       maxFeerate = feeratePerKw * 1.5
       _ = require(actualFeerate < maxFeerate, s"actual feerate $actualFeerate is more than 50% above requested feerate $feeratePerKw")
-      txid <- publishTransaction(signedTx)
+      txid <-  unlockIfFails(lockedOutputs)(publishTransaction(signedTx))
     } yield txid
   }
 
