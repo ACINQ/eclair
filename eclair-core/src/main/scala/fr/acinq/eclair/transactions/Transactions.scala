@@ -25,15 +25,14 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.bitcoin.{ScriptFlags, ScriptTree, SigHash}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
-import fr.acinq.eclair.channel.RemoteSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts.Taproot.NUMS_POINT
 import fr.acinq.eclair.transactions.Scripts._
+import fr.acinq.eclair.transactions.Transactions.InputInfo.RedeemPath
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import scodec.bits.ByteVector
 
 import java.nio.ByteOrder
-import scala.jdk.CollectionConverters.SeqHasAsJava
 import scala.reflect.ClassTag
 import scala.util.{Success, Try}
 
@@ -119,7 +118,34 @@ object Transactions {
     object SegwitInput {
       def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]) = new SegwitInput(outPoint, txOut,  Script.write(redeemScript))
     }
-    case class TaprootInput(outPoint: OutPoint, txOut: TxOut, internalKey: XonlyPublicKey, scriptTree_opt: Option[ScriptTree], leaf: ByteVector32) extends InputInfo
+    case class TaprootInput(outPoint: OutPoint, txOut: TxOut, internalKey: XonlyPublicKey, redeemPath: RedeemPath) extends InputInfo
+    sealed trait RedeemPath
+    object RedeemPath {
+     /**
+       * @param scriptTree_opt the script tree must be known if there is one, even when spending via the key path.
+       */
+      case class KeyPath(scriptTree_opt: Option[ScriptTree]) extends RedeemPath
+      /**
+       * @param scriptTree we need the complete script tree to spend taproot inputs.
+       * @param leafHash   hash of the leaf script we're spending (must belong to the tree).
+       */
+      case class ScriptPath(scriptTree: ScriptTree, leafHash: ByteVector32) extends RedeemPath {
+        require(ScriptPath.findScript(scriptTree, leafHash).nonEmpty, "script tree must contain the provided leaf")
+      }
+
+      object ScriptPath {
+        import KotlinUtils._
+
+        /**
+         * Note: this won't be needed once findScript is added to bitcoin-kmp
+         * @return the leaf that matches `leafHash`
+         */
+        def findScript(scriptTree: ScriptTree, leafHash: ByteVector32): Option[ScriptTree.Leaf] = scriptTree match {
+          case l: ScriptTree.Leaf => if (l.hash() == scala2kmp(leafHash)) Some(l) else None
+          case b: ScriptTree.Branch => findScript(b.getLeft, leafHash) orElse findScript(b.getRight, leafHash)
+        }
+      }
+    }
   }
 
   /** Owner of a given transaction (local/remote). */
@@ -151,7 +177,10 @@ object Transactions {
 
     def sign(key: PrivateKey, sighashType: Int): ByteVector64 = input match {
       case t: InputInfo.TaprootInput =>
-        Transaction.signInputTaprootScriptPath(key, tx, 0, Seq(input.txOut), sighashType, t.leaf)
+        t.redeemPath match {
+          case k: RedeemPath.KeyPath => Transaction.signInputTaprootKeyPath(key, tx, 0, Seq(input.txOut), sighashType, k.scriptTree_opt)
+          case s: RedeemPath.ScriptPath => Transaction.signInputTaprootScriptPath(key, tx, 0, Seq(input.txOut), sighashType, s.leafHash)
+        }
       case InputInfo.SegwitInput(outPoint, txOut, redeemScript) =>
         // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
         // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
@@ -162,7 +191,10 @@ object Transactions {
 
     def checkSig(sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = input match {
       case t: InputInfo.TaprootInput =>
-        val data = Transaction.hashForSigningTaprootScriptPath(tx, inputIndex = 0, Seq(input.txOut), sighash(txOwner, commitmentFormat), t.leaf)
+        val data = t.redeemPath match {
+          case _: RedeemPath.KeyPath => Transaction.hashForSigningTaprootKeyPath(tx, inputIndex = 0, Seq(input.txOut), sighash(txOwner, commitmentFormat))
+          case s: RedeemPath.ScriptPath => Transaction.hashForSigningTaprootScriptPath(tx, inputIndex = 0, Seq(input.txOut), sighash(txOwner, commitmentFormat), s.leafHash)
+        }
         Crypto.verifySignatureSchnorr(data, sig, pubKey.xOnly)
       case InputInfo.SegwitInput(outPoint, txOut, redeemScript) =>
         val sighash = this.sighash(txOwner, commitmentFormat)
@@ -185,19 +217,6 @@ object Transactions {
 
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo {
     override def desc: String = "commit-tx"
-
-    def checkPartialSignature(psig: PartialSignatureWithNonce, localPubKey: PublicKey, localNonce: IndividualNonce, remotePubKey: PublicKey): Boolean = {
-      import KotlinUtils._
-      val session = fr.acinq.bitcoin.crypto.musig2.Musig2.taprootSession(
-          this.tx,
-          0,
-          java.util.List.of(this.input.txOut),
-          Scripts.sort(Seq(localPubKey, remotePubKey)).map(scala2kmp).asJava,
-          java.util.List.of(localNonce, psig.nonce),
-          null
-        ).getRight
-      session.verify(psig.partialSig, psig.nonce, remotePubKey)
-    }
   }
 
   /**
@@ -279,26 +298,10 @@ object Transactions {
 
   case class HtlcPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo {
     override def desc: String = "htlc-penalty"
-
-    override def sign(privateKey:  PrivateKey, txOwner:  TxOwner, commitmentFormat:  CommitmentFormat): ByteVector64 = input match {
-      case t: InputInfo.TaprootInput =>
-        Transaction.signInputTaprootKeyPath(privateKey, tx, 0, Seq(input.txOut), sighash(txOwner, commitmentFormat), t.scriptTree_opt)
-      case _: InputInfo.SegwitInput => {
-        super.sign(privateKey, txOwner, commitmentFormat)
-      }
-    }
   }
 
   case class ClaimHtlcDelayedOutputPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo {
     override def desc: String = "htlc-delayed-penalty"
-
-    override def sign(privateKey:  PrivateKey, txOwner:  TxOwner, commitmentFormat:  CommitmentFormat): ByteVector64 = input match {
-      case t: InputInfo.TaprootInput =>
-        Transaction.signInputTaprootKeyPath(privateKey, tx, 0, Seq(input.txOut), sighash(txOwner, commitmentFormat), t.scriptTree_opt)
-      case _: InputInfo.SegwitInput => {
-        super.sign(privateKey, txOwner, commitmentFormat)
-      }
-    }
   }
 
   case class ClosingTx(input: InputInfo, tx: Transaction, toLocalOutput: Option[OutputInfo]) extends TransactionWithInputInfo {
@@ -698,7 +701,7 @@ object Transactions {
       output match {
         case t: CommitmentOutputLink.TaprootLink[OutHtlc] =>
           val Some(scriptTree: ScriptTree.Branch) = t.scriptTree_opt
-          val input = InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), t.internalKey, t.scriptTree_opt, scriptTree.getLeft.hash())
+          val input = InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), t.internalKey, RedeemPath.ScriptPath(scriptTree, scriptTree.getLeft.hash()))
           val tree = Taproot.htlcDelayedScriptTree(localDelayedPaymentPubkey, toLocalDelay)
           val tx = Transaction(
             version = 2,
@@ -740,7 +743,7 @@ object Transactions {
       output match {
         case t: CommitmentOutputLink.TaprootLink[InHtlc] =>
           val Some(scriptTree: ScriptTree.Branch) = t.scriptTree_opt
-          val input = InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), t.internalKey, t.scriptTree_opt, scriptTree.getRight.hash())
+          val input = InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), t.internalKey, RedeemPath.ScriptPath(scriptTree, scriptTree.getRight.hash()))
           val tree = Taproot.htlcDelayedScriptTree(localDelayedPaymentPubkey, toLocalDelay)
           val tx = Transaction(
             version = 2,
@@ -800,7 +803,7 @@ object Transactions {
       val input = outputs(outputIndex) match {
         case t: CommitmentOutputLink.TaprootLink[_] =>
           val Some(scriptTree: ScriptTree.Branch) = t.scriptTree_opt
-          InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), t.internalKey, t.scriptTree_opt, scriptTree.getRight.hash())
+          InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), t.internalKey, RedeemPath.ScriptPath(scriptTree, scriptTree.getRight.hash()))
         case _: CommitmentOutputLink.SegwitLink[_] =>
           val redeemScript = htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlc.paymentHash.bytes), commitmentFormat)
           InputInfo.SegwitInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), redeemScript)
@@ -846,7 +849,7 @@ object Transactions {
       val input = outputs(outputIndex) match {
         case t: CommitmentOutputLink.TaprootLink[_] =>
           val Some(scriptTree: ScriptTree.Branch) = t.scriptTree_opt
-          InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), t.internalKey, t.scriptTree_opt, scriptTree.getLeft.hash())
+          InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), t.internalKey, RedeemPath.ScriptPath(scriptTree, scriptTree.getLeft.hash()))
         case _: CommitmentOutputLink.SegwitLink[_] =>
           val redeemScript = htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, ripemd160(htlc.paymentHash.bytes), htlc.cltvExpiry, commitmentFormat)
           InputInfo.SegwitInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), redeemScript)
@@ -921,7 +924,7 @@ object Transactions {
       val pubkeyScript = pay2tr(NUMS_POINT.xOnly, Some(Scripts.Taproot.toRemoteScriptTree(localPaymentPubkey)))
       findPubKeyScriptIndex(commitTx, pubkeyScript) flatMap { outputIndex =>
         val scriptTree = Scripts.Taproot.toRemoteScriptTree(localPaymentPubkey)
-        val input = InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), NUMS_POINT.xOnly, Some(scriptTree), scriptTree.hash())
+        val input = InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), NUMS_POINT.xOnly, RedeemPath.ScriptPath(scriptTree, scriptTree.hash()))
         makeUnsignedTx(input)
       }
     }
@@ -946,7 +949,7 @@ object Transactions {
       findPubKeyScriptIndex(htlcTx, Script.pay2tr(localRevocationPubkey.xOnly, Some(htlcTxTree))) match {
         case Left(skip) => Left(skip)
         case Right(outputIndex) =>
-          val input = InputInfo.TaprootInput(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex), localRevocationPubkey.xOnly, Some(htlcTxTree), htlcTxTree.hash())
+          val input = InputInfo.TaprootInput(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex), localRevocationPubkey.xOnly, RedeemPath.ScriptPath(htlcTxTree, htlcTxTree.hash()))
           // unsigned transaction
           val tx = Transaction(
             version = 2,
@@ -1013,7 +1016,7 @@ object Transactions {
       val scriptTree = Scripts.Taproot.toLocalScriptTree(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
       val pubkeyScript = pay2tr(NUMS_POINT.xOnly, Some(scriptTree))
       findPubKeyScriptIndex(parentTx, pubkeyScript) flatMap { outputIndex =>
-        val input = InputInfo.TaprootInput(OutPoint(parentTx, outputIndex), parentTx.txOut(outputIndex), NUMS_POINT.xOnly, Some(scriptTree), scriptTree.getLeft.hash())
+        val input = InputInfo.TaprootInput(OutPoint(parentTx, outputIndex), parentTx.txOut(outputIndex), NUMS_POINT.xOnly, RedeemPath.ScriptPath(scriptTree, scriptTree.getLeft.hash()))
         makeUnsignedTx(input)
       }
     }
@@ -1042,7 +1045,7 @@ object Transactions {
 
       val pubkeyScript = pay2tr(fundingPubkey.xOnly, Some(Scripts.Taproot.anchorScriptTree))
       findPubKeyScriptIndex(commitTx, pubkeyScript) flatMap { outputIndex =>
-        val input = InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), fundingPubkey.xOnly, Some(Scripts.Taproot.anchorScriptTree), Scripts.Taproot.anchorScriptTree.hash())
+        val input = InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), fundingPubkey.xOnly, RedeemPath.ScriptPath(Scripts.Taproot.anchorScriptTree, Scripts.Taproot.anchorScriptTree.hash()))
         val tx = makeUnsignedTx(input)
         Right((input, tx))
       }
@@ -1069,7 +1072,6 @@ object Transactions {
   }
 
   def makeClaimHtlcDelayedOutputPenaltyTxs(htlcTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw, commitmentFormat: CommitmentFormat = DefaultCommitmentFormat): Seq[Either[TxGenerationSkipped, ClaimHtlcDelayedOutputPenaltyTx]] = {
-    import KotlinUtils._
 
     def makeUnsignedTx(input: InputInfo): Either[TxGenerationSkipped, ClaimHtlcDelayedOutputPenaltyTx] = {
       val tx = Transaction(
@@ -1094,7 +1096,7 @@ object Transactions {
       val pubkeyScript = pay2tr(localRevocationPubkey.xOnly, Some(tree.getLeft))
       findPubKeyScriptIndexes(htlcTx, pubkeyScript) map { outputIndexes =>
         outputIndexes.map { outputIndex =>
-          val input = InputInfo.TaprootInput(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex), localRevocationPubkey.xOnly, Some(tree.getLeft), tree.getLeft.hash())
+          val input = InputInfo.TaprootInput(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex), localRevocationPubkey.xOnly, RedeemPath.KeyPath(Some(tree.getLeft)))
           makeUnsignedTx(input)
         }
       }
@@ -1141,7 +1143,7 @@ object Transactions {
       val toLocalScriptTree = Scripts.Taproot.toLocalScriptTree(remoteRevocationPubkey, toRemoteDelay, remoteDelayedPaymentPubkey)
       val pubkeyScript = pay2tr(NUMS_POINT.xOnly, Some(toLocalScriptTree))
       findPubKeyScriptIndex(commitTx, pubkeyScript) flatMap { outputIndex =>
-        val input = InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), NUMS_POINT.xOnly, Some(toLocalScriptTree), toLocalScriptTree.getRight.hash())
+        val input = InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), NUMS_POINT.xOnly, RedeemPath.ScriptPath(toLocalScriptTree, toLocalScriptTree.getRight.hash()))
         nmakeUnsignedTx(input)
       }
     }
@@ -1181,9 +1183,8 @@ object Transactions {
   }
 
   def makeHtlcPenaltyTx(commitTx: Transaction, htlcOutputIndex: Int, internalKey: XonlyPublicKey, scriptTree: ScriptTree, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, HtlcPenaltyTx] = {
-    import KotlinUtils._
 
-    val input = InputInfo.TaprootInput(OutPoint(commitTx, htlcOutputIndex), commitTx.txOut(htlcOutputIndex), internalKey, Some(scriptTree), scriptTree.hash())
+    val input = InputInfo.TaprootInput(OutPoint(commitTx, htlcOutputIndex), commitTx.txOut(htlcOutputIndex), internalKey, RedeemPath.KeyPath(Some(scriptTree)))
     // unsigned transaction
     val tx = Transaction(
       version = 2,
@@ -1191,7 +1192,7 @@ object Transactions {
       txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
       lockTime = 0)
     // compute weight with a dummy 73 bytes signature (the largest you can get)
-    val weight = addSigs(MainPenaltyTx(input, tx), PlaceHolderSig).tx.weight()
+    val weight = addSigs(HtlcPenaltyTx(input, tx), PlaceHolderSig, PlaceHolderPubKey).tx.weight()
     val fee = weight2fee(feeratePerKw, weight)
     val amount = input.txOut.amount - fee
     if (amount < localDustLimit) {
@@ -1201,7 +1202,6 @@ object Transactions {
       Right(HtlcPenaltyTx(input, tx1))
     }
   }
-
 
   def makeClosingTx(commitTxInput: InputInfo, localScriptPubKey: ByteVector, remoteScriptPubKey: ByteVector, localPaysClosingFees: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec, sequence: Long = 0xffffffffL): ClosingTx = {
     require(spec.htlcs.isEmpty, "there shouldn't be any pending htlcs")
@@ -1338,25 +1338,6 @@ object Transactions {
     Musig2.signTaprootInput(key, tx, inputIndex, spentOutputs, publicKeys, localNonce._1, Seq(localNonce._2, remoteNextLocalNonce), None)
   }
 
-  def partialSign(txinfo: TransactionWithInputInfo, key: PrivateKey,
-                  localFundingPublicKey: PublicKey, remoteFundingPublicKey: PublicKey,
-                  localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32] = {
-    val inputIndex = txinfo.tx.txIn.indexWhere(_.outPoint == txinfo.input.outPoint)
-    partialSign(key, txinfo.tx, inputIndex, Seq(txinfo.input.txOut), localFundingPublicKey: PublicKey, remoteFundingPublicKey: PublicKey, localNonce, remoteNextLocalNonce)
-  }
-
-  def aggregatePartialSignatures(txinfo: TransactionWithInputInfo,
-                                 localSig: ByteVector32, remoteSig: ByteVector32,
-                                 localFundingPublicKey: PublicKey, remoteFundingPublicKey: PublicKey,
-                                 localNonce: IndividualNonce, remoteNonce: IndividualNonce): Either[Throwable, ByteVector64] = {
-    Musig2.aggregateTaprootSignatures(
-      Seq(localSig, remoteSig), txinfo.tx, txinfo.tx.txIn.indexWhere(_.outPoint == txinfo.input.outPoint),
-      Seq(txinfo.input.txOut),
-      Scripts.sort(Seq(localFundingPublicKey, remoteFundingPublicKey)),
-      Seq(localNonce, remoteNonce),
-      None)
-  }
-
   def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): CommitTx = {
     val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
     commitTx.copy(tx = commitTx.tx.updateWitness(0, witness))
@@ -1366,8 +1347,8 @@ object Transactions {
     val witness = mainPenaltyTx.input match {
       case InputInfo.SegwitInput(_, _, redeemScript) => Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, redeemScript)
       case t: InputInfo.TaprootInput =>
-        t.scriptTree_opt match {
-          case Some(scriptTree: ScriptTree.Branch) => Script.witnessScriptPathPay2tr(t.internalKey, scriptTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(revocationSig)), scriptTree)
+        t.redeemPath match {
+          case RedeemPath.ScriptPath(scriptTree: ScriptTree.Branch, _) => Script.witnessScriptPathPay2tr(t.internalKey, scriptTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(revocationSig)), scriptTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building main penalty tx")
         }
     }
@@ -1386,8 +1367,8 @@ object Transactions {
     val witness = htlcSuccessTx.input match {
       case InputInfo.SegwitInput(_, _, redeemScript) => witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, redeemScript, commitmentFormat)
       case t: InputInfo.TaprootInput =>
-        t.scriptTree_opt match {
-          case Some(htlcTree: ScriptTree.Branch) =>
+        t.redeemPath match {
+          case RedeemPath.ScriptPath(htlcTree: ScriptTree.Branch, _) =>
             Script.witnessScriptPathPay2tr(t.internalKey, htlcTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(Taproot.encodeSig(remoteSig, SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY), Taproot.encodeSig(localSig, SIGHASH_DEFAULT), paymentPreimage)), htlcTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building htlc successTx tx")
         }
@@ -1399,8 +1380,8 @@ object Transactions {
     val witness = htlcTimeoutTx.input match {
       case InputInfo.SegwitInput(_, _, redeemScript) => witnessHtlcTimeout(localSig, remoteSig, redeemScript, commitmentFormat)
       case t: InputInfo.TaprootInput =>
-        t.scriptTree_opt match {
-          case Some(htlcTree: ScriptTree.Branch) =>
+        t.redeemPath match {
+          case RedeemPath.ScriptPath(htlcTree: ScriptTree.Branch, _) =>
             Script.witnessScriptPathPay2tr(t.internalKey, htlcTree.getLeft.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(Taproot.encodeSig(remoteSig, SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY), Taproot.encodeSig(localSig, SIGHASH_DEFAULT))), htlcTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building htlc timeout tx")
         }
@@ -1412,8 +1393,8 @@ object Transactions {
     val witness = claimHtlcSuccessTx.input match {
       case InputInfo.SegwitInput(_, _, redeemScript) => witnessClaimHtlcSuccessFromCommitTx(localSig, paymentPreimage, redeemScript)
       case t: InputInfo.TaprootInput =>
-        t.scriptTree_opt match {
-          case Some(htlcTree: ScriptTree.Branch) =>
+        t.redeemPath match {
+          case RedeemPath.ScriptPath(htlcTree: ScriptTree.Branch, _) =>
             Script.witnessScriptPathPay2tr(t.internalKey, htlcTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(localSig, paymentPreimage)), htlcTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building claim htlc success tx")
         }
@@ -1426,8 +1407,8 @@ object Transactions {
       case InputInfo.SegwitInput(_, _, redeemScript) =>
         witnessClaimHtlcTimeoutFromCommitTx(localSig, redeemScript)
       case t: InputInfo.TaprootInput =>
-        t.scriptTree_opt match {
-          case Some(htlcTree: ScriptTree.Branch) =>
+        t.redeemPath match {
+          case RedeemPath.ScriptPath(htlcTree: ScriptTree.Branch, _) =>
             Script.witnessScriptPathPay2tr(t.internalKey, htlcTree.getLeft.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(localSig)), htlcTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building claim htlc timeout tx")
         }
@@ -1444,8 +1425,8 @@ object Transactions {
     val witness = claimRemoteDelayedOutputTx.input match {
       case InputInfo.SegwitInput(_, _, redeemScript) => witnessClaimToRemoteDelayedFromCommitTx(localSig, redeemScript)
       case t: InputInfo.TaprootInput =>
-        t.scriptTree_opt match {
-          case Some(toRemoteScriptTree: ScriptTree.Leaf) =>
+        t.redeemPath match {
+          case RedeemPath.ScriptPath(toRemoteScriptTree: ScriptTree.Leaf, _) =>
             Script.witnessScriptPathPay2tr(t.internalKey, toRemoteScriptTree, ScriptWitness(Seq(localSig)), toRemoteScriptTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building claim remote delayed output tx")
         }
@@ -1457,8 +1438,8 @@ object Transactions {
     val witness = claimDelayedOutputTx.input match {
       case InputInfo.SegwitInput(_, _, redeemScript) => witnessToLocalDelayedAfterDelay(localSig, redeemScript)
       case t: InputInfo.TaprootInput =>
-        t.scriptTree_opt match {
-          case Some(scriptTree: ScriptTree.Branch) =>
+        t.redeemPath match {
+          case RedeemPath.ScriptPath(scriptTree: ScriptTree.Branch, _) =>
             Script.witnessScriptPathPay2tr(t.internalKey, scriptTree.getLeft.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(localSig)), scriptTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building claim delayed output tx")
         }
@@ -1470,8 +1451,8 @@ object Transactions {
     val witness = htlcDelayedTx.input match {
       case InputInfo.SegwitInput(_, _, redeemScript) => witnessToLocalDelayedAfterDelay(localSig, redeemScript)
       case t: InputInfo.TaprootInput =>
-        t.scriptTree_opt match {
-          case Some(scriptTree: ScriptTree.Leaf) =>
+        t.redeemPath match {
+          case RedeemPath.ScriptPath(scriptTree: ScriptTree.Leaf, _) =>
             Script.witnessScriptPathPay2tr(t.internalKey, scriptTree, ScriptWitness(Seq(localSig)), scriptTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building htlc delayed tx")
         }
