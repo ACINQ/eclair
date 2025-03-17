@@ -28,6 +28,7 @@ import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.{BitcoinReq, SignTransactionResponse}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType.{P2tr, P2wpkh}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCClient, JsonRPCError}
@@ -1938,5 +1939,46 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       wallet.sendToPubkeyScript(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get, 50_000.sat, FeeratePerKw(FeeratePerByte(5.sat))).pipeTo(sender.ref)
       sender.expectMsgType[TxId]
     }
+  }
+
+  test("sign mixed p2wpkh/p2tr inputs") {
+    import KotlinUtils._
+
+    val sender = TestProbe()
+    val entropy = randomBytes32()
+    val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), "")
+    val (wallet, keyManager) = createWallet(seed)
+    createEclairBackedWallet(wallet.rpcClient, keyManager)
+
+    // create a P2WPKH UTXO
+    val utxo1 = {
+      wallet.getReceiveAddress(Some(P2wpkh)).pipeTo(sender.ref)
+      val address = sender.expectMsgType[String]
+      val tx = sendToAddress(address, 100_000.sat)
+      val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get))
+      OutPoint(tx, outputIndex)
+    }
+    // create a P2TR UTXO
+    val utxo2 = {
+      wallet.getReceiveAddress(Some(P2tr)).pipeTo(sender.ref)
+      val address = sender.expectMsgType[String]
+      val tx = sendToAddress(address, 100_000.sat)
+      val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get))
+      OutPoint(tx, outputIndex)
+    }
+    generateBlocks(1)
+    wallet.getReceiveAddress(Some(P2tr)).pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+
+    val tx  = Transaction(version = 2,
+      txIn = TxIn(utxo1, Nil, TxIn.SEQUENCE_FINAL) :: TxIn(utxo2, Nil, TxIn.SEQUENCE_FINAL) :: Nil,
+      txOut = TxOut(199_000.sat, addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get) :: Nil,
+      lockTime = 0)
+    val psbt = new Psbt(tx)
+    wallet.signPsbt(psbt, tx.txIn.indices, tx.txOut.indices).pipeTo(sender.ref)
+    val ProcessPsbtResponse(signedPsbt, true) = sender.expectMsgType[ProcessPsbtResponse]
+    val signedTx: Transaction = signedPsbt.extract().getRight
+    wallet.publishTransaction(signedTx).pipeTo(sender.ref)
+    sender.expectMsg(signedTx.txid)
   }
 }
