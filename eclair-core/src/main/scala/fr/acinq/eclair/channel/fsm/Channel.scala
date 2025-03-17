@@ -1028,10 +1028,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             val parentCommitment = d.commitments.latest.commitment
             val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey
             val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubKey, msg.fundingPubKey, d.commitments.latest.params.commitmentFormat)
-            val sharedInput = d.commitments.latest.commitInput match {
-              case _: Transactions.InputInfo.TaprootInput => Musig2Input(parentCommitment)
-              case _ => Multisig2of2Input(parentCommitment)
-            }
+            val sharedInput = SharedFundingInput(parentCommitment)
             LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = false, msg.requestFunding_opt, nodeParams.liquidityAdsConfig.rates_opt, msg.useFeeCredit_opt) match {
               case Left(t) =>
                 log.warning("rejecting splice request with invalid liquidity ads: {}", t.getMessage)
@@ -1089,10 +1086,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
           val parentCommitment = d.commitments.latest.commitment
-          val sharedInput = d.commitments.latest.commitInput match {
-            case _: Transactions.InputInfo.TaprootInput => Musig2Input(parentCommitment)
-            case _ => Multisig2of2Input(parentCommitment)
-          }
+          val sharedInput = SharedFundingInput(parentCommitment)
           val fundingParams = InteractiveTxParams(
             channelId = d.channelId,
             isInitiator = true,
@@ -1173,7 +1167,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     isInitiator = false,
                     localContribution = fundingContribution,
                     remoteContribution = msg.fundingContribution,
-                    sharedInput_opt = Some(Multisig2of2Input(rbf.parentCommitment)),
+                    sharedInput_opt = Some(SharedFundingInput(rbf.parentCommitment)),
                     remoteFundingPubKey = rbf.latestFundingTx.fundingParams.remoteFundingPubKey,
                     localOutputs = rbf.latestFundingTx.fundingParams.localOutputs,
                     lockTime = msg.lockTime,
@@ -1226,7 +1220,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     isInitiator = true,
                     localContribution = txInitRbf.fundingContribution,
                     remoteContribution = msg.fundingContribution,
-                    sharedInput_opt = Some(Multisig2of2Input(rbf.parentCommitment)),
+                    sharedInput_opt = Some(SharedFundingInput(rbf.parentCommitment)),
                     remoteFundingPubKey = rbf.latestFundingTx.fundingParams.remoteFundingPubKey,
                     localOutputs = rbf.latestFundingTx.fundingParams.localOutputs,
                     lockTime = txInitRbf.lockTime,
@@ -3265,7 +3259,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     val targetFeerate = nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing)
     val fundingContribution = InteractiveTxFunder.computeSpliceContribution(
       isInitiator = true,
-      sharedInput = Multisig2of2Input(parentCommitment),
+      sharedInput = SharedFundingInput(parentCommitment),
       spliceInAmount = cmd.additionalLocalFunding,
       spliceOut = cmd.spliceOutputs,
       targetFeerate = targetFeerate)
