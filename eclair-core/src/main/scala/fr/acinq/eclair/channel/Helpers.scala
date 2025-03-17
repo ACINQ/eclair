@@ -382,7 +382,7 @@ object Helpers {
         val fundingScript = Taproot.musig2FundingScript(fundingPubkey1, fundingPubkey2)
         val fundingTxOut = TxOut(fundingSatoshis, fundingScript)
         InputInfo.TaprootInput(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, Taproot.musig2Aggregate(fundingPubkey1, fundingPubkey2), None, ByteVector32.Zeroes)
-      case _ =>
+      case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
         val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
         val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
         InputInfo.SegwitInput(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, write(fundingScript))
