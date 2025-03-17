@@ -100,6 +100,8 @@ object ChannelStateTestsTags {
   val SimpleClose = "option_simple_close"
   /** If set, disable option_splice for one node. */
   val DisableSplice = "disable_splice"
+  /** If set, channels weill use option_simple_taproot_staging */
+  val OptionSimpleTaprootStaging = "option_simple_taproot_staging"
 }
 
 trait ChannelStateTestsBase extends Assertions with Eventually {
@@ -194,6 +196,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootStaging))(_.updated(Features.SimpleTaprootStaging, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.SimpleClose))(_.updated(Features.SimpleClose, FeatureSupport.Optional))),
     nodeParamsB.copy(features = nodeParamsB.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableWumbo))(_.removed(Features.Wumbo))
@@ -208,7 +211,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.SimpleClose))(_.updated(Features.SimpleClose, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableSplice))(_.removed(Features.SplicePrototype))
-      ))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootStaging))(_.updated(Features.SimpleTaprootStaging, FeatureSupport.Optional))
+     ))
   }
 
   def computeFeatures(setup: SetupFixture, tags: Set[String], channelFlags: ChannelFlags): (LocalParams, LocalParams, SupportedChannelType) = {
@@ -580,8 +584,10 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(publishedLocalCommitTx.txid == commitTx.txid)
     val commitInput = closingState.commitments.latest.commitInput
     Transaction.correctlySpends(publishedLocalCommitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    if (closingState.commitments.params.commitmentFormat.isInstanceOf[Transactions.AnchorOutputsCommitmentFormat]) {
-      assert(s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+    closingState.commitments.params.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat =>
+        assert(s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      case _ => ()
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(TxPublisher.PublishFinalTx(tx, tx.fee, None)))
@@ -590,7 +596,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
         // all htlcs success/timeout should be published as-is, without claiming their outputs
         s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => TxPublisher.PublishFinalTx(tx, tx.fee, Some(commitTx.txid)) }: _*)
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
-      case _: Transactions.AnchorOutputsCommitmentFormat =>
+      case _: Transactions.AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat =>
         // all htlcs success/timeout should be published as replaceable txs, without claiming their outputs
         val htlcTxs = localCommitPublished.htlcTxs.values.collect { case Some(tx: HtlcTx) => tx }
         val publishedTxs = htlcTxs.map(_ => s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx])
@@ -629,7 +635,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
     closingData.commitments.params.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat =>
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat =>
         val anchorTx = s2blockchain.expectMsgType[PublishReplaceableTx]
         assert(anchorTx.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
       case Transactions.DefaultCommitmentFormat => ()
