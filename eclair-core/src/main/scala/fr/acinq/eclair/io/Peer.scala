@@ -29,7 +29,7 @@ import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates, OnChainChannelFunder, OnchainPubkeyCache}
+import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates, OnChainChannelFunder, OnChainPubkeyCache}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.Sphinx
@@ -60,7 +60,7 @@ import scodec.bits.ByteVector
  */
 class Peer(val nodeParams: NodeParams,
            remoteNodeId: PublicKey,
-           wallet: OnchainPubkeyCache,
+           wallet: OnChainPubkeyCache,
            channelFactory: Peer.ChannelFactory,
            switchboard: ActorRef,
            register: ActorRef,
@@ -979,12 +979,12 @@ object Peer {
     def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef
   }
 
-  case class SimpleChannelFactory(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, wallet: OnChainChannelFunder with OnchainPubkeyCache, txPublisherFactory: Channel.TxPublisherFactory) extends ChannelFactory {
+  case class SimpleChannelFactory(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, wallet: OnChainChannelFunder with OnChainPubkeyCache, txPublisherFactory: Channel.TxPublisherFactory) extends ChannelFactory {
     override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef =
       context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory))
   }
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, channelFactory: ChannelFactory, switchboard: ActorRef, register: ActorRef, router: typed.ActorRef[Router.GetNodeId], pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]): Props =
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainPubkeyCache, channelFactory: ChannelFactory, switchboard: ActorRef, register: ActorRef, router: typed.ActorRef[Router.GetNodeId], pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]): Props =
     Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard, register, router, pendingChannelsRateLimiter))
 
   // @formatter:off

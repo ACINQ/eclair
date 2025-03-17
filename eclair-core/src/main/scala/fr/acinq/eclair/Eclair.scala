@@ -132,7 +132,7 @@ trait Eclair {
 
   def listOffers(onlyActive: Boolean = true)(implicit timeout: Timeout): Future[Seq[OfferData]]
 
-  def newAddress(addressType: Option[AddressType] = None): Future[String]
+  def newAddress(addressType_opt: Option[AddressType] = None): Future[String]
 
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
@@ -413,9 +413,9 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     appKit.nodeParams.db.offers.listOffers(onlyActive)
   }
 
-  override def newAddress(addressType: Option[AddressType] = None): Future[String] = {
+  override def newAddress(addressType_opt: Option[AddressType] = None): Future[String] = {
     appKit.wallet match {
-      case w: BitcoinCoreClient => w.getReceiveAddress(addressType)
+      case w: BitcoinCoreClient => w.getReceiveAddress(addressType_opt)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
@@ -837,7 +837,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
   }
 
   override def getOnChainMasterPubKey(account: Long): String = appKit.nodeParams.onChainKeyManager_opt match {
-    case Some(keyManager) => keyManager.masterPubKey(account)
+    case Some(keyManager) => keyManager.masterPubKey(account, AddressType.P2wpkh)
     case _ => throw new RuntimeException("on-chain seed is not configured")
   }
 

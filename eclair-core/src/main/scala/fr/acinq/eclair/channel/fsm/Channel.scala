@@ -127,7 +127,7 @@ object Channel {
     }
   }
 
-  def props(nodeParams: NodeParams, wallet: OnChainChannelFunder with OnchainPubkeyCache, remoteNodeId: PublicKey, blockchain: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: TxPublisherFactory): Props =
+  def props(nodeParams: NodeParams, wallet: OnChainChannelFunder with OnChainPubkeyCache, remoteNodeId: PublicKey, blockchain: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: TxPublisherFactory): Props =
     Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, relayer, txPublisherFactory))
 
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
@@ -192,7 +192,7 @@ object Channel {
 
 }
 
-class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with OnchainPubkeyCache, val remoteNodeId: PublicKey, val blockchain: typed.ActorRef[ZmqWatcher.Command], val relayer: ActorRef, val txPublisherFactory: Channel.TxPublisherFactory)(implicit val ec: ExecutionContext = ExecutionContext.Implicits.global)
+class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with OnChainPubkeyCache, val remoteNodeId: PublicKey, val blockchain: typed.ActorRef[ZmqWatcher.Command], val relayer: ActorRef, val txPublisherFactory: Channel.TxPublisherFactory)(implicit val ec: ExecutionContext = ExecutionContext.Implicits.global)
   extends FSM[ChannelState, ChannelData]
     with FSMDiagnosticActorLogging[ChannelState, ChannelData]
     with ChannelOpenSingleFunded

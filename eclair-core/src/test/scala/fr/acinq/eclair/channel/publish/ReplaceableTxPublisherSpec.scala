@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.MempoolTx
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.blockchain.{CurrentBlockHeight, OnchainPubkeyCache}
+import fr.acinq.eclair.blockchain.{CurrentBlockHeight, OnChainPubkeyCache}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop, UpdateConfirmationTarget}
@@ -124,7 +124,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   def createTestWallet(walletName: String) = {
     val walletRpcClient = createWallet(walletName)
     val probe = TestProbe()
-    val walletClient = new BitcoinCoreClient(walletRpcClient) with OnchainPubkeyCache {
+    val walletClient = new BitcoinCoreClient(walletRpcClient) with OnChainPubkeyCache {
       val pubkey = {
         getP2wpkhPubkey().pipeTo(probe.ref)
         probe.expectMsgType[PublicKey]
@@ -136,7 +136,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
 
-      override def getReceivePubkeyScript(renew: Boolean): Seq[ScriptElt] = pubkeyScript
+      override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = pubkeyScript
     }
 
     (walletRpcClient, walletClient)
@@ -1861,7 +1861,7 @@ class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherS
     val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), walletName)
     val keyManager = new LocalOnChainKeyManager(walletName, seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
     val walletRpcClient = new BasicBitcoinJsonRPCClient(Block.RegtestGenesisBlock.hash, rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
-    val walletClient = new BitcoinCoreClient(walletRpcClient, onChainKeyManager_opt = Some(keyManager)) with OnchainPubkeyCache {
+    val walletClient = new BitcoinCoreClient(walletRpcClient, onChainKeyManager_opt = Some(keyManager)) with OnChainPubkeyCache {
       lazy val pubkey = {
         getP2wpkhPubkey().pipeTo(probe.ref)
         probe.expectMsgType[PublicKey]
@@ -1873,7 +1873,7 @@ class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherS
 
       override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
 
-      override def getReceivePubkeyScript(renew: Boolean): Seq[ScriptElt] = pubkeyScript
+      override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = pubkeyScript
     }
     createEclairBackedWallet(walletRpcClient, keyManager)
 
