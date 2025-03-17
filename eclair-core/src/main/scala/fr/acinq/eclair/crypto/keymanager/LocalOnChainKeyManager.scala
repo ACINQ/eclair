@@ -50,7 +50,7 @@ object LocalOnChainKeyManager extends Logging {
       val passphrase = config.getString("eclair.signer.passphrase")
       val timestamp = config.getLong("eclair.signer.timestamp")
       val keyManager = new LocalOnChainKeyManager(wallet, MnemonicCode.toSeed(mnemonics, passphrase), TimestampSecond(timestamp), chainHash)
-      logger.info("using on-chain key manager wallet={} with xpub: bip84={}, bip86={}", wallet, keyManager.masterPubKey(0, AddressType.P2wpkh), keyManager.masterPubKey(0, AddressType.P2tr))
+      logger.info(s"using on-chain key manager wallet=$wallet with xpub: bip84=${keyManager.masterPubKey(0, AddressType.P2wpkh)}, bip86=${keyManager.masterPubKey(0, AddressType.P2tr)}")
       Some(keyManager)
     } else {
       None
