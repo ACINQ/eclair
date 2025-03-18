@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto.keymanager
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.Descriptors
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{AddressType, Descriptors}
 
 import scala.util.Try
 
@@ -30,13 +30,15 @@ trait OnChainKeyManager {
    * @param account account number (0 is used by most wallets)
    * @return the on-chain pubkey for this account, which can then be imported into a BIP39-compatible wallet such as Electrum
    */
-  def masterPubKey(account: Long): String
+  def masterPubKey(account: Long, addressType: AddressType): String
 
   /**
    * @param keyPath BIP32 path
    * @return the (public key, address) pair for this BIP32 path starting from the master key
    */
   def derivePublicKey(keyPath: KeyPath): (PublicKey, String)
+
+  def derivePublicKey(keyPath: String): (PublicKey, String) = derivePublicKey(KeyPath(keyPath))
 
   /**
    * @param account account number

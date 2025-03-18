@@ -30,7 +30,7 @@ import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptors, WalletTx}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{AddressType, Descriptors, WalletTx}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
@@ -132,7 +132,7 @@ trait Eclair {
 
   def listOffers(onlyActive: Boolean = true)(implicit timeout: Timeout): Future[Seq[OfferData]]
 
-  def newAddress(): Future[String]
+  def newAddress(addressType_opt: Option[AddressType] = None): Future[String]
 
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
@@ -413,9 +413,9 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     appKit.nodeParams.db.offers.listOffers(onlyActive)
   }
 
-  override def newAddress(): Future[String] = {
+  override def newAddress(addressType_opt: Option[AddressType] = None): Future[String] = {
     appKit.wallet match {
-      case w: BitcoinCoreClient => w.getReceiveAddress()
+      case w: BitcoinCoreClient => w.getReceiveAddress(addressType_opt)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
@@ -837,7 +837,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
   }
 
   override def getOnChainMasterPubKey(account: Long): String = appKit.nodeParams.onChainKeyManager_opt match {
-    case Some(keyManager) => keyManager.masterPubKey(account)
+    case Some(keyManager) => keyManager.masterPubKey(account, AddressType.P2wpkh)
     case _ => throw new RuntimeException("on-chain seed is not configured")
   }
 

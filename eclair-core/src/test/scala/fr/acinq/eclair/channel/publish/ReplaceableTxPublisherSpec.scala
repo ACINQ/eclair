@@ -22,14 +22,14 @@ import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BtcAmount, MilliBtcDouble, MnemonicCode, OutPoint, SatoshiLong, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{Block, BtcAmount, MilliBtcDouble, MnemonicCode, OutPoint, SatoshiLong, ScriptElt, Transaction, TxId}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.MempoolTx
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.blockchain.{CurrentBlockHeight, OnchainPubkeyCache}
+import fr.acinq.eclair.blockchain.{CurrentBlockHeight, OnChainPubkeyCache}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop, UpdateConfirmationTarget}
@@ -124,13 +124,19 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   def createTestWallet(walletName: String) = {
     val walletRpcClient = createWallet(walletName)
     val probe = TestProbe()
-    val walletClient = new BitcoinCoreClient(walletRpcClient) with OnchainPubkeyCache {
+    val walletClient = new BitcoinCoreClient(walletRpcClient) with OnChainPubkeyCache {
       val pubkey = {
         getP2wpkhPubkey().pipeTo(probe.ref)
         probe.expectMsgType[PublicKey]
       }
+      val pubkeyScript = {
+        getReceivePublicKeyScript(None).pipeTo(probe.ref)
+        probe.expectMsgType[Seq[ScriptElt]]
+      }
 
       override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
+
+      override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = pubkeyScript
     }
 
     (walletRpcClient, walletClient)
@@ -1854,14 +1860,20 @@ class ReplaceableTxPublisherWithEclairSignerSpec extends ReplaceableTxPublisherS
     val entropy = ByteVector.fromValidHex("01" * 32)
     val seed = MnemonicCode.toSeed(MnemonicCode.toMnemonics(entropy), walletName)
     val keyManager = new LocalOnChainKeyManager(walletName, seed, TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
-    val walletRpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
-    val walletClient = new BitcoinCoreClient(walletRpcClient, onChainKeyManager_opt = Some(keyManager)) with OnchainPubkeyCache {
+    val walletRpcClient = new BasicBitcoinJsonRPCClient(Block.RegtestGenesisBlock.hash, rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
+    val walletClient = new BitcoinCoreClient(walletRpcClient, onChainKeyManager_opt = Some(keyManager)) with OnChainPubkeyCache {
       lazy val pubkey = {
         getP2wpkhPubkey().pipeTo(probe.ref)
         probe.expectMsgType[PublicKey]
       }
+      lazy val pubkeyScript = {
+        getReceivePublicKeyScript(None).pipeTo(probe.ref)
+        probe.expectMsgType[Seq[ScriptElt]]
+      }
 
       override def getP2wpkhPubkey(renew: Boolean): PublicKey = pubkey
+
+      override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = pubkeyScript
     }
     createEclairBackedWallet(walletRpcClient, keyManager)
 

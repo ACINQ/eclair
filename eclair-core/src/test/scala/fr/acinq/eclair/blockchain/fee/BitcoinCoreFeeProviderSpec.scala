@@ -99,7 +99,7 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
   }
 
   private def createMockBitcoinClient(fees: Map[Int, FeeratePerKB], mempoolMinFee: FeeratePerKB): BasicBitcoinJsonRPCClient = {
-    new BasicBitcoinJsonRPCClient(rpcAuthMethod = UserPassword("", ""), host = "localhost", port = 0) {
+    new BasicBitcoinJsonRPCClient(Block.RegtestGenesisBlock.hash, rpcAuthMethod = UserPassword("", ""), host = "localhost", port = 0) {
       override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
         case "estimatesmartfee" =>
           val blocks = params(0).asInstanceOf[Int]

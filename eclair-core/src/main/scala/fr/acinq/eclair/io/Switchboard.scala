@@ -22,7 +22,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRe
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy, typed}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.blockchain.OnchainPubkeyCache
+import fr.acinq.eclair.blockchain.OnChainPubkeyCache
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.IncomingConnectionsTracker.TrackIncomingConnection
@@ -176,7 +176,7 @@ object Switchboard {
     def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef
   }
 
-  case class SimplePeerFactory(nodeParams: NodeParams, wallet: OnchainPubkeyCache, channelFactory: Peer.ChannelFactory, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command], register: ActorRef, router: typed.ActorRef[Router.GetNodeId]) extends PeerFactory {
+  case class SimplePeerFactory(nodeParams: NodeParams, wallet: OnChainPubkeyCache, channelFactory: Peer.ChannelFactory, pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command], register: ActorRef, router: typed.ActorRef[Router.GetNodeId]) extends PeerFactory {
     override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef =
       context.actorOf(Peer.props(nodeParams, remoteNodeId, wallet, channelFactory, context.self, register, router, pendingChannelsRateLimiter), name = peerActorName(remoteNodeId))
   }
