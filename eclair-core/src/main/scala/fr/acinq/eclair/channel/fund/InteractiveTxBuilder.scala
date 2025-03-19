@@ -109,6 +109,13 @@ object InteractiveTxBuilder {
     // @formatter:on
   }
 
+  object SharedFundingInput {
+    def apply(commitment: Commitment): SharedFundingInput = commitment.commitInput match {
+      case inputInfo: InputInfo.SegwitInput => Multisig2of2Input(inputInfo, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
+      case inputInfo: InputInfo.TaprootInput => Musig2Input(inputInfo, commitment.fundingTxIndex, commitment.remoteFundingPubKey, commitment.localCommit.index)
+    }
+  }
+
   case class Multisig2of2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
     override val weight: Int = 388
 
@@ -118,14 +125,12 @@ object InteractiveTxBuilder {
     }
   }
 
-  object Multisig2of2Input {
-    def apply(commitment: Commitment): Multisig2of2Input = Multisig2of2Input(
-      info = commitment.commitInput,
-      fundingTxIndex = commitment.fundingTxIndex,
-      remoteFundingPubkey = commitment.remoteFundingPubKey
-    )
-  }
+  case class Musig2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, commitIndex: Long) extends SharedFundingInput {
+    override val weight: Int = 234
 
+    override def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction): ByteVector64 = ByteVector64.Zeroes
+  }
+  
   /**
    * @param channelId              id of the channel.
    * @param isInitiator            true if we initiated the protocol, in which case we will pay fees for the shared parts of the transaction.
@@ -1046,6 +1051,7 @@ object InteractiveTxSigningSession {
             log.info("invalid tx_signatures: missing shared input signatures")
             return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
         }
+      case Some(_: Musig2Input) => return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId))) // TODO: not implemented
       case None => None
     }
     val txWithSigs = FullySignedSharedTransaction(partiallySignedTx.tx, partiallySignedTx.localSigs, remoteSigs, sharedSigs_opt)
