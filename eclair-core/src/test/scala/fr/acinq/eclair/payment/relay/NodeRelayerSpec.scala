@@ -29,7 +29,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.EncodedNodeId.ShortChannelIdDir
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{AsyncPaymentPrototype, BasicMultiPartPayment, PaymentSecret, VariableLengthOnion}
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register, Upstream}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.{Peer, PeerReadyManager, Switchboard}
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
@@ -626,6 +626,49 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(relayEvent.outgoing.nonEmpty)
     parent.expectMessageType[NodeRelayer.RelayComplete]
     register.expectNoMessage(100 millis)
+  }
+
+  test("ignore downstream failures after fulfill") { f =>
+    import f._
+
+    // Receive an upstream multi-part payment.
+    val (nodeRelayer, parent) = f.createNodeRelay(incomingMultiPart.head)
+    incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p, randomKey().publicKey))
+
+    val getPeerInfo = register.expectMessageType[Register.ForwardNodeId[Peer.GetPeerInfo]](100 millis)
+    getPeerInfo.message.replyTo.foreach(_ ! Peer.PeerNotFound(getPeerInfo.nodeId))
+
+    mockPayFSM.expectMessageType[SendPaymentConfig]
+    val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
+    validateOutgoingPayment(outgoingPayment)
+    // those are adapters for pay-fsm messages
+    val nodeRelayerAdapters = outgoingPayment.replyTo
+
+    // A first downstream HTLC is fulfilled: we immediately forward the fulfill upstream.
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
+    val fulfills = incomingMultiPart.map { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
+      assert(fwd.channelId == p.add.channelId)
+      assert(fwd.message == CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))
+      fwd
+    }
+    // We store the commands in our DB in case we restart before relaying them upstream.
+    val upstreamChannels = fulfills.map(_.channelId).toSet
+    upstreamChannels.foreach(channelId => {
+      eventually(assert(nodeParams.db.pendingCommands.listSettlementCommands(channelId).toSet == fulfills.filter(_.channelId == channelId).map(_.message.copy(commit = false)).toSet))
+    })
+
+    // The remaining downstream HTLCs are failed (e.g. because a revoked commitment confirmed that doesn't include them).
+    // The corresponding commands conflict with the previous fulfill and are ignored.
+    val downstreamHtlc = UpdateAddHtlc(randomBytes32(), 7, outgoingAmount, paymentHash, outgoingExpiry, TestConstants.emptyOnionPacket, None, 0.4375, None)
+    val failure = LocalFailure(outgoingAmount, Nil, HtlcOverriddenByLocalCommit(randomBytes32(), downstreamHtlc))
+    nodeRelayerAdapters ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, Seq(failure))
+    eventListener.expectNoMessage(100 millis) // the payment didn't succeed, but didn't fail either, so we just ignore it
+    parent.expectMessageType[NodeRelayer.RelayComplete]
+    register.expectNoMessage(100 millis)
+    upstreamChannels.foreach(channelId => {
+      assert(nodeParams.db.pendingCommands.listSettlementCommands(channelId).toSet == fulfills.filter(_.channelId == channelId).map(_.message.copy(commit = false)).toSet)
+    })
   }
 
   test("relay incoming single-part payment") { f =>
