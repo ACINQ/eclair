@@ -841,6 +841,18 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(checkSpendable(signedTx).isSuccess)
     }
     {
+      // anyone can spend the anchor after 16 blocks
+      val anchorKey = commitmentFormat match {
+        case SimpleTaprootChannelCommitmentFormat => localDelayedPaymentPriv
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => localFundingPriv
+      }
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, anchorKey.publicKey, ConfirmationTarget.Absolute(BlockHeight(0)))
+      val tx = claimAnchorOutputTx.tx
+        .copy(txIn = claimAnchorOutputTx.tx.txIn.head.copy(sequence = 16) :: Nil)
+        .updateWitness(0, Script.witnessScriptPathPay2tr(anchorKey.xOnlyPublicKey(), Taproot.anchorScriptTree, ScriptWitness(Seq()), Taproot.anchorScriptTree))
+      Transaction.correctlySpends(tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+    {
       // remote spends local main delayed output with revocation key
       val Right(mainPenaltyTx) = makeMainPenaltyTx(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localDelayedPaymentPriv.publicKey, feeratePerKw)
       val sig = mainPenaltyTx.sign(localRevocationPriv, TxOwner.Local, commitmentFormat)
