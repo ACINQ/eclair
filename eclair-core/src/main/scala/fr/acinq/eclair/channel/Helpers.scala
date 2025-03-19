@@ -1152,10 +1152,10 @@ object Helpers {
               (localPaymentPubkey, remoteDelayedPaymentPubkey)
           }
           val claimAnchorTxs = List(
-            withTxGenerationLog("local-anchor") {
-              Transactions.makeClaimLocalAnchorOutputTx(rcp.commitTx, localAnchorKey, confirmationTarget)
+            withTxGenerationLog("local-anchor-from-remote-commit-tx") {
+              Transactions.makeClaimLocalAnchorOutputTx(rcp.commitTx, localAnchorKey, confirmationTarget).map(_.copy(fromRemoteCommitTx = true))
             },
-            withTxGenerationLog("remote-anchor") {
+            withTxGenerationLog("remote-anchor-from-remote-commit-tx") {
               Transactions.makeClaimRemoteAnchorOutputTx(rcp.commitTx, remoteAnchorKey)
             }
           ).flatten

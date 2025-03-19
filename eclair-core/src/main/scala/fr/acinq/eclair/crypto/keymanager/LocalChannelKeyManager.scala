@@ -130,13 +130,13 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
    * @param commitmentFormat format of the commitment tx
    * @return a signature generated with the private key that matches the input extended public key
    */
-  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
+  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, spentUtxos: Option[Seq[TxOut]]): ByteVector64 = {
     // NB: not all those transactions are actually commit txs (especially during closing), but this is good enough for monitoring purposes
     val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.CommitTx)
     Metrics.SignTxCount.withTags(tags).increment()
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
       val privateKey = privateKeys.get(publicKey.path)
-      tx.sign(privateKey.privateKey, txOwner, commitmentFormat)
+      tx.sign(privateKey.privateKey, txOwner, commitmentFormat, spentUtxos)
     }
   }
 
@@ -160,14 +160,14 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
    * @param commitmentFormat format of the commitment tx
    * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
    */
-  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
+  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, spentUtxos: Option[Seq[TxOut]] = None): ByteVector64 = {
     // NB: not all those transactions are actually htlc txs (especially during closing), but this is good enough for monitoring purposes
     val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.HtlcTx)
     Metrics.SignTxCount.withTags(tags).increment()
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
       val privateKey = privateKeys.get(publicKey.path)
       val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
-      tx.sign(currentKey, txOwner, commitmentFormat)
+      tx.sign(currentKey, txOwner, commitmentFormat, spentUtxos)
     }
   }
 

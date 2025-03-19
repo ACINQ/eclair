@@ -88,7 +88,9 @@ trait ChannelKeyManager {
    * @param commitmentFormat format of the commitment tx
    * @return a signature generated with the private key that matches the input extended public key
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, spentUtxos: Option[Seq[TxOut]]): ByteVector64
+
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = sign(tx, publicKey, txOwner, commitmentFormat, None)
 
   def partialSign(tx: TransactionWithInputInfo, localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32] = {
     partialSign(tx.tx, tx.tx.txIn.indexWhere(_.outPoint == tx.input.outPoint), Seq(tx.input.txOut), localPublicKey, remotePublicKey, txOwner, localNonce, remoteNextLocalNonce)
@@ -106,7 +108,7 @@ trait ChannelKeyManager {
    * @param commitmentFormat format of the commitment tx
    * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, spentUtxos: Option[Seq[TxOut]] = None): ByteVector64
 
   /**
    * Ths method is used to spend revoked transactions, with the corresponding revocation key

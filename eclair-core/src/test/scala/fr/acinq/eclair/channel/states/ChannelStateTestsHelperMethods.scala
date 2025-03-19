@@ -256,7 +256,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags(announceChannel = tags.contains(ChannelStateTestsTags.ChannelsPublic))
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, tags, channelFlags)
-    val commitTxFeerate = if (tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
+    val commitTxFeerate = if (tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs) || tags.contains(ChannelStateTestsTags.OptionSimpleTaprootStaging)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val fundingAmount = TestConstants.fundingSatoshis
     val initiatorPushAmount = if (tags.contains(ChannelStateTestsTags.NoPushAmount)) None else Some(TestConstants.initiatorPushAmount)
     val nonInitiatorPushAmount = if (tags.contains(ChannelStateTestsTags.NonInitiatorPushAmount)) Some(TestConstants.nonInitiatorPushAmount) else None
