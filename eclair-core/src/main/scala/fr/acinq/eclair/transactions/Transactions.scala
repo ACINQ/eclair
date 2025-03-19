@@ -274,11 +274,6 @@ object Transactions {
   sealed trait ClaimAnchorOutputTx extends TransactionWithInputInfo
   case class ClaimLocalAnchorOutputTx(input: InputInfo, tx: Transaction, confirmationTarget: ConfirmationTarget) extends ClaimAnchorOutputTx with ReplaceableTransactionWithInputInfo {
     override def desc: String = "local-anchor"
-
-    override def sign(privateKey:  PrivateKey, txOwner:  TxOwner, commitmentFormat:  CommitmentFormat): ByteVector64 = input match {
-      case _: InputInfo.TaprootInput => Transaction.signInputTaprootKeyPath(privateKey, tx, 0, Seq(input.txOut), sighash(txOwner, commitmentFormat), Some(Scripts.Taproot.anchorScriptTree))
-      case _: InputInfo.SegwitInput => super.sign(privateKey, txOwner, commitmentFormat)
-    }
   }
 
   case class ClaimRemoteAnchorOutputTx(input: InputInfo, tx: Transaction) extends ClaimAnchorOutputTx { override def desc: String = "remote-anchor" }
@@ -1045,7 +1040,7 @@ object Transactions {
 
       val pubkeyScript = pay2tr(fundingPubkey.xOnly, Some(Scripts.Taproot.anchorScriptTree))
       findPubKeyScriptIndex(commitTx, pubkeyScript) flatMap { outputIndex =>
-        val input = InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), fundingPubkey.xOnly, RedeemPath.ScriptPath(Scripts.Taproot.anchorScriptTree, Scripts.Taproot.anchorScriptTree.hash()))
+        val input = InputInfo.TaprootInput(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), fundingPubkey.xOnly, RedeemPath.KeyPath(Some(Scripts.Taproot.anchorScriptTree)))
         val tx = makeUnsignedTx(input)
         Right((input, tx))
       }
