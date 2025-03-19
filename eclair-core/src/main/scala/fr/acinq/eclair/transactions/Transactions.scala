@@ -173,15 +173,17 @@ object Transactions {
       case DefaultCommitmentFormat | _:AnchorOutputsCommitmentFormat => SIGHASH_ALL
     }
 
-    def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
-      sign(key, sighash(txOwner, commitmentFormat))
+    def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, spentUtxos: Option[Seq[TxOut]] = None): ByteVector64 = {
+      sign(key, sighash(txOwner, commitmentFormat), spentUtxos)
     }
 
-    def sign(key: PrivateKey, sighashType: Int): ByteVector64 = input match {
+    def sign(key: PrivateKey, sighashType: Int): ByteVector64 = sign(key, sighashType, None)
+
+    def sign(key: PrivateKey, sighashType: Int, spentUtxos: Option[Seq[TxOut]]): ByteVector64 = input match {
       case t: InputInfo.TaprootInput =>
         t.redeemPath match {
-          case k: RedeemPath.KeyPath => Transaction.signInputTaprootKeyPath(key, tx, 0, Seq(input.txOut), sighashType, k.scriptTree_opt)
-          case s: RedeemPath.ScriptPath => Transaction.signInputTaprootScriptPath(key, tx, 0, Seq(input.txOut), sighashType, s.leafHash)
+          case k: RedeemPath.KeyPath => Transaction.signInputTaprootKeyPath(key, tx, 0, spentUtxos getOrElse Seq(input.txOut), sighashType, k.scriptTree_opt)
+          case s: RedeemPath.ScriptPath => Transaction.signInputTaprootScriptPath(key, tx, 0, spentUtxos getOrElse Seq(input.txOut), sighashType, s.leafHash)
         }
       case InputInfo.SegwitInput(outPoint, txOut, redeemScript) =>
         // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the

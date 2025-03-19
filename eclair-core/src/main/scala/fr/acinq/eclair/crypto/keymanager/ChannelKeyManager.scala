@@ -106,7 +106,7 @@ trait ChannelKeyManager {
    * @param commitmentFormat format of the commitment tx
    * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, spentUtxos: Option[Seq[TxOut]] = None): ByteVector64
 
   /**
    * Ths method is used to spend revoked transactions, with the corresponding revocation key
