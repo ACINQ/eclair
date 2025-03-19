@@ -731,6 +731,38 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     }
   }
 
+  test("settlement success followed by failure") { f =>
+    import f._
+
+    val channelId1 = channelIds(realScid1)
+    val u = createLocalUpdate(channelId1)
+    channelRelayer ! WrappedLocalChannelUpdate(u)
+
+    val payload = ChannelRelay.Standard(realScid1, outgoingAmount, outgoingExpiry)
+    val r = createValidIncomingPacket(payload, endorsementIn = 3)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+    val fwd1 = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 3)
+    fwd1.message.replyTo ! RES_SUCCESS(fwd1.message, channelId1)
+
+    // The downstream HTLC is fulfilled.
+    val downstream = UpdateAddHtlc(randomBytes32(), 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket, None, 0.4375, None)
+    fwd1.message.origin.replyTo ! RES_ADD_SETTLED(fwd1.message.origin, downstream, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(downstream.channelId, downstream.id, paymentPreimage)))
+    val fulfill = inside(register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]) { fwd =>
+      assert(fwd.channelId == r.add.channelId)
+      assert(fwd.message.id == r.add.id)
+      assert(fwd.message.r == paymentPreimage)
+      fwd.message
+    }
+
+    // The command is stored in the pending settlements DB.
+    eventually(assert(nodeParams.db.pendingCommands.listSettlementCommands(r.add.channelId) == Seq(fulfill.copy(commit = false))))
+
+    // The downstream HTLC is now failed (e.g. because a revoked commitment confirmed that doesn't include it): this conflicting command is ignored.
+    fwd1.message.origin.replyTo ! RES_ADD_SETTLED(fwd1.message.origin, downstream, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(downstream.channelId, downstream)))
+    register.expectNoMessage(100 millis)
+    assert(nodeParams.db.pendingCommands.listSettlementCommands(r.add.channelId) == Seq(fulfill.copy(commit = false)))
+  }
+
   test("get outgoing channels") { f =>
     import PaymentPacketSpec._
     import f._
@@ -797,7 +829,7 @@ object ChannelRelayerSpec {
   val channelId1: ByteVector32 = randomBytes32()
   val channelId2: ByteVector32 = randomBytes32()
 
-  val channelIds = Map(
+  val channelIds: Map[ShortChannelId, ByteVector32] = Map(
     realScid1 -> channelId1,
     realScid2 -> channelId2,
     localAlias1 -> channelId1,

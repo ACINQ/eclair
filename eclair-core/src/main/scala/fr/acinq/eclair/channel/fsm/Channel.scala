@@ -2001,15 +2001,21 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             handleRemoteSpentNext(tx, d1)
           } else {
             // Our counterparty is trying to broadcast a revoked commit tx (cheating attempt).
-            // We need to fail pending outgoing HTLCs: we must do it here because we're overwriting the commitments data, so we won't be able to do it afterwards.
-            val remoteCommit = d.commitments.latest.remoteCommit
-            val nextRemoteCommit_opt = d.commitments.latest.nextRemoteCommit_opt.map(_.commit)
-            val pendingOutgoingHtlcs = nextRemoteCommit_opt.getOrElse(remoteCommit).spec.htlcs.collect(DirectedHtlc.incoming)
-            val failedHtlcs = Closing.recentlyFailedHtlcs(remoteCommit, nextRemoteCommit_opt, d.commitments.changes)
-            (pendingOutgoingHtlcs ++ failedHtlcs).foreach { add =>
+            // We need to fail pending outgoing HTLCs, otherwise they will timeout upstream.
+            // We must do it here because since we're overwriting the commitments data, we will lose all information
+            // about HTLCs that are in the current commitments but were not in the revoked one.
+            // We fail *all* outgoing HTLCs:
+            //  - those that are not in the revoked commitment will never settle on-chain
+            //  - those that are in the revoked commitment will be claimed on-chain, so it's as if they were failed
+            // Note that if we already received the preimage for some of these HTLCs, we already relayed it upstream
+            // so the fail command will be a no-op.
+            val outgoingHtlcs = d.commitments.latest.localCommit.spec.htlcs.collect(DirectedHtlc.outgoing) ++
+              d.commitments.latest.remoteCommit.spec.htlcs.collect(DirectedHtlc.incoming) ++
+              d.commitments.latest.nextRemoteCommit_opt.map(_.commit.spec.htlcs.collect(DirectedHtlc.incoming)).getOrElse(Set.empty)
+            outgoingHtlcs.foreach { add =>
               d.commitments.originChannels.get(add.id) match {
                 case Some(origin) =>
-                  log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overridden by revoked remote commit")
+                  log.info("failing htlc #{} paymentHash={} origin={}: overridden by revoked remote commit", add.id, add.paymentHash, origin)
                   relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
                 case None => ()
               }
@@ -2017,7 +2023,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             handleRemoteSpentOther(tx, d1)
           }
         case None =>
-          log.warning(s"ignoring unrecognized alternative commit tx=${tx.txid}")
+          log.warning("ignoring unrecognized alternative commit tx={}", tx.txid)
           stay()
       }
 
@@ -2028,20 +2034,22 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       // when a remote or local commitment tx containing outgoing htlcs is published on the network,
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
-      log.debug(s"processing bitcoin output spent by txid=${tx.txid} tx=$tx")
+      log.debug(s"processing bitcoin output spent by txid={} tx={}", tx.txid, tx)
       val extracted = Closing.extractPreimages(d.commitments.latest, tx)
       extracted.foreach { case (htlc, preimage) =>
         d.commitments.originChannels.get(htlc.id) match {
           case Some(origin) =>
-            log.info(s"fulfilling htlc #${htlc.id} paymentHash=${htlc.paymentHash} origin=$origin")
+            log.info("fulfilling htlc #{} paymentHash={} origin={}", htlc.id, htlc.paymentHash, origin)
             relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFulfill(preimage))
           case None =>
             // if we don't have the origin, it means that we already have forwarded the fulfill so that's not a big deal.
             // this can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it
-            log.info(s"cannot fulfill htlc #${htlc.id} paymentHash=${htlc.paymentHash} (origin not found)")
+            log.warning("cannot fulfill htlc #{} paymentHash={} (origin not found)", htlc.id, htlc.paymentHash)
         }
       }
       val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
+        // this transaction may be an HTLC transaction spending a revoked commitment
+        // in that case, we immediately publish an HTLC-penalty transaction spending its output(s)
         val (rev1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(keyManager, d.commitments.params, d.commitments.remotePerCommitmentSecrets, rev, tx, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)
         penaltyTxs.foreach(claimTx => txPublisher ! PublishFinalTx(claimTx, claimTx.fee, None))
         penaltyTxs.foreach(claimTx => blockchain ! WatchOutputSpent(self, tx.txid, claimTx.input.outPoint.index.toInt, claimTx.amountIn, hints = Set(claimTx.tx.txid)))
@@ -2050,7 +2058,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       stay() using d.copy(revokedCommitPublished = revokedCommitPublished1) storing()
 
     case Event(WatchTxConfirmedTriggered(blockHeight, _, tx), d: DATA_CLOSING) =>
-      log.info(s"txid=${tx.txid} has reached mindepth, updating closing state")
+      log.info("txid={} has reached mindepth, updating closing state", tx.txid)
       context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, tx))
       // first we check if this tx belongs to one of the current local/remote commits, update it and update the channel data
       val d1 = d.copy(
@@ -2101,27 +2109,31 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val timedOutHtlcs = Closing.isClosingTypeAlreadyKnown(d1) match {
         case Some(c: Closing.LocalClose) => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.params.localParams.dustLimit, tx)
         case Some(c: Closing.RemoteClose) => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.params.remoteParams.dustLimit, tx)
-        case _ => Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarios (future remote commit)
+        case Some(_: Closing.RevokedClose) => Set.empty[UpdateAddHtlc] // revoked commitments are handled using [[overriddenOutgoingHtlcs]] below
+        case Some(_: Closing.RecoveryClose) => Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarios (future remote commit)
+        case Some(_: Closing.MutualClose) => Set.empty[UpdateAddHtlc]
+        case None => Set.empty[UpdateAddHtlc]
       }
       timedOutHtlcs.foreach { add =>
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
-            log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
+            log.info("failing htlc #{} paymentHash={} origin={}: htlc timed out", add.id, add.paymentHash, origin)
             relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(d.channelId, Set(add))))
           case None =>
             // same as for fulfilling the htlc (no big deal)
-            log.info(s"cannot fail timed out htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
+            log.info("cannot fail timed out htlc #{} paymentHash={} (origin not found)", add.id, add.paymentHash)
         }
       }
       // we also need to fail outgoing htlcs that we know will never reach the blockchain
+      // if we previously received the preimage, we have already relayed it upstream and the command below will be ignored
       Closing.overriddenOutgoingHtlcs(d, tx).foreach { add =>
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
-            log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overridden by local commit")
+            log.info("failing htlc #{} paymentHash={} origin={}: overridden by local commit", add.id, add.paymentHash, origin)
             relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
           case None =>
             // same as for fulfilling the htlc (no big deal)
-            log.info(s"cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
+            log.info("cannot fail overridden htlc #{} paymentHash={} (origin not found)", add.id, add.paymentHash)
         }
       }
       // for our outgoing payments, let's send events if we know that they will settle on chain
@@ -2295,8 +2307,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case _ => Set.empty
       }
       val lastFundingLockedTlvs: Set[ChannelReestablishTlv] = if (d.commitments.params.remoteParams.initFeatures.hasFeature(Features.SplicePrototype)) {
-          d.commitments.lastLocalLocked_opt.map(c => ChannelReestablishTlv.MyCurrentFundingLockedTlv(c.fundingTxId)).toSet ++
-            d.commitments.lastRemoteLocked_opt.map(c => ChannelReestablishTlv.YourLastFundingLockedTlv(c.fundingTxId)).toSet
+        d.commitments.lastLocalLocked_opt.map(c => ChannelReestablishTlv.MyCurrentFundingLockedTlv(c.fundingTxId)).toSet ++
+          d.commitments.lastRemoteLocked_opt.map(c => ChannelReestablishTlv.YourLastFundingLockedTlv(c.fundingTxId)).toSet
       } else Set.empty
 
       val channelReestablish = ChannelReestablish(
@@ -2996,11 +3008,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
   /** Fail outgoing unsigned htlcs right away when transitioning from NORMAL to CLOSING */
   onTransition {
     case NORMAL -> CLOSING =>
-      (nextStateData: @unchecked) match {
+      nextStateData match {
         case d: DATA_CLOSING =>
           d.commitments.changes.localChanges.proposed.collect {
             case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.ChannelFailureBeforeSigned)
           }
+        case _ => ()
       }
   }
 

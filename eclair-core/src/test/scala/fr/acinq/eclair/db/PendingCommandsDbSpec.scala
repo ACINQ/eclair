@@ -60,9 +60,11 @@ class PendingCommandsDbSpec extends AnyFunSuite {
       assert(db.listSettlementCommands(channelId1).toSet == Set.empty)
       db.addSettlementCommand(channelId1, msg0)
       db.addSettlementCommand(channelId1, msg0) // duplicate
+      db.addSettlementCommand(channelId1, CMD_FAIL_HTLC(msg0.id, FailureReason.EncryptedDownstreamFailure(randomBytes32()))) // conflicting command
       db.addSettlementCommand(channelId1, msg1)
       db.addSettlementCommand(channelId1, msg2)
       db.addSettlementCommand(channelId1, msg3)
+      db.addSettlementCommand(channelId1, CMD_FULFILL_HTLC(msg3.id, randomBytes32())) // conflicting command
       db.addSettlementCommand(channelId1, msg4)
       db.addSettlementCommand(channelId2, msg0) // same messages but for different channel
       db.addSettlementCommand(channelId2, msg1)
@@ -71,6 +73,8 @@ class PendingCommandsDbSpec extends AnyFunSuite {
       assert(db.listSettlementCommands().toSet == Set((channelId1, msg0), (channelId1, msg1), (channelId1, msg2), (channelId1, msg3), (channelId1, msg4), (channelId2, msg0), (channelId2, msg1)))
       db.removeSettlementCommand(channelId1, msg1.id)
       assert(db.listSettlementCommands().toSet == Set((channelId1, msg0), (channelId1, msg2), (channelId1, msg3), (channelId1, msg4), (channelId2, msg0), (channelId2, msg1)))
+      db.removeSettlementCommand(channelId1, msg0.id)
+      assert(db.listSettlementCommands().toSet == Set((channelId1, msg2), (channelId1, msg3), (channelId1, msg4), (channelId2, msg0), (channelId2, msg1)))
     }
   }
 
