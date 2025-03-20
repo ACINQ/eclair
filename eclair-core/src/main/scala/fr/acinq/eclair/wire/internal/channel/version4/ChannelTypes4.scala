@@ -33,7 +33,7 @@ private[channel] object ChannelTypes4 {
                             channelUpdate: ChannelUpdate,
                             localShutdown: Option[Shutdown],
                             remoteShutdown: Option[Shutdown],
-                            closingFeerates: Option[ClosingFeerates],
+                            closeInitiated: Option[CloseInitiated],
                             spliceStatus: SpliceStatus) {
     def migrate(): DATA_NORMAL = {
       val commitments1 = commitments.copy(
@@ -41,7 +41,7 @@ private[channel] object ChannelTypes4 {
         inactive = commitments.inactive.map(c => setScidIfMatches(c, shortIds)),
       )
       val aliases = ShortIdAliases(shortIds.localAlias, shortIds.remoteAlias_opt)
-      DATA_NORMAL(commitments1, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, spliceStatus)
+      DATA_NORMAL(commitments1, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closeInitiated, spliceStatus)
     }
   }
 

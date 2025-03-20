@@ -224,6 +224,7 @@ final case class ClosingFees(preferred: Satoshi, min: Satoshi, max: Satoshi)
 final case class ClosingFeerates(preferred: FeeratePerKw, min: FeeratePerKw, max: FeeratePerKw) {
   def computeFees(closingTxWeight: Int): ClosingFees = ClosingFees(weight2fee(preferred, closingTxWeight), weight2fee(min, closingTxWeight), weight2fee(max, closingTxWeight))
 }
+final case class CloseInitiated(feerates_opt: Option[ClosingFeerates])
 
 sealed trait CloseCommand extends HasReplyToCommand
 final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], feerates: Option[ClosingFeerates]) extends CloseCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
@@ -629,14 +630,14 @@ final case class DATA_NORMAL(commitments: Commitments,
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
-                             closingFeerates: Option[ClosingFeerates],
+                             closeInitiated: Option[CloseInitiated],
                              spliceStatus: SpliceStatus) extends ChannelDataWithCommitments {
   val lastAnnouncedCommitment_opt: Option[AnnouncedCommitment] = lastAnnouncement_opt.flatMap(ann => commitments.resolveCommitment(ann.shortChannelId).map(c => AnnouncedCommitment(c, ann)))
   val lastAnnouncedFundingTxId_opt: Option[TxId] = lastAnnouncedCommitment_opt.map(_.fundingTxId)
   val isNegotiatingQuiescence: Boolean = spliceStatus.isNegotiatingQuiescence
   val isQuiescent: Boolean = spliceStatus.isQuiescent
 }
-final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]) extends ChannelDataWithCommitments
+final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closeInitiated: Option[CloseInitiated]) extends ChannelDataWithCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
