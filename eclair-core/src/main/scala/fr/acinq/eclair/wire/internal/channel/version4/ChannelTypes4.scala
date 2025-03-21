@@ -44,7 +44,7 @@ private[channel] object ChannelTypes4 {
       val closeStatus_opt = if (localShutdown.nonEmpty) {
         Some(CloseStatus.Initiator(closingFeerates))
       } else if (remoteShutdown.nonEmpty) {
-        Some(CloseStatus.Initiator(closingFeerates))
+        Some(CloseStatus.NonInitiator(closingFeerates))
       } else None
       DATA_NORMAL(commitments1, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closeStatus_opt, spliceStatus)
     }
