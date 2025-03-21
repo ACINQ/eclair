@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.states.b
 import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
@@ -40,7 +40,6 @@ import scala.concurrent.duration._
 
 class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  private val LargeChannel = "large_channel"
   private val FunderBelowCommitFees = "funder_below_commit_fees"
 
   case class FixtureParam(bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe, listener: TestProbe)
@@ -51,8 +50,6 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
 
     val (fundingSatoshis, pushMsat) = if (test.tags.contains(FunderBelowCommitFees)) {
       (1_000_100 sat, (1_000_000 sat).toMilliSatoshi) // toLocal = 100 satoshis
-    } else if (test.tags.contains(LargeChannel)) {
-      (Btc(5).toSatoshi, TestConstants.initiatorPushAmount)
     } else {
       (TestConstants.fundingSatoshis, TestConstants.initiatorPushAmount)
     }
@@ -87,18 +84,6 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     val watchConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(watchConfirmed.minDepth == Bob.nodeParams.channelConf.minDepth)
-  }
-
-  test("recv FundingCreated (large channel)", Tag(LargeChannel)) { f =>
-    import f._
-    alice2bob.expectMsgType[FundingCreated]
-    alice2bob.forward(bob)
-    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    bob2alice.expectMsgType[FundingSigned]
-    bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
-    val watchConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    // when we are fundee, we use a higher min depth for wumbo channels
-    assert(watchConfirmed.minDepth > Bob.nodeParams.channelConf.minDepth)
   }
 
   test("recv FundingCreated (funder can't pay fees)", Tag(FunderBelowCommitFees)) { f =>

@@ -110,7 +110,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }, max = 20 seconds, interval = 1 second)
 
     // confirming the funding tx
-    generateBlocks(6)
+    generateBlocks(8)
 
     within(60 seconds) {
       var count = 0

@@ -61,7 +61,7 @@ trait ErrorHandlers extends CommonHandlers {
   def doPublish(closingTx: ClosingTx, localPaysClosingFees: Boolean): Unit = {
     val fee = if (localPaysClosingFees) closingTx.fee else 0.sat
     txPublisher ! PublishFinalTx(closingTx, fee, None)
-    blockchain ! WatchTxConfirmed(self, closingTx.tx.txid, nodeParams.channelConf.minDepthScaled(closingTx.amountIn))
+    blockchain ! WatchTxConfirmed(self, closingTx.tx.txid, nodeParams.channelConf.minDepth)
   }
 
   def handleLocalError(cause: Throwable, d: ChannelData, msg: Option[Any]) = {
@@ -180,11 +180,7 @@ trait ErrorHandlers extends CommonHandlers {
    */
   private def watchConfirmedIfNeeded(txs: Iterable[Transaction], irrevocablySpent: Map[OutPoint, Transaction], relativeDelays: Map[TxId, RelativeDelay]): Unit = {
     val (skip, process) = txs.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
-    process.foreach(tx => {
-      // Those are channel force-close transactions, which don't include a change output: every output is potentially at stake.
-      val minDepth = nodeParams.channelConf.minDepthScaled(tx.txOut.map(_.amount).sum)
-      blockchain ! WatchTxConfirmed(self, tx.txid, minDepth, relativeDelays.get(tx.txid))
-    })
+    process.foreach(tx => blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth, relativeDelays.get(tx.txid)))
     skip.foreach(tx => log.debug(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
   }
 
