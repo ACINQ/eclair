@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.a
 
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.NoOpOnChainWallet
 import fr.acinq.eclair.channel._
@@ -43,7 +43,6 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
 
   private val HighRemoteDustLimit = "high_remote_dust_limit"
   private val StandardChannelType = "standard_channel_type"
-  private val LargeChannel = "large_channel"
 
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, listener: TestProbe)
 
@@ -65,8 +64,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val listener = TestProbe()
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
-      val fundingAmount = if (test.tags.contains(LargeChannel)) Btc(5).toSatoshi else TestConstants.fundingSatoshis
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded = false, commitTxFeerate, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, commitTxFeerate, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
       bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -296,15 +294,6 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
-  }
-
-  test("recv AcceptChannel (large channel)", Tag(LargeChannel)) { f =>
-    import f._
-    val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.minimumDepth == 17) // with large channel tag we create a 5BTC channel
-    bob2alice.forward(alice, accept)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    aliceOpenReplyTo.expectNoMessage()
   }
 
   test("recv AcceptChannel (upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>

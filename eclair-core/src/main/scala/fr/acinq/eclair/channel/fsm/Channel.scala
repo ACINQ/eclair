@@ -112,9 +112,6 @@ object Channel {
     require(balanceThresholds.sortBy(_.available) == balanceThresholds, "channel-update.balance-thresholds must be sorted by available-sat")
 
     def minFundingSatoshis(flags: ChannelFlags): Satoshi = if (flags.announceChannel) minFundingPublicSatoshis else minFundingPrivateSatoshis
-
-    /** The number of confirmations required to be safe from reorgs is always scaled based on the amount at risk. */
-    def minDepthScaled(amount: Satoshi): Int = ChannelParams.minDepthScaled(minDepth, amount)
   }
 
   trait TxPublisherFactory {
@@ -320,14 +317,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   // once, because at the next restore, the status of the funding tx will be "confirmed".
                   ()
               }
-              watchFundingConfirmed(commitment.fundingTxId, Some(singleFundingMinDepth(data)), herdDelay_opt)
+              watchFundingConfirmed(commitment.fundingTxId, Some(nodeParams.channelConf.minDepth), herdDelay_opt)
             case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
               publishFundingTx(fundingTx)
-              val minDepth_opt = data.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepth, fundingTx.sharedTx.tx)
+              val minDepth_opt = data.commitments.params.minDepth(nodeParams.channelConf.minDepth)
               watchFundingConfirmed(fundingTx.sharedTx.txId, minDepth_opt, herdDelay_opt)
             case fundingTx: LocalFundingStatus.ZeroconfPublishedFundingTx =>
-              // This is a zero-conf channel, the min-depth isn't critical: we use the default.
-              watchFundingConfirmed(fundingTx.tx.txid, Some(nodeParams.channelConf.minDepth.toLong), herdDelay_opt)
+              watchFundingConfirmed(fundingTx.tx.txid, Some(nodeParams.channelConf.minDepth), herdDelay_opt)
             case _: LocalFundingStatus.ConfirmedFundingTx =>
               data match {
                 case closing: DATA_CLOSING if Closing.nothingAtStake(closing) || Closing.isClosingTypeAlreadyKnown(closing).isDefined =>
@@ -612,7 +608,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                     // We don't have their tx_sigs, but they have ours, and could publish the funding tx without telling us.
                     // That's why we move on immediately to the next step, and will update our unsigned funding tx when we
                     // receive their tx_sigs.
-                    val minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepth, signingSession1.fundingTx.sharedTx.tx)
+                    val minDepth_opt = d.commitments.params.minDepth(nodeParams.channelConf.minDepth)
                     watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
                     val commitments1 = d.commitments.add(signingSession1.commitment)
                     val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
@@ -1349,7 +1345,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   rollbackFundingAttempt(signingSession.fundingTx.tx, previousTxs = Seq.empty) // no splice rbf yet
                   stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, f.getMessage)
                 case Right(signingSession1) =>
-                  val minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepth, signingSession1.fundingTx.sharedTx.tx)
+                  val minDepth_opt = d.commitments.params.minDepth(nodeParams.channelConf.minDepth)
                   watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
                   val commitments1 = d.commitments.add(signingSession1.commitment)
                   val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
@@ -1368,7 +1364,6 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
       d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, d.lastAnnouncedFundingTxId_opt) match {
         case Right((commitments1, commitment)) =>
-          // This is a zero-conf channel, the min-depth isn't critical: we use the default.
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepth), delay_opt = None)
           maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
           maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
@@ -1960,7 +1955,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         d.commitments.resolveCommitment(tx) match {
           case Some(commitment) =>
             log.warning("a commit tx for an older commitment has been published fundingTxId={} fundingTxIndex={}", tx.txid, commitment.fundingTxIndex)
-            blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepthScaled(commitment.capacity))
+            blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth)
             stay()
           case None =>
             // This must be a former funding tx that has already been pruned, because watches are unordered.
@@ -2029,7 +2024,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
     case Event(WatchOutputSpentTriggered(amount, tx), d: DATA_CLOSING) =>
       // one of the outputs of the local/remote/revoked commit was spent
       // we just put a watch to be notified when it is confirmed
-      blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepthScaled(amount))
+      blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth)
       // when a remote or local commitment tx containing outgoing htlcs is published on the network,
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
@@ -2064,7 +2059,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           val (localCommitPublished1, claimHtlcTx_opt) = Closing.LocalClose.claimHtlcDelayedOutput(localCommitPublished, keyManager, d.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, d.finalScriptPubKey)
           claimHtlcTx_opt.foreach(claimHtlcTx => {
             txPublisher ! PublishFinalTx(claimHtlcTx, claimHtlcTx.fee, None)
-            blockchain ! WatchTxConfirmed(self, claimHtlcTx.tx.txid, nodeParams.channelConf.minDepthScaled(claimHtlcTx.amountIn), Some(RelativeDelay(tx.txid, d.commitments.params.remoteParams.toSelfDelay.toInt.toLong)))
+            blockchain ! WatchTxConfirmed(self, claimHtlcTx.tx.txid, nodeParams.channelConf.minDepth, Some(RelativeDelay(tx.txid, d.commitments.params.remoteParams.toSelfDelay.toInt.toLong)))
           })
           Closing.updateLocalCommitPublished(localCommitPublished1, tx)
         }),
@@ -2841,7 +2836,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       } else {
         // This is one of the transactions we published.
         val closingTx = d.findClosingTx(tx).get
-        blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepthScaled(closingTx.amountIn))
+        blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth)
         stay()
       }
 
@@ -2869,7 +2864,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           case Some(commitment) =>
             log.warning("a commit tx for an older commitment has been published fundingTxId={} fundingTxIndex={}", tx.txid, commitment.fundingTxIndex)
             // We watch the commitment tx, in the meantime we force close using the latest commitment.
-            blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepthScaled(commitment.capacity))
+            blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth)
             spendLocalCurrent(d)
           case None =>
             // This must be a former funding tx that has already been pruned, because watches are unordered.

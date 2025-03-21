@@ -168,11 +168,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val channelId = Helpers.computeChannelId(open.revocationBasepoint, revocationBasePoint)
           val channelParams = ChannelParams(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, open.channelFlags)
           val localAmount = d.init.fundingContribution_opt.map(_.fundingAmount).getOrElse(0 sat)
-          val remoteAmount = open.fundingAmount
-          // At this point, the min_depth is an estimate and may change after we know exactly how our peer contributes
-          // to the funding transaction. Maybe they will contribute 0 satoshis to the shared output, but still add inputs
-          // and outputs.
-          val minDepth_opt = channelParams.minDepthFundee(nodeParams.channelConf.minDepth, localAmount + remoteAmount)
+          val minDepth_opt = channelParams.minDepth(nodeParams.channelConf.minDepth)
           val upfrontShutdownScript_opt = localParams.upfrontShutdownScript_opt.map(scriptPubKey => ChannelTlv.UpfrontShutdownScriptTlv(scriptPubKey))
           val tlvs: Set[AcceptDualFundedChannelTlv] = Set(
             upfrontShutdownScript_opt,
@@ -188,7 +184,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             dustLimit = localParams.dustLimit,
             maxHtlcValueInFlightMsat = UInt64(localParams.maxHtlcValueInFlightMsat.toLong),
             htlcMinimum = localParams.htlcMinimum,
-            minimumDepth = minDepth_opt.getOrElse(0),
+            minimumDepth = minDepth_opt.getOrElse(0).toLong,
             toSelfDelay = localParams.toSelfDelay,
             maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
             fundingPubkey = localFundingPubkey,
@@ -389,7 +385,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             // We don't have their tx_sigs, but they have ours, and could publish the funding tx without telling us.
             // That's why we move on immediately to the next step, and will update our unsigned funding tx when we
             // receive their tx_sigs.
-            val minDepth_opt = d.channelParams.minDepthDualFunding(nodeParams.channelConf.minDepth, signingSession1.fundingTx.sharedTx.tx)
+            val minDepth_opt = d.channelParams.minDepth(nodeParams.channelConf.minDepth)
             watchFundingConfirmed(d.signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
             val commitments = Commitments(
               params = d.channelParams,
@@ -412,7 +408,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
               goto(CLOSED) sending Error(d.channelId, f.getMessage)
             case Right(signingSession) =>
-              val minDepth_opt = d.channelParams.minDepthDualFunding(nodeParams.channelConf.minDepth, signingSession.fundingTx.sharedTx.tx)
+              val minDepth_opt = d.channelParams.minDepth(nodeParams.channelConf.minDepth)
               watchFundingConfirmed(d.signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
               val commitments = Commitments(
                 params = d.channelParams,
@@ -480,7 +476,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                   rollbackRbfAttempt(signingSession, d)
                   stay() using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, f.getMessage)
                 case Right(signingSession1) =>
-                  val minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepth, signingSession1.fundingTx.sharedTx.tx)
+                  val minDepth_opt = d.commitments.params.minDepth(nodeParams.channelConf.minDepth)
                   watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
                   val commitments1 = d.commitments.add(signingSession1.commitment)
                   val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments1, d.localPushAmount, d.remotePushAmount, d.waitingSince, d.lastChecked, DualFundingStatus.WaitingForConfirmations, d.deferred)
@@ -497,11 +493,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       }
 
     case Event(cmd: CMD_BUMP_FUNDING_FEE, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      val zeroConf = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepth, d.latestFundingTx.sharedTx.tx).isEmpty
       if (!d.latestFundingTx.fundingParams.isInitiator) {
         cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfNonInitiator(d.channelId))
         stay()
-      } else if (zeroConf) {
+      } else if (d.commitments.params.zeroConf) {
         cmd.replyTo ! RES_FAILURE(cmd, InvalidRbfZeroConf(d.channelId))
         stay()
       } else if (cmd.requestFunding_opt.isEmpty && d.latestFundingTx.liquidityPurchase_opt.nonEmpty) {
@@ -526,12 +521,11 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       }
 
     case Event(msg: TxInitRbf, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      val zeroConf = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepth, d.latestFundingTx.sharedTx.tx).isEmpty
       if (d.latestFundingTx.fundingParams.isInitiator) {
         // Only the initiator is allowed to initiate RBF.
         log.info("rejecting tx_init_rbf, we're the initiator, not them!")
         stay() sending Error(d.channelId, InvalidRbfNonInitiator(d.channelId).getMessage)
-      } else if (zeroConf) {
+      } else if (d.commitments.params.zeroConf) {
         log.info("rejecting tx_init_rbf, we're using zero-conf")
         stay() using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, InvalidRbfZeroConf(d.channelId).getMessage)
       } else {
@@ -663,7 +657,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                 // No need to store their commit_sig, they will re-send it if we disconnect.
                 stay() using d.copy(status = DualFundingStatus.RbfWaitingForSigs(signingSession1))
               case signingSession1: InteractiveTxSigningSession.SendingSigs =>
-                val minDepth_opt = d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepth, signingSession1.fundingTx.sharedTx.tx)
+                val minDepth_opt = d.commitments.params.minDepth(nodeParams.channelConf.minDepth)
                 watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
                 val commitments1 = d.commitments.add(signingSession1.commitment)
                 val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments1, d.localPushAmount, d.remotePushAmount, d.waitingSince, d.lastChecked, DualFundingStatus.WaitingForConfirmations, d.deferred)
@@ -729,7 +723,6 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, lastAnnouncedFundingTxId_opt = None) match {
         case Right((commitments1, _)) =>
           // We still watch the funding tx for confirmation even if we can use the zero-conf channel right away.
-          // But since this is a zero-conf channel, the minimum depth isn't critical: we use the default one.
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepth), delay_opt = None)
           val shortIds = createShortIdAliases(d.channelId)
           val channelReady = createChannelReady(shortIds, d.commitments.params)

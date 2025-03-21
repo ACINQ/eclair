@@ -128,7 +128,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val fundingPubkey = keyManager.fundingPublicKey(d.initFundee.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
           val channelKeyPath = keyManager.keyPath(d.initFundee.localParams, d.initFundee.channelConfig)
           val params = ChannelParams(d.initFundee.temporaryChannelId, d.initFundee.channelConfig, channelFeatures, d.initFundee.localParams, remoteParams, open.channelFlags)
-          val minimumDepth = params.minDepthFundee(nodeParams.channelConf.minDepth, open.fundingSatoshis)
+          val minimumDepth = params.minDepth(nodeParams.channelConf.minDepth)
           log.info("will use fundingMinDepth={}", minimumDepth)
           // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
@@ -137,7 +137,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             dustLimitSatoshis = d.initFundee.localParams.dustLimit,
             maxHtlcValueInFlightMsat = UInt64(d.initFundee.localParams.maxHtlcValueInFlightMsat.toLong),
             channelReserveSatoshis = d.initFundee.localParams.initialRequestedChannelReserve_opt.get,
-            minimumDepth = minimumDepth.getOrElse(0),
+            minimumDepth = minimumDepth.getOrElse(0).toLong,
             htlcMinimumMsat = d.initFundee.localParams.htlcMinimum,
             toSelfDelay = d.initFundee.localParams.toSelfDelay,
             maxAcceptedHtlcs = d.initFundee.localParams.maxAcceptedHtlcs,
@@ -297,7 +297,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
               // NB: we don't send a ChannelSignatureSent for the first commit
               log.info("waiting for them to publish the funding tx for channelId={} fundingTxid={}", channelId, commitment.fundingTxId)
-              watchFundingConfirmed(commitment.fundingTxId, params.minDepthFundee(nodeParams.channelConf.minDepth, fundingAmount), delay_opt = None)
+              watchFundingConfirmed(commitment.fundingTxId, params.minDepth(nodeParams.channelConf.minDepth), delay_opt = None)
               goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
           }
       }
@@ -342,7 +342,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val blockHeight = nodeParams.currentBlockHeight
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           log.info(s"publishing funding tx fundingTxid=${commitment.fundingTxId}")
-          watchFundingConfirmed(commitment.fundingTxId, params.minDepthFunder(nodeParams.channelConf.minDepth), delay_opt = None)
+          watchFundingConfirmed(commitment.fundingTxId, params.minDepth(nodeParams.channelConf.minDepth), delay_opt = None)
           // we will publish the funding tx only after the channel state has been written to disk because we want to
           // make sure we first persist the commitment that returns back the funds to us in case of problem
           goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx(d.channelId, fundingTx, fundingTxFee, d.replyTo)
@@ -382,7 +382,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       //    confirmations if we're the initiator (no risk of double-spend) and they provided a channel alias
       val switchToZeroConf = d.commitments.params.localParams.isChannelOpener &&
         remoteChannelReady.alias_opt.isDefined &&
-        !d.commitments.params.localParams.initFeatures.hasFeature(Features.ZeroConf)
+        !d.commitments.params.zeroConf
       if (switchToZeroConf) {
         log.info("this channel isn't zero-conf, but we are funder and they sent an early channel_ready with an alias: no need to wait for confirmations")
         blockchain ! WatchPublished(self, d.commitments.latest.fundingTxId)
@@ -396,7 +396,6 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Right((commitments1, _)) =>
           log.info("funding txid={} was successfully published for zero-conf channelId={}", w.tx.txid, d.channelId)
           // We still watch the funding tx for confirmation even if we can use the zero-conf channel right away.
-          // But since this is a zero-conf channel, the minimum depth isn't critical: we use the default one.
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepth), delay_opt = None)
           val shortIds = createShortIdAliases(d.channelId)
           val channelReady = createChannelReady(shortIds, d.commitments.params)
