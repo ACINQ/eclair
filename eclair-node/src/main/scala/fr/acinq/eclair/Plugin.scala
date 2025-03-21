@@ -58,7 +58,7 @@ object Plugin extends Logging {
   }
 
   def openJar(jar: File): Option[JarURLConnection] =
-    Try(URI.create(s"jar:file:${jar.getCanonicalPath}!/").toURL.openConnection().asInstanceOf[JarURLConnection]) match {
+    Try(URI.create(s"jar:${jar.toURI}!/").toURL.openConnection().asInstanceOf[JarURLConnection]) match {
       case Success(url) => Some(url)
       case Failure(t) => logger.error(s"unable to load plugin file:${jar.getAbsolutePath} ", t); None
     }
