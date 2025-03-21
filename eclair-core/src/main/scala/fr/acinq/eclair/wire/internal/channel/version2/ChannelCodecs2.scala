@@ -288,17 +288,17 @@ private[channel] object ChannelCodecs2 {
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
-        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).map {
-      case commitments :: shortChannelId :: _ :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
+        ("closeStatus" | provide(Option.empty[CloseStatus]))).map {
+      case commitments :: shortChannelId :: _ :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closeStatus :: HNil =>
         val aliases = ShortIdAliases(localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None)
-        DATA_NORMAL(commitments, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice)
+        DATA_NORMAL(commitments, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closeStatus, SpliceStatus.NoSplice)
     }.decodeOnly
 
     val DATA_SHUTDOWN_03_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | commitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
-        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_SHUTDOWN]
+        ("closeStatus" | provide[CloseStatus](CloseStatus.Initiator(None)))).as[DATA_SHUTDOWN]
 
     val DATA_NEGOTIATING_04_Codec: Codec[DATA_NEGOTIATING] = (
       ("commitments" | commitmentsCodec) ::

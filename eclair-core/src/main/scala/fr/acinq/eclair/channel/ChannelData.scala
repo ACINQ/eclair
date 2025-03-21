@@ -481,6 +481,14 @@ object DualFundingStatus {
   case object RbfAborted extends DualFundingStatus
 }
 
+sealed trait CloseStatus {
+  def feerates_opt: Option[ClosingFeerates]
+}
+object CloseStatus {
+  final case class Initiator(override val feerates_opt: Option[ClosingFeerates]) extends CloseStatus
+  final case class NonInitiator(override val feerates_opt: Option[ClosingFeerates]) extends CloseStatus
+}
+
 /** We're waiting for the channel to be quiescent. */
 sealed trait QuiescenceNegotiation
 object QuiescenceNegotiation {
@@ -629,14 +637,14 @@ final case class DATA_NORMAL(commitments: Commitments,
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
-                             closingFeerates: Option[ClosingFeerates],
+                             closeStatus_opt: Option[CloseStatus],
                              spliceStatus: SpliceStatus) extends ChannelDataWithCommitments {
   val lastAnnouncedCommitment_opt: Option[AnnouncedCommitment] = lastAnnouncement_opt.flatMap(ann => commitments.resolveCommitment(ann.shortChannelId).map(c => AnnouncedCommitment(c, ann)))
   val lastAnnouncedFundingTxId_opt: Option[TxId] = lastAnnouncedCommitment_opt.map(_.fundingTxId)
   val isNegotiatingQuiescence: Boolean = spliceStatus.isNegotiatingQuiescence
   val isQuiescent: Boolean = spliceStatus.isQuiescent
 }
-final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]) extends ChannelDataWithCommitments
+final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closeStatus: CloseStatus) extends ChannelDataWithCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)

@@ -41,7 +41,12 @@ private[channel] object ChannelTypes4 {
         inactive = commitments.inactive.map(c => setScidIfMatches(c, shortIds)),
       )
       val aliases = ShortIdAliases(shortIds.localAlias, shortIds.remoteAlias_opt)
-      DATA_NORMAL(commitments1, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, spliceStatus)
+      val closeStatus_opt = if (localShutdown.nonEmpty) {
+        Some(CloseStatus.Initiator(closingFeerates))
+      } else if (remoteShutdown.nonEmpty) {
+        Some(CloseStatus.NonInitiator(closingFeerates))
+      } else None
+      DATA_NORMAL(commitments1, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closeStatus_opt, spliceStatus)
     }
   }
 

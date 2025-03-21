@@ -583,6 +583,10 @@ private[channel] object ChannelCodecs4 {
         ("min" | feeratePerKw) ::
         ("max" | feeratePerKw)).as[ClosingFeerates]
 
+    val closeStatusCodec: Codec[CloseStatus] = discriminated[CloseStatus].by(uint8)
+        .typecase(0x01, optional(bool8, closingFeeratesCodec).as[CloseStatus.Initiator])
+        .typecase(0x02, optional(bool8, closingFeeratesCodec).as[CloseStatus.NonInitiator])
+
     val closingTxProposedCodec: Codec[ClosingTxProposed] = (
       ("unsignedTx" | closingTxCodec) ::
         ("localClosingSigned" | lengthDelimited(closingSignedCodec))).as[ClosingTxProposed]
@@ -751,20 +755,39 @@ private[channel] object ChannelCodecs4 {
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
-        ("closingFeerates" | optional(bool8, closingFeeratesCodec)) ::
+        // If there are closing fees defined we consider ourselves to be the closing initiator.
+        ("closingFeerates" | optional(bool8, closingFeeratesCodec).map[Option[CloseStatus]](feerates_opt => Some(CloseStatus.Initiator(feerates_opt))).decodeOnly) ::
+        ("spliceStatus" | spliceStatusCodec)).as[DATA_NORMAL]
+
+    val DATA_NORMAL_18_Codec: Codec[DATA_NORMAL] = (
+      ("commitments" | versionedCommitmentsCodec) ::
+        ("aliases" | aliases) ::
+        ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
+        ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
+        ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("closeStatus" | optional(bool8, closeStatusCodec)) ::
         ("spliceStatus" | spliceStatusCodec)).as[DATA_NORMAL]
 
     val DATA_SHUTDOWN_05_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
-        ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_SHUTDOWN]
+        // If there are closing fees defined we consider ourselves to be the closing initiator.
+        ("closingFeerates" | optional(bool8, closingFeeratesCodec).map[CloseStatus](feerates_opt => CloseStatus.Initiator(feerates_opt)).decodeOnly)).as[DATA_SHUTDOWN]
 
     val DATA_SHUTDOWN_0f_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | versionedCommitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
         ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
-        ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_SHUTDOWN]
+        // If there are closing fees defined we consider ourselves to be the closing initiator.
+        ("closingFeerates" | optional(bool8, closingFeeratesCodec).map[CloseStatus](feerates_opt => CloseStatus.Initiator(feerates_opt)).decodeOnly)).as[DATA_SHUTDOWN]
+
+    val DATA_SHUTDOWN_19_Codec: Codec[DATA_SHUTDOWN] = (
+      ("commitments" | versionedCommitmentsCodec) ::
+        ("localShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("closeStatus" | closeStatusCodec)).as[DATA_SHUTDOWN]
 
     val DATA_NEGOTIATING_06_Codec: Codec[DATA_NEGOTIATING] = (
       ("commitments" | commitmentsCodecWithoutFirstRemoteCommitIndex) ::
@@ -828,6 +851,8 @@ private[channel] object ChannelCodecs4 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x19, Codecs.DATA_SHUTDOWN_19_Codec)
+    .typecase(0x18, Codecs.DATA_NORMAL_18_Codec)
     .typecase(0x17, Codecs.DATA_NEGOTIATING_SIMPLE_17_Codec)
     .typecase(0x16, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_READY_16_Codec)
     .typecase(0x15, Codecs.DATA_WAIT_FOR_CHANNEL_READY_15_Codec)

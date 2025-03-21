@@ -404,7 +404,7 @@ private[channel] object ChannelCodecs0 {
         ("channelUpdate" | variableSizeBytes(noUnknownFieldsChannelUpdateSizeCodec, channelUpdateCodec)) ::
         ("localShutdown" | optional(bool, shutdownCodec)) ::
         ("remoteShutdown" | optional(bool, shutdownCodec)) ::
-        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).map {
+        ("closeStatus" | provide(Option.empty[CloseStatus]))).map {
       case commitments :: shortChannelId :: _ :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
         val aliases = ShortIdAliases(localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None)
         DATA_NORMAL(commitments, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice)
@@ -418,7 +418,7 @@ private[channel] object ChannelCodecs0 {
         ("channelUpdate" | variableSizeBytes(uint16, channelUpdateCodec)) ::
         ("localShutdown" | optional(bool, shutdownCodec)) ::
         ("remoteShutdown" | optional(bool, shutdownCodec)) ::
-        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).map {
+        ("closeStatus" | provide(Option.empty[CloseStatus]))).map {
       case commitments :: shortChannelId :: _ :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
         val aliases = ShortIdAliases(localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None)
         DATA_NORMAL(commitments, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice)
@@ -428,7 +428,7 @@ private[channel] object ChannelCodecs0 {
       ("commitments" | commitmentsCodec) ::
         ("localShutdown" | shutdownCodec) ::
         ("remoteShutdown" | shutdownCodec) ::
-        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_SHUTDOWN].decodeOnly
+        ("closeStatus" | provide[CloseStatus](CloseStatus.Initiator(None)))).as[DATA_SHUTDOWN].decodeOnly
 
     val DATA_NEGOTIATING_05_Codec: Codec[DATA_NEGOTIATING] = (
       ("commitments" | commitmentsCodec) ::
