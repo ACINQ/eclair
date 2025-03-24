@@ -38,16 +38,6 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
-  test("scale funding tx min depth according to funding amount") {
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(1)) == 5)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 6, Btc(1)) == 6) // 5 conf would be enough but we use min-depth=6
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(3.125)) == 11) // we use scaling_factor=10 and a fixed block reward of 3.125BTC
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(6.25)) == 21)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(10)) == 33)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(25)) == 81)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(50)) == 161)
-  }
-
   test("compute refresh delay") {
     import org.scalatest.matchers.should.Matchers._
     implicit val log: akka.event.DiagnosticLoggingAdapter = NoLoggingDiagnostics

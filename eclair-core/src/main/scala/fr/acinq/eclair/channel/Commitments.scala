@@ -7,9 +7,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.ChannelConf
-import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.SharedTransaction
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
@@ -40,6 +38,9 @@ case class ChannelParams(channelId: ByteVector32,
   // We can safely cast to millisatoshis since we verify that it's less than a valid millisatoshi amount.
   val maxHtlcAmount: MilliSatoshi = remoteParams.maxHtlcValueInFlightMsat.toBigInt.min(localParams.maxHtlcValueInFlightMsat.toLong).toLong.msat
 
+  // If we've set the 0-conf feature bit for this peer, we will always use 0-conf with them.
+  val zeroConf: Boolean = localParams.initFeatures.hasFeature(Features.ZeroConf)
+
   /**
    * We update local/global features at reconnection
    */
@@ -49,47 +50,10 @@ case class ChannelParams(channelId: ByteVector32,
   )
 
   /**
-   * Returns the number of confirmations needed to safely handle a funding transaction that we unilaterally funded.
-   * As funder we trust ourselves to not double spend funding txs, so we don't need to scale the number of confirmations
-   * based on the funding amount. We want to wait a few blocks though to ensure that the short_channel_id we obtain will
-   * not be invalidated by a reorg.
+   * Returns the number of confirmations needed to make a channel transaction safe from reorgs.
+   * A malicious miner that can create a longer reorg will be able to steal all of the channel funds.
    */
-  def minDepthFunder(defaultMinDepth: Int): Option[Long] = {
-    if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
-      None
-    } else {
-      Some(defaultMinDepth.toLong)
-    }
-  }
-
-  /**
-   * Returns the number of confirmations needed to safely handle a funding transaction with remote inputs. We make sure
-   * the cumulative block reward largely exceeds the channel size, because an attacker that could create a reorg would
-   * be able to steal the entire channel funding, but would likely miss block rewards during that process, making it
-   * economically irrational for them.
-   *
-   * @param fundingAmount funding amount of the channel
-   * @return number of confirmations needed, if any
-   */
-  def minDepthFundee(defaultMinDepth: Int, fundingAmount: Satoshi): Option[Long] =
-    if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
-      None // zero-conf stay zero-conf, whatever the funding amount is
-    } else {
-      Some(ChannelParams.minDepthScaled(defaultMinDepth, fundingAmount))
-    }
-
-  /**
-   * When using dual funding or splices, we wait for multiple confirmations even if we're the initiator because:
-   *  - our peer may also contribute to the funding transaction, even if they don't contribute to the channel funding amount
-   *  - even if they don't, we may RBF the transaction and don't want to handle reorgs
-   */
-  def minDepthDualFunding(defaultMinDepth: Int, sharedTx: SharedTransaction): Option[Long] = {
-    if (localParams.initFeatures.hasFeature(Features.ZeroConf)) {
-      None
-    } else {
-      Some(ChannelParams.minDepthScaled(defaultMinDepth, sharedTx.sharedOutput.amount))
-    }
-  }
+  def minDepth(defaultMinDepth: Int): Option[Int] = if (zeroConf) None else Some(defaultMinDepth)
 
   /** Channel reserve that applies to our funds. */
   def localChannelReserveForCapacity(capacity: Satoshi, isSplice: Boolean): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding) || isSplice) {
@@ -137,20 +101,6 @@ case class ChannelParams(channelId: ByteVector32,
     else Right(remoteScriptPubKey)
   }
 
-}
-
-object ChannelParams {
-  def minDepthScaled(defaultMinDepth: Int, amount: Satoshi): Int = {
-    if (amount <= Channel.MAX_FUNDING_WITHOUT_WUMBO) {
-      // small amount: not scaled
-      defaultMinDepth
-    } else {
-      val blockReward = 3.125 // this will be too large after the halving in 2028
-      val scalingFactor = 10
-      val blocksToReachFunding = (((scalingFactor * amount.toBtc.toDouble) / blockReward).ceil + 1).toInt
-      defaultMinDepth.max(blocksToReachFunding)
-    }
-  }
 }
 
 // @formatter:off

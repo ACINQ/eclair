@@ -55,7 +55,7 @@ trait CommonFundingHandlers extends CommonHandlers {
   /**
    * @param delay_opt optional delay to reduce herd effect at startup.
    */
-  def watchFundingConfirmed(fundingTxId: TxId, minDepth_opt: Option[Long], delay_opt: Option[FiniteDuration]): Unit = {
+  def watchFundingConfirmed(fundingTxId: TxId, minDepth_opt: Option[Int], delay_opt: Option[FiniteDuration]): Unit = {
     val watch = minDepth_opt match {
       case Some(fundingMinDepth) => WatchFundingConfirmed(self, fundingTxId, fundingMinDepth)
       // When using 0-conf, we make sure that the transaction was successfully published, otherwise there is a risk

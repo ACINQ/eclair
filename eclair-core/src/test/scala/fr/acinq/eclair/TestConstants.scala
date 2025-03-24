@@ -30,8 +30,8 @@ import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.{MessageWeightRatios, PaymentWeightRatios}
-import fr.acinq.eclair.router.{PathFindingExperimentConf, Router}
 import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.router.{PathFindingExperimentConf, Router}
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Tag
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -57,7 +57,7 @@ object TestConstants {
     paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalance)
   )
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
-  val emptyOrigin = Origin.Hot(ActorRef.noSender, Upstream.Local(UUID.randomUUID()))
+  val emptyOrigin: Origin.Hot = Origin.Hot(ActorRef.noSender, Upstream.Local(UUID.randomUUID()))
 
   case object TestFeature extends Feature with InitFeature with NodeFeature {
     val rfcName = "test_feature"

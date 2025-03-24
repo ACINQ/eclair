@@ -12,7 +12,20 @@
 
 ### Miscellaneous improvements and bug fixes
 
-<insert changes>
+#### Remove confirmation scaling based on funding amount
+
+We previously scaled the number of confirmations based on the channel funding amount.
+However, this doesn't work with splicing, where the channel capacity may change drastically.
+It's much simpler to always use the same number of confirmations, while choosing a value that is large enough to protect against malicious reorgs.
+We now by default use 8 confirmations, which can be modified in `eclair.conf`:
+
+```conf
+// Minimum number of confirmations for channel transactions to be safe from reorgs.
+eclair.channel.min-depth-blocks = 8
+```
+
+Note however that we require `min-depth` to be at least 6 blocks, since the BOLTs require this before announcing channels.
+See #3044 for more details.
 
 ## Verifying signatures
 
