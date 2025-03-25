@@ -60,13 +60,13 @@ object PendingCommandsDb {
 
   def ackSettlementCommands(db: PendingCommandsDb, updates: List[UpdateMessage])(implicit log: LoggingAdapter): Unit = updates.collect {
     case u: UpdateFulfillHtlc =>
-      log.debug("fulfill acked for htlcId={} in channelId={}", u.id, u.channelId)
+      log.debug("fulfill acked for htlcId={}", u.id)
       db.removeSettlementCommand(u.channelId, u.id)
     case u: UpdateFailHtlc =>
-      log.debug("fail acked for htlcId={} in channelId={}", u.id, u.channelId)
+      log.debug("fail acked for htlcId={}", u.id)
       db.removeSettlementCommand(u.channelId, u.id)
     case u: UpdateFailMalformedHtlc =>
-      log.debug("fail-malformed acked for htlcId={} in channelId={}", u.id, u.channelId)
+      log.debug("fail-malformed acked for htlcId={}", u.id)
       db.removeSettlementCommand(u.channelId, u.id)
   }
 
