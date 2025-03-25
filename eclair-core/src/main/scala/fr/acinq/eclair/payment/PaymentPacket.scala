@@ -25,7 +25,7 @@ import fr.acinq.eclair.router.Router.Route
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{InvoiceRoutingInfo, OutgoingBlindedPaths}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, randomBytes32, randomKey}
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
@@ -160,6 +160,17 @@ object IncomingPaymentPacket {
             // We check if the payment is using trampoline: if it is, we may not be the final recipient.
             payload.get[OnionPaymentPayloadTlv.TrampolineOnion] match {
               case Some(OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket)) =>
+                val outerPayload = payload.get[OnionPaymentPayloadTlv.PaymentData] match {
+                  case Some(_) => payload
+                  // The spec allows omitting the payment_secret field when not using MPP to reach the trampoline node.
+                  // We made the payment_secret field mandatory, which lets us factor a lot of our receiving code.
+                  // We simply insert a dummy one, which doesn't have any drawback since the sender is using a single
+                  // part payment.
+                  case None =>
+                    val dummyPaymentSecret = randomBytes32()
+                    val totalAmount = payload.get[OnionPaymentPayloadTlv.AmountToForward].map(_.amount).getOrElse(add.amountMsat)
+                    payload.copy(records = payload.records + OnionPaymentPayloadTlv.PaymentData(dummyPaymentSecret, totalAmount))
+                }
                 // NB: when we enable blinded trampoline routes, we will need to check if the outer onion contains a
                 // path key and use it to derive the decryption key for the blinded trampoline onion.
                 decryptOnion(add.paymentHash, privateKey, trampolinePacket).flatMap {
@@ -169,22 +180,22 @@ object IncomingPaymentPacket {
                       // The payment recipient doesn't support trampoline.
                       // They can be reached with the invoice data provided.
                       // The payer is a wallet using the legacy trampoline feature.
-                      validateTrampolineToNonTrampoline(add, payload, innerPayload)
+                      validateTrampolineToNonTrampoline(add, outerPayload, innerPayload)
                     } else {
-                      validateNodeRelay(add, payload, innerPayload, next)
+                      validateNodeRelay(add, outerPayload, innerPayload, next)
                     }
                   case DecodedOnionPacket(innerPayload, None) =>
                     if (innerPayload.get[OutgoingBlindedPaths].isDefined) {
                       // The payment recipient doesn't support trampoline.
                       // They can be reached using the blinded paths provided.
-                      validateTrampolineToBlindedPaths(add, payload, innerPayload)
+                      validateTrampolineToBlindedPaths(add, outerPayload, innerPayload)
                     } else if (innerPayload.get[InvoiceRoutingInfo].isDefined) {
                       // The payment recipient doesn't support trampoline.
                       // They can be reached with the invoice data provided.
-                      validateTrampolineToNonTrampoline(add, payload, innerPayload)
+                      validateTrampolineToNonTrampoline(add, outerPayload, innerPayload)
                     } else {
                       // We're the final recipient of this trampoline payment.
-                      validateTrampolineFinalPayload(add, payload, innerPayload)
+                      validateTrampolineFinalPayload(add, outerPayload, innerPayload)
                     }
                 }
               case None =>
