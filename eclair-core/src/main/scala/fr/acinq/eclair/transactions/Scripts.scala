@@ -226,6 +226,9 @@ object Scripts {
     case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
   }
 
+  /** Extract payment preimages from a (potentially batched) 2nd-stage HTLC transaction's witnesses. */
+  def extractPreimagesFromHtlcSuccess(tx: Transaction): Set[ByteVector32] = tx.txIn.map(_.witness).collect(extractPreimageFromHtlcSuccess).toSet
+
   /**
    * If remote publishes its commit tx where there was a remote->local htlc, then local uses this script to
    * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
@@ -237,6 +240,9 @@ object Scripts {
   def extractPreimageFromClaimHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
     case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
   }
+
+  /** Extract payment preimages from a (potentially batched) claim HTLC transaction's witnesses. */
+  def extractPreimagesFromClaimHtlcSuccess(tx: Transaction): Set[ByteVector32] = tx.txIn.map(_.witness).collect(extractPreimageFromClaimHtlcSuccess).toSet
 
   def htlcReceived(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteVector, lockTime: CltvExpiry, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
@@ -340,7 +346,7 @@ object Scripts {
      * miniscript: this is not miniscript compatible
      *
      * @param localDelayedPaymentPubkey local delayed key
-     * @param revocationPubkey revocation key
+     * @param revocationPubkey          revocation key
      * @return a script that will be used to add a "revocation" leaf to a script tree
      */
     private def toRevocationKey(localDelayedPaymentPubkey: PublicKey, revocationPubkey: PublicKey): Seq[ScriptElt] = {

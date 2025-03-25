@@ -950,10 +950,12 @@ object Helpers {
                 val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitment.params.commitmentFormat)
                 Right(Transactions.addSigs(txInfo, localSig, remoteSig, hash2Preimage(paymentHash), commitment.params.commitmentFormat))
               })
-            } else if (failedIncomingHtlcs.contains(txInfo.htlcId) || nonRelayedIncomingHtlcs.contains(txInfo.htlcId)) {
+            } else if (failedIncomingHtlcs.contains(txInfo.htlcId)) {
               // We can ignore incoming htlcs that we started failing: our peer will claim them after the timeout.
-              // We can also ignore incoming htlcs that we haven't relayed, because we can't receive the preimage.
               // We don't track those outputs because we want to move to the CLOSED state even if our peer never claims them.
+              None
+            } else if (nonRelayedIncomingHtlcs.contains(txInfo.htlcId)) {
+              // Similarly, we can also ignore incoming htlcs that we haven't relayed, because we can't receive the preimage.
               None
             } else {
               // For all other incoming htlcs, we may receive the preimage later from downstream. We thus want to track
@@ -1127,10 +1129,12 @@ object Helpers {
                   val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitment.params.commitmentFormat)
                   Right(Transactions.addSigs(claimHtlcTx, sig, hash2Preimage(add.paymentHash)))
                 })
-              } else if (failedIncomingHtlcs.contains(add.id) || nonRelayedIncomingHtlcs.contains(add.id)) {
+              } else if (failedIncomingHtlcs.contains(add.id)) {
                 // We can ignore incoming htlcs that we started failing: our peer will claim them after the timeout.
-                // We can also ignore incoming htlcs that we haven't relayed, because we can't receive the preimage.
                 // We don't track those outputs because we want to move to the CLOSED state even if our peer never claims them.
+                None
+              } else if (nonRelayedIncomingHtlcs.contains(add.id)) {
+                // Similarly, we can also ignore incoming htlcs that we haven't relayed, because we can't receive the preimage.
                 None
               } else {
                 // For all other incoming htlcs, we may receive the preimage later from downstream. We thus want to track
@@ -1338,11 +1342,11 @@ object Helpers {
      *           - preimage needs to be sent to the upstream channel
      */
     def extractPreimages(commitment: FullCommitment, tx: Transaction)(implicit log: LoggingAdapter): Set[(UpdateAddHtlc, ByteVector32)] = {
-      val htlcSuccess = tx.txIn.map(_.witness).collect(Scripts.extractPreimageFromHtlcSuccess)
-      htlcSuccess.foreach(r => log.info(s"extracted paymentPreimage=$r from tx=$tx (htlc-success)"))
-      val claimHtlcSuccess = tx.txIn.map(_.witness).collect(Scripts.extractPreimageFromClaimHtlcSuccess)
-      claimHtlcSuccess.foreach(r => log.info(s"extracted paymentPreimage=$r from tx=$tx (claim-htlc-success)"))
-      val paymentPreimages = (htlcSuccess ++ claimHtlcSuccess).toSet
+      val htlcSuccess = Scripts.extractPreimagesFromHtlcSuccess(tx)
+      htlcSuccess.foreach(r => log.info("extracted paymentPreimage={} from tx={} (htlc-success)", r, tx))
+      val claimHtlcSuccess = Scripts.extractPreimagesFromClaimHtlcSuccess(tx)
+      claimHtlcSuccess.foreach(r => log.info("extracted paymentPreimage={} from tx={} (claim-htlc-success)", r, tx))
+      val paymentPreimages = htlcSuccess ++ claimHtlcSuccess
       paymentPreimages.flatMap { paymentPreimage =>
         val paymentHash = sha256(paymentPreimage)
         // We only care about outgoing HTLCs when we're trying to learn a preimage to relay upstream.
@@ -1379,7 +1383,7 @@ object Helpers {
         tx.txIn.flatMap(txIn => localCommitPublished.htlcTxs.get(txIn.outPoint) match {
           // This may also be our peer claiming the HTLC by revealing the preimage: in that case we have already
           // extracted the preimage with [[extractPreimages]] and relayed it upstream.
-          case Some(Some(HtlcTimeoutTx(_, _, htlcId, _))) if tx.txIn.map(_.witness).collect(Scripts.extractPreimageFromClaimHtlcSuccess).isEmpty =>
+          case Some(Some(HtlcTimeoutTx(_, _, htlcId, _))) if Scripts.extractPreimagesFromClaimHtlcSuccess(tx).isEmpty =>
             untrimmedHtlcs.find(_.id == htlcId) match {
               case Some(htlc) =>
                 log.info("htlc-timeout tx for htlc #{} paymentHash={} expiry={} has been confirmed (tx={})", htlcId, htlc.paymentHash, tx.lockTime, tx)
@@ -1411,7 +1415,7 @@ object Helpers {
         tx.txIn.flatMap(txIn => remoteCommitPublished.claimHtlcTxs.get(txIn.outPoint) match {
           // This may also be our peer claiming the HTLC by revealing the preimage: in that case we have already
           // extracted the preimage with [[extractPreimages]] and relayed it upstream.
-          case Some(Some(ClaimHtlcTimeoutTx(_, _, htlcId, _))) if tx.txIn.map(_.witness).collect(Scripts.extractPreimageFromHtlcSuccess).isEmpty =>
+          case Some(Some(ClaimHtlcTimeoutTx(_, _, htlcId, _))) if Scripts.extractPreimagesFromHtlcSuccess(tx).isEmpty =>
             untrimmedHtlcs.find(_.id == htlcId) match {
               case Some(htlc) =>
                 log.info("claim-htlc-timeout tx for htlc #{} paymentHash={} expiry={} has been confirmed (tx={})", htlcId, htlc.paymentHash, tx.lockTime, tx)
@@ -1461,7 +1465,9 @@ object Helpers {
         // A revoked commitment got confirmed: we will claim its outputs, but we also need to resolve upstream htlcs.
         // We consider *all* outgoing htlcs failed: our peer may reveal the preimage with an HTLC-success transaction,
         // but it's more likely that our penalty transaction will confirm first. In any case, since we will get those
-        // funds back on-chain, it's as if the outgoing htlc had failed and should thus be failed back upstream.
+        // funds back on-chain, it's as if the outgoing htlc had failed, therefore it doesn't hurt to be failed back
+        // upstream. In the best case scenario, we already fulfilled upstream, then the fail will be a no-op and we
+        // will pocket the htlc amount.
         outgoingHtlcs
       } else if (remoteCommit.txid == tx.txid) {
         // Their current commit got confirmed: any htlc that is *not* in their current commit will never reach the chain.
