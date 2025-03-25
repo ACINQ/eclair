@@ -1287,36 +1287,36 @@ object Helpers {
        */
       def claimHtlcTxOutputs(keyManager: ChannelKeyManager, params: ChannelParams, remotePerCommitmentSecrets: ShaChain, revokedCommitPublished: RevokedCommitPublished, htlcTx: Transaction, feerates: FeeratesPerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (RevokedCommitPublished, Seq[ClaimHtlcDelayedOutputPenaltyTx]) = {
         // We published HTLC-penalty transactions for every HTLC output: this transaction may be ours, or it may be one
-        // of their HTLC transactions that confirmed before our HTLC-penalty transaction.
+        // of their HTLC transactions that confirmed before our HTLC-penalty transaction. If it is spending an HTLC
+        // output, we assume that it's an HTLC transaction published by our peer and try to create penalty transactions
+        // that spend it, which will automatically be skipped if this was instead one of our HTLC-penalty transactions.
         val htlcOutputs = revokedCommitPublished.htlcPenaltyTxs.map(_.input.outPoint).toSet
         val spendsHtlcOutput = htlcTx.txIn.exists(txIn => htlcOutputs.contains(txIn.outPoint))
-        val isNotOurs = htlcTx.txOut.exists(_.publicKeyScript != finalScriptPubKey)
-        if (spendsHtlcOutput && isNotOurs) {
-          log.warning("looks like txid={} could be a 2nd level htlc tx spending revoked commit txid={}", htlcTx.txid, revokedCommitPublished.commitTx.txid)
-          // Let's assume that htlcTx is an HtlcSuccessTx or HtlcTimeoutTx and try to generate a tx spending its output using a revocation key
+        if (spendsHtlcOutput) {
           import params._
           val commitTx = revokedCommitPublished.commitTx
           val obscuredTxNumber = Transactions.decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
           val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
           val localPaymentPoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
-          // this tx has been published by remote, so we need to invert local/remote params
+          // If this tx has been published by the remote, we need to invert local/remote params.
           val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isChannelOpener, remoteParams.paymentBasepoint, localPaymentPoint)
-          // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
+          // Now we know what commit number this tx is referring to, we can derive the commitment point from the shachain.
           remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txNumber)
             .map(d => PrivateKey(d))
             .map(remotePerCommitmentSecret => {
               val remotePerCommitmentPoint = remotePerCommitmentSecret.publicKey
               val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
               val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-              // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
+              // We need to use a high fee when spending HTLC txs because after a delay they can also be spent by the counterparty.
               val feeratePerKwPenalty = feerates.fastest
               val penaltyTxs = Transactions.makeClaimHtlcDelayedOutputPenaltyTxs(htlcTx, localParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, finalScriptPubKey, feeratePerKwPenalty).flatMap(claimHtlcDelayedOutputPenaltyTx => {
                 withTxGenerationLog("htlc-delayed-penalty") {
                   claimHtlcDelayedOutputPenaltyTx.map(htlcDelayedPenalty => {
                     val sig = keyManager.sign(htlcDelayedPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
                     val signedTx = Transactions.addSigs(htlcDelayedPenalty, sig)
-                    // we need to make sure that the tx is indeed valid
+                    // We need to make sure that the tx is indeed valid.
                     Transaction.correctlySpends(signedTx.tx, Seq(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+                    log.warning("txId={} is a 2nd level htlc tx spending revoked commit txId={}: publishing htlc-penalty txId={}", htlcTx.txid, revokedCommitPublished.commitTx.txid, signedTx.tx.txid)
                     signedTx
                   })
                 }
