@@ -495,7 +495,14 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   def generateCommitAndHtlcTxs(commitmentFormat: CommitmentFormat): Unit = {
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
-    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, DefaultCommitmentFormat)
+    // funding tx sends to musig2 aggregate of local and remote funding keys
+    val fundingTx = commitmentFormat match {
+      case SimpleTaprootChannelCommitmentFormat => Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), Script.pay2tr(Taproot.musig2Aggregate(localFundingPriv.publicKey, remoteFundingPriv.publicKey), None)) :: Nil, lockTime = 0)
+      case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), Scripts.multiSig2of2(localFundingPriv.publicKey, remoteFundingPriv.publicKey)) :: Nil, lockTime = 0)
+    }
+    val fundingTxOutpoint = OutPoint(fundingTx.txid, 0)
+    val fundingOutput = fundingTx.txOut(0)
+    val commitInput = Funding.makeFundingInputInfo(fundingTxOutpoint.txid, fundingTxOutpoint.index.toInt, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitmentFormat)
 
     // htlc1, htlc2a and htlc2b are regular IN/OUT htlcs
     val paymentPreimage1 = randomBytes32()
@@ -691,7 +698,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val remoteSig = htlcSuccessTx.sign(remoteHtlcPriv, TxOwner.Remote, commitmentFormat)
         val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage, commitmentFormat)
         assert(checkSpendable(signedTx).isSuccess)
-        assert(signedTx.tx.weight() == SimpleTaprootChannelCommitmentFormat.htlcSuccessWeight)
         // check remote sig
         assert(htlcSuccessTx.checkSig(remoteSig, remoteHtlcPriv.publicKey, TxOwner.Remote, commitmentFormat))
         assertWeightMatches(signedTx.tx.weight(), commitmentFormat.htlcSuccessWeight, commitmentFormat)
@@ -752,10 +758,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val signedTx = addSigs(claimHtlcTimeoutTx, localSig)
         assertWeightMatches(signedTx.tx.weight(), commitmentFormat.claimHtlcTimeoutWeight, commitmentFormat)
         assert(checkSpendable(signedTx).isSuccess)
-        commitmentFormat match {
-          case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => Scripts.extractPaymentHashFromClaimHtlcTimeout.isDefinedAt(signedTx.tx.txIn(0).witness)
-          case SimpleTaprootChannelCommitmentFormat => Scripts.Taproot.isClaimHtlcTimeoutWitness(signedTx.tx.txIn(0).witness)
-        }
       }
     }
     {
