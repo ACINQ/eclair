@@ -526,9 +526,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val commitTxNumber = 0x404142434445L
       val outputs = makeCommitTxOutputs(localPaysCommitTxFees = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, spec, UnsafeLegacyAnchorOutputsCommitmentFormat)
       val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localIsChannelOpener = true, outputs)
-      val localSig = txInfo.sign(localPaymentPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
-      val remoteSig = txInfo.sign(remotePaymentPriv, TxOwner.Remote, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val localSig = txInfo.sign(localFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val remoteSig = txInfo.sign(remoteFundingPriv, TxOwner.Remote, UnsafeLegacyAnchorOutputsCommitmentFormat)
       val commitTx = Transactions.addSigs(txInfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
+      assert(checkSpendable(commitTx).isSuccess)
 
       val htlcTxs = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.htlcTxFeerate(UnsafeLegacyAnchorOutputsCommitmentFormat), outputs, UnsafeLegacyAnchorOutputsCommitmentFormat)
       assert(htlcTxs.length == 5)
@@ -608,6 +609,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val remoteSig = htlcTimeoutTx.sign(remoteHtlcPriv, TxOwner.Remote, UnsafeLegacyAnchorOutputsCommitmentFormat)
         val signedTx = addSigs(htlcTimeoutTx, localSig, remoteSig, UnsafeLegacyAnchorOutputsCommitmentFormat)
         assert(checkSpendable(signedTx).isSuccess)
+
         // local detects when remote doesn't use the right sighash flags
         val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         for (sighash <- invalidSighash) {
@@ -785,6 +787,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           Transactions.addSigs(txInfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
       }
       commitTx.tx.correctlySpends(Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      assert(commitTx.tx.weight() == SimpleTaprootChannelCommitmentFormat.commitWeight + 2 * 172)
       val htlcTxs = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.htlcTxFeerate(commitmentFormat), outputs, commitmentFormat)
       assert(htlcTxs.length == 2)
       val htlcSuccessTxs = htlcTxs.collect { case tx: HtlcSuccessTx => tx }
@@ -866,6 +869,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val remoteSig = htlcTimeoutTx.sign(remoteHtlcPriv, TxOwner.Remote, commitmentFormat)
         val signedTx = addSigs(htlcTimeoutTx, localSig, remoteSig, commitmentFormat)
         assert(checkSpendable(signedTx).isSuccess)
+        assert(signedTx.tx.weight() == SimpleTaprootChannelCommitmentFormat.htlcTimeoutWeight)
         // local detects when remote doesn't use the right sighash flags
         val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         for (sighash <- invalidSighash) {
@@ -892,6 +896,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val remoteSig = htlcSuccessTx.sign(remoteHtlcPriv, TxOwner.Remote, commitmentFormat)
         val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage, commitmentFormat)
         assert(checkSpendable(signedTx).isSuccess)
+        assert(signedTx.tx.weight() == SimpleTaprootChannelCommitmentFormat.htlcSuccessWeight)
         // check remote sig
         assert(htlcSuccessTx.checkSig(remoteSig, remoteHtlcPriv.publicKey, TxOwner.Remote, commitmentFormat))
         // local detects when remote doesn't use the right sighash flags
@@ -920,6 +925,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val localSig = claimHtlcSuccessTx.sign(remoteHtlcPriv, TxOwner.Local, commitmentFormat)
         val signed = addSigs(claimHtlcSuccessTx, localSig, paymentPreimage)
         assert(checkSpendable(signed).isSuccess)
+        val input = signed.tx.txIn(0)
+        assert(TxIn.write(input).size * 4 + ScriptWitness.write(input.witness).size == SimpleTaprootChannelCommitmentFormat.htlcSuccessInputWeight)
       }
     }
     {
@@ -936,6 +943,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val localSig = claimHtlcTimeoutTx.sign(remoteHtlcPriv, TxOwner.Local, commitmentFormat)
         val signed = addSigs(claimHtlcTimeoutTx, localSig)
         assert(checkSpendable(signed).isSuccess)
+        val input = signed.tx.txIn(0)
+        assert(TxIn.write(input).size * 4 + ScriptWitness.write(input.witness).size == SimpleTaprootChannelCommitmentFormat.htlcTimeoutInputWeight)
       }
     }
     {

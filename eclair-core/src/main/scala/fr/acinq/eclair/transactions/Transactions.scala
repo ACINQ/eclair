@@ -75,8 +75,8 @@ object Transactions {
     override val htlcOutputWeight = 172
     override val htlcTimeoutWeight = 666
     override val htlcSuccessWeight = 706
-    override val htlcTimeoutInputWeight = 452
-    override val htlcSuccessInputWeight = 491
+    override val htlcTimeoutInputWeight = 452 // 288 + 4 * 41
+    override val htlcSuccessInputWeight = 491 // 327 + 4 * 41
   }
 
   object AnchorOutputsCommitmentFormat {
@@ -97,12 +97,26 @@ object Transactions {
   case object ZeroFeeHtlcTxAnchorOutputsCommitmentFormat extends AnchorOutputsCommitmentFormat
 
   case object SimpleTaprootChannelCommitmentFormat extends CommitmentFormat {
-    override val commitWeight = 968
+    // weights for taproot transactions are deterministic since signatures are encoded as 64 bytes and
+    // not in variable length DER format (around 72 bytes)
+    
+    // commit tx witness is just a single 64 bytes signature
+    override val commitWeight = 960
+    // HTLC output weight remains the same
     override val htlcOutputWeight = 172
-    override val htlcTimeoutWeight = 666
-    override val htlcSuccessWeight = 706
-    override val htlcTimeoutInputWeight = 452
-    override val htlcSuccessInputWeight = 491
+
+    // witness is remote sig (64 + 1 bytes + local sig (64 bytes) + script (68 bytes) + control block (65 bytes)
+    override val htlcTimeoutWeight = 645
+    // witness is remote sig (64 + 1 bytes + local sig (64 bytes) + preimage (32 bytes) +  script (95 bytes) + control block (65 bytes)
+    override val htlcSuccessWeight = 705
+
+    // witness = sig (64 bytes) + script (41 bytes) + control block (65 bytes)
+    // input weight = 4 * 41 (input without witness) + 174 (witness)
+    override val htlcTimeoutInputWeight = 338
+
+    // witness is sig (64 bytes)  + preimage (32 bytes) + script (63 bytes) + control block (65 bytes) = 229 bytes
+    // input weight = 4 * 41 (input without witness) + 229 (witness)
+    override val htlcSuccessInputWeight = 393
   }
 
   // @formatter:off
