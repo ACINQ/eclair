@@ -225,7 +225,7 @@ object Scripts {
   /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
   def extractPreimageFromHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
     case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // standard channels
-    case ScriptWitness(Seq(remoteSig, localSig, paymentPreimage, _, _)) if remoteSig.size == 65 && localSig.size == 65 && paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // simple taproot channels
+    case ScriptWitness(Seq(remoteSig, localSig, paymentPreimage, _, _)) if remoteSig.size == 65 && localSig.size == 64 && paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // simple taproot channels
   }
 
   /** Extract payment preimages from a (potentially batched) 2nd-stage HTLC transaction's witnesses. */
@@ -241,6 +241,7 @@ object Scripts {
   /** Extract the payment preimage from from a fulfilled offered htlc. */
   def extractPreimageFromClaimHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
     case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
+    case ScriptWitness(Seq(_, paymentPreimage, _, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
   }
 
   /** Extract payment preimages from a (potentially batched) claim HTLC transaction's witnesses. */
@@ -487,6 +488,14 @@ object Scripts {
       OP_1 :: OP_CHECKSEQUENCEVERIFY :: OP_VERIFY ::
       encodeNumber(lockTime.toLong) :: OP_CHECKLOCKTIMEVERIFY :: Nil
       // @formatter:on
+    }
+
+    def isClaimHtlcTimeoutWitness(witness: ScriptWitness): Boolean = witness.stack match {
+      case sig :: script :: controlBlock :: Nil if sig.size == 64 && script.size == 41 && controlBlock.size == 65 => Script.parse(script) match {
+        case OP_PUSHDATA(x, _) :: OP_CHECKSIGVERIFY :: OP_1 :: OP_CHECKSEQUENCEVERIFY :: OP_VERIFY :: _ :: OP_CHECKLOCKTIMEVERIFY :: Nil if x.size == 32 => true
+        case _ => false
+      }
+      case _ => false
     }
 
     /**
