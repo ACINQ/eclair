@@ -18,7 +18,7 @@ package fr.acinq.eclair.crypto.keymanager
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, DeterministicWallet, Protocol}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, DeterministicWallet, Protocol, TxOut}
 import fr.acinq.eclair.channel.{ChannelConfig, LocalParams}
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
 import scodec.bits.ByteVector
@@ -66,7 +66,9 @@ trait ChannelKeyManager {
    * @param commitmentFormat format of the commitment tx
    * @return a signature generated with the private key that matches the input extended public key
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, spentUtxos: Option[Seq[TxOut]]): ByteVector64
+
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = sign(tx, publicKey, txOwner, commitmentFormat, None)
 
   /**
    * This method is used to spend funds sent to htlc keys/delayed keys
@@ -78,7 +80,7 @@ trait ChannelKeyManager {
    * @param commitmentFormat format of the commitment tx
    * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, spentUtxos: Option[Seq[TxOut]] = None): ByteVector64
 
   /**
    * Ths method is used to spend revoked transactions, with the corresponding revocation key

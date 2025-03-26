@@ -131,11 +131,13 @@ object Transactions {
     /** Sighash flags to use when signing the transaction. */
     def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = SIGHASH_ALL
 
-    def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
-      sign(key, sighash(txOwner, commitmentFormat))
+    def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, spentUtxos: Option[Seq[TxOut]] = None): ByteVector64 = {
+      sign(key, sighash(txOwner, commitmentFormat), spentUtxos)
     }
 
-    def sign(key: PrivateKey, sighashType: Int): ByteVector64 = input match {
+    def sign(key: PrivateKey, sighashType: Int): ByteVector64 = sign(key, sighashType, None)
+
+    def sign(key: PrivateKey, sighashType: Int, spentUtxos: Option[Seq[TxOut]]): ByteVector64 = input match {
       case _: InputInfo.TaprootInput => ByteVector64.Zeroes
       case InputInfo.SegwitInput(outPoint, txOut, redeemScript) =>
         // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
