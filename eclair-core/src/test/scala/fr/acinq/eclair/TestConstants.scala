@@ -110,6 +110,7 @@ object TestConstants {
           Features.Quiescence -> FeatureSupport.Optional,
           Features.SplicePrototype -> FeatureSupport.Optional,
           Features.ProvideStorage -> FeatureSupport.Optional,
+          Features.ChannelType -> FeatureSupport.Mandatory
         ),
         unknown = Set(UnknownFeature(TestFeature.optional))
       ),
@@ -295,6 +296,7 @@ object TestConstants {
         Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Optional,
         Features.Quiescence -> FeatureSupport.Optional,
         Features.SplicePrototype -> FeatureSupport.Optional,
+        Features.ChannelType -> FeatureSupport.Mandatory
       ),
       pluginParams = Nil,
       overrideInitFeatures = Map.empty,

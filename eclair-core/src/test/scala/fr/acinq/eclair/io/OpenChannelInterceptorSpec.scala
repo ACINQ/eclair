@@ -320,7 +320,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     }
   }
 
-  test("don't spawn a channel if channel type is missing with the feature bit set", Tag(ChannelStateTestsTags.ChannelType)) { f =>
+  test("don't spawn a channel if channel type is missing with the feature bit set") { f =>
     import f._
 
     val open = createOpenChannelMessage()
