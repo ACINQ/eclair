@@ -114,7 +114,7 @@ object InteractiveTxBuilder {
 
     override def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction): ByteVector64 = {
       val localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex)
-      keyManager.sign(Transactions.SpliceTx(info, tx), localFundingPubkey, TxOwner.Local, params.commitmentFormat)
+      keyManager.sign(Transactions.SpliceTx(info, tx), localFundingPubkey, TxOwner.Local, params.commitmentFormat, Nil)
     }
   }
 
@@ -847,9 +847,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)) =>
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
         val fundingPubKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex)
-        val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat)
+        val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat, Nil)
         val localPerCommitmentPoint = keyManager.htlcPoint(keyManager.keyPath(channelParams.localParams, channelParams.channelConfig))
-        val htlcSignatures = sortedHtlcTxs.map(keyManager.sign(_, localPerCommitmentPoint, purpose.remotePerCommitmentPoint, TxOwner.Remote, channelParams.commitmentFormat)).toList
+        val htlcSignatures = sortedHtlcTxs.map(keyManager.sign(_, localPerCommitmentPoint, purpose.remotePerCommitmentPoint, TxOwner.Remote, channelParams.commitmentFormat, Nil)).toList
         val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures)
         val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx, htlcTxs = Nil)
         val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)

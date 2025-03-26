@@ -22,7 +22,7 @@ import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BtcAmount, MilliBtcDouble, MnemonicCode, OutPoint, SatoshiLong, ScriptElt, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{Block, BtcAmount, ByteVector64, Crypto, DeterministicWallet, MilliBtcDouble, MnemonicCode, OutPoint, SatoshiLong, ScriptElt, Transaction, TxId, TxOut}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -36,18 +36,19 @@ import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop, Up
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
-import fr.acinq.eclair.crypto.keymanager.LocalOnChainKeyManager
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, LocalOnChainKeyManager}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UpdateFee}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
+import org.json4s.JString
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration.DurationInt
 
@@ -143,7 +144,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   // NB: we can't use ScalaTest's fixtures, they would see uninitialized bitcoind fields because they sandbox each test.
-  private def withFixture(utxos: Seq[BtcAmount], channelType: SupportedChannelType)(testFun: Fixture => Any): Unit = {
+  private def withFixture(utxos: Seq[BtcAmount], channelType: SupportedChannelType, channelKeyManager_opt: Option[ChannelKeyManager] = None)(testFun: Fixture => Any): Unit = {
     // Create a unique wallet for this test and ensure it has some btc.
     val testId = UUID.randomUUID()
     val (walletRpcClient, walletClient) = createTestWallet(s"lightning-$testId")
@@ -160,7 +161,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     // Setup a valid channel between alice and bob.
     val blockHeight = new AtomicLong()
     blockHeight.set(currentBlockHeight(probe).toLong)
-    val aliceNodeParams = TestConstants.Alice.nodeParams.copy(blockHeight = blockHeight)
+    val aliceNodeParams = channelKeyManager_opt.map(ckm => TestConstants.Alice.nodeParams.copy(blockHeight = blockHeight, channelKeyManager = ckm)).getOrElse(TestConstants.Alice.nodeParams.copy(blockHeight = blockHeight))
     val setup = init(aliceNodeParams, TestConstants.Bob.nodeParams.copy(blockHeight = blockHeight), wallet_opt = Some(walletClient))
     val testTags = channelType match {
       case _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx => Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)
@@ -407,7 +408,36 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("commit tx feerate too low, spending anchor output (local commit)") {
-    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+    //we create a new channel key manager that delegates all call to Alice's key manager but track extra utxos passed to the sign() methods
+    val walletInputs = new AtomicReference[Seq[TxOut]](Nil)
+    val channelKeyManagerA = TestConstants.Alice.nodeParams.channelKeyManager
+    // @formatter:off
+    val channelKeyManager = new ChannelKeyManager {
+      override def fundingPublicKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): DeterministicWallet.ExtendedPublicKey = channelKeyManagerA.fundingPublicKey(fundingKeyPath, fundingTxIndex)
+      override def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): DeterministicWallet.ExtendedPublicKey = channelKeyManagerA.revocationPoint(channelKeyPath)
+      override def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath): DeterministicWallet.ExtendedPublicKey = channelKeyManagerA.paymentPoint(channelKeyPath)
+      override def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): DeterministicWallet.ExtendedPublicKey = channelKeyManagerA.delayedPaymentPoint(channelKeyPath)
+      override def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): DeterministicWallet.ExtendedPublicKey = channelKeyManagerA.htlcPoint(channelKeyPath)
+      override def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PrivateKey = channelKeyManagerA.commitmentSecret(channelKeyPath, index)
+      override def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PublicKey = channelKeyManagerA.commitmentPoint(channelKeyPath, index)
+      override def newFundingKeyPath(isChannelOpener: Boolean): DeterministicWallet.KeyPath = channelKeyManagerA.newFundingKeyPath(isChannelOpener)
+      override def sign(tx: TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Seq[TxOut]): ByteVector64 = {
+        walletInputs.set(extraUtxos)
+        channelKeyManagerA.sign(tx, publicKey, txOwner, commitmentFormat, extraUtxos)
+      }
+      override def sign(tx: TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Seq[TxOut]): ByteVector64 = {
+        walletInputs.set(extraUtxos)
+        channelKeyManagerA.sign(tx, publicKey, remotePoint, txOwner, commitmentFormat, extraUtxos)
+      }
+      override def sign(tx: TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remoteSecret: Crypto.PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Seq[TxOut]): ByteVector64 = {
+        walletInputs.set(extraUtxos)
+        channelKeyManagerA.sign(tx, publicKey, remoteSecret, txOwner, commitmentFormat, extraUtxos)
+      }
+      override def signChannelAnnouncement(witness: ByteVector, fundingKeyPath: DeterministicWallet.KeyPath): ByteVector64 = channelKeyManagerA.signChannelAnnouncement(witness, fundingKeyPath)
+    }
+    // @formatter:on
+
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Some(channelKeyManager)) { f =>
       import f._
 
       val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
@@ -419,9 +449,22 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // NB: we try to get transactions confirmed *before* their confirmation target, so we aim for a more aggressive block target what's provided.
       setFeerate(targetFeerate, blockTarget = 12)
       publisher ! Publish(probe.ref, anchorTx)
+
       // wait for the commit tx and anchor tx to be published
       val mempoolTxs = getMempoolTxs(2)
+      // check that the wallet input added by the tx funder was passed to the key manager
       assert(mempoolTxs.map(_.txid).contains(commitTx.tx.txid))
+
+      def getTransaction(txid: TxId): Transaction = {
+        bitcoinrpcclient.invoke("getrawtransaction", txid).pipeTo(probe.ref)
+        Transaction.read(probe.expectMsgType[JString].values)
+      }
+
+      // there are 2 transactions in the mempool, the one that is not the commit tx has to be the anchor tx
+      val publishedAnchorTx = getTransaction(mempoolTxs.filterNot(_.txid == commitTx.tx.txid).head.txid)
+      val extraInputs = publishedAnchorTx.txIn.tail.map(input => getTransaction(input.outPoint.txid).txOut(input.outPoint.index.toInt))
+      // check that inputs added to the anchor tx match what was passed to our key manager's sign() method
+      assert(walletInputs.get() == extraInputs)
 
       val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
       val actualFee = mempoolTxs.map(_.fees).sum
