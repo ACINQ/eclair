@@ -104,6 +104,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
    * @param publicKey        extended public key
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
+   * @param spentUtxos       all outputs spent by this transaction
    * @return a signature generated with the private key that matches the input extended public key
    */
   override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, spentUtxos: Option[Seq[TxOut]]): ByteVector64 = {
@@ -124,6 +125,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
    * @param remotePoint      remote point
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
+   * @param spentUtxos       all outputs spent by this transaction
    * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
    */
   override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, spentUtxos: Option[Seq[TxOut]] = None): ByteVector64 = {
