@@ -10,6 +10,11 @@
 
 - `listoffers` now returns more details about each offer.
 
+
+### Configuration changes
+
+- The default for `eclair.features.option_channel_type` is now  `mandatory` instead of `optional`. This change prepares nodes to always assume the behavior of `option_channel_type` from peers when Bolts PR [#1232](https://github.com/lightning/bolts/pull/1232) is adopted. Until [#1232](https://github.com/lightning/bolts/pull/1232) is adopted you can still set `option_channel_type` to `optional` in your `eclair.conf` file for specific peers that do not yet support this option, see `Configure.md` for more information.
+
 ### Miscellaneous improvements and bug fixes
 
 #### Remove confirmation scaling based on funding amount
