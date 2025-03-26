@@ -132,7 +132,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
       val trampolinePaymentSecret = randomBytes32()
       context.log.info("sending trampoline payment parts: {}->{}, {}->{}", channel1.data.channelId, amount1, channel2.data.channelId, amount2)
       val parts = Seq((amount1, channel1), (amount2, channel2)).map { case (amount, channelInfo) =>
-        val outgoing = buildOutgoingPayment(cmd.trampolineNodeId, cmd.invoice, amount, expiry, trampolinePaymentSecret, attemptNumber)
+        val outgoing = buildOutgoingPayment(cmd.trampolineNodeId, cmd.invoice, amount, expiry, Some(trampolinePaymentSecret), attemptNumber)
         val add = CMD_ADD_HTLC(addHtlcAdapter.toClassic, outgoing.trampolineAmount, paymentHash, outgoing.trampolineExpiry, outgoing.onion.packet, None, 1.0, None, origin, commit = true)
         channelInfo.channel ! add
         val channelId = channelInfo.data.asInstanceOf[DATA_NORMAL].channelId
@@ -205,10 +205,10 @@ object TrampolinePayment {
   case class OutgoingPayment(trampolineAmount: MilliSatoshi, trampolineExpiry: CltvExpiry, onion: Sphinx.PacketAndSecrets, trampolineOnion: Sphinx.PacketAndSecrets)
 
   def buildOutgoingPayment(trampolineNodeId: PublicKey, invoice: Invoice, expiry: CltvExpiry): OutgoingPayment = {
-    buildOutgoingPayment(trampolineNodeId, invoice, invoice.amount_opt.get, expiry, trampolinePaymentSecret = randomBytes32(), attemptNumber = 0)
+    buildOutgoingPayment(trampolineNodeId, invoice, invoice.amount_opt.get, expiry, trampolinePaymentSecret_opt = Some(randomBytes32()), attemptNumber = 0)
   }
 
-  def buildOutgoingPayment(trampolineNodeId: PublicKey, invoice: Invoice, amount: MilliSatoshi, expiry: CltvExpiry, trampolinePaymentSecret: ByteVector32, attemptNumber: Int): OutgoingPayment = {
+  def buildOutgoingPayment(trampolineNodeId: PublicKey, invoice: Invoice, amount: MilliSatoshi, expiry: CltvExpiry, trampolinePaymentSecret_opt: Option[ByteVector32], attemptNumber: Int): OutgoingPayment = {
     val totalAmount = invoice.amount_opt.get
     val trampolineOnion = invoice match {
       case invoice: Bolt11Invoice if invoice.features.hasFeature(Features.TrampolinePaymentPrototype) =>
@@ -225,7 +225,10 @@ object TrampolinePayment {
     val trampolineAmount = computeTrampolineAmount(amount, attemptNumber)
     val trampolineTotalAmount = computeTrampolineAmount(totalAmount, attemptNumber)
     val trampolineExpiry = computeTrampolineExpiry(expiry, attemptNumber)
-    val payload = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolineAmount, trampolineTotalAmount, trampolineExpiry, trampolinePaymentSecret, trampolineOnion.packet)
+    val payload = trampolinePaymentSecret_opt match {
+      case Some(trampolinePaymentSecret) => PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolineAmount, trampolineTotalAmount, trampolineExpiry, trampolinePaymentSecret, trampolineOnion.packet)
+      case None => PaymentOnion.TrampolineWithoutMppPayload.create(trampolineAmount, trampolineExpiry, trampolineOnion.packet)
+    }
     val paymentOnion = buildOnion(NodePayload(trampolineNodeId, payload) :: Nil, invoice.paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
     OutgoingPayment(trampolineAmount, trampolineExpiry, paymentOnion, trampolineOnion)
   }

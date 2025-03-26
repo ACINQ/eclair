@@ -275,15 +275,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_b.totalAmount == finalAmount)
   }
 
-  test("build outgoing trampoline payment") {
-    // simple trampoline route to e:
-    //        .----.
-    //       /      \
-    // b -> c        e
-    val invoiceFeatures = Features[Bolt11Feature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, TrampolinePaymentPrototype -> Optional)
-    val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_e.privateKey, Left("invoice"), CltvExpiryDelta(6), paymentSecret = paymentSecret, features = invoiceFeatures, paymentMetadata = Some(hex"010203"))
-    val payment = TrampolinePayment.buildOutgoingPayment(c, invoice, finalExpiry)
-
+  private def testRelayTrampolinePayment(invoice: Bolt11Invoice, payment: TrampolinePayment.OutgoingPayment): Unit = {
     val add_c = UpdateAddHtlc(randomBytes32(), 2, payment.trampolineAmount, paymentHash, payment.trampolineExpiry, payment.onion.packet, None, 1.0, None)
     val Right(RelayToTrampolinePacket(add_c2, outer_c, inner_c, trampolinePacket_e)) = decrypt(add_c, priv_c.privateKey, Features.empty)
     assert(add_c2 == add_c)
@@ -313,8 +305,31 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_e.amount == finalAmount)
     assert(payload_e.expiry == finalExpiry)
     assert(payload_e.asInstanceOf[FinalPayload.Standard].paymentSecret == paymentSecret)
-    assert(payload_e.asInstanceOf[FinalPayload.Standard].paymentMetadata.contains(hex"010203"))
+    assert(payload_e.asInstanceOf[FinalPayload.Standard].paymentMetadata == invoice.paymentMetadata)
     assert(payload_e.asInstanceOf[FinalPayload.Standard].isTrampoline)
+  }
+
+  test("build outgoing trampoline payment") {
+    // simple trampoline route to e:
+    //        .----.
+    //       /      \
+    // b -> c        e
+    val invoiceFeatures = Features[Bolt11Feature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, TrampolinePaymentPrototype -> Optional)
+    val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_e.privateKey, Left("invoice"), CltvExpiryDelta(6), paymentSecret = paymentSecret, features = invoiceFeatures, paymentMetadata = Some(hex"010203"))
+    val payment = TrampolinePayment.buildOutgoingPayment(c, invoice, finalExpiry)
+    testRelayTrampolinePayment(invoice, payment)
+  }
+
+  test("build outgoing trampoline payment without MPP") {
+    // simple trampoline route to e, but we don't include a payment_secret in the outer payload for c:
+    //        .----.
+    //       /      \
+    // b -> c        e
+    val invoiceFeatures = Features[Bolt11Feature](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, TrampolinePaymentPrototype -> Optional)
+    val invoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_e.privateKey, Left("invoice"), CltvExpiryDelta(6), paymentSecret = paymentSecret, features = invoiceFeatures, paymentMetadata = Some(hex"010203"))
+    // Note that we don't include a payment_secret for the trampoline node, since the spec allows omitting it when not using MPP to reach the trampoline node.
+    val payment = TrampolinePayment.buildOutgoingPayment(c, invoice, finalAmount, finalExpiry, trampolinePaymentSecret_opt = None, attemptNumber = 0)
+    testRelayTrampolinePayment(invoice, payment)
   }
 
   test("build outgoing trampoline payment with non-trampoline recipient") {
