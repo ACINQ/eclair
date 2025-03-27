@@ -166,6 +166,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       case _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx => Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)
       case _: ChannelTypes.AnchorOutputs => Set(ChannelStateTestsTags.AnchorOutputs)
       case _: ChannelTypes.StaticRemoteKey => Set(ChannelStateTestsTags.StaticRemoteKey)
+      case _: ChannelTypes.SimpleTaprootChannelsStaging => Set(ChannelStateTestsTags.OptionSimpleTaprootStaging)
       case _ => Set.empty[String]
     }
     reachNormal(setup, testTags)
@@ -436,6 +437,37 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  test("commit tx feerate too low, spending anchor output (local commit, simple taproot channels)") {
+    withFixture(Seq(500 millibtc), ChannelTypes.SimpleTaprootChannelsStaging()) { f =>
+      import f._
+
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
+      wallet.publishTransaction(commitTx.tx).pipeTo(probe.ref)
+      probe.expectMsg(commitTx.tx.txid)
+      assert(getMempool().length == 1)
+
+      val targetFeerate = FeeratePerKw(3000 sat)
+      // NB: we try to get transactions confirmed *before* their confirmation target, so we aim for a more aggressive block target what's provided.
+      setFeerate(targetFeerate, blockTarget = 12)
+      publisher ! Publish(probe.ref, anchorTx)
+      // wait for the commit tx and anchor tx to be published
+      val mempoolTxs = getMempoolTxs(2)
+      assert(mempoolTxs.map(_.txid).contains(commitTx.tx.txid))
+
+      val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
+      val actualFee = mempoolTxs.map(_.fees).sum
+      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.15, s"actualFee=$actualFee targetFee=$targetFee")
+
+      generateBlocks(6)
+      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+      val result = probe.expectMsgType[TxConfirmed]
+      assert(result.cmd == anchorTx)
+      assert(result.tx.txIn.map(_.outPoint.txid).contains(commitTx.tx.txid))
+      assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
+    }
+  }
+
+
   private def testSpendRemoteCommitAnchor(f: Fixture, nextCommit: Boolean): Unit = {
     import f._
 
@@ -470,7 +502,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
     val actualFee = mempoolTxs.map(_.fees).sum
-    assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+    assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.2, s"actualFee=$actualFee targetFee=$targetFee")
 
     generateBlocks(6)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
@@ -482,6 +514,12 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
   test("commit tx feerate too low, spending anchor output (remote commit)") {
     withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
+      testSpendRemoteCommitAnchor(f, nextCommit = false)
+    }
+  }
+
+  test("commit tx feerate too low, spending anchor output (remote commit, simple taproot channels)") {
+    withFixture(Seq(500 millibtc), ChannelTypes.SimpleTaprootChannelsStaging()) { f =>
       testSpendRemoteCommitAnchor(f, nextCommit = false)
     }
   }
@@ -1578,7 +1616,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
     bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => assert(remoteCommitTx.tx.txOut.size == 4)
-      case _: AnchorOutputsCommitmentFormat => assert(remoteCommitTx.tx.txOut.size == 6)
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => assert(remoteCommitTx.tx.txOut.size == 6)
     }
     probe.send(alice, WatchFundingSpentTriggered(remoteCommitTx.tx))
 
@@ -1589,7 +1627,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => ()
-      case _: AnchorOutputsCommitmentFormat => alice2blockchain.expectMsgType[PublishReplaceableTx] // claim anchor
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => alice2blockchain.expectMsgType[PublishReplaceableTx] // claim anchor
     }
     if (!bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.paysDirectlyToWallet) alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
     val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]

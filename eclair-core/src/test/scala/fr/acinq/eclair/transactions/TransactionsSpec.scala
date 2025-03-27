@@ -52,7 +52,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   val localHtlcPriv = PrivateKey(randomBytes32())
   val remoteHtlcPriv = PrivateKey(randomBytes32())
   val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
-  val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+  val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, DefaultCommitmentFormat)
   val toLocalDelay = CltvExpiryDelta(144)
   val localDustLimit = Satoshi(546)
   val feeratePerKw = FeeratePerKw(22000 sat)
@@ -258,7 +258,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   test("generate valid commitment and htlc transactions (default commitment format)") {
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
-    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, DefaultCommitmentFormat)
 
     // htlc1 and htlc2 are regular IN/OUT htlcs
     val paymentPreimage1 = randomBytes32()
@@ -405,10 +405,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // remote spends offered HTLC output with revocation key
       val script = Script.write(Scripts.htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc1.paymentHash), DefaultCommitmentFormat))
-      val Some(htlcOutputIndex) = outputs.zipWithIndex.find {
-        case (CommitmentOutputLink(_, _, OutHtlc(OutgoingHtlc(someHtlc))), _) => someHtlc.id == htlc1.id
-        case _ => false
-      }.map(_._2)
+      val Some(htlcOutputIndex) = outputs.map(_.filter[OutHtlc]).zipWithIndex.collectFirst {
+        case (Some(co), outputIndex) if co.commitmentOutput.outgoingHtlc.add.id == htlc1.id => outputIndex
+      }
       val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
       val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, DefaultCommitmentFormat)
       val signed = addSigs(htlcPenaltyTx, sig, localRevocationPriv.publicKey)
@@ -427,10 +426,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // remote spends received HTLC output with revocation key
       val script = Script.write(Scripts.htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc2.paymentHash), htlc2.cltvExpiry, DefaultCommitmentFormat))
-      val Some(htlcOutputIndex) = outputs.zipWithIndex.find {
-        case (CommitmentOutputLink(_, _, InHtlc(IncomingHtlc(someHtlc))), _) => someHtlc.id == htlc2.id
-        case _ => false
-      }.map(_._2)
+      val Some(htlcOutputIndex) = outputs.map(_.filter[InHtlc]).zipWithIndex.collectFirst {
+        case (Some(co), outputIndex) if co.commitmentOutput.incomingHtlc.add.id == htlc2.id => outputIndex
+      }
       val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
       val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, DefaultCommitmentFormat)
       val signed = addSigs(htlcPenaltyTx, sig, localRevocationPriv.publicKey)
@@ -489,7 +487,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   test("generate valid commitment and htlc transactions (anchor outputs)") {
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
-    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, DefaultCommitmentFormat)
 
     // htlc1, htlc2a and htlc2b are regular IN/OUT htlcs
     val paymentPreimage1 = randomBytes32()
@@ -613,7 +611,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         // local detects when remote doesn't use the right sighash flags
         val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         for (sighash <- invalidSighash) {
-          val invalidRemoteSig = htlcTimeoutTx.sign(remoteHtlcPriv, sighash)
+          val invalidRemoteSig = htlcTimeoutTx.sign(remoteHtlcPriv, sighash, None)
           val invalidTx = addSigs(htlcTimeoutTx, localSig, invalidRemoteSig, UnsafeLegacyAnchorOutputsCommitmentFormat)
           assert(checkSpendable(invalidTx).isFailure)
         }
@@ -719,10 +717,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // remote spends offered htlc output with revocation key
       val script = Script.write(Scripts.htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc1.paymentHash), UnsafeLegacyAnchorOutputsCommitmentFormat))
-      val Some(htlcOutputIndex) = commitTxOutputs.zipWithIndex.find {
-        case (CommitmentOutputLink(_, _, OutHtlc(OutgoingHtlc(someHtlc))), _) => someHtlc.id == htlc1.id
-        case _ => false
-      }.map(_._2)
+      val Some(htlcOutputIndex) = commitTxOutputs.map(_.filter[OutHtlc]).zipWithIndex.collectFirst {
+        case (Some(co), outputIndex) if co.commitmentOutput.outgoingHtlc.add.id == htlc1.id => outputIndex
+      }
       val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
       val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
       val signed = addSigs(htlcPenaltyTx, sig, localRevocationPriv.publicKey)
@@ -732,10 +729,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // remote spends received htlc output with revocation key
       for (htlc <- Seq(htlc2a, htlc2b)) {
         val script = Script.write(Scripts.htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc.paymentHash), htlc.cltvExpiry, UnsafeLegacyAnchorOutputsCommitmentFormat))
-        val Some(htlcOutputIndex) = commitTxOutputs.zipWithIndex.find {
-          case (CommitmentOutputLink(_, _, InHtlc(IncomingHtlc(someHtlc))), _) => someHtlc.id == htlc.id
-          case _ => false
-        }.map(_._2)
+        val Some(htlcOutputIndex) = commitTxOutputs.map(_.filter[InHtlc]).zipWithIndex.collectFirst {
+          case (Some(co), outputIndex) if co.commitmentOutput.incomingHtlc.add.id == htlc.id => outputIndex
+        }
         val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
         val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat)
         val signed = addSigs(htlcPenaltyTx, sig, localRevocationPriv.publicKey)
@@ -744,7 +740,263 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
   }
 
-  test("generate valid commitment and htlc transactions (taproot)") {
+  test("generate valid commitment and htlc transactions (simple taproot channels)") {
+    val commitmentFormat: CommitmentFormat = SimpleTaprootChannelCommitmentFormat
+    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
+    // funding tx sends to musig2 aggregate of local and remote funding keys
+    val fundingTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), Script.pay2tr(Taproot.musig2Aggregate(localFundingPriv.publicKey, remoteFundingPriv.publicKey), None)) :: Nil, lockTime = 0)
+    val fundingTxOutpoint = OutPoint(fundingTx.txid, 0)
+    val fundingOutput = fundingTx.txOut(0)
+    val commitInput = Funding.makeFundingInputInfo(fundingTxOutpoint.txid, fundingTxOutpoint.index.toInt, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitmentFormat)
+
+    // htlc1, htlc2 are regular IN/OUT htlcs
+    val paymentPreimage1 = randomBytes32()
+    val htlc1 = UpdateAddHtlc(ByteVector32.Zeroes, 0, MilliBtc(100).toMilliSatoshi, sha256(paymentPreimage1), CltvExpiry(300), TestConstants.emptyOnionPacket, None, 1.0, None)
+    val paymentPreimage2 = randomBytes32()
+    val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliBtc(50).toMilliSatoshi, sha256(paymentPreimage2), CltvExpiry(310), TestConstants.emptyOnionPacket, None, 1.0, None)
+    val spec = CommitmentSpec(
+      htlcs = Set(
+        OutgoingHtlc(htlc1),
+        IncomingHtlc(htlc2),
+      ),
+      commitTxFeerate = feeratePerKw,
+      toLocal = 400.millibtc.toMilliSatoshi,
+      toRemote = 300.millibtc.toMilliSatoshi)
+    val (secretLocalNonce, publicLocalNonce) = Musig2.generateNonce(randomBytes32(), localFundingPriv, Seq(localFundingPriv.publicKey))
+    val (secretRemoteNonce, publicRemoteNonce) = Musig2.generateNonce(randomBytes32(), remoteFundingPriv, Seq(remoteFundingPriv.publicKey))
+    val publicKeys = Scripts.sort(Seq(localFundingPriv.publicKey, remoteFundingPriv.publicKey))
+    val publicNonces = Seq(publicLocalNonce, publicRemoteNonce)
+
+    val (commitTx, commitTxOutputs, htlcTimeoutTxs, htlcSuccessTxs) = {
+      val commitTxNumber = 0x404142434445L
+      val outputs = makeCommitTxOutputs(localPaysCommitTxFees = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, spec, commitmentFormat)
+      val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localIsChannelOpener = true, outputs)
+      val commitTx = commitmentFormat match {
+        case SimpleTaprootChannelCommitmentFormat =>
+          val Right(sig) = for {
+            localPartialSig <- Musig2.signTaprootInput(localFundingPriv, txInfo.tx, 0, Seq(fundingOutput), publicKeys, secretLocalNonce, publicNonces, None)
+            remotePartialSig <- Musig2.signTaprootInput(remoteFundingPriv, txInfo.tx, 0, Seq(fundingOutput), publicKeys, secretRemoteNonce, publicNonces, None)
+            sig <- Musig2.aggregateTaprootSignatures(Seq(localPartialSig, remotePartialSig), txInfo.tx, 0, Seq(fundingOutput), publicKeys, publicNonces, None)
+          } yield sig
+          Transactions.addAggregatedSignature(txInfo, sig)
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+          val localSig = txInfo.sign(localPaymentPriv, TxOwner.Local, commitmentFormat)
+          val remoteSig = txInfo.sign(remotePaymentPriv, TxOwner.Remote, commitmentFormat)
+          Transactions.addSigs(txInfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
+      }
+      commitTx.tx.correctlySpends(Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      val htlcTxs = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.htlcTxFeerate(commitmentFormat), outputs, commitmentFormat)
+      assert(htlcTxs.length == 2)
+      val htlcSuccessTxs = htlcTxs.collect { case tx: HtlcSuccessTx => tx }
+      val htlcTimeoutTxs = htlcTxs.collect { case tx: HtlcTimeoutTx => tx }
+      assert(htlcTimeoutTxs.size == 1) // htlc1
+      assert(htlcTimeoutTxs.map(_.htlcId).toSet == Set(0))
+      assert(htlcSuccessTxs.size == 1) // htlc2
+      assert(htlcSuccessTxs.map(_.htlcId).toSet == Set(1))
+
+      (commitTx, outputs, htlcTimeoutTxs, htlcSuccessTxs)
+    }
+
+    {
+      // local spends main delayed output
+      val Right(claimMainOutputTx) = makeClaimLocalDelayedOutputTx(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val localSig = claimMainOutputTx.sign(localDelayedPaymentPriv, TxOwner.Local, commitmentFormat)
+      val signedTx = addSigs(claimMainOutputTx, localSig)
+      assert(checkSpendable(signedTx).isSuccess)
+    }
+    {
+      // remote cannot spend main output with default commitment format
+      val Left(failure) = makeClaimP2WPKHOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      assert(failure == OutputNotFound)
+    }
+    {
+      // remote spends main delayed output
+      val Right(claimRemoteDelayedOutputTx) = makeClaimRemoteDelayedOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val localSig = claimRemoteDelayedOutputTx.sign(remotePaymentPriv, TxOwner.Local, commitmentFormat)
+      val signedTx = addSigs(claimRemoteDelayedOutputTx, localSig)
+      assert(checkSpendable(signedTx).isSuccess)
+    }
+    {
+      // local spends local anchor
+      val anchorKey = commitmentFormat match {
+        case SimpleTaprootChannelCommitmentFormat => localDelayedPaymentPriv
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => localFundingPriv
+      }
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, anchorKey.publicKey, ConfirmationTarget.Absolute(BlockHeight(0)))
+      assert(checkSpendable(claimAnchorOutputTx).isFailure)
+      val localSig = claimAnchorOutputTx.sign(anchorKey, TxOwner.Local, commitmentFormat)
+      val signedTx = addSigs(claimAnchorOutputTx, localSig)
+      assert(checkSpendable(signedTx).isSuccess)
+    }
+    {
+      // remote spends remote anchor
+      val anchorKey = commitmentFormat match {
+        case SimpleTaprootChannelCommitmentFormat => remotePaymentPriv
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => remoteFundingPriv
+      }
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, anchorKey.publicKey, ConfirmationTarget.Absolute(BlockHeight(0)))
+      assert(checkSpendable(claimAnchorOutputTx).isFailure)
+      val localSig = claimAnchorOutputTx.sign(anchorKey, TxOwner.Local, commitmentFormat)
+      val signedTx = addSigs(claimAnchorOutputTx, localSig)
+      assert(checkSpendable(signedTx).isSuccess)
+    }
+    {
+      // anyone can spend the anchor after 16 blocks
+      val anchorKey = commitmentFormat match {
+        case SimpleTaprootChannelCommitmentFormat => localDelayedPaymentPriv
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => localFundingPriv
+      }
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, anchorKey.publicKey, ConfirmationTarget.Absolute(BlockHeight(0)))
+      val tx = claimAnchorOutputTx.tx
+        .copy(txIn = claimAnchorOutputTx.tx.txIn.head.copy(sequence = 16) :: Nil)
+        .updateWitness(0, Script.witnessScriptPathPay2tr(anchorKey.xOnlyPublicKey(), Taproot.anchorScriptTree, ScriptWitness(Seq()), Taproot.anchorScriptTree))
+      Transaction.correctlySpends(tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+    {
+      // remote spends local main delayed output with revocation key
+      val Right(mainPenaltyTx) = makeMainPenaltyTx(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localDelayedPaymentPriv.publicKey, feeratePerKw)
+      val sig = mainPenaltyTx.sign(localRevocationPriv, TxOwner.Local, commitmentFormat)
+      val signed = addSigs(mainPenaltyTx, sig)
+      assert(checkSpendable(signed).isSuccess)
+    }
+    {
+      // local spends received htlc with HTLC-timeout tx
+      for (htlcTimeoutTx <- htlcTimeoutTxs) {
+        val localSig = htlcTimeoutTx.sign(localHtlcPriv, TxOwner.Local, commitmentFormat)
+        val remoteSig = htlcTimeoutTx.sign(remoteHtlcPriv, TxOwner.Remote, commitmentFormat)
+        val signedTx = addSigs(htlcTimeoutTx, localSig, remoteSig, commitmentFormat)
+        assert(checkSpendable(signedTx).isSuccess)
+        // local detects when remote doesn't use the right sighash flags
+        val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
+        for (sighash <- invalidSighash) {
+          val invalidRemoteSig = htlcTimeoutTx.sign(remoteHtlcPriv, sighash)
+          val invalidTx = addSigs(htlcTimeoutTx, localSig, invalidRemoteSig, commitmentFormat)
+          assert(checkSpendable(invalidTx).isFailure)
+        }
+      }
+    }
+    {
+      // local spends delayed output of htlc1 timeout tx
+      val Right(htlcDelayed) = makeHtlcDelayedTx(htlcTimeoutTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val localSig = htlcDelayed.sign(localDelayedPaymentPriv, TxOwner.Local, commitmentFormat)
+      val signedTx = addSigs(htlcDelayed, localSig)
+      assert(checkSpendable(signedTx).isSuccess)
+      // local can't claim delayed output of htlc3 timeout tx because it is below the dust limit
+      val htlcDelayed1 = makeHtlcDelayedTx(htlcTimeoutTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      assert(htlcDelayed1 == Left(OutputNotFound))
+    }
+    {
+      // local spends offered htlc with HTLC-success tx
+      for ((htlcSuccessTx, paymentPreimage) <- (htlcSuccessTxs(0), paymentPreimage2) :: Nil) {
+        val localSig = htlcSuccessTx.sign(localHtlcPriv, TxOwner.Local, commitmentFormat)
+        val remoteSig = htlcSuccessTx.sign(remoteHtlcPriv, TxOwner.Remote, commitmentFormat)
+        val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage, commitmentFormat)
+        assert(checkSpendable(signedTx).isSuccess)
+        // check remote sig
+        assert(htlcSuccessTx.checkSig(remoteSig, remoteHtlcPriv.publicKey, TxOwner.Remote, commitmentFormat))
+        // local detects when remote doesn't use the right sighash flags
+        val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
+        for (sighash <- invalidSighash) {
+          val invalidRemoteSig = htlcSuccessTx.sign(remoteHtlcPriv, sighash)
+          val invalidTx = addSigs(htlcSuccessTx, localSig, invalidRemoteSig, paymentPreimage, commitmentFormat)
+          assert(checkSpendable(invalidTx).isFailure)
+          assert(!invalidTx.checkSig(invalidRemoteSig, remoteHtlcPriv.publicKey, TxOwner.Remote, commitmentFormat))
+        }
+      }
+    }
+    {
+      // local spends delayed output of htlc2 success tx
+      val Right(htlcDelayedA) = makeHtlcDelayedTx(htlcSuccessTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      for (htlcDelayed <- Seq(htlcDelayedA)) {
+        val localSig = htlcDelayed.sign(localDelayedPaymentPriv, TxOwner.Local, commitmentFormat)
+        val signedTx = addSigs(htlcDelayed, localSig)
+        assert(checkSpendable(signedTx).isSuccess)
+      }
+    }
+    {
+      // remote spends local->remote htlc outputs directly in case of success
+      for ((htlc, paymentPreimage) <- (htlc1, paymentPreimage1) :: Nil) {
+        val Right(claimHtlcSuccessTx) = makeClaimHtlcSuccessTx(commitTx.tx, commitTxOutputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw, commitmentFormat)
+        val localSig = claimHtlcSuccessTx.sign(remoteHtlcPriv, TxOwner.Local, commitmentFormat)
+        val signed = addSigs(claimHtlcSuccessTx, localSig, paymentPreimage)
+        assert(checkSpendable(signed).isSuccess)
+      }
+    }
+    {
+      // remote spends htlc1's htlc-timeout tx with revocation key
+      val Seq(Right(claimHtlcDelayedPenaltyTx)) = makeClaimHtlcDelayedOutputPenaltyTxs(htlcTimeoutTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw, commitmentFormat)
+      val sig = claimHtlcDelayedPenaltyTx.sign(localRevocationPriv, TxOwner.Local, commitmentFormat)
+      val signed = addSigs(claimHtlcDelayedPenaltyTx, sig)
+      assert(checkSpendable(signed).isSuccess)
+    }
+    {
+      // remote spends remote->local htlc output directly in case of timeout
+      for (htlc <- Seq(htlc2)) {
+        val Right(claimHtlcTimeoutTx) = makeClaimHtlcTimeoutTx(commitTx.tx, commitTxOutputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw, commitmentFormat)
+        val localSig = claimHtlcTimeoutTx.sign(remoteHtlcPriv, TxOwner.Local, commitmentFormat)
+        val signed = addSigs(claimHtlcTimeoutTx, localSig)
+        assert(checkSpendable(signed).isSuccess)
+      }
+    }
+    {
+      // remote spends htlc2's htlc-success tx with revocation key
+      val Seq(Right(claimHtlcDelayedPenaltyTxA)) = makeClaimHtlcDelayedOutputPenaltyTxs(htlcSuccessTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw, commitmentFormat)
+      for (claimHtlcSuccessPenaltyTx <- Seq(claimHtlcDelayedPenaltyTxA)) {
+        val sig = claimHtlcSuccessPenaltyTx.sign(localRevocationPriv, TxOwner.Local, commitmentFormat)
+        val signed = addSigs(claimHtlcSuccessPenaltyTx, sig)
+        assert(checkSpendable(signed).isSuccess)
+      }
+    }
+    {
+      // remote spends all htlc txs aggregated in a single tx
+      val txIn = htlcTimeoutTxs.flatMap(_.tx.txIn) ++ htlcSuccessTxs.flatMap(_.tx.txIn)
+      val txOut = htlcTimeoutTxs.flatMap(_.tx.txOut) ++ htlcSuccessTxs.flatMap(_.tx.txOut)
+      val aggregatedHtlcTx = Transaction(2, txIn, txOut, 0)
+      val claimHtlcDelayedPenaltyTxs = makeClaimHtlcDelayedOutputPenaltyTxs(aggregatedHtlcTx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw, commitmentFormat)
+      assert(claimHtlcDelayedPenaltyTxs.size == 2)
+      val claimed = claimHtlcDelayedPenaltyTxs.collect { case Right(tx) => tx }
+      assert(claimed.size == 2)
+      assert(claimed.map(_.input.outPoint).toSet.size == 2)
+    }
+    {
+      // remote spends offered htlc output with revocation key
+      val Some(htlcOutputIndex) = commitTxOutputs.map(_.filter[OutHtlc]).zipWithIndex.collectFirst {
+        case (Some(co), outputIndex) if co.commitmentOutput.outgoingHtlc.add.id == htlc1.id => outputIndex
+      }
+      val Right(htlcPenaltyTx) = commitmentFormat match {
+        case SimpleTaprootChannelCommitmentFormat =>
+          val scriptTree = Taproot.offeredHtlcScriptTree(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, htlc1.paymentHash)
+          makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, localRevocationPriv.publicKey.xOnly, scriptTree, localDustLimit, finalPubKeyScript, feeratePerKw)
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+          val script = Script.write(Scripts.htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc1.paymentHash), commitmentFormat))
+          makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
+      }
+      val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, commitmentFormat)
+      val signed = addSigs(htlcPenaltyTx, sig, localRevocationPriv.publicKey)
+      assert(checkSpendable(signed).isSuccess)
+    }
+    {
+      // remote spends received htlc output with revocation key
+      for (htlc <- Seq(htlc2)) {
+        val Some(htlcOutputIndex) = commitTxOutputs.map(_.filter[InHtlc]).zipWithIndex.collectFirst {
+          case (Some(co), outputIndex) if co.commitmentOutput.incomingHtlc.add.id == htlc.id => outputIndex
+        }
+        val Right(htlcPenaltyTx) = commitmentFormat match {
+          case SimpleTaprootChannelCommitmentFormat =>
+            val scriptTree = Taproot.receivedHtlcScriptTree(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, htlc.paymentHash, htlc.cltvExpiry)
+            makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, localRevocationPriv.publicKey.xOnly, scriptTree, localDustLimit, finalPubKeyScript, feeratePerKw)
+          case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+            val script = Script.write(Scripts.htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc.paymentHash), htlc.cltvExpiry, commitmentFormat))
+            makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
+        }
+        val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, commitmentFormat)
+        val signed = addSigs(htlcPenaltyTx, sig, localRevocationPriv.publicKey)
+        assert(checkSpendable(signed).isSuccess)
+      }
+    }
+  }
+
+  test("generate valid commitment and htlc transactions (taproot - unit test for low-level helpers)") {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
     import fr.acinq.eclair.transactions.Scripts.Taproot
 
@@ -883,9 +1135,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         txOut = TxOut(25_000.sat, Taproot.htlcDelayed(localDelayedPaymentPriv.publicKey, toLocalDelay, localRevocationPriv.publicKey)) :: Nil,
         lockTime = 300)
       val scriptTree = Taproot.offeredHtlcScriptTree(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, paymentHash)
-      val sigHash = SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY
-      val localSig = Taproot.encodeSig(Transaction.signInputTaprootScriptPath(localHtlcPriv, tx, 0, Seq(commitTx.txOut(4)), sigHash, scriptTree.getLeft.hash()), sigHash)
-      val remoteSig = Taproot.encodeSig(Transaction.signInputTaprootScriptPath(remoteHtlcPriv, tx, 0, Seq(commitTx.txOut(4)), sigHash, scriptTree.getLeft.hash()), sigHash)
+      val localSig = Taproot.encodeSig(Transaction.signInputTaprootScriptPath(localHtlcPriv, tx, 0, Seq(commitTx.txOut(4)), SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY, scriptTree.getLeft.hash()), SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY)
+      val remoteSig = Taproot.encodeSig(Transaction.signInputTaprootScriptPath(remoteHtlcPriv, tx, 0, Seq(commitTx.txOut(4)), SigHash.SIGHASH_DEFAULT, scriptTree.getLeft.hash()), SigHash.SIGHASH_DEFAULT)
       val witness = Script.witnessScriptPathPay2tr(localRevocationPriv.xOnlyPublicKey(), scriptTree.getLeft.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(remoteSig, localSig)), scriptTree)
       tx.updateWitness(0, witness)
     }
@@ -1012,7 +1263,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val remotePaymentPriv = PrivateKey(hex"a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6")
     val localHtlcPriv = PrivateKey(hex"a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7")
     val remoteHtlcPriv = PrivateKey(hex"a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8")
-    val commitInput = Funding.makeFundingInputInfo(TxId.fromValidHex("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+    val commitInput = Funding.makeFundingInputInfo(TxId.fromValidHex("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, DefaultCommitmentFormat)
 
     // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
     // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
@@ -1072,7 +1323,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("find our output in closing tx") {
-    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, DefaultCommitmentFormat)
     val localPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
     val remotePubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
 
