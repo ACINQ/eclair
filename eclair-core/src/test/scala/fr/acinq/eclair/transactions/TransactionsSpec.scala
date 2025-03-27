@@ -25,6 +25,7 @@ import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{Multisig2of2Input, Musig2Input}
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions.AnchorOutputsCommitmentFormat.anchorAmount
@@ -555,6 +556,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           val commitTx = Transactions.addAggregatedSignature(txInfo, sig)
           val expectedCommitTxWeight = commitmentFormat.commitWeight + 5 * commitmentFormat.htlcOutputWeight
           assertWeightMatches(commitTx.tx.weight(), expectedCommitTxWeight, commitmentFormat)
+          val sharedInput = Musig2Input(InputInfo.TaprootInput(fundingTxOutpoint, fundingOutput, Taproot.musig2Aggregate(localFundingPriv.publicKey, remoteFundingPriv.publicKey), InputInfo.RedeemPath.KeyPath(None)), 0, remoteFundingPriv.publicKey, 0)
+          assertWitnessWeightMatches(commitTx.tx.txIn(0).witness, sharedInput.weight, commitmentFormat)
           commitTx
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
           val localSig = txInfo.sign(localFundingPriv, TxOwner.Local, commitmentFormat)
@@ -563,6 +566,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           val expectedCommitTxWeight = commitmentFormat.commitWeight + 5 * commitmentFormat.htlcOutputWeight
           // we cannot do exact matches because DER signature encoding is variable length
           assertWeightMatches(commitTx.tx.weight(), expectedCommitTxWeight, commitmentFormat)
+          val sharedInput = Multisig2of2Input(InputInfo.SegwitInput(fundingTxOutpoint, fundingOutput, Scripts.multiSig2of2(localFundingPriv.publicKey, remoteFundingPriv.publicKey)), 0, remoteFundingPriv.publicKey)
+          assertWitnessWeightMatches(commitTx.tx.txIn(0).witness, sharedInput.weight, commitmentFormat)
           commitTx
       }
       assert(checkSpendable(commitTx).isSuccess)

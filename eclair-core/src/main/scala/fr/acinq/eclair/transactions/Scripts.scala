@@ -490,14 +490,6 @@ object Scripts {
       // @formatter:on
     }
 
-    def isClaimHtlcTimeoutWitness(witness: ScriptWitness): Boolean = witness.stack match {
-      case sig :: script :: controlBlock :: Nil if sig.size == 64 && script.size == 41 && controlBlock.size == 65 => Script.parse(script) match {
-        case OP_PUSHDATA(x, _) :: OP_CHECKSIGVERIFY :: OP_1 :: OP_CHECKSEQUENCEVERIFY :: OP_VERIFY :: _ :: OP_CHECKLOCKTIMEVERIFY :: Nil if x.size == 32 => true
-        case _ => false
-      }
-      case _ => false
-    }
-
     /**
      * Script that can be spent when a received (incoming) HTLC is fulfilled.
      * It is spent using a pre-signed HTLC transaction signed with both keys and the preimage.
