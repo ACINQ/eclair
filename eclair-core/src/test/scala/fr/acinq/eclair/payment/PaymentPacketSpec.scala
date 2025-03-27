@@ -714,7 +714,7 @@ object PaymentPacketSpec {
     val localParams = LocalParams(null, null, null, Long.MaxValue.msat, Some(channelReserve), null, null, 0, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
     val remoteParams = RemoteParams(randomKey().publicKey, null, UInt64.MaxValue, Some(channelReserve), null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, None)
     val fundingTx = Transaction(2, Nil, Seq(TxOut(testCapacity, Nil)), 0)
-    val commitInput = InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, Nil)
+    val commitInput = InputInfo.SegwitInput(OutPoint(fundingTx, 0), fundingTx.txOut.head, Nil)
     val localCommit = LocalCommit(0, null, CommitTxAndRemoteSig(Transactions.CommitTx(commitInput, null), RemoteSignature.FullSignature(null)), Nil)
     val remoteCommit = RemoteCommit(0, null, null, randomKey().publicKey)
     val localChanges = LocalChanges(Nil, Nil, Nil)
