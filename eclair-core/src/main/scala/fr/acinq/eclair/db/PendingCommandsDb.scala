@@ -23,35 +23,30 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.protocol.{UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc, UpdateMessage}
 
 /**
- * This database stores CMD_FULFILL_HTLC and CMD_FAIL_HTLC that we have received from downstream
- * (either directly via UpdateFulfillHtlc or by extracting the value from the
- * blockchain).
+ * This database stores [[CMD_FULFILL_HTLC]], [[CMD_FAIL_HTLC]] and [[CMD_FAIL_MALFORMED_HTLC]] commands received from
+ * downstream (either directly via channel settlement like [[UpdateFulfillHtlc]] or [[UpdateFailHtlc]] or by extracting
+ * the preimage from the blockchain during a force-close).
  *
- * This means that this database is only used in the context of *relaying* payments.
+ * We must ensure that if a downstream channel is able to pull funds from us, we can always do the same from upstream,
+ * otherwise we lose money. Hence the need for persistence to handle all corner cases where we disconnect or restart
+ * before settling on the upstream channel.
  *
- * We need to be sure that if downstream is able to pull funds from us, we can always
- * do the same from upstream, otherwise we lose money. Hence the need for persistence
- * to handle all corner cases.
+ * Importantly, we must only store the *first* command received for a given upstream HTLC: if we first receive
+ * [[CMD_FULFILL_HTLC]] and then [[CMD_FAIL_HTLC]], the second command must be ignored. This should be implemented by
+ * using a primary key based on the (channel_id, htlc_id) pair and ignoring conflicting inserts.
  *
+ * Note: this database is only used in the context of *relaying* payments.
  */
 trait PendingCommandsDb {
-
+  // @formatter:off
   def addSettlementCommand(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit
-
   def removeSettlementCommand(channelId: ByteVector32, htlcId: Long): Unit
-
   def listSettlementCommands(channelId: ByteVector32): Seq[HtlcSettlementCommand]
-
   def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)]
-
+  // @formatter:on
 }
 
 object PendingCommandsDb {
-  /**
-   * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
-   * in a database because we don't want to lose preimages, or to forget to fail
-   * incoming htlcs, which would lead to unwanted channel closings.
-   */
   def safeSend(register: ActorRef, db: PendingCommandsDb, channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = {
     // htlc settlement commands don't have replyTo
     register ! Register.Forward(null, channelId, cmd)
@@ -65,17 +60,17 @@ object PendingCommandsDb {
 
   def ackSettlementCommands(db: PendingCommandsDb, updates: List[UpdateMessage])(implicit log: LoggingAdapter): Unit = updates.collect {
     case u: UpdateFulfillHtlc =>
-      log.debug(s"fulfill acked for htlcId=${u.id}")
+      log.debug("fulfill acked for htlcId={}", u.id)
       db.removeSettlementCommand(u.channelId, u.id)
     case u: UpdateFailHtlc =>
-      log.debug(s"fail acked for htlcId=${u.id}")
+      log.debug("fail acked for htlcId={}", u.id)
       db.removeSettlementCommand(u.channelId, u.id)
     case u: UpdateFailMalformedHtlc =>
-      log.debug(s"fail-malformed acked for htlcId=${u.id}")
+      log.debug("fail-malformed acked for htlcId={}", u.id)
       db.removeSettlementCommand(u.channelId, u.id)
   }
 
-  def getSettlementCommands(db: PendingCommandsDb, channelId: ByteVector32)(implicit log: LoggingAdapter): Seq[HtlcSettlementCommand] = {
+  def getSettlementCommands(db: PendingCommandsDb, channelId: ByteVector32): Seq[HtlcSettlementCommand] = {
     db.listSettlementCommands(channelId)
   }
 }

@@ -226,6 +226,9 @@ object Scripts {
     case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
   }
 
+  /** Extract payment preimages from a (potentially batched) 2nd-stage HTLC transaction's witnesses. */
+  def extractPreimagesFromHtlcSuccess(tx: Transaction): Set[ByteVector32] = tx.txIn.map(_.witness).collect(extractPreimageFromHtlcSuccess).toSet
+
   /**
    * If remote publishes its commit tx where there was a remote->local htlc, then local uses this script to
    * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
@@ -237,6 +240,9 @@ object Scripts {
   def extractPreimageFromClaimHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
     case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
   }
+
+  /** Extract payment preimages from a (potentially batched) claim HTLC transaction's witnesses. */
+  def extractPreimagesFromClaimHtlcSuccess(tx: Transaction): Set[ByteVector32] = tx.txIn.map(_.witness).collect(extractPreimageFromClaimHtlcSuccess).toSet
 
   def htlcReceived(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteVector, lockTime: CltvExpiry, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
@@ -274,22 +280,12 @@ object Scripts {
   def witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcOfferedScript: ByteVector, commitmentFormat: CommitmentFormat) =
     ScriptWitness(ByteVector.empty :: der(remoteSig, htlcRemoteSighash(commitmentFormat)) :: der(localSig) :: ByteVector.empty :: htlcOfferedScript :: Nil)
 
-  /** Extract the payment hash from a 2nd-stage HTLC Timeout transaction's witness script */
-  def extractPaymentHashFromHtlcTimeout: PartialFunction[ScriptWitness, ByteVector] = {
-    case ScriptWitness(Seq(ByteVector.empty, _, _, ByteVector.empty, htlcOfferedScript)) => htlcOfferedScript.slice(109, 109 + 20)
-  }
-
   /**
    * If remote publishes its commit tx where there was a local->remote htlc, then local uses this script to
    * claim its funds after timeout (consumes htlcReceived script from commit tx)
    */
   def witnessClaimHtlcTimeoutFromCommitTx(localSig: ByteVector64, htlcReceivedScript: ByteVector) =
     ScriptWitness(der(localSig) :: ByteVector.empty :: htlcReceivedScript :: Nil)
-
-  /** Extract the payment hash from a timed-out received htlc. */
-  def extractPaymentHashFromClaimHtlcTimeout: PartialFunction[ScriptWitness, ByteVector] = {
-    case ScriptWitness(Seq(_, ByteVector.empty, htlcReceivedScript)) => htlcReceivedScript.slice(69, 69 + 20)
-  }
 
   /**
    * This witness script spends (steals) a [[htlcOffered]] or [[htlcReceived]] output using a revocation key as a punishment
@@ -350,7 +346,7 @@ object Scripts {
      * miniscript: this is not miniscript compatible
      *
      * @param localDelayedPaymentPubkey local delayed key
-     * @param revocationPubkey revocation key
+     * @param revocationPubkey          revocation key
      * @return a script that will be used to add a "revocation" leaf to a script tree
      */
     private def toRevocationKey(localDelayedPaymentPubkey: PublicKey, revocationPubkey: PublicKey): Seq[ScriptElt] = {

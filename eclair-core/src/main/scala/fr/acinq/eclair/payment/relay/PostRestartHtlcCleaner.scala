@@ -28,7 +28,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
-import fr.acinq.eclair.wire.protocol.{FailureMessage, FailureReason, InvalidOnionBlinding, TemporaryNodeFailure, UpdateAddHtlc}
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CustomCommitmentsPlugin, Feature, Features, Logs, MilliSatoshiLong, NodeParams, TimestampMilli}
 
 import scala.concurrent.Promise
@@ -407,7 +407,7 @@ object PostRestartHtlcCleaner {
     val htlcsOut = channels
       .collect { case c: ChannelDataWithCommitments => c }
       .flatMap { c =>
-        // Filter out HTLCs that will never reach the blockchain or have already been timed-out on-chain.
+        // Filter out HTLCs that will never reach the blockchain or have already been settled on-chain.
         val htlcsToIgnore: Set[Long] = c match {
           case d: DATA_CLOSING =>
             val closingType_opt = Closing.isClosingTypeAlreadyKnown(d)
@@ -415,23 +415,27 @@ object PostRestartHtlcCleaner {
               case Some(c: Closing.LocalClose) => Closing.overriddenOutgoingHtlcs(d, c.localCommitPublished.commitTx)
               case Some(c: Closing.RemoteClose) => Closing.overriddenOutgoingHtlcs(d, c.remoteCommitPublished.commitTx)
               case Some(c: Closing.RevokedClose) => Closing.overriddenOutgoingHtlcs(d, c.revokedCommitPublished.commitTx)
-              case _ => Set.empty[UpdateAddHtlc]
+              case Some(c: Closing.RecoveryClose) => Closing.overriddenOutgoingHtlcs(d, c.remoteCommitPublished.commitTx)
+              case Some(_: Closing.MutualClose) => Set.empty[UpdateAddHtlc]
+              case None => Set.empty[UpdateAddHtlc]
             }).map(_.id)
-            val irrevocablySpent = closingType_opt match {
-              case Some(c: Closing.LocalClose) => c.localCommitPublished.irrevocablySpent.values.toSeq
-              case Some(c: Closing.RemoteClose) => c.remoteCommitPublished.irrevocablySpent.values.toSeq
-              case Some(c: Closing.RevokedClose) => c.revokedCommitPublished.irrevocablySpent.values.toSeq
-              case _ => Nil
+            val confirmedTxs = closingType_opt match {
+              case Some(c: Closing.LocalClose) => c.localCommitPublished.irrevocablySpent.values.toSet
+              case Some(c: Closing.RemoteClose) => c.remoteCommitPublished.irrevocablySpent.values.toSet
+              case Some(c: Closing.RevokedClose) => c.revokedCommitPublished.irrevocablySpent.values.toSet
+              case Some(c: Closing.RecoveryClose) => c.remoteCommitPublished.irrevocablySpent.values.toSet
+              case Some(_: Closing.MutualClose) => Set.empty
+              case None => Set.empty
             }
+            val params = d.commitments.params
             val timedOutHtlcs: Set[Long] = (closingType_opt match {
-              case Some(c: Closing.LocalClose) =>
-                val confirmedTxs = c.localCommitPublished.commitTx +: irrevocablySpent.filter(tx => Closing.isHtlcTimeout(tx, c.localCommitPublished))
-                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.params.localParams.dustLimit, tx))
-              case Some(c: Closing.RemoteClose) =>
-                val confirmedTxs = c.remoteCommitPublished.commitTx +: irrevocablySpent.filter(tx => Closing.isClaimHtlcTimeout(tx, c.remoteCommitPublished))
-                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.params.remoteParams.dustLimit, tx))
-              case _ => Seq.empty[UpdateAddHtlc]
-            }).map(_.id).toSet
+              case Some(c: Closing.LocalClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(params.commitmentFormat, c.localCommit, c.localCommitPublished, params.localParams.dustLimit, tx))
+              case Some(c: Closing.RemoteClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(params.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, params.remoteParams.dustLimit, tx))
+              case Some(_: Closing.RevokedClose) => Set.empty // revoked commitments are handled using [[overriddenOutgoingHtlcs]] above
+              case Some(_: Closing.RecoveryClose) => Set.empty // we lose htlc outputs in dataloss protection scenarios (future remote commit)
+              case Some(_: Closing.MutualClose) => Set.empty
+              case None => Set.empty
+            }).map(_.id)
             overriddenHtlcs ++ timedOutHtlcs
           case _ => Set.empty
         }
