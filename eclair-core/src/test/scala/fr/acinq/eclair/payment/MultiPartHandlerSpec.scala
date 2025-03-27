@@ -61,7 +61,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   val featuresWithMpp = Features[Feature](
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
-    BasicMultiPartPayment -> Optional
+    BasicMultiPartPayment -> Optional,
+    TrampolinePayment -> Optional,
   )
 
   val featuresWithKeySend = Features[Feature](
@@ -74,6 +75,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
+    TrampolinePayment -> Optional,
     RouteBlinding -> Optional,
   )
 
@@ -234,32 +236,25 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val sender = TestProbe()
 
     {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = false, features = featuresWithoutMpp), TestProbe().ref, TestProbe().ref))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(features = featuresWithoutMpp), TestProbe().ref, TestProbe().ref))
       sender.send(handler, ReceiveStandardPayment(sender.ref, Some(42 msat), Left("1 coffee")))
       val invoice = sender.expectMsgType[Bolt11Invoice]
       assert(!invoice.features.hasFeature(BasicMultiPartPayment))
-      assert(!invoice.features.hasFeature(TrampolinePaymentPrototype))
+      assert(!invoice.features.hasFeature(TrampolinePayment))
     }
     {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = false, features = featuresWithMpp), TestProbe().ref, TestProbe().ref))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(features = featuresWithMpp.remove(TrampolinePayment)), TestProbe().ref, TestProbe().ref))
       sender.send(handler, ReceiveStandardPayment(sender.ref, Some(42 msat), Left("1 coffee")))
       val invoice = sender.expectMsgType[Bolt11Invoice]
       assert(invoice.features.hasFeature(BasicMultiPartPayment))
-      assert(!invoice.features.hasFeature(TrampolinePaymentPrototype))
+      assert(!invoice.features.hasFeature(TrampolinePayment))
     }
     {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = true, features = featuresWithoutMpp), TestProbe().ref, TestProbe().ref))
-      sender.send(handler, ReceiveStandardPayment(sender.ref, Some(42 msat), Left("1 coffee")))
-      val invoice = sender.expectMsgType[Bolt11Invoice]
-      assert(!invoice.features.hasFeature(BasicMultiPartPayment))
-      assert(invoice.features.hasFeature(TrampolinePaymentPrototype))
-    }
-    {
-      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(enableTrampolinePayment = true, features = featuresWithMpp), TestProbe().ref, TestProbe().ref))
+      val handler = TestActorRef[PaymentHandler](PaymentHandler.props(Alice.nodeParams.copy(features = featuresWithMpp), TestProbe().ref, TestProbe().ref))
       sender.send(handler, ReceiveStandardPayment(sender.ref, Some(42 msat), Left("1 coffee")))
       val invoice = sender.expectMsgType[Bolt11Invoice]
       assert(invoice.features.hasFeature(BasicMultiPartPayment))
-      assert(invoice.features.hasFeature(TrampolinePaymentPrototype))
+      assert(invoice.features.hasFeature(TrampolinePayment))
     }
   }
 
@@ -436,6 +431,22 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, FinalPayload.Standard.createPayload(add.amountMsat, 1000 msat, add.cltvExpiry, invoice.paymentSecret.reverse, invoice.paymentMetadata)))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
+  }
+
+  test("PaymentHandler should reject incoming trampoline payment with invalid payment secret") { f =>
+    import f._
+
+    sender.send(handlerWithMpp, ReceiveStandardPayment(sender.ref, Some(1000 msat), Left("trampoline invalid payment secret")))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
+    assert(invoice.features.hasFeature(TrampolinePayment))
+
+    // Invalid payment secret.
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None, 1.0, None)
+    val trampolineOnion = TestConstants.emptyOnionPacket
+    sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, FinalPayload.Standard.createPayload(add.amountMsat, 1000 msat, add.cltvExpiry, invoice.paymentSecret.reverse, invoice.paymentMetadata, trampolineOnion_opt = Some(trampolineOnion))))
+    val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
+    assert(cmd.reason == FailureReason.LocalTrampolineFailure(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
     assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
   }
 
