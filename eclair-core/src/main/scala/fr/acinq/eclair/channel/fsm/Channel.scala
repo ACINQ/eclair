@@ -2002,7 +2002,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           } else {
             // Our counterparty is trying to broadcast a revoked commit tx (cheating attempt).
             // We need to fail pending outgoing HTLCs, otherwise they will timeout upstream.
-            // We must do it here because since we're overwriting the commitments data, we will lose all information
+            // We must do it here because we're overwriting the commitments data, so we will lose all information
             // about HTLCs that are in the current commitments but were not in the revoked one.
             // We fail *all* outgoing HTLCs:
             //  - those that are not in the revoked commitment will never settle on-chain

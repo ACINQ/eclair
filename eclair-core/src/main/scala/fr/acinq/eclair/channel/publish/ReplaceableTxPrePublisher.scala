@@ -130,7 +130,6 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     // We verify that:
     //  - our commit is not confirmed (if it is, no need to claim our anchor)
     //  - their commit is not confirmed (if it is, no need to claim our anchor either)
-    //  - the local or remote commit tx is in the mempool (otherwise we can't claim our anchor)
     val fundingOutpoint = cmd.commitment.commitInput.outPoint
     context.pipeToSelf(bitcoinClient.getTxConfirmations(fundingOutpoint.txid).flatMap {
       case Some(_) =>
@@ -143,13 +142,12 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
             // have any CSV delays and don't need 2nd-stage HTLC transactions).
             getRemoteCommitConfirmations(cmd.commitment).flatMap {
               case Some(_) => Future.failed(RemoteCommitTxPublished)
-              // Otherwise, we must ensure our local commit tx is in the mempool before publishing the anchor transaction.
-              // If it's already published, this call will be a no-op.
-              case None => bitcoinClient.publishTransaction(cmd.commitTx)
+              // We're trying to bump the local commit tx: no need to do anything, we will publish it alongside the anchor transaction.
+              case None => Future.successful(cmd.commitTx.txid)
             }
           case true =>
-            // We're trying to bump a remote commitment: we must make sure it is in our mempool first.
-            bitcoinClient.publishTransaction(cmd.commitTx)
+            // We're trying to bump a remote commitment: no need to do anything, we will publish it alongside the anchor transaction.
+            Future.successful(cmd.commitTx.txid)
         }
       case None =>
         // If the funding transaction cannot be found (e.g. when using 0-conf), we should retry later.

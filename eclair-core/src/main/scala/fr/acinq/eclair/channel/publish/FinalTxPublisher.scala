@@ -113,7 +113,7 @@ private class FinalTxPublisher(nodeParams: NodeParams,
 
   def publish(): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), "mempool-tx-monitor")
-    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, cmd.input, nodeParams.channelConf.minDepth, cmd.desc, cmd.fee)
+    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, None, cmd.input, nodeParams.channelConf.minDepth, cmd.desc, cmd.fee)
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(txResult) =>
         txResult match {

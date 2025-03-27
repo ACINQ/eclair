@@ -179,7 +179,12 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
               case ConfirmationTarget.Priority(priority) => log.debug("publishing {} with priority {}", cmd.desc, priority)
             }
             val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), s"mempool-tx-monitor-${tx.signedTx.txid}")
-            txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, nodeParams.channelConf.minDepth, cmd.desc, tx.fee)
+            val parentTx_opt = cmd.txInfo match {
+              // Anchor output transactions are packaged with the corresponding commitment transaction.
+              case _: Transactions.ClaimAnchorOutputTx => Some(cmd.commitTx)
+              case _ => None
+            }
+            txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, parentTx_opt, cmd.input, nodeParams.channelConf.minDepth, cmd.desc, tx.fee)
             wait(tx)
           case ReplaceableTxFunder.FundingFailed(reason) => sendResult(TxPublisher.TxRejected(txPublishContext.id, cmd, reason), None)
         }
@@ -287,7 +292,12 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   // situation where we have one transaction in the mempool and wait for it to confirm.
   def publishReplacement(previousTx: FundedTx, bumpedTx: FundedTx): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), s"mempool-tx-monitor-${bumpedTx.signedTx.txid}")
-    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), bumpedTx.signedTx, cmd.input, nodeParams.channelConf.minDepth, cmd.desc, bumpedTx.fee)
+    val parentTx_opt = cmd.txInfo match {
+      // Anchor output transactions are packaged with the corresponding commitment transaction.
+      case _: Transactions.ClaimAnchorOutputTx => Some(cmd.commitTx)
+      case _ => None
+    }
+    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), bumpedTx.signedTx, parentTx_opt, cmd.input, nodeParams.channelConf.minDepth, cmd.desc, bumpedTx.fee)
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(txResult) =>
         txResult match {

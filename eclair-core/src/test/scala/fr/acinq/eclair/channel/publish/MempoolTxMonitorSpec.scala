@@ -79,7 +79,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     import f._
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 1_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, 3, "test-tx", 50 sat)
+    monitor ! Publish(probe.ref, tx, Some(parentTx), tx.txIn.head.outPoint, 3, "test-tx", 50 sat)
     assert(eventListener.expectMsgType[TransactionPublished].tx == tx)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
 
@@ -97,7 +97,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     generateBlocks(1)
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 1_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, 6, "test-tx", 50 sat)
+    monitor ! Publish(probe.ref, tx, None, tx.txIn.head.outPoint, 6, "test-tx", 50 sat)
     assert(eventListener.expectMsgType[TransactionPublished].tx == tx)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
 
@@ -130,7 +130,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     probe.expectMsg(tx1.txid)
 
     val tx2 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 10_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx2, tx2.txIn.head.outPoint, 3, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, tx2, None, tx2.txIn.head.outPoint, 3, "test-tx", 10 sat)
     waitTxInMempool(bitcoinClient, tx2.txid, probe)
 
     generateBlocks(3)
@@ -147,7 +147,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     probe.expectMsg(tx1.txid)
 
     val tx2 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 7_500 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx2, tx2.txIn.head.outPoint, 3, "test-tx", 25 sat)
+    monitor ! Publish(probe.ref, tx2, Some(parentTx), tx2.txIn.head.outPoint, 3, "test-tx", 25 sat)
     probe.expectMsg(TxRejected(tx2.txid, ConflictingTxUnconfirmed))
   }
 
@@ -161,7 +161,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     generateBlocks(1)
 
     val tx2 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 15_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx2, tx2.txIn.head.outPoint, 3, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, tx2, None, tx2.txIn.head.outPoint, 3, "test-tx", 10 sat)
     probe.expectMsg(TxRejected(tx2.txid, ConflictingTxConfirmed))
   }
 
@@ -171,7 +171,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
     val txUnknownInput = tx.copy(txIn = tx.txIn ++ Seq(TxIn(OutPoint(randomTxId(), 13), Nil, 0)))
-    monitor ! Publish(probe.ref, txUnknownInput, txUnknownInput.txIn.head.outPoint, 3, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, txUnknownInput, None, txUnknownInput.txIn.head.outPoint, 3, "test-tx", 10 sat)
     probe.expectMsg(TxRejected(txUnknownInput.txid, InputGone))
   }
 
@@ -184,7 +184,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
     val txUnknownInput = tx.copy(txIn = tx.txIn ++ Seq(TxIn(OutPoint(randomTxId(), 13), Nil, 0)))
-    monitor ! Publish(probe.ref, txUnknownInput, txUnknownInput.txIn.head.outPoint, 3, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, txUnknownInput, None, txUnknownInput.txIn.head.outPoint, 3, "test-tx", 10 sat)
     probe.expectMsg(TxRejected(txUnknownInput.txid, InputGone))
   }
 
@@ -199,7 +199,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     generateBlocks(1) // we ensure the wallet input is already spent by a confirmed transaction
 
     val tx = createSpendManyP2WPKH(Seq(parentTx, walletTx), priv, priv.publicKey, 5_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, 3, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, tx, None, tx.txIn.head.outPoint, 3, "test-tx", 10 sat)
     probe.expectMsg(TxRejected(tx.txid, InputGone))
   }
 
@@ -208,7 +208,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     import f._
 
     val tx1 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx1, tx1.txIn.head.outPoint, 3, "test-tx", 0 sat)
+    monitor ! Publish(probe.ref, tx1, Some(parentTx), tx1.txIn.head.outPoint, 3, "test-tx", 0 sat)
     waitTxInMempool(bitcoinClient, tx1.txid, probe)
 
     val tx2 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 15_000 sat, 0, 0)
@@ -225,7 +225,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     import f._
 
     val tx1 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx1, tx1.txIn.head.outPoint, 3, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, tx1, Some(parentTx), tx1.txIn.head.outPoint, 3, "test-tx", 10 sat)
     waitTxInMempool(bitcoinClient, tx1.txid, probe)
 
     val tx2 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 15_000 sat, 0, 0)
@@ -248,7 +248,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     probe.expectMsg(walletTx.txid)
 
     val tx = createSpendManyP2WPKH(Seq(parentTx, walletTx), priv, priv.publicKey, 1_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, 3, "test-tx", 10 sat)
+    monitor ! Publish(probe.ref, tx, None, tx.txIn.head.outPoint, 3, "test-tx", 10 sat)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
 
     // A transaction replaces our unconfirmed wallet input.
@@ -270,7 +270,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     generateBlocks(1)
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 1_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, 2, "test-tx", 15 sat)
+    monitor ! Publish(probe.ref, tx, None, tx.txIn.head.outPoint, 2, "test-tx", 15 sat)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
     val txPublished = eventListener.expectMsgType[TransactionPublished]
     assert(txPublished.tx == tx)
