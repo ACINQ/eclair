@@ -20,7 +20,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.psbt.Psbt
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
@@ -32,7 +32,6 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{NodeParams, NotificationsLogger}
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.jdk.CollectionConverters.ListHasAsScala
 import scala.util.{Failure, Success}
 
 /**
@@ -50,14 +49,14 @@ object ReplaceableTxFunder {
   sealed trait Command
   case class FundTransaction(replyTo: ActorRef[FundingResult], cmd: TxPublisher.PublishReplaceableTx, tx: Either[FundedTx, ReplaceableTxWithWitnessData], targetFeerate: FeeratePerKw) extends Command
 
-  private case class AddInputsOk(tx: ReplaceableTxWithWitnessData, totalAmountIn: Satoshi, walletUtxos: Seq[TxOut]) extends Command
+  private case class AddInputsOk(tx: ReplaceableTxWithWitnessData, totalAmountIn: Satoshi, walletUtxos: Map[OutPoint, TxOut]) extends Command
   private case class AddInputsFailed(reason: Throwable) extends Command
   private case class SignWalletInputsOk(signedTx: Transaction) extends Command
   private case class SignWalletInputsFailed(reason: Throwable) extends Command
   private case object UtxosUnlocked extends Command
   // @formatter:on
 
-  case class FundedTx(signedTxWithWitnessData: ReplaceableTxWithWitnessData, totalAmountIn: Satoshi, feerate: FeeratePerKw) {
+  case class FundedTx(signedTxWithWitnessData: ReplaceableTxWithWitnessData, totalAmountIn: Satoshi, feerate: FeeratePerKw, walletInputs: Map[OutPoint, TxOut]) {
     require(signedTxWithWitnessData.txInfo.tx.txIn.nonEmpty, "funded transaction must have inputs")
     require(signedTxWithWitnessData.txInfo.tx.txOut.nonEmpty, "funded transaction must have outputs")
     val signedTx: Transaction = signedTxWithWitnessData.txInfo.tx
@@ -249,7 +248,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
         val htlcFeerate = cmd.commitment.localCommit.spec.htlcTxFeerate(cmd.commitment.params.commitmentFormat)
         if (targetFeerate <= htlcFeerate) {
           log.debug("publishing {} without adding inputs: txid={}", cmd.desc, htlcTx.txInfo.tx.txid)
-          sign(txWithWitnessData, htlcFeerate, htlcTx.txInfo.amountIn, Nil)
+          sign(txWithWitnessData, htlcFeerate, htlcTx.txInfo.amountIn, Map.empty)
         } else {
           addWalletInputs(htlcTx, targetFeerate)
         }
@@ -261,7 +260,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
             replyTo ! FundingFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
             Behaviors.stopped
           case Right(updatedClaimHtlcTx) =>
-            sign(updatedClaimHtlcTx, targetFeerate, updatedClaimHtlcTx.txInfo.amountIn, Nil)
+            sign(updatedClaimHtlcTx, targetFeerate, updatedClaimHtlcTx.txInfo.amountIn, Map.empty)
         }
     }
   }
@@ -275,7 +274,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
         Behaviors.stopped
       case AdjustPreviousTxOutputResult.TxOutputAdjusted(updatedTx) =>
         log.debug("bumping {} fees without adding new inputs: txid={}", cmd.desc, updatedTx.txInfo.tx.txid)
-        sign(updatedTx, targetFeerate, previousTx.totalAmountIn, Nil)
+        sign(updatedTx, targetFeerate, previousTx.totalAmountIn, Map.empty)
       case AdjustPreviousTxOutputResult.AddWalletInputs(tx) =>
         log.debug("bumping {} fees requires adding new inputs (feerate={})", cmd.desc, targetFeerate)
         // We restore the original transaction (remove previous attempt's wallet inputs).
@@ -310,20 +309,13 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     }
   }
 
-  private def sign(fundedTx: ReplaceableTxWithWitnessData, txFeerate: FeeratePerKw, amountIn: Satoshi, walletUtxos: Seq[TxOut]): Behavior[Command] = {
+  private def sign(fundedTx: ReplaceableTxWithWitnessData, txFeerate: FeeratePerKw, amountIn: Satoshi, walletUtxos: Map[OutPoint, TxOut]): Behavior[Command] = {
     val channelKeyPath = keyManager.keyPath(cmd.commitment.localParams, cmd.commitment.params.channelConfig)
     fundedTx match {
       case claimAnchorTx: ClaimLocalAnchorWithWitnessData =>
-        log.info(s"signing ${claimAnchorTx.txInfo.tx} with wallet utxos $walletUtxos")
-        val localSig = fundedTx.txInfo.input match {
-          case _: InputInfo.SegwitInput =>
-            keyManager.sign(claimAnchorTx.txInfo, keyManager.fundingPublicKey(cmd.commitment.localParams.fundingKeyPath, cmd.commitment.fundingTxIndex), TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
-          case _: InputInfo.TaprootInput =>
-            val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitment.localCommit.index)
-            keyManager.sign(claimAnchorTx.txInfo, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
-        }
+        val localSig = keyManager.sign(claimAnchorTx.txInfo, keyManager.fundingPublicKey(cmd.commitment.localParams.fundingKeyPath, cmd.commitment.fundingTxIndex), TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
         val signedTx = claimAnchorTx.copy(txInfo = addSigs(claimAnchorTx.txInfo, localSig))
-        signWalletInputs(signedTx, txFeerate, amountIn)
+        signWalletInputs(signedTx, txFeerate, amountIn, walletUtxos)
       case htlcTx: HtlcWithWitnessData =>
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitment.localCommit.index)
         val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
@@ -334,9 +326,9 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
         }
         val hasWalletInputs = htlcTx.txInfo.tx.txIn.size > 1
         if (hasWalletInputs) {
-          signWalletInputs(signedTx, txFeerate, amountIn)
+          signWalletInputs(signedTx, txFeerate, amountIn, walletUtxos)
         } else {
-          replyTo ! TransactionReady(FundedTx(signedTx, amountIn, txFeerate))
+          replyTo ! TransactionReady(FundedTx(signedTx, amountIn, txFeerate, walletUtxos))
           Behaviors.stopped
         }
       case claimHtlcTx: ClaimHtlcWithWitnessData =>
@@ -350,12 +342,12 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
           case legacyClaimHtlcSuccess: LegacyClaimHtlcSuccessWithWitnessData => legacyClaimHtlcSuccess
           case claimTimeout: ClaimHtlcTimeoutWithWitnessData => claimTimeout.copy(txInfo = addSigs(claimTimeout.txInfo, sig))
         }
-        replyTo ! TransactionReady(FundedTx(signedTx, amountIn, txFeerate))
+        replyTo ! TransactionReady(FundedTx(signedTx, amountIn, txFeerate, walletUtxos))
         Behaviors.stopped
     }
   }
 
-  private def signWalletInputs(locallySignedTx: ReplaceableTxWithWalletInputs, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
+  private def signWalletInputs(locallySignedTx: ReplaceableTxWithWalletInputs, txFeerate: FeeratePerKw, amountIn: Satoshi, walletUtxos: Map[OutPoint, TxOut]): Behavior[Command] = {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
     // We create a PSBT with the non-wallet input already signed:
@@ -363,10 +355,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
       case InputInfo.SegwitInput(_, _, redeemScript) => fr.acinq.bitcoin.Script.parse(redeemScript)
       case _: InputInfo.TaprootInput => null
     }
-    val sigHash = locallySignedTx.txInfo.input match {
-      case _: InputInfo.TaprootInput => fr.acinq.bitcoin.SigHash.SIGHASH_DEFAULT
-      case _: InputInfo.SegwitInput => fr.acinq.bitcoin.SigHash.SIGHASH_ALL
-    }
+    val sigHash = locallySignedTx.txInfo.sighash(TxOwner.Local, cmd.commitment.params.commitmentFormat)
     val psbt = new Psbt(locallySignedTx.txInfo.tx)
       .updateWitnessInput(
         locallySignedTx.txInfo.input.outPoint,
@@ -414,7 +403,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
         Behaviors.receiveMessagePartial {
           case SignWalletInputsOk(signedTx) =>
             val fullySignedTx = locallySignedTx.updateTx(signedTx)
-            replyTo ! TransactionReady(FundedTx(fullySignedTx, amountIn, txFeerate))
+            replyTo ! TransactionReady(FundedTx(fullySignedTx, amountIn, txFeerate, walletUtxos))
             Behaviors.stopped
           case SignWalletInputsFailed(reason) =>
             log.error(s"cannot sign ${cmd.desc}: ", reason)
@@ -437,15 +426,20 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     }
   }
 
-  private def addInputs(tx: ReplaceableTxWithWalletInputs, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(ReplaceableTxWithWalletInputs, Satoshi, Seq[TxOut])] = {
-    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+  private def addInputs(tx: ReplaceableTxWithWalletInputs, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(ReplaceableTxWithWalletInputs, Satoshi, Map[OutPoint, TxOut])] = {
 
-    def getWalletUtxos(txInfo: TransactionWithInputInfo): Future[Seq[TxOut]] = {
-      val psbt = new Psbt(txInfo.tx)
-      bitcoinClient.utxoUpdatePsbt(psbt).map(updatedPsbt => {
-        // we skip the first spent (it's the one from txInfo.input), additional inputs are wallet inputs and have been updated by bitcoin core
-        updatedPsbt.inputs.asScala.tail.map(_.getWitnessUtxo).map(kmp2scala).toSeq
-      })
+    def getWalletUtxos(txInfo: TransactionWithInputInfo): Future[Map[OutPoint, TxOut]] = {
+      val inputs = txInfo.tx.txIn.filterNot(_.outPoint == txInfo.input.outPoint)
+      val txids = inputs.map(_.outPoint.txid).toSet
+      for {
+        txs <- Future.sequence(txids.toSeq.map(bitcoinClient.getTransaction))
+        txMap = txs.map(tx => tx.txid -> tx).toMap
+      } yield {
+        inputs.map(_.outPoint).map(outPoint => {
+          require(txMap.contains(outPoint.txid) && txMap(outPoint.txid).txOut.size >= outPoint.index, s"missing wallet input $outPoint")
+          outPoint -> txMap(outPoint.txid).txOut(outPoint.index.toInt)
+        }).toMap
+      }
     }
 
     tx match {

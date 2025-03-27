@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey, ripemd160}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.bitcoin.{ScriptFlags, ScriptTree, SigHash}
+import fr.acinq.bitcoin.{ScriptFlags, ScriptTree}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.transactions.CommitmentOutput._
@@ -131,11 +131,11 @@ object Transactions {
     /** Sighash flags to use when signing the transaction. */
     def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = SIGHASH_ALL
 
-    def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Seq[TxOut]): ByteVector64 = {
+    def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
       sign(key, sighash(txOwner, commitmentFormat), extraUtxos)
     }
 
-    def sign(key: PrivateKey, sighashType: Int, extraUtxos: Seq[TxOut]): ByteVector64 = input match {
+    def sign(key: PrivateKey, sighashType: Int, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = input match {
       case _: InputInfo.TaprootInput => ByteVector64.Zeroes
       case InputInfo.SegwitInput(outPoint, txOut, redeemScript) =>
         // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
@@ -201,15 +201,7 @@ object Transactions {
   case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, confirmationTarget: ConfirmationTarget.Absolute) extends ClaimHtlcTx { override def desc: String = "claim-htlc-success" }
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long, confirmationTarget: ConfirmationTarget.Absolute) extends ClaimHtlcTx { override def desc: String = "claim-htlc-timeout" }
   sealed trait ClaimAnchorOutputTx extends TransactionWithInputInfo
-  case class ClaimLocalAnchorOutputTx(input: InputInfo, tx: Transaction, confirmationTarget: ConfirmationTarget) extends ClaimAnchorOutputTx with ReplaceableTransactionWithInputInfo {
-    override def desc: String = "local-anchor"
-    override def sign(key:  PrivateKey, sighashType:  Int, extraUtxos:  Seq[TxOut]): ByteVector64 = input match { // README: this will be updated with a better type hierarchy for taproot inputs
-        case _: InputInfo.SegwitInput =>
-          super.sign(key, sighashType, extraUtxos)
-        case t: InputInfo.TaprootInput =>
-          Transaction.signInputTaprootKeyPath(key, tx, 0, input.txOut +: extraUtxos, sighashType, t.scriptTree_opt)
-      }
-  }
+  case class ClaimLocalAnchorOutputTx(input: InputInfo, tx: Transaction, confirmationTarget: ConfirmationTarget) extends ClaimAnchorOutputTx with ReplaceableTransactionWithInputInfo { override def desc: String = "local-anchor" }
   case class ClaimRemoteAnchorOutputTx(input: InputInfo, tx: Transaction) extends ClaimAnchorOutputTx { override def desc: String = "remote-anchor" }
   sealed trait ClaimRemoteCommitMainOutputTx extends TransactionWithInputInfo
   case class ClaimP2WPKHOutputTx(input: InputInfo, tx: Transaction) extends ClaimRemoteCommitMainOutputTx { override def desc: String = "remote-main" }

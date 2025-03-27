@@ -49,7 +49,7 @@ trait SpendFromChannelAddress {
         localFundingPubkey,
         TxOwner.Local, // unused
         DefaultCommitmentFormat, // unused
-        Nil
+        Map.empty
       )
       witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey.publicKey, remoteFundingPubkey)
       signedTx = unsignedTx.updateWitness(0, witness)
