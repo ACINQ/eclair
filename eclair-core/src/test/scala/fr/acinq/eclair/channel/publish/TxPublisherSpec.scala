@@ -38,9 +38,7 @@ import scala.concurrent.duration.DurationInt
 class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
   case class FixtureParam(nodeParams: NodeParams, txPublisher: ActorRef[TxPublisher.Command], factory: TestProbe, probe: TestProbe)
-
-  private def randomScript = Script.write(Script.pay2wpkh(randomKey().publicKey))
-
+  
   override def withFixture(test: OneArgTest): Outcome = {
     within(max = 30 seconds) {
       val nodeParams = TestConstants.Alice.nodeParams
