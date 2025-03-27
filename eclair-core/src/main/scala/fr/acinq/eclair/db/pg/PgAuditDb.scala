@@ -36,7 +36,7 @@ import javax.sql.DataSource
 
 object PgAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 12
+  val CURRENT_VERSION = 13
 }
 
 class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
@@ -114,6 +114,10 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON audit.transactions_published(channel_id)")
       }
 
+      def migration1213(statement: Statement): Unit = {
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_channel_id_idx ON audit.relayed(channel_id)")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA audit")
@@ -135,6 +139,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON audit.relayed(payment_hash)")
           statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON audit.relayed_trampoline(timestamp)")
           statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON audit.relayed_trampoline(payment_hash)")
+          statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON audit.relayed(channel_id)")
           statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON audit.channel_events(timestamp)")
           statement.executeUpdate("CREATE INDEX channel_errors_timestamp_idx ON audit.channel_errors(timestamp)")
           statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON audit.channel_updates(channel_id)")
@@ -149,7 +154,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON audit.transactions_published(channel_id)")
           statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
           statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
-        case Some(v@(4 | 5 | 6 | 7 | 8 | 9 | 10 | 11)) =>
+        case Some(v@(4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 5) {
             migration45(statement)
@@ -174,6 +179,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           }
           if (v < 12) {
             migration1112(statement)
+          }
+          if (v < 13) {
+            migration1213(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
