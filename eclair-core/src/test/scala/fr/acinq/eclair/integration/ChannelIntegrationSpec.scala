@@ -441,17 +441,17 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val localPerCommitmentPointF = keyManagerF.commitmentPoint(channelKeyPathF, commitmentsF.localCommitIndex)
     val revokedCommitTx = {
       val commitTx = localCommitF.commitTxAndRemoteSig.commitTx
-      val localSig = keyManagerF.sign(commitTx, keyManagerF.fundingPublicKey(commitmentsF.params.localParams.fundingKeyPath, commitmentsF.latest.fundingTxIndex), TxOwner.Local, commitmentFormat, Nil)
+      val localSig = keyManagerF.sign(commitTx, keyManagerF.fundingPublicKey(commitmentsF.params.localParams.fundingKeyPath, commitmentsF.latest.fundingTxIndex), TxOwner.Local, commitmentFormat, Map.empty)
       val RemoteSignature.FullSignature(remoteSig) = localCommitF.commitTxAndRemoteSig.remoteSig
       Transactions.addSigs(commitTx, keyManagerF.fundingPublicKey(commitmentsF.params.localParams.fundingKeyPath, commitmentsF.latest.fundingTxIndex).publicKey, commitmentsF.latest.remoteFundingPubKey, localSig, remoteSig).tx
     }
     val htlcSuccess = htlcSuccessTxs.zip(Seq(preimage1, preimage2)).map {
       case (htlcTxAndSigs, preimage) =>
-        val localSig = keyManagerF.sign(htlcTxAndSigs.htlcTx, keyManagerF.htlcPoint(channelKeyPathF), localPerCommitmentPointF, TxOwner.Local, commitmentFormat, Nil)
+        val localSig = keyManagerF.sign(htlcTxAndSigs.htlcTx, keyManagerF.htlcPoint(channelKeyPathF), localPerCommitmentPointF, TxOwner.Local, commitmentFormat, Map.empty)
         Transactions.addSigs(htlcTxAndSigs.htlcTx.asInstanceOf[Transactions.HtlcSuccessTx], localSig, htlcTxAndSigs.remoteSig, preimage, commitmentsF.params.commitmentFormat).tx
     }
     val htlcTimeout = htlcTimeoutTxs.map { htlcTxAndSigs =>
-      val localSig = keyManagerF.sign(htlcTxAndSigs.htlcTx, keyManagerF.htlcPoint(channelKeyPathF), localPerCommitmentPointF, TxOwner.Local, commitmentFormat, Nil)
+      val localSig = keyManagerF.sign(htlcTxAndSigs.htlcTx, keyManagerF.htlcPoint(channelKeyPathF), localPerCommitmentPointF, TxOwner.Local, commitmentFormat, Map.empty)
       Transactions.addSigs(htlcTxAndSigs.htlcTx.asInstanceOf[Transactions.HtlcTimeoutTx], localSig, htlcTxAndSigs.remoteSig, commitmentsF.params.commitmentFormat).tx
     }
     htlcSuccess.foreach(tx => Transaction.correctlySpends(tx, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))

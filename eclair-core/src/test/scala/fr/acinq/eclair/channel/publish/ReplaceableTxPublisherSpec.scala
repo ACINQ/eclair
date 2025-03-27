@@ -409,7 +409,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
   test("commit tx feerate too low, spending anchor output (local commit)") {
     //we create a new channel key manager that delegates all call to Alice's key manager but track extra utxos passed to the sign() methods
-    val walletInputs = new AtomicReference[Seq[TxOut]](Nil)
+    val walletInputs = new AtomicReference[Map[OutPoint, TxOut]](Map.empty)
     val channelKeyManagerA = TestConstants.Alice.nodeParams.channelKeyManager
     // @formatter:off
     val channelKeyManager = new ChannelKeyManager {
@@ -421,15 +421,15 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       override def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PrivateKey = channelKeyManagerA.commitmentSecret(channelKeyPath, index)
       override def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PublicKey = channelKeyManagerA.commitmentPoint(channelKeyPath, index)
       override def newFundingKeyPath(isChannelOpener: Boolean): DeterministicWallet.KeyPath = channelKeyManagerA.newFundingKeyPath(isChannelOpener)
-      override def sign(tx: TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Seq[TxOut]): ByteVector64 = {
+      override def sign(tx: TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
         walletInputs.set(extraUtxos)
         channelKeyManagerA.sign(tx, publicKey, txOwner, commitmentFormat, extraUtxos)
       }
-      override def sign(tx: TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Seq[TxOut]): ByteVector64 = {
+      override def sign(tx: TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
         walletInputs.set(extraUtxos)
         channelKeyManagerA.sign(tx, publicKey, remotePoint, txOwner, commitmentFormat, extraUtxos)
       }
-      override def sign(tx: TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remoteSecret: Crypto.PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Seq[TxOut]): ByteVector64 = {
+      override def sign(tx: TransactionWithInputInfo, publicKey: DeterministicWallet.ExtendedPublicKey, remoteSecret: Crypto.PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
         walletInputs.set(extraUtxos)
         channelKeyManagerA.sign(tx, publicKey, remoteSecret, txOwner, commitmentFormat, extraUtxos)
       }
@@ -462,7 +462,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       // there are 2 transactions in the mempool, the one that is not the commit tx has to be the anchor tx
       val publishedAnchorTx = getTransaction(mempoolTxs.filterNot(_.txid == commitTx.tx.txid).head.txid)
-      val extraInputs = publishedAnchorTx.txIn.tail.map(input => getTransaction(input.outPoint.txid).txOut(input.outPoint.index.toInt))
+      val extraInputs = publishedAnchorTx.txIn.tail.map(input => input.outPoint -> getTransaction(input.outPoint.txid).txOut(input.outPoint.index.toInt)).toMap
       // check that inputs added to the anchor tx match what was passed to our key manager's sign() method
       assert(walletInputs.get() == extraInputs)
 
