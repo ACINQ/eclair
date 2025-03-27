@@ -933,7 +933,7 @@ object Helpers {
 
         // We collect all the preimages we wanted to reveal to our peer.
         val hash2Preimage: Map[ByteVector32, ByteVector32] = commitment.changes.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
-        // We collect incoming HTLCs that we starting failing but didn't cross-sign.
+        // We collect incoming HTLCs that we started failing but didn't cross-sign.
         val failedIncomingHtlcs: Set[Long] = commitment.changes.localChanges.all.collect {
           case u: UpdateFailHtlc => u.id
           case u: UpdateFailMalformedHtlc => u.id
@@ -1107,7 +1107,7 @@ object Helpers {
 
         // We collect all the preimages we wanted to reveal to our peer.
         val hash2Preimage: Map[ByteVector32, ByteVector32] = commitment.changes.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
-        // We collect incoming HTLCs that we starting failing but didn't cross-sign.
+        // We collect incoming HTLCs that we started failing but didn't cross-sign.
         val failedIncomingHtlcs: Set[Long] = commitment.changes.localChanges.all.collect {
           case u: UpdateFailHtlc => u.id
           case u: UpdateFailMalformedHtlc => u.id
