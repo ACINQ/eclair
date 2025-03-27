@@ -29,6 +29,7 @@ import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Output.Local
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Purpose
@@ -884,6 +885,10 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             incomingHtlcCount = purpose.remoteNextHtlcId,
           )
           context.system.eventStream ! EventStream.Publish(ChannelLiquidityPurchased(replyTo.toClassic, channelParams.channelId, remoteNodeId, purchase))
+          // Liquidity requestor will pay the mining fee for the raw splice tx with a negative funding contribution, on top of that we add the mining fee for our inputs bring liquidity
+          val userMiningFee = -fundingParams.remoteContribution + p.fees.miningFee
+          log.info("funding fee check: serviceFee={} userMiningFee={} actualMiningFee={}", p.fees.serviceFee, userMiningFee, signedTx.tx.fees)
+          Metrics.recordInteractiveTxMiningFeeDiff(userMiningFee, signedTx.tx.fees)
         }
         val signingSession = InteractiveTxSigningSession.WaitingForSigs(
           fundingParams,
