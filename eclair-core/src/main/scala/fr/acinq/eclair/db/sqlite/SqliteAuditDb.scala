@@ -34,7 +34,7 @@ import java.util.UUID
 
 object SqliteAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 9
+  val CURRENT_VERSION = 10
 }
 
 class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
@@ -114,6 +114,10 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON transactions_published(channel_id)")
     }
 
+    def migration910(statement: Statement): Unit = {
+      statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON relayed(channel_id)")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
@@ -131,6 +135,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX received_timestamp_idx ON received(timestamp)")
         statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON relayed(timestamp)")
         statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON relayed(payment_hash)")
+        statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON relayed(channel_id)")
         statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON relayed_trampoline(timestamp)")
         statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON relayed_trampoline(payment_hash)")
         statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON channel_events(timestamp)")
@@ -145,7 +150,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON transactions_published(channel_id)")
         statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON transactions_published(timestamp)")
         statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
-      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8)) =>
+      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -170,6 +175,9 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         }
         if (v < 9) {
           migration89(statement)
+        }
+        if (v < 10) {
+          migration910(statement)
         }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
