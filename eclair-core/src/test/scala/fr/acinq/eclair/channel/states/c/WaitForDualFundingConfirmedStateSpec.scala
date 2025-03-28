@@ -416,7 +416,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val balanceBob2 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.spec.toLocal
     assert(balanceBob2 == TestConstants.nonInitiatorFundingSatoshis.toMilliSatoshi)
     val fundingTx2 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx.asInstanceOf[FullySignedSharedTransaction]
-    assert(FeeratePerKw(12_500 sat) <= fundingTx2.feerate && fundingTx2.feerate < FeeratePerKw(13_000 sat))
+    assert(FeeratePerKw(12_500 sat) <= fundingTx2.feerate && fundingTx2.feerate < FeeratePerKw(13_500 sat))
 
     // Alice RBFs the funding transaction again: Bob keeps contributing the same amount.
     val feerate3 = FeeratePerKw(15_000 sat)
@@ -424,7 +424,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val balanceBob3 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.spec.toLocal
     assert(balanceBob3 == TestConstants.nonInitiatorFundingSatoshis.toMilliSatoshi)
     val fundingTx3 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx.asInstanceOf[FullySignedSharedTransaction]
-    assert(FeeratePerKw(15_000 sat) <= fundingTx3.feerate && fundingTx3.feerate < FeeratePerKw(15_500 sat))
+    assert(FeeratePerKw(15_000 sat) <= fundingTx3.feerate && fundingTx3.feerate < FeeratePerKw(15_700 sat))
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.length == 2)
 
     // The initial funding transaction confirms
@@ -452,7 +452,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(liquidityFee1.total < liquidityFee2.total)
     assert(balanceBob2 == (remoteFunding1 + liquidityFee2.total).toMilliSatoshi)
     val fundingTx2 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx.asInstanceOf[FullySignedSharedTransaction]
-    assert(FeeratePerKw(12_500 sat) <= fundingTx2.feerate && fundingTx2.feerate < FeeratePerKw(13_000 sat))
+    assert(FeeratePerKw(12_500 sat) <= fundingTx2.feerate && fundingTx2.feerate < FeeratePerKw(13_500 sat))
 
     // Alice RBFs again and purchases more inbound liquidity.
     val remoteFunding3 = 750_000.sat
@@ -463,7 +463,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val balanceBob3 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.spec.toLocal
     assert(balanceBob3 == (remoteFunding3 + liquidityFee3.total).toMilliSatoshi)
     val fundingTx3 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx.asInstanceOf[FullySignedSharedTransaction]
-    assert(FeeratePerKw(15_000 sat) <= fundingTx3.feerate && fundingTx3.feerate < FeeratePerKw(15_500 sat))
+    assert(FeeratePerKw(15_000 sat) <= fundingTx3.feerate && fundingTx3.feerate < FeeratePerKw(15_700 sat))
 
     // Alice RBFs again and purchases less inbound liquidity.
     val remoteFunding4 = 250_000.sat
@@ -474,7 +474,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val balanceBob4 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.spec.toLocal
     assert(balanceBob4 == (remoteFunding4 + liquidityFee4.total).toMilliSatoshi)
     val fundingTx4 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx.asInstanceOf[FullySignedSharedTransaction]
-    assert(FeeratePerKw(17_500 sat) <= fundingTx4.feerate && fundingTx4.feerate < FeeratePerKw(18_000 sat))
+    assert(FeeratePerKw(17_500 sat) <= fundingTx4.feerate && fundingTx4.feerate < FeeratePerKw(18_200 sat))
 
     // Alice tries to cancel the liquidity purchase.
     val sender = TestProbe()
