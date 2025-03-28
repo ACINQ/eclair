@@ -256,16 +256,30 @@ class ChannelRelay private(nodeParams: NodeParams,
       case _: CMD_FULFILL_HTLC => cmd
       case _: CMD_FAIL_HTLC | _: CMD_FAIL_MALFORMED_HTLC => r.payload match {
         case payload: IntermediatePayload.ChannelRelay.Blinded =>
-          // We are inside a blinded route, so we must carefully choose the error we return to avoid leaking information.
-          val failure = InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket))
-          payload.records.get[OnionPaymentPayloadTlv.PathKey] match {
+          walletNodeId_opt match {
             case Some(_) =>
-              // We are the introduction node: we add a delay to make it look like it could come from further downstream.
-              val delay = Some(Random.nextLong(1000).millis)
-              CMD_FAIL_HTLC(cmd.id, FailureReason.LocalFailure(failure), delay, commit = true)
+              // When the next node is a wallet node directly connected to us, we forward their failure downstream
+              // because we don't need to protect the blinded path against probing since it only contains our node.
+              // Their node isn't announced so they don't reveal anything by sending back a failure message (which
+              // will be encrypted using their blinded node_id).
+              cmd match {
+                // However, when the failure comes from us, we don't want to leak the unannounced channel by revealing
+                // its channel_update: in that case, we always return a temporary node failure instead.
+                case cmd@CMD_FAIL_HTLC(_, FailureReason.LocalFailure(_: Update), _, _, _) => cmd.copy(reason = FailureReason.LocalFailure(TemporaryNodeFailure()))
+                case _ => cmd
+              }
             case None =>
-              // We are not the introduction node.
-              CMD_FAIL_MALFORMED_HTLC(cmd.id, failure.onionHash, failure.code, commit = true)
+              // We are inside a blinded route, so we must carefully choose the error we return to avoid leaking information.
+              val failure = InvalidOnionBlinding(Sphinx.hash(r.add.onionRoutingPacket))
+              payload.records.get[OnionPaymentPayloadTlv.PathKey] match {
+                case Some(_) =>
+                  // We are the introduction node: we add a delay to make it look like it could come from further downstream.
+                  val delay = Some(Random.nextLong(1000).millis)
+                  CMD_FAIL_HTLC(cmd.id, FailureReason.LocalFailure(failure), delay, commit = true)
+                case None =>
+                  // We are not the introduction node.
+                  CMD_FAIL_MALFORMED_HTLC(cmd.id, failure.onionHash, failure.code, commit = true)
+              }
           }
         case _: IntermediatePayload.ChannelRelay.Standard => cmd
       }
