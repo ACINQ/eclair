@@ -246,7 +246,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fwd2 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd2.channelId == upstream2.add.channelId)
     assert(fwd2.message.id == upstream2.add.id)
-    assert(fwd2.message.reason == FailureReason.LocalFailure(InvalidOnionBlinding(Sphinx.hash(upstream2.add.onionRoutingPacket))))
+    assert(fwd2.message.reason == FailureReason.EncryptedDownstreamFailure(fail2.reason))
 
     val fail3 = WillFailMalformedHtlc(willAdd3.id, paymentHash, randomBytes32(), InvalidOnionHmac(randomBytes32()).code)
     peerConnection.send(peer, fail3)
@@ -330,7 +330,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == u.add.channelId)
       assert(fwd.message.id == u.add.id)
-      assert(fwd.message.reason == FailureReason.LocalFailure(InvalidOnionBlinding(Sphinx.hash(u.add.onionRoutingPacket))))
+      assert(fwd.message.reason == FailureReason.LocalFailure(UnknownNextPeer()))
       assert(fwd.message.commit)
     })
     peerConnection.expectMsgType[Warning]

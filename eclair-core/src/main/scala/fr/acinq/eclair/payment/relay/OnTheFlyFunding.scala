@@ -96,10 +96,10 @@ object OnTheFlyFunding {
     def createFailureCommands(failure_opt: Option[FailureReason])(implicit log: LoggingAdapter): Seq[(ByteVector32, CMD_FAIL_HTLC)] = upstream match {
       case _: Upstream.Local => Nil
       case u: Upstream.Hot.Channel =>
-        val failure = htlc.pathKey_opt match {
-          case Some(_) => FailureReason.LocalFailure(InvalidOnionBlinding(Sphinx.hash(u.add.onionRoutingPacket)))
-          case None => failure_opt.getOrElse(FailureReason.LocalFailure(UnknownNextPeer()))
-        }
+        // Note that even in the Bolt12 case, we relay the downstream failure instead of sending back invalid_onion_blinding.
+        // That's because we are directly connected to the wallet: the blinded path doesn't contain any other public nodes,
+        // so we don't need to protect against probing. This allows us to return a more meaningful failure to the payer.
+        val failure = failure_opt.getOrElse(FailureReason.LocalFailure(UnknownNextPeer()))
         Seq(u.add.channelId -> CMD_FAIL_HTLC(u.add.id, failure, commit = true))
       case u: Upstream.Hot.Trampoline =>
         val failure = failure_opt match {
