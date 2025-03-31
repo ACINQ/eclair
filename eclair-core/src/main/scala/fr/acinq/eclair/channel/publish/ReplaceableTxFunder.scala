@@ -20,7 +20,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.psbt.Psbt
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
@@ -442,9 +442,12 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     val actualCommitFee = commitment.commitInput.txOut.amount - cmd.commitTx.txOut.map(_.amount).sum
     val anchorInputFee = Transactions.weight2fee(targetFeerate, anchorInputWeight)
     val missingFee = expectedCommitFee - actualCommitFee + anchorInputFee
-    val txNotFunded = Transaction(2, Nil, TxOut(commitment.localParams.dustLimit + missingFee, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil, 0)
-    // We only use confirmed inputs for anchor transactions to be able to leverage 1-parent-1-child package relay.
-    bitcoinClient.fundTransaction(txNotFunded, targetFeerate, minInputConfirmations_opt = Some(1)).flatMap { fundTxResponse =>
+    for {
+      changeScript <- bitcoinClient.getChangePublicKeyScript()
+      txNotFunded = Transaction(2, Nil, TxOut(commitment.localParams.dustLimit + missingFee, changeScript) :: Nil, 0)
+      // We only use confirmed inputs for anchor transactions to be able to leverage 1-parent-1-child package relay.
+      fundTxResponse <- bitcoinClient.fundTransaction(txNotFunded, targetFeerate, minInputConfirmations_opt = Some(1))
+    } yield {
       // We merge our dummy change output with the one added by Bitcoin Core, if any, and adjust the change amount to
       // pay the expected package feerate.
       val txIn = anchorTx.txInfo.tx.txIn ++ fundTxResponse.tx.txIn
@@ -452,18 +455,12 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
       val expectedFee = Transactions.weight2fee(targetFeerate, packageWeight)
       val currentFee = actualCommitFee + fundTxResponse.fee
       val changeAmount = (fundTxResponse.tx.txOut.map(_.amount).sum - expectedFee + currentFee).max(commitment.localParams.dustLimit)
-      fundTxResponse.changePosition match {
-        case Some(changePos) =>
-          val changeOutput = fundTxResponse.tx.txOut(changePos).copy(amount = changeAmount)
-          val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(changeOutput))
-          Future.successful(anchorTx.updateTx(txSingleOutput), fundTxResponse.amountIn)
-        case None =>
-          bitcoinClient.getChangePublicKeyScript().map(changeScript => {
-            // We must have a change output, otherwise the transaction is invalid: we replace the PlaceHolderPubKey with a real wallet key.
-            val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(TxOut(changeAmount, changeScript)))
-            (anchorTx.updateTx(txSingleOutput), fundTxResponse.amountIn)
-          })
+      val changeOutput = fundTxResponse.changePosition match {
+        case Some(changePos) => fundTxResponse.tx.txOut(changePos).copy(amount = changeAmount)
+        case None => TxOut(changeAmount, changeScript)
       }
+      val txSingleOutput = fundTxResponse.tx.copy(txIn = txIn, txOut = Seq(changeOutput))
+      (anchorTx.updateTx(txSingleOutput), fundTxResponse.amountIn)
     }
   }
 
