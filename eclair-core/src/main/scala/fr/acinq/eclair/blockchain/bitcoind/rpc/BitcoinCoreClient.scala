@@ -498,6 +498,25 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         getRawTransaction(tx.txid).map(_ => tx.txid).recoverWith { case _ => Future.failed(e) }
     }
 
+  /**
+   * Publish a 1-parent-1-child transaction package, which allows replacing a conflicting parent transaction that has
+   * the same (or a higher) feerate by leveraging CPFP. The child transaction cannot have other unconfirmed parents.
+   */
+  def publishPackage(parentTx: Transaction, childTx: Transaction)(implicit ec: ExecutionContext): Future[TxId] = {
+    rpcClient.invoke("submitpackage", Seq(parentTx, childTx).map(_.toString())).flatMap(json => {
+      val JString(msg) = json \ "package_msg"
+      if (msg == "success") {
+        // All transactions were accepted into or are already in the mempool.
+        Future.successful(childTx.txid)
+      } else {
+        val childError = (json \ "tx-results" \ childTx.wtxid.toHex \ "error").extractOpt[String]
+        val parentError = (json \ "tx-results" \ parentTx.wtxid.toHex \ "error").extractOpt[String]
+        val error = childError.orElse(parentError).getOrElse("unknown failure")
+        Future.failed(new IllegalArgumentException(error))
+      }
+    })
+  }
+
   override def abandon(txId: TxId)(implicit ec: ExecutionContext): Future[Boolean] = {
     rpcClient.invoke("abandontransaction", txId).map(_ => true).recover(_ => false)
   }
