@@ -1141,6 +1141,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     sender.expectMsg(childTx1.txid)
     bitcoinClient.getMempool().map(txs => txs.map(_.txid).toSet).pipeTo(sender.ref)
     sender.expectMsg(Set(parentTx1.txid, childTx1.txid))
+    generateBlocks(1)
   }
 
   test("send and list transactions") {
