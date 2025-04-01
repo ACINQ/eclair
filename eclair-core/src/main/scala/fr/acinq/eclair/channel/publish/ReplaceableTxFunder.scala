@@ -274,7 +274,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
         Behaviors.stopped
       case AdjustPreviousTxOutputResult.TxOutputAdjusted(updatedTx) =>
         log.debug("bumping {} fees without adding new inputs: txid={}", cmd.desc, updatedTx.txInfo.tx.txid)
-        sign(updatedTx, targetFeerate, previousTx.totalAmountIn, Map.empty)
+        sign(updatedTx, targetFeerate, previousTx.totalAmountIn, previousTx.walletInputs)
       case AdjustPreviousTxOutputResult.AddWalletInputs(tx) =>
         log.debug("bumping {} fees requires adding new inputs (feerate={})", cmd.desc, targetFeerate)
         // We restore the original transaction (remove previous attempt's wallet inputs).
@@ -426,32 +426,23 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     }
   }
 
-  private def addInputs(tx: ReplaceableTxWithWalletInputs, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(ReplaceableTxWithWalletInputs, Satoshi, Map[OutPoint, TxOut])] = {
-
-    def getWalletUtxos(txInfo: TransactionWithInputInfo): Future[Map[OutPoint, TxOut]] = {
-      val inputs = txInfo.tx.txIn.filterNot(_.outPoint == txInfo.input.outPoint)
-      val txids = inputs.map(_.outPoint.txid).toSet
-      for {
-        txs <- Future.sequence(txids.toSeq.map(bitcoinClient.getTransaction))
-        txMap = txs.map(tx => tx.txid -> tx).toMap
-      } yield {
-        inputs.map(_.outPoint).map(outPoint => {
-          require(txMap.contains(outPoint.txid) && txMap(outPoint.txid).txOut.size >= outPoint.index, s"missing wallet input $outPoint")
-          outPoint -> txMap(outPoint.txid).txOut(outPoint.index.toInt)
-        }).toMap
+  private def getWalletUtxos(txInfo: TransactionWithInputInfo): Future[Map[OutPoint, TxOut]] = {
+    Future.sequence(txInfo.tx.txIn.filter(_.outPoint != txInfo.input.outPoint).map(txIn => {
+      bitcoinClient.getTransaction(txIn.outPoint.txid).flatMap {
+        case inputTx if inputTx.txOut.size <= txIn.outPoint.index => Future.failed(new IllegalArgumentException(s"input ${inputTx.txid}:${txIn.outPoint.index} doesn't exist"))
+        case inputTx => Future.successful(txIn.outPoint -> inputTx.txOut(txIn.outPoint.index.toInt))
       }
-    }
+    })).map(_.toMap)
+  }
 
-    tx match {
-      case anchorTx: ClaimLocalAnchorWithWitnessData => for {
-        (fundedTx, amountIn) <- addInputs(anchorTx, targetFeerate, commitment)
-        spentUtxos <- getWalletUtxos(fundedTx.txInfo)
-      } yield (fundedTx, amountIn, spentUtxos)
-      case htlcTx: HtlcWithWitnessData => for {
-        (fundedTx, amountIn) <- addInputs(htlcTx, targetFeerate, commitment)
-        spentUtxos <- getWalletUtxos(fundedTx.txInfo)
-      } yield (fundedTx, amountIn, spentUtxos)
-    }
+  private def addInputs(tx: ReplaceableTxWithWalletInputs, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(ReplaceableTxWithWalletInputs, Satoshi, Map[OutPoint, TxOut])] = {
+    for {
+      (fundedTx, amountIn) <- tx match {
+        case anchorTx: ClaimLocalAnchorWithWitnessData => addInputs(anchorTx, targetFeerate, commitment)
+        case htlcTx: HtlcWithWitnessData => addInputs(htlcTx, targetFeerate, commitment)
+      }
+      spentUtxos <- getWalletUtxos(fundedTx.txInfo)
+    } yield (fundedTx, amountIn, spentUtxos)
   }
 
   private def addInputs(anchorTx: ClaimLocalAnchorWithWitnessData, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(ClaimLocalAnchorWithWitnessData, Satoshi)] = {

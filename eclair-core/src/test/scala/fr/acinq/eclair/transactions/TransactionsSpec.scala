@@ -23,7 +23,6 @@ import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Crypto, MilliBtc, MilliB
 import fr.acinq.bitcoin.{ScriptFlags, ScriptTree, SigHash, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.fee.ConfirmationPriority.Fast
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
@@ -37,7 +36,7 @@ import scodec.bits._
 
 import java.nio.ByteOrder
 import scala.io.Source
-import scala.util.Random
+import scala.util.{Random, Try}
 
 /**
  * Created by PM on 16/12/2016.
@@ -489,7 +488,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("generate valid commitment and htlc transactions (anchor outputs)") {
-    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
+    val walletPriv = randomKey()
+    val walletPub = walletPriv.publicKey
+    val finalPubKeyScript = Script.write(Script.pay2wpkh(walletPub))
     val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
 
     // htlc1, htlc2a and htlc2b are regular IN/OUT htlcs
@@ -582,12 +583,30 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(checkSpendable(signedTx).isSuccess)
     }
     {
-      // local spends local anchor
-      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(0)))
-      assert(checkSpendable(claimAnchorOutputTx).isFailure)
-      val localSig = claimAnchorOutputTx.sign(localFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
+      // local spends local anchor with additional wallet inputs
+      val walletAmount = 50_000 sat
+      val walletInputs = Map(
+        OutPoint(randomTxId(), 3) -> TxOut(walletAmount, Script.pay2wpkh(walletPub)),
+        OutPoint(randomTxId(), 0) -> TxOut(walletAmount, Script.pay2wpkh(walletPub)),
+      )
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(0))).map(anchorTx => {
+        val walletTxIn = walletInputs.map { case (outpoint, _) => TxIn(outpoint, ByteVector.empty, 0) }
+        val unsignedTx = anchorTx.tx.copy(txIn = anchorTx.tx.txIn ++ walletTxIn)
+        val sig1 = unsignedTx.signInput(1, Script.pay2pkh(walletPub), SIGHASH_ALL, walletAmount, SigVersion.SIGVERSION_WITNESS_V0, walletPriv)
+        val sig2 = unsignedTx.signInput(2, Script.pay2pkh(walletPub), SIGHASH_ALL, walletAmount, SigVersion.SIGVERSION_WITNESS_V0, walletPriv)
+        val walletSignedTx = unsignedTx
+          .updateWitness(1, Script.witnessPay2wpkh(walletPub, sig1))
+          .updateWitness(2, Script.witnessPay2wpkh(walletPub, sig2))
+        anchorTx.copy(tx = walletSignedTx)
+      })
+      val allInputs = walletInputs + (claimAnchorOutputTx.input.outPoint -> claimAnchorOutputTx.input.txOut)
+      assert(Try(Transaction.correctlySpends(claimAnchorOutputTx.tx, allInputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isFailure)
+      // All wallet inputs must be provided when signing.
+      assert(Try(claimAnchorOutputTx.sign(localFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)).isFailure)
+      assert(Try(claimAnchorOutputTx.sign(localFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, walletInputs.take(1))).isFailure)
+      val localSig = claimAnchorOutputTx.sign(localFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, walletInputs)
       val signedTx = addSigs(claimAnchorOutputTx, localSig)
-      assert(checkSpendable(signedTx).isSuccess)
+      Transaction.correctlySpends(signedTx.tx, allInputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     {
       // remote spends remote anchor

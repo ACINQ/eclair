@@ -104,7 +104,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
    * @param publicKey        extended public key
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to our [[fr.acinq.eclair.transactions.Transactions.InputInfo]] output, which is assumed to always be the first spent output)
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
    * @return a signature generated with the private key that matches the input extended public key
    */
   override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
@@ -125,7 +125,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
    * @param remotePoint      remote point
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to our [[fr.acinq.eclair.transactions.Transactions.InputInfo]] output, which is assumed to always be the first spent output)
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
    * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
    */
   override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
@@ -147,7 +147,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
    * @param remoteSecret     remote secret
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to our [[fr.acinq.eclair.transactions.Transactions.InputInfo]] output, which is assumed to always be the first spent output)
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
    * @return a signature generated with a private key generated from the input key's matching private key and the remote secret.
    */
   override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
