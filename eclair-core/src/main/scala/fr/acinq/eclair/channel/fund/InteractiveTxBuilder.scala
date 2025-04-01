@@ -105,18 +105,15 @@ object InteractiveTxBuilder {
     // @formatter:off
     def info: InputInfo
     def weight: Int
-    // we don't need to provide extra inputs here, as this method will only be called for multisig-2-of-2 inputs which only require the output that is spent for signing
-    // for taproot channels, we'll use a musig2 input that is not signed like this: instead, the signature will be the Musig2 aggregation if a local and remote partial signature
-    def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction): ByteVector64
     // @formatter:on
   }
 
   case class Multisig2of2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
     override val weight: Int = 388
 
-    override def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction): ByteVector64 = {
+    def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction, spentUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
       val localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex)
-      keyManager.sign(Transactions.SpliceTx(info, tx), localFundingPubkey, TxOwner.Local, params.commitmentFormat, Map.empty)
+      keyManager.sign(Transactions.SpliceTx(info, tx), localFundingPubkey, TxOwner.Local, params.commitmentFormat, spentUtxos)
     }
   }
 
@@ -339,6 +336,8 @@ object InteractiveTxBuilder {
     val remoteFees: MilliSatoshi = remoteAmountIn - remoteAmountOut
     // Note that the truncation is a no-op: sub-satoshi balances are carried over from inputs to outputs and cancel out.
     val fees: Satoshi = (localFees + remoteFees).truncateToSatoshi
+    // When signing transactions that include taproot inputs, we must provide details about all of the transaction's inputs.
+    val inputDetails: Map[OutPoint, TxOut] = (sharedInput_opt.toSeq.map(i => i.outPoint -> i.txOut) ++ localInputs.map(i => i.outPoint -> i.txOut) ++ remoteInputs.map(i => i.outPoint -> i.txOut)).toMap
 
     def localOnlyNonChangeOutputs: List[Output.Local.NonChange] = localOutputs.collect { case o: Local.NonChange => o }
 
@@ -914,7 +913,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
     val tx = unsignedTx.buildUnsignedTx()
-    val sharedSig_opt = fundingParams.sharedInput_opt.map(_.sign(keyManager, channelParams, tx))
+    val sharedSig_opt = fundingParams.sharedInput_opt.collect {
+      case i: Multisig2of2Input => i.sign(keyManager, channelParams, tx, unsignedTx.inputDetails)
+    }
     if (unsignedTx.localInputs.isEmpty) {
       context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, Nil, sharedSig_opt)))
     } else {

@@ -305,7 +305,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
     })
   }
 
-  def utxoUpdatePsbt(psbt: Psbt)(implicit ec: ExecutionContext): Future[Psbt] = {
+  private def utxoUpdatePsbt(psbt: Psbt)(implicit ec: ExecutionContext): Future[Psbt] = {
     val encoded = Base64.getEncoder.encodeToString(Psbt.write(psbt).toByteArray)
     rpcClient.invoke("utxoupdatepsbt", encoded).map(json => {
       val JString(base64) = json

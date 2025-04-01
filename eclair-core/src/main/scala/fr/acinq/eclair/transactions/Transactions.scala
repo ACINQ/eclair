@@ -131,18 +131,31 @@ object Transactions {
     /** Sighash flags to use when signing the transaction. */
     def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = SIGHASH_ALL
 
+    /**
+     * @param extraUtxos extra outputs spent by this transaction (in addition to the main [[input]]).
+     */
     def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
       sign(key, sighash(txOwner, commitmentFormat), extraUtxos)
     }
 
-    def sign(key: PrivateKey, sighashType: Int, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = input match {
-      case _: InputInfo.TaprootInput => ByteVector64.Zeroes
-      case InputInfo.SegwitInput(outPoint, txOut, redeemScript) =>
-        // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
-        // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
-        val inputIndex = tx.txIn.indexWhere(_.outPoint == outPoint)
-        val sigDER = Transaction.signInput(tx, inputIndex, redeemScript, sighashType, txOut.amount, SIGVERSION_WITNESS_V0, key)
-        Crypto.der2compact(sigDER)
+    def sign(key: PrivateKey, sighashType: Int, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
+      val inputsMap = extraUtxos + (input.outPoint -> input.txOut)
+      tx.txIn.foreach(txIn => {
+        // Note that using a require here is dangerous, because callers don't except this function to throw.
+        // But we want to ensure that we're correctly providing input details, otherwise our signature will silently be
+        // invalid when using taproot. We verify this in all cases, even when using segwit v0, to ensure that we have as
+        // many tests as possible that exercise this codepath.
+        require(inputsMap.contains(txIn.outPoint), s"cannot sign $desc with txId=${tx.txid}: missing input details for ${txIn.outPoint}")
+      })
+      input match {
+        case InputInfo.SegwitInput(outPoint, txOut, redeemScript) =>
+          // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
+          // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
+          val inputIndex = tx.txIn.indexWhere(_.outPoint == outPoint)
+          val sigDER = Transaction.signInput(tx, inputIndex, redeemScript, sighashType, txOut.amount, SIGVERSION_WITNESS_V0, key)
+          Crypto.der2compact(sigDER)
+        case _: InputInfo.TaprootInput => ???
+      }
     }
 
     def checkSig(sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = input match {
