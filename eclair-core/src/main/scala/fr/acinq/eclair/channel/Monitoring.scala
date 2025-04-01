@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.scalacompat.SatoshiLong
+import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong}
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, SharedTransaction}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc}
 import kamon.Kamon
@@ -33,6 +33,10 @@ object Monitoring {
     val HtlcValueInFlightGlobal = Kamon.gauge("channels.htlc-value-in-flight-global", "Global HTLC value in flight across all channels")
     val LocalFeeratePerByte = Kamon.histogram("channels.local-feerate-per-byte")
     val RemoteFeeratePerByte = Kamon.histogram("channels.remote-feerate-per-byte")
+    val InteractiveTxFundingTargetAmount = Kamon.histogram("channels.interactive-tx-funding.target-amount", "Interactive tx funding target amount")
+    val InteractiveTxFundingInputsCount = Kamon.histogram("channels.interactive-tx-funding.inputs-count", "Interactive tx funding inputs count")
+    val InteractiveTxFundingHasChange = Kamon.histogram("channels.interactive-tx-funding.change", "Interactive tx funding change")
+    val InteractiveTxMiningFeeDiff = Kamon.histogram("channels.interactive-tx-funding.mining-fee", "Interactive tx mining fee diff")
     val Splices = Kamon.histogram("channels.splices", "Splices")
     val ProcessMessage = Kamon.timer("channels.messages-processed")
 
@@ -49,6 +53,24 @@ object Monitoring {
         HtlcValueInFlight.withTag(Tags.Direction, direction).record(value)
         HtlcValueInFlightGlobal.withTag(Tags.Direction, direction).increment((value - previousValue).toDouble)
       }
+    }
+
+    /**
+     * Record parameters and results for calls to bitcoind's `fundrawtransaction`.
+     */
+    def recordInteractiveTxFunding(targetAmount: Satoshi, inputsCount: Int, change: Satoshi): Unit = {
+      Metrics.InteractiveTxFundingTargetAmount.withoutTags().record(targetAmount.toLong)
+      Metrics.InteractiveTxFundingInputsCount.withoutTags().record(inputsCount)
+      Metrics.InteractiveTxFundingHasChange.withoutTags().record(change.toLong)
+    }
+
+    /**
+     * Record actual vs estimated mining fee
+     */
+    def recordInteractiveTxMiningFeeDiff(userMiningFee: Satoshi, actualMiningFee: Satoshi): Unit = {
+      // If actual mining fee is greater than what the user paid, we lose money
+      val diff = userMiningFee - actualMiningFee
+      Metrics.InteractiveTxMiningFeeDiff.withTag(Tags.DiffSign, if (diff > 0.sat) Tags.DiffSigns.plus else Tags.DiffSigns.minus).record(Math.abs(diff.toLong))
     }
 
     /**
@@ -84,7 +106,9 @@ object Monitoring {
     val Origin = "origin"
     val State = "state"
     val CommitmentFormat = "commitment-format"
+    val Amount = "amount"
     val SpliceType = "splice-type"
+    val DiffSign = "sign"
 
     object Events {
       val Created = "created"
@@ -106,6 +130,12 @@ object Monitoring {
       val SpliceIn = "splice-in"
       val SpliceOut = "splice-out"
       val SpliceCpfp = "splice-cpfp"
+    }
+
+    /** we can't chart negative amounts in Kamon */
+    object DiffSigns {
+      val plus = "plus"
+      val minus = "minus"
     }
   }
 
