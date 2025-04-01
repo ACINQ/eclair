@@ -48,7 +48,8 @@ trait SpendFromChannelAddress {
         Transactions.SpliceTx(inputInfo, unsignedTx), // classify as splice, doesn't really matter
         localFundingPubkey,
         TxOwner.Local, // unused
-        DefaultCommitmentFormat // unused
+        DefaultCommitmentFormat, // unused
+        Map.empty
       )
       witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey.publicKey, remoteFundingPubkey)
       signedTx = unsignedTx.updateWitness(0, witness)

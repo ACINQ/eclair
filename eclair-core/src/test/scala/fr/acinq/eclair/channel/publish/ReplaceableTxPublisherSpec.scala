@@ -419,9 +419,16 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // NB: we try to get transactions confirmed *before* their confirmation target, so we aim for a more aggressive block target what's provided.
       setFeerate(targetFeerate, blockTarget = 12)
       publisher ! Publish(probe.ref, anchorTx)
+
       // wait for the commit tx and anchor tx to be published
       val mempoolTxs = getMempoolTxs(2)
       assert(mempoolTxs.map(_.txid).contains(commitTx.tx.txid))
+
+      // we check that the anchor tx contains additional wallet inputs
+      // there are 2 transactions in the mempool, the one that is not the commit tx has to be the anchor tx
+      wallet.getTransaction(mempoolTxs.filterNot(_.txid == commitTx.tx.txid).head.txid).pipeTo(probe.ref)
+      val publishedAnchorTx = probe.expectMsgType[Transaction]
+      assert(publishedAnchorTx.txIn.size > 1)
 
       val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
       val actualFee = mempoolTxs.map(_.fees).sum

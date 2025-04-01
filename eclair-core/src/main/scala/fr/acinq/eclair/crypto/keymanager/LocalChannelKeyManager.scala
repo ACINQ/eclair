@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto.keymanager
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, TxOut}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Announcements
@@ -104,15 +104,16 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
    * @param publicKey        extended public key
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
    * @return a signature generated with the private key that matches the input extended public key
    */
-  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
+  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
     // NB: not all those transactions are actually commit txs (especially during closing), but this is good enough for monitoring purposes
     val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.CommitTx)
     Metrics.SignTxCount.withTags(tags).increment()
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
       val privateKey = privateKeys.get(publicKey.path)
-      tx.sign(privateKey.privateKey, txOwner, commitmentFormat)
+      tx.sign(privateKey.privateKey, txOwner, commitmentFormat, extraUtxos)
     }
   }
 
@@ -124,16 +125,17 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
    * @param remotePoint      remote point
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
    * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
    */
-  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
+  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
     // NB: not all those transactions are actually htlc txs (especially during closing), but this is good enough for monitoring purposes
     val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.HtlcTx)
     Metrics.SignTxCount.withTags(tags).increment()
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
       val privateKey = privateKeys.get(publicKey.path)
       val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
-      tx.sign(currentKey, txOwner, commitmentFormat)
+      tx.sign(currentKey, txOwner, commitmentFormat, extraUtxos)
     }
   }
 
@@ -145,15 +147,16 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
    * @param remoteSecret     remote secret
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
    * @return a signature generated with a private key generated from the input key's matching private key and the remote secret.
    */
-  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
+  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
     val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.RevokedTx)
     Metrics.SignTxCount.withTags(tags).increment()
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
       val privateKey = privateKeys.get(publicKey.path)
       val currentKey = Generators.revocationPrivKey(privateKey.privateKey, remoteSecret)
-      tx.sign(currentKey, txOwner, commitmentFormat)
+      tx.sign(currentKey, txOwner, commitmentFormat, extraUtxos)
     }
   }
 

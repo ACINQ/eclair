@@ -18,7 +18,7 @@ package fr.acinq.eclair.crypto.keymanager
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, DeterministicWallet, Protocol}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, DeterministicWallet, OutPoint, Protocol, TxOut}
 import fr.acinq.eclair.channel.{ChannelConfig, LocalParams}
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
 import scodec.bits.ByteVector
@@ -64,9 +64,11 @@ trait ChannelKeyManager {
    * @param publicKey        extended public key
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
    * @return a signature generated with the private key that matches the input extended public key
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64
+
 
   /**
    * This method is used to spend funds sent to htlc keys/delayed keys
@@ -76,9 +78,10 @@ trait ChannelKeyManager {
    * @param remotePoint      remote point
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
    * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64
 
   /**
    * Ths method is used to spend revoked transactions, with the corresponding revocation key
@@ -88,9 +91,10 @@ trait ChannelKeyManager {
    * @param remoteSecret     remote secret
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
    * @return a signature generated with a private key generated from the input key's matching private key and the remote secret.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
+  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64
 
   /**
    * Sign a channel announcement message
