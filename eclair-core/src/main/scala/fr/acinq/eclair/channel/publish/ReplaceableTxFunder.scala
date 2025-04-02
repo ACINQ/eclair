@@ -107,9 +107,9 @@ object ReplaceableTxFunder {
       // For HTLC transactions, we add a p2wpkh input and a p2wpkh change output.
       case _: HtlcSuccessTx => commitment.params.commitmentFormat.htlcSuccessWeight + Transactions.claimP2WPKHOutputWeight
       case _: HtlcTimeoutTx => commitment.params.commitmentFormat.htlcTimeoutWeight + Transactions.claimP2WPKHOutputWeight
-      case _: ClaimHtlcSuccessTx => Transactions.claimHtlcSuccessWeight
-      case _: LegacyClaimHtlcSuccessTx => Transactions.claimHtlcSuccessWeight
-      case _: ClaimHtlcTimeoutTx => Transactions.claimHtlcTimeoutWeight
+      case _: ClaimHtlcSuccessTx => commitment.params.commitmentFormat.claimHtlcSuccessWeight
+      case _: LegacyClaimHtlcSuccessTx => commitment.params.commitmentFormat.claimHtlcSuccessWeight
+      case _: ClaimHtlcTimeoutTx => commitment.params.commitmentFormat.claimHtlcTimeoutWeight
       case _: ClaimLocalAnchorOutputTx => commitTx.weight() + Transactions.claimAnchorOutputMinWeight
     }
     // It doesn't make sense to use a feerate that is much higher than the current feerate for inclusion into the next block.
