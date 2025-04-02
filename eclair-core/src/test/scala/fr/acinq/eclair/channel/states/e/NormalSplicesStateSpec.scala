@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.NumericSatoshi.abs
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{DummyOnChainWallet, SingleKeyOnChainWallet}
+import fr.acinq.eclair.blockchain.{DummyOnChainWallet, SingleKeyOnChainWallet, SingleKeyOnChainWalletWithConfirmedInputs}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.{LocalClose, RemoteClose, RevokedClose}
@@ -116,16 +116,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   private def initiateSpliceWithoutSigs(f: FixtureParam, spliceIn_opt: Option[SpliceIn] = None, spliceOut_opt: Option[SpliceOut] = None, sendTxComplete: Boolean = true): TestProbe = initiateSpliceWithoutSigs(f.alice, f.bob, f.alice2bob, f.bob2alice, spliceIn_opt, spliceOut_opt, sendTxComplete)
 
-  private def initiateRbfWithoutSigs(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, feerate: FeeratePerKw, sInputsCount: Int, sOutputsCount: Int, rInputsCount: Int, rOutputsCount: Int): TestProbe = {
-    val sender = TestProbe()
-    val cmd = CMD_BUMP_FUNDING_FEE(sender.ref, feerate, 100_000 sat, 0, None)
-    s ! cmd
-    exchangeStfu(s, r, s2r, r2s)
-    s2r.expectMsgType[TxInitRbf]
-    s2r.forward(r)
-    r2s.expectMsgType[TxAckRbf]
-    r2s.forward(s)
-
+  private def constructTx(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, sInputsCount: Int, sOutputsCount: Int, rInputsCount: Int, rOutputsCount: Int): Unit = {
     // The initiator also adds the shared input and shared output.
     var sRemainingInputs = sInputsCount + 1
     var sRemainingOutputs = sOutputsCount + 1
@@ -172,12 +163,25 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
         r2s.forward(s)
       }
     }
+  }
+
+  private def initiateRbfWithoutSigs(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, feerate: FeeratePerKw, sInputsCount: Int, sOutputsCount: Int, rInputsCount: Int, rOutputsCount: Int, requestFunding_opt: Option[LiquidityAds.RequestFunding]): TestProbe = {
+    val sender = TestProbe()
+    val cmd = CMD_BUMP_FUNDING_FEE(sender.ref, feerate, 100_000 sat, 0, requestFunding_opt)
+    s ! cmd
+    exchangeStfu(s, r, s2r, r2s)
+    s2r.expectMsgType[TxInitRbf]
+    s2r.forward(r)
+    r2s.expectMsgType[TxAckRbf]
+    r2s.forward(s)
+
+    constructTx(s, r, s2r, r2s, sInputsCount, sOutputsCount, rInputsCount, rOutputsCount)
 
     sender
   }
 
-  private def initiateRbfWithoutSigs(f: FixtureParam, feerate: FeeratePerKw, sInputsCount: Int, sOutputsCount: Int): TestProbe = {
-    initiateRbfWithoutSigs(f.alice, f.bob, f.alice2bob, f.bob2alice, feerate, sInputsCount, sOutputsCount, rInputsCount = 0, rOutputsCount = 0)
+  private def initiateRbfWithoutSigs(f: FixtureParam, feerate: FeeratePerKw, sInputsCount: Int, sOutputsCount: Int, requestFunding_opt: Option[LiquidityAds.RequestFunding] = None): TestProbe = {
+    initiateRbfWithoutSigs(f.alice, f.bob, f.alice2bob, f.bob2alice, feerate, sInputsCount, sOutputsCount, rInputsCount = 0, rOutputsCount = 0, requestFunding_opt)
   }
 
   private def exchangeSpliceSigs(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, sender: TestProbe): Transaction = {
@@ -221,8 +225,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   private def initiateSplice(f: FixtureParam, spliceIn_opt: Option[SpliceIn] = None, spliceOut_opt: Option[SpliceOut] = None): Transaction = initiateSplice(f.alice, f.bob, f.alice2bob, f.bob2alice, spliceIn_opt, spliceOut_opt)
 
-  private def initiateRbf(f: FixtureParam, feerate: FeeratePerKw, sInputsCount: Int, sOutputsCount: Int): Transaction = {
-    val sender = initiateRbfWithoutSigs(f, feerate, sInputsCount, sOutputsCount)
+  private def initiateRbf(f: FixtureParam, feerate: FeeratePerKw, sInputsCount: Int, sOutputsCount: Int, requestFunding_opt: Option[LiquidityAds.RequestFunding] = None): Transaction = {
+    val sender = initiateRbfWithoutSigs(f, feerate, sInputsCount, sOutputsCount, requestFunding_opt)
     exchangeSpliceSigs(f, sender)
   }
 
@@ -300,7 +304,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     TestHtlcs(Seq(adda1, adda2), Seq(addb1, addb2))
   }
 
-  def spliceOutFee(f: FixtureParam, capacity: Satoshi): Satoshi = {
+  private def spliceOutFee(f: FixtureParam, capacity: Satoshi): Satoshi = {
     import f._
 
     // When we only splice-out, the fees are paid by deducing them from the next funding amount.
@@ -313,7 +317,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     actualMiningFee
   }
 
-  def checkPostSpliceState(f: FixtureParam, spliceOutFee: Satoshi): Unit = {
+  private def checkPostSpliceState(f: FixtureParam, spliceOutFee: Satoshi): Unit = {
     import f._
 
     // if the swap includes a splice-in, swap-out fees will be paid from bitcoind so final capacity is predictable
@@ -327,7 +331,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(postSpliceState.commitments.latest.localCommit.spec.htlcs.collect(outgoing).toSeq.map(_.amountMsat).sum == outgoingHtlcs)
   }
 
-  def resolveHtlcs(f: FixtureParam, htlcs: TestHtlcs, spliceOutFee: Satoshi = 0.sat): Unit = {
+  private def resolveHtlcs(f: FixtureParam, htlcs: TestHtlcs, spliceOutFee: Satoshi = 0.sat): Unit = {
     import f._
 
     checkPostSpliceState(f, spliceOutFee)
@@ -352,6 +356,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(finalState.commitments.latest.localCommit.spec.toLocal == 1_200_000_000.msat - spliceOutFee + settledHtlcs)
     assert(finalState.commitments.latest.localCommit.spec.toRemote == 700_000_000.msat - settledHtlcs)
   }
+
+  private def computeFees(tx: Transaction, wallet: SingleKeyOnChainWallet): Satoshi =
+    tx.txIn.flatMap(txIn => wallet.inputs.find(_.txid == txIn.outPoint.txid).flatMap(_.txOut.lift(txIn.outPoint.index.toInt))).map(_.amount).sum - tx.txOut.map(_.amount).sum
+
 
   test("recv CMD_SPLICE (splice-in)") { f =>
     import f._
@@ -410,24 +418,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.forward(bob)
     assert(bob2alice.expectMsgType[SpliceAck].willFund_opt.nonEmpty)
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddInput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddInput]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddInput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddOutput]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxComplete]
-    alice2bob.forward(bob)
+
+    // Alice adds splice-in input and change output, Bob adds liquidity splice-in input and change output.
+    constructTx(alice, bob, alice2bob, bob2alice, sInputsCount = 1, sOutputsCount = 1, rInputsCount = 1, rOutputsCount = 1)
+
     exchangeSpliceSigs(alice, bob, alice2bob, bob2alice, sender)
 
     // Alice paid fees to Bob for the additional liquidity.
@@ -524,6 +518,23 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
     assert(alice2bob.expectMsgType[TxAbort].toAscii.contains("invalid balances"))
     assert(bob2alice.expectMsgType[TxAbort].toAscii.contains("invalid balances"))
+  }
+
+  test("recv CMD_SPLICE (splice-in, liquidity ads, cannot fund request)") { f =>
+    import f._
+
+    val sender = TestProbe()
+    val fundingRequest = LiquidityAds.RequestFunding(DummyOnChainWallet.invalidFundingAmount, TestConstants.defaultLiquidityRates.fundingRates.last, LiquidityAds.PaymentDetails.FromChannelBalance)
+    val cmd = CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest))
+    alice ! cmd
+
+    exchangeStfu(alice, bob, alice2bob, bob2alice)
+    assert(alice2bob.expectMsgType[SpliceInit].requestFunding_opt.nonEmpty)
+    alice2bob.forward(bob)
+    assert(bob2alice.expectMsgType[TxAbort].toAscii.contains("channel funding error"))
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAbort]
+    alice2bob.forward(bob)
   }
 
   test("recv CMD_SPLICE (splice-in, local and remote commit index mismatch)") { f =>
@@ -759,7 +770,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // Bob RBFs the splice transaction: he needs to add an input to pay the fees.
     // Our dummy bitcoin wallet adds an additional input for Alice: a real bitcoin wallet would simply lower the previous change output.
-    val sender2 = initiateRbfWithoutSigs(bob, alice, bob2alice, alice2bob, FeeratePerKw(20_000 sat), sInputsCount = 1, sOutputsCount = 1, rInputsCount = 3, rOutputsCount = 2)
+    val sender2 = initiateRbfWithoutSigs(bob, alice, bob2alice, alice2bob, FeeratePerKw(20_000 sat), sInputsCount = 1, sOutputsCount = 1, rInputsCount = 3, rOutputsCount = 2, None)
     val rbfTx2 = exchangeSpliceSigs(alice, bob, alice2bob, bob2alice, sender2)
     assert(rbfTx2.txIn.size > rbfTx1.txIn.size)
     rbfTx1.txIn.foreach(txIn => assert(rbfTx2.txIn.map(_.outPoint).contains(txIn.outPoint)))
@@ -805,7 +816,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(spliceTx2.txIn.exists(_.outPoint.txid == spliceTx1.txid))
 
     // Alice cannot RBF her first splice, so she RBFs Bob's splice instead.
-    val sender = initiateRbfWithoutSigs(alice, bob, alice2bob, bob2alice, FeeratePerKw(15_000 sat), sInputsCount = 1, sOutputsCount = 1, rInputsCount = 2, rOutputsCount = 2)
+    val sender = initiateRbfWithoutSigs(alice, bob, alice2bob, bob2alice, FeeratePerKw(15_000 sat), sInputsCount = 1, sOutputsCount = 1, rInputsCount = 2, rOutputsCount = 2, None)
     val rbfTx = exchangeSpliceSigs(bob, alice, bob2alice, alice2bob, sender)
     assert(rbfTx.txIn.size > spliceTx2.txIn.size)
     spliceTx2.txIn.foreach(txIn => assert(rbfTx.txIn.map(_.outPoint).contains(txIn.outPoint)))
@@ -982,6 +993,21 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectMsgType[Stfu]
     bob2alice.forward(alice, TxInitRbf(alice.stateData.channelId, 0, FeeratePerKw(15_000 sat), 250_000 sat, requireConfirmedInputs = false, None))
     assert(alice2bob.expectMsgType[TxAbort].toAscii.contains("we're using zero-conf"))
+  }
+
+  test("recv TxAbort (before sending SpliceAck)") { f =>
+    import f._
+
+    val sender = TestProbe()
+    val requestFunding = Some(LiquidityAds.RequestFunding(TestConstants.nonInitiatorFundingSatoshis, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance))
+    alice ! CMD_SPLICE(sender.ref, spliceIn_opt = None, spliceOut_opt = Some(SpliceOut(50_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = requestFunding)
+    exchangeStfu(f)
+    alice2bob.expectMsgType[SpliceInit]
+    alice2bob.forward(bob)
+    alice2bob.forward(bob, TxAbort(channelId(alice), "changed my mind!"))
+    bob2alice.expectMsgType[TxAbort]
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    awaitCond(wallet.asInstanceOf[SingleKeyOnChainWalletWithConfirmedInputs].rolledback.size == 1)
   }
 
   test("recv TxAbort (before TxComplete)") { f =>
@@ -1574,7 +1600,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectNoMessage(100 millis)
   }
 
-  test("Excess added to additional local funding", Tag(ChannelStateTestsTags.ChangelessFunding)) { f =>
+  test("Added excess to funding (splice-in, changeless)", Tag(ChannelStateTestsTags.ChangelessFunding)) { f =>
     import f._
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(100_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
@@ -1583,6 +1609,76 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val spliceInit = alice2bob.expectMsgType[SpliceInit]
     // When we request an input of 100_000 sat, we should get an input of 101_000 sat + fees from our dummy wallet.
     assert(spliceInit.fundingContribution == 101_000.sat)
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[SpliceAck]
+    bob2alice.forward(alice)
+
+    // Alice adds splice-in input (no change output), Bob does not add inputs or outputs.
+    constructTx(alice, bob, alice2bob, bob2alice, sInputsCount = 1, sOutputsCount = 0, rInputsCount = 0, rOutputsCount = 0)
+    val spliceTx = exchangeSpliceSigs(f, sender)
+    assert(spliceTx.txIn.size == 2)
+    assert(computeFees(spliceTx, wallet.asInstanceOf[SingleKeyOnChainWallet]) < 10_000.sat)
+
+    val rbfTx1 = initiateRbf(f, FeeratePerKw(15_000 sat), sInputsCount = 2, sOutputsCount = 0)
+    assert(computeFees(rbfTx1, wallet.asInstanceOf[SingleKeyOnChainWallet]) < 18_000.sat)
+    rbfTx1.txIn.foreach(txIn => assert(rbfTx1.txIn.map(_.outPoint).contains(txIn.outPoint)))
+
+    // Alice keeps excess from initial funding.
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 901_000_000.msat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toRemote == 700_000_000.msat)
+  }
+
+  test("Added excess to funding (splice-in, liquidity ads, changeless)", Tag(ChannelStateTestsTags.ChangelessFunding)) { f =>
+    import f._
+
+    val sender = TestProbe()
+    val fundingRequest = LiquidityAds.RequestFunding(100_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)
+    val cmd = CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest))
+    alice ! cmd
+
+    exchangeStfu(alice, bob, alice2bob, bob2alice)
+    assert(alice2bob.expectMsgType[SpliceInit].requestFunding_opt.nonEmpty)
+    alice2bob.forward(bob)
+    val spliceAck = bob2alice.expectMsgType[SpliceAck]
+    bob2alice.forward(alice)
+    assert(spliceAck.willFund_opt.nonEmpty)
+    // When we request an input of 100_000 sat, we should get an input of 101_000 sat + fees from our dummy wallet.
+    assert(spliceAck.fundingContribution == 101_000.sat)
+
+    // Alice adds splice-in input (no change output), Bob adds liquidity splice-in input (no change output).
+    constructTx(alice, bob, alice2bob, bob2alice, sInputsCount = 1, sOutputsCount = 0, rInputsCount = 1, rOutputsCount = 0)
+
+    val spliceTx = exchangeSpliceSigs(alice, bob, alice2bob, bob2alice, sender)
+    assert(computeFees(spliceTx, wallet.asInstanceOf[SingleKeyOnChainWallet]) < 15_000.sat)
+
+    // Alice paid fees to Bob for the additional liquidity.
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.capacity == 2_101_000.sat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal < 1_300_000_000.msat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toRemote > 801_000_000.msat)
+
+    // Bob signed a liquidity purchase.
+    bobPeer.fishForMessage() {
+      case l: LiquidityPurchaseSigned =>
+        assert(l.purchase.paymentDetails == LiquidityAds.PaymentDetails.FromChannelBalance)
+        assert(l.fundingTxIndex == 1)
+        assert(l.txId == alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingTxId)
+        true
+      case _ => false
+    }
+
+    // Alice adds two inputs: splice-in and fee bump (no excess, no change output), Bob adds two inputs: liquidity splice-in
+    // and fee bump (no change output); our dummy wallet always adds an input during funding but a real bitcoin wallet would
+    // use the previous input with less change.
+    val rbfSender = initiateRbfWithoutSigs(f.alice, f.bob, f.alice2bob, f.bob2alice, FeeratePerKw(15_000 sat), sInputsCount = 2, sOutputsCount = 0, rInputsCount = 2, rOutputsCount = 0, Some(fundingRequest))
+    val rbfTx1 = exchangeSpliceSigs(f, rbfSender)
+
+    assert(computeFees(rbfTx1, wallet.asInstanceOf[SingleKeyOnChainWallet]) < 30_000.sat)
+    rbfTx1.txIn.foreach(txIn => assert(rbfTx1.txIn.map(_.outPoint).contains(txIn.outPoint)))
+
+    // Bob does not add the initial excess funding to their added inbound liquidity; only what was initially requested.
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.capacity == 2_100_000.sat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal < 1_300_000_000.msat)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toRemote > 800_000_000.msat)
   }
 
   test("recv CMD_ADD_HTLC while a splice is requested") { f =>

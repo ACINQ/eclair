@@ -501,6 +501,8 @@ object SpliceStatus {
   case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit, fundingContributions_opt: Option[InteractiveTxFunder.FundingContributions]) extends SpliceStatus
   /** We told our peer we want to RBF the latest splice transaction. */
   case class RbfRequested(cmd: CMD_BUMP_FUNDING_FEE, rbf: TxInitRbf) extends SpliceStatus
+  /** Our peer initiated a splice */
+  case class SpliceInitiated(init: SpliceInit, willFund_opt: Option[LiquidityAds.WillFundPurchase]) extends SpliceStatus
   /** We both agreed to splice/rbf and are building the corresponding transaction. */
   case class SpliceInProgress(cmd_opt: Option[ChannelFundingCommand], sessionId: ByteVector32, splice: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends SpliceStatus
   /** The splice transaction has been negotiated, we're exchanging signatures. */
