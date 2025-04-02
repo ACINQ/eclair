@@ -198,7 +198,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainPubkeyCache {
     val excess = if (amountOut - currentAmountIn == 100_000.sat) 1_000.sat else 0.sat
     val fee = Transactions.weight2fee(feeRate, dummySignedTx.weight() + externalInputsWeight.values.sum.toInt)
     // We add a single input to reach the desired feerate.
-    val inputAmount1 = if (changeless) amountOut + fee + excess else inputAmount
+    val inputAmount1 = if (changeless) amountOut + fee + excess - currentAmountIn else inputAmount
     val inputTx1 = Transaction(2, Seq(TxIn(OutPoint(randomTxId(), 1), Nil, 0)), Seq(TxOut(inputAmount1, script)), 0)
     inputs = inputs :+ inputTx1
     feeBudget_opt match {

@@ -1035,6 +1035,56 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               val spliceInit1 = spliceInit.copy(fundingContribution = spliceInit.fundingContribution + fundingContributions.excess_opt.getOrElse(0 sat))
               stay() using d.copy(spliceStatus = SpliceStatus.SpliceRequested(cmd, spliceInit1, Some(fundingContributions))) sending spliceInit1
           }
+        case SpliceStatus.SpliceInitiated(spliceInit, willFund_opt) =>
+          msg match {
+            case InteractiveTxFunder.FundingFailed =>
+              log.warning("splice request funding failed from txFunder: {}, current splice status is {}.", msg, d.spliceStatus)
+              stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, ChannelFundingError(d.channelId).getMessage)
+            case fundingContributions: InteractiveTxFunder.FundingContributions =>
+              val fundingContribution1 = willFund_opt.map(_.purchase.amount).getOrElse(0 sat) + fundingContributions.excess_opt.getOrElse(0 sat)
+              log.info("accepting splice with remote.in.amount={} remote.in.push={} local.in.amount={} (excess={}).",
+                spliceInit.fundingContribution,
+                spliceInit.pushAmount,
+                fundingContribution1,
+                fundingContributions.excess_opt.getOrElse(0 sat)
+              )
+              val parentCommitment = d.commitments.latest.commitment
+              val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey
+              val spliceAck = SpliceAck(d.channelId,
+                fundingContribution = fundingContribution1,
+                fundingPubKey = localFundingPubKey,
+                pushAmount = 0.msat,
+                requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
+                willFund_opt = willFund_opt.map(_.willFund),
+                feeCreditUsed_opt = spliceInit.useFeeCredit_opt
+              )
+              val fundingParams = InteractiveTxParams(
+                channelId = d.channelId,
+                isInitiator = false,
+                localContribution = fundingContribution1,
+                remoteContribution = spliceInit.fundingContribution,
+                sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
+                remoteFundingPubKey = spliceInit.fundingPubKey,
+                localOutputs = Nil,
+                lockTime = spliceInit.lockTime,
+                dustLimit = d.commitments.params.localParams.dustLimit.max(d.commitments.params.remoteParams.dustLimit),
+                targetFeerate = spliceInit.feerate,
+                requireConfirmedInputs = RequireConfirmedInputs(forLocal = spliceInit.requireConfirmedInputs, forRemote = nodeParams.channelConf.requireConfirmedInputsForDualFunding)
+              )
+              val sessionId = randomBytes32()
+              val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
+                sessionId,
+                nodeParams, fundingParams,
+                channelParams = d.commitments.params,
+                purpose = InteractiveTxBuilder.SpliceTx(parentCommitment, d.commitments.changes),
+                localPushAmount = spliceAck.pushAmount, remotePushAmount = spliceInit.pushAmount,
+                liquidityPurchase_opt = willFund_opt.map(_.purchase),
+                Some(fundingContributions),
+                wallet
+              ))
+              txBuilder ! InteractiveTxBuilder.Start(self)
+              stay() using d.copy(spliceStatus = SpliceStatus.SpliceInProgress(cmd_opt = None, sessionId, txBuilder, remoteCommitSig = None)) sending spliceAck
+          }
         case _ =>
           msg match {
             case InteractiveTxFunder.FundingFailed =>
@@ -1073,19 +1123,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                 log.warning("rejecting splice request with invalid liquidity ads: {}", t.getMessage)
                 stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, t.getMessage)
               case Right(willFund_opt) =>
-                log.info(s"accepting splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount}")
-                val spliceAck = SpliceAck(d.channelId,
-                  fundingContribution = willFund_opt.map(_.purchase.amount).getOrElse(0 sat),
-                  fundingPubKey = localFundingPubKey,
-                  pushAmount = 0.msat,
-                  requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
-                  willFund_opt = willFund_opt.map(_.willFund),
-                  feeCreditUsed_opt = msg.useFeeCredit_opt
-                )
+                log.info(s"funding splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount}")
                 val fundingParams = InteractiveTxParams(
                   channelId = d.channelId,
                   isInitiator = false,
-                  localContribution = spliceAck.fundingContribution,
+                  localContribution = willFund_opt.map(_.purchase.amount).getOrElse(0 sat),
                   remoteContribution = msg.fundingContribution,
                   sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
                   remoteFundingPubKey = msg.fundingPubKey,
@@ -1093,21 +1135,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
                   lockTime = msg.lockTime,
                   dustLimit = d.commitments.params.localParams.dustLimit.max(d.commitments.params.remoteParams.dustLimit),
                   targetFeerate = msg.feerate,
-                  requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceAck.requireConfirmedInputs)
+                  requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = nodeParams.channelConf.requireConfirmedInputsForDualFunding)
                 )
-                val sessionId = randomBytes32()
-                val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
-                  sessionId,
-                  nodeParams, fundingParams,
-                  channelParams = d.commitments.params,
-                  purpose = InteractiveTxBuilder.SpliceTx(parentCommitment, d.commitments.changes),
-                  localPushAmount = spliceAck.pushAmount, remotePushAmount = msg.pushAmount,
-                  liquidityPurchase_opt = willFund_opt.map(_.purchase),
-                  None,
-                  wallet
-                ))
-                txBuilder ! InteractiveTxBuilder.Start(self)
-                stay() using d.copy(spliceStatus = SpliceStatus.SpliceInProgress(cmd_opt = None, sessionId, txBuilder, remoteCommitSig = None)) sending spliceAck
+                val dummyFundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey)))
+                val txFunder = context.spawnAnonymous(InteractiveTxFunder(remoteNodeId, fundingParams, dummyFundingPubkeyScript, purpose = InteractiveTxBuilder.SpliceTx(parentCommitment, d.commitments.changes), wallet))
+                txFunder ! InteractiveTxFunder.FundTransaction(self)
+                stay() using d.copy(spliceStatus = SpliceStatus.SpliceInitiated(msg, willFund_opt))
             }
           }
         case SpliceStatus.NoSplice =>
@@ -1294,6 +1327,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(msg: TxAbort, d: DATA_NORMAL) =>
       d.spliceStatus match {
+        case SpliceStatus.SpliceInitiated(_, _) =>
+          log.info("our peer aborted their own splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
+          stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
         case SpliceStatus.SpliceInProgress(cmd_opt, _, txBuilder, _) =>
           log.info("our peer aborted the splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, SpliceAttemptAborted(d.channelId)))
