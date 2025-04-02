@@ -153,7 +153,7 @@ object Transactions {
        * @param leafHash   hash of the leaf script we're spending (must belong to the tree).
        */
       case class ScriptPath(scriptTree: ScriptTree, leafHash: ByteVector32) extends RedeemPath {
-        require(ScriptPath.findScript(scriptTree, leafHash).nonEmpty, "script tree must contain the provided leaf")
+        val leaf: ScriptTree.Leaf = ScriptPath.findScript(scriptTree, leafHash).getOrElse(throw new IllegalArgumentException("script tree must contain the provided leaf"))
       }
 
       object ScriptPath {
@@ -1340,7 +1340,7 @@ object Transactions {
       case InputInfo.SegwitInput(_, _, redeemScript) => Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, redeemScript)
       case t: InputInfo.TaprootInput =>
         t.redeemPath match {
-          case RedeemPath.ScriptPath(scriptTree: ScriptTree.Branch, _) => Script.witnessScriptPathPay2tr(t.internalKey, scriptTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(revocationSig)), scriptTree)
+          case s@RedeemPath.ScriptPath(scriptTree: ScriptTree.Branch, _) => Script.witnessScriptPathPay2tr(t.internalKey, s.leaf, ScriptWitness(Seq(revocationSig)), scriptTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building main penalty tx")
         }
     }
@@ -1360,8 +1360,8 @@ object Transactions {
       case InputInfo.SegwitInput(_, _, redeemScript) => witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, redeemScript, commitmentFormat)
       case t: InputInfo.TaprootInput =>
         t.redeemPath match {
-          case RedeemPath.ScriptPath(htlcTree: ScriptTree.Branch, _) =>
-            Script.witnessScriptPathPay2tr(t.internalKey, htlcTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(Taproot.encodeSig(remoteSig, SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY), Taproot.encodeSig(localSig, SIGHASH_DEFAULT), paymentPreimage)), htlcTree)
+          case s@RedeemPath.ScriptPath(htlcTree: ScriptTree.Branch, _) =>
+            Script.witnessScriptPathPay2tr(t.internalKey, s.leaf, ScriptWitness(Seq(Taproot.encodeSig(remoteSig, SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY), Taproot.encodeSig(localSig, SIGHASH_DEFAULT), paymentPreimage)), htlcTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building htlc successTx tx")
         }
     }
@@ -1373,8 +1373,8 @@ object Transactions {
       case InputInfo.SegwitInput(_, _, redeemScript) => witnessHtlcTimeout(localSig, remoteSig, redeemScript, commitmentFormat)
       case t: InputInfo.TaprootInput =>
         t.redeemPath match {
-          case RedeemPath.ScriptPath(htlcTree: ScriptTree.Branch, _) =>
-            Script.witnessScriptPathPay2tr(t.internalKey, htlcTree.getLeft.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(Taproot.encodeSig(remoteSig, SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY), Taproot.encodeSig(localSig, SIGHASH_DEFAULT))), htlcTree)
+          case s@RedeemPath.ScriptPath(htlcTree: ScriptTree.Branch, _) =>
+            Script.witnessScriptPathPay2tr(t.internalKey, s.leaf, ScriptWitness(Seq(Taproot.encodeSig(remoteSig, SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY), Taproot.encodeSig(localSig, SIGHASH_DEFAULT))), htlcTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building htlc timeout tx")
         }
     }
@@ -1386,8 +1386,8 @@ object Transactions {
       case InputInfo.SegwitInput(_, _, redeemScript) => witnessClaimHtlcSuccessFromCommitTx(localSig, paymentPreimage, redeemScript)
       case t: InputInfo.TaprootInput =>
         t.redeemPath match {
-          case RedeemPath.ScriptPath(htlcTree: ScriptTree.Branch, _) =>
-            Script.witnessScriptPathPay2tr(t.internalKey, htlcTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(localSig, paymentPreimage)), htlcTree)
+          case s@RedeemPath.ScriptPath(htlcTree: ScriptTree.Branch, _f) =>
+            Script.witnessScriptPathPay2tr(t.internalKey, s.leaf, ScriptWitness(Seq(localSig, paymentPreimage)), htlcTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building claim htlc success tx")
         }
     }
@@ -1400,8 +1400,8 @@ object Transactions {
         witnessClaimHtlcTimeoutFromCommitTx(localSig, redeemScript)
       case t: InputInfo.TaprootInput =>
         t.redeemPath match {
-          case RedeemPath.ScriptPath(htlcTree: ScriptTree.Branch, _) =>
-            Script.witnessScriptPathPay2tr(t.internalKey, htlcTree.getLeft.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(localSig)), htlcTree)
+          case s@RedeemPath.ScriptPath(htlcTree: ScriptTree.Branch, _) =>
+            Script.witnessScriptPathPay2tr(t.internalKey, s.leaf, ScriptWitness(Seq(localSig)), htlcTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building claim htlc timeout tx")
         }
     }
@@ -1431,8 +1431,8 @@ object Transactions {
       case InputInfo.SegwitInput(_, _, redeemScript) => witnessToLocalDelayedAfterDelay(localSig, redeemScript)
       case t: InputInfo.TaprootInput =>
         t.redeemPath match {
-          case RedeemPath.ScriptPath(scriptTree: ScriptTree.Branch, _) =>
-            Script.witnessScriptPathPay2tr(t.internalKey, scriptTree.getLeft.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(localSig)), scriptTree)
+          case s@RedeemPath.ScriptPath(scriptTree: ScriptTree.Branch, _) =>
+            Script.witnessScriptPathPay2tr(t.internalKey, s.leaf, ScriptWitness(Seq(localSig)), scriptTree)
           case _ => throw new IllegalArgumentException("unexpected script tree leaf when building claim delayed output tx")
         }
     }
