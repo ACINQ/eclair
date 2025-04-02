@@ -26,8 +26,9 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReady, ChannelReadyTlv, TlvStream}
+import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.{RealShortChannelId, ShortChannelId}
+import fr.acinq.eclair.wire.protocol._
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.{Failure, Success, Try}
@@ -122,11 +123,21 @@ trait CommonFundingHandlers extends CommonHandlers {
     aliases
   }
 
-  def createChannelReady(aliases: ShortIdAliases, params: ChannelParams): ChannelReady = {
+  def createChannelReady(aliases: ShortIdAliases, commitments: Commitments): ChannelReady = {
+    val params = commitments.params
+    val fundingTxId = commitments.latest.fundingTxId
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
     val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
+    val tlvStream: TlvStream[ChannelReadyTlv] = commitments.latest.commitInput match {
+      case _: InputInfo.TaprootInput =>
+        val localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
+        val (_, nextLocalNonce) = keyManager.verificationNonce(fundingTxId, localFundingPubkey, 1)
+        TlvStream(ChannelReadyTlv.ShortChannelIdTlv(aliases.localAlias), ChannelTlv.NextLocalNonceTlv(nextLocalNonce))
+      case _: InputInfo.SegwitInput =>
+        TlvStream(ChannelReadyTlv.ShortChannelIdTlv(aliases.localAlias))
+    }
     // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
-    ChannelReady(params.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(aliases.localAlias)))
+    ChannelReady(params.channelId, nextPerCommitmentPoint, tlvStream)
   }
 
   def receiveChannelReady(aliases: ShortIdAliases, channelReady: ChannelReady, commitments: Commitments): DATA_NORMAL = {
@@ -150,6 +161,7 @@ trait CommonFundingHandlers extends CommonHandlers {
       },
       remoteNextCommitInfo = Right(channelReady.nextPerCommitmentPoint)
     )
+    setRemoteNextLocalNonces("received ChannelReady", channelReady.nexLocalNonce_opt.toList) // TODO: this is wrong, there should be a different nonce for each commitment
     peer ! ChannelReadyForPayments(self, remoteNodeId, commitments.channelId, fundingTxIndex = 0)
     DATA_NORMAL(commitments1, aliases1, None, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
   }

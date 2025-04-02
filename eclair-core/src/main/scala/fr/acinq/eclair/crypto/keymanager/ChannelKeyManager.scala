@@ -16,9 +16,10 @@
 
 package fr.acinq.eclair.crypto.keymanager
 
+import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, DeterministicWallet, OutPoint, Protocol, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Protocol, Transaction, TxId, TxOut}
 import fr.acinq.eclair.channel.{ChannelConfig, LocalParams}
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
 import scodec.bits.ByteVector
@@ -40,6 +41,27 @@ trait ChannelKeyManager {
   def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PrivateKey
 
   def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PublicKey
+
+  /**
+   * Create a deterministic verification nonce for a specific funding public key and commit tx index. The public nonce will be sent to our peer to create a partial signature
+   * of our commit tx, the private nonce is never shared (and never serialized or stored) and is used to create our local partial signature to be combined with our peer's.
+   *
+   * @param fundingTxId funding transaction id
+   * @param fundingPubKey funding public key
+   * @param commitIndex   commit tx index
+   * @return a verification nonce that is used to create a partial musig2 signature for our commit tx.
+   */
+  def verificationNonce(fundingTxId: TxId, fundingPubKey: PublicKey, commitIndex: Long): (SecretNonce, IndividualNonce)
+
+  /**
+   * Create a new, randomized singing nonce for a specific funding public key. These nonces are used to create a partial musig2 signature for our peer's commit tx and are sent
+   * alongside the partial signature. They are created on the fly, and never stored.
+   *
+   * @param fundingPubKey funding public key
+   * @return a signing nonce that can be used to create a musig2 signature with the funding private key that matches the provided key.
+   *         Each call to this methode will return a different, randomized signing nonce.
+   */
+  def signingNonce(fundingPubKey: PublicKey): (SecretNonce, IndividualNonce)
 
   def keyPath(localParams: LocalParams, channelConfig: ChannelConfig): DeterministicWallet.KeyPath = {
     if (channelConfig.hasOption(ChannelConfig.FundingPubKeyBasedChannelKeyPath)) {
@@ -64,11 +86,16 @@ trait ChannelKeyManager {
    * @param publicKey        extended public key
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to our [[fr.acinq.eclair.transactions.Transactions.InputInfo]] output, which is assumed to always be the first spent output)
    * @return a signature generated with the private key that matches the input extended public key
    */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64
 
+  def partialSign(tx: TransactionWithInputInfo, localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32] = {
+    partialSign(tx.tx, tx.tx.txIn.indexWhere(_.outPoint == tx.input.outPoint), Seq(tx.input.txOut), localPublicKey, remotePublicKey, txOwner, localNonce, remoteNextLocalNonce)
+  }
+
+  def partialSign(tx: Transaction, inputIndex: Int, spentOutputs: Seq[TxOut], localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32]
 
   /**
    * This method is used to spend funds sent to htlc keys/delayed keys
@@ -78,7 +105,7 @@ trait ChannelKeyManager {
    * @param remotePoint      remote point
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to our [[fr.acinq.eclair.transactions.Transactions.InputInfo]] output, which is assumed to always be the first spent output)
    * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
    */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64
@@ -91,7 +118,7 @@ trait ChannelKeyManager {
    * @param remoteSecret     remote secret
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to our [[fr.acinq.eclair.transactions.Transactions.InputInfo]] output, which is assumed to always be the first spent output)
    * @return a signature generated with a private key generated from the input key's matching private key and the remote secret.
    */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64
