@@ -222,10 +222,13 @@ object Scripts {
   def witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector, commitmentFormat: CommitmentFormat) =
     ScriptWitness(ByteVector.empty :: der(remoteSig, htlcRemoteSighash(commitmentFormat)) :: der(localSig) :: paymentPreimage.bytes :: htlcOfferedScript :: Nil)
 
-  /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
+  /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script
+   * We don't check signature or script sizes, just that there is a 32 bytes item in the right place which may be a preimage
+   * for one of our HTLCs, and if it's a false positive it will be ignored
+   */
   def extractPreimageFromHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
     case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // standard channels
-    case ScriptWitness(Seq(remoteSig, localSig, paymentPreimage, _, _)) if remoteSig.size == 65 && localSig.size == 64 && paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // simple taproot channels
+    case ScriptWitness(Seq(_, _, paymentPreimage, _, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage) // simple taproot channels
   }
 
   /** Extract payment preimages from a (potentially batched) 2nd-stage HTLC transaction's witnesses. */

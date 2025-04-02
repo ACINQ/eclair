@@ -558,7 +558,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           val commitTx = Transactions.addAggregatedSignature(txInfo, sig)
           val expectedCommitTxWeight = commitmentFormat.commitWeight + 5 * commitmentFormat.htlcOutputWeight
           assertWeightMatches(commitTx.tx.weight(), expectedCommitTxWeight, commitmentFormat)
-          val sharedInput = Musig2Input(InputInfo.TaprootInput(fundingTxOutpoint, fundingOutput, Taproot.musig2Aggregate(localFundingPriv.publicKey, remoteFundingPriv.publicKey), InputInfo.RedeemPath.KeyPath(None)), 0, remoteFundingPriv.publicKey, 0)
+          val sharedInput = Musig2Input(InputInfo.TaprootInput(fundingTxOutpoint, fundingOutput, Taproot.musig2Aggregate(localFundingPriv.publicKey, remoteFundingPriv.publicKey), InputInfo.RedeemPath.KeyPath(None)), 0, remoteFundingPriv.publicKey)
           assertWitnessWeightMatches(commitTx.tx.txIn(0).witness, sharedInput.weight, commitmentFormat)
           commitTx
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
@@ -659,8 +659,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val allInputs = walletInputs + (claimAnchorOutputTx.input.outPoint -> claimAnchorOutputTx.input.txOut)
       assert(Try(Transaction.correctlySpends(claimAnchorOutputTx.tx, allInputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isFailure)
       // All wallet inputs must be provided when signing.
-      //assert(Try(claimAnchorOutputTx.sign(anchorKey, TxOwner.Local, commitmentFormat, Map.empty)).isFailure)
-      //assert(Try(claimAnchorOutputTx.sign(anchorKey, TxOwner.Local, commitmentFormat, walletInputs.take(1))).isFailure)
+      assert(Try(claimAnchorOutputTx.sign(anchorKey, TxOwner.Local, commitmentFormat, Map.empty)).isFailure)
+      assert(Try(claimAnchorOutputTx.sign(anchorKey, TxOwner.Local, commitmentFormat, walletInputs.take(1))).isFailure)
       val localSig = claimAnchorOutputTx.sign(anchorKey, TxOwner.Local, commitmentFormat, walletInputs)
       val signedTx = addSigs(claimAnchorOutputTx, localSig)
       Transaction.correctlySpends(signedTx.tx, allInputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
