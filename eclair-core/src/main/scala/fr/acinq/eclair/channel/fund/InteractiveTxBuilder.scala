@@ -124,7 +124,7 @@ object InteractiveTxBuilder {
     }
   }
 
-  case class Musig2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, commitIndex: Long) extends SharedFundingInput {
+  case class Musig2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
     // witness is a single 64 bytes signature, weight = 1 (# of items) + 1 (size) + 64 = 66
     // weight is 4 * (unsigned input weight) + witness weight = 4 * (32 + 4 + 4 + 1) + 66 = 230
     override val weight: Int = 230

@@ -139,7 +139,7 @@ object Transactions {
   object InputInfo {
     case class SegwitInput(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector) extends InputInfo
     object SegwitInput {
-      def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]) = new SegwitInput(outPoint, txOut,  Script.write(redeemScript))
+      def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]): SegwitInput = SegwitInput(outPoint, txOut,  Script.write(redeemScript))
     }
     case class TaprootInput(outPoint: OutPoint, txOut: TxOut, internalKey: XonlyPublicKey, redeemPath: RedeemPath) extends InputInfo
     sealed trait RedeemPath
@@ -160,7 +160,7 @@ object Transactions {
         import KotlinUtils._
 
         /**
-         * Note: this won't be needed once findScript is added to bitcoin-kmp
+         * TODO: this won't be needed once findScript is added to bitcoin-kmp, remove when updating bitcoin-kmp
          * @return the leaf that matches `leafHash`
          */
         def findScript(scriptTree: ScriptTree, leafHash: ByteVector32): Option[ScriptTree.Leaf] = scriptTree match {

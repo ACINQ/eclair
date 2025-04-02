@@ -1065,7 +1065,7 @@ object Helpers {
               (localFundingPubkey, commitment.remoteFundingPubKey)
             case SimpleTaprootChannelCommitmentFormat =>
               val channelKeyPath = keyManager.keyPath(commitment.localParams, commitment.params.channelConfig)
-              val localPaymentPubkey = commitment.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
+              val localPaymentPubkey = keyManager.paymentPoint(channelKeyPath).publicKey
               val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitment.remoteParams.delayedPaymentBasepoint, commitment.remoteCommit.remotePerCommitmentPoint)
               (localPaymentPubkey, remoteDelayedPaymentPubkey)
           }
