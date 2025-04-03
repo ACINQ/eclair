@@ -406,8 +406,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // remote spends offered HTLC output with revocation key
       val script = Script.write(Scripts.htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc1.paymentHash), DefaultCommitmentFormat))
-      val Some(htlcOutputIndex) = outputs.map(_.filter[OutHtlc]).zipWithIndex.collectFirst {
-        case (Some(co), outputIndex) if co.commitmentOutput.outgoingHtlc.add.id == htlc1.id => outputIndex
+      val Some(htlcOutputIndex) = outputs.zipWithIndex.collectFirst {
+        case (CommitmentOutputLink(o, s, OutHtlc(ou)), outputIndex) if ou.add.id == htlc1.id => outputIndex
       }
       val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
       val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
@@ -427,8 +427,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // remote spends received HTLC output with revocation key
       val script = Script.write(Scripts.htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc2.paymentHash), htlc2.cltvExpiry, DefaultCommitmentFormat))
-      val Some(htlcOutputIndex) = outputs.map(_.filter[InHtlc]).zipWithIndex.collectFirst {
-        case (Some(co), outputIndex) if co.commitmentOutput.incomingHtlc.add.id == htlc2.id => outputIndex
+      val Some(htlcOutputIndex) = outputs.zipWithIndex.collectFirst {
+        case (CommitmentOutputLink(o, s, InHtlc(ou)), outputIndex) if ou.add.id == htlc2.id => outputIndex
       }
       val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
       val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
@@ -558,7 +558,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           val commitTx = Transactions.addAggregatedSignature(txInfo, sig)
           val expectedCommitTxWeight = commitmentFormat.commitWeight + 5 * commitmentFormat.htlcOutputWeight
           assertWeightMatches(commitTx.tx.weight(), expectedCommitTxWeight, commitmentFormat)
-          val sharedInput = Musig2Input(InputInfo.TaprootInput(fundingTxOutpoint, fundingOutput, Taproot.musig2Aggregate(localFundingPriv.publicKey, remoteFundingPriv.publicKey), InputInfo.RedeemPath.KeyPath(None)), 0, remoteFundingPriv.publicKey)
+          val sharedInput = Musig2Input(InputInfo(fundingTxOutpoint, fundingOutput, InputSpendingInfo.TaprootKeyPath(Taproot.musig2Aggregate(localFundingPriv.publicKey, remoteFundingPriv.publicKey), None)), 0, remoteFundingPriv.publicKey)
           assertWitnessWeightMatches(commitTx.tx.txIn(0).witness, sharedInput.weight, commitmentFormat)
           commitTx
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
@@ -568,7 +568,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           val expectedCommitTxWeight = commitmentFormat.commitWeight + 5 * commitmentFormat.htlcOutputWeight
           // we cannot do exact matches because DER signature encoding is variable length
           assertWeightMatches(commitTx.tx.weight(), expectedCommitTxWeight, commitmentFormat)
-          val sharedInput = Multisig2of2Input(InputInfo.SegwitInput(fundingTxOutpoint, fundingOutput, Scripts.multiSig2of2(localFundingPriv.publicKey, remoteFundingPriv.publicKey)), 0, remoteFundingPriv.publicKey)
+          val sharedInput = Multisig2of2Input(InputInfo(fundingTxOutpoint, fundingOutput, InputSpendingInfo.Segwit(Scripts.multiSig2of2(localFundingPriv.publicKey, remoteFundingPriv.publicKey))), 0, remoteFundingPriv.publicKey)
           assertWitnessWeightMatches(commitTx.tx.txIn(0).witness, sharedInput.weight, commitmentFormat)
           commitTx
       }
@@ -827,8 +827,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends offered htlc output with revocation key
-      val Some(htlcOutputIndex) = commitTxOutputs.map(_.filter[OutHtlc]).zipWithIndex.collectFirst {
-        case (Some(co), outputIndex) if co.commitmentOutput.outgoingHtlc.add.id == htlc1.id => outputIndex
+      val Some(htlcOutputIndex) = commitTxOutputs.zipWithIndex.collectFirst {
+        case (CommitmentOutputLink(o, s, OutHtlc(ou)), outputIndex) if ou.add.id == htlc1.id => outputIndex
       }
       val Right(htlcPenaltyTx) = commitmentFormat match {
         case SimpleTaprootChannelCommitmentFormat =>
@@ -845,8 +845,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // remote spends received htlc output with revocation key
       for (htlc <- Seq(htlc2a, htlc2b)) {
-        val Some(htlcOutputIndex) = commitTxOutputs.map(_.filter[InHtlc]).zipWithIndex.collectFirst {
-          case (Some(co), outputIndex) if co.commitmentOutput.incomingHtlc.add.id == htlc.id => outputIndex
+        val Some(htlcOutputIndex) = commitTxOutputs.zipWithIndex.collectFirst {
+          case (CommitmentOutputLink(o, s, InHtlc(ou)), outputIndex) if ou.add.id == htlc.id => outputIndex
         }
         val Right(htlcPenaltyTx) = commitmentFormat match {
           case SimpleTaprootChannelCommitmentFormat =>

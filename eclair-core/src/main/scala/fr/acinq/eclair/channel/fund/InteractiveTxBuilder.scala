@@ -34,7 +34,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Output.Local
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Purpose
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, InputSpendingInfo, TxOwner}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ToMilliSatoshiConversion, UInt64}
@@ -109,9 +109,9 @@ object InteractiveTxBuilder {
   }
 
   object SharedFundingInput {
-    def apply(commitment: Commitment): SharedFundingInput = commitment.commitInput match {
-      case inputInfo: InputInfo.SegwitInput => Multisig2of2Input(inputInfo, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
-      case inputInfo: InputInfo.TaprootInput => Musig2Input(inputInfo, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
+    def apply(commitment: Commitment): SharedFundingInput = commitment.commitInput.spendingInfo match {
+      case _: InputSpendingInfo.Segwit => Multisig2of2Input(commitment.commitInput, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
+      case _: InputSpendingInfo.TaprootScriptPath | _: InputSpendingInfo.TaprootKeyPath => Musig2Input(commitment.commitInput, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
     }
   }
 

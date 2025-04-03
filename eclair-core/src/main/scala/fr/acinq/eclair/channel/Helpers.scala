@@ -33,7 +33,6 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Scripts._
-import fr.acinq.eclair.transactions.Transactions.InputInfo.RedeemPath
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
@@ -382,11 +381,11 @@ object Helpers {
       case SimpleTaprootChannelCommitmentFormat =>
         val fundingScript = Taproot.musig2FundingScript(fundingPubkey1, fundingPubkey2)
         val fundingTxOut = TxOut(fundingSatoshis, fundingScript)
-        InputInfo.TaprootInput(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, Taproot.musig2Aggregate(fundingPubkey1, fundingPubkey2), RedeemPath.KeyPath(None))
+        InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, InputSpendingInfo.TaprootKeyPath(Taproot.musig2Aggregate(fundingPubkey1, fundingPubkey2), None))
       case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
         val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
         val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
-        InputInfo.SegwitInput(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, write(fundingScript))
+        InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, InputSpendingInfo.Segwit(fundingScript))
     }
 
     /**

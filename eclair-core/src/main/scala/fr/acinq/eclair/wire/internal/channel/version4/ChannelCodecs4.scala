@@ -2,7 +2,7 @@ package fr.acinq.eclair.wire.internal.channel.version4
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Script, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget}
 import fr.acinq.eclair.channel.LocalFundingStatus._
 import fr.acinq.eclair.channel._
@@ -110,10 +110,15 @@ private[channel] object ChannelCodecs4 {
     val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
     // all v4-encoded channels use segwit inputs, support for taproot inputs will be added later in v5 codecs
+    private val spendingInfoCodec: Codec[InputSpendingInfo] = lengthDelimited(bytes).xmap[InputSpendingInfo.Segwit](
+      b => InputSpendingInfo.Segwit(b),
+      s => Script.write(s.output.redeemScript)
+    ).upcast[InputSpendingInfo]
+
     val inputInfoCodec: Codec[InputInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo.SegwitInput].upcast[InputInfo]
+        ("redeemScript" | spendingInfoCodec)).as[InputInfo]
 
     val outputInfoCodec: Codec[OutputInfo] = (
       ("index" | uint32) ::

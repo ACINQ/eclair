@@ -25,7 +25,6 @@ import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.AdjustPreviousTxOutpu
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder._
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.transactions.Transactions.InputInfo.SegwitInput
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, TestKitBaseClass, randomBytes32}
 import org.mockito.IdiomaticMockito.StubbingOps
@@ -43,12 +42,12 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val commitInput = Funding.makeFundingInputInfo(randomTxId(), 1, 500 sat, PlaceHolderPubKey, PlaceHolderPubKey, DefaultCommitmentFormat)
     val commitTx = Transaction(
       2,
-      Seq(TxIn(commitInput.outPoint, commitInput.asInstanceOf[SegwitInput].redeemScript, 0, Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey))),
+      Seq(TxIn(commitInput.outPoint, Script.write(commitInput.spendingInfo.asInstanceOf[InputSpendingInfo.Segwit].output.redeemScript), 0, Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey))),
       Seq(TxOut(330 sat, Script.pay2wsh(anchorScript))),
       0
     )
     val anchorTx = ClaimLocalAnchorOutputTx(
-      InputInfo.SegwitInput(OutPoint(commitTx, 0), commitTx.txOut.head, anchorScript),
+      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, InputSpendingInfo.Segwit(anchorScript)),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Nil, 0),
       ConfirmationTarget.Absolute(BlockHeight(0))
     )
@@ -67,14 +66,14 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       0
     )
     val htlcSuccess = HtlcSuccessWithWitnessData(HtlcSuccessTx(
-      InputInfo.SegwitInput(OutPoint(commitTx, 0), commitTx.txOut.head, htlcSuccessScript),
+      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, InputSpendingInfo.Segwit(htlcSuccessScript)),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       paymentHash,
       17,
       ConfirmationTarget.Absolute(BlockHeight(0))
     ), PlaceHolderSig, preimage)
     val htlcTimeout = HtlcTimeoutWithWitnessData(HtlcTimeoutTx(
-      InputInfo.SegwitInput(OutPoint(commitTx, 1), commitTx.txOut.last, htlcTimeoutScript),
+      InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last, InputSpendingInfo.Segwit(htlcTimeoutScript)),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(4000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       12,
       ConfirmationTarget.Absolute(BlockHeight(0))
@@ -94,14 +93,14 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       0
     )
     val claimHtlcSuccess = ClaimHtlcSuccessWithWitnessData(ClaimHtlcSuccessTx(
-      InputInfo.SegwitInput(OutPoint(commitTx, 0), commitTx.txOut.head, htlcSuccessScript),
+      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, InputSpendingInfo.Segwit(htlcSuccessScript)),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       paymentHash,
       5,
       ConfirmationTarget.Absolute(BlockHeight(0))
     ), preimage)
     val claimHtlcTimeout = ClaimHtlcTimeoutWithWitnessData(ClaimHtlcTimeoutTx(
-      InputInfo.SegwitInput(OutPoint(commitTx, 1), commitTx.txOut.last, htlcTimeoutScript),
+      InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last, InputSpendingInfo.Segwit(htlcTimeoutScript)),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       7,
       ConfirmationTarget.Absolute(BlockHeight(0))

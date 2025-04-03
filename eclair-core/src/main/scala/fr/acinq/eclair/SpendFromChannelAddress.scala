@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector64, DeterministicWallet, OutPoint
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, InputInfo, PlaceHolderPubKey, PlaceHolderSig, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, InputInfo, InputSpendingInfo, PlaceHolderPubKey, PlaceHolderSig, TxOwner}
 import scodec.bits.ByteVector
 
 import scala.concurrent.Future
@@ -43,7 +43,7 @@ trait SpendFromChannelAddress {
       inputTx <- appKit.wallet.getTransaction(outPoint.txid)
       localFundingPubkey = appKit.nodeParams.channelKeyManager.fundingPublicKey(fundingKeyPath, fundingTxIndex)
       fundingRedeemScript = multiSig2of2(localFundingPubkey.publicKey, remoteFundingPubkey)
-      inputInfo = InputInfo.SegwitInput(outPoint, inputTx.txOut(outPoint.index.toInt), fundingRedeemScript)
+      inputInfo = InputInfo(outPoint, inputTx.txOut(outPoint.index.toInt), InputSpendingInfo.Segwit(fundingRedeemScript))
       localSig = appKit.nodeParams.channelKeyManager.sign(
         Transactions.SpliceTx(inputInfo, unsignedTx), // classify as splice, doesn't really matter
         localFundingPubkey,
