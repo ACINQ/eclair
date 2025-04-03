@@ -13,7 +13,7 @@ import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.transactions._
+import fr.acinq.eclair.transactions.{Transactions, _}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, payment}
 import scodec.bits.ByteVector
@@ -1154,10 +1154,10 @@ case class Commitments(params: ChannelParams,
     active.forall { commitment =>
       val localFundingKey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
       val remoteFundingKey = commitment.remoteFundingPubKey
-      val fundingScript = Script.write(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
-      commitment.commitInput match {
-        case InputInfo.SegwitInput(_, _, redeemScript) => redeemScript == fundingScript
-        case _: InputInfo.TaprootInput => false
+      val fundingScript = Scripts.multiSig2of2(localFundingKey, remoteFundingKey)
+      commitment.commitInput.spendingInfo match {
+        case s: InputSpendingInfo.Segwit => s.output.redeemScript == fundingScript
+        case _ => false
       }
     }
   }

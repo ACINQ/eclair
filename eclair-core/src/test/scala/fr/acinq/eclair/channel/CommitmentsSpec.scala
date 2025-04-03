@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.LocalChannelKeyManager
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, DefaultCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, DefaultCommitmentFormat, InputSpendingInfo}
 import fr.acinq.eclair.transactions.{CommitmentSpec, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -492,7 +492,7 @@ object CommitmentsSpec {
     val localFundingPubKey = randomKey().publicKey
     val remoteFundingPubKey = randomKey().publicKey
     val fundingTx = Transaction(2, Nil, Seq(TxOut((toLocal + toRemote).truncateToSatoshi, Funding.makeFundingPubKeyScript(localFundingPubKey, remoteFundingPubKey, DefaultCommitmentFormat))), 0)
-    val commitmentInput = Transactions.InputInfo.SegwitInput(OutPoint(fundingTx, 0), fundingTx.txOut.head, Scripts.multiSig2of2(localFundingPubKey, remoteFundingPubKey))
+    val commitmentInput = Transactions.InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, InputSpendingInfo.Segwit(Scripts.multiSig2of2(localFundingPubKey, remoteFundingPubKey)))
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomTxId(), randomKey().publicKey)
     val localFundingStatus = announcement_opt match {
@@ -517,7 +517,7 @@ object CommitmentsSpec {
     val localFundingPubKey = randomKey().publicKey
     val remoteFundingPubKey = randomKey().publicKey
     val fundingTx = Transaction(2, Nil, Seq(TxOut((toLocal + toRemote).truncateToSatoshi, Funding.makeFundingPubKeyScript(localFundingPubKey, remoteFundingPubKey, DefaultCommitmentFormat))), 0)
-    val commitmentInput = Transactions.InputInfo.SegwitInput(OutPoint(fundingTx, 0), fundingTx.txOut.head, Scripts.multiSig2of2(localFundingPubKey, remoteFundingPubKey))
+    val commitmentInput = Transactions.InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, InputSpendingInfo.Segwit(Scripts.multiSig2of2(localFundingPubKey, remoteFundingPubKey)))
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toRemote, toLocal), randomTxId(), randomKey().publicKey)
     val localFundingStatus = announcement_opt match {

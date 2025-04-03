@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.internal.channel.version0
 
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, OutPoint, Transaction, TxId, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, OutPoint, Script, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
@@ -124,10 +124,15 @@ private[channel] object ChannelCodecs0 {
       closingTx => closingTx.tx
     )
 
+    private val spendingInfoCodec: Codec[InputSpendingInfo] = varsizebinarydata.xmap[InputSpendingInfo.Segwit](
+      b => InputSpendingInfo.Segwit(b),
+      s => Script.write(s.output.redeemScript)
+    ).upcast[InputSpendingInfo]
+
     val inputInfoCodec: Codec[InputInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | varsizebinarydata)).as[InputInfo.SegwitInput].upcast[InputInfo].decodeOnly
+        ("redeemScript" | spendingInfoCodec)).as[InputInfo].decodeOnly
 
     private val defaultConfirmationTarget: Codec[ConfirmationTarget.Absolute] = provide(ConfirmationTarget.Absolute(BlockHeight(0)))
 
