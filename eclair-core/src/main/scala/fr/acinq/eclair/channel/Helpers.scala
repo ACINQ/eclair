@@ -1178,7 +1178,7 @@ object Helpers {
             // back after the timeout.
             // NB: we first generate the tx skeleton and finalize it below, so we set logSuccess to false to avoid logging twice.
             withTxGenerationLog("claim-htlc-timeout", logSuccess = false) {
-              Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputs, commitment.localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, finalScriptPubKey, add, feeratePerKwHtlc, commitment.params.commitmentFormat)
+              Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputs, commitment.localParams.dustLimit, finalScriptPubKey, add, feeratePerKwHtlc, commitment.params.commitmentFormat)
             }.map(claimHtlcTx => {
               Some(claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-timeout") {
                 val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)

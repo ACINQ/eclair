@@ -190,7 +190,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val outputs = makeCommitTxOutputs(localPaysCommitTxFees = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, spec, DefaultCommitmentFormat)
       val pubKeyScript = write(pay2wsh(htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry, DefaultCommitmentFormat)))
       val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
-      val Right(claimClaimHtlcTimeoutTx) = makeClaimHtlcTimeoutTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw, DefaultCommitmentFormat)
+      val Right(claimClaimHtlcTimeoutTx) = makeClaimHtlcTimeoutTx(commitTx, outputs, localDustLimit, finalPubKeyScript, htlc, feeratePerKw, DefaultCommitmentFormat)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimClaimHtlcTimeoutTx, PlaceHolderSig).tx)
       assert(DefaultCommitmentFormat.claimHtlcTimeoutWeight == weight)
@@ -381,7 +381,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends remote->local htlc output directly in case of timeout
-      val Right(claimHtlcTimeoutTx) = makeClaimHtlcTimeoutTx(commitTx.tx, outputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc2, feeratePerKw, DefaultCommitmentFormat)
+      val Right(claimHtlcTimeoutTx) = makeClaimHtlcTimeoutTx(commitTx.tx, outputs, localDustLimit, finalPubKeyScript, htlc2, feeratePerKw, DefaultCommitmentFormat)
       val localSig = claimHtlcTimeoutTx.sign(remoteHtlcPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
       val signed = addSigs(claimHtlcTimeoutTx, localSig)
       assert(checkSpendable(signed).isSuccess)
@@ -791,7 +791,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // remote spends remote->local htlc output directly in case of timeout
       for (htlc <- Seq(htlc2a, htlc2b)) {
-        val Right(claimHtlcTimeoutTx) = makeClaimHtlcTimeoutTx(commitTx.tx, commitTxOutputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw, UnsafeLegacyAnchorOutputsCommitmentFormat)
+        val Right(claimHtlcTimeoutTx) = makeClaimHtlcTimeoutTx(commitTx.tx, commitTxOutputs, localDustLimit, finalPubKeyScript, htlc, feeratePerKw, UnsafeLegacyAnchorOutputsCommitmentFormat)
         val localSig = claimHtlcTimeoutTx.sign(remoteHtlcPriv, TxOwner.Local, commitmentFormat, Map.empty)
         val signedTx = addSigs(claimHtlcTimeoutTx, localSig)
         assertWeightMatches(signedTx.tx.weight(), commitmentFormat.claimHtlcTimeoutWeight, commitmentFormat)
