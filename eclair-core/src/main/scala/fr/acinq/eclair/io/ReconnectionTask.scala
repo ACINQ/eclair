@@ -187,19 +187,19 @@ object ReconnectionTask {
   // @formatter:on
 
   def selectNodeAddress(nodeParams: NodeParams, nodeAddresses: Seq[NodeAddress]): Option[NodeAddress] = {
-    // it doesn't make sense to mix tor and clearnet addresses, so we separate them and decide whether we use one or the other
     val torAddresses = nodeAddresses.collect { case o: OnionAddress => o }
     val clearnetAddresses = nodeAddresses diff torAddresses
     val selectedAddresses = nodeParams.socksProxy_opt match {
-      case Some(params) if clearnetAddresses.nonEmpty && params.useForTor && (!params.useForIPv4 || !params.useForIPv6) =>
-        // Remote has clearnet (and possibly tor addresses), and we support tor, but we have configured it to only use
-        // tor when strictly necessary. In this case we will only connect over clearnet.
-        clearnetAddresses
-      case Some(params) if torAddresses.nonEmpty && params.useForTor =>
-        // In all other cases, if they have a tor address and we support tor, we use tor.
-        torAddresses
-      case _ =>
-        // Otherwise, if we don't support tor or they don't have a tor address, we use clearnet.
+      case Some(socksProxy) =>
+        if (socksProxy.useForTor) {
+          // Tor is enabled, so we can connect to any type of addresses.
+          nodeAddresses
+        } else {
+          // Tor is enabled, but for some reason tor addresses are not supported, we use clearnet addresses only.
+          clearnetAddresses
+        }
+      case None =>
+        // Otherwise, if we don't support tor, we use clearnet.
         clearnetAddresses
     }
     // finally, we pick an address at random
