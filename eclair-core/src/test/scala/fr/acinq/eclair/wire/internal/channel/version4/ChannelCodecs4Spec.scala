@@ -12,7 +12,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs, SharedTransaction}
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, RedeemInfo}
 import fr.acinq.eclair.transactions.{CommitmentSpec, Scripts}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
 import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4.Codecs._
@@ -124,7 +124,8 @@ class ChannelCodecs4Spec extends AnyFunSuite {
 
   test("encode/decode rbf status") {
     val channelId = randomBytes32()
-    val fundingInput = InputInfo(OutPoint(randomTxId(), 3), TxOut(175_000 sat, Script.pay2wpkh(randomKey().publicKey)), Nil)
+    val fundingInput = InputInfo(OutPoint(randomTxId(), 3), TxOut(175_000 sat, Script.pay2wpkh(randomKey().publicKey)))
+    val redeemInfo = RedeemInfo.SegwitV0(Nil)
     val fundingTx = SharedTransaction(
       sharedInput_opt = None,
       sharedOutput = InteractiveTxBuilder.Output.Shared(UInt64(8), ByteVector.empty, 100_000_600 msat, 74_000_400 msat, 0 msat),
@@ -134,6 +135,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     )
     val commitTx = CommitTx(
       fundingInput,
+      redeemInfo,
       Transaction(2, Seq(TxIn(fundingInput.outPoint, Nil, 0)), Seq(TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0),
     )
     val waitingForSigs = InteractiveTxSigningSession.WaitingForSigs(
@@ -180,7 +182,8 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       createdAt = BlockHeight(1000),
       fundingParams = InteractiveTxParams(channelId = channelId, isInitiator = true, localContribution = 100.sat, remoteContribution = 200.sat,
         sharedInput_opt = Some(InteractiveTxBuilder.Multisig2of2Input(
-          InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(1000.sat, Script.pay2wsh(script)), script),
+          InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(1000.sat, Script.pay2wsh(script))),
+          RedeemInfo.SegwitV0(script),
           0,
           PrivateKey(ByteVector.fromValidHex("02" * 32)).publicKey
         )),

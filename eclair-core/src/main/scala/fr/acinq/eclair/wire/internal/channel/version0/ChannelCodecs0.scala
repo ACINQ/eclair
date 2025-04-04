@@ -124,10 +124,9 @@ private[channel] object ChannelCodecs0 {
       closingTx => closingTx.tx
     )
 
-    val inputInfoCodec: Codec[InputInfo] = (
-      ("outPoint" | outPointCodec) ::
-        ("txOut" | txOutCodec) ::
-        ("redeemScript" | varsizebinarydata)).as[InputInfo.SegwitInput].upcast[InputInfo].decodeOnly
+    val inputInfoCodec: Codec[InputInfo] = (("outPoint" | outPointCodec) :: ("txOut" | txOutCodec)).as[InputInfo].decodeOnly
+
+    val redeemInfoCodec: Codec[RedeemInfo.SegwitV0] = ("redeemScript" | varsizebinarydata).as[RedeemInfo.SegwitV0].decodeOnly
 
     private val defaultConfirmationTarget: Codec[ConfirmationTarget.Absolute] = provide(ConfirmationTarget.Absolute(BlockHeight(0)))
 
@@ -137,16 +136,16 @@ private[channel] object ChannelCodecs0 {
     // as quickly as possible. It's very unlikely that nodes will run into this, so it's a good trade-off between code
     // complexity and real world impact.
     val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
-      .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx])
-      .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | provide(0L)) :: ("confirmationTarget" | defaultConfirmationTarget)).as[HtlcSuccessTx])
-      .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[HtlcTimeoutTx])
-      .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[LegacyClaimHtlcSuccessTx])
-      .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[ClaimHtlcTimeoutTx])
-      .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
-      .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx])
-      .typecase(0x08, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[MainPenaltyTx])
-      .typecase(0x09, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcPenaltyTx])
-      .typecase(0x10, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("outputIndex" | provide(Option.empty[OutputInfo]))).as[ClosingTx])
+      .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootKeyPathOrSegwitV0] :: ("tx" | txCodec)).as[CommitTx])
+      .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootScriptPathOrSegwitV0] :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | provide(0L)) :: ("confirmationTarget" | defaultConfirmationTarget)).as[HtlcSuccessTx])
+      .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootScriptPathOrSegwitV0] :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[HtlcTimeoutTx])
+      .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootScriptPathOrSegwitV0] :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[LegacyClaimHtlcSuccessTx])
+      .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootScriptPathOrSegwitV0] :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[ClaimHtlcTimeoutTx])
+      .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootKeyPathOrSegwitV0] :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
+      .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootScriptPathOrSegwitV0] :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx])
+      .typecase(0x08, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootKeyPathOrSegwitV0] :: ("tx" | txCodec)).as[MainPenaltyTx])
+      .typecase(0x09, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootKeyPathOrSegwitV0] :: ("tx" | txCodec)).as[HtlcPenaltyTx])
+      .typecase(0x10, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootKeyPathOrSegwitV0] :: ("tx" | txCodec) :: ("outputIndex" | provide(Option.empty[OutputInfo]))).as[ClosingTx])
 
     // this is a backward compatible codec (we used to store the sig as DER encoded), now we store it as 64-bytes
     val sig64OrDERCodec: Codec[ByteVector64] = Codec[ByteVector64](
@@ -163,7 +162,7 @@ private[channel] object ChannelCodecs0 {
         ("remoteSig" | variableSizeBytes(uint16, sig64OrDERCodec))).as[HtlcTxAndSigs].decodeOnly
 
     val publishableTxsCodec: Codec[PublishableTxs] = (
-      ("commitTx" | (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx]) ::
+      ("commitTx" | (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootKeyPathOrSegwitV0] :: ("tx" | txCodec)).as[CommitTx]) ::
         ("htlcTxsAndSigs" | listOfN(uint16, htlcTxAndSigsCodec))).as[PublishableTxs].decodeOnly
 
     val localCommitCodec: Codec[ChannelTypes0.LocalCommit] = (
@@ -290,6 +289,7 @@ private[channel] object ChannelCodecs0 {
           ("originChannels" | originsMapCodec) ::
           ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, publicKey)) ::
           ("commitInput" | inputInfoCodec) ::
+          ("redeemInfo" | redeemInfoCodec) ::
           ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
           ("channelId" | bytes32)
       }).as[ChannelTypes0.Commitments].decodeOnly.map[Commitments](_.migrate()).decodeOnly
