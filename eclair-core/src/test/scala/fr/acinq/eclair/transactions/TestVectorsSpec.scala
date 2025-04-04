@@ -124,7 +124,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   val fundingAmount = fundingTx.txOut(0).amount
   logger.info(s"# funding-tx: $fundingTx}")
 
-  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey)
+  val (commitmentInput, redeemInfo) = Funding.makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey, commitmentFormat)
 
   val obscured_tx_number = Transactions.obscuredCommitTxNumber(42, localIsChannelOpener = true, Local.payment_basepoint, Remote.payment_basepoint)
   assert(obscured_tx_number == (0x2bb038521914L ^ 42L))
@@ -140,8 +140,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   logger.info(s"remotekey: ${Remote.payment_privkey.publicKey}")
   logger.info(s"local_delayedkey: ${Local.delayed_payment_privkey.publicKey}")
   logger.info(s"local_revocation_key: ${Local.revocation_pubkey}")
-  logger.info(s"# funding wscript = ${commitmentInput.redeemScript}")
-  assert(commitmentInput.redeemScript == hex"5221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae")
+  logger.info(s"# funding wscript = $redeemInfo")
+  assert(redeemInfo == RedeemInfo.SegwitV0(hex"5221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae"))
 
   val paymentPreimages = Seq(
     ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"),
@@ -204,6 +204,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val commitTx = {
       val tx = Transactions.makeCommitTx(
         commitTxInput = commitmentInput,
+        redeemInfo = redeemInfo,
         commitTxNumber = Local.commitTxNumber,
         localPaymentBasePoint = Local.payment_basepoint,
         remotePaymentBasePoint = Remote.payment_basepoint,
@@ -250,7 +251,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       case tx: HtlcSuccessTx =>
         val localSig = tx.sign(Local.htlc_privkey, TxOwner.Local, commitmentFormat, Map.empty)
         val remoteSig = tx.sign(Remote.htlc_privkey, TxOwner.Remote, commitmentFormat, Map.empty)
-        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.asInstanceOf[InputInfo.SegwitInput].redeemScript))
+        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.redeemInfo.asInstanceOf[RedeemInfo.SegwitV0].redeemScript))
         val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage, commitmentFormat)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -262,7 +263,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       case tx: HtlcTimeoutTx =>
         val localSig = tx.sign(Local.htlc_privkey, TxOwner.Local, commitmentFormat, Map.empty)
         val remoteSig = tx.sign(Remote.htlc_privkey, TxOwner.Remote, commitmentFormat, Map.empty)
-        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.asInstanceOf[InputInfo.SegwitInput].redeemScript))
+        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.redeemInfo.asInstanceOf[RedeemInfo.SegwitV0].redeemScript))
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, commitmentFormat)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-timeout for htlc #$htlcIndex)")

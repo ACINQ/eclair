@@ -34,7 +34,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Output.Local
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Purpose
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, RedeemInfo, TxOwner}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ToMilliSatoshiConversion, UInt64}
@@ -104,22 +104,24 @@ object InteractiveTxBuilder {
   sealed trait SharedFundingInput {
     // @formatter:off
     def info: InputInfo
+    def redeemInfo: RedeemInfo.TaprootKeyPathOrSegwitV0
     def weight: Int
     // @formatter:on
   }
 
-  case class Multisig2of2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
+  case class Multisig2of2Input(info: InputInfo, redeemInfo: RedeemInfo.TaprootKeyPathOrSegwitV0, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
     override val weight: Int = 388
 
     def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction, spentUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
       val localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex)
-      keyManager.sign(Transactions.SpliceTx(info, tx), localFundingPubkey, TxOwner.Local, params.commitmentFormat, spentUtxos)
+      keyManager.sign(Transactions.SpliceTx(info, redeemInfo, tx), localFundingPubkey, TxOwner.Local, params.commitmentFormat, spentUtxos)
     }
   }
 
   object Multisig2of2Input {
     def apply(commitment: Commitment): Multisig2of2Input = Multisig2of2Input(
       info = commitment.commitInput,
+      redeemInfo = commitment.redeemInfo,
       fundingTxIndex = commitment.fundingTxIndex,
       remoteFundingPubkey = commitment.remoteFundingPubKey
     )
@@ -1089,6 +1091,7 @@ object InteractiveTxSigningSession {
                             remoteCommit: RemoteCommit,
                             liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends InteractiveTxSigningSession {
     val commitInput: InputInfo = localCommit.fold(_.commitTx.input, _.commitTxAndRemoteSig.commitTx.input)
+    val redeemInfo: RedeemInfo.TaprootKeyPathOrSegwitV0 = localCommit.fold(_.commitTx.redeemInfo, _.commitTxAndRemoteSig.commitTx.redeemInfo)
     val localCommitIndex: Long = localCommit.fold(_.index, _.index)
     // This value tells our peer whether we need them to retransmit their commit_sig on reconnection or not.
     val nextLocalCommitmentNumber: Long = localCommit match {
@@ -1101,7 +1104,7 @@ object InteractiveTxSigningSession {
         case Left(unsignedLocalCommit) =>
           val channelKeyPath = nodeParams.channelKeyManager.keyPath(channelParams.localParams, channelParams.channelConfig)
           val localPerCommitmentPoint = nodeParams.channelKeyManager.commitmentPoint(channelKeyPath, localCommitIndex)
-          LocalCommit.fromCommitSig(nodeParams.channelKeyManager, channelParams, fundingTx.txId, fundingTxIndex, fundingParams.remoteFundingPubKey, commitInput, remoteCommitSig, localCommitIndex, unsignedLocalCommit.spec, localPerCommitmentPoint).map { signedLocalCommit =>
+          LocalCommit.fromCommitSig(nodeParams.channelKeyManager, channelParams, fundingTx.txId, fundingTxIndex, fundingParams.remoteFundingPubKey, commitInput, redeemInfo, remoteCommitSig, localCommitIndex, unsignedLocalCommit.spec, localPerCommitmentPoint).map { signedLocalCommit =>
             if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
               val fundingStatus = LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx, nodeParams.currentBlockHeight, fundingParams, liquidityPurchase_opt)
               val commitment = Commitment(fundingTxIndex, remoteCommit.index, fundingParams.remoteFundingPubKey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, None)

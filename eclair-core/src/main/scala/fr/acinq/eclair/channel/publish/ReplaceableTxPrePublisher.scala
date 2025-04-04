@@ -252,7 +252,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     htlcTx match {
       case tx: HtlcSuccessTx =>
         commitment.localCommit.htlcTxsAndRemoteSigs.collectFirst {
-          case HtlcTxAndRemoteSig(HtlcSuccessTx(input, _, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => remoteSig
+          case HtlcTxAndRemoteSig(tx1: HtlcSuccessTx, remoteSig) if tx1.input.outPoint == tx.input.outPoint => remoteSig
         } match {
           case Some(remoteSig) =>
             commitment.changes.localChanges.all.collectFirst {
@@ -269,7 +269,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         }
       case tx: HtlcTimeoutTx =>
         commitment.localCommit.htlcTxsAndRemoteSigs.collectFirst {
-          case HtlcTxAndRemoteSig(HtlcTimeoutTx(input, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => remoteSig
+          case HtlcTxAndRemoteSig(tx1: HtlcTimeoutTx, remoteSig) if tx1.input.outPoint == tx.input.outPoint => remoteSig
         } match {
           case Some(remoteSig) => Some(HtlcTimeoutWithWitnessData(tx, remoteSig))
           case None =>

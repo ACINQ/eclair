@@ -47,8 +47,10 @@ private[channel] object ChannelTypes0 {
     // modified: we don't use the InputInfo in closing business logic, so we don't need to fill everything (this part
     // assumes that we only have standard channels, no anchor output channels - which was the case before version2).
     val input = childTx.txIn.head.outPoint
-    InputInfo(input, parentTx.txOut(input.index.toInt), Nil)
+    InputInfo(input, parentTx.txOut(input.index.toInt))
   }
+
+  private def getDummyRedeemInfo(): RedeemInfo.SegwitV0 = RedeemInfo.SegwitV0(Nil)
 
   case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, TxId]) {
     def migrate(): channel.LocalCommitPublished = {
@@ -57,14 +59,14 @@ private[channel] object ChannelTypes0 {
       // NB: irrevocablySpent may contain transactions that belong to our peer: we will drop them in this migration but
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
-      val claimMainDelayedOutputTxNew = claimMainDelayedOutputTx.map(tx => ClaimLocalDelayedOutputTx(getPartialInputInfo(commitTx, tx), tx))
-      val htlcSuccessTxsNew = htlcSuccessTxs.map(tx => HtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, ByteVector32.Zeroes, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
-      val htlcTimeoutTxsNew = htlcTimeoutTxs.map(tx => HtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
+      val claimMainDelayedOutputTxNew = claimMainDelayedOutputTx.map(tx => ClaimLocalDelayedOutputTx(getPartialInputInfo(commitTx, tx), getDummyRedeemInfo(), tx))
+      val htlcSuccessTxsNew = htlcSuccessTxs.map(tx => HtlcSuccessTx(getPartialInputInfo(commitTx, tx), getDummyRedeemInfo(), tx, ByteVector32.Zeroes, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
+      val htlcTimeoutTxsNew = htlcTimeoutTxs.map(tx => HtlcTimeoutTx(getPartialInputInfo(commitTx, tx), getDummyRedeemInfo(), tx, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
       val htlcTxsNew = (htlcSuccessTxsNew ++ htlcTimeoutTxsNew).map(tx => tx.input.outPoint -> Some(tx)).toMap
       val claimHtlcDelayedTxsNew = claimHtlcDelayedTxs.map(tx => {
         val htlcTx = htlcTxs.find(_.txid == tx.txIn.head.outPoint.txid)
         require(htlcTx.nonEmpty, s"3rd-stage htlc tx doesn't spend one of our htlc txs: claim-htlc-tx=$tx, htlc-txs=${htlcTxs.mkString(",")}")
-        HtlcDelayedTx(getPartialInputInfo(htlcTx.get, tx), tx)
+        HtlcDelayedTx(getPartialInputInfo(htlcTx.get, tx), getDummyRedeemInfo(), tx)
       })
       channel.LocalCommitPublished(commitTx, claimMainDelayedOutputTxNew, htlcTxsNew, claimHtlcDelayedTxsNew, Nil, irrevocablySpentNew)
     }
@@ -77,9 +79,9 @@ private[channel] object ChannelTypes0 {
       // NB: irrevocablySpent may contain transactions that belong to our peer: we will drop them in this migration but
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
-      val claimMainOutputTxNew = claimMainOutputTx.map(tx => ClaimP2WPKHOutputTx(getPartialInputInfo(commitTx, tx), tx))
-      val claimHtlcSuccessTxsNew = claimHtlcSuccessTxs.map(tx => LegacyClaimHtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
-      val claimHtlcTimeoutTxsNew = claimHtlcTimeoutTxs.map(tx => ClaimHtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
+      val claimMainOutputTxNew = claimMainOutputTx.map(tx => ClaimP2WPKHOutputTx(getPartialInputInfo(commitTx, tx), getDummyRedeemInfo(), tx))
+      val claimHtlcSuccessTxsNew = claimHtlcSuccessTxs.map(tx => LegacyClaimHtlcSuccessTx(getPartialInputInfo(commitTx, tx), getDummyRedeemInfo(), tx, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
+      val claimHtlcTimeoutTxsNew = claimHtlcTimeoutTxs.map(tx => ClaimHtlcTimeoutTx(getPartialInputInfo(commitTx, tx), getDummyRedeemInfo(), tx, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
       val claimHtlcTxsNew = (claimHtlcSuccessTxsNew ++ claimHtlcTimeoutTxsNew).map(tx => tx.input.outPoint -> Some(tx)).toMap
       channel.RemoteCommitPublished(commitTx, claimMainOutputTxNew, claimHtlcTxsNew, Nil, irrevocablySpentNew)
     }
@@ -91,12 +93,12 @@ private[channel] object ChannelTypes0 {
       // NB: irrevocablySpent may contain transactions that belong to our peer: we will drop them in this migration but
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
-      val claimMainOutputTxNew = claimMainOutputTx.map(tx => ClaimP2WPKHOutputTx(getPartialInputInfo(commitTx, tx), tx))
-      val mainPenaltyTxNew = mainPenaltyTx.map(tx => MainPenaltyTx(getPartialInputInfo(commitTx, tx), tx))
-      val htlcPenaltyTxsNew = htlcPenaltyTxs.map(tx => HtlcPenaltyTx(getPartialInputInfo(commitTx, tx), tx))
+      val claimMainOutputTxNew = claimMainOutputTx.map(tx => ClaimP2WPKHOutputTx(getPartialInputInfo(commitTx, tx), getDummyRedeemInfo(), tx))
+      val mainPenaltyTxNew = mainPenaltyTx.map(tx => MainPenaltyTx(getPartialInputInfo(commitTx, tx), getDummyRedeemInfo(), tx))
+      val htlcPenaltyTxsNew = htlcPenaltyTxs.map(tx => HtlcPenaltyTx(getPartialInputInfo(commitTx, tx), getDummyRedeemInfo(), tx))
       val claimHtlcDelayedPenaltyTxsNew = claimHtlcDelayedPenaltyTxs.map(tx => {
         // We don't have all the `InputInfo` data, but it's ok: we only use the tx that is fully signed.
-        ClaimHtlcDelayedOutputPenaltyTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx)
+        ClaimHtlcDelayedOutputPenaltyTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil)), getDummyRedeemInfo(), tx)
       })
       channel.RevokedCommitPublished(commitTx, claimMainOutputTxNew, mainPenaltyTxNew, htlcPenaltyTxsNew, claimHtlcDelayedPenaltyTxsNew, irrevocablySpentNew)
     }
@@ -113,7 +115,7 @@ private[channel] object ChannelTypes0 {
    * the raw transaction. It provides more information for auditing but is not used for business logic, so we can safely
    * put dummy values in the migration.
    */
-  def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx, None)
+  def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil)), getDummyRedeemInfo(), tx, None)
 
   case class HtlcTxAndSigs(txinfo: HtlcTx, localSig: ByteVector64, remoteSig: ByteVector64)
 
@@ -230,6 +232,7 @@ private[channel] object ChannelTypes0 {
                          originChannels: Map[Long, Origin],
                          remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                          commitInput: InputInfo,
+                         redeemInfo: RedeemInfo.SegwitV0,
                          remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
     def migrate(): channel.Commitments = {
       val channelConfig = if (channelVersion.hasPubkeyKeyPath) {
