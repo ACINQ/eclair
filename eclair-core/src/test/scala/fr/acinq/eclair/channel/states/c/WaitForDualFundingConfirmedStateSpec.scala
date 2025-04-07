@@ -33,7 +33,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.ClaimLocalAnchorOutputTx
+import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -72,7 +72,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val commitFeerate = channelType.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => TestConstants.feeratePerKw
-      case _: Transactions.AnchorOutputsCommitmentFormat => TestConstants.anchorOutputsFeeratePerKw
+      case _: Transactions.AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => TestConstants.anchorOutputsFeeratePerKw
     }
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)

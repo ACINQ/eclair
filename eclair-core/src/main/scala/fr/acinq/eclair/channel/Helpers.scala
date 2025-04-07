@@ -372,20 +372,20 @@ object Helpers {
   }
 
   object Funding {
-
-    def makeFundingPubKeyScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat): ByteVector = {
-      commitmentFormat match {
-        case Transactions.DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => write(pay2wsh(multiSig2of2(localFundingKey, remoteFundingKey)))
-      }
+    def makeFundingPubKeyScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat): ByteVector = commitmentFormat match {
+      case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => write(pay2wsh(multiSig2of2(localFundingKey, remoteFundingKey)))
+      case SimpleTaprootChannelCommitmentFormat => write(Taproot.musig2FundingScript(localFundingKey, remoteFundingKey))
     }
 
-    def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingAmount: Satoshi, localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat): (InputInfo, RedeemInfo.TaprootKeyPathOrSegwitV0) = {
-      val (redeemInfo, pubkeyScript) = commitmentFormat match {
-        case Transactions.DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
-          val fundingScript = multiSig2of2(localFundingKey, remoteFundingKey)
-          (RedeemInfo.SegwitV0(fundingScript), pay2wsh(fundingScript))
-      }
-      (InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), TxOut(fundingAmount, pubkeyScript)), redeemInfo)
+    def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey, commitmentFormat: CommitmentFormat): (InputInfo, RedeemInfo.TaprootKeyPathOrSegwitV0) = commitmentFormat match {
+      case SimpleTaprootChannelCommitmentFormat =>
+        val fundingScript = Taproot.musig2FundingScript(fundingPubkey1, fundingPubkey2)
+        val fundingTxOut = TxOut(fundingSatoshis, fundingScript)
+        InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut) -> RedeemInfo.TaprootKeyPath(Taproot.musig2Aggregate(fundingPubkey1, fundingPubkey2), None)
+      case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
+        val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
+        InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut) -> RedeemInfo.SegwitV0(fundingScript)
     }
 
     /**
@@ -686,7 +686,7 @@ object Helpers {
           case DefaultCommitmentFormat =>
             // we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
             requestedFeerate.min(commitment.localCommit.spec.commitTxFeerate)
-          case _: AnchorOutputsCommitmentFormat => requestedFeerate
+          case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => requestedFeerate
         }
         // NB: we choose a minimum fee that ensures the tx will easily propagate while allowing low fees since we can
         // always use CPFP to speed up confirmation if necessary.
@@ -1084,7 +1084,7 @@ object Helpers {
                 Transactions.addSigs(claimMain, localPubkey, sig)
               })
             }
-            case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
+            case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
               Transactions.makeClaimRemoteDelayedOutputTx(tx, params.localParams.dustLimit, localPaymentPoint, finalScriptPubKey, feeratePerKwMain, params.commitmentFormat).map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, params.commitmentFormat, Map.empty)
                 Transactions.addSigs(claimMain, sig)
@@ -1231,7 +1231,7 @@ object Helpers {
                 Transactions.addSigs(claimMain, localPaymentPubkey, sig)
               })
             }
-            case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
+            case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
               Transactions.makeClaimRemoteDelayedOutputTx(commitTx, localParams.dustLimit, localPaymentPoint, finalScriptPubKey, feerateMain, commitmentFormat).map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitmentFormat, Map.empty)
                 Transactions.addSigs(claimMain, sig)
@@ -1262,6 +1262,7 @@ object Helpers {
                   Script.write(pay2wsh(offered)) -> RedeemInfo.SegwitV0(offered),
                   Script.write(pay2wsh(received)) -> RedeemInfo.SegwitV0(received)
                 )
+              case SimpleTaprootChannelCommitmentFormat => ??? // FIXME
             }
         }.toMap
 
