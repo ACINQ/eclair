@@ -143,7 +143,7 @@ private[channel] object ChannelCodecs0 {
       .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootScriptPathOrSegwitV0] :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[ClaimHtlcTimeoutTx])
       .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootKeyPathOrSegwitV0] :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
       .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootScriptPathOrSegwitV0] :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx])
-      .typecase(0x08, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootKeyPathOrSegwitV0] :: ("tx" | txCodec)).as[MainPenaltyTx])
+      .typecase(0x08, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootScriptPathOrSegwitV0] :: ("tx" | txCodec)).as[MainPenaltyTx])
       .typecase(0x09, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootKeyPathOrSegwitV0] :: ("tx" | txCodec)).as[HtlcPenaltyTx])
       .typecase(0x10, (("inputInfo" | inputInfoCodec) :: ("redeemInfo" | redeemInfoCodec).upcast[RedeemInfo.TaprootKeyPathOrSegwitV0] :: ("tx" | txCodec) :: ("outputIndex" | provide(Option.empty[OutputInfo]))).as[ClosingTx])
 
