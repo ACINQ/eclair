@@ -404,8 +404,10 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       "lnbc2500000001p1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9qrsgq0lzc236j96a95uv0m3umg28gclm5lqxtqqwk32uuk4k6673k6n5kfvx3d2h8s295fad45fdhmusm8sjudfhlf6dcsxmfvkeywmjdkxcp99202x",
       // Missing payment secret.
       "lnbc1qqygh9qpp5s7zxqqqqqqqqqqqqpjqqqqqqqqqqqqqqqqqqcqpjqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqquqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzxqqqqqqqqqqqqqqqy6f523d",
+      // Missing payment secret.
+      "lnbc20m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqs9qrsgq7ea976txfraylvgzuxs8kgcw23ezlrszfnh8r6qtfpr6cxga50aj6txm9rxrydzd06dfeawfk6swupvz4erwnyutnjq7x39ymw6j38gp49qdkj",
       // Invalid signature public key recovery id.
-      "lnbc1qqqqpqqnp4qqqlftcw9qqqqqqqqqqqqygh9qpp5qpp5s7zxqqqqcqpjpqqygh9qpp5s7zxqqqqcqpjpqqlqqqqqqqqqqqqcqqpqqqqqqqqqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqlqqqcqpjptfqptfqptfqpqqqqqqqqqqqqqqqqqqq8ddm0a"
+      "lnbc1qqqqpqqnp4qqqlftcw9qqqqqqqqqqqqygh9qpp5qpp5s7zxqqqqcqpjpqqygh9qpp5s7zxqqqqcqpjpqqlqqqqqqqqqqqqcqqpqqqqqqqqqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqlqqqcqpjptfqptfqptfqpqqqqqqqqqqqqqqqqqqq8ddm0a",
     )
     for (ref <- refs) {
       assert(Bolt11Invoice.fromString(ref).isFailure)
@@ -528,6 +530,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
   }
 
   test("feature bits to minimally-encoded feature bytes") {
+    // Invoice features are encoded as 5-bits chunks, which we decode to bytes.
     val testCases = Seq(
       (bin"   0010000100000101", hex"  2105"),
       (bin"   1010000100000101", hex"  a105"),
@@ -539,8 +542,24 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       (bin"1000110000000000110", hex"046006")
     )
 
-    for ((bitmask, featureBytes) <- testCases) {
-      assert(Features(bitmask).toByteVector == featureBytes)
+    for ((invoiceFeatureBits, featureBytes) <- testCases) {
+      assert(Features(invoiceFeatureBits).toByteVector == featureBytes)
+    }
+  }
+
+  test("feature bytes to minimally-encoded feature bits") {
+    // When encoding features into 5-bits chunks, we want to get rid of leading zeroes.
+    val testCases = Seq(
+      (bin"00010000", bin"10000"),
+      (bin"00100000", bin"0000100000"),
+      (bin"10010000", bin"0010010000"),
+      (bin"0000000100000000", bin"0100000000"),
+      (bin"0000001000000000", bin"1000000000"),
+      (bin"0000010000000000", bin"000010000000000"),
+    )
+
+    for ((featureBytes, invoiceFeatureBits) <- testCases) {
+      assert(features2bits(Features(featureBytes)) == invoiceFeatureBits)
     }
   }
 
