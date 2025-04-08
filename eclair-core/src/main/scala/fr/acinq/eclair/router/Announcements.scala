@@ -18,8 +18,10 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector64, Crypto, LexicographicalOrdering}
+import fr.acinq.eclair.channel.ChannelParams
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, NodeFeature, RealShortChannelId, ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, NodeFeature, NodeParams, RealShortChannelId, ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
 import scodec.bits.ByteVector
 import shapeless.HNil
 
@@ -68,7 +70,7 @@ object Announcements {
     )
   }
 
-  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], features: Features[NodeFeature], timestamp: TimestampSecond = TimestampSecond.now()): NodeAnnouncement = {
+  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], features: Features[NodeFeature], timestamp: TimestampSecond = TimestampSecond.now(), fundingRates_opt: Option[LiquidityAds.WillFundRates] = None): NodeAnnouncement = {
     require(alias.length <= 32)
     // sort addresses by ascending address descriptor type; do not reorder addresses within the same descriptor type
     val sortedAddresses = nodeAddresses.map {
@@ -78,7 +80,8 @@ object Announcements {
       case address@(_: Tor3) => (4, address)
       case address@(_: DnsHostname) => (5, address)
     }.sortBy(_._1).map(_._2)
-    val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, features.unscoped(), sortedAddresses, TlvStream.empty)
+    val tlvs = TlvStream(Set(fundingRates_opt.map(NodeAnnouncementTlv.OptionWillFund)).flatten[NodeAnnouncementTlv])
+    val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, features.unscoped(), sortedAddresses, tlvs)
     val sig = Crypto.sign(witness, nodeSecret)
     NodeAnnouncement(
       signature = sig,
@@ -87,7 +90,8 @@ object Announcements {
       rgbColor = color,
       alias = alias,
       features = features.unscoped(),
-      addresses = sortedAddresses
+      addresses = sortedAddresses,
+      tlvStream = tlvs
     )
   }
 
@@ -117,6 +121,10 @@ object Announcements {
       u1.cltvExpiryDelta == u2.cltvExpiryDelta &&
       u1.htlcMinimumMsat == u2.htlcMinimumMsat &&
       u1.htlcMaximumMsat == u2.htlcMaximumMsat
+
+  def makeChannelUpdate(nodeParams: NodeParams, remoteNodeId: PublicKey, scid: ShortChannelId, params: ChannelParams, relayFees: RelayFees, maxHtlcAmount: MilliSatoshi, enable: Boolean): ChannelUpdate = {
+    makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scid, nodeParams.channelConf.expiryDelta, params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, maxHtlcAmount, isPrivate = !params.announceChannel, enable)
+  }
 
   def makeChannelUpdate(chainHash: BlockHash, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, isPrivate: Boolean = false, enable: Boolean = true, timestamp: TimestampSecond = TimestampSecond.now()): ChannelUpdate = {
     val messageFlags = ChannelUpdate.MessageFlags(isPrivate)

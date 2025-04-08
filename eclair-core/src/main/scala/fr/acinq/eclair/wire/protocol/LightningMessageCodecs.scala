@@ -227,6 +227,22 @@ object LightningMessageCodecs {
       ("signature" | bytes64) ::
       ("tlvStream" | ClosingSignedTlv.closingSignedTlvCodec)).as[ClosingSigned]
 
+  val closingCompleteCodec: Codec[ClosingComplete] = (
+    ("channelId" | bytes32) ::
+      ("closerScriptPubKey" | varsizebinarydata) ::
+      ("closeeScriptPubKey" | varsizebinarydata) ::
+      ("fees" | satoshi) ::
+      ("lockTime" | uint32) ::
+      ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingComplete]
+
+  val closingSigCodec: Codec[ClosingSig] = (
+    ("channelId" | bytes32) ::
+      ("closerScriptPubKey" | varsizebinarydata) ::
+      ("closeeScriptPubKey" | varsizebinarydata) ::
+      ("fees" | satoshi) ::
+      ("lockTime" | uint32) ::
+      ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingSig]
+
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
       ("id" | uint64overflow) ::
@@ -385,9 +401,17 @@ object LightningMessageCodecs {
       ("tlvStream" | GossipTimestampFilterTlv.gossipTimestampFilterTlvCodec)).as[GossipTimestampFilter]
 
   val onionMessageCodec: Codec[OnionMessage] = (
-    ("blindingKey" | publicKey) ::
+    ("pathKey" | publicKey) ::
       ("onionPacket" | MessageOnionCodecs.messageOnionPacketCodec) ::
       ("tlvStream" | OnionMessageTlv.onionMessageTlvCodec)).as[OnionMessage]
+
+  val peerStorageStore: Codec[PeerStorageStore] = (
+    ("blob" | variableSizeBytes(uint16, bytes)) ::
+      ("tlvStream" | PeerStorageTlv.peerStorageTlvCodec)).as[PeerStorageStore]
+
+  val peerStorageRetrieval: Codec[PeerStorageRetrieval] = (
+    ("blob" | variableSizeBytes(uint16, bytes)) ::
+      ("tlvStream" | PeerStorageTlv.peerStorageTlvCodec)).as[PeerStorageRetrieval]
 
   // NB: blank lines to minimize merge conflicts
 
@@ -429,14 +453,55 @@ object LightningMessageCodecs {
 
   //
 
+  val recommendedFeeratesCodec: Codec[RecommendedFeerates] = (
+    ("chainHash" | blockHash) ::
+      ("fundingFeerate" | feeratePerKw) ::
+      ("commitmentFeerate" | feeratePerKw) ::
+      ("tlvStream" | RecommendedFeeratesTlv.recommendedFeeratesTlvCodec)).as[RecommendedFeerates]
+
+  val willAddHtlcCodec: Codec[WillAddHtlc] = (
+    ("chainHash" | blockHash) ::
+      ("id" | bytes32) ::
+      ("amount" | millisatoshi) ::
+      ("paymentHash" | bytes32) ::
+      ("expiry" | cltvExpiry) ::
+      ("onionRoutingPacket" | PaymentOnionCodecs.paymentOnionPacketCodec) ::
+      ("tlvStream" | WillAddHtlcTlv.willAddHtlcTlvCodec)).as[WillAddHtlc]
+
+  val willFailHtlcCodec: Codec[WillFailHtlc] = (
+    ("id" | bytes32) ::
+      ("paymentHash" | bytes32) ::
+      ("reason" | varsizebinarydata)).as[WillFailHtlc]
+
+  val willFailMalformedHtlcCodec: Codec[WillFailMalformedHtlc] = (
+    ("id" | bytes32) ::
+      ("paymentHash" | bytes32) ::
+      ("onionHash" | bytes32) ::
+      ("failureCode" | uint16)).as[WillFailMalformedHtlc]
+
+  val cancelOnTheFlyFundingCodec: Codec[CancelOnTheFlyFunding] = (
+    ("channelId" | bytes32) ::
+      ("paymentHashes" | listOfN(uint16, bytes32)) ::
+      ("reason" | varsizebinarydata)).as[CancelOnTheFlyFunding]
+
+  val addFeeCreditCodec: Codec[AddFeeCredit] = (
+    ("chainHash" | blockHash) ::
+      ("preimage" | bytes32)).as[AddFeeCredit]
+
+  val currentFeeCreditCodec: Codec[CurrentFeeCredit] = (
+    ("chainHash" | blockHash) ::
+      ("amount" | millisatoshi)).as[CurrentFeeCredit]
+
   val unknownMessageCodec: Codec[UnknownMessage] = (
     ("tag" | uint16) ::
       ("message" | bytes)
     ).as[UnknownMessage]
 
-  val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
+  val lightningMessageCodec = catchAllCodec(discriminated[LightningMessage].by(uint16)
     .typecase(1, warningCodec)
     .typecase(2, stfuCodec)
+    .typecase(7, peerStorageStore)
+    .typecase(9, peerStorageRetrieval)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
     .typecase(18, pingCodec)
@@ -448,6 +513,8 @@ object LightningMessageCodecs {
     .typecase(36, channelReadyCodec)
     .typecase(38, shutdownCodec)
     .typecase(39, closingSignedCodec)
+    .typecase(40, closingCompleteCodec)
+    .typecase(41, closingSigCodec)
     .typecase(64, openDualFundedChannelCodec)
     .typecase(65, acceptDualFundedChannelCodec)
     .typecase(66, txAddInputCodec)
@@ -480,9 +547,23 @@ object LightningMessageCodecs {
     // NB: blank lines to minimize merge conflicts
 
     //
+    //
+    .typecase(41041, willAddHtlcCodec)
+    .typecase(41042, willFailHtlcCodec)
+    .typecase(41043, willFailMalformedHtlcCodec)
+    .typecase(41044, cancelOnTheFlyFundingCodec)
+    //
+    //
+    .typecase(41045, addFeeCreditCodec)
+    .typecase(41046, currentFeeCreditCodec)
+    //
     .typecase(37000, spliceInitCodec)
     .typecase(37002, spliceAckCodec)
     .typecase(37004, spliceLockedCodec)
+    //
+
+    //
+    .typecase(39409, recommendedFeeratesCodec)
   //
 
   //
@@ -492,13 +573,9 @@ object LightningMessageCodecs {
   //
 
   //
+  )
 
-  //
-
-  //
-
-  val lightningMessageCodecWithFallback: Codec[LightningMessage] =
-    discriminatorWithDefault(lightningMessageCodec, unknownMessageCodec.upcast)
+  val lightningMessageCodecWithFallback: Codec[LightningMessage] = discriminatorWithDefault(lightningMessageCodec, catchAllCodec(unknownMessageCodec.upcast))
 
   val meteredLightningMessageCodec = Codec[LightningMessage](
     (msg: LightningMessage) => KamonExt.time(Metrics.EncodeDuration.withTag(Tags.MessageType, msg.getClass.getSimpleName))(lightningMessageCodecWithFallback.encode(msg)),

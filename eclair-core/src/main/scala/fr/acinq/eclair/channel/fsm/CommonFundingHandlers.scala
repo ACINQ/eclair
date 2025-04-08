@@ -20,13 +20,15 @@ import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction, TxId}
-import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.getRelayFees
 import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx, SingleFundedUnconfirmedFundingTx}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.fsm.Channel.{ANNOUNCEMENTS_MINCONF, BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
+import fr.acinq.eclair.channel.fsm.Channel.{BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
+import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReady, ChannelReadyTlv, TlvStream}
+import fr.acinq.eclair.{RealShortChannelId, ShortChannelId}
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.{Failure, Success, Try}
@@ -81,54 +83,76 @@ trait CommonFundingHandlers extends CommonHandlers {
         }
       case _ => () // in the dual-funding case, we have already verified the funding tx
     }
-    val fundingStatus = ConfirmedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid))
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
-    d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus).map {
-      case (commitments1, commitment) =>
-        // First of all, we watch the funding tx that is now confirmed.
-        // Children splice transactions may already spend that confirmed funding transaction.
-        val spliceSpendingTxs = commitments1.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
-        watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet, None)
-        // in the dual-funding case we can forget all other transactions, they have been double spent by the tx that just confirmed
-        rollbackDualFundingTxs(d.commitments.active // note how we use the unpruned original commitments
-          .filter(c => c.fundingTxIndex == commitment.fundingTxIndex && c.fundingTxId != commitment.fundingTxId)
-          .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx })
-        (commitments1, commitment)
+    d.commitments.all.find(_.fundingTxId == w.tx.txid) match {
+      case Some(c) =>
+        val scid = RealShortChannelId(w.blockHeight, w.txIndex, c.commitInput.outPoint.index.toInt)
+        val fundingStatus = ConfirmedFundingTx(w.tx, scid, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
+        // When a splice transaction confirms, it double-spends all the commitment transactions that only applied to the
+        // previous funding transaction. Our peer cannot publish the corresponding revoked commitments anymore, so we can
+        // clean-up the htlc data that we were storing for the matching penalty transactions.
+        context.system.eventStream.publish(RevokedHtlcInfoCleaner.ForgetHtlcInfos(d.channelId, beforeCommitIndex = c.firstRemoteCommitIndex))
+        val lastAnnouncedFundingTxId_opt = d match {
+          case d: DATA_NORMAL => d.lastAnnouncedFundingTxId_opt
+          case _ => None
+        }
+        d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, lastAnnouncedFundingTxId_opt).map {
+          case (commitments1, commitment) =>
+            // First of all, we watch the funding tx that is now confirmed.
+            // Children splice transactions may already spend that confirmed funding transaction.
+            val spliceSpendingTxs = commitments1.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
+            watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet, None)
+            // In the dual-funding/splicing case we can forget all other transactions (RBF attempts), they have been
+            // double-spent by the tx that just confirmed.
+            val conflictingTxs = d.commitments.active // note how we use the unpruned original commitments
+              .filter(c => c.fundingTxIndex == commitment.fundingTxIndex && c.fundingTxId != commitment.fundingTxId)
+              .map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx.sharedTx }
+            conflictingTxs.foreach(tx => blockchain ! UnwatchTxConfirmed(tx.txId))
+            rollbackDualFundingTxs(conflictingTxs)
+            (commitments1, commitment)
+        }
+      case None => Left(d.commitments)
     }
   }
 
-  def createShortIds(channelId: ByteVector32, realScidStatus: RealScidStatus): ShortIds = {
-    // the alias will use in our peer's channel_update message, the goal is to be able to use our channel as soon
-    // as it reaches NORMAL state, and before it is announced on the network
-    val shortIds = ShortIds(realScidStatus, ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
-    context.system.eventStream.publish(ShortChannelIdAssigned(self, channelId, shortIds, remoteNodeId))
-    shortIds
+  def createShortIdAliases(channelId: ByteVector32): ShortIdAliases = {
+    // The alias will be used in our peer's channel_update message, the goal is to be able to use our channel as soon
+    // as it reaches the NORMAL state, before it is announced on the network.
+    val aliases = ShortIdAliases(ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
+    context.system.eventStream.publish(ShortChannelIdAssigned(self, channelId, None, aliases, remoteNodeId))
+    aliases
   }
 
-  def createChannelReady(shortIds: ShortIds, params: ChannelParams): ChannelReady = {
+  def createChannelReady(aliases: ShortIdAliases, params: ChannelParams): ChannelReady = {
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
     val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
     // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
-    ChannelReady(params.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(shortIds.localAlias)))
+    ChannelReady(params.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(aliases.localAlias)))
   }
 
-  def receiveChannelReady(shortIds: ShortIds, channelReady: ChannelReady, commitments: Commitments): DATA_NORMAL = {
-    val shortIds1 = shortIds.copy(remoteAlias_opt = channelReady.alias_opt)
-    shortIds1.remoteAlias_opt.foreach(_ => context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortIds = shortIds1, remoteNodeId = remoteNodeId)))
-    log.info("shortIds: real={} localAlias={} remoteAlias={}", shortIds1.real.toOption.getOrElse("none"), shortIds1.localAlias, shortIds1.remoteAlias_opt.getOrElse("none"))
-    // we notify that the channel is now ready to route payments
+  def receiveChannelReady(aliases: ShortIdAliases, channelReady: ChannelReady, commitments: Commitments): DATA_NORMAL = {
+    val aliases1 = aliases.copy(remoteAlias_opt = channelReady.alias_opt)
+    aliases1.remoteAlias_opt.foreach(_ => context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, None, aliases1, remoteNodeId)))
+    log.info("shortIds: real={} localAlias={} remoteAlias={}", commitments.latest.shortChannelId_opt.getOrElse("none"), aliases1.localAlias, aliases1.remoteAlias_opt.getOrElse("none"))
+    // We notify that the channel is now ready to route payments.
     context.system.eventStream.publish(ChannelOpened(self, remoteNodeId, commitments.channelId))
-    // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
-    val scidForChannelUpdate = Helpers.scidForChannelUpdate(channelAnnouncement_opt = None, shortIds1.localAlias)
+    // We create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced.
+    val scidForChannelUpdate = Helpers.scidForChannelUpdate(channelAnnouncement_opt = None, aliases1.localAlias)
     log.info("using shortChannelId={} for initial channel_update", scidForChannelUpdate)
     val relayFees = getRelayFees(nodeParams, remoteNodeId, commitments.announceChannel)
-    val initialChannelUpdate = Helpers.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, commitments, relayFees)
-    // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
+    val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, commitments.params, relayFees, Helpers.maxHtlcAmount(nodeParams, commitments), enable = true)
+    // We need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network.
     context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
-    // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
-    blockchain ! WatchFundingDeeplyBuried(self, commitments.latest.fundingTxId, ANNOUNCEMENTS_MINCONF)
-    val commitments1 = commitments.modify(_.remoteNextCommitInfo).setTo(Right(channelReady.nextPerCommitmentPoint))
-    DATA_NORMAL(commitments1, shortIds1, None, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
+    val commitments1 = commitments.copy(
+      // Set the remote status for all initial funding commitments to Locked. If there are RBF attempts, only one can be confirmed locally.
+      active = commitments.active.map {
+        case c if c.fundingTxIndex == 0 => c.copy(remoteFundingStatus = RemoteFundingStatus.Locked)
+        case c => c
+      },
+      remoteNextCommitInfo = Right(channelReady.nextPerCommitmentPoint)
+    )
+    peer ! ChannelReadyForPayments(self, remoteNodeId, commitments.channelId, fundingTxIndex = 0)
+    DATA_NORMAL(commitments1, aliases1, None, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
   }
 
   def delayEarlyAnnouncementSigs(remoteAnnSigs: AnnouncementSignatures): Unit = {

@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.channel.Origin
 import fr.acinq.eclair.io.OpenChannelInterceptor.{DefaultParams, OpenChannelNonInitiator}
 import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.IncomingHtlc
-import fr.acinq.eclair.wire.protocol.Error
+import fr.acinq.eclair.wire.protocol.{Error, LiquidityAds}
 
 /** Custom plugin parameters. */
 trait PluginParams {
@@ -56,7 +56,7 @@ trait CustomCommitmentsPlugin extends PluginParams {
    * result upstream to preserve channels. If you have non-standard HTLCs that may be in this situation, they should be
    * returned by this method.
    */
-  def getHtlcsRelayedOut(htlcsIn: Seq[IncomingHtlc], nodeParams: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]]
+  def getHtlcsRelayedOut(htlcsIn: Seq[IncomingHtlc], nodeParams: NodeParams, log: LoggingAdapter): Map[Origin.Cold, Set[(ByteVector32, Long)]]
 }
 
 // @formatter:off
@@ -67,7 +67,7 @@ case class InterceptOpenChannelReceived(replyTo: ActorRef[InterceptOpenChannelRe
 }
 
 sealed trait InterceptOpenChannelResponse
-case class AcceptOpenChannel(temporaryChannelId: ByteVector32, defaultParams: DefaultParams) extends InterceptOpenChannelResponse
+case class AcceptOpenChannel(temporaryChannelId: ByteVector32, defaultParams: DefaultParams, addFunding_opt: Option[LiquidityAds.AddFunding]) extends InterceptOpenChannelResponse
 case class RejectOpenChannel(temporaryChannelId: ByteVector32, error: Error) extends InterceptOpenChannelResponse
 // @formatter:on
 

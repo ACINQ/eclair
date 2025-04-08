@@ -17,9 +17,9 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
+import fr.acinq.eclair.db.AuditDb.{NetworkFee, PublishedTransaction, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
@@ -34,7 +34,7 @@ import java.util.UUID
 
 object SqliteAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 8
+  val CURRENT_VERSION = 9
 }
 
 class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
@@ -110,6 +110,10 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("DROP TABLE network_fees")
     }
 
+    def migration89(statement: Statement): Unit = {
+      statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON transactions_published(channel_id)")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
@@ -138,9 +142,10 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON path_finding_metrics(timestamp)")
         statement.executeUpdate("CREATE INDEX metrics_mpp_idx ON path_finding_metrics(is_mpp)")
         statement.executeUpdate("CREATE INDEX metrics_name_idx ON path_finding_metrics(experiment_name)")
+        statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON transactions_published(channel_id)")
         statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON transactions_published(timestamp)")
         statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
-      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7)) =>
+      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -163,6 +168,9 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         if (v < 8) {
           migration78(statement)
         }
+        if (v < 9) {
+          migration89(statement)
+        }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
@@ -174,7 +182,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(1, e.channelId.toArray)
       statement.setBytes(2, e.remoteNodeId.value.toArray)
       statement.setLong(3, e.capacity.toLong)
-      statement.setBoolean(4, e.isInitiator)
+      statement.setBoolean(4, e.isChannelOpener)
       statement.setBoolean(5, e.isPrivate)
       statement.setString(6, e.event.label)
       statement.setLong(7, TimestampMilli.now().toLong)
@@ -218,7 +226,9 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     val payments = e match {
       case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, startedAt, settledAt) =>
         // non-trampoline relayed payments have one input and one output
-        Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", startedAt), RelayedPart(toChannelId, amountOut, "OUT", "channel", settledAt))
+        val in = Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", startedAt))
+        val out = Seq(RelayedPart(toChannelId, amountOut, "OUT", "channel", settledAt))
+        in ++ out
       case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) =>
         using(sqlite.prepareStatement("INSERT INTO relayed_trampoline VALUES (?, ?, ?, ?)")) { statement =>
           statement.setBytes(1, e.paymentHash.toArray)
@@ -228,8 +238,13 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           statement.executeUpdate()
         }
         // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
-        incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", i.receivedAt)) ++
-          outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", o.settledAt))
+        val in = incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", i.receivedAt))
+        val out = outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", o.settledAt))
+        in ++ out
+      case OnTheFlyFundingPaymentRelayed(_, incoming, outgoing) =>
+        val in = incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "on-the-fly-funding", i.receivedAt))
+        val out = outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "on-the-fly-funding", o.settledAt))
+        in ++ out
     }
     for (p <- payments) {
       using(sqlite.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
@@ -307,6 +322,15 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.setString(7, m.experimentName)
       statement.setBytes(8, m.recipientNodeId.value.toArray)
       statement.executeUpdate()
+    }
+  }
+
+  override def listPublished(channelId: ByteVector32): Seq[PublishedTransaction] = withMetrics("audit/list-published", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT * FROM transactions_published WHERE channel_id = ?")) { statement =>
+      statement.setBytes(1, channelId.toArray)
+      statement.executeQuery().map { rs =>
+        PublishedTransaction(TxId(rs.getByteVector32("tx_id")), rs.getString("tx_type"), rs.getLong("mining_fee_sat").sat)
+      }.toSeq
     }
   }
 
@@ -406,6 +430,8 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           case Some(RelayedPart(_, _, _, "trampoline", _)) =>
             val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PlaceHolderPubKey))
             TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) :: Nil
+          case Some(RelayedPart(_, _, _, "on-the-fly-funding", _)) =>
+            Seq(OnTheFlyFundingPaymentRelayed(paymentHash, incoming, outgoing))
           case _ => Nil
         }
     }.toSeq.sortBy(_.timestamp)
@@ -431,11 +457,22 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         }.toSeq
     }
 
-  override def stats(from: TimestampMilli, to: TimestampMilli): Seq[Stats] = {
-    val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
-      feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
-    }
+  override def stats(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[Stats] = {
     case class Relayed(amount: MilliSatoshi, fee: MilliSatoshi, direction: String)
+
+    def aggregateRelayStats(previous: Map[ByteVector32, Seq[Relayed]], incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing): Map[ByteVector32, Seq[Relayed]] = {
+      // We ensure trampoline payments are counted only once per channel and per direction (if multiple HTLCs were sent
+      // from/to the same channel, we group them).
+      val amountIn = incoming.map(_.amount).sum
+      val amountOut = outgoing.map(_.amount).sum
+      val in = incoming.groupBy(_.channelId).map { case (channelId, parts) => (channelId, Relayed(parts.map(_.amount).sum, 0 msat, "IN")) }.toSeq
+      val out = outgoing.groupBy(_.channelId).map { case (channelId, parts) =>
+        val fee = (amountIn - amountOut) * parts.length / outgoing.length // we split the fee among outgoing channels
+        (channelId, Relayed(parts.map(_.amount).sum, fee, "OUT"))
+      }.toSeq
+      (in ++ out).groupBy(_._1).map { case (channelId, payments) => (channelId, payments.map(_._2) ++ previous.getOrElse(channelId, Nil)) }
+    }
+
     val relayed = listRelayed(from, to).foldLeft(Map.empty[ByteVector32, Seq[Relayed]]) { (previous, e) =>
       // NB: we must avoid counting the fee twice: we associate it to the outgoing channels rather than the incoming ones.
       val current = e match {
@@ -444,20 +481,20 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           c.toChannelId -> (Relayed(c.amountOut, c.amountIn - c.amountOut, "OUT") +: previous.getOrElse(c.toChannelId, Nil)),
         )
         case t: TrampolinePaymentRelayed =>
-          // We ensure a trampoline payment is counted only once per channel and per direction (if multiple HTLCs were
-          // sent from/to the same channel, we group them).
-          val in = t.incoming.groupBy(_.channelId).map { case (channelId, parts) => (channelId, Relayed(parts.map(_.amount).sum, 0 msat, "IN")) }.toSeq
-          val out = t.outgoing.groupBy(_.channelId).map { case (channelId, parts) =>
-            val fee = (t.amountIn - t.amountOut) * parts.length / t.outgoing.length // we split the fee among outgoing channels
-            (channelId, Relayed(parts.map(_.amount).sum, fee, "OUT"))
-          }.toSeq
-          (in ++ out).groupBy(_._1).map { case (channelId, payments) => (channelId, payments.map(_._2) ++ previous.getOrElse(channelId, Nil)) }
+          aggregateRelayStats(previous, t.incoming, t.outgoing)
+        case f: OnTheFlyFundingPaymentRelayed =>
+          aggregateRelayStats(previous, f.incoming, f.outgoing)
       }
       previous ++ current
     }
+
+    val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
+      feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
+    }
+
     // Channels opened by our peers won't have any network fees paid by us, but we still want to compute stats for them.
     val allChannels = networkFees.keySet ++ relayed.keySet
-    allChannels.toSeq.flatMap(channelId => {
+    val result = allChannels.toSeq.flatMap(channelId => {
       val networkFee = networkFees.getOrElse(channelId, 0 sat)
       val (in, out) = relayed.getOrElse(channelId, Nil).partition(_.direction == "IN")
       ((in, "IN") :: (out, "OUT") :: Nil).map { case (r, direction) =>
@@ -470,6 +507,11 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           Stats(channelId, direction, avgPaymentAmount.truncateToSatoshi, paymentCount, relayFee.truncateToSatoshi, networkFee)
         }
       }
-    })
+    }).sortBy(s => s.channelId.toHex + s.direction)
+    paginated_opt match {
+      case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
+      case None => result
+    }
+
   }
 }

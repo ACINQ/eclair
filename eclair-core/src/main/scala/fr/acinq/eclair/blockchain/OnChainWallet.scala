@@ -37,7 +37,7 @@ trait OnChainChannelFunder {
    * Fund the provided transaction by adding inputs (and a change output if necessary).
    * Callers must verify that the resulting transaction isn't sending funds to unexpected addresses (malicious bitcoin node).
    */
-  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, externalInputsWeight: Map[OutPoint, Long] = Map.empty, feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse]
+  def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, externalInputsWeight: Map[OutPoint, Long] = Map.empty, minInputConfirmations_opt: Option[Int] = None, feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse]
 
   /**
    * Sign a PSBT. Result may be partially signed: only inputs known to our bitcoin wallet will be signed. *
@@ -75,8 +75,35 @@ trait OnChainChannelFunder {
   /** Get the number of confirmations of a given transaction. */
   def getTxConfirmations(txId: TxId)(implicit ec: ExecutionContext): Future[Option[Int]]
 
+  /**
+   * Return true if this output can potentially be spent.
+   *
+   * Note that if this function returns false, that doesn't mean the output cannot be spent. The output could be unknown
+   * (not in the blockchain nor in the mempool) but could reappear later and be spendable at that point.
+   */
+  def isTransactionOutputSpendable(txid: TxId, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean]
+
   /** Rollback a transaction that we failed to commit: this probably translates to "release locks on utxos". */
   def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
+
+  /**
+   * Mark a transaction as abandoned, which will allow for its wallet inputs to be re-spent.
+   *
+   * If the transaction has been permanently double-spent by a direct conflict, there is no need to call this function,
+   * it will automatically be detected and the wallet inputs will be re-spent.
+   *
+   * This should only be used when the transaction has become invalid because one of its ancestors has been permanently
+   * double-spent. Since the wallet doesn't keep track of unconfirmed ancestors status, it cannot know that the
+   * transaction has become permanently invalid and will never be publishable again.
+   *
+   * This function must never be called on a transaction that isn't permanently invalidated, otherwise it would create
+   * a risk of accidentally double-spending ourselves:
+   *  - the transaction is abandoned
+   *  - its inputs are re-spent in another transaction
+   *  - but the initial transaction confirms because it had already reached the mempool of other nodes, unexpectedly
+   *    double-spending the second transaction
+   */
+  def abandon(txId: TxId)(implicit ec: ExecutionContext): Future[Boolean]
 
   /**
    * Tests whether the inputs of the provided transaction have been spent by another transaction.

@@ -168,12 +168,14 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         ActorRef.noSender,
         nodeId = aliceNodeId,
         state = Peer.CONNECTED,
+        features = Some(Features(Features.ChannelRangeQueries -> FeatureSupport.Optional).initFeatures()),
         address = Some(NodeAddress.fromParts("127.0.0.1", 9731).get),
         channels = Set(ActorRef.noSender)),
       PeerInfo(
         ActorRef.noSender,
         nodeId = bobNodeId,
         state = Peer.DISCONNECTED,
+        features = None,
         address = None,
         channels = Set(ActorRef.noSender))))
 
@@ -204,8 +206,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'usablebalances' returns expected balance json only for enabled channels") {
     val eclair = mock[Eclair]
     eclair.usableBalances()(any[Timeout]) returns Future.successful(List(
-      ChannelBalance(aliceNodeId, ShortIds(RealScidStatus.Unknown, Alias(1), None), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
-      ChannelBalance(aliceNodeId, ShortIds(RealScidStatus.Final(RealShortChannelId(2)), Alias(3), Some(Alias(4))), 400000000 msat, 30000000 msat, isPublic = false, isEnabled = true)
+      ChannelBalance(aliceNodeId, None, ShortIdAliases(Alias(1), None), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
+      ChannelBalance(aliceNodeId, Some(RealShortChannelId(2)), ShortIdAliases(Alias(3), Some(Alias(4))), 400000000 msat, 30000000 msat, isPublic = false, isEnabled = true)
     ))
 
     val mockService = mockApi(eclair)
@@ -224,8 +226,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'channelbalances' returns expected balance json for all channels") {
     val eclair = mock[Eclair]
     eclair.channelBalances()(any[Timeout]) returns Future.successful(List(
-      ChannelBalance(aliceNodeId, ShortIds(RealScidStatus.Temporary(RealShortChannelId(1)), Alias(2), None), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
-      ChannelBalance(aliceNodeId, ShortIds(RealScidStatus.Final(RealShortChannelId(3)), Alias(3), Some(Alias(3))), 0 msat, 30000000 msat, isPublic = false, isEnabled = false)
+      ChannelBalance(aliceNodeId, Some(RealShortChannelId(1)), ShortIdAliases(Alias(2), None), 100000000 msat, 20000000 msat, isPublic = true, isEnabled = true),
+      ChannelBalance(aliceNodeId, Some(RealShortChannelId(3)), ShortIdAliases(Alias(3), Some(Alias(3))), 0 msat, 30000000 msat, isPublic = false, isEnabled = false)
     ))
 
     val mockService = mockApi(eclair)
@@ -979,7 +981,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   }
 
   test("'sendtoroute' method should accept a json-encoded") {
-    val payment = SendPaymentToRouteResponse(UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f"), UUID.fromString("2ad8c6d7-99cb-4238-8f67-89024b8eed0d"), None)
+    val payment = SendPaymentToRouteResponse(UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f"), UUID.fromString("2ad8c6d7-99cb-4238-8f67-89024b8eed0d"))
     val expected = """{"paymentId":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","parentId":"2ad8c6d7-99cb-4238-8f67-89024b8eed0d"}"""
     val externalId = UUID.randomUUID().toString
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.Zeroes, randomKey(), Left("Some invoice"), CltvExpiryDelta(24))
@@ -987,7 +989,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val jsonNodes = serialization.write(expectedRoute.nodes)
 
     val eclair = mock[Eclair]
-    eclair.sendToRoute(any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[Bolt11Invoice], any[PredefinedNodeRoute], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]])(any[Timeout]) returns Future.successful(payment)
+    eclair.sendToRoute(any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[Bolt11Invoice], any[PredefinedNodeRoute])(any[Timeout]) returns Future.successful(payment)
     val mockService = new MockService(eclair)
 
     Post("/sendtoroute", FormData("nodeIds" -> jsonNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "externalId" -> externalId, "invoice" -> pr.toString).toEntity) ~>
@@ -998,19 +1000,19 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == expected)
-        eclair.sendToRoute(None, Some(externalId), None, pr, expectedRoute, None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.sendToRoute(None, Some(externalId), None, pr, expectedRoute)(any[Timeout]).wasCalled(once)
       }
   }
 
   test("'sendtoroute' method should accept a comma separated list of pubkeys") {
-    val payment = SendPaymentToRouteResponse(UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f"), UUID.fromString("2ad8c6d7-99cb-4238-8f67-89024b8eed0d"), None)
+    val payment = SendPaymentToRouteResponse(UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f"), UUID.fromString("2ad8c6d7-99cb-4238-8f67-89024b8eed0d"))
     val expected = """{"paymentId":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","parentId":"2ad8c6d7-99cb-4238-8f67-89024b8eed0d"}"""
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.Zeroes, randomKey(), Left("Some invoice"), CltvExpiryDelta(24))
     val expectedRoute = PredefinedNodeRoute(1234 msat, Seq(PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9"), PublicKey(hex"0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3"), PublicKey(hex"026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28")))
     val csvNodes = "0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9, 0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3, 026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"
 
     val eclair = mock[Eclair]
-    eclair.sendToRoute(any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[Bolt11Invoice], any[PredefinedNodeRoute], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]])(any[Timeout]) returns Future.successful(payment)
+    eclair.sendToRoute(any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[Bolt11Invoice], any[PredefinedNodeRoute])(any[Timeout]) returns Future.successful(payment)
     val mockService = new MockService(eclair)
 
     // this test uses CSV encoded route
@@ -1022,7 +1024,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == expected)
-        eclair.sendToRoute(None, None, None, pr, expectedRoute, None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.sendToRoute(None, None, None, pr, expectedRoute)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -1208,8 +1210,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         system.eventStream.publish(pset)
         wsClient.expectMessage(expectedSerializedPset)
 
-        val chcr = ChannelCreated(system.deadLetters, system.deadLetters, bobNodeId, isInitiator = true, ByteVector32.One, FeeratePerKw(25 sat), Some(FeeratePerKw(20 sat)))
-        val expectedSerializedChcr = """{"type":"channel-created","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","isInitiator":true,"temporaryChannelId":"0100000000000000000000000000000000000000000000000000000000000000","commitTxFeeratePerKw":25,"fundingTxFeeratePerKw":20}"""
+        val chcr = ChannelCreated(system.deadLetters, system.deadLetters, bobNodeId, isOpener = true, ByteVector32.One, FeeratePerKw(25 sat), Some(FeeratePerKw(20 sat)))
+        val expectedSerializedChcr = """{"type":"channel-created","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","isOpener":true,"temporaryChannelId":"0100000000000000000000000000000000000000000000000000000000000000","commitTxFeeratePerKw":25,"fundingTxFeeratePerKw":20}"""
         assert(serialization.write(chcr) == expectedSerializedChcr)
         system.eventStream.publish(chcr)
         wsClient.expectMessage(expectedSerializedChcr)
@@ -1232,15 +1234,16 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         system.eventStream.publish(chcl)
         wsClient.expectMessage(expectedSerializedChcl)
 
+        val replyPath = Sphinx.RouteBlinding.create(PrivateKey(hex"414141414141414141414141414141414141414141414141414141414141414101"), Seq(bobNodeId), Seq(hex"000000"))
         val Right(payload) = MessageOnion.FinalPayload.validate(TlvStream[OnionMessagePayloadTlv](
           Set[OnionMessagePayloadTlv](
             OnionMessagePayloadTlv.EncryptedData(ByteVector.empty),
-            OnionMessagePayloadTlv.ReplyPath(Sphinx.RouteBlinding.create(PrivateKey(hex"414141414141414141414141414141414141414141414141414141414141414101"), Seq(bobNodeId), Seq(hex"000000")).route)
+            OnionMessagePayloadTlv.ReplyPath(replyPath.route)
           ), Set(
             GenericTlv(UInt64(5), hex"1111")
           )), TlvStream(RouteBlindingEncryptedDataTlv.PathId(hex"2222")))
-        val msgrcv = OnionMessages.ReceiveMessage(payload)
-        val expectedSerializedMsgrcv = """{"type":"onion-message-received","pathId":"2222","tlvs":{"EncryptedData":{"data":""},"ReplyPath":{"blindedRoute":{"introductionNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","blindingKey":"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619","blindedNodes":[{"blindedPublicKey":"020303f91e620504cde242df38d04599d8b4d4c555149cc742a5f12de452cbdd40","encryptedPayload":"126a26221759247584d704b382a5789f1d8c5a"}]}},"Unknown5":"1111"}}"""
+        val msgrcv = OnionMessages.ReceiveMessage(payload, PrivateKey(hex"515151515151515151515151515151515151515151515151515151515151515101"))
+        val expectedSerializedMsgrcv = """{"type":"onion-message-received","pathId":"2222","tlvs":{"EncryptedData":{"data":""},"ReplyPath":{"blindedRoute":{"firstNodeId":{"publicKey":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585"},"firstPathKey":"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619","blindedHops":[{"blindedPublicKey":"020303f91e620504cde242df38d04599d8b4d4c555149cc742a5f12de452cbdd40","encryptedPayload":"126a26221759247584d704b382a5789f1d8c5a"}]}},"Unknown5":"1111"}}"""
         assert(serialization.write(msgrcv) == expectedSerializedMsgrcv)
         system.eventStream.publish(msgrcv)
         wsClient.expectMessage(expectedSerializedMsgrcv)

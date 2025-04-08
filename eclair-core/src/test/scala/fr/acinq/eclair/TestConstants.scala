@@ -16,21 +16,23 @@
 
 package fr.acinq.eclair
 
+import akka.actor.ActorRef
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong}
-import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, RemoteRbfLimits, UnhandledExceptionStrategy}
-import fr.acinq.eclair.channel.{ChannelFlags, LocalParams}
+import fr.acinq.eclair.channel.{ChannelFlags, LocalParams, Origin, Upstream}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
 import fr.acinq.eclair.io.MessageRelay.RelayAll
-import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection}
+import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection, PeerReadyNotifier}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
+import fr.acinq.eclair.payment.offer.OffersConfig
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
-import fr.acinq.eclair.router.Graph.{MessagePath, WeightRatios}
-import fr.acinq.eclair.router.PathFindingExperimentConf
-import fr.acinq.eclair.router.Router.{MessageRouteParams, MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
-import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
+import fr.acinq.eclair.router.Graph.{MessageWeightRatios, PaymentWeightRatios}
+import fr.acinq.eclair.router.{PathFindingExperimentConf, Router}
+import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Tag
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -50,7 +52,12 @@ object TestConstants {
   val nonInitiatorPushAmount: MilliSatoshi = 100_000_000L msat
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10_000 sat)
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2_500 sat)
+  val defaultLiquidityRates: LiquidityAds.WillFundRates = LiquidityAds.WillFundRates(
+    fundingRates = LiquidityAds.FundingRate(100_000 sat, 10_000_000 sat, 500, 100, 100 sat, 1000 sat) :: Nil,
+    paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalance)
+  )
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
+  val emptyOrigin = Origin.Hot(ActorRef.noSender, Upstream.Local(UUID.randomUUID()))
 
   case object TestFeature extends Feature with InitFeature with NodeFeature {
     val rfcName = "test_feature"
@@ -83,28 +90,31 @@ object TestConstants {
       channelKeyManager,
       onChainKeyManager_opt = None,
       blockHeight = new AtomicLong(defaultBlockHeight),
-      feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
+      bitcoinCoreFeerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       torAddress_opt = None,
       features = Features(
         Map(
-          DataLossProtect -> Optional,
-          ChannelRangeQueries -> Optional,
-          ChannelRangeQueriesExtended -> Optional,
-          VariableLengthOnion -> Mandatory,
-          PaymentSecret -> Mandatory,
-          BasicMultiPartPayment -> Optional,
-          Wumbo -> Optional,
-          PaymentMetadata -> Optional,
-          RouteBlinding -> Optional,
+          Features.DataLossProtect -> FeatureSupport.Optional,
+          Features.ChannelRangeQueries -> FeatureSupport.Optional,
+          Features.ChannelRangeQueriesExtended -> FeatureSupport.Optional,
+          Features.VariableLengthOnion -> FeatureSupport.Mandatory,
+          Features.PaymentSecret -> FeatureSupport.Mandatory,
+          Features.BasicMultiPartPayment -> FeatureSupport.Optional,
+          Features.Wumbo -> FeatureSupport.Optional,
+          Features.PaymentMetadata -> FeatureSupport.Optional,
+          Features.RouteBlinding -> FeatureSupport.Optional,
+          Features.StaticRemoteKey -> FeatureSupport.Mandatory,
+          Features.Quiescence -> FeatureSupport.Optional,
+          Features.SplicePrototype -> FeatureSupport.Optional,
+          Features.ProvideStorage -> FeatureSupport.Optional,
         ),
         unknown = Set(UnknownFeature(TestFeature.optional))
       ),
       pluginParams = List(pluginParams),
       overrideInitFeatures = Map.empty,
-      syncWhitelist = Set.empty,
       channelConf = ChannelConf(
         dustLimit = 1100 sat,
         maxRemoteDustLimit = 1500 sat,
@@ -118,31 +128,35 @@ object TestConstants {
         maxRestartWatchDelay = 0 millis,
         maxBlockProcessingDelay = 10 millis,
         maxTxPublishRetryDelay = 10 millis,
+        scanPreviousBlocksDepth = 3,
         maxChannelSpentRescanBlocks = 144,
         htlcMinimum = 0 msat,
-        minDepthBlocks = 3,
+        minDepth = 6,
         toRemoteDelay = CltvExpiryDelta(144),
         maxToLocalDelay = CltvExpiryDelta(1000),
         reserveToFundingRatio = 0.01, // note: not used (overridden below)
         maxReserveToFundingRatio = 0.05,
         unhandledExceptionStrategy = UnhandledExceptionStrategy.LocalClose,
         revocationTimeout = 20 seconds,
-        channelFlags = ChannelFlags.Public,
+        channelFlags = ChannelFlags(announceChannel = true),
         minFundingPublicSatoshis = 1000 sat,
         minFundingPrivateSatoshis = 900 sat,
         requireConfirmedInputsForDualFunding = false,
         channelOpenerWhitelist = Set.empty,
         maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99,
+        channelFundingTimeout = 30 seconds,
         remoteRbfLimits = RemoteRbfLimits(5, 0),
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hours,
+        acceptIncomingStaticRemoteKeyChannels = false
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
+        anchorWithoutHtlcsMaxFee = 100_000.sat,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
         defaultFeerateTolerance = FeerateTolerance(0.5, 8.0, anchorOutputsFeeratePerKw, DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)),
@@ -183,10 +197,14 @@ object TestConstants {
         watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
-        requestNodeAnnouncements = true,
-        encodingType = EncodingType.COMPRESSED_ZLIB,
-        channelRangeChunkSize = 20,
-        channelQueryChunkSize = 5,
+        syncConf = Router.SyncConf(
+          requestNodeAnnouncements = true,
+          encodingType = EncodingType.COMPRESSED_ZLIB,
+          channelRangeChunkSize = 20,
+          channelQueryChunkSize = 5,
+          peerLimit = 10,
+          whitelist = Set.empty
+        ),
         pathFindingExperimentConf = PathFindingExperimentConf(Map("alice-test-experiment" -> PathFindingConf(
           randomize = false,
           boundaries = SearchBoundaries(
@@ -194,20 +212,20 @@ object TestConstants {
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          heuristics = Left(WeightRatios(
+          heuristics = PaymentWeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
             capacityFactor = 0.0,
-            hopCost = RelayFees(0 msat, 0),
-          )),
+            hopFees = RelayFees(0 msat, 0),
+          ),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
             maxParts = 10,
           ),
           experimentName = "alice-test-experiment",
           experimentPercentage = 100))),
-        messageRouteParams = MessageRouteParams(8, MessagePath.WeightRatios(0.7, 0.1, 0.2)),
+        messageRouteParams = MessageRouteParams(8, MessageWeightRatios(0.7, 0.1, 0.2)),
         balanceEstimateHalfLife = 1 day,
         numberOfWorkers = 0,
       ),
@@ -225,7 +243,13 @@ object TestConstants {
         timeout = 200 millis,
         maxAttempts = 2,
       ),
-      purgeInvoicesInterval = None
+      purgeInvoicesInterval = None,
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
+      liquidityAdsConfig = LiquidityAds.Config(Some(defaultLiquidityRates), lockUtxos = true),
+      peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
+      onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
+      peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour),
+      offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -233,7 +257,8 @@ object TestConstants {
       nodeParams.features.initFeatures(),
       None,
       None,
-      isInitiator = true,
+      isChannelOpener = true,
+      paysCommitTxFees = true,
       dualFunded = false,
       fundingSatoshis,
       unlimitedMaxHtlcValueInFlight = false,
@@ -252,25 +277,28 @@ object TestConstants {
       channelKeyManager,
       onChainKeyManager_opt = None,
       blockHeight = new AtomicLong(defaultBlockHeight),
-      feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
+      bitcoinCoreFeerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw)),
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
       torAddress_opt = None,
       features = Features(
-        DataLossProtect -> Optional,
-        ChannelRangeQueries -> Optional,
-        ChannelRangeQueriesExtended -> Optional,
-        VariableLengthOnion -> Mandatory,
-        PaymentSecret -> Mandatory,
-        BasicMultiPartPayment -> Optional,
-        Wumbo -> Optional,
-        PaymentMetadata -> Optional,
-        RouteBlinding -> Optional,
+        Features.DataLossProtect -> FeatureSupport.Optional,
+        Features.ChannelRangeQueries -> FeatureSupport.Optional,
+        Features.ChannelRangeQueriesExtended -> FeatureSupport.Optional,
+        Features.VariableLengthOnion -> FeatureSupport.Mandatory,
+        Features.PaymentSecret -> FeatureSupport.Mandatory,
+        Features.BasicMultiPartPayment -> FeatureSupport.Optional,
+        Features.Wumbo -> FeatureSupport.Optional,
+        Features.PaymentMetadata -> FeatureSupport.Optional,
+        Features.RouteBlinding -> FeatureSupport.Optional,
+        Features.StaticRemoteKey -> FeatureSupport.Mandatory,
+        Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Optional,
+        Features.Quiescence -> FeatureSupport.Optional,
+        Features.SplicePrototype -> FeatureSupport.Optional,
       ),
       pluginParams = Nil,
       overrideInitFeatures = Map.empty,
-      syncWhitelist = Set.empty,
       channelConf = ChannelConf(
         dustLimit = 1000 sat,
         maxRemoteDustLimit = 1500 sat,
@@ -284,31 +312,35 @@ object TestConstants {
         maxRestartWatchDelay = 5 millis,
         maxBlockProcessingDelay = 10 millis,
         maxTxPublishRetryDelay = 10 millis,
+        scanPreviousBlocksDepth = 3,
         maxChannelSpentRescanBlocks = 144,
         htlcMinimum = 1000 msat,
-        minDepthBlocks = 3,
+        minDepth = 3,
         toRemoteDelay = CltvExpiryDelta(144),
         maxToLocalDelay = CltvExpiryDelta(1000),
         reserveToFundingRatio = 0.01, // note: not used (overridden below)
         maxReserveToFundingRatio = 0.05,
         unhandledExceptionStrategy = UnhandledExceptionStrategy.LocalClose,
         revocationTimeout = 20 seconds,
-        channelFlags = ChannelFlags.Public,
+        channelFlags = ChannelFlags(announceChannel = true),
         minFundingPublicSatoshis = 1000 sat,
         minFundingPrivateSatoshis = 900 sat,
         requireConfirmedInputsForDualFunding = false,
         channelOpenerWhitelist = Set.empty,
         maxPendingChannelsPerPeer = 3,
         maxTotalPendingChannelsPrivateNodes = 99,
-        remoteRbfLimits = RemoteRbfLimits(5, 0),
+        channelFundingTimeout = 30 seconds,
+        remoteRbfLimits = RemoteRbfLimits(10, 0),
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hour,
+        acceptIncomingStaticRemoteKeyChannels = false
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
+        anchorWithoutHtlcsMaxFee = 100_000.sat,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
         defaultFeerateTolerance = FeerateTolerance(0.75, 1.5, anchorOutputsFeeratePerKw, DustTolerance(30_000 sat, closeOnUpdateFeeOverflow = true)),
@@ -349,10 +381,14 @@ object TestConstants {
         watchSpentWindow = 1 second,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
-        requestNodeAnnouncements = true,
-        encodingType = EncodingType.UNCOMPRESSED,
-        channelRangeChunkSize = 20,
-        channelQueryChunkSize = 5,
+        syncConf = Router.SyncConf(
+          requestNodeAnnouncements = true,
+          encodingType = EncodingType.UNCOMPRESSED,
+          channelRangeChunkSize = 20,
+          channelQueryChunkSize = 5,
+          peerLimit = 20,
+          whitelist = Set.empty
+        ),
         pathFindingExperimentConf = PathFindingExperimentConf(Map("bob-test-experiment" -> PathFindingConf(
           randomize = false,
           boundaries = SearchBoundaries(
@@ -360,20 +396,20 @@ object TestConstants {
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          heuristics = Left(WeightRatios(
+          heuristics = PaymentWeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
             capacityFactor = 0.0,
-            hopCost = RelayFees(0 msat, 0),
-          )),
+            hopFees = RelayFees(0 msat, 0),
+          ),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
             maxParts = 10,
           ),
           experimentName = "bob-test-experiment",
           experimentPercentage = 100))),
-        messageRouteParams = MessageRouteParams(9, MessagePath.WeightRatios(0.5, 0.2, 0.3)),
+        messageRouteParams = MessageRouteParams(9, MessageWeightRatios(0.5, 0.2, 0.3)),
         balanceEstimateHalfLife = 1 day,
         numberOfWorkers = 0
       ),
@@ -391,7 +427,13 @@ object TestConstants {
         timeout = 100 millis,
         maxAttempts = 2,
       ),
-      purgeInvoicesInterval = None
+      purgeInvoicesInterval = None,
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
+      liquidityAdsConfig = LiquidityAds.Config(Some(defaultLiquidityRates), lockUtxos = true),
+      peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
+      onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
+      peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour),
+      offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
     def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
@@ -399,7 +441,8 @@ object TestConstants {
       nodeParams.features.initFeatures(),
       None,
       None,
-      isInitiator = false,
+      isChannelOpener = false,
+      paysCommitTxFees = false,
       dualFunded = false,
       fundingSatoshis,
       unlimitedMaxHtlcValueInFlight = false,

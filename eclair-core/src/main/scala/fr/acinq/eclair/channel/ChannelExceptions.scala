@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, InteractiveTxMessage, UpdateAddHtlc}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, InteractiveTxMessage, LiquidityAds, UpdateAddHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64}
 import scodec.bits.ByteVector
 
@@ -37,6 +37,7 @@ class ChannelException(val channelId: ByteVector32, message: String) extends Run
 
 // @formatter:off
 case class InvalidChainHash                        (override val channelId: ByteVector32, local: BlockHash, remote: BlockHash) extends ChannelException(channelId, s"invalid chainHash (local=$local remote=$remote)")
+case class FundingFeerateTooLow                    (override val channelId: ByteVector32, proposed: FeeratePerKw, expected: FeeratePerKw) extends ChannelException(channelId, s"funding feerate is too low: expected at least $expected, but $proposed was proposed")
 case class FundingAmountTooLow                     (override val channelId: ByteVector32, fundingAmount: Satoshi, min: Satoshi) extends ChannelException(channelId, s"invalid funding_amount=$fundingAmount (min=$min)")
 case class FundingAmountTooHigh                    (override val channelId: ByteVector32, fundingAmount: Satoshi, max: Satoshi) extends ChannelException(channelId, s"invalid funding_amount=$fundingAmount (max=$max)")
 case class InvalidFundingBalances                  (override val channelId: ByteVector32, fundingAmount: Satoshi, localBalance: MilliSatoshi, remoteBalance: MilliSatoshi) extends ChannelException(channelId, s"invalid balances funding_amount=$fundingAmount local=$localBalance remote=$remoteBalance")
@@ -51,6 +52,11 @@ case class ToSelfDelayTooHigh                      (override val channelId: Byte
 case class ChannelReserveTooHigh                   (override val channelId: ByteVector32, channelReserve: Satoshi, reserveToFundingRatio: Double, maxReserveToFundingRatio: Double) extends ChannelException(channelId, s"channelReserve too high: reserve=$channelReserve fundingRatio=$reserveToFundingRatio maxFundingRatio=$maxReserveToFundingRatio")
 case class ChannelReserveBelowOurDustLimit         (override val channelId: ByteVector32, channelReserve: Satoshi, dustLimit: Satoshi) extends ChannelException(channelId, s"their channelReserve=$channelReserve is below our dustLimit=$dustLimit")
 case class ChannelReserveNotMet                    (override val channelId: ByteVector32, toLocal: MilliSatoshi, toRemote: MilliSatoshi, reserve: Satoshi) extends ChannelException(channelId, s"channel reserve is not met toLocal=$toLocal toRemote=$toRemote reserve=$reserve")
+case class MissingLiquidityAds                     (override val channelId: ByteVector32) extends ChannelException(channelId, "liquidity ads field is missing")
+case class InvalidLiquidityAdsSig                  (override val channelId: ByteVector32) extends ChannelException(channelId, "liquidity ads signature is invalid")
+case class InvalidLiquidityAdsAmount               (override val channelId: ByteVector32, proposed: Satoshi, min: Satoshi) extends ChannelException(channelId, s"liquidity ads funding amount is too low (expected at least $min, got $proposed)")
+case class InvalidLiquidityAdsPaymentType          (override val channelId: ByteVector32, proposed: LiquidityAds.PaymentType, allowed: Set[LiquidityAds.PaymentType]) extends ChannelException(channelId, s"liquidity ads ${proposed.rfcName} payment type is not supported (allowed=${allowed.map(_.rfcName).mkString(", ")})")
+case class InvalidLiquidityAdsRate                 (override val channelId: ByteVector32) extends ChannelException(channelId, "liquidity ads funding rates don't match")
 case class ChannelFundingError                     (override val channelId: ByteVector32) extends ChannelException(channelId, "channel funding error")
 case class InvalidFundingTx                        (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid funding tx")
 case class InvalidSerialId                         (override val channelId: ByteVector32, serialId: UInt64) extends ChannelException(channelId, s"invalid serial_id=${serialId.toByteVector.toHex}")
@@ -77,6 +83,7 @@ case class UnexpectedFundingSignatures             (override val channelId: Byte
 case class InvalidFundingFeerate                   (override val channelId: ByteVector32, targetFeerate: FeeratePerKw, actualFeerate: FeeratePerKw) extends ChannelException(channelId, s"invalid funding feerate: target=$targetFeerate actual=$actualFeerate")
 case class InvalidFundingSignature                 (override val channelId: ByteVector32, txId_opt: Option[TxId]) extends ChannelException(channelId, s"invalid funding signature: txId=${txId_opt.map(_.toString()).getOrElse("n/a")}")
 case class InvalidRbfFeerate                       (override val channelId: ByteVector32, proposed: FeeratePerKw, expected: FeeratePerKw) extends ChannelException(channelId, s"invalid rbf attempt: the feerate must be at least $expected, you proposed $proposed")
+case class InvalidSpliceFeerate                    (override val channelId: ByteVector32, proposed: FeeratePerKw, expected: FeeratePerKw) extends ChannelException(channelId, s"invalid splice request: the feerate must be at least $expected, you proposed $proposed")
 case class InvalidSpliceRequest                    (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid splice request")
 case class InvalidRbfAlreadyInProgress             (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid rbf attempt: the current rbf attempt must be completed or aborted first")
 case class InvalidSpliceAlreadyInProgress          (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid splice attempt: the current splice attempt must be completed or aborted first")
@@ -85,9 +92,11 @@ case class InvalidRbfAttemptsExhausted             (override val channelId: Byte
 case class InvalidRbfAttemptTooSoon                (override val channelId: ByteVector32, previousAttempt: BlockHeight, nextAttempt: BlockHeight) extends ChannelException(channelId, s"invalid rbf attempt: last attempt made at block=$previousAttempt, next attempt available after block=$nextAttempt")
 case class InvalidSpliceTxAbortNotAcked            (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid splice attempt: our previous tx_abort has not been acked")
 case class InvalidSpliceNotQuiescent               (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid splice attempt: the channel is not quiescent")
+case class InvalidSpliceWithUnconfirmedTx          (override val channelId: ByteVector32, fundingTx: TxId) extends ChannelException(channelId, s"invalid splice attempt: the current funding transaction is still unconfirmed (txId=$fundingTx), you should use tx_init_rbf instead")
 case class InvalidRbfTxConfirmed                   (override val channelId: ByteVector32) extends ChannelException(channelId, "no need to rbf, transaction is already confirmed")
 case class InvalidRbfNonInitiator                  (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot initiate rbf: we're not the initiator of this interactive-tx attempt")
 case class InvalidRbfZeroConf                      (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot initiate rbf: we're using zero-conf for this interactive-tx attempt")
+case class InvalidRbfMissingLiquidityPurchase      (override val channelId: ByteVector32, expectedAmount: Satoshi) extends ChannelException(channelId, s"cannot accept rbf attempt: the previous attempt contained a liquidity purchase of $expectedAmount but this one doesn't contain any liquidity purchase")
 case class InvalidRbfAttempt                       (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid rbf attempt")
 case class NoMoreHtlcsClosingInProgress            (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
 case class ClosingAlreadyInProgress                (override val channelId: ByteVector32) extends ChannelException(channelId, "closing already in progress")
@@ -107,7 +116,10 @@ case class FeerateTooDifferent                     (override val channelId: Byte
 case class InvalidAnnouncementSignatures           (override val channelId: ByteVector32, annSigs: AnnouncementSignatures) extends ChannelException(channelId, s"invalid announcement signatures: $annSigs")
 case class InvalidCommitmentSignature              (override val channelId: ByteVector32, fundingTxId: TxId, fundingTxIndex: Long, unsignedCommitTx: Transaction) extends ChannelException(channelId, s"invalid commitment signature: fundingTxId=$fundingTxId fundingTxIndex=$fundingTxIndex commitTxId=${unsignedCommitTx.txid} commitTx=$unsignedCommitTx")
 case class InvalidHtlcSignature                    (override val channelId: ByteVector32, txId: TxId) extends ChannelException(channelId, s"invalid htlc signature: txId=$txId")
+case class CannotGenerateClosingTx                 (override val channelId: ByteVector32) extends ChannelException(channelId, "failed to generate closing transaction: all outputs are trimmed")
+case class MissingCloseSignature                   (override val channelId: ByteVector32) extends ChannelException(channelId, "closing_complete is missing a signature for a closing transaction including our output")
 case class InvalidCloseSignature                   (override val channelId: ByteVector32, txId: TxId) extends ChannelException(channelId, s"invalid close signature: txId=$txId")
+case class InvalidCloseeScript                     (override val channelId: ByteVector32, received: ByteVector, expected: ByteVector) extends ChannelException(channelId, s"invalid closee script used in closing_complete: our latest script is $expected, you're using $received")
 case class InvalidCloseAmountBelowDust             (override val channelId: ByteVector32, txId: TxId) extends ChannelException(channelId, s"invalid closing tx: some outputs are below dust: txId=$txId")
 case class CommitSigCountMismatch                  (override val channelId: ByteVector32, expected: Int, actual: Int) extends ChannelException(channelId, s"commit sig count mismatch: expected=$expected actual=$actual")
 case class HtlcSigCountMismatch                    (override val channelId: ByteVector32, expected: Int, actual: Int) extends ChannelException(channelId, s"htlc sig count mismatch: expected=$expected actual=$actual")

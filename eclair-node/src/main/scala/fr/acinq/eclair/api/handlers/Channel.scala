@@ -90,6 +90,12 @@ trait Channel {
       }
   }
 
+  val rbfSplice: Route = postRequest("rbfsplice") { implicit f =>
+    formFields(channelIdFormParam, "targetFeerateSatByte".as[FeeratePerByte], "fundingFeeBudgetSatoshis".as[Satoshi], "lockTime".as[Long].?) {
+      (channelId, targetFeerateSatByte, fundingFeeBudget, lockTime_opt) => complete(eclairApi.rbfSplice(channelId, FeeratePerKw(targetFeerateSatByte), fundingFeeBudget, lockTime_opt))
+    }
+  }
+
   val close: Route = postRequest("close") { implicit t =>
     withChannelsIdentifier { channels =>
       formFields("scriptPubKey".as[ByteVector](bytesUnmarshaller).?, "preferredFeerateSatByte".as[FeeratePerByte].?, "minFeerateSatByte".as[FeeratePerByte].?, "maxFeerateSatByte".as[FeeratePerByte].?) {
@@ -154,8 +160,10 @@ trait Channel {
   }
 
   val channelStats: Route = postRequest("channelstats") { implicit t =>
-    formFields(fromFormParam(), toFormParam()) { (from, to) =>
-      complete(eclairApi.channelStats(from, to))
+    withPaginated { paginated_opt =>
+      formFields(fromFormParam(), toFormParam()) { (from, to) =>
+        complete(eclairApi.channelStats(from, to, paginated_opt.orElse(Some(Paginated(count = 10, skip = 0)))))
+      }
     }
   }
 
@@ -163,6 +171,6 @@ trait Channel {
     complete(eclairApi.channelBalances())
   }
 
-  val channelRoutes: Route = open ~ rbfOpen ~ spliceIn ~ spliceOut ~ close ~ forceClose ~ bumpForceClose ~ channel ~ channels ~ closedChannels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
+  val channelRoutes: Route = open ~ rbfOpen ~ spliceIn ~ spliceOut ~ rbfSplice ~ close ~ forceClose ~ bumpForceClose ~ channel ~ channels ~ closedChannels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
 
 }

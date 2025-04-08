@@ -49,7 +49,9 @@ object Logs {
           parentPaymentId_opt: Option[UUID] = None,
           paymentId_opt: Option[UUID] = None,
           paymentHash_opt: Option[ByteVector32] = None,
+          offerId_opt: Option[ByteVector32] = None,
           txPublishId_opt: Option[UUID] = None,
+          messageId_opt: Option[ByteVector32] = None,
           nodeAlias_opt: Option[String] = None): Map[String, String] =
     Seq(
       // nb: we preformat MDC values so that there is no white spaces in logs when they are not defined
@@ -59,7 +61,9 @@ object Logs {
       parentPaymentId_opt.map(p => "parentPaymentId" -> s" p:$p"),
       paymentId_opt.map(i => "paymentId" -> s" i:$i"),
       paymentHash_opt.map(h => "paymentHash" -> s" h:$h"),
+      offerId_opt.map(o => "offerId" -> s" o:$o"),
       txPublishId_opt.map(t => "txPublishId" -> s" t:$t"),
+      messageId_opt.map(m => "messageId" -> s" m:$m"),
       nodeAlias_opt.map(a => "nodeAlias" -> s" a:$a"),
     ).flatten.toMap
 
@@ -105,6 +109,10 @@ object Logs {
       override def category: String = "SYN"
     }
 
+    case object MESSAGE extends LogCategory {
+      override def category: String = "MSG"
+    }
+
     case object PAYMENT extends LogCategory {
       override def category: String = "PAY"
     }
@@ -132,6 +140,8 @@ object Logs {
         case _: RoutingMessage => Some(LogCategory.ROUTING_SYNC)
         case TickBroadcast => Some(LogCategory.ROUTING_SYNC)
         case TickPruneStaleChannels => Some(LogCategory.ROUTING_SYNC)
+
+        case _: OnionMessage => Some(LogCategory.MESSAGE)
 
         case _: HandshakeCompleted => Some(LogCategory.CONNECTION)
         case _: Peer.Connect => Some(LogCategory.CONNECTION)

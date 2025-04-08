@@ -16,17 +16,16 @@
 
 package fr.acinq.eclair.router
 
-import akka.actor.{ActorContext, ActorRef, Status}
+import akka.actor.{ActorContext, ActorRef}
 import akka.event.DiagnosticLoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
-import fr.acinq.eclair.message.SendingMessage
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{InfiniteLoop, MessagePath, NegativeProbability, RichWeight}
+import fr.acinq.eclair.router.Graph.{InfiniteLoop, MessagePathWeight, NegativeProbability, PaymentPathWeight, WeightedPath}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import kamon.tag.TagSet
@@ -42,7 +41,7 @@ object RouteCalculation {
       // We are the destination of that edge: local graph edges always use either the local alias or the real scid.
       // We want to use the remote alias when available, because our peer won't understand our local alias.
       d.resolve(e.desc.shortChannelId) match {
-        case Some(c: PrivateChannel) => c.shortIds.remoteAlias_opt.getOrElse(e.desc.shortChannelId)
+        case Some(c: PrivateChannel) => c.aliases.remoteAlias_opt.getOrElse(e.desc.shortChannelId)
         case _ => e.desc.shortChannelId
       }
     } else {
@@ -77,12 +76,12 @@ object RouteCalculation {
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
               val hops = selectedEdges.map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
               validateMaxRouteFee(Route(amount, hops, None), maxFee_opt) match {
-                case Success(route) => replyTo ! RouteResponse(route :: Nil)
-                case Failure(f) => replyTo ! Status.Failure(f)
+                case Success(route) => fr.replyTo ! RouteResponse(route :: Nil)
+                case Failure(f) => fr.replyTo ! PaymentRouteNotFound(f)
               }
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
-              replyTo ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
+              fr.replyTo ! PaymentRouteNotFound(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
           }
         case PredefinedChannelRoute(amount, targetNodeId, shortChannelIds, maxFee_opt) =>
           val (end, hops) = shortChannelIds.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
@@ -94,8 +93,8 @@ object RouteCalculation {
                   case _ => None
                 }
                 case Some(c: PrivateChannel) => currentNode match {
-                  case c.nodeId1 => Some(ChannelDesc(c.shortIds.localAlias, c.nodeId1, c.nodeId2))
-                  case c.nodeId2 => Some(ChannelDesc(c.shortIds.localAlias, c.nodeId2, c.nodeId1))
+                  case c.nodeId1 => Some(ChannelDesc(c.aliases.localAlias, c.nodeId1, c.nodeId2))
+                  case c.nodeId2 => Some(ChannelDesc(c.aliases.localAlias, c.nodeId2, c.nodeId1))
                   case _ => None
                 }
                 case None => extraEdges.find(e => e.desc.shortChannelId == shortChannelId && e.desc.a == currentNode).map(_.desc)
@@ -106,11 +105,11 @@ object RouteCalculation {
               }
           }
           if (end != targetNodeId || hops.length != shortChannelIds.length) {
-            replyTo ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
+            fr.replyTo ! PaymentRouteNotFound(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
           } else {
             validateMaxRouteFee(Route(amount, hops, None), maxFee_opt) match {
-              case Success(route) => replyTo ! RouteResponse(route :: Nil)
-              case Failure(f) => replyTo ! Status.Failure(f)
+              case Success(route) => fr.replyTo ! RouteResponse(route :: Nil)
+              case Failure(f) => fr.replyTo ! PaymentRouteNotFound(f)
             }
           }
       }
@@ -163,14 +162,6 @@ object RouteCalculation {
         // In that case, we will slightly over-estimate the fee we're paying, but at least we won't exceed our fee budget.
         val maxFee = totalMaxFee - pendingChannelFee - r.pendingPayments.map(_.blindedFee).sum
         (targetNodeId, amountToSend, maxFee, extraEdges)
-      case recipient: ClearTrampolineRecipient =>
-        // Trampoline payments require finding routes to the trampoline node, not the final recipient.
-        // This also ensures that we correctly take the trampoline fee into account only once, even when using MPP to
-        // reach the trampoline node (which will aggregate the incoming MPP payment and re-split as necessary).
-        val targetNodeId = recipient.trampolineHop.nodeId
-        val amountToSend = recipient.trampolineAmount - pendingAmount
-        val maxFee = totalMaxFee - pendingChannelFee - recipient.trampolineFee
-        (targetNodeId, amountToSend, maxFee, Set.empty)
     }
   }
 
@@ -179,7 +170,6 @@ object RouteCalculation {
       recipient match {
         case _: ClearRecipient => Some(route)
         case _: SpontaneousRecipient => Some(route)
-        case recipient: ClearTrampolineRecipient => Some(route.copy(finalHop_opt = Some(recipient.trampolineHop)))
         case recipient: BlindedRecipient =>
           route.hops.lastOption.flatMap {
             hop => recipient.blindedHops.find(_.dummyId == hop.shortChannelId)
@@ -218,33 +208,52 @@ object RouteCalculation {
             // trampoline nodes).
             Metrics.RouteResults.withTags(tags).record(routes.length)
             routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.hops.length))
-            replyTo ! RouteResponse(routes)
+            r.replyTo ! RouteResponse(routes)
           case Failure(failure: InfiniteLoop) =>
             log.error(s"found infinite loop ${failure.path.map(edge => edge.desc).mkString(" -> ")}")
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "InfiniteLoop")).increment()
-            replyTo ! Status.Failure(failure)
+            r.replyTo ! PaymentRouteNotFound(failure)
           case Failure(failure: NegativeProbability) =>
             log.error(s"computed negative probability: edge=${failure.edge}, weight=${failure.weight}, heuristicsConstants=${failure.heuristicsConstants}")
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "NegativeProbability")).increment()
-            replyTo ! Status.Failure(failure)
+            r.replyTo ! PaymentRouteNotFound(failure)
           case Failure(t) =>
             val failure = if (isNeighborBalanceTooLow(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend)) BalanceTooLow else t
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
-            replyTo ! Status.Failure(failure)
+            r.replyTo ! PaymentRouteNotFound(failure)
         }
       }
       d
     }
   }
 
+  def handleBlindedRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: BlindedRouteRequest)(implicit log: DiagnosticLoggingAdapter): Data = {
+    val maxFee = r.routeParams.getMaxFee(r.amount)
+
+    val boundaries: PaymentPathWeight => Boolean = { weight =>
+      weight.amount - r.amount <= maxFee &&
+        weight.length <= r.routeParams.boundaries.maxRouteLength &&
+        weight.length <= ROUTE_MAX_LENGTH &&
+        weight.cltv <= r.routeParams.boundaries.maxCltv
+    }
+
+    val routes = Graph.routeBlindingPaths(d.graphWithBalances.graph, r.source, r.target, r.amount, r.ignore.channels, r.ignore.nodes, r.pathsToFind, r.routeParams.heuristics, currentBlockHeight, boundaries)
+    if (routes.isEmpty) {
+      r.replyTo ! PaymentRouteNotFound(RouteNotFound)
+    } else {
+      r.replyTo ! RouteResponse(routes.map(route => Route(r.amount, route.path.map(graphEdgeToHop), None)))
+    }
+    d
+  }
+
   def handleMessageRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: MessageRouteRequest, routeParams: MessageRouteParams)(implicit log: DiagnosticLoggingAdapter): Data = {
-    val boundaries: MessagePath.RichWeight => Boolean = { weight =>
+    val boundaries: MessagePathWeight => Boolean = { weight =>
       weight.length <= routeParams.maxRouteLength && weight.length <= ROUTE_MAX_LENGTH
     }
     log.info("finding route for onion messages {} -> {}", r.source, r.target)
-    Graph.MessagePath.dijkstraMessagePath(d.graphWithBalances.graph, r.source, r.target, r.ignoredNodes, boundaries, currentBlockHeight, routeParams.ratios) match {
+    Graph.dijkstraMessagePath(d.graphWithBalances.graph, r.source, r.target, r.ignoredNodes, boundaries, currentBlockHeight, routeParams.ratios) match {
       case Some(path) =>
-        val intermediateNodes = path.map(_.a).drop(1)
+        val intermediateNodes = path.map(_.desc.a).drop(1)
         log.info("found route for onion messages {}", (r.source +: intermediateNodes :+ r.target).mkString(" -> "))
         r.replyTo ! MessageRoute(intermediateNodes, r.target)
       case None =>
@@ -320,7 +329,7 @@ object RouteCalculation {
                                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                                 ignoredVertices: Set[PublicKey] = Set.empty,
                                 routeParams: RouteParams,
-                                currentBlockHeight: BlockHeight): Either[RouterException, Seq[Graph.WeightedPath]] = {
+                                currentBlockHeight: BlockHeight): Either[RouterException, Seq[WeightedPath[PaymentPathWeight]]] = {
     require(amount > 0.msat, "route amount must be strictly positive")
 
     if (localNodeId == targetNodeId) return Left(CannotRouteToSelf)
@@ -331,9 +340,9 @@ object RouteCalculation {
 
     def cltvOk(cltv: CltvExpiryDelta): Boolean = cltv <= routeParams.boundaries.maxCltv
 
-    val boundaries: RichWeight => Boolean = { weight => feeOk(weight.amount - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
+    val boundaries: PaymentPathWeight => Boolean = { weight => feeOk(weight.amount - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
 
-    val foundRoutes: Seq[Graph.WeightedPath] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
+    val foundRoutes: Seq[WeightedPath[PaymentPathWeight]] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
     if (foundRoutes.nonEmpty) {
       val (directRoutes, indirectRoutes) = foundRoutes.partition(_.path.length == 1)
       val routes = if (routeParams.randomize) {
@@ -432,7 +441,7 @@ object RouteCalculation {
   }
 
   @tailrec
-  private def split(amount: MilliSatoshi, paths: mutable.Queue[Graph.WeightedPath], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, selectedRoutes: Seq[Route] = Nil): Either[RouterException, Seq[Route]] = {
+  private def split(amount: MilliSatoshi, paths: mutable.Queue[WeightedPath[PaymentPathWeight]], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, selectedRoutes: Seq[Route] = Nil): Either[RouterException, Seq[Route]] = {
     if (amount == 0.msat) {
       Right(selectedRoutes)
     } else if (paths.isEmpty) {

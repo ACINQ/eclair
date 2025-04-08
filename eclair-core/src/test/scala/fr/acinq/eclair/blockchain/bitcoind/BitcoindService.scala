@@ -62,7 +62,7 @@ trait BitcoindService extends Logging {
 
   val PATH_BITCOIND = sys.env.get("BITCOIND_DIR") match {
     case Some(customBitcoinDir) => new File(customBitcoinDir, "bitcoind")
-    case None => new File(TestUtils.BUILD_DIRECTORY, "bitcoin-24.1/bin/bitcoind")
+    case None => new File(TestUtils.BUILD_DIRECTORY, "bitcoin-28.1/bin/bitcoind")
   }
   logger.info(s"using bitcoind: $PATH_BITCOIND")
   val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
@@ -133,7 +133,7 @@ trait BitcoindService extends Logging {
     }))
   }
 
-  def makeBitcoinCoreClient(): BitcoinCoreClient = new BitcoinCoreClient(bitcoinrpcclient, if (useEclairSigner) Some(onChainKeyManager) else None)
+  def makeBitcoinCoreClient(): BitcoinCoreClient = new BitcoinCoreClient(bitcoinrpcclient, onChainKeyManager_opt = if (useEclairSigner) Some(onChainKeyManager) else None)
 
   def stopBitcoind(): Unit = {
     // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging

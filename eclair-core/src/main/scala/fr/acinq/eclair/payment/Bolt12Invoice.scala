@@ -19,7 +19,6 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto}
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{InvalidTlvPayload, MissingRequiredTlv}
@@ -45,27 +44,23 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   override val amount_opt: Option[MilliSatoshi] = Some(amount)
   override val nodeId: Crypto.PublicKey = records.get[InvoiceNodeId].get.nodeId
   override val paymentHash: ByteVector32 = records.get[InvoicePaymentHash].get.hash
-  override val description: Either[String, ByteVector32] = Left(invoiceRequest.offer.description)
+  val description: Option[String] = invoiceRequest.offer.description
   override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
-  override val features: Features[InvoiceFeature] = {
-    val f = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
-    // We add invoice features that are implicitly required for Bolt 12 (the spec doesn't allow explicitly setting them).
-    f.add(Features.VariableLengthOnion, FeatureSupport.Mandatory).add(Features.RouteBlinding, FeatureSupport.Mandatory)
-  }
-  val blindedPaths: Seq[PaymentBlindedContactInfo] = records.get[InvoicePaths].get.paths.zip(records.get[InvoiceBlindedPay].get.paymentInfo).map { case (route, info) => PaymentBlindedContactInfo(route, info) }
+  override val features: Features[InvoiceFeature] = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
+  val blindedPaths: Seq[PaymentBlindedRoute] = records.get[InvoicePaths].get.paths.zip(records.get[InvoiceBlindedPay].get.paymentInfo).map { case (route, info) => PaymentBlindedRoute(route, info) }
   val fallbacks: Option[Seq[FallbackAddress]] = records.get[InvoiceFallbacks].map(_.addresses)
   val signature: ByteVector64 = records.get[Signature].get.signature
 
   // It is assumed that the request is valid for this offer.
-  def validateFor(request: InvoiceRequest): Either[String, Unit] = {
+  def validateFor(request: InvoiceRequest, pathNodeId: PublicKey): Either[String, Unit] = {
     if (invoiceRequest.unsigned != request.unsigned) {
       Left("Invoice does not match request")
-    } else if (nodeId != invoiceRequest.offer.nodeId) {
+    } else if (nodeId != invoiceRequest.offer.nodeId.getOrElse(pathNodeId)) {
       Left("Wrong node id")
     } else if (isExpired()) {
       Left("Invoice expired")
-    } else if (!request.amount.forall(_ == amount)) {
+    } else if (request.amount != amount) {
       Left("Incompatible amount")
     } else if (!Features.areCompatible(request.features, features.bolt12Features())) {
       Left("Incompatible features")
@@ -86,8 +81,6 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   }
 
 }
-
-case class PaymentBlindedContactInfo(route: BlindedContactInfo, paymentInfo: PaymentInfo)
 
 case class PaymentBlindedRoute(route: BlindedRoute, paymentInfo: PaymentInfo)
 
@@ -110,11 +103,10 @@ object Bolt12Invoice {
             nodeKey: PrivateKey,
             invoiceExpiry: FiniteDuration,
             features: Features[Bolt12Feature],
-            paths: Seq[PaymentBlindedContactInfo],
+            paths: Seq[PaymentBlindedRoute],
             additionalTlvs: Set[InvoiceTlv] = Set.empty,
             customTlvs: Set[GenericTlv] = Set.empty): Bolt12Invoice = {
-    require(request.amount.nonEmpty || request.offer.amount.nonEmpty)
-    val amount = request.amount.orElse(request.offer.amount.map(_ * request.quantity)).get
+    val amount = request.amount
     val tlvs: Set[InvoiceTlv] = removeSignature(request.records).records ++ Set(
       Some(InvoicePaths(paths.map(_.route))),
       Some(InvoiceBlindedPay(paths.map(_.paymentInfo))),
@@ -172,14 +164,10 @@ case class MinimalBolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice 
   override val amount_opt: Option[MilliSatoshi] = records.get[InvoiceAmount].map(_.amount)
   override val nodeId: Crypto.PublicKey = records.get[InvoiceNodeId].get.nodeId
   override val paymentHash: ByteVector32 = records.get[InvoicePaymentHash].get.hash
-  override val description: Either[String, ByteVector32] = Left(records.get[OfferDescription].get.description)
+  val description: Option[String] = records.get[OfferDescription].map(_.description)
   override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(Bolt12Invoice.DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
-  override val features: Features[InvoiceFeature] = {
-    val f = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features[InvoiceFeature](Features.BasicMultiPartPayment -> FeatureSupport.Optional))
-    // We add invoice features that are implicitly required for Bolt 12 (the spec doesn't allow explicitly setting them).
-    f.add(Features.VariableLengthOnion, FeatureSupport.Mandatory).add(Features.RouteBlinding, FeatureSupport.Mandatory)
-  }
+  override val features: Features[InvoiceFeature] = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features[InvoiceFeature](Features.BasicMultiPartPayment -> FeatureSupport.Optional))
 
   override def toString: String = {
     val data = OfferCodecs.invoiceTlvCodec.encode(records).require.bytes
@@ -206,7 +194,7 @@ object MinimalBolt12Invoice {
       OfferTypes.InvoiceCreatedAt(createdAt),
       OfferTypes.InvoicePaymentHash(paymentHash),
       OfferTypes.InvoiceAmount(amount),
-      OfferTypes.InvoiceNodeId(offer.nodeId),
+      OfferTypes.InvoiceNodeId(offer.contactInfos.head.nodeId),
     ) ++ additionalTlvs, offer.records.unknown ++ customTlvs))
   }
 

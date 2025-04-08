@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.io
 
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import kamon.Kamon
 
 object Monitoring {
@@ -28,14 +29,17 @@ object Monitoring {
 
     val ReconnectionsAttempts = Kamon.counter("reconnections.attempts")
 
-    val OnionMessagesReceived = Kamon.counter("onionmessages.received")
-    val OnionMessagesSent = Kamon.counter("onionmessages.sent")
+    val OnionMessagesProcessed = Kamon.counter("onionmessages.processed")
     val OnionMessagesThrottled = Kamon.counter("onionmessages.throttled")
+    val OnionMessagesNotRelayed = Kamon.counter("onionmessages.not-relayed")
 
     val OpenChannelRequestsPending = Kamon.gauge("openchannelrequests.pending")
 
     val IncomingConnectionsNoChannels = Kamon.gauge("incomingconnections.nochannels")
     val IncomingConnectionsDisconnected = Kamon.counter("incomingconnections.disconnected")
+
+    val OnTheFlyFunding = Kamon.counter("on-the-fly-funding.attempts")
+    val OnTheFlyFundingFees = Kamon.histogram("on-the-fly-funding.fees-msat")
   }
 
   object Tags {
@@ -51,6 +55,32 @@ object Monitoring {
 
     val PublicPeers = "public"
 
+    val Direction = "direction"
+    object Directions {
+      val Incoming = "IN"
+      val Outgoing = "OUT"
+    }
+
+    val Reason = "reason"
+    object Reasons {
+      val UnknownNextNodeId = "UnknownNextNodeId"
+      val NoChannelWithPreviousPeer = "NoChannelWithPreviousPeer"
+      val NoChannelWithNextPeer = "NoChannelWithNextPeer"
+      val ConnectionFailure = "ConnectionFailure"
+    }
+
+    val OnTheFlyFundingState = "state"
+    object OnTheFlyFundingStates {
+      val Proposed = "proposed"
+      val Rejected = "rejected"
+      val Expired = "expired"
+      val Timeout = "timeout"
+      val AddedToFeeCredit = "added-to-fee-credit"
+      val Funded = "funded"
+      val RelaySucceeded = "relay-succeeded"
+
+      def relayFailed(failure: OnTheFlyFunding.PaymentRelayer.RelayFailure) = s"relay-failed-${failure.getClass.getSimpleName}"
+    }
   }
 
 }

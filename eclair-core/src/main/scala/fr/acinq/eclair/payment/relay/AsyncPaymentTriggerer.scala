@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment.relay
 import akka.actor.typed.ActorRef.ActorRefOps
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
+import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
@@ -99,7 +99,7 @@ private class AsyncPaymentTriggerer(context: ActorContext[Command]) {
       case Watch(replyTo, remoteNodeId, paymentHash, timeout) =>
         peers.get(remoteNodeId) match {
           case None =>
-            val notifier = context.spawnAnonymous(Behaviors.supervise(PeerReadyNotifier(remoteNodeId, timeout_opt = None)).onFailure(SupervisorStrategy.stop))
+            val notifier = context.spawnAnonymous(PeerReadyNotifier(remoteNodeId, timeout_opt = None))
             context.watchWith(notifier, NotifierStopped(remoteNodeId))
             notifier ! NotifyWhenPeerReady(context.messageAdapter[PeerReadyNotifier.Result](WrappedPeerReadyResult))
             val peer = PeerPayments(notifier, Set(Payment(replyTo, timeout, paymentHash)))

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.message
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{EncodedNodeId, ShortChannelId}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, IntermediatePayload}
@@ -27,7 +27,6 @@ import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
-import scala.annotation.tailrec
 import scala.concurrent.duration.FiniteDuration
 
 object OnionMessages {
@@ -44,23 +43,29 @@ object OnionMessages {
                                 timeout: FiniteDuration,
                                 maxAttempts: Int)
 
-  case class IntermediateNode(nodeId: PublicKey, outgoingChannel_opt: Option[ShortChannelId] = None, padding: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty) {
-    def toTlvStream(nextNodeId: PublicKey, nextBlinding_opt: Option[PublicKey] = None): TlvStream[RouteBlindingEncryptedDataTlv] =
+  case class IntermediateNode(publicKey: PublicKey, encodedNodeId: EncodedNodeId, outgoingChannel_opt: Option[ShortChannelId] = None, padding: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty) {
+    def toTlvStream(nextNodeId: EncodedNodeId, nextPathKey_opt: Option[PublicKey] = None): TlvStream[RouteBlindingEncryptedDataTlv] =
       TlvStream(Set[Option[RouteBlindingEncryptedDataTlv]](
         padding.map(Padding),
         outgoingChannel_opt.map(OutgoingChannelId).orElse(Some(OutgoingNodeId(nextNodeId))),
-        nextBlinding_opt.map(NextBlinding)
+        nextPathKey_opt.map(NextPathKey)
       ).flatten, customTlvs)
+  }
+
+  object IntermediateNode {
+    def apply(publicKey: PublicKey): IntermediateNode = IntermediateNode(publicKey, EncodedNodeId.WithPublicKey.Plain(publicKey))
   }
 
   // @formatter:off
   sealed trait Destination {
-    def nodeId: PublicKey
+    def introductionNodeId: EncodedNodeId
   }
   case class BlindedPath(route: Sphinx.RouteBlinding.BlindedRoute) extends Destination {
-    override def nodeId: PublicKey = route.introductionNodeId
+    override def introductionNodeId: EncodedNodeId = route.firstNodeId
   }
-  case class Recipient(nodeId: PublicKey, pathId: Option[ByteVector], padding: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty) extends Destination
+  case class Recipient(nodeId: PublicKey, pathId: Option[ByteVector], padding: Option[ByteVector] = None, customTlvs: Set[GenericTlv] = Set.empty) extends Destination {
+    override def introductionNodeId: EncodedNodeId = EncodedNodeId.WithPublicKey.Plain(nodeId)
+  }
   // @formatter:on
 
   // @formatter:off
@@ -75,98 +80,79 @@ object OnionMessages {
   }
   // @formatter:on
 
-  private def buildIntermediatePayloads(intermediateNodes: Seq[IntermediateNode], lastNodeId: PublicKey, lastBlinding_opt: Option[PublicKey] = None): Seq[ByteVector] = {
+  private def buildIntermediatePayloads(intermediateNodes: Seq[IntermediateNode], lastNodeId: EncodedNodeId, lastPathKey_opt: Option[PublicKey] = None): Seq[ByteVector] = {
     if (intermediateNodes.isEmpty) {
       Nil
     } else {
-      val intermediatePayloads = intermediateNodes.dropRight(1).zip(intermediateNodes.tail).map { case (hop, nextNode) => hop.toTlvStream(nextNode.nodeId) }
-      val lastPayload = intermediateNodes.last.toTlvStream(lastNodeId, lastBlinding_opt)
+      val intermediatePayloads = intermediateNodes.dropRight(1).zip(intermediateNodes.tail).map { case (hop, nextNode) => hop.toTlvStream(nextNode.encodedNodeId) }
+      val lastPayload = intermediateNodes.last.toTlvStream(lastNodeId, lastPathKey_opt)
       (intermediatePayloads :+ lastPayload).map(tlvs => RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(tlvs).require.bytes)
     }
   }
 
-  def buildRoute(blindingSecret: PrivateKey,
+  def buildRoute(pathKeySecret: PrivateKey,
                  intermediateNodes: Seq[IntermediateNode],
-                 recipient: Recipient): Sphinx.RouteBlinding.BlindedRoute = {
-    val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, recipient.nodeId)
+                 recipient: Recipient): Sphinx.RouteBlinding.BlindedRouteDetails = {
+    val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, EncodedNodeId.WithPublicKey.Plain(recipient.nodeId))
     val tlvs: Set[RouteBlindingEncryptedDataTlv] = Set(recipient.padding.map(Padding), recipient.pathId.map(PathId)).flatten
     val lastPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(tlvs, recipient.customTlvs)).require.bytes
-    Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ recipient.nodeId, intermediatePayloads :+ lastPayload).route
+    Sphinx.RouteBlinding.create(pathKeySecret, intermediateNodes.map(_.publicKey) :+ recipient.nodeId, intermediatePayloads :+ lastPayload)
   }
 
-  private[message] def buildRouteFrom(originKey: PrivateKey,
-                                      blindingSecret: PrivateKey,
+  private[message] def buildRouteFrom(pathKeySecret: PrivateKey,
                                       intermediateNodes: Seq[IntermediateNode],
-                                      destination: Destination): Option[Sphinx.RouteBlinding.BlindedRoute] = {
+                                      destination: Destination): Sphinx.RouteBlinding.BlindedRoute = {
     destination match {
-      case recipient: Recipient => Some(buildRoute(blindingSecret, intermediateNodes, recipient))
-      case BlindedPath(route) if route.introductionNodeId == originKey.publicKey =>
-        RouteBlindingEncryptedDataCodecs.decode(originKey, route.blindingKey, route.blindedNodes.head.encryptedPayload) match {
-          case Left(_) => None
-          case Right(decoded) =>
-            decoded.tlvs.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId] match {
-              case None => None
-              case Some(RouteBlindingEncryptedDataTlv.OutgoingNodeId(nextNodeId)) =>
-                Some(Sphinx.RouteBlinding.BlindedRoute(nextNodeId, decoded.nextBlinding, route.blindedNodes.tail))
-            }
-        }
-      case BlindedPath(route) if intermediateNodes.isEmpty => Some(route)
+      case recipient: Recipient => buildRoute(pathKeySecret, intermediateNodes, recipient).route
+      case BlindedPath(route) if intermediateNodes.isEmpty => route
       case BlindedPath(route) =>
-        val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, route.introductionNodeId, Some(route.blindingKey))
-        val routePrefix = Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId), intermediatePayloads).route
-        Some(Sphinx.RouteBlinding.BlindedRoute(routePrefix.introductionNodeId, routePrefix.blindingKey, routePrefix.blindedNodes ++ route.blindedNodes))
+        val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, route.firstNodeId, Some(route.firstPathKey))
+        val routePrefix = Sphinx.RouteBlinding.create(pathKeySecret, intermediateNodes.map(_.publicKey), intermediatePayloads).route
+        Sphinx.RouteBlinding.BlindedRoute(routePrefix.firstNodeId, routePrefix.firstPathKey, routePrefix.blindedHops ++ route.blindedHops)
     }
   }
 
-  // @formatter:off
-  sealed trait BuildMessageError
-  case class MessageTooLarge(payloadSize: Long) extends BuildMessageError
-  case class InvalidDestination(destination: Destination) extends BuildMessageError
-  // @formatter:on
+  case class MessageTooLarge(payloadSize: Long)
 
   /**
    * Builds an encrypted onion containing a message that should be relayed to the destination.
    *
    * @param sessionKey        A random key to encrypt the onion
-   * @param blindingSecret    A random key to encrypt the onion
+   * @param pathKeySecret     A random key to encrypt the onion
    * @param intermediateNodes List of intermediate nodes between us and the destination, can be empty if we want to contact the destination directly
    * @param destination       The destination of this message, can be a node id or a blinded route
    * @param content           List of TLVs to send to the recipient of the message
    * @return The node id to send the onion to and the onion containing the message
    */
-  def buildMessage(nodeKey: PrivateKey,
-                   sessionKey: PrivateKey,
-                   blindingSecret: PrivateKey,
+  def buildMessage(sessionKey: PrivateKey,
+                   pathKeySecret: PrivateKey,
                    intermediateNodes: Seq[IntermediateNode],
                    destination: Destination,
-                   content: TlvStream[OnionMessagePayloadTlv]): Either[BuildMessageError, (PublicKey, OnionMessage)] = {
-    buildRouteFrom(nodeKey, blindingSecret, intermediateNodes, destination) match {
-      case None => Left(InvalidDestination(destination))
-      case Some(route) =>
-        val lastPayload = MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(content.records + EncryptedData(route.encryptedPayloads.last), content.unknown)).require.bytes
-        val payloads = route.encryptedPayloads.dropRight(1).map(encTlv => MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(EncryptedData(encTlv))).require.bytes) :+ lastPayload
-        val payloadSize = payloads.map(_.length + Sphinx.MacLength).sum
-        val packetSize = if (payloadSize <= 1300) {
-          1300
-        } else if (payloadSize <= 32768) {
-          32768
-        } else if (payloadSize > 65432) {
-          // A payload of size 65432 corresponds to a total lightning message size of 65535.
-          return Left(MessageTooLarge(payloadSize))
-        } else {
-          payloadSize.toInt
-        }
-        // Since we are setting the packet size based on the payload, the onion creation should never fail (hence the `.get`).
-        val Sphinx.PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, packetSize, route.blindedNodes.map(_.blindedPublicKey), payloads, None).get
-        Right((route.introductionNodeId, OnionMessage(route.blindingKey, packet)))
+                   content: TlvStream[OnionMessagePayloadTlv]): Either[MessageTooLarge, OnionMessage] = {
+    val route = buildRouteFrom(pathKeySecret, intermediateNodes, destination)
+    val lastPayload = MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(content.records + EncryptedData(route.encryptedPayloads.last), content.unknown)).require.bytes
+    val payloads = route.encryptedPayloads.dropRight(1).map(encTlv => MessageOnionCodecs.perHopPayloadCodec.encode(TlvStream(EncryptedData(encTlv))).require.bytes) :+ lastPayload
+    val payloadSize = payloads.map(_.length + Sphinx.MacLength).sum
+    val packetSize = if (payloadSize <= 1300) {
+      1300
+    } else if (payloadSize <= 32768) {
+      32768
+    } else if (payloadSize > 65432) {
+      // A payload of size 65432 corresponds to a total lightning message size of 65535.
+      return Left(MessageTooLarge(payloadSize))
+    } else {
+      payloadSize.toInt
     }
+    // Since we are setting the packet size based on the payload, the onion creation should never fail (hence the `.get`).
+    val Sphinx.PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, packetSize, route.blindedHops.map(_.blindedPublicKey), payloads, None).get
+    Right(OnionMessage(route.firstPathKey, packet))
   }
 
   // @formatter:off
   sealed trait Action
   case class DropMessage(reason: DropReason) extends Action
-  case class SendMessage(nextNode: Either[ShortChannelId, PublicKey], message: OnionMessage) extends Action
-  case class ReceiveMessage(finalPayload: FinalPayload) extends Action
+  case class SendMessage(nextNode: Either[ShortChannelId, EncodedNodeId], message: OnionMessage) extends Action
+  case class ReceiveMessage(finalPayload: FinalPayload, blindedKey: PrivateKey) extends Action
 
   sealed trait DropReason
   case class CannotDecryptOnion(message: String) extends DropReason { override def toString = s"can't decrypt onion: $message" }
@@ -189,54 +175,49 @@ object OnionMessages {
     }
   }
 
-  case class DecodedEncryptedData(payload: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey)
+  case class DecodedEncryptedData(payload: TlvStream[RouteBlindingEncryptedDataTlv], nextPathKey: PublicKey)
 
-  private def decryptEncryptedData(privateKey: PrivateKey, blinding: PublicKey, encryptedData: ByteVector): Either[DropReason, DecodedEncryptedData] = {
-    RouteBlindingEncryptedDataCodecs.decode(privateKey, blinding, encryptedData) match {
+  private def decryptEncryptedData(privateKey: PrivateKey, pathKey: PublicKey, encryptedData: ByteVector): Either[DropReason, DecodedEncryptedData] = {
+    RouteBlindingEncryptedDataCodecs.decode(privateKey, pathKey, encryptedData) match {
       case Left(RouteBlindingEncryptedDataCodecs.CannotDecryptData(f)) => Left(CannotDecryptBlindedPayload(f))
       case Left(RouteBlindingEncryptedDataCodecs.CannotDecodeData(f)) => Left(CannotDecodeBlindedPayload(f))
-      case Right(decoded) => Right(DecodedEncryptedData(decoded.tlvs, decoded.nextBlinding))
+      case Right(decoded) => Right(DecodedEncryptedData(decoded.tlvs, decoded.nextPathKey))
     }
   }
 
-  @tailrec
   def process(privateKey: PrivateKey, msg: OnionMessage): Action = {
-    val blindedPrivateKey = Sphinx.RouteBlinding.derivePrivateKey(privateKey, msg.blindingKey)
+    val blindedPrivateKey = Sphinx.RouteBlinding.derivePrivateKey(privateKey, msg.pathKey)
     decryptOnion(blindedPrivateKey, msg.onionRoutingPacket) match {
       case Left(f) => DropMessage(f)
       case Right(DecodedOnionPacket(payload, nextPacket_opt)) =>
         payload.get[OnionMessagePayloadTlv.EncryptedData] match {
           case Some(OnionMessagePayloadTlv.EncryptedData(encryptedData)) =>
-            decryptEncryptedData(privateKey, msg.blindingKey, encryptedData) match {
+            decryptEncryptedData(privateKey, msg.pathKey, encryptedData) match {
               case Left(f) => DropMessage(f)
-              case Right(DecodedEncryptedData(blindedPayload, nextBlinding)) => nextPacket_opt match {
-                case Some(nextPacket) => validateRelayPayload(payload, blindedPayload, nextBlinding, nextPacket) match {
-                  case SendMessage(Right(nextNodeId), nextMsg) if nextNodeId == privateKey.publicKey => process(privateKey, nextMsg)
-                  case SendMessage(Left(outgoingChannelId), nextMsg) if outgoingChannelId == ShortChannelId.toSelf => process(privateKey, nextMsg)
-                  case action => action
-                }
-                case None => validateFinalPayload(payload, blindedPayload)
+              case Right(DecodedEncryptedData(blindedPayload, nextPathKey)) => nextPacket_opt match {
+                case Some(nextPacket) => validateRelayPayload(payload, blindedPayload, nextPathKey, nextPacket)
+                case None => validateFinalPayload(payload, blindedPayload, blindedPrivateKey)
               }
             }
           case None => nextPacket_opt match {
             case Some(_) => DropMessage(CannotDecryptBlindedPayload("encrypted_data is missing"))
-            case None => validateFinalPayload(payload, TlvStream.empty)
+            case None => validateFinalPayload(payload, TlvStream.empty, blindedPrivateKey)
           }
         }
     }
   }
 
-  private def validateRelayPayload(payload: TlvStream[OnionMessagePayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv], nextBlinding: PublicKey, nextPacket: OnionRoutingPacket): Action = {
-    IntermediatePayload.validate(payload, blindedPayload, nextBlinding) match {
+  private def validateRelayPayload(payload: TlvStream[OnionMessagePayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv], nextPathKey: PublicKey, nextPacket: OnionRoutingPacket): Action = {
+    IntermediatePayload.validate(payload, blindedPayload, nextPathKey) match {
       case Left(f) => DropMessage(CannotDecodeBlindedPayload(f.failureMessage.message))
-      case Right(relayPayload) => SendMessage(relayPayload.nextNode, OnionMessage(nextBlinding, nextPacket))
+      case Right(relayPayload) => SendMessage(relayPayload.nextNode, OnionMessage(nextPathKey, nextPacket))
     }
   }
 
-  private def validateFinalPayload(payload: TlvStream[OnionMessagePayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv]): Action = {
+  private def validateFinalPayload(payload: TlvStream[OnionMessagePayloadTlv], blindedPayload: TlvStream[RouteBlindingEncryptedDataTlv], blindedKey: PrivateKey): Action = {
     FinalPayload.validate(payload, blindedPayload) match {
       case Left(f) => DropMessage(CannotDecodeBlindedPayload(f.failureMessage.message))
-      case Right(finalPayload) => ReceiveMessage(finalPayload)
+      case Right(finalPayload) => ReceiveMessage(finalPayload, blindedKey)
     }
   }
 

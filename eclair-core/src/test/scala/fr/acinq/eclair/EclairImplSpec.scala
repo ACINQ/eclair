@@ -73,6 +73,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val balanceActor = TestProbe()
     val postman = TestProbe()
     val offerManager = TestProbe()
+    val defaultOfferHandler = TestProbe()
     val kit = Kit(
       TestConstants.Alice.nodeParams,
       system,
@@ -88,6 +89,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       balanceActor.ref.toTyped,
       postman.ref.toTyped,
       offerManager.ref.toTyped,
+      defaultOfferHandler.ref.toTyped,
       new DummyOnChainWallet()
     )
     withFixture(test.toNoArgTest(FixtureParam(register, relayer, router, paymentInitiator, switchboard, paymentHandler, TestProbe(), kit)))
@@ -313,7 +315,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val fallBackAddressRaw = "muhtvdmsnbQEPFuEmxcChX58fGvXaaUoVt"
     val eclair = new EclairImpl(kit)
-    eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some(fallBackAddressRaw), None)
+    eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some(fallBackAddressRaw), None, None)
     val receive = paymentHandler.expectMsgType[ReceiveStandardPayment]
 
     assert(receive.amount_opt.contains(123 msat))
@@ -321,7 +323,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(receive.fallbackAddress_opt.contains(fallBackAddressRaw))
 
     // try with wrong address format
-    assertThrows[IllegalArgumentException](eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some("wassa wassa"), None))
+    assertThrows[IllegalArgumentException](eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some("wassa wassa"), None, None))
   }
 
   test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { f =>
@@ -331,7 +333,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kitWithPaymentHandler)
     val paymentPreimage = randomBytes32()
 
-    eclair.receive(Left("some desc"), None, None, None, Some(paymentPreimage)).pipeTo(sender.ref)
+    eclair.receive(Left("some desc"), None, None, None, Some(paymentPreimage), None).pipeTo(sender.ref)
     assert(sender.expectMsgType[Invoice].paymentHash == Crypto.sha256(paymentPreimage))
   }
 
@@ -343,14 +345,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val parentId = UUID.randomUUID()
     val secret = randomBytes32()
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), Right(randomBytes32()), CltvExpiryDelta(18))
-    eclair.sendToRoute(Some(1200 msat), Some("42"), Some(parentId), pr, route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)))
+    eclair.sendToRoute(Some(1200 msat), Some("42"), Some(parentId), pr, route)
     val sendPaymentToRoute = paymentInitiator.expectMsgType[SendPaymentToRoute]
     assert(sendPaymentToRoute.recipientAmount == 1200.msat)
     assert(sendPaymentToRoute.invoice == pr)
     assert(sendPaymentToRoute.route == route)
     assert(sendPaymentToRoute.externalId.contains("42"))
     assert(sendPaymentToRoute.parentId.contains(parentId))
-    assert(sendPaymentToRoute.trampoline_opt.contains(TrampolineAttempt(secret, 100 msat, CltvExpiryDelta(144))))
   }
 
   test("find routes") { f =>
@@ -364,19 +365,18 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       channel1.shortChannelId -> PublicChannel(channel1, TxId(ByteVector32.Zeroes), 100_000 sat, None, None, None),
       channel2.shortChannelId -> PublicChannel(channel2, TxId(ByteVector32.Zeroes), 150_000 sat, None, None, None),
     )
-    val (channelId3, shortIds3) = (randomBytes32(), ShortIds(RealScidStatus.Unknown, Alias(13), None))
-    val (channelId4, shortIds4) = (randomBytes32(), ShortIds(RealScidStatus.Final(RealShortChannelId(4)), Alias(14), None))
+    val (channelId3, aliases3) = (randomBytes32(), ShortIdAliases(Alias(13), None))
+    val (channelId4, aliases4) = (randomBytes32(), ShortIdAliases(Alias(14), None))
     val privateChannels = Map(
-      channelId3 -> PrivateChannel(channelId3, shortIds3, a, b, None, None, Router.ChannelMeta(25_000 msat, 50_000 msat)),
-      channelId4 -> PrivateChannel(channelId4, shortIds4, a, c, None, None, Router.ChannelMeta(75_000 msat, 10_000 msat)),
+      channelId3 -> PrivateChannel(channelId3, aliases3, a, b, None, None, Router.ChannelMeta(25_000 msat, 50_000 msat)),
+      channelId4 -> PrivateChannel(channelId4, aliases4, a, c, None, None, Router.ChannelMeta(75_000 msat, 10_000 msat)),
     )
     val scidMapping = Map(
-      shortIds3.localAlias.toLong -> channelId3,
-      shortIds4.localAlias.toLong -> channelId4,
-      shortIds4.real.toOption.get.toLong -> channelId4,
+      aliases3.localAlias.toLong -> channelId3,
+      aliases4.localAlias.toLong -> channelId4,
     )
     val g = GraphWithBalanceEstimates(DirectedGraph(Nil), 1 hour)
-    val routerData = Router.Data(Map.empty, publicChannels, SortedMap.empty, Router.Stash(Map.empty, Map.empty), Router.Rebroadcast(Map.empty, Map.empty, Map.empty), Map.empty, privateChannels, scidMapping, Map.empty, g, Map.empty)
+    val routerData = Router.Data(Map.empty, publicChannels, SortedMap.empty, Router.Stash(Map.empty, Map.empty), Router.Rebroadcast(Map.empty, Map.empty, Map.empty), Map.empty, privateChannels, scidMapping, Map.empty, g, Map.empty, Map.empty)
 
     eclair.findRoute(c, 250_000 msat, None)
     val routeRequest1 = router.expectMsgType[RouteRequest]
@@ -385,7 +385,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val unknownNodeId = randomKey().publicKey
     val unknownScid = Alias(42)
-    eclair.findRoute(c, 250_000 msat, None, ignoreNodeIds = Seq(b, unknownNodeId), ignoreShortChannelIds = Seq(channel1.shortChannelId, shortIds3.localAlias, shortIds4.real.toOption.get, unknownScid))
+    eclair.findRoute(c, 250_000 msat, None, ignoreNodeIds = Seq(b, unknownNodeId), ignoreShortChannelIds = Seq(channel1.shortChannelId, aliases3.localAlias, unknownScid))
     router.expectMsg(Router.GetRouterData)
     router.reply(routerData)
     val routeRequest2 = router.expectMsgType[RouteRequest]
@@ -394,10 +394,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(routeRequest2.ignore.channels == Set(
       Router.ChannelDesc(channel1.shortChannelId, a, b),
       Router.ChannelDesc(channel1.shortChannelId, b, a),
-      Router.ChannelDesc(shortIds3.localAlias, a, b),
-      Router.ChannelDesc(shortIds3.localAlias, b, a),
-      Router.ChannelDesc(shortIds4.real.toOption.get, a, c),
-      Router.ChannelDesc(shortIds4.real.toOption.get, c, a),
+      Router.ChannelDesc(aliases3.localAlias, a, b),
+      Router.ChannelDesc(aliases3.localAlias, b, a),
     ))
   }
 
@@ -515,7 +513,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.channelsInfo(toRemoteNode_opt = None).pipeTo(sender.ref)
 
-    register.expectMsg(Symbol("channels"))
+    register.expectMsg(Register.GetChannels)
     register.reply(map)
 
     val c1 = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
@@ -544,7 +542,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.channelsInfo(toRemoteNode_opt = Some(a)).pipeTo(sender.ref)
 
-    register.expectMsg(Symbol("channelsTo"))
+    register.expectMsg(Register.GetChannelsTo)
     register.reply(channels2Nodes)
 
     val c1 = register.expectMsgType[Register.Forward[CMD_GET_CHANNEL_INFO]]
@@ -676,7 +674,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.updateRelayFee(List(a, b), 999 msat, 1234).pipeTo(sender.ref)
 
-    register.expectMsg(Symbol("channelsTo"))
+    register.expectMsg(Register.GetChannelsTo)
     register.reply(map)
 
     val u1 = register.expectMsgType[Register.Forward[CMD_UPDATE_RELAY_FEE]]

@@ -21,7 +21,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.13</artifactId>
-        <version>0.9.1-SNAPSHOT</version>
+        <version>0.12.0</version>
     </parent>
 
     <artifactId>eclair-node_2.13</artifactId>
@@ -79,7 +79,7 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.2.13</version>
+            <version>1.5.16</version>
         </dependency>
         <dependency>
             <!--conditional logging -->
@@ -123,6 +123,21 @@
             <groupId>io.kamon</groupId>
             <artifactId>kamon-prometheus_${scala.version.short}</artifactId>
             <version>${kamon.version}</version>
+            <!-- depends on a old version of okhttp that depends on kotlin 1.6, which conflicts with kotlin 1.9 -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-stdlib</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-stdlib-common</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-stdlib-jdk8</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <!-- test dependencies -->
         <dependency>
@@ -147,7 +162,7 @@
         <dependency>
             <groupId>io.kamon</groupId>
             <artifactId>kanela-agent</artifactId>
-            <version>1.0.17</version>
+            <version>${kanela-agent.version}</version>
         </dependency>
     </dependencies>
 </project>

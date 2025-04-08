@@ -56,9 +56,7 @@ sealed trait PaymentEvent {
 case class PaymentSent(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment]) extends PaymentEvent {
   require(parts.nonEmpty, "must have at least one payment part")
   val amountWithFees: MilliSatoshi = parts.map(_.amountWithFees).sum
-  val feesPaid: MilliSatoshi = amountWithFees - recipientAmount // overall fees for this payment (routing + trampoline)
-  val trampolineFees: MilliSatoshi = parts.map(_.amount).sum - recipientAmount
-  val nonTrampolineFees: MilliSatoshi = feesPaid - trampolineFees // routing fees to reach the first trampoline node, or the recipient if not using trampoline
+  val feesPaid: MilliSatoshi = amountWithFees - recipientAmount // overall fees for this payment
   val timestamp: TimestampMilli = parts.map(_.timestamp).min // we use min here because we receive the proof of payment as soon as the first partial payment is fulfilled
 }
 
@@ -95,6 +93,14 @@ case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi
 }
 
 case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, nextTrampolineNodeId: PublicKey, nextTrampolineAmount: MilliSatoshi) extends PaymentRelayed {
+  override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
+  override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
+  override val startedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
+  override val settledAt: TimestampMilli = outgoing.map(_.settledAt).maxOption.getOrElse(TimestampMilli.now())
+  override val timestamp: TimestampMilli = settledAt
+}
+
+case class OnTheFlyFundingPaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing) extends PaymentRelayed {
   override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
   override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
   override val startedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
@@ -144,7 +150,7 @@ case class LocalFailure(amount: MilliSatoshi, route: Seq[Hop], t: Throwable) ext
 case class RemoteFailure(amount: MilliSatoshi, route: Seq[Hop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
 
 /** A remote node failed the payment but we couldn't decrypt the failure (e.g. a malicious node tampered with the message). */
-case class UnreadableRemoteFailure(amount: MilliSatoshi, route: Seq[Hop]) extends PaymentFailure
+case class UnreadableRemoteFailure(amount: MilliSatoshi, route: Seq[Hop], failurePacket: ByteVector) extends PaymentFailure
 
 object PaymentFailure {
 
@@ -186,7 +192,7 @@ object PaymentFailure {
    */
   def hasAlreadyFailedOnce(nodeId: PublicKey, failures: Seq[PaymentFailure]): Boolean =
     failures
-      .collectFirst { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, u: Update)) if origin == nodeId => u.update }
+      .collectFirst { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, u: Update)) if origin == nodeId => u.update_opt }
       .isDefined
 
   /** Ignore the channel outgoing from the given nodeId in the given route. */
@@ -196,7 +202,7 @@ object PaymentFailure {
       case hop: BlindedHop if hop.nodeId == nodeId => ChannelDesc(hop.dummyId, hop.nodeId, hop.nextNodeId)
       // The error comes from inside the blinded route: this is a spec violation, errors should always come from the
       // introduction node, so we definitely want to ignore this blinded route when this happens.
-      case hop: BlindedHop if hop.route.blindedNodeIds.contains(nodeId) => ChannelDesc(hop.dummyId, hop.nodeId, hop.nextNodeId)
+      case hop: BlindedHop if hop.resolved.route.blindedNodeIds.contains(nodeId) => ChannelDesc(hop.dummyId, hop.nodeId, hop.nextNodeId)
     } match {
       case Some(faultyEdge) => ignore + faultyEdge
       case None => ignore
@@ -211,7 +217,7 @@ object PaymentFailure {
     case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(nodeId, _: Node)) =>
       ignore + nodeId
     case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
-      if (Announcements.checkSig(failureMessage.update, nodeId)) {
+      if (failureMessage.update_opt.forall(update => Announcements.checkSig(update, nodeId))) {
         val shouldIgnore = failureMessage match {
           case _: TemporaryChannelFailure => true
           case _: ChannelDisabled => true
@@ -224,12 +230,12 @@ object PaymentFailure {
           ignore
         }
       } else {
-        // This node is fishy, it gave us a bad signature, so let's filter it out.
+        // This node is fishy, it gave us a bad channel update signature, so let's filter it out.
         ignore + nodeId
       }
     case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
       ignoreNodeOutgoingEdge(nodeId, hops, ignore)
-    case UnreadableRemoteFailure(_, hops) =>
+    case UnreadableRemoteFailure(_, hops, _) =>
       // We don't know which node is sending garbage, let's blacklist all nodes except:
       //  - the one we are directly connected to: it would be too restrictive for retries
       //  - the final recipient: they have no incentive to send garbage since they want that payment
@@ -257,7 +263,10 @@ object PaymentFailure {
         // We're only interested in the last channel update received per channel.
         val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
           case (current, failure) => failure match {
-            case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => current.updated(f.update.shortChannelId, f.update)
+            case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => f.update_opt match {
+              case Some(update) => current.updated(update.shortChannelId, update)
+              case None => current
+            }
             case _ => current
           }
         }

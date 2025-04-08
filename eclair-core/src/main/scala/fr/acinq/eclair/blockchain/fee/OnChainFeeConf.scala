@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 
 // @formatter:off
 sealed trait ConfirmationPriority extends Ordered[ConfirmationPriority] {
@@ -71,17 +71,33 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
    * @return true if the difference between proposed and reference fee rates is too high.
    */
   def isFeeDiffTooHigh(commitmentFormat: CommitmentFormat, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
+    isProposedFeerateTooLow(commitmentFormat, networkFeerate, proposedFeerate) || isProposedFeerateTooHigh(commitmentFormat, networkFeerate, proposedFeerate)
+  }
+
+  def isProposedFeerateTooHigh(commitmentFormat: CommitmentFormat, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
     commitmentFormat match {
-      case DefaultCommitmentFormat =>
-        proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate
-      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat =>
-        // when using anchor outputs, we allow any feerate: fees will be set with CPFP and RBF at broadcast time
-        false
+      case Transactions.DefaultCommitmentFormat => networkFeerate * ratioHigh < proposedFeerate
+      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat => networkFeerate * ratioHigh < proposedFeerate
+    }
+  }
+
+  def isProposedFeerateTooLow(commitmentFormat: CommitmentFormat, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
+    commitmentFormat match {
+      case Transactions.DefaultCommitmentFormat => proposedFeerate < networkFeerate * ratioLow
+      // When using anchor outputs, we allow low feerates: fees will be set with CPFP and RBF at broadcast time.
+      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat => false
     }
   }
 }
 
-case class OnChainFeeConf(feeTargets: FeeTargets, safeUtxosThreshold: Int, spendAnchorWithoutHtlcs: Boolean, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, private val defaultFeerateTolerance: FeerateTolerance, private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
+case class OnChainFeeConf(feeTargets: FeeTargets,
+                          safeUtxosThreshold: Int,
+                          spendAnchorWithoutHtlcs: Boolean,
+                          anchorWithoutHtlcsMaxFee: Satoshi,
+                          closeOnOfflineMismatch: Boolean,
+                          updateFeeMinDiffRatio: Double,
+                          defaultFeerateTolerance: FeerateTolerance,
+                          private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
 
   def feerateToleranceFor(nodeId: PublicKey): FeerateTolerance = perNodeFeerateTolerance.getOrElse(nodeId, defaultFeerateTolerance)
 
@@ -96,8 +112,8 @@ case class OnChainFeeConf(feeTargets: FeeTargets, safeUtxosThreshold: Int, spend
    *  - if we're using anchor outputs, we use a feerate that allows network propagation of the commit tx: we will use CPFP to speed up confirmation if needed
    *  - otherwise we use a feerate that should get the commit tx confirmed within the configured block target
    *
-   * @param remoteNodeId        nodeId of our channel peer
-   * @param commitmentFormat    commitment format
+   * @param remoteNodeId     nodeId of our channel peer
+   * @param commitmentFormat commitment format
    */
   def getCommitmentFeerate(feerates: FeeratesPerKw, remoteNodeId: PublicKey, commitmentFormat: CommitmentFormat, channelCapacity: Satoshi): FeeratePerKw = {
     val networkFeerate = feerates.fast

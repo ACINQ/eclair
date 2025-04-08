@@ -36,7 +36,7 @@ import javax.sql.DataSource
 
 object PgChannelsDb {
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 8
+  val CURRENT_VERSION = 10
 }
 
 class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb with Logging {
@@ -65,7 +65,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN last_connected_timestamp SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + last_connected_timestamp * interval '1 millisecond'")
         statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN closed_timestamp SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + closed_timestamp * interval '1 millisecond'")
 
-        statement.executeUpdate("ALTER TABLE htlc_infos ALTER COLUMN commitment_number  SET DATA TYPE BIGINT USING commitment_number::BIGINT")
+        statement.executeUpdate("ALTER TABLE htlc_infos ALTER COLUMN commitment_number SET DATA TYPE BIGINT USING commitment_number::BIGINT")
       }
 
       def migration45(statement: Statement): Unit = {
@@ -115,17 +115,32 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels(remote_node_id)")
       }
 
+      def migration89(statement: Statement): Unit = {
+        statement.executeUpdate("CREATE TABLE local.htlc_infos_to_remove (channel_id TEXT NOT NULL PRIMARY KEY, before_commitment_number BIGINT NOT NULL)")
+      }
+      
+      def migration910(statement: Statement): Unit = {
+        // We're changing our composite index to two distinct indices to improve performance.
+        statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON local.htlc_infos(channel_id)")
+        statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON local.htlc_infos(commitment_number)")
+        statement.executeUpdate("DROP INDEX IF EXISTS local.htlc_infos_idx")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
 
           statement.executeUpdate("CREATE TABLE local.channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, data BYTEA NOT NULL, json JSONB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE, created_timestamp TIMESTAMP WITH TIME ZONE, last_payment_sent_timestamp TIMESTAMP WITH TIME ZONE, last_payment_received_timestamp TIMESTAMP WITH TIME ZONE, last_connected_timestamp TIMESTAMP WITH TIME ZONE, closed_timestamp TIMESTAMP WITH TIME ZONE)")
           statement.executeUpdate("CREATE TABLE local.htlc_infos (channel_id TEXT NOT NULL, commitment_number BIGINT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local.channels(channel_id))")
+          statement.executeUpdate("CREATE TABLE local.htlc_infos_to_remove (channel_id TEXT NOT NULL PRIMARY KEY, before_commitment_number BIGINT NOT NULL)")
 
           statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local.channels ((json->>'type'))")
           statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels(remote_node_id)")
-          statement.executeUpdate("CREATE INDEX htlc_infos_idx ON local.htlc_infos(channel_id, commitment_number)")
-        case Some(v@(2 | 3 | 4 | 5 | 6 | 7)) =>
+          // Note that we use two distinct indices instead of a composite index on (channel_id, commitment_number).
+          // This is more efficient because we're writing a lot to this table but only reading when a channel is force-closed.
+          statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON local.htlc_infos(channel_id)")
+          statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON local.htlc_infos(commitment_number)")
+        case Some(v@(2 | 3 | 4 | 5 | 6 | 7 | 8 | 9)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 3) {
             migration23(statement)
@@ -144,6 +159,12 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           }
           if (v < 8) {
             migration78(statement)
+          }
+          if (v < 9) {
+            migration89(statement)
+          }
+          if (v < 10) {
+            migration910(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -225,15 +246,54 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         statement.executeUpdate()
       }
 
-      using(pg.prepareStatement("DELETE FROM local.htlc_infos WHERE channel_id=?")) { statement =>
-        statement.setString(1, channelId.toHex)
-        statement.executeUpdate()
-      }
+      // The htlc_infos may contain millions of rows, which is very expensive to delete synchronously.
+      // We instead run an asynchronous job to clean up that data in small batches.
+      markHtlcInfosForRemoval(channelId, Long.MaxValue)
 
       using(pg.prepareStatement("UPDATE local.channels SET is_closed=TRUE, closed_timestamp=? WHERE channel_id=?")) { statement =>
         statement.setTimestamp(1, Timestamp.from(Instant.now()))
         statement.setString(2, channelId.toHex)
         statement.executeUpdate()
+      }
+    }
+  }
+
+  override def markHtlcInfosForRemoval(channelId: ByteVector32, beforeCommitIndex: Long): Unit = withMetrics("channels/forget-htlc-infos", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("INSERT INTO local.htlc_infos_to_remove (channel_id, before_commitment_number) VALUES(?, ?) ON CONFLICT (channel_id) DO UPDATE SET before_commitment_number = EXCLUDED.before_commitment_number")) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.setLong(2, beforeCommitIndex)
+        statement.executeUpdate()
+      }
+    }
+  }
+
+  override def removeHtlcInfos(batchSize: Int): Unit = withMetrics("channels/remove-htlc-infos", DbBackends.Postgres) {
+    withLock { pg =>
+      // Check if there are channels that need to be cleaned up.
+      val channelToCleanUp_opt = using(pg.prepareStatement("SELECT channel_id, before_commitment_number FROM local.htlc_infos_to_remove LIMIT 1")) { statement =>
+        statement.executeQuery().map(rs => {
+          val channelId = ByteVector32(rs.getByteVector32FromHex("channel_id"))
+          val beforeCommitmentNumber = rs.getLong("before_commitment_number")
+          (channelId, beforeCommitmentNumber)
+        }).lastOption
+      }
+      // Remove a batch of HTLC information for that channel.
+      channelToCleanUp_opt.foreach { case (channelId, beforeCommitmentNumber) =>
+        val deletedCount = using(pg.prepareStatement(s"DELETE FROM local.htlc_infos WHERE channel_id=? AND commitment_number IN (SELECT commitment_number FROM local.htlc_infos WHERE channel_id=? AND commitment_number<? LIMIT $batchSize)")) { statement =>
+          statement.setString(1, channelId.toHex)
+          statement.setString(2, channelId.toHex)
+          statement.setLong(3, beforeCommitmentNumber)
+          statement.executeUpdate()
+        }
+        logger.info(s"deleted $deletedCount rows from htlc_infos for channelId=$channelId beforeCommitmentNumber=$beforeCommitmentNumber")
+        // If we've deleted all HTLC information for that channel, we can now remove it from the DB.
+        if (deletedCount < batchSize) {
+          using(pg.prepareStatement("DELETE FROM local.htlc_infos_to_remove WHERE channel_id=?")) { statement =>
+            statement.setString(1, channelId.toHex)
+            statement.executeUpdate()
+          }
+        }
       }
     }
   }

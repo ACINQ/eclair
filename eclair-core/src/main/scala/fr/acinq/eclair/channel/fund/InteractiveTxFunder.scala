@@ -94,14 +94,38 @@ object InteractiveTxFunder {
     spliceInAmount - spliceOut.map(_.amount).sum - fees
   }
 
-  private def canUseInput(fundingParams: InteractiveTxParams, txIn: TxIn, previousTx: Transaction, confirmations: Int): Boolean = {
+  private def needsAdditionalFunding(fundingParams: InteractiveTxParams, purpose: Purpose): Boolean = {
+    if (fundingParams.isInitiator) {
+      purpose match {
+        case _: FundingTx | _: FundingTxRbf =>
+          // We're the initiator, but we may be purchasing liquidity without contributing to the funding transaction if
+          // we're using on-the-fly funding. In that case it's acceptable that we don't pay the mining fees for the
+          // shared output. Otherwise, we must contribute funds to pay the mining fees.
+          fundingParams.localContribution > 0.sat || fundingParams.localOutputs.nonEmpty
+        case _: SpliceTx | _: SpliceTxRbf =>
+          // We're the initiator, we always have to pay on-chain fees for the shared input and output, even if we don't
+          // splice in or out. If we're not paying those on-chain fees by lowering our channel contribution, we must add
+          // more funding.
+          fundingParams.localContribution + fundingParams.localOutputs.map(_.amount).sum >= 0.sat
+      }
+    } else {
+      // We're not the initiator, so we don't have to pay on-chain fees for the common transaction fields.
+      if (fundingParams.localOutputs.isEmpty) {
+        // We're not splicing out: we only need to add funds if we're splicing in.
+        fundingParams.localContribution > 0.sat
+      } else {
+        // We need to add funds if we're not paying on-chain fees by lowering our channel contribution.
+        fundingParams.localContribution + fundingParams.localOutputs.map(_.amount).sum >= 0.sat
+      }
+    }
+  }
+
+  private def canUseInput(txIn: TxIn, previousTx: Transaction): Boolean = {
     // Wallet input transaction must fit inside the tx_add_input message.
     val previousTxSizeOk = Transaction.write(previousTx).length <= 65000
     // Wallet input must be a native segwit input.
     val isNativeSegwit = Script.isNativeWitnessScript(previousTx.txOut(txIn.outPoint.index.toInt).publicKeyScript)
-    // Wallet input must be confirmed if our peer requested it.
-    val confirmationsOk = !fundingParams.requireConfirmedInputs.forLocal || confirmations > 0
-    previousTxSizeOk && isNativeSegwit && confirmationsOk
+    previousTxSizeOk && isNativeSegwit
   }
 
   private def sortFundingContributions(fundingParams: InteractiveTxParams, inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput]): FundingContributions = {
@@ -137,9 +161,12 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
 
   private val log = context.log
   private val previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction] = purpose match {
-    case rbf: InteractiveTxBuilder.PreviousTxRbf => rbf.previousTransactions
+    case rbf: InteractiveTxBuilder.FundingTxRbf => rbf.previousTransactions
+    case rbf: InteractiveTxBuilder.SpliceTxRbf => rbf.previousTransactions
     case _ => Nil
   }
+
+  private val spliceInOnly = fundingParams.sharedInput_opt.nonEmpty && fundingParams.localContribution > 0.sat && fundingParams.localOutputs.isEmpty
 
   def start(): Behavior[Command] = {
     // We always double-spend all our previous inputs. It's technically overkill because we only really need to double
@@ -148,8 +175,7 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
     // The balances in the shared input may have changed since the previous funding attempt, so we ignore the previous
     // shared input and will add it explicitly later.
     val previousWalletInputs = previousTransactions.flatMap(_.tx.localInputs).distinctBy(_.outPoint)
-    val hasEnoughFunding = fundingParams.localContribution + fundingParams.localOutputs.map(_.amount).sum <= 0.sat
-    if (hasEnoughFunding) {
+    if (!needsAdditionalFunding(fundingParams, purpose)) {
       log.info("we seem to have enough funding, no need to request wallet inputs from bitcoind")
       // We're not contributing to the shared output or we have enough funds in our shared input, so we don't need to
       // ask bitcoind for more inputs. When splicing some funds out, we assume that the caller has allocated enough
@@ -169,10 +195,21 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
         replyTo ! fundingContributions
         Behaviors.stopped
       }
+    } else if (!fundingParams.isInitiator && spliceInOnly) {
+      // We are splicing funds in without being the initiator (most likely responding to a liquidity ads).
+      // We don't need to include the shared input, the other node will pay for its weight.
+      // We create a dummy shared output with the amount we want to splice in, and bitcoind will make sure we match that
+      // amount.
+      val sharedTxOut = TxOut(fundingParams.localContribution, fundingPubkeyScript)
+      val previousWalletTxIn = previousWalletInputs.map(i => TxIn(i.outPoint, ByteVector.empty, i.sequence))
+      val dummyTx = Transaction(2, previousWalletTxIn, Seq(sharedTxOut), fundingParams.lockTime)
+      fund(dummyTx, previousWalletInputs, Set.empty)
     } else {
       // The shared input contains funds that belong to us *and* funds that belong to our peer, so we add the previous
       // funding amount to our shared output to make sure bitcoind adds what is required for our local contribution.
       // We always include the shared input in our transaction and will let bitcoind make sure the target feerate is reached.
+      // We will later subtract the fees for that input to ensure we don't overshoot the feerate: however, if bitcoind
+      // doesn't add a change output, we won't be able to do so and will overpay miner fees.
       // Note that if the shared output amount is smaller than the dust limit, bitcoind will reject the funding attempt.
       val sharedTxOut = TxOut(purpose.previousFundingAmount + fundingParams.localContribution, fundingPubkeyScript)
       val sharedTxIn = fundingParams.sharedInput_opt.toSeq.map(sharedInput => TxIn(sharedInput.info.outPoint, ByteVector.empty, 0xfffffffdL))
@@ -188,13 +225,18 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
    * inputs.
    */
   private def fund(txNotFunded: Transaction, currentInputs: Seq[OutgoingInput], unusableInputs: Set[UnusableInput]): Behavior[Command] = {
-    val sharedInputWeight = fundingParams.sharedInput_opt.toSeq.map(i => i.info.outPoint -> i.weight.toLong).toMap
+    val sharedInputWeight = fundingParams.sharedInput_opt match {
+      case Some(i) if txNotFunded.txIn.exists(_.outPoint == i.info.outPoint) => Map(i.info.outPoint -> i.weight.toLong)
+      case _ => Map.empty[OutPoint, Long]
+    }
     val feeBudget_opt = purpose match {
       case p: FundingTx => p.feeBudget_opt
-      case p: PreviousTxRbf => p.feeBudget_opt
+      case p: FundingTxRbf => p.feeBudget_opt
+      case p: SpliceTxRbf => p.feeBudget_opt
       case _ => None
     }
-    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, replaceable = true, externalInputsWeight = sharedInputWeight, feeBudget_opt = feeBudget_opt)) {
+    val minConfirmations_opt = if (fundingParams.requireConfirmedInputs.forLocal) Some(1) else None
+    context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, externalInputsWeight = sharedInputWeight, minInputConfirmations_opt = minConfirmations_opt, feeBudget_opt = feeBudget_opt)) {
       case Failure(t) => WalletFailure(t)
       case Success(result) => FundTransactionResult(result.tx, result.changePosition)
     }
@@ -249,13 +291,16 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
             // By using bitcoind's fundrawtransaction we are currently paying fees for those fields, but we can fix that
             // by increasing our change output accordingly.
             // If we don't have a change output, we will slightly overpay the fees: fixing this is not worth the extra
-            // complexity of adding a change output, which would require a call to bitcoind to get a change address.
+            // complexity of adding a change output, which would require a call to bitcoind to get a change address and
+            // create a tiny change output that would most likely be unusable and costly to spend.
             val outputs = changeOutput_opt match {
               case Some(changeOutput) =>
                 val txWeightWithoutInput = Transaction(2, Nil, Seq(TxOut(fundingParams.fundingAmount, fundingPubkeyScript)), 0).weight()
                 val commonWeight = fundingParams.sharedInput_opt match {
-                  case Some(sharedInput) => sharedInput.weight + txWeightWithoutInput
-                  case None => txWeightWithoutInput
+                  // If we are only splicing in, we didn't include the shared input in the funding transaction, but
+                  // otherwise we did and must thus claim the corresponding fee back.
+                  case Some(sharedInput) if !spliceInOnly => sharedInput.weight + txWeightWithoutInput
+                  case _ => txWeightWithoutInput
                 }
                 val overpaidFees = Transactions.weight2fee(fundingParams.targetFeerate, commonWeight)
                 nonChangeOutputs :+ changeOutput.copy(amount = changeOutput.amount + overpaidFees)
@@ -299,18 +344,15 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
           // We don't need to validate the shared input, it comes from a valid lightning channel.
           Future.successful(Right(Input.Shared(UInt64(0), sharedInput.info.outPoint, sharedInput.info.txOut.publicKeyScript, txIn.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance, purpose.htlcBalance)))
         case _ =>
-          for {
-            previousTx <- wallet.getTransaction(txIn.outPoint.txid)
-              // Strip input witnesses to save space (there is a max size on txs due to lightning message limits).
-              .map(_.modify(_.txIn.each.witness).setTo(ScriptWitness.empty))
-            confirmations_opt <- if (fundingParams.requireConfirmedInputs.forLocal) wallet.getTxConfirmations(txIn.outPoint.txid) else Future.successful(None)
-          } yield {
-            if (canUseInput(fundingParams, txIn, previousTx, confirmations_opt.getOrElse(0))) {
-              Right(Input.Local(UInt64(0), previousTx, txIn.outPoint.index, txIn.sequence))
+          wallet.getTransaction(txIn.outPoint.txid).map(tx => {
+            // Strip input witnesses to save space (there is a max size on txs due to lightning message limits).
+            val txWithoutWitness = tx.modify(_.txIn.each.witness).setTo(ScriptWitness.empty)
+            if (canUseInput(txIn, txWithoutWitness)) {
+              Right(Input.Local(UInt64(0), txWithoutWitness, txIn.outPoint.index, txIn.sequence))
             } else {
               Left(UnusableInput(txIn.outPoint))
             }
-          }
+          })
       }
     }
   }

@@ -21,7 +21,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.13</artifactId>
-        <version>0.9.1-SNAPSHOT</version>
+        <version>0.12.0</version>
     </parent>
 
     <artifactId>eclair-core_2.13</artifactId>
@@ -47,8 +47,7 @@
                             <url>${bitcoind.url}</url>
                             <unpack>true</unpack>
                             <outputDirectory>${project.build.directory}</outputDirectory>
-                            <md5>${bitcoind.md5}</md5>
-                            <sha1>${bitcoind.sha1}</sha1>
+                            <sha256>${bitcoind.sha256}</sha256>
                         </configuration>
                     </execution>
                 </executions>
@@ -88,9 +87,8 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-24.1/bitcoin-24.1-x86_64-linux-gnu.tar.gz</bitcoind.url>
-                <bitcoind.md5>35a2faf826a9d866aa6821832e39231e</bitcoind.md5>
-                <bitcoind.sha1>a006ef05514b95cf4d78b5ec844e6cf78fabc196</bitcoind.sha1>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-28.1/bitcoin-28.1-x86_64-linux-gnu.tar.gz</bitcoind.url>
+                <bitcoind.sha256>07f77afd326639145b9ba9562912b2ad2ccec47b8a305bd075b4f4cb127b7ed7</bitcoind.sha256>
             </properties>
         </profile>
         <profile>
@@ -101,9 +99,8 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-24.1/bitcoin-24.1-x86_64-apple-darwin.tar.gz</bitcoind.url>
-                <bitcoind.md5>eba2d59fc9b81c0f6a9ccf77639b8b57</bitcoind.md5>
-                <bitcoind.sha1>b75f30dfa9095c733a9402e243e18174de4522d6</bitcoind.sha1>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-28.1/bitcoin-28.1-x86_64-apple-darwin.tar.gz</bitcoind.url>
+                <bitcoind.sha256>c85d1a0ebedeff43b99db2c906b50f14547b84175a4d0ebb039a9809789af280</bitcoind.sha256>
             </properties>
         </profile>
         <profile>
@@ -114,9 +111,8 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-24.1/bitcoin-24.1-win64.zip</bitcoind.url>
-                <bitcoind.md5>3a6cff40522e392f4ab1d8aef1274a9d</bitcoind.md5>
-                <bitcoind.sha1>588a60fe5d0b4d8fd09fae6bf366c3f0fc9336b8</bitcoind.sha1>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-28.1/bitcoin-28.1-win64.zip</bitcoind.url>
+                <bitcoind.sha256>2d636ad562b347c96d36870d6ed810f4a364f446ca208258299f41048b35eab0</bitcoind.sha256>
             </properties>
         </profile>
     </profiles>
@@ -144,6 +140,12 @@
             <version>${akka.version}</version>
         </dependency>
         <dependency>
+            <!-- Force version of slf4j to be compatible with logback 1.5.x (Akka 2.6 uses slf4j 1.7). -->
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.16</version>
+        </dependency>
+        <dependency>
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-cluster_${scala.version.short}</artifactId>
             <version>${akka.version}</version>
@@ -167,6 +169,14 @@
                 <exclusion>
                     <groupId>org.jetbrains.kotlin</groupId>
                     <artifactId>kotlin-stdlib</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-stdlib-jdk8</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.jetbrains.kotlin</groupId>
+                    <artifactId>kotlin-stdlib-common</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -296,7 +306,7 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.2.13</version>
+            <version>1.5.16</version>
             <scope>test</scope>
         </dependency>
         <dependency>

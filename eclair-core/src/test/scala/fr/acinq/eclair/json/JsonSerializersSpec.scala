@@ -110,7 +110,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   test("PeerInfo serialization") {
-    val peerInfo = PeerInfo(ActorRef.noSender, PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), Peer.CONNECTED, None, Set(ActorRef.noSender))
+    val peerInfo = PeerInfo(ActorRef.noSender, PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), Peer.CONNECTED, None, None, Set(ActorRef.noSender))
     val expected = """{"nodeId":"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","state":"CONNECTED","channels":1}"""
     JsonSerializers.serialization.write(peerInfo)(JsonSerializers.formats) shouldBe expected
   }
@@ -119,7 +119,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val probe = TestProbe()(system)
     val dummyPublicKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101").publicKey
     val dummyBytes32 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
-    val localParams = LocalParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, Long.MaxValue.msat, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isInitiator = true, None, None, Features.empty)
+    val localParams = LocalParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, Long.MaxValue.msat, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
     val remoteParams = RemoteParams(dummyPublicKey, 546 sat, UInt64.MaxValue, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey)
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
@@ -133,13 +133,13 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         Commitments(
           ChannelParams(dummyBytes32, ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = true)),
           CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
-          List(Commitment(0, dummyPublicKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+          List(Commitment(0, 0, dummyPublicKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
           inactive = Nil,
           Right(dummyPublicKey),
           ShaChain.init,
           Map.empty,
         ),
-        ShortIds(RealScidStatus.Unknown, Alias(42), None),
+        ShortIdAliases(Alias(42), None),
         None,
         ChannelUpdate(ByteVector64(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 100 msat, 0, 2_000_000 msat),
         None, None, None, SpliceStatus.NoSplice
@@ -166,7 +166,8 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "htlcMinimum": 1,
         |         "toSelfDelay": 144,
         |         "maxAcceptedHtlcs": 50,
-        |         "isInitiator": true,
+        |         "isChannelOpener": true,
+        |         "paysCommitTxFees" : true,
         |         "initFeatures": { "activated": {}, "unknown": [] }
         |       },
         |       "remoteParams": {
@@ -184,6 +185,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "initFeatures": { "activated": {}, "unknown": [] }
         |       },
         |       "channelFlags": {
+        |         "nonInitiatorPaysCommitFees": false,
         |         "announceChannel": true
         |       }
         |     },
@@ -218,7 +220,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |     "remotePerCommitmentSecrets": null,
         |     "originChannels": {}
         |   },
-        |   "shortIds": { "real": { "status": "unknown" }, "localAlias": "0x2a" },
+        |   "aliases": { "localAlias": "0x2a" },
         |   "channelUpdate": {
         |     "signature": "345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f",
         |     "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
@@ -252,7 +254,9 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         payload = hex"3c7a66997c681a3de1bae56438abeee4fc50a16554725a430ade1dc8db6bdd76704d45c6151c4051d710cf487e63f8cbe9f5e537e6e518d7998f11c40277d551bee036d227a421f344c0185b4533660d200acbc4f4aa6148e29f813bb537e950a79ba961b80ccaa6ad808cb88f858ee73f8b1f129d3214d194f76fc011c46e18c2caec0fcb69715e79cb381e449e5be20281e0aaa92defa089c98b7e29c22181f2d1af9f5fe2a37ede4ac3163b123aa72318201b1128b17053c381e7bf111620dfb7ea3dcc5c28cafdd9cb7bb1a4202b64199aa02af145c563ba1b9f10288203ce2666f486aacb2ee385dc0b67915864c95174dfaac1e0ea195329d1741cd1febb4b49b33f84e0d10a5ec8ee0a1a94f73abf081ec69bb863edfeb46d24ce424b025ac3f593a7ba9419ec9b17fb39f0fbeac80e0898f95b6709cbc95f7c097e22e3a6ca0efbc947bbcd4a9077f6bd9daba25b18bb16179fca9d9cb2ce49fc7cbd2de589237926cacb87ea60e2cc60a90b47575517921b5529b8a95823dd0c3d02a7747d74c4ca927ba6b70c06c1c1ef27e14d371e8dd8f5d9380a65b08ae1e6384f9b3575c5d7278de22ce80e63612a27f3b3f45dbe32ee855185293c719e5a7203a682a08fd810c46fa12b67e61349831f8fae3f558090ea988e1a22ec877b790ea09169055529247c4dd597857aad74eaeb3a5879e96453e681e213f2796ed704d620509f34f91d9d16f881fd397e2836a0a4d2f1bcd230067f7acb5381a2b17e8c5135e38c4d258afbe4f69ac7ad39b789e99686ee926b3ad31b98993673313b7b18a4faaea238d8055824fde7339a791fc7777ef28cc4a1a5d177b3c3882ced4921c6cd85ae82e1fe13fe680ae432a9918ce37b15f88d4d18fb16b69e5369d18c204aaf7ee49b830bf2328380e6ad96e8f6a9e01bc2c97ffbaa402d5406dc7b83c6eb5d515ffc3bea8c42cf299c9e2bea693515246c6ff859d33ba6c4da4c4c1706e0c6b4a574e927f02eb92b7d56722cff80c3e6f6b98d1c84cb576abdcc27a6bc7b110fc2ac5fead57f05ad854c3331ce1ff94c0dc97303540ee797d71566497af09f20e3554d467528e1fed8e69438171072fe2deca3979a8f5ec9043b9bc4da921b095c29dc0294148c1b7001dafda4c48600d1194f745e6d0689c561bf19d20758c4d25fac64d81780607a4106e220ef546fc4026af7b9da8defb2fe3c21d48798ac67c794fb40aabe44618a8911673466be06808c6f54a772b87bcfafb4d120a9bebffb8051bf24bb332eaa769cf175c1aadb0186f8946dc32513fd81fe1a61bfb860886bdd070359a43e06e74607d300bd2e01a3f1ee900c4039e8db742170228db61ef0c77724c49d1573144564a80cc1ebc0449b34f84be35187ceba3fbc2facf5ad1f1e15945e3c6c236579aca7bc97e4cc76a3310022693b64008562b254a7d11c0086813e551c4817bbb72a1d6fbfc84d326ce973651200f80aa8ab0976c53c390249ca8e7e5ec21b80e70c3e0205983d313b28a5d1b9d9149501e05d3257c8ae88c6308e9e00feeab19121d1032a582e68ca1f9f64a1fd91cb5d8613b985fd4be22a4d5c14a132c20811a75ee3cc61de0b3fbc3254d61995d086603032269888b942ec0971ad26ea4b8df1746c5ec1de904ddeb5045abc0a6ede9d6a199ed0782cb69efa3a4dc00747553dbef12fb8299ca364b4cdf2ac3eba03b0d8b273684116bba4458b5717bc4aca5406901173a89b3643ccc076f22779fccf1ad69981e24eef18c711a2d58dfe5834b41f9e7166d54dc8628e754baaca1cbb7db8256f88ebc889de6078ba83a1af14a4",
         hmac = ByteVector32(hex"9442626f72c475963dbddf8a57ab2cef3013eb3d6a5e8afbea9e631dac4481f5")
       ),
-      blinding_opt = None
+      pathKey_opt = None,
+      confidence = 0.7,
+      fundingFee_opt = None,
     )
 
     val expectedIn = """{"direction":"IN","id":926,"amountMsat":12365,"paymentHash":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","cltvExpiry":621500}"""
@@ -261,16 +265,20 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   test("HTLC origin serialization") {
-    val localOrigin = Origin.LocalCold(UUID.fromString("11111111-1111-1111-1111-111111111111"))
+    val localOrigin = Origin.Cold(Upstream.Local(UUID.fromString("11111111-1111-1111-1111-111111111111")))
     val expectedLocalOrigin = """{"paymentId":"11111111-1111-1111-1111-111111111111"}"""
     JsonSerializers.serialization.write(localOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedLocalOrigin
 
-    val channelOrigin = Origin.ChannelRelayedCold(ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 7, 500 msat, 400 msat)
-    val expectedChannelOrigin = """{"channelId":"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f","htlcId":7}"""
+    val channelOrigin = Origin.Cold(Upstream.Cold.Channel(ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 7, 500 msat))
+    val expectedChannelOrigin = """{"channelId":"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f","htlcId":7,"amount":500}"""
     JsonSerializers.serialization.write(channelOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedChannelOrigin
 
-    val trampolineOrigin = Origin.TrampolineRelayedCold((ByteVector32(hex"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3L) :: (ByteVector32(hex"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), 7L) :: Nil)
-    val expectedTrampolineOrigin = """[{"channelId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","htlcId":3},{"channelId":"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","htlcId":7}]"""
+    val relayedHtlcs = List(
+      Upstream.Cold.Channel(ByteVector32(hex"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3, 600 msat),
+      Upstream.Cold.Channel(ByteVector32(hex"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), 7, 500 msat),
+    )
+    val trampolineOrigin = Origin.Cold(Upstream.Cold.Trampoline(relayedHtlcs))
+    val expectedTrampolineOrigin = """[{"channelId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","htlcId":3,"amount":600},{"channelId":"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","htlcId":7,"amount":500}]"""
     JsonSerializers.serialization.write(trampolineOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedTrampolineOrigin
   }
 
@@ -320,25 +328,33 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   test("Bolt 12 invoice") {
     val ref = "lni1qqsf4h8fsnpjkj057gjg9c3eqhv889440xh0z6f5kng9vsaad8pgq7sgqsdjuqsqpgxk66twd9kkzmpqdanxvetjzcss83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh42qsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqzjqsdjupkjtqssx05572ha26x39rczan5yft22pgwa72jw8gytavkm5ydn7yf5kpgh5zsq83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh4q2rd3ny0elv9m7mh38xxwe6ypfheeqeqlwgft05r6dhc50gtw0nv2qgrrl9x2qzzqvwukam32mhkdqrvwwcp5l6jcnnnezdq69vz8gdvvgmsqwk3efqf3f6gmf0ul63940awz429rdhhsts86s0r30e5nffwhrqw90xgxf7f60sm7tcclvyqwz7cer5q9223madstdy2p5q6y8qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqf2qheqqqqq2gprrgshynfszqyk2sgpvkrnmq53kv7r52rpnmtmd9ukredsnygsnymsurdy6e9la6l4hyz4qgxewqmftqggrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet6lqsx4k5r7rsld3hhe87psyy5cnhhzt4dz838f75734mted7pdsrflpvys23tkafmhctf3musnsaa42h6qjdggyqlhtevutzzpzlnwd8alq"
     val pr = Invoice.fromString(ref).get
-    JsonSerializers.serialization.write(pr)(JsonSerializers.formats) shouldBe """{"amount":456001234,"nodeId":"03c48ac97e09f3cbbaeb35b02aaa6d072b57726841a34d25952157caca60a1caf5","paymentHash":"2cb0e7b052366787450c33daf6d2f2c3cb6132221326e1c1b49ac97fdd7eb720","description":"minimal offer","features":{"activated":{"var_onion_optin":"mandatory","option_route_blinding":"mandatory"},"unknown":[]},"blindedPaths":[{"introductionNodeId":"03c48ac97e09f3cbbaeb35b02aaa6d072b57726841a34d25952157caca60a1caf5","blindedNodeIds":["031fca650042031dcb777156ef66806c73b01a7f52c4e73c89a0d15823a1ac6237"]}],"createdAt":1665412681,"expiresAt":1665412981,"serialized":"lni1qqsf4h8fsnpjkj057gjg9c3eqhv889440xh0z6f5kng9vsaad8pgq7sgqsdjuqsqpgxk66twd9kkzmpqdanxvetjzcss83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh42qsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqzjqsdjupkjtqssx05572ha26x39rczan5yft22pgwa72jw8gytavkm5ydn7yf5kpgh5zsq83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh4q2rd3ny0elv9m7mh38xxwe6ypfheeqeqlwgft05r6dhc50gtw0nv2qgrrl9x2qzzqvwukam32mhkdqrvwwcp5l6jcnnnezdq69vz8gdvvgmsqwk3efqf3f6gmf0ul63940awz429rdhhsts86s0r30e5nffwhrqw90xgxf7f60sm7tcclvyqwz7cer5q9223madstdy2p5q6y8qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqf2qheqqqqq2gprrgshynfszqyk2sgpvkrnmq53kv7r52rpnmtmd9ukredsnygsnymsurdy6e9la6l4hyz4qgxewqmftqggrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet6lqsx4k5r7rsld3hhe87psyy5cnhhzt4dz838f75734mted7pdsrflpvys23tkafmhctf3musnsaa42h6qjdggyqlhtevutzzpzlnwd8alq"}"""
+    JsonSerializers.serialization.write(pr)(JsonSerializers.formats) shouldBe """{"amount":456001234,"nodeId":"03c48ac97e09f3cbbaeb35b02aaa6d072b57726841a34d25952157caca60a1caf5","paymentHash":"2cb0e7b052366787450c33daf6d2f2c3cb6132221326e1c1b49ac97fdd7eb720","description":"minimal offer","features":{"activated":{},"unknown":[]},"blindedPaths":[{"introductionNodeId":"03c48ac97e09f3cbbaeb35b02aaa6d072b57726841a34d25952157caca60a1caf5","blindedNodeIds":["031fca650042031dcb777156ef66806c73b01a7f52c4e73c89a0d15823a1ac6237"]}],"createdAt":1665412681,"expiresAt":1665412981,"serialized":"lni1qqsf4h8fsnpjkj057gjg9c3eqhv889440xh0z6f5kng9vsaad8pgq7sgqsdjuqsqpgxk66twd9kkzmpqdanxvetjzcss83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh42qsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqzjqsdjupkjtqssx05572ha26x39rczan5yft22pgwa72jw8gytavkm5ydn7yf5kpgh5zsq83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh4q2rd3ny0elv9m7mh38xxwe6ypfheeqeqlwgft05r6dhc50gtw0nv2qgrrl9x2qzzqvwukam32mhkdqrvwwcp5l6jcnnnezdq69vz8gdvvgmsqwk3efqf3f6gmf0ul63940awz429rdhhsts86s0r30e5nffwhrqw90xgxf7f60sm7tcclvyqwz7cer5q9223madstdy2p5q6y8qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqf2qheqqqqq2gprrgshynfszqyk2sgpvkrnmq53kv7r52rpnmtmd9ukredsnygsnymsurdy6e9la6l4hyz4qgxewqmftqggrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet6lqsx4k5r7rsld3hhe87psyy5cnhhzt4dz838f75734mted7pdsrflpvys23tkafmhctf3musnsaa42h6qjdggyqlhtevutzzpzlnwd8alq"}"""
   }
 
   test("GlobalBalance serializer") {
     val gb = GlobalBalance(
-      onChain = CheckBalance.CorrectedOnChainBalance(Btc(0.4), Btc(0.05)),
+      onChain = CheckBalance.DetailedOnChainBalance(
+        confirmed = Map(OutPoint(TxId.fromValidHex("9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3) -> Btc(1.4)),
+        unconfirmed = Map(OutPoint(TxId.fromValidHex("345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 1) -> Btc(0.05)),
+        utxos = Seq.empty
+      ),
       offChain = CheckBalance.OffChainBalance(normal = MainAndHtlcBalance(
         toLocal = Btc(0.2),
         htlcs = Btc(0.05)
       ), closing = ClosingBalance(
         localCloseBalance = PossiblyPublishedMainAndHtlcBalance(
-          toLocal = Map(TxId.fromValidHex("4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2") -> Btc(0.1)),
-          htlcs = Map(TxId.fromValidHex("94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71") -> Btc(0.03), TxId.fromValidHex("a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13") -> Btc(0.06)),
+          toLocal = Map(OutPoint(TxId.fromValidHex("4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2"), 0) -> Btc(0.1)),
+          htlcs = Map(OutPoint(TxId.fromValidHex("94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71"), 1) -> Btc(0.03), OutPoint(TxId.fromValidHex("a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13"), 3) -> Btc(0.06)),
           htlcsUnpublished = Btc(0.01)),
         mutualCloseBalance = PossiblyPublishedMainBalance(
-          toLocal = Map(TxId.fromValidHex("7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247") -> Btc(0.1)))
-      ))
+          toLocal = Map(OutPoint(TxId.fromValidHex("7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247"), 4) -> Btc(0.1)))
+      )
+      ),
+      channels = Map.empty, // not used by json serializer
+      knownPreimages = Set.empty, // not used by json serializer
+
     )
-    JsonSerializers.serialization.write(gb)(JsonSerializers.formats) shouldBe """{"total":1.0,"onChain":{"confirmed":0.4,"unconfirmed":0.05},"offChain":{"waitForFundingConfirmed":0.0,"waitForChannelReady":0.0,"normal":{"toLocal":0.2,"htlcs":0.05},"shutdown":{"toLocal":0.0,"htlcs":0.0},"negotiating":0.0,"closing":{"localCloseBalance":{"toLocal":{"4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2":0.1},"htlcs":{"94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71":0.03,"a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13":0.06},"htlcsUnpublished":0.01},"remoteCloseBalance":{"toLocal":{},"htlcs":{},"htlcsUnpublished":0.0},"mutualCloseBalance":{"toLocal":{"7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247":0.1}},"unknownCloseBalance":{"toLocal":0.0,"htlcs":0.0}},"waitForPublishFutureCommitment":0.0}}"""
+    JsonSerializers.serialization.write(gb)(JsonSerializers.formats) shouldBe """{"total":2.0,"onChain":{"total":1.45,"confirmed":{"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692:3":1.4},"unconfirmed":{"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f:1":0.05}},"offChain":{"waitForFundingConfirmed":0.0,"waitForChannelReady":0.0,"normal":{"toLocal":0.2,"htlcs":0.05},"shutdown":{"toLocal":0.0,"htlcs":0.0},"negotiating":0.0,"closing":{"localCloseBalance":{"toLocal":{"4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2:0":0.1},"htlcs":{"94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71:1":0.03,"a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13:3":0.06},"htlcsUnpublished":0.01},"remoteCloseBalance":{"toLocal":{},"htlcs":{},"htlcsUnpublished":0.0},"mutualCloseBalance":{"toLocal":{"7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247:4":0.1}},"unknownCloseBalance":{"toLocal":0.0,"htlcs":0.0}},"waitForPublishFutureCommitment":0.0}}"""
   }
 
   test("type hints") {
@@ -439,14 +455,10 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     JsonSerializers.serialization.write(map)(JsonSerializers.formats) shouldBe s"""{"e2fc57221cfb1942224082174022f3f70a32005aa209956f9c94c6903f7669ff":"ok","8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3":"cannot execute command=CMD_UPDATE_RELAY_FEE in state=CLOSING","74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8":"channel 74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8 not found"}"""
   }
 
-  test("serialize short ids") {
+  test("serialize short id aliases") {
     val testCases = Map(
-      ShortIds(real = RealScidStatus.Unknown, localAlias = Alias(0x4455), remoteAlias_opt = Some(Alias(0x88888888L))) ->
-        """{"real":{"status":"unknown"},"localAlias":"0x4455","remoteAlias":"0x88888888"}""",
-      ShortIds(real = RealScidStatus.Temporary(RealShortChannelId(BlockHeight(500000), 42, 1)), localAlias = Alias(0x4455), remoteAlias_opt = None) ->
-        """{"real":{"status":"temporary","realScid":"500000x42x1"},"localAlias":"0x4455"}""",
-      ShortIds(real = RealScidStatus.Final(RealShortChannelId(BlockHeight(500000), 42, 1)), localAlias = Alias(0x4455), remoteAlias_opt = None) ->
-        """{"real":{"status":"final","realScid":"500000x42x1"},"localAlias":"0x4455"}""",
+      ShortIdAliases(localAlias = Alias(0x4455), remoteAlias_opt = Some(Alias(0x88888888L))) -> """{"localAlias":"0x4455","remoteAlias":"0x88888888"}""",
+      ShortIdAliases(localAlias = Alias(0x4455), remoteAlias_opt = None) -> """{"localAlias":"0x4455"}""",
     )
     for ((obj, json) <- testCases) {
       JsonSerializers.serialization.write(obj)(JsonSerializers.formats) shouldBe json

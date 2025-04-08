@@ -2,7 +2,7 @@ package fr.acinq.eclair.testutils
 
 import ch.qos.logback.classic.LoggerContext
 import ch.qos.logback.classic.selector.ContextSelector
-import ch.qos.logback.classic.util.ContextInitializer
+import ch.qos.logback.classic.util.{ContextInitializer, LogbackMDCAdapter}
 
 import java.util
 import scala.jdk.CollectionConverters.SeqHasAsJava
@@ -32,10 +32,11 @@ class MyContextSelector extends ContextSelector {
       val context = contexts.getOrElse(name, {
         val context = new LoggerContext()
         context.setName(name)
+        context.setMDCAdapter(new LogbackMDCAdapter())
         new ContextInitializer(context).autoConfig()
+        contexts = contexts + (name -> context)
         context
       })
-      contexts = contexts + (name -> context)
       context
     }
   }

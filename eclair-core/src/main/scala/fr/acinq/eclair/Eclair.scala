@@ -24,11 +24,12 @@ import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, Script, TxId, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction, TxId, addressToPublicKeyScript}
 import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{Descriptors, WalletTx}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
@@ -38,15 +39,17 @@ import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, OpenChannelResponse, PeerInfo}
 import fr.acinq.eclair.io._
+import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.offer.{OfferCreator, OfferManager}
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, OutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.{ClearRecipient, OfferPayment, PaymentIdentifier}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
+import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferAbsoluteExpiry, OfferIssuer, OfferQuantityMax, OfferTlv}
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -67,7 +70,12 @@ case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
 
 case class SendOnionMessageResponsePayload(tlvs: TlvStream[OnionMessagePayloadTlv])
 case class SendOnionMessageResponse(sent: Boolean, failureMessage: Option[String], response: Option[SendOnionMessageResponsePayload])
+
+case class SpendFromChannelPrep(fundingTxIndex: Long, localFundingPubkey: PublicKey, inputAmount: Satoshi, unsignedTx: Transaction)
+case class SpendFromChannelResult(signedTx: Transaction)
 // @formatter:on
+
+case class EnableFromFutureHtlcResponse(enabled: Boolean, failureMessage: Option[String])
 
 object SignedMessage {
   def signedBytes(message: ByteVector): ByteVector32 =
@@ -94,9 +102,13 @@ trait Eclair {
 
   def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
 
+  def rbfSplice(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]]
+
   def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]]
 
   def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]]
+
+  def forceCloseResetFundingIndex(channel: ApiTypes.ChannelIdentifier, resetFundingTxIndex: Int)(implicit timeout: Timeout): Future[CommandResponse[CMD_FORCECLOSE]]
 
   def bumpForceCloseFee(channels: List[ApiTypes.ChannelIdentifier], confirmationTarget: ConfirmationTarget)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]]]]
 
@@ -114,7 +126,13 @@ trait Eclair {
 
   def nodes(nodeIds_opt: Option[Set[PublicKey]] = None)(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]]
 
-  def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[Bolt11Invoice]
+  def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], privateChannelIds_opt: Option[List[ByteVector32]])(implicit timeout: Timeout): Future[Bolt11Invoice]
+
+  def createOffer(description_opt: Option[String], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], issuer_opt: Option[String], blindedPathsFirstNodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Offer]
+
+  def disableOffer(offer: Offer)(implicit timeout: Timeout): Future[Unit]
+
+  def listOffers(onlyActive: Boolean = true)(implicit timeout: Timeout): Future[Seq[Offer]]
 
   def newAddress(): Future[String]
 
@@ -138,13 +156,13 @@ trait Eclair {
 
   def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse]
 
-  def sendToRoute(recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: Bolt11Invoice, route: PredefinedRoute, trampolineSecret_opt: Option[ByteVector32] = None, trampolineFees_opt: Option[MilliSatoshi] = None, trampolineExpiryDelta_opt: Option[CltvExpiryDelta] = None)(implicit timeout: Timeout): Future[SendPaymentToRouteResponse]
+  def sendToRoute(recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: Bolt11Invoice, route: PredefinedRoute)(implicit timeout: Timeout): Future[SendPaymentToRouteResponse]
 
   def audit(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[AuditResponse]
 
   def networkFees(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[NetworkFee]]
 
-  def channelStats(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Stats]]
+  def channelStats(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Stats]]
 
   def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[Invoice]]
 
@@ -170,6 +188,8 @@ trait Eclair {
 
   def globalBalance()(implicit timeout: Timeout): Future[GlobalBalance]
 
+  def resetBalance()(implicit timeout: Timeout): Future[Option[GlobalBalance]]
+
   def signMessage(message: ByteVector): SignedMessage
 
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
@@ -180,14 +200,24 @@ trait Eclair {
 
   def payOfferBlocking(offer: Offer, amount: MilliSatoshi, quantity: Long, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false)(implicit timeout: Timeout): Future[PaymentEvent]
 
+  def payOfferTrampoline(offer: Offer, amount: MilliSatoshi, quantity: Long, trampolineNodeId: PublicKey, externalId_opt: Option[String] = None, maxAttempts_opt: Option[Int] = None, maxFeeFlat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None, pathFindingExperimentName_opt: Option[String] = None, connectDirectly: Boolean = false)(implicit timeout: Timeout): Future[PaymentEvent]
+
   def getOnChainMasterPubKey(account: Long): String
 
   def getDescriptors(account: Long): Descriptors
 
+  def enableFromFutureHtlc(): Future[EnableFromFutureHtlcResponse]
+
   def stop(): Future[Unit]
+
+  def manualWatchFundingSpent(channelId: ByteVector32, tx: Transaction): TxId
+
+  def spendFromChannelAddressPrep(outPoint: OutPoint, fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, address: String, feerate: FeeratePerKw): Future[SpendFromChannelPrep]
+
+  def spendFromChannelAddress(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, remoteSig: ByteVector64, unsignedTx: Transaction): Future[SpendFromChannelResult]
 }
 
-class EclairImpl(appKit: Kit) extends Eclair with Logging {
+class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChannelAddress {
 
   implicit val ec: ExecutionContext = appKit.system.dispatcher
   implicit val scheduler: Scheduler = appKit.system.scheduler.toTyped
@@ -218,6 +248,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         pushAmount_opt = pushAmount_opt,
         fundingTxFeerate_opt = fundingFeerate_opt.map(FeeratePerKw(_)),
         fundingTxFeeBudget_opt = Some(fundingFeeBudget),
+        requestFunding_opt = None,
         channelFlags_opt = announceChannel_opt.map(announceChannel => ChannelFlags(announceChannel = announceChannel)),
         timeout_opt = Some(openTimeout))
       res <- (appKit.switchboard ? open).mapTo[OpenChannelResponse]
@@ -225,16 +256,18 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]] = {
-    sendToChannelTyped(channel = Left(channelId),
-      cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong)))
+    sendToChannelTyped(
+      channel = Left(channelId),
+      cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong), requestFunding_opt = None)
+    )
   }
 
   override def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
-    sendToChannelTyped(channel = Left(channelId),
-      cmdBuilder = CMD_SPLICE(_,
-        spliceIn_opt = Some(SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))),
-        spliceOut_opt = None
-      ))
+    val spliceIn = SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))
+    sendToChannelTyped(
+      channel = Left(channelId),
+      cmdBuilder = CMD_SPLICE(_, spliceIn_opt = Some(spliceIn), spliceOut_opt = None, requestFunding_opt = None)
+    )
   }
 
   override def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
@@ -245,11 +278,18 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         case Right(script) => Script.write(script)
       }
     }
-    sendToChannelTyped(channel = Left(channelId),
-      cmdBuilder = CMD_SPLICE(_,
-        spliceIn_opt = None,
-        spliceOut_opt = Some(SpliceOut(amount = amountOut, scriptPubKey = script))
-      ))
+    val spliceOut = SpliceOut(amount = amountOut, scriptPubKey = script)
+    sendToChannelTyped(
+      channel = Left(channelId),
+      cmdBuilder = CMD_SPLICE(_, spliceIn_opt = None, spliceOut_opt = Some(spliceOut), requestFunding_opt = None)
+    )
+  }
+
+  override def rbfSplice(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]] = {
+    sendToChannelTyped(
+      channel = Left(channelId),
+      cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong), requestFunding_opt = None)
+    )
   }
 
   override def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]] = {
@@ -258,6 +298,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]] = {
     sendToChannels(channels, CMD_FORCECLOSE(ActorRef.noSender))
+  }
+
+  override def forceCloseResetFundingIndex(channel: ApiTypes.ChannelIdentifier, resetFundingTxIndex: Int)(implicit timeout: Timeout): Future[CommandResponse[CMD_FORCECLOSE]] = {
+    sendToChannel[CMD_FORCECLOSE, CommandResponse[CMD_FORCECLOSE]](channel, CMD_FORCECLOSE(ActorRef.noSender, resetFundingTxIndex_opt = Some(resetFundingTxIndex)))
   }
 
   override def bumpForceCloseFee(channels: List[ApiTypes.ChannelIdentifier], confirmationTarget: ConfirmationTarget)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]]]] = {
@@ -291,8 +335,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]] = {
     val futureResponse = toRemoteNode_opt match {
-      case Some(pk) => (appKit.register ? Symbol("channelsTo")).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(_._2 == pk).keys)
-      case None => (appKit.register ? Symbol("channels")).mapTo[Map[ByteVector32, ActorRef]].map(_.keys)
+      case Some(pk) => (appKit.register ? Register.GetChannelsTo).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(_._2 == pk).keys)
+      case None => (appKit.register ? Register.GetChannels).mapTo[Map[ByteVector32, ActorRef]].map(_.keys)
     }
 
     for {
@@ -328,14 +372,46 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[Bolt11Invoice] = {
+  override def receive(description: Either[String, ByteVector32], amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32], privateChannelIds_opt: Option[List[ByteVector32]])(implicit timeout: Timeout): Future[Bolt11Invoice] = {
     fallbackAddress_opt.foreach { fa =>
+      // If it's not a valid bitcoin address we throw an exception.
       addressToPublicKeyScript(appKit.nodeParams.chainHash, fa) match {
         case Left(failure) => throw new IllegalArgumentException(failure.toString)
         case Right(_) => ()
       }
-    } // if it's not a bitcoin address throws an exception
-    appKit.paymentHandler.toTyped.ask(ref => ReceiveStandardPayment(ref, amount_opt, description, expire_opt, fallbackAddress_opt = fallbackAddress_opt, paymentPreimage_opt = paymentPreimage_opt))
+    }
+    for {
+      routingHints <- getInvoiceRoutingHints(privateChannelIds_opt)
+      invoice <- appKit.paymentHandler.toTyped.ask[Bolt11Invoice](ref => ReceiveStandardPayment(ref, amount_opt, description, expire_opt, routingHints, fallbackAddress_opt, paymentPreimage_opt))
+    } yield invoice
+  }
+
+  private def getInvoiceRoutingHints(privateChannelIds_opt: Option[List[ByteVector32]])(implicit timeout: Timeout): Future[List[List[Bolt11Invoice.ExtraHop]]] = {
+    privateChannelIds_opt match {
+      case Some(channelIds) =>
+        (appKit.router ? GetRouterData).mapTo[Router.Data].map {
+          d => channelIds.flatMap(cid => d.privateChannels.get(cid)).flatMap(_.toIncomingExtraHop).map(hop => hop :: Nil)
+        }
+      case None => Future.successful(Nil)
+    }
+  }
+
+  override def createOffer(description_opt: Option[String], amount_opt: Option[MilliSatoshi], expireInSeconds_opt: Option[Long], issuer_opt: Option[String], blindedPathsFirstNodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Offer] = {
+    val offerCreator = appKit.system.spawnAnonymous(OfferCreator(appKit.nodeParams, appKit.router, appKit.offerManager, appKit.defaultOfferHandler))
+    val expiry_opt = expireInSeconds_opt.map(TimestampSecond.now() + _)
+    offerCreator.ask[OfferCreator.CreateOfferResult](replyTo => OfferCreator.Create(replyTo, description_opt, amount_opt, expiry_opt, issuer_opt, blindedPathsFirstNodeId_opt))
+      .flatMap {
+        case OfferCreator.CreateOfferError(reason) => Future.failed(new Exception(reason))
+        case OfferCreator.CreatedOffer(offer) => Future.successful(offer)
+      }
+  }
+
+  override def disableOffer(offer: Offer)(implicit timeout: Timeout): Future[Unit] = Future {
+    appKit.offerManager ! OfferManager.DisableOffer(offer)
+  }
+
+  override def listOffers(onlyActive: Boolean = true)(implicit timeout: Timeout): Future[Seq[Offer]] = Future {
+    appKit.nodeParams.db.offers.listOffers(onlyActive).map(_.offer)
   }
 
   override def newAddress(): Future[String] = {
@@ -362,9 +438,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def sendOnChain(address: String, amount: Satoshi, confirmationTargetOrFeerate: Either[Long, FeeratePerByte]): Future[TxId] = {
     val feeRate = confirmationTargetOrFeerate match {
       case Left(blocks) =>
-        if (blocks < 3) appKit.nodeParams.currentFeerates.fast
-        else if (blocks > 6) appKit.nodeParams.currentFeerates.slow
-        else appKit.nodeParams.currentFeerates.medium
+        if (blocks < 3) appKit.nodeParams.currentBitcoinCoreFeerates.fast
+        else if (blocks > 6) appKit.nodeParams.currentBitcoinCoreFeerates.slow
+        else appKit.nodeParams.currentBitcoinCoreFeerates.medium
       case Right(feeratePerByte) => FeeratePerKw(feeratePerByte)
     }
     appKit.wallet match {
@@ -411,25 +487,25 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         for {
           ignoredChannels <- getChannelDescs(ignoreShortChannelIds.toSet)
           ignore = Ignore(ignoreNodeIds.toSet, ignoredChannels)
-          response <- (appKit.router ? RouteRequest(sourceNodeId, target, routeParams1, ignore)).mapTo[RouteResponse]
+          response <- appKit.router.toTyped.ask[PaymentRouteResponse](replyTo => RouteRequest(replyTo, sourceNodeId, target, routeParams1, ignore)).flatMap {
+            case r: RouteResponse => Future.successful(r)
+            case PaymentRouteNotFound(error) => Future.failed(error)
+          }
         } yield response
       case Left(t) => Future.failed(t)
     }
   }
 
-  override def sendToRoute(recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: Bolt11Invoice, route: PredefinedRoute, trampolineSecret_opt: Option[ByteVector32], trampolineFees_opt: Option[MilliSatoshi], trampolineExpiryDelta_opt: Option[CltvExpiryDelta])(implicit timeout: Timeout): Future[SendPaymentToRouteResponse] = {
+  override def sendToRoute(recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: Bolt11Invoice, route: PredefinedRoute)(implicit timeout: Timeout): Future[SendPaymentToRouteResponse] = {
     if (invoice.isExpired()) {
       Future.failed(new IllegalArgumentException("invoice has expired"))
     } else if (route.isEmpty) {
       Future.failed(new IllegalArgumentException("missing payment route"))
     } else if (externalId_opt.exists(_.length > externalIdMaxLength)) {
       Future.failed(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
-    } else if (trampolineFees_opt.nonEmpty && trampolineExpiryDelta_opt.isEmpty) {
-      Future.failed(new IllegalArgumentException("trampoline payments must specify a trampoline fee and cltv delta"))
     } else {
       val recipientAmount = recipientAmount_opt.getOrElse(invoice.amount_opt.getOrElse(route.amount))
-      val trampoline_opt = trampolineFees_opt.map(fees => TrampolineAttempt(trampolineSecret_opt.getOrElse(randomBytes32()), fees, trampolineExpiryDelta_opt.get))
-      val sendPayment = SendPaymentToRoute(recipientAmount, invoice, Nil, route, externalId_opt, parentId_opt, trampoline_opt)
+      val sendPayment = SendPaymentToRoute(recipientAmount, invoice, Nil, route, externalId_opt, parentId_opt)
       (appKit.paymentInitiator ? sendPayment).mapTo[SendPaymentToRouteResponse]
     }
   }
@@ -497,7 +573,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
               case PendingSpontaneousPayment(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Pending)
               case PendingPaymentToNode(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), r.payerKey_opt, OutgoingPaymentStatus.Pending)
               case PendingPaymentToRoute(_, r) => OutgoingPayment(paymentId, paymentId, r.externalId, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), None, OutgoingPaymentStatus.Pending)
-              case PendingTrampolinePayment(_, _, r) => OutgoingPayment(paymentId, paymentId, None, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), None, OutgoingPaymentStatus.Pending)
+              case PendingTrampolinePayment(_, r) => OutgoingPayment(paymentId, paymentId, None, paymentHash, paymentType, r.recipientAmount, r.recipientAmount, r.recipientNodeId, TimestampMilli.now(), Some(r.invoice), None, OutgoingPaymentStatus.Pending)
             }
             dummyOutgoingPayment +: outgoingDbPayments
         }
@@ -523,8 +599,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     Future(appKit.nodeParams.db.audit.listNetworkFees(from.toTimestampMilli, to.toTimestampMilli))
   }
 
-  override def channelStats(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Stats]] = {
-    Future(appKit.nodeParams.db.audit.stats(from.toTimestampMilli, to.toTimestampMilli))
+  override def channelStats(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Stats]] = {
+    Future(appKit.nodeParams.db.audit.stats(from.toTimestampMilli, to.toTimestampMilli, paginated_opt))
   }
 
   override def allInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]] = Future {
@@ -556,9 +632,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     case Left(channelId) => appKit.register ? Register.Forward(null, channelId, request)
     case Right(shortChannelId) => appKit.register ? Register.ForwardShortId(null, shortChannelId, request)
   }).map {
-    case t: R@unchecked => t
-    case t: Register.ForwardFailure[C]@unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
-    case t: Register.ForwardShortIdFailure[C]@unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
+    case t: R @unchecked => t
+    case t: Register.ForwardFailure[C] @unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
+    case t: Register.ForwardShortIdFailure[C] @unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
   }
 
   private def sendToChannelTyped[C <: Command, R <: CommandResponse[C]](channel: ApiTypes.ChannelIdentifier, cmdBuilder: akka.actor.typed.ActorRef[Any] => C)(implicit timeout: Timeout): Future[R] =
@@ -569,9 +645,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         case Right(shortChannelId) => Register.ForwardShortId(replyTo, shortChannelId, cmd)
       }
     }.map {
-      case t: R@unchecked => t
-      case t: Register.ForwardFailure[C]@unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
-      case t: Register.ForwardShortIdFailure[C]@unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
+      case t: R @unchecked => t
+      case t: Register.ForwardFailure[C] @unchecked => throw ChannelNotFound(Left(t.fwd.channelId))
+      case t: Register.ForwardShortIdFailure[C] @unchecked => throw ChannelNotFound(Right(t.fwd.shortChannelId))
     }
 
   /**
@@ -592,7 +668,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   /** Send a request to multiple channels using node ids */
   private def sendToNodes[C <: Command, R <: CommandResponse[C]](nodeids: List[PublicKey], request: C)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, R]]] = {
     for {
-      channelIds <- (appKit.register ? Symbol("channelsTo")).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(kv => nodeids.contains(kv._2)).keys)
+      channelIds <- (appKit.register ? Register.GetChannelsTo).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(kv => nodeids.contains(kv._2)).keys)
       res <- sendToChannels[C, R](channelIds.map(Left(_)).toList, request)
     } yield res
   }
@@ -624,6 +700,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
       globalBalance_try <- appKit.balanceActor.ask(res => BalanceActor.GetGlobalBalance(res, channels))
       globalBalance <- Promise[GlobalBalance]().complete(globalBalance_try).future
     } yield globalBalance
+  }
+
+  override def resetBalance()(implicit timeout: Timeout): Future[Option[GlobalBalance]] = {
+    appKit.balanceActor.ask(res => BalanceActor.ResetBalance(res))
   }
 
   override def signMessage(message: ByteVector): SignedMessage = {
@@ -686,6 +766,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   private def payOfferInternal(offer: Offer,
                                amount: MilliSatoshi,
                                quantity: Long,
+                               trampolineNodeId_opt: Option[PublicKey],
                                externalId_opt: Option[String],
                                maxAttempts_opt: Option[Int],
                                maxFeeFlat_opt: Option[Satoshi],
@@ -703,8 +784,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           .modify(_.boundaries.maxFeeFlat).setToIfDefined(maxFeeFlat_opt.map(_.toMilliSatoshi))
       case Left(t) => return Future.failed(t)
     }
-    val sendPaymentConfig = OfferPayment.SendPaymentConfig(externalId_opt, connectDirectly, maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts), routeParams, blocking)
-    val offerPayment = appKit.system.spawnAnonymous(OfferPayment(appKit.nodeParams, appKit.postman, appKit.router, appKit.paymentInitiator))
+    val sendPaymentConfig = OfferPayment.SendPaymentConfig(externalId_opt, connectDirectly, maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts), routeParams, blocking, trampolineNodeId_opt)
+    val offerPayment = appKit.system.spawnAnonymous(OfferPayment(appKit.nodeParams, appKit.postman, appKit.router, appKit.register, appKit.paymentInitiator))
     offerPayment.ask((ref: typed.ActorRef[Any]) => OfferPayment.PayOffer(ref.toClassic, offer, amount, quantity, sendPaymentConfig)).flatMap {
       case f: OfferPayment.Failure => Future.failed(new Exception(f.toString))
       case x => Future.successful(x)
@@ -720,7 +801,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
                         maxFeePct_opt: Option[Double],
                         pathFindingExperimentName_opt: Option[String],
                         connectDirectly: Boolean)(implicit timeout: Timeout): Future[UUID] = {
-    payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = false).mapTo[UUID]
+    payOfferInternal(offer, amount, quantity, None, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = false).mapTo[UUID]
   }
 
   override def payOfferBlocking(offer: Offer,
@@ -732,7 +813,20 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
                                 maxFeePct_opt: Option[Double],
                                 pathFindingExperimentName_opt: Option[String],
                                 connectDirectly: Boolean)(implicit timeout: Timeout): Future[PaymentEvent] = {
-    payOfferInternal(offer, amount, quantity, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = true).mapTo[PaymentEvent]
+    payOfferInternal(offer, amount, quantity, None, externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = true).mapTo[PaymentEvent]
+  }
+
+  override def payOfferTrampoline(offer: Offer,
+                                  amount: MilliSatoshi,
+                                  quantity: Long,
+                                  trampolineNodeId: PublicKey,
+                                  externalId_opt: Option[String],
+                                  maxAttempts_opt: Option[Int],
+                                  maxFeeFlat_opt: Option[Satoshi],
+                                  maxFeePct_opt: Option[Double],
+                                  pathFindingExperimentName_opt: Option[String],
+                                  connectDirectly: Boolean)(implicit timeout: Timeout): Future[PaymentEvent] = {
+    payOfferInternal(offer, amount, quantity, Some(trampolineNodeId), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt, connectDirectly, blocking = true).mapTo[PaymentEvent]
   }
 
   override def getDescriptors(account: Long): Descriptors = appKit.nodeParams.onChainKeyManager_opt match {
@@ -745,6 +839,16 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     case _ => throw new RuntimeException("on-chain seed is not configured")
   }
 
+  override def enableFromFutureHtlc(): Future[EnableFromFutureHtlcResponse] = {
+    appKit.nodeParams.liquidityAdsConfig.rates_opt match {
+      case Some(willFundRates) if willFundRates.paymentTypes.contains(LiquidityAds.PaymentType.FromFutureHtlc) =>
+        appKit.nodeParams.onTheFlyFundingConfig.enableFromFutureHtlc()
+        Future.successful(EnableFromFutureHtlcResponse(appKit.nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed, None))
+      case _ =>
+        Future.successful(EnableFromFutureHtlcResponse(enabled = false, Some("could not enable from_future_htlc: you must add it to eclair.liquidity-ads.payment-types in your eclair.conf file first")))
+    }
+  }
+
   override def stop(): Future[Unit] = {
     // README: do not make this smarter or more complex !
     // eclair can simply and cleanly be stopped by killing its process without fear of losing data, payments, ... and it should remain this way.
@@ -752,4 +856,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     sys.exit(0)
     Future.successful(())
   }
+
+  override def manualWatchFundingSpent(channelId: ByteVector32, tx: Transaction): TxId = {
+    appKit.register ! Register.Forward(null, channelId, WatchFundingSpentTriggered(tx))
+    tx.txid
+  }
+
 }

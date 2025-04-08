@@ -36,7 +36,6 @@ import java.nio.ByteOrder
 import scala.annotation.tailrec
 import scala.collection.immutable.Queue
 import scala.reflect.ClassTag
-import scala.util.{Failure, Success, Try}
 
 /**
  * see BOLT #8
@@ -97,16 +96,14 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
   def decodeAndSendToListener(listener: ActorRef, plaintextMessages: Seq[ByteVector]): Map[T, Int] = {
     log.debug("decoding {} plaintext messages", plaintextMessages.size)
     var m: Map[T, Int] = Map()
-    plaintextMessages.foreach(plaintext => Try(codec.decode(plaintext.toBitVector)) match {
-      case Success(Attempt.Successful(DecodeResult(message, _))) =>
+    plaintextMessages.foreach(plaintext => codec.decode(plaintext.bits) match {
+      case Attempt.Successful(DecodeResult(message, _)) =>
         diag(message, "IN")
         Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.IN).record(plaintext.size)
         listener ! message
         m += (message -> (m.getOrElse(message, 0) + 1))
-      case Success(Attempt.Failure(err)) =>
-        log.error(s"cannot deserialize ${plaintext.toHex}: $err")
-      case Failure(t) =>
-        log.error(s"cannot deserialize ${plaintext.toHex}: ${t.getMessage}")
+      case Attempt.Failure(err) =>
+        log.warning("cannot deserialize {}: {}", plaintext.toHex, err.message)
     })
     log.debug("decoded {} messages", m.values.sum)
     m
@@ -178,7 +175,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
 
   when(Normal) {
     handleExceptions {
-      case Event(Tcp.Received(data), d: NormalData[T@unchecked]) =>
+      case Event(Tcp.Received(data), d: NormalData[T @unchecked]) =>
         log.debug("received chunk of size={}", data.size)
         val (dec1, plaintextMessages) = d.decryptor.copy(buffer = d.decryptor.buffer ++ data).decrypt()
         val unackedReceived1 = decodeAndSendToListener(d.listener, plaintextMessages)
@@ -188,7 +185,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         }
         stay() using d.copy(decryptor = dec1, unackedReceived = unackedReceived1)
 
-      case Event(ReadAck(msg: T), d: NormalData[T@unchecked]) =>
+      case Event(ReadAck(msg: T), d: NormalData[T @unchecked]) =>
         // how many occurrences of this message are still unacked?
         val remaining = d.unackedReceived.getOrElse(msg, 0) - 1
         log.debug("acking message {}", msg)
@@ -202,7 +199,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         }
         stay() using d.copy(unackedReceived = unackedReceived1)
 
-      case Event(t: T, d: NormalData[T@unchecked]) =>
+      case Event(t: T, d: NormalData[T @unchecked]) =>
         if (d.sendBuffer.normalPriority.size + d.sendBuffer.lowPriority.size >= MAX_BUFFERED) {
           log.warning("send buffer overrun, closing connection")
           connection ! PoisonPill
@@ -224,7 +221,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
           stay() using d.copy(encryptor = enc1, unackedSent = Some(t))
         }
 
-      case Event(WriteAck, d: NormalData[T@unchecked]) =>
+      case Event(WriteAck, d: NormalData[T @unchecked]) =>
         def send(t: T) = {
           diag(t, "OUT")
           val blob = codec.encode(t).require.toByteVector

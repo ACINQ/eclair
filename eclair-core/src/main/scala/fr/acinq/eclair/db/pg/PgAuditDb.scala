@@ -17,9 +17,9 @@
 package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
+import fr.acinq.eclair.db.AuditDb.{NetworkFee, PublishedTransaction, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
@@ -36,7 +36,7 @@ import javax.sql.DataSource
 
 object PgAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 11
+  val CURRENT_VERSION = 12
 }
 
 class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
@@ -110,6 +110,10 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX metrics_recipient_idx ON audit.path_finding_metrics(recipient_node_id)")
       }
 
+      def migration1112(statement: Statement): Unit = {
+        statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON audit.transactions_published(channel_id)")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA audit")
@@ -142,9 +146,10 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX metrics_name_idx ON audit.path_finding_metrics(experiment_name)")
           statement.executeUpdate("CREATE INDEX metrics_recipient_idx ON audit.path_finding_metrics(recipient_node_id)")
           statement.executeUpdate("CREATE INDEX metrics_hash_idx ON audit.path_finding_metrics(payment_hash)")
+          statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON audit.transactions_published(channel_id)")
           statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
           statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
-        case Some(v@(4 | 5 | 6 | 7 | 8 | 9 | 10)) =>
+        case Some(v@(4 | 5 | 6 | 7 | 8 | 9 | 10 | 11)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 5) {
             migration45(statement)
@@ -167,6 +172,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           if (v < 11) {
             migration1011(statement)
           }
+          if (v < 12) {
+            migration1112(statement)
+          }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
@@ -180,7 +188,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setString(1, e.channelId.toHex)
         statement.setString(2, e.remoteNodeId.value.toHex)
         statement.setLong(3, e.capacity.toLong)
-        statement.setBoolean(4, e.isInitiator)
+        statement.setBoolean(4, e.isChannelOpener)
         statement.setBoolean(5, e.isPrivate)
         statement.setString(6, e.event.label)
         statement.setTimestamp(7, Timestamp.from(Instant.now()))
@@ -230,7 +238,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       val payments = e match {
         case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, startedAt, settledAt) =>
           // non-trampoline relayed payments have one input and one output
-          Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", startedAt), RelayedPart(toChannelId, amountOut, "OUT", "channel", settledAt))
+          val in = Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", startedAt))
+          val out = Seq(RelayedPart(toChannelId, amountOut, "OUT", "channel", settledAt))
+          in ++ out
         case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) =>
           using(pg.prepareStatement("INSERT INTO audit.relayed_trampoline VALUES (?, ?, ?, ?)")) { statement =>
             statement.setString(1, e.paymentHash.toHex)
@@ -240,7 +250,13 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             statement.executeUpdate()
           }
           // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
-          incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", i.receivedAt)) ++ outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", o.settledAt))
+          val in = incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", i.receivedAt))
+          val out = outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", o.settledAt))
+          in ++ out
+        case OnTheFlyFundingPaymentRelayed(_, incoming, outgoing) =>
+          val in = incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "on-the-fly-funding", i.receivedAt))
+          val out = outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "on-the-fly-funding", o.settledAt))
+          in ++ out
       }
       for (p <- payments) {
         using(pg.prepareStatement("INSERT INTO audit.relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
@@ -330,6 +346,17 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setString(9, m.paymentHash.toHex)
         statement.setString(10, serialization.write(m.extraEdges))
         statement.executeUpdate()
+      }
+    }
+  }
+
+  override def listPublished(channelId: ByteVector32): Seq[PublishedTransaction] = withMetrics("audit/list-published", DbBackends.Postgres) {
+    inTransaction { pg =>
+      using(pg.prepareStatement("SELECT * FROM audit.transactions_published WHERE channel_id = ?")) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.executeQuery().map { rs =>
+          PublishedTransaction(TxId.fromValidHex(rs.getString("tx_id")), rs.getString("tx_type"), rs.getLong("mining_fee_sat").sat)
+        }.toSeq
       }
     }
   }
@@ -434,6 +461,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             case Some(RelayedPart(_, _, _, "trampoline", _)) =>
               val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PlaceHolderPubKey))
               TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) :: Nil
+            case Some(RelayedPart(_, _, _, "on-the-fly-funding", _)) =>
+              Seq(OnTheFlyFundingPaymentRelayed(paymentHash, incoming, outgoing))
             case _ => Nil
           }
       }.toSeq.sortBy(_.timestamp)
@@ -460,11 +489,22 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
     }
 
-  override def stats(from: TimestampMilli, to: TimestampMilli): Seq[Stats] = {
-    val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
-      feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
-    }
+  override def stats(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[Stats] = {
     case class Relayed(amount: MilliSatoshi, fee: MilliSatoshi, direction: String)
+
+    def aggregateRelayStats(previous: Map[ByteVector32, Seq[Relayed]], incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing): Map[ByteVector32, Seq[Relayed]] = {
+      // We ensure trampoline payments are counted only once per channel and per direction (if multiple HTLCs were sent
+      // from/to the same channel, we group them).
+      val amountIn = incoming.map(_.amount).sum
+      val amountOut = outgoing.map(_.amount).sum
+      val in = incoming.groupBy(_.channelId).map { case (channelId, parts) => (channelId, Relayed(parts.map(_.amount).sum, 0 msat, "IN")) }.toSeq
+      val out = outgoing.groupBy(_.channelId).map { case (channelId, parts) =>
+        val fee = (amountIn - amountOut) * parts.length / outgoing.length // we split the fee among outgoing channels
+        (channelId, Relayed(parts.map(_.amount).sum, fee, "OUT"))
+      }.toSeq
+      (in ++ out).groupBy(_._1).map { case (channelId, payments) => (channelId, payments.map(_._2) ++ previous.getOrElse(channelId, Nil)) }
+    }
+
     val relayed = listRelayed(from, to).foldLeft(Map.empty[ByteVector32, Seq[Relayed]]) { (previous, e) =>
       // NB: we must avoid counting the fee twice: we associate it to the outgoing channels rather than the incoming ones.
       val current = e match {
@@ -473,20 +513,20 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           c.toChannelId -> (Relayed(c.amountOut, c.amountIn - c.amountOut, "OUT") +: previous.getOrElse(c.toChannelId, Nil)),
         )
         case t: TrampolinePaymentRelayed =>
-          // We ensure a trampoline payment is counted only once per channel and per direction (if multiple HTLCs were
-          // sent from/to the same channel, we group them).
-          val in = t.incoming.groupBy(_.channelId).map { case (channelId, parts) => (channelId, Relayed(parts.map(_.amount).sum, 0 msat, "IN")) }.toSeq
-          val out = t.outgoing.groupBy(_.channelId).map { case (channelId, parts) =>
-            val fee = (t.amountIn - t.amountOut) * parts.length / t.outgoing.length // we split the fee among outgoing channels
-            (channelId, Relayed(parts.map(_.amount).sum, fee, "OUT"))
-          }.toSeq
-          (in ++ out).groupBy(_._1).map { case (channelId, payments) => (channelId, payments.map(_._2) ++ previous.getOrElse(channelId, Nil)) }
+          aggregateRelayStats(previous, t.incoming, t.outgoing)
+        case f: OnTheFlyFundingPaymentRelayed =>
+          aggregateRelayStats(previous, f.incoming, f.outgoing)
       }
       previous ++ current
     }
+
+    val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
+      feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
+    }
+
     // Channels opened by our peers won't have any network fees paid by us, but we still want to compute stats for them.
     val allChannels = networkFees.keySet ++ relayed.keySet
-    allChannels.toSeq.flatMap(channelId => {
+    val result = allChannels.toSeq.flatMap(channelId => {
       val networkFee = networkFees.getOrElse(channelId, 0 sat)
       val (in, out) = relayed.getOrElse(channelId, Nil).partition(_.direction == "IN")
       ((in, "IN") :: (out, "OUT") :: Nil).map { case (r, direction) =>
@@ -499,6 +539,10 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           Stats(channelId, direction, avgPaymentAmount.truncateToSatoshi, paymentCount, relayFee.truncateToSatoshi, networkFee)
         }
       }
-    })
+    }).sortBy(s => s.channelId.toHex + s.direction)
+    paginated_opt match {
+      case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
+      case None => result
+    }
   }
 }

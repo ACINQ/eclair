@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Satoshi, Transaction, TxHash, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{ChannelFlags, RealScidStatus, ShortIds}
+import fr.acinq.eclair.channel.{ChannelFlags, ShortIdAliases}
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, UnspecifiedShortChannelId}
 import org.apache.commons.codec.binary.Base32
@@ -71,6 +71,7 @@ object CommonCodecs {
   // this is needed because some millisatoshi values are encoded on 32 bits in the BOLTs
   // this codec will fail if the amount does not fit on 32 bits
   val millisatoshi32: Codec[MilliSatoshi] = uint32.xmapc(l => MilliSatoshi(l))(_.toLong)
+  val satoshi32: Codec[Satoshi] = uint32.xmapc(l => Satoshi(l))(_.toLong)
 
   val timestampSecond: Codec[TimestampSecond] = uint32.xmapc(TimestampSecond(_))(_.toLong)
 
@@ -118,7 +119,7 @@ object CommonCodecs {
 
   val listofsignatures: Codec[List[ByteVector64]] = listOfN(uint16, bytes64)
 
-  val channelflags: Codec[ChannelFlags] = (ignore(7) dropLeft bool).as[ChannelFlags]
+  val channelflags: Codec[ChannelFlags] = (ignore(6) :: bool :: bool).as[ChannelFlags]
 
   val ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))
 
@@ -145,26 +146,15 @@ object CommonCodecs {
 
   val alias: Codec[Alias] = shortchannelid.narrow[Alias](scid => Attempt.successful(Alias(scid.toLong)), scid => scid)
 
-  val realShortChannelIdStatus: Codec[RealScidStatus] = discriminated[RealScidStatus].by(uint8)
-    .typecase(0, provide(RealScidStatus.Unknown))
-    .typecase(1, realshortchannelid.as[RealScidStatus.Temporary])
-    .typecase(2, realshortchannelid.as[RealScidStatus.Final])
-
-  val shortids: Codec[ShortIds] = (
-    ("real" | realShortChannelIdStatus) ::
-      ("localAlias" | discriminated[Alias].by(uint16).typecase(1, alias)) :: // forward-compatible with listOfN(uint16, aliashortchannelid) in case we want to store a list of local aliases later
+  val aliases: Codec[ShortIdAliases] = (
+    // forward-compatible with listOfN(uint16, alias) in case we want to store a list of local aliases later
+    ("localAlias" | discriminated[Alias].by(uint16).typecase(1, alias)) ::
       ("remoteAlias_opt" | optional(bool8, alias))
-    ).as[ShortIds]
+    ).as[ShortIdAliases]
 
-  val privateKey: Codec[PrivateKey] = Codec[PrivateKey](
-    (priv: PrivateKey) => bytes(32).encode(priv.value),
-    (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => PrivateKey(b)))
-  )
+  val privateKey: Codec[PrivateKey] = bytes(32).xmap(bin => PrivateKey(bin), priv => priv.value)
 
-  val publicKey: Codec[PublicKey] = Codec[PublicKey](
-    (pub: PublicKey) => bytes(33).encode(pub.value),
-    (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => PublicKey(b)))
-  )
+  val publicKey: Codec[PublicKey] = catchAllCodec(bytes(33).xmap(bin => PublicKey(bin), pub => pub.value))
 
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
 
@@ -176,7 +166,7 @@ object CommonCodecs {
    * When encoding, prepend a valid mac to the output of the given codec.
    * When decoding, verify that a valid mac is prepended.
    */
-  def prependmac[A](codec: Codec[A], mac: Mac32) = Codec[A](
+  def prependmac[A](codec: Codec[A], mac: Mac32): Codec[A] = Codec[A](
     (a: A) => codec.encode(a).map(bits => mac.mac(bits.toByteVector).bits ++ bits),
     (bits: BitVector) => ("mac" | bytes32).decode(bits) match {
       case Attempt.Successful(DecodeResult(msgMac, remainder)) if mac.verify(msgMac, remainder.toByteVector) => codec.decode(remainder)
@@ -198,5 +188,11 @@ object CommonCodecs {
   val lengthPrefixedFeaturesCodec: Codec[Features[Feature]] = variableSizeBytes(uint16, featuresCodec)
 
   val initFeaturesCodec: Codec[Features[InitFeature]] = lengthPrefixedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())
+
+  /** Returns the same codec, that catches all exceptions when decoding. */
+  def catchAllCodec[T](codec: Codec[T]): Codec[T] = Codec[T](
+    (o: T) => codec.encode(o),
+    (bits: BitVector) => Attempt.fromTry(Try(codec.decode(bits))).flatten
+  )
 
 }

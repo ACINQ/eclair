@@ -16,6 +16,9 @@
 
 package fr.acinq.eclair.db
 
+import akka.actor.typed.SupervisorStrategy
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{Actor, DiagnosticActorLogging, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -33,13 +36,17 @@ import fr.acinq.eclair.{Logs, NodeParams}
  */
 class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorLogging {
 
-  val auditDb: AuditDb = nodeParams.db.audit
-  val channelsDb: ChannelsDb = nodeParams.db.channels
+  private val auditDb: AuditDb = nodeParams.db.audit
+  private val channelsDb: ChannelsDb = nodeParams.db.channels
+  private val liquidityDb: LiquidityDb = nodeParams.db.liquidity
+
+  context.spawn(Behaviors.supervise(RevokedHtlcInfoCleaner(channelsDb, nodeParams.revokedHtlcInfoCleanerConfig)).onFailure(SupervisorStrategy.restart), name = "revoked-htlc-info-cleaner")
 
   context.system.eventStream.subscribe(self, classOf[PaymentSent])
   context.system.eventStream.subscribe(self, classOf[PaymentFailed])
   context.system.eventStream.subscribe(self, classOf[PaymentReceived])
   context.system.eventStream.subscribe(self, classOf[PaymentRelayed])
+  context.system.eventStream.subscribe(self, classOf[ChannelLiquidityPurchased])
   context.system.eventStream.subscribe(self, classOf[TransactionPublished])
   context.system.eventStream.subscribe(self, classOf[TransactionConfirmed])
   context.system.eventStream.subscribe(self, classOf[ChannelErrorOccurred])
@@ -84,14 +91,21 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
         case ChannelPaymentRelayed(_, _, _, fromChannelId, toChannelId, _, _) =>
           channelsDb.updateChannelMeta(fromChannelId, ChannelEvent.EventType.PaymentReceived)
           channelsDb.updateChannelMeta(toChannelId, ChannelEvent.EventType.PaymentSent)
+        case OnTheFlyFundingPaymentRelayed(_, incoming, outgoing) =>
+          incoming.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentReceived))
+          outgoing.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentSent))
       }
       auditDb.add(e)
+
+    case e: ChannelLiquidityPurchased => liquidityDb.addPurchase(e)
 
     case e: TransactionPublished =>
       log.info(s"paying mining fee=${e.miningFee} for txid=${e.tx.txid} desc=${e.desc}")
       auditDb.add(e)
 
-    case e: TransactionConfirmed => auditDb.add(e)
+    case e: TransactionConfirmed =>
+      liquidityDb.setConfirmed(e.remoteNodeId, e.tx.txid)
+      auditDb.add(e)
 
     case e: ChannelErrorOccurred =>
       // first pattern matching level is to ignore some errors, second level is to separate between different kind of errors
@@ -111,7 +125,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
         case ChannelStateChanged(_, channelId, _, remoteNodeId, WAIT_FOR_CHANNEL_READY | WAIT_FOR_DUAL_FUNDING_READY, NORMAL, Some(commitments)) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Created).increment()
           val event = ChannelEvent.EventType.Created
-          auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.latest.capacity, commitments.params.localParams.isInitiator, !commitments.announceChannel, event))
+          auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.latest.capacity, commitments.params.localParams.isChannelOpener, !commitments.announceChannel, event))
           channelsDb.updateChannelMeta(channelId, event)
         case ChannelStateChanged(_, _, _, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
         case ChannelStateChanged(_, channelId, _, _, OFFLINE, SYNCING, _) =>
@@ -125,7 +139,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
       ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closed).increment()
       val event = ChannelEvent.EventType.Closed(e.closingType)
       val capacity = e.commitments.latest.capacity
-      auditDb.add(ChannelEvent(e.channelId, e.commitments.params.remoteParams.nodeId, capacity, e.commitments.params.localParams.isInitiator, !e.commitments.announceChannel, event))
+      auditDb.add(ChannelEvent(e.channelId, e.commitments.params.remoteParams.nodeId, capacity, e.commitments.params.localParams.isChannelOpener, !e.commitments.announceChannel, event))
       channelsDb.updateChannelMeta(e.channelId, event)
 
     case u: ChannelUpdateParametersChanged =>
@@ -153,7 +167,7 @@ object DbEventHandler {
   def props(nodeParams: NodeParams): Props = Props(new DbEventHandler(nodeParams))
 
   // @formatter:off
-  case class ChannelEvent(channelId: ByteVector32, remoteNodeId: PublicKey, capacity: Satoshi, isInitiator: Boolean, isPrivate: Boolean, event: ChannelEvent.EventType)
+  case class ChannelEvent(channelId: ByteVector32, remoteNodeId: PublicKey, capacity: Satoshi, isChannelOpener: Boolean, isPrivate: Boolean, event: ChannelEvent.EventType)
   object ChannelEvent {
     sealed trait EventType { def label: String }
     object EventType {

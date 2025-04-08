@@ -19,6 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.CMD_FAIL_HTLC
+import fr.acinq.eclair.wire.protocol.FailureReason
 import kamon.Kamon
 
 object Monitoring {
@@ -34,6 +35,7 @@ object Monitoring {
     val SentPaymentDuration = Kamon.timer("payment.duration.sent", "Outgoing payment duration")
     val ReceivedPaymentDuration = Kamon.timer("payment.duration.received", "Incoming payment duration")
     val RelayedPaymentDuration = Kamon.timer("payment.duration.relayed", "Duration of pending downstream HTLCs during a relay")
+    val SuspiciousFromFutureHtlcRelays = Kamon.gauge("payment.on-the-fly-funding.suspicious-htlc-relays", "Number of pending on-the-fly HTLCs that are being rejected by seemingly malicious peers")
 
     // The goal of this metric is to measure whether retrying MPP payments on failing channels yields useful results.
     // Once enough data has been collected, we will update the MultiPartPaymentLifecycle logic accordingly.
@@ -67,6 +69,10 @@ object Monitoring {
       PaymentNodeOutAmount.withoutTags().record(bucket, amount.truncateToSatoshi.toLong)
       PaymentNodeOut.withoutTags().record(bucket)
     }
+
+    private val RelayConfidence = Kamon.histogram("payment.relay.confidence", "Confidence (in percent) that the relayed HTLC will be fulfilled")
+    def relayFulfill(confidence: Double) = RelayConfidence.withTag("status", "fulfill").record((confidence * 100).toLong)
+    def relayFail(confidence: Double) = RelayConfidence.withTag("status", "fail").record((confidence * 100).toLong)
   }
 
   object Tags {
@@ -96,10 +102,12 @@ object Monitoring {
     object RelayType {
       val Channel = "channel"
       val Trampoline = "trampoline"
+      val OnTheFly = "on-the-fly"
 
       def apply(e: PaymentRelayed): String = e match {
         case _: ChannelPaymentRelayed => Channel
         case _: TrampolinePaymentRelayed => Trampoline
+        case _: OnTheFlyFundingPaymentRelayed => OnTheFly
       }
     }
 
@@ -115,18 +123,19 @@ object Monitoring {
     val Failure = "failure"
 
     object FailureType {
+      val WakeUp = "WakeUp"
       val Remote = "Remote"
       val Malformed = "MalformedHtlc"
 
       def apply(cmdFail: CMD_FAIL_HTLC): String = cmdFail.reason match {
-        case Left(_) => Remote
-        case Right(f) => f.getClass.getSimpleName
+        case _: FailureReason.EncryptedDownstreamFailure => Remote
+        case FailureReason.LocalFailure(f) => f.getClass.getSimpleName
       }
 
       def apply(pf: PaymentFailure): String = pf match {
         case LocalFailure(_, _, t) => t.getClass.getSimpleName
         case RemoteFailure(_, _, e) => e.failureMessage.getClass.getSimpleName
-        case UnreadableRemoteFailure(_, _) => "UnreadableRemoteFailure"
+        case _: UnreadableRemoteFailure => "UnreadableRemoteFailure"
       }
     }
 

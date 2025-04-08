@@ -44,13 +44,15 @@ sealed trait InteractiveTxConstructionMessage extends InteractiveTxMessage // <-
 sealed trait HtlcMessage extends LightningMessage
 sealed trait RoutingMessage extends LightningMessage
 sealed trait AnnouncementMessage extends RoutingMessage // <- not in the spec
+sealed trait OnTheFlyFundingMessage extends LightningMessage { def paymentHash: ByteVector32 }
+sealed trait OnTheFlyFundingFailureMessage extends OnTheFlyFundingMessage { def id: ByteVector32 }
 sealed trait HasTimestamp extends LightningMessage { def timestamp: TimestampSecond }
 sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChannelId: ByteVector32 } // <- not in the spec
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
 sealed trait HasChainHash extends LightningMessage { def chainHash: BlockHash } // <- not in the spec
 sealed trait HasSerialId extends LightningMessage { def serialId: UInt64 } // <- not in the spec
-sealed trait ForbiddenMessageDuringSplice extends LightningMessage // <- not in the spec
-sealed trait UpdateMessage extends HtlcMessage with ForbiddenMessageDuringSplice // <- not in the spec
+sealed trait ForbiddenMessageWhenQuiescent extends LightningMessage // <- not in the spec
+sealed trait UpdateMessage extends HtlcMessage with ForbiddenMessageWhenQuiescent // <- not in the spec
 sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- not in the spec
 sealed trait HtlcFailureMessage extends HtlcSettlementMessage // <- not in the spec
 // @formatter:on
@@ -58,6 +60,7 @@ sealed trait HtlcFailureMessage extends HtlcSettlementMessage // <- not in the s
 case class Init(features: Features[InitFeature], tlvStream: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
   val networks = tlvStream.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
   val remoteAddress_opt = tlvStream.get[InitTlv.RemoteAddress].map(_.address)
+  val fundingRates_opt = tlvStream.get[InitTlv.OptionWillFund].map(_.rates)
 }
 
 case class Warning(channelId: ByteVector32, data: ByteVector, tlvStream: TlvStream[WarningTlv] = TlvStream.empty) extends SetupMessage with HasChannelId {
@@ -133,21 +136,36 @@ case class TxInitRbf(channelId: ByteVector32,
                      feerate: FeeratePerKw,
                      tlvStream: TlvStream[TxInitRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
   val fundingContribution: Satoshi = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount).getOrElse(0 sat)
+  val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val requestFunding_opt: Option[LiquidityAds.RequestFunding] = tlvStream.get[ChannelTlv.RequestFundingTlv].map(_.request)
 }
 
 object TxInitRbf {
-  def apply(channelId: ByteVector32, lockTime: Long, feerate: FeeratePerKw, fundingContribution: Satoshi): TxInitRbf =
-    TxInitRbf(channelId, lockTime, feerate, TlvStream[TxInitRbfTlv](TxRbfTlv.SharedOutputContributionTlv(fundingContribution)))
+  def apply(channelId: ByteVector32, lockTime: Long, feerate: FeeratePerKw, fundingContribution: Satoshi, requireConfirmedInputs: Boolean, requestFunding_opt: Option[LiquidityAds.RequestFunding]): TxInitRbf = {
+    val tlvs: Set[TxInitRbfTlv] = Set(
+      Some(TxRbfTlv.SharedOutputContributionTlv(fundingContribution)),
+      if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+      requestFunding_opt.map(ChannelTlv.RequestFundingTlv)
+    ).flatten
+    TxInitRbf(channelId, lockTime, feerate, TlvStream(tlvs))
+  }
 }
 
-case class TxAckRbf(channelId: ByteVector32,
-                    tlvStream: TlvStream[TxAckRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
+case class TxAckRbf(channelId: ByteVector32, tlvStream: TlvStream[TxAckRbfTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
   val fundingContribution: Satoshi = tlvStream.get[TxRbfTlv.SharedOutputContributionTlv].map(_.amount).getOrElse(0 sat)
+  val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val willFund_opt: Option[LiquidityAds.WillFund] = tlvStream.get[ChannelTlv.ProvideFundingTlv].map(_.willFund)
 }
 
 object TxAckRbf {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi): TxAckRbf =
-    TxAckRbf(channelId, TlvStream[TxAckRbfTlv](TxRbfTlv.SharedOutputContributionTlv(fundingContribution)))
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund]): TxAckRbf = {
+    val tlvs: Set[TxAckRbfTlv] = Set(
+      Some(TxRbfTlv.SharedOutputContributionTlv(fundingContribution)),
+      if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+      willFund_opt.map(ChannelTlv.ProvideFundingTlv)
+    ).flatten
+    TxAckRbf(channelId, TlvStream(tlvs))
+  }
 }
 
 case class TxAbort(channelId: ByteVector32,
@@ -167,6 +185,8 @@ case class ChannelReestablish(channelId: ByteVector32,
                               myCurrentPerCommitmentPoint: PublicKey,
                               tlvStream: TlvStream[ChannelReestablishTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val nextFundingTxId_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].map(_.txId)
+  val myCurrentFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.MyCurrentFundingLockedTlv].map(_.txId)
+  val yourLastFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.YourLastFundingLockedTlv].map(_.txId)
 }
 
 case class OpenChannel(chainHash: BlockHash,
@@ -235,6 +255,9 @@ case class OpenDualFundedChannel(chainHash: BlockHash,
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val requestFunding_opt: Option[LiquidityAds.RequestFunding] = tlvStream.get[ChannelTlv.RequestFundingTlv].map(_.request)
+  val usesOnTheFlyFunding: Boolean = requestFunding_opt.exists(_.paymentDetails.paymentType.isInstanceOf[LiquidityAds.OnTheFlyFundingPaymentType])
+  val useFeeCredit_opt: Option[MilliSatoshi] = tlvStream.get[ChannelTlv.UseFeeCredit].map(_.amount)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
 
@@ -258,6 +281,7 @@ case class AcceptDualFundedChannel(temporaryChannelId: ByteVector32,
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val willFund_opt: Option[LiquidityAds.WillFund] = tlvStream.get[ChannelTlv.ProvideFundingTlv].map(_.willFund)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
 
@@ -286,14 +310,18 @@ case class SpliceInit(channelId: ByteVector32,
                       fundingPubKey: PublicKey,
                       tlvStream: TlvStream[SpliceInitTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val requestFunding_opt: Option[LiquidityAds.RequestFunding] = tlvStream.get[ChannelTlv.RequestFundingTlv].map(_.request)
+  val usesOnTheFlyFunding: Boolean = requestFunding_opt.exists(_.paymentDetails.paymentType.isInstanceOf[LiquidityAds.OnTheFlyFundingPaymentType])
+  val useFeeCredit_opt: Option[MilliSatoshi] = tlvStream.get[ChannelTlv.UseFeeCredit].map(_.amount)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
 
 object SpliceInit {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean): SpliceInit = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, requestFunding_opt: Option[LiquidityAds.RequestFunding]): SpliceInit = {
     val tlvs: Set[SpliceInitTlv] = Set(
-      Some(ChannelTlv.PushAmountTlv(pushAmount)),
+      if (pushAmount > 0.msat) Some(ChannelTlv.PushAmountTlv(pushAmount)) else None,
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+      requestFunding_opt.map(ChannelTlv.RequestFundingTlv)
     ).flatten
     SpliceInit(channelId, fundingContribution, feerate, lockTime, fundingPubKey, TlvStream(tlvs))
   }
@@ -304,14 +332,17 @@ case class SpliceAck(channelId: ByteVector32,
                      fundingPubKey: PublicKey,
                      tlvStream: TlvStream[SpliceAckTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
+  val willFund_opt: Option[LiquidityAds.WillFund] = tlvStream.get[ChannelTlv.ProvideFundingTlv].map(_.willFund)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
 }
 
 object SpliceAck {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean): SpliceAck = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund], feeCreditUsed_opt: Option[MilliSatoshi]): SpliceAck = {
     val tlvs: Set[SpliceAckTlv] = Set(
-      Some(ChannelTlv.PushAmountTlv(pushAmount)),
+      if (pushAmount > 0.msat) Some(ChannelTlv.PushAmountTlv(pushAmount)) else None,
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
+      willFund_opt.map(ChannelTlv.ProvideFundingTlv),
+      feeCreditUsed_opt.map(ChannelTlv.FeeCreditUsedTlv),
     ).flatten
     SpliceAck(channelId, fundingContribution, fundingPubKey, TlvStream(tlvs))
   }
@@ -324,13 +355,25 @@ case class SpliceLocked(channelId: ByteVector32,
 
 case class Shutdown(channelId: ByteVector32,
                     scriptPubKey: ByteVector,
-                    tlvStream: TlvStream[ShutdownTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId with ForbiddenMessageDuringSplice
+                    tlvStream: TlvStream[ShutdownTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId with ForbiddenMessageWhenQuiescent
 
 case class ClosingSigned(channelId: ByteVector32,
                          feeSatoshis: Satoshi,
                          signature: ByteVector64,
                          tlvStream: TlvStream[ClosingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val feeRange_opt = tlvStream.get[ClosingSignedTlv.FeeRange]
+}
+
+case class ClosingComplete(channelId: ByteVector32, closerScriptPubKey: ByteVector, closeeScriptPubKey: ByteVector, fees: Satoshi, lockTime: Long, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val closerOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserOutputOnly].map(_.sig)
+  val closeeOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloseeOutputOnly].map(_.sig)
+  val closerAndCloseeOutputsSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserAndCloseeOutputs].map(_.sig)
+}
+
+case class ClosingSig(channelId: ByteVector32, closerScriptPubKey: ByteVector, closeeScriptPubKey: ByteVector, fees: Satoshi, lockTime: Long, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val closerOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserOutputOnly].map(_.sig)
+  val closeeOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloseeOutputOnly].map(_.sig)
+  val closerAndCloseeOutputsSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserAndCloseeOutputs].map(_.sig)
 }
 
 case class UpdateAddHtlc(channelId: ByteVector32,
@@ -340,7 +383,13 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          cltvExpiry: CltvExpiry,
                          onionRoutingPacket: OnionRoutingPacket,
                          tlvStream: TlvStream[UpdateAddHtlcTlv]) extends HtlcMessage with UpdateMessage with HasChannelId {
-  val blinding_opt: Option[PublicKey] = tlvStream.get[UpdateAddHtlcTlv.BlindingPoint].map(_.publicKey)
+  val pathKey_opt: Option[PublicKey] = tlvStream.get[UpdateAddHtlcTlv.PathKey].map(_.publicKey)
+  val fundingFee_opt: Option[LiquidityAds.FundingFee] = tlvStream.get[UpdateAddHtlcTlv.FundingFeeTlv].map(_.fee)
+
+  val endorsement: Int = tlvStream.get[UpdateAddHtlcTlv.Endorsement].map(_.level).getOrElse(0)
+
+  /** When storing in our DB, we avoid wasting storage with unknown data. */
+  def removeUnknownTlvs(): UpdateAddHtlc = this.copy(tlvStream = tlvStream.copy(unknown = Set.empty))
 }
 
 object UpdateAddHtlc {
@@ -350,8 +399,14 @@ object UpdateAddHtlc {
             paymentHash: ByteVector32,
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
-            blinding_opt: Option[PublicKey]): UpdateAddHtlc = {
-    val tlvs = blinding_opt.map(UpdateAddHtlcTlv.BlindingPoint).toSet[UpdateAddHtlcTlv]
+            pathKey_opt: Option[PublicKey],
+            confidence: Double,
+            fundingFee_opt: Option[LiquidityAds.FundingFee]): UpdateAddHtlc = {
+    val tlvs = Set(
+      pathKey_opt.map(UpdateAddHtlcTlv.PathKey),
+      fundingFee_opt.map(UpdateAddHtlcTlv.FundingFeeTlv),
+      Some(UpdateAddHtlcTlv.Endorsement((confidence * 7.999).toInt)),
+    ).flatten[UpdateAddHtlcTlv]
     UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, TlvStream(tlvs))
   }
 }
@@ -450,7 +505,11 @@ object NodeAddress {
 }
 
 object IPAddress {
-  def apply(inetAddress: InetAddress, port: Int): IPAddress = inetAddress match {
+  def apply(inetAddress: InetAddress, port: Int): IPAddress = (inetAddress: @unchecked) match {
+    // we need the @unchecked annotation to suppress a "matching not exhaustive". Before JDK21, InetAddress was a regular class so scalac would not check anything (it only checks sealed patterns)
+    // with JDK21 InetAddress is defined as `public sealed class InetAddress implements Serializable permits Inet4Address, Inet6Address` and scalac complains because in theory there could be
+    // an InetAddress() instance, though it is not possible in practice because the constructor is package private :(
+    // remove @unchecked if we upgrade to a newer JDK that does not have this pb, or if scalac pattern matching becomes more clever
     case address: Inet4Address => IPv4(address, port)
     case address: Inet6Address => IPv6(address, port)
   }
@@ -464,6 +523,8 @@ case class Tor3(tor3: String, port: Int) extends OnionAddress { override def hos
 case class DnsHostname(dnsHostname: String, port: Int) extends IPAddress {override def host: String = dnsHostname}
 // @formatter:on
 
+case class NodeInfo(features: Features[InitFeature], address_opt: Option[NodeAddress])
+
 case class NodeAnnouncement(signature: ByteVector64,
                             features: Features[Feature],
                             timestamp: TimestampSecond,
@@ -472,14 +533,13 @@ case class NodeAnnouncement(signature: ByteVector64,
                             alias: String,
                             addresses: List[NodeAddress],
                             tlvStream: TlvStream[NodeAnnouncementTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp {
-
+  val fundingRates_opt = tlvStream.get[NodeAnnouncementTlv.OptionWillFund].map(_.rates)
   val validAddresses: List[NodeAddress] = {
     // if port is equal to 0, SHOULD ignore ipv6_addr OR ipv4_addr OR hostname; SHOULD ignore Tor v2 onion services.
     val validAddresses = addresses.filter(address => address.port != 0 || address.isInstanceOf[Tor3]).filterNot(address => address.isInstanceOf[Tor2])
     // if more than one type 5 address is announced, SHOULD ignore the additional data.
     validAddresses.filter(!_.isInstanceOf[DnsHostname]) ++ validAddresses.find(_.isInstanceOf[DnsHostname])
   }
-
   val shouldRebroadcast: Boolean = {
     // if more than one type 5 address is announced, MUST not forward the node_announcement.
     addresses.count(address => address.isInstanceOf[DnsHostname]) <= 1
@@ -560,7 +620,11 @@ object ReplyChannelRange {
 
 case class GossipTimestampFilter(chainHash: BlockHash, firstTimestamp: TimestampSecond, timestampRange: Long, tlvStream: TlvStream[GossipTimestampFilterTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash
 
-case class OnionMessage(blindingKey: PublicKey, onionRoutingPacket: OnionRoutingPacket, tlvStream: TlvStream[OnionMessageTlv] = TlvStream.empty) extends LightningMessage
+case class OnionMessage(pathKey: PublicKey, onionRoutingPacket: OnionRoutingPacket, tlvStream: TlvStream[OnionMessageTlv] = TlvStream.empty) extends LightningMessage
+
+case class PeerStorageStore(blob: ByteVector, tlvStream: TlvStream[PeerStorageTlv] = TlvStream.empty) extends SetupMessage
+
+case class PeerStorageRetrieval(blob: ByteVector, tlvStream: TlvStream[PeerStorageTlv] = TlvStream.empty) extends SetupMessage
 
 // NB: blank lines to minimize merge conflicts
 
@@ -579,5 +643,73 @@ case class OnionMessage(blindingKey: PublicKey, onionRoutingPacket: OnionRouting
 //
 
 //
+
+/**
+ * This message informs our peers of the feerates we recommend using.
+ * We may reject funding attempts that use values that are too far from our recommended feerates.
+ */
+case class RecommendedFeerates(chainHash: BlockHash, fundingFeerate: FeeratePerKw, commitmentFeerate: FeeratePerKw, tlvStream: TlvStream[RecommendedFeeratesTlv] = TlvStream.empty) extends SetupMessage with HasChainHash {
+  val minFundingFeerate: FeeratePerKw = tlvStream.get[RecommendedFeeratesTlv.FundingFeerateRange].map(_.min).getOrElse(fundingFeerate)
+  val maxFundingFeerate: FeeratePerKw = tlvStream.get[RecommendedFeeratesTlv.FundingFeerateRange].map(_.max).getOrElse(fundingFeerate)
+  val minCommitmentFeerate: FeeratePerKw = tlvStream.get[RecommendedFeeratesTlv.CommitmentFeerateRange].map(_.min).getOrElse(commitmentFeerate)
+  val maxCommitmentFeerate: FeeratePerKw = tlvStream.get[RecommendedFeeratesTlv.CommitmentFeerateRange].map(_.max).getOrElse(commitmentFeerate)
+}
+
+/**
+ * This message is sent when an HTLC couldn't be relayed to our node because we don't have enough inbound liquidity.
+ * This allows us to treat it as an incoming payment, and request on-the-fly liquidity accordingly if we wish to receive that payment.
+ * If we accept the payment, we will send an [[OpenDualFundedChannel]] or [[SpliceInit]] message containing [[ChannelTlv.RequestFundingTlv]].
+ * Our peer will then provide the requested funding liquidity and will relay the corresponding HTLC(s) afterwards.
+ */
+case class WillAddHtlc(chainHash: BlockHash,
+                       id: ByteVector32,
+                       amount: MilliSatoshi,
+                       paymentHash: ByteVector32,
+                       expiry: CltvExpiry,
+                       finalPacket: OnionRoutingPacket,
+                       tlvStream: TlvStream[WillAddHtlcTlv] = TlvStream.empty) extends OnTheFlyFundingMessage {
+  val pathKey_opt: Option[PublicKey] = tlvStream.get[WillAddHtlcTlv.PathKey].map(_.publicKey)
+}
+
+object WillAddHtlc {
+  def apply(chainHash: BlockHash,
+            id: ByteVector32,
+            amount: MilliSatoshi,
+            paymentHash: ByteVector32,
+            expiry: CltvExpiry,
+            finalPacket: OnionRoutingPacket,
+            pathKey_opt: Option[PublicKey]): WillAddHtlc = {
+    val tlvs = pathKey_opt.map(WillAddHtlcTlv.PathKey).toSet[WillAddHtlcTlv]
+    WillAddHtlc(chainHash, id, amount, paymentHash, expiry, finalPacket, TlvStream(tlvs))
+  }
+}
+
+/** This message is similar to [[UpdateFailHtlc]], but for [[WillAddHtlc]]. */
+case class WillFailHtlc(id: ByteVector32, paymentHash: ByteVector32, reason: ByteVector) extends OnTheFlyFundingFailureMessage
+
+/** This message is similar to [[UpdateFailMalformedHtlc]], but for [[WillAddHtlc]]. */
+case class WillFailMalformedHtlc(id: ByteVector32, paymentHash: ByteVector32, onionHash: ByteVector32, failureCode: Int) extends OnTheFlyFundingFailureMessage
+
+/**
+ * This message is sent in response to an [[OpenDualFundedChannel]] or [[SpliceInit]] message containing an invalid [[LiquidityAds.RequestFunding]].
+ * The receiver must consider the funding attempt failed when receiving this message.
+ */
+case class CancelOnTheFlyFunding(channelId: ByteVector32, paymentHashes: List[ByteVector32], reason: ByteVector) extends LightningMessage with HasChannelId {
+  def toAscii: String = if (isAsciiPrintable(reason)) new String(reason.toArray, StandardCharsets.US_ASCII) else "n/a"
+}
+
+object CancelOnTheFlyFunding {
+  def apply(channelId: ByteVector32, paymentHashes: List[ByteVector32], reason: String): CancelOnTheFlyFunding = CancelOnTheFlyFunding(channelId, paymentHashes, ByteVector.view(reason.getBytes(Charsets.US_ASCII)))
+}
+
+/**
+ * This message is used to reveal the preimage of a small payment for which it isn't economical to perform an on-chain
+ * transaction. The amount of the payment will be added to our fee credit, which can be used when a future on-chain
+ * transaction is needed. This message requires the [[Features.FundingFeeCredit]] feature.
+ */
+case class AddFeeCredit(chainHash: BlockHash, preimage: ByteVector32) extends HasChainHash
+
+/** This message contains our current fee credit: the liquidity provider is the source of truth for that value. */
+case class CurrentFeeCredit(chainHash: BlockHash, amount: MilliSatoshi) extends HasChainHash
 
 case class UnknownMessage(tag: Int, data: ByteVector) extends LightningMessage

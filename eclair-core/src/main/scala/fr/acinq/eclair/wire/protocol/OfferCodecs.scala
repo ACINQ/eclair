@@ -17,12 +17,13 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.BlockHash
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedHop, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequestChain, InvoiceRequestPayerNote, InvoiceRequestQuantity, _}
+import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
-import fr.acinq.eclair.{TimestampSecond, UInt64}
-import scodec.{Attempt, Codec, Err}
+import fr.acinq.eclair.{EncodedNodeId, TimestampSecond, UInt64}
+import scodec.Codec
 import scodec.codecs._
 
 object OfferCodecs {
@@ -40,34 +41,34 @@ object OfferCodecs {
 
   private val offerAbsoluteExpiry: Codec[OfferAbsoluteExpiry] = tlvField(tu64overflow.as[TimestampSecond])
 
-  private val blindedNodeCodec: Codec[BlindedNode] =
+  /** A 32-bytes codec for public keys where the first byte is set manually. */
+  private def tweakFirstByteCodec(prefix: Byte): Codec[PublicKey] = catchAllCodec(bytes(32).xmap(b => PublicKey(prefix +: b), _.value.drop(1)))
+
+  // The first byte encodes what type of identifier is used.
+  val encodedNodeIdCodec: Codec[EncodedNodeId] = discriminated[EncodedNodeId].by(uint8)
+    // If the first byte is 0x00 or 0x01, we're using a shortChannelId and a direction to identify the node.
+    .subcaseP(0x00) { case e: EncodedNodeId.ShortChannelIdDir if e.isNode1 => e }(realshortchannelid.xmap(EncodedNodeId.ShortChannelIdDir(true, _), _.scid))
+    .subcaseP(0x01) { case e: EncodedNodeId.ShortChannelIdDir if !e.isNode1 => e }(realshortchannelid.xmap(EncodedNodeId.ShortChannelIdDir(false, _), _.scid))
+    // If the first byte is 0x02 or 0x03, this is a standard public key.
+    .subcaseP(0x02) { case e: EncodedNodeId.WithPublicKey.Plain if e.publicKey.value.head == 0x02 => e }(tweakFirstByteCodec(2).xmap[EncodedNodeId.WithPublicKey.Plain](EncodedNodeId.WithPublicKey.Plain, _.publicKey))
+    .subcaseP(0x03) { case e: EncodedNodeId.WithPublicKey.Plain if e.publicKey.value.head == 0x03 => e }(tweakFirstByteCodec(3).xmap[EncodedNodeId.WithPublicKey.Plain](EncodedNodeId.WithPublicKey.Plain, _.publicKey))
+    // If the first byte is 0x04 or 0x05, this is a public key for a wallet node: we need to tweak back that first byte
+    // to be 0x02 or 0x03 to obtain a valid public key.
+    .subcaseP(0x04) { case e: EncodedNodeId.WithPublicKey.Wallet if e.publicKey.value.head == 0x02 => e }(tweakFirstByteCodec(2).xmap[EncodedNodeId.WithPublicKey.Wallet](EncodedNodeId.WithPublicKey.Wallet, _.publicKey))
+    .subcaseP(0x05) { case e: EncodedNodeId.WithPublicKey.Wallet if e.publicKey.value.head == 0x03 => e }(tweakFirstByteCodec(3).xmap[EncodedNodeId.WithPublicKey.Wallet](EncodedNodeId.WithPublicKey.Wallet, _.publicKey))
+
+  private val blindedNodeCodec: Codec[BlindedHop] =
     (("nodeId" | publicKey) ::
-      ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
+      ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedHop]
 
-  private val blindedNodesCodec: Codec[Seq[BlindedNode]] = listOfN(uint8, blindedNodeCodec).xmap(_.toSeq, _.toList)
+  private val blindedNodesCodec: Codec[Seq[BlindedHop]] = listOfN(uint8, blindedNodeCodec).xmap(_.toSeq, _.toList)
 
-  private val blindedPathCodec: Codec[BlindedPath] =
-    (("firstNodeId" | publicKey) ::
-      ("blinding" | publicKey) ::
-      ("path" | blindedNodesCodec)).as[BlindedRoute].as[BlindedPath]
+  val blindedRouteCodec: Codec[BlindedRoute] =
+    (("firstNodeId" | encodedNodeIdCodec) ::
+      ("firstPathKey" | publicKey) ::
+      ("path" | blindedNodesCodec)).as[BlindedRoute]
 
-  private val isNode1: Codec[Boolean] = uint8.narrow(
-    n => if (n == 0) Attempt.Successful(true) else if (n == 1) Attempt.Successful(false) else Attempt.Failure(new Err.MatchingDiscriminatorNotFound(n)),
-    b => if (b) 0 else 1
-  )
-
-  private val shortChannelIdDirCodec: Codec[ShortChannelIdDir] =
-    (("isNode1" | isNode1) ::
-      ("scid" | realshortchannelid)).as[ShortChannelIdDir]
-
-  private val compactBlindedPathCodec: Codec[CompactBlindedPath] =
-    (("introductionNode" | shortChannelIdDirCodec) ::
-      ("blinding" | publicKey) ::
-      ("path" | blindedNodesCodec)).as[CompactBlindedPath]
-
-  val pathCodec: Codec[BlindedContactInfo] = choice(compactBlindedPathCodec.upcast[BlindedContactInfo], blindedPathCodec.upcast[BlindedContactInfo])
-
-  private val offerPaths: Codec[OfferPaths] = tlvField(list(pathCodec).xmap[Seq[BlindedContactInfo]](_.toSeq, _.toList))
+  private val offerPaths: Codec[OfferPaths] = tlvField(list(blindedRouteCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList))
 
   private val offerIssuer: Codec[OfferIssuer] = tlvField(utf8)
 
@@ -75,7 +76,7 @@ object OfferCodecs {
 
   private val offerNodeId: Codec[OfferNodeId] = tlvField(publicKey)
 
-  val offerTlvCodec: Codec[TlvStream[OfferTlv]] = TlvCodecs.tlvStream[OfferTlv](discriminated[OfferTlv].by(varint)
+  val offerTlvCodec: Codec[TlvStream[OfferTlv]] = catchAllCodec(TlvCodecs.tlvStream[OfferTlv](discriminated[OfferTlv].by(varint)
     .typecase(UInt64(2), offerChains)
     .typecase(UInt64(4), offerMetadata)
     .typecase(UInt64(6), offerCurrency)
@@ -87,7 +88,7 @@ object OfferCodecs {
     .typecase(UInt64(18), offerIssuer)
     .typecase(UInt64(20), offerQuantityMax)
     .typecase(UInt64(22), offerNodeId)
-  ).complete
+  ).complete)
 
   private val invoiceRequestMetadata: Codec[InvoiceRequestMetadata] = tlvField(bytes)
 
@@ -105,7 +106,7 @@ object OfferCodecs {
 
   private val signature: Codec[Signature] = tlvField(bytes64)
 
-  val invoiceRequestTlvCodec: Codec[TlvStream[InvoiceRequestTlv]] = TlvCodecs.tlvStream[InvoiceRequestTlv](discriminated[InvoiceRequestTlv].by(varint)
+  val invoiceRequestTlvCodec: Codec[TlvStream[InvoiceRequestTlv]] = catchAllCodec(TlvCodecs.tlvStream[InvoiceRequestTlv](discriminated[InvoiceRequestTlv].by(varint)
     .typecase(UInt64(0), invoiceRequestMetadata)
     // Offer part that must be copy-pasted from above
     .typecase(UInt64(2), offerChains)
@@ -127,11 +128,11 @@ object OfferCodecs {
     .typecase(UInt64(88), invoiceRequestPayerId)
     .typecase(UInt64(89), invoiceRequestPayerNote)
     .typecase(UInt64(240), signature)
-  ).complete
+  ).complete)
 
-  private val invoicePaths: Codec[InvoicePaths] = tlvField(list(pathCodec).xmap[Seq[BlindedContactInfo]](_.toSeq, _.toList))
+  private val invoicePaths: Codec[InvoicePaths] = tlvField(list(blindedRouteCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList))
 
-  private val paymentInfo: Codec[PaymentInfo] =
+  val paymentInfo: Codec[PaymentInfo] =
     (("fee_base_msat" | millisatoshi32) ::
       ("fee_proportional_millionths" | uint32) ::
       ("cltv_expiry_delta" | cltvExpiryDelta) ::
@@ -157,7 +158,7 @@ object OfferCodecs {
 
   private val invoiceNodeId: Codec[InvoiceNodeId] = tlvField(publicKey)
 
-  val invoiceTlvCodec: Codec[TlvStream[InvoiceTlv]] = TlvCodecs.tlvStream[InvoiceTlv](discriminated[InvoiceTlv].by(varint)
+  val invoiceTlvCodec: Codec[TlvStream[InvoiceTlv]] = catchAllCodec(TlvCodecs.tlvStream[InvoiceTlv](discriminated[InvoiceTlv].by(varint)
     // Invoice request part that must be copy-pasted from above
     .typecase(UInt64(0), invoiceRequestMetadata)
     .typecase(UInt64(2), offerChains)
@@ -188,13 +189,13 @@ object OfferCodecs {
     .typecase(UInt64(174), invoiceFeatures)
     .typecase(UInt64(176), invoiceNodeId)
     .typecase(UInt64(240), signature)
-  ).complete
+  ).complete)
 
-  val invoiceErrorTlvCodec: Codec[TlvStream[InvoiceErrorTlv]] = TlvCodecs.tlvStream[InvoiceErrorTlv](discriminated[InvoiceErrorTlv].by(varint)
+  private val invoiceErrorTlvCodec: Codec[TlvStream[InvoiceErrorTlv]] = catchAllCodec(TlvCodecs.tlvStream[InvoiceErrorTlv](discriminated[InvoiceErrorTlv].by(varint)
     .typecase(UInt64(1), tlvField(tu64overflow.as[ErroneousField]))
     .typecase(UInt64(3), tlvField(bytes.as[SuggestedValue]))
     .typecase(UInt64(5), tlvField(utf8.as[Error]))
-  ).complete
+  ).complete)
 
   val invoiceRequestCodec: Codec[OnionMessagePayloadTlv.InvoiceRequest] = tlvField(invoiceRequestTlvCodec)
   val invoiceCodec: Codec[OnionMessagePayloadTlv.Invoice] = tlvField(invoiceTlvCodec)

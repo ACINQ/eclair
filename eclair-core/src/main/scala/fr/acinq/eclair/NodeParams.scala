@@ -18,24 +18,27 @@ package fr.acinq.eclair
 
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{BalanceThreshold, ChannelConf, UnhandledExceptionStrategy}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelType, ChannelTypes}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayChannelsOnly, RelayPolicy}
-import fr.acinq.eclair.io.PeerConnection
+import fr.acinq.eclair.io.{PeerConnection, PeerReadyNotifier}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
+import fr.acinq.eclair.payment.offer.OffersConfig
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Announcements.AddressException
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentWeightRatios}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf}
+import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf, Router}
 import fr.acinq.eclair.tor.Socks5ProxyParams
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -57,14 +60,13 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       onChainKeyManager_opt: Option[OnChainKeyManager],
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockHeight: AtomicLong,
-                      private val feerates: AtomicReference[FeeratesPerKw],
+                      private val bitcoinCoreFeerates: AtomicReference[FeeratesPerKw],
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
                       torAddress_opt: Option[NodeAddress],
                       features: Features[Feature],
                       private val overrideInitFeatures: Map[PublicKey, Features[InitFeature]],
-                      syncWhitelist: Set[PublicKey],
                       pluginParams: Seq[PluginParams],
                       channelConf: ChannelConf,
                       onChainFeeConf: OnChainFeeConf,
@@ -86,7 +88,13 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       blockchainWatchdogThreshold: Int,
                       blockchainWatchdogSources: Seq[String],
                       onionMessageConfig: OnionMessageConfig,
-                      purgeInvoicesInterval: Option[FiniteDuration]) {
+                      purgeInvoicesInterval: Option[FiniteDuration],
+                      revokedHtlcInfoCleanerConfig: RevokedHtlcInfoCleaner.Config,
+                      liquidityAdsConfig: LiquidityAds.Config,
+                      peerWakeUpConfig: PeerReadyNotifier.WakeUpConfig,
+                      onTheFlyFundingConfig: OnTheFlyFunding.Config,
+                      peerStorageConfig: PeerStorageConfig,
+                      offersConfig: OffersConfig) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -99,13 +107,38 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   def currentBlockHeight: BlockHeight = BlockHeight(blockHeight.get)
 
-  def currentFeerates: FeeratesPerKw = feerates.get()
+  def currentBitcoinCoreFeerates: FeeratesPerKw = bitcoinCoreFeerates.get()
+
+  def currentFeeratesForFundingClosing: FeeratesPerKw = currentBitcoinCoreFeerates
 
   /** Only to be used in tests. */
-  def setFeerates(value: FeeratesPerKw): Unit = feerates.set(value)
+  def setBitcoinCoreFeerates(value: FeeratesPerKw): Unit = bitcoinCoreFeerates.set(value)
 
   /** Returns the features that should be used in our init message with the given peer. */
   def initFeaturesFor(nodeId: PublicKey): Features[InitFeature] = overrideInitFeatures.getOrElse(nodeId, features).initFeatures()
+
+  /** Returns the feerates we'd like our peer to use when funding channels. */
+  def recommendedFeerates(remoteNodeId: PublicKey, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): RecommendedFeerates = {
+    // Independently of target and tolerance ratios, our transactions must be publishable in our local mempool
+    val minimumFeerate = currentBitcoinCoreFeerates.minimum
+    val feerateTolerance = onChainFeeConf.feerateToleranceFor(remoteNodeId)
+    val fundingFeerate = onChainFeeConf.getFundingFeerate(currentFeeratesForFundingClosing)
+    val fundingRange = RecommendedFeeratesTlv.FundingFeerateRange(
+      min = (fundingFeerate * feerateTolerance.ratioLow).max(minimumFeerate),
+      max = (fundingFeerate * feerateTolerance.ratioHigh).max(minimumFeerate),
+    )
+    // We use the most likely commitment format, even though there is no guarantee that this is the one that will be used.
+    val commitmentFormat = ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, announceChannel = false).commitmentFormat
+    val commitmentFeerate = onChainFeeConf.getCommitmentFeerate(currentBitcoinCoreFeerates, remoteNodeId, commitmentFormat, channelConf.minFundingPrivateSatoshis)
+    val commitmentRange = RecommendedFeeratesTlv.CommitmentFeerateRange(
+      min = (commitmentFeerate * feerateTolerance.ratioLow).max(minimumFeerate),
+      max = (commitmentFormat match {
+        case Transactions.DefaultCommitmentFormat => commitmentFeerate * feerateTolerance.ratioHigh
+        case _: Transactions.AnchorOutputsCommitmentFormat => (commitmentFeerate * feerateTolerance.ratioHigh).max(feerateTolerance.anchorOutputMaxCommitFeerate)
+      }).max(minimumFeerate),
+    )
+    RecommendedFeerates(chainHash, fundingFeerate, commitmentFeerate, TlvStream(fundingRange, commitmentRange))
+  }
 }
 
 case class PaymentFinalExpiryConf(min: CltvExpiryDelta, max: CltvExpiryDelta) {
@@ -124,6 +157,18 @@ case class PaymentFinalExpiryConf(min: CltvExpiryDelta, max: CltvExpiryDelta) {
       max
     }
     (minFinalExpiryDelta + additionalDelta).toCltvExpiry(currentBlockHeight)
+  }
+}
+
+/**
+ * @param writeDelay       delay before writing the peer's data to disk, which avoids doing multiple writes during bursts of storage updates.
+ * @param removalDelay     we keep our peer's data in our DB even after closing all of our channels with them, up to this duration.
+ * @param cleanUpFrequency frequency at which we go through the DB to remove unused storage.
+ */
+case class PeerStorageConfig(writeDelay: FiniteDuration, removalDelay: FiniteDuration, cleanUpFrequency: FiniteDuration) {
+  // NB: we don't use the arguments here, but they can be used in feature branches to override the default value.
+  def getWriteDelay(nodeId: PublicKey, remoteFeatures_opt: Option[Features[InitFeature]]): FiniteDuration = {
+    writeDelay
   }
 }
 
@@ -186,7 +231,9 @@ object NodeParams extends Logging {
 
   private val chain2Hash: Map[String, BlockHash] = Map(
     "regtest" -> Block.RegtestGenesisBlock.hash,
-    "testnet" -> Block.TestnetGenesisBlock.hash,
+    "testnet" -> Block.Testnet3GenesisBlock.hash,
+    "testnet3" -> Block.Testnet3GenesisBlock.hash,
+    "testnet4" -> Block.Testnet4GenesisBlock.hash,
     "signet" -> Block.SignetGenesisBlock.hash,
     "mainnet" -> Block.LivenetGenesisBlock.hash
   )
@@ -214,7 +261,7 @@ object NodeParams extends Logging {
 
   def makeNodeParams(config: Config, instanceId: UUID,
                      nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager, onChainKeyManager_opt: Option[OnChainKeyManager],
-                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, feerates: AtomicReference[FeeratesPerKw],
+                     torAddress_opt: Option[NodeAddress], database: Databases, blockHeight: AtomicLong, bitcoinCoreFeerates: AtomicReference[FeeratesPerKw],
                      pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
@@ -275,9 +322,12 @@ object NodeParams extends Logging {
       "channel.min-funding-satoshis" -> "channel.min-public-funding-satoshis, channel.min-private-funding-satoshis",
       // v0.8.0
       "bitcoind.batch-requests" -> "bitcoind.batch-watcher-requests",
-      // vx.x.x
+      // v0.9.0
       "on-chain-fees.target-blocks.safe-utxos-threshold" -> "on-chain-fees.safe-utxos-threshold",
-      "on-chain-fees.target-blocks" -> "on-chain-fees.confirmation-priority"
+      "on-chain-fees.target-blocks" -> "on-chain-fees.confirmation-priority",
+      // v0.12.0
+      "channel.mindepth-blocks" -> "channel.min-depth-blocks",
+      "sync-whitelist" -> "router.sync.whitelist",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -319,6 +369,7 @@ object NodeParams extends Logging {
     require(fulfillSafetyBeforeTimeout * 2 < expiryDelta, "channel.fulfill-safety-before-timeout-blocks must be smaller than channel.expiry-delta-blocks / 2 because it effectively reduces that delta; if you want to increase this value, you may want to increase expiry-delta-blocks as well")
     val minFinalExpiryDelta = CltvExpiryDelta(config.getInt("channel.min-final-expiry-delta-blocks"))
     require(minFinalExpiryDelta > fulfillSafetyBeforeTimeout, "channel.min-final-expiry-delta-blocks must be strictly greater than channel.fulfill-safety-before-timeout-blocks; otherwise it may lead to undesired channel closure")
+    require(config.getInt("channel.min-depth-blocks") >= 6, "channel.min-depth-blocks must be at least 6 to ensure that channels are safe from reorgs, otherwise funds can be stolen")
 
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
@@ -371,8 +422,6 @@ object NodeParams extends Logging {
       p -> (f.copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature)): Features[InitFeature])
     }.toMap
 
-    val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
-
     val socksProxy_opt = parseSocks5ProxyParams(config)
 
     val publicTorAddress_opt = if (config.getBoolean("tor.publish-onion-address")) torAddress_opt else None
@@ -411,20 +460,20 @@ object NodeParams extends Logging {
         maxFeeFlat = Satoshi(config.getLong("boundaries.max-fee-flat-sat")).toMilliSatoshi,
         maxFeeProportional = config.getDouble("boundaries.max-fee-proportional-percent") / 100.0),
       heuristics = if (config.getBoolean("use-ratios")) {
-        Left(WeightRatios(
+        PaymentWeightRatios(
           baseFactor = config.getDouble("ratios.base"),
           cltvDeltaFactor = config.getDouble("ratios.cltv"),
           ageFactor = config.getDouble("ratios.channel-age"),
           capacityFactor = config.getDouble("ratios.channel-capacity"),
-          hopCost = getRelayFees(config.getConfig("hop-cost")),
-        ))
+          hopFees = getRelayFees(config.getConfig("hop-cost")),
+        )
       } else {
-        Right(HeuristicsConstants(
+        HeuristicsConstants(
           lockedFundsRisk = config.getDouble("locked-funds-risk"),
-          failureCost = getRelayFees(config.getConfig("failure-cost")),
-          hopCost = getRelayFees(config.getConfig("hop-cost")),
+          failureFees = getRelayFees(config.getConfig("failure-cost")),
+          hopFees = getRelayFees(config.getConfig("hop-cost")),
           useLogProbability = config.getBoolean("use-log-probability"),
-        ))
+        )
       },
       mpp = MultiPartParams(
         Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
@@ -443,7 +492,7 @@ object NodeParams extends Logging {
       val ratioBase = config.getDouble("ratios.base")
       val ratioAge = config.getDouble("ratios.channel-age")
       val ratioCapacity = config.getDouble("ratios.channel-capacity")
-      MessageRouteParams(maxRouteLength, Graph.MessagePath.WeightRatios(ratioBase, ratioAge, ratioCapacity))
+      MessageRouteParams(maxRouteLength, Graph.MessageWeightRatios(ratioBase, ratioAge, ratioCapacity))
     }
 
     val unhandledExceptionStrategy = config.getString("channel.unhandled-exception-strategy") match {
@@ -475,13 +524,43 @@ object NodeParams extends Logging {
     val maxNoChannels = config.getInt("peer-connection.max-no-channels")
     require(maxNoChannels > 0, "peer-connection.max-no-channels must be > 0")
 
+    val willFundRates_opt = {
+      val supportedPaymentTypes = Map(
+        LiquidityAds.PaymentType.FromChannelBalance.rfcName -> LiquidityAds.PaymentType.FromChannelBalance,
+        LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc.rfcName -> LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc,
+        LiquidityAds.PaymentType.FromFutureHtlc.rfcName -> LiquidityAds.PaymentType.FromFutureHtlc,
+        LiquidityAds.PaymentType.FromFutureHtlcWithPreimage.rfcName -> LiquidityAds.PaymentType.FromFutureHtlcWithPreimage,
+      )
+      val paymentTypes: Set[LiquidityAds.PaymentType] = config.getStringList("liquidity-ads.payment-types").asScala.map(s => {
+        supportedPaymentTypes.get(s) match {
+          case Some(paymentType) => paymentType
+          case None => throw new IllegalArgumentException(s"unknown liquidity ads payment type: $s")
+        }
+      }).toSet
+      val fundingRates: List[LiquidityAds.FundingRate] = config.getConfigList("liquidity-ads.funding-rates").asScala.map { r =>
+        LiquidityAds.FundingRate(
+          minAmount = r.getLong("min-funding-amount-satoshis").sat,
+          maxAmount = r.getLong("max-funding-amount-satoshis").sat,
+          fundingWeight = r.getInt("funding-weight"),
+          feeBase = r.getLong("fee-base-satoshis").sat,
+          feeProportional = r.getInt("fee-basis-points"),
+          channelCreationFee = r.getLong("channel-creation-fee-satoshis").sat,
+        )
+      }.toList
+      if (fundingRates.nonEmpty && paymentTypes.nonEmpty) {
+        Some(LiquidityAds.WillFundRates(fundingRates, paymentTypes))
+      } else {
+        None
+      }
+    }
+
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
       onChainKeyManager_opt = onChainKeyManager_opt,
       instanceId = instanceId,
       blockHeight = blockHeight,
-      feerates = feerates,
+      bitcoinCoreFeerates = bitcoinCoreFeerates,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
@@ -489,7 +568,6 @@ object NodeParams extends Logging {
       features = coreAndPluginFeatures,
       pluginParams = pluginParams,
       overrideInitFeatures = overrideInitFeatures,
-      syncWhitelist = syncWhitelist,
       channelConf = ChannelConf(
         channelFlags = channelFlags,
         dustLimit = dustLimitSatoshis,
@@ -504,7 +582,7 @@ object NodeParams extends Logging {
         minFundingPrivateSatoshis = Satoshi(config.getLong("channel.min-private-funding-satoshis")),
         toRemoteDelay = offeredCLTV,
         maxToLocalDelay = maxToLocalCLTV,
-        minDepthBlocks = config.getInt("channel.mindepth-blocks"),
+        minDepth = config.getInt("channel.min-depth-blocks"),
         expiryDelta = expiryDelta,
         maxExpiryDelta = maxExpiryDelta,
         fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
@@ -512,6 +590,7 @@ object NodeParams extends Logging {
         maxRestartWatchDelay = FiniteDuration(config.getDuration("channel.max-restart-watch-delay").getSeconds, TimeUnit.SECONDS),
         maxBlockProcessingDelay = FiniteDuration(config.getDuration("channel.max-block-processing-delay").getSeconds, TimeUnit.SECONDS),
         maxTxPublishRetryDelay = FiniteDuration(config.getDuration("channel.max-tx-publish-retry-delay").getSeconds, TimeUnit.SECONDS),
+        scanPreviousBlocksDepth = config.getInt("channel.scan-previous-blocks-depth"),
         maxChannelSpentRescanBlocks = config.getInt("channel.max-channel-spent-rescan-blocks"),
         unhandledExceptionStrategy = unhandledExceptionStrategy,
         revocationTimeout = FiniteDuration(config.getDuration("channel.revocation-timeout").getSeconds, TimeUnit.SECONDS),
@@ -519,15 +598,18 @@ object NodeParams extends Logging {
         channelOpenerWhitelist = channelOpenerWhitelist,
         maxPendingChannelsPerPeer = maxPendingChannelsPerPeer,
         maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes,
+        channelFundingTimeout = FiniteDuration(config.getDuration("channel.funding.timeout").getSeconds, TimeUnit.SECONDS),
         remoteRbfLimits = Channel.RemoteRbfLimits(config.getInt("channel.funding.remote-rbf-limits.max-attempts"), config.getInt("channel.funding.remote-rbf-limits.attempt-delta-blocks")),
         quiescenceTimeout = FiniteDuration(config.getDuration("channel.quiescence-timeout").getSeconds, TimeUnit.SECONDS),
         balanceThresholds = config.getConfigList("channel.channel-update.balance-thresholds").asScala.map(conf => BalanceThreshold(Satoshi(conf.getLong("available-sat")), Satoshi(conf.getLong("max-htlc-sat")))).toSeq,
         minTimeBetweenUpdates = FiniteDuration(config.getDuration("channel.channel-update.min-time-between-updates").getSeconds, TimeUnit.SECONDS),
+        acceptIncomingStaticRemoteKeyChannels = config.getBoolean("channel.accept-incoming-static-remote-key-channels")
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
         safeUtxosThreshold = config.getInt("on-chain-fees.safe-utxos-threshold"),
         spendAnchorWithoutHtlcs = config.getBoolean("on-chain-fees.spend-anchor-without-htlcs"),
+        anchorWithoutHtlcsMaxFee = Satoshi(config.getLong("on-chain-fees.anchor-without-htlcs-max-fee-satoshis")),
         closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),
         updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio"),
         defaultFeerateTolerance = FeerateTolerance(
@@ -583,10 +665,14 @@ object NodeParams extends Logging {
         watchSpentWindow = watchSpentWindow,
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
-        requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
-        encodingType = EncodingType.UNCOMPRESSED,
-        channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
-        channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
+        syncConf = Router.SyncConf(
+          requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
+          encodingType = EncodingType.UNCOMPRESSED,
+          channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
+          channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
+          peerLimit = config.getInt("router.sync.peer-limit"),
+          whitelist = config.getStringList("router.sync.whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
+        ),
         pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments")),
         messageRouteParams = getMessageRouteParams(config.getConfig("router.message-path-finding")),
         balanceEstimateHalfLife = FiniteDuration(config.getDuration("router.balance-estimate-half-life").getSeconds, TimeUnit.SECONDS),
@@ -605,7 +691,30 @@ object NodeParams extends Logging {
         timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
         maxAttempts = config.getInt("onion-messages.max-attempts"),
       ),
-      purgeInvoicesInterval = purgeInvoicesInterval
+      purgeInvoicesInterval = purgeInvoicesInterval,
+      revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(
+        batchSize = config.getInt("db.revoked-htlc-info-cleaner.batch-size"),
+        interval = FiniteDuration(config.getDuration("db.revoked-htlc-info-cleaner.interval").getSeconds, TimeUnit.SECONDS)
+      ),
+      liquidityAdsConfig = LiquidityAds.Config(rates_opt = willFundRates_opt, lockUtxos = config.getBoolean("liquidity-ads.lock-utxos-during-funding")),
+      peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(
+        enabled = config.getBoolean("peer-wake-up.enabled"),
+        timeout = FiniteDuration(config.getDuration("peer-wake-up.timeout").getSeconds, TimeUnit.SECONDS),
+      ),
+      onTheFlyFundingConfig = OnTheFlyFunding.Config(
+        proposalTimeout = FiniteDuration(config.getDuration("on-the-fly-funding.proposal-timeout").getSeconds, TimeUnit.SECONDS),
+      ),
+      peerStorageConfig = PeerStorageConfig(
+        writeDelay = FiniteDuration(config.getDuration("peer-storage.write-delay").getSeconds, TimeUnit.SECONDS),
+        removalDelay = FiniteDuration(config.getDuration("peer-storage.removal-delay").getSeconds, TimeUnit.SECONDS),
+        cleanUpFrequency = FiniteDuration(config.getDuration("peer-storage.cleanup-frequency").getSeconds, TimeUnit.SECONDS),
+      ),
+      offersConfig = OffersConfig(
+        messagePathMinLength = config.getInt("offers.message-path-min-length"),
+        paymentPathCount = config.getInt("offers.payment-path-count"),
+        paymentPathLength = config.getInt("offers.payment-path-length"),
+        paymentPathCltvExpiryDelta = CltvExpiryDelta(config.getInt("offers.payment-path-expiry-delta")),
+      )
     )
   }
 }

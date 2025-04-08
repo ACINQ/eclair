@@ -19,6 +19,7 @@ package fr.acinq.eclair.blockchain.bitcoind
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
+import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.blockchain.Monitoring.Metrics
 import fr.acinq.eclair.blockchain._
@@ -30,7 +31,7 @@ import fr.acinq.eclair.{BlockHeight, KamonExt, NodeParams, RealShortChannelId, T
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Random, Success}
 
 /**
  * Created by PM on 21/02/2016.
@@ -59,10 +60,16 @@ object ZmqWatcher {
   private case object TickNewBlock extends Command
   private case object TickBlockTimeout extends Command
   private case class GetBlockCountFailed(t: Throwable) extends Command
+  private case class GetBlockIdFailed(blockHeight: BlockHeight, t: Throwable) extends Command
+  private case class GetBlockFailed(blockId: BlockId, t: Throwable) extends Command
   private case class CheckBlockHeight(current: BlockHeight) extends Command
   private case class PublishBlockHeight(current: BlockHeight) extends Command
   private case class ProcessNewBlock(blockId: BlockId) extends Command
   private case class ProcessNewTransaction(tx: Transaction) extends Command
+  private case class AnalyzeLastBlock(remaining: Int) extends Command
+  private case class AnalyzeBlockId(blockId: BlockId, remaining: Int) extends Command
+  private case class AnalyzeBlock(block: Block, remaining: Int) extends Command
+  private case class SetWatchHint(w: GenericWatch, hint: WatchHint) extends Command
 
   final case class ValidateRequest(replyTo: ActorRef[ValidateResult], ann: ChannelAnnouncement) extends Command
   final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
@@ -103,20 +110,6 @@ object ZmqWatcher {
     def hints: Set[TxId]
   }
 
-  /**
-   * Watch for the first transaction spending the given outpoint. We assume that txid is already confirmed or in the
-   * mempool (i.e. the outpoint exists).
-   *
-   * NB: an event will be triggered only once when we see a transaction that spends the given outpoint. If you want to
-   * react to the transaction spending the outpoint, you should use [[WatchSpent]] instead.
-   */
-  sealed trait WatchSpentBasic[T <: WatchSpentBasicTriggered] extends Watch[T] {
-    /** TxId of the outpoint to watch. */
-    def txId: TxId
-    /** Index of the outpoint to watch. */
-    def outputIndex: Int
-  }
-
   /** This event is sent when a [[WatchConfirmed]] condition is met. */
   sealed trait WatchConfirmedTriggered extends WatchTriggered {
     /** Block in which the transaction was confirmed. */
@@ -133,17 +126,15 @@ object ZmqWatcher {
     def spendingTx: Transaction
   }
 
-  /** This event is sent when a [[WatchSpentBasic]] condition is met. */
-  sealed trait WatchSpentBasicTriggered extends WatchTriggered
-
-  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: TxId, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpentBasic[WatchExternalChannelSpentTriggered]
-  case class WatchExternalChannelSpentTriggered(shortChannelId: RealShortChannelId) extends WatchSpentBasicTriggered
+  case class WatchExternalChannelSpent(replyTo: ActorRef[WatchExternalChannelSpentTriggered], txId: TxId, outputIndex: Int, shortChannelId: RealShortChannelId) extends WatchSpent[WatchExternalChannelSpentTriggered] { override def hints: Set[TxId] = Set.empty }
+  case class WatchExternalChannelSpentTriggered(shortChannelId: RealShortChannelId, spendingTx: Transaction) extends WatchSpentTriggered
+  case class UnwatchExternalChannelSpent(txId: TxId, outputIndex: Int) extends Command
 
   case class WatchFundingSpent(replyTo: ActorRef[WatchFundingSpentTriggered], txId: TxId, outputIndex: Int, hints: Set[TxId]) extends WatchSpent[WatchFundingSpentTriggered]
   case class WatchFundingSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
 
-  case class WatchOutputSpent(replyTo: ActorRef[WatchOutputSpentTriggered], txId: TxId, outputIndex: Int, hints: Set[TxId]) extends WatchSpent[WatchOutputSpentTriggered]
-  case class WatchOutputSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
+  case class WatchOutputSpent(replyTo: ActorRef[WatchOutputSpentTriggered], txId: TxId, outputIndex: Int, amount: Satoshi, hints: Set[TxId]) extends WatchSpent[WatchOutputSpentTriggered]
+  case class WatchOutputSpentTriggered(amount: Satoshi, spendingTx: Transaction) extends WatchSpentTriggered
 
   /** Waiting for a wallet transaction to be published guarantees that bitcoind won't double-spend it in the future, unless we explicitly call abandontransaction. */
   case class WatchPublished(replyTo: ActorRef[WatchPublishedTriggered], txId: TxId) extends Watch[WatchPublishedTriggered]
@@ -152,10 +143,8 @@ object ZmqWatcher {
   case class WatchFundingConfirmed(replyTo: ActorRef[WatchFundingConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchFundingConfirmedTriggered]
   case class WatchFundingConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class WatchFundingDeeplyBuried(replyTo: ActorRef[WatchFundingDeeplyBuriedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchFundingDeeplyBuriedTriggered]
-  case class WatchFundingDeeplyBuriedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
-
-  case class WatchTxConfirmed(replyTo: ActorRef[WatchTxConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchTxConfirmedTriggered]
+  case class RelativeDelay(parentTxId: TxId, delay: Long)
+  case class WatchTxConfirmed(replyTo: ActorRef[WatchTxConfirmedTriggered], txId: TxId, minDepth: Long, delay_opt: Option[RelativeDelay] = None) extends WatchConfirmed[WatchTxConfirmedTriggered]
   case class WatchTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
   case class WatchParentTxConfirmed(replyTo: ActorRef[WatchParentTxConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchParentTxConfirmedTriggered]
@@ -167,6 +156,16 @@ object ZmqWatcher {
   private sealed trait AddWatchResult
   private case object Keep extends AddWatchResult
   private case object Ignore extends AddWatchResult
+
+  /** Stop watching confirmations for a given transaction: must be used to stop watching obsolete RBF attempts. */
+  case class UnwatchTxConfirmed(txId: TxId) extends Command
+
+  sealed trait WatchHint
+  /**
+   * In some cases we don't need to check watches every time a block is found and only need to check again after we
+   * reach a specific block height. This is for example the case for transactions with a CSV delay.
+   */
+  private case class CheckAfterBlock(blockHeight: BlockHeight) extends WatchHint
   // @formatter:on
 
   def apply(nodeParams: NodeParams, blockCount: AtomicLong, client: BitcoinCoreClient): Behavior[Command] =
@@ -178,14 +177,13 @@ object ZmqWatcher {
         timers.startSingleTimer(TickNewBlock, 1 second)
         // we start a timer in case we don't receive ZMQ block events
         timers.startSingleTimer(TickBlockTimeout, blockTimeout)
-        new ZmqWatcher(nodeParams, blockCount, client, context, timers).watching(Set.empty[GenericWatch], Map.empty[OutPoint, Set[GenericWatch]])
+        new ZmqWatcher(nodeParams, blockCount, client, context, timers).watching(Map.empty[GenericWatch, Option[WatchHint]], Map.empty[OutPoint, Set[GenericWatch]], Nil)
       }
     }
 
   private def utxo(w: GenericWatch): Option[OutPoint] = {
     w match {
       case w: WatchSpent[_] => Some(OutPoint(w.txId, w.outputIndex))
-      case w: WatchSpentBasic[_] => Some(OutPoint(w.txId, w.outputIndex))
       case _ => None
     }
   }
@@ -224,7 +222,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
 
   private val watchdog = context.spawn(Behaviors.supervise(BlockchainWatchdog(nodeParams, 150 seconds)).onFailure(SupervisorStrategy.resume), "blockchain-watchdog")
 
-  private def watching(watches: Set[GenericWatch], watchedUtxos: Map[OutPoint, Set[GenericWatch]]): Behavior[Command] = {
+  private def watching(watches: Map[GenericWatch, Option[WatchHint]], watchedUtxos: Map[OutPoint, Set[GenericWatch]], analyzedBlocks: Seq[BlockId]): Behavior[Command] = {
     Behaviors.receiveMessage {
       case ProcessNewTransaction(tx) =>
         log.debug("analyzing txid={} tx={}", tx.txid, tx)
@@ -233,13 +231,13 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
           .flatMap(watchedUtxos.get)
           .flatten
           .foreach {
-            case w: WatchExternalChannelSpent => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId))
+            case w: WatchExternalChannelSpent => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId, tx))
             case w: WatchFundingSpent => context.self ! TriggerEvent(w.replyTo, w, WatchFundingSpentTriggered(tx))
-            case w: WatchOutputSpent => context.self ! TriggerEvent(w.replyTo, w, WatchOutputSpentTriggered(tx))
+            case w: WatchOutputSpent => context.self ! TriggerEvent(w.replyTo, w, WatchOutputSpentTriggered(w.amount, tx))
             case _: WatchPublished => // nothing to do
             case _: WatchConfirmed[_] => // nothing to do
           }
-        watches.collect {
+        watches.keySet.collect {
           case w: WatchPublished if w.txId == tx.txid => context.self ! TriggerEvent(w.replyTo, w, WatchPublishedTriggered(tx))
         }
         Behaviors.same
@@ -253,6 +251,35 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         timers.startSingleTimer(TickNewBlock, 2 seconds)
         Behaviors.same
 
+      case AnalyzeLastBlock(remaining) =>
+        val currentBlockHeight = blockHeight.get().toInt
+        context.pipeToSelf(client.getBlockId(currentBlockHeight)) {
+          case Failure(f) => GetBlockIdFailed(BlockHeight(currentBlockHeight), f)
+          case Success(blockId) => AnalyzeBlockId(blockId, remaining)
+        }
+        Behaviors.same
+
+      case AnalyzeBlockId(blockId, remaining) =>
+        if (analyzedBlocks.contains(blockId)) {
+          log.debug("blockId={} has already been analyzed, we can skip it", blockId)
+        } else if (remaining > 0) {
+          context.pipeToSelf(client.getBlock(blockId)) {
+            case Failure(f) => GetBlockFailed(blockId, f)
+            case Success(block) => AnalyzeBlock(block, remaining)
+          }
+        }
+        Behaviors.same
+
+      case AnalyzeBlock(block, remaining) =>
+        // We analyze every transaction in that block to see if one of our watches is triggered.
+        block.tx.forEach(tx => context.self ! ProcessNewTransaction(KotlinUtils.kmp2scala(tx)))
+        // We keep analyzing previous blocks in this chain.
+        context.self ! AnalyzeBlockId(BlockId(KotlinUtils.kmp2scala(block.header.hashPreviousBlock)), remaining - 1)
+        // We update our list of analyzed blocks, while ensuring that it doesn't grow unbounded.
+        val maxCacheSize = nodeParams.channelConf.scanPreviousBlocksDepth * 3
+        val analyzedBlocks1 = (KotlinUtils.kmp2scala(block.blockId) +: analyzedBlocks).take(maxCacheSize)
+        watching(watches, watchedUtxos, analyzedBlocks1)
+
       case TickBlockTimeout =>
         // we haven't received a block in a while, we check whether we're behind and restart the timer.
         timers.startSingleTimer(TickBlockTimeout, blockTimeout)
@@ -264,6 +291,15 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
 
       case GetBlockCountFailed(t) =>
         log.error("could not get block count from bitcoind", t)
+        Behaviors.same
+
+      case GetBlockIdFailed(blockHeight, t) =>
+        log.error(s"cannot get blockId for blockHeight=$blockHeight", t)
+        Behaviors.same
+
+      case GetBlockFailed(blockId, t) =>
+        // Note that this may happen if there is a reorg while we're analyzing the pre-reorg chain.
+        log.warn("cannot get block for blockId={}, a reorg may have happened: {}", blockId, t.getMessage)
         Behaviors.same
 
       case CheckBlockHeight(height) =>
@@ -279,20 +315,32 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
           case Failure(t) => GetBlockCountFailed(t)
           case Success(currentHeight) => PublishBlockHeight(currentHeight)
         }
-        // TODO: beware of the herd effect
-        KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
-          Future.sequence(watches.collect {
-            case w: WatchPublished => checkPublished(w)
-            case w: WatchConfirmed[_] => checkConfirmed(w)
-          })
-        }
         Behaviors.same
 
       case PublishBlockHeight(currentHeight) =>
         log.debug("setting blockHeight={}", currentHeight)
         blockHeight.set(currentHeight.toLong)
         context.system.eventStream ! EventStream.Publish(CurrentBlockHeight(currentHeight))
+        // TODO: should we try to mitigate the herd effect and not check all watches immediately?
+        KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
+          Future.sequence(watches.collect {
+            case (w: WatchPublished, _) => checkPublished(w)
+            case (w: WatchConfirmed[_], hint) =>
+              hint match {
+                case Some(CheckAfterBlock(delayUntilBlock)) if currentHeight < delayUntilBlock => Future.successful(())
+                case _ => checkConfirmed(w, currentHeight)
+              }
+          })
+        }
+        timers.startSingleTimer(AnalyzeLastBlock(nodeParams.channelConf.scanPreviousBlocksDepth), Random.nextLong(nodeParams.channelConf.maxBlockProcessingDelay.toMillis + 1).milliseconds)
         Behaviors.same
+
+      case SetWatchHint(w, hint) =>
+        val watches1 = watches.get(w) match {
+          case Some(_) => watches + (w -> Some(hint))
+          case None => watches
+        }
+        watching(watches1, watchedUtxos, analyzedBlocks)
 
       case TriggerEvent(replyTo, watch, event) =>
         if (watches.contains(watch)) {
@@ -304,7 +352,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
               // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
               Behaviors.same
             case _ =>
-              watching(watches - watch, removeWatchedUtxos(watchedUtxos, watch))
+              watching(watches - watch, removeWatchedUtxos(watchedUtxos, watch), analyzedBlocks)
           }
         } else {
           Behaviors.same
@@ -316,14 +364,11 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         val result = w match {
           case _ if watches.contains(w) =>
             Ignore // we ignore duplicates
-          case w: WatchSpentBasic[_] =>
-            checkSpentBasic(w)
-            Keep
           case w: WatchSpent[_] =>
             checkSpent(w)
             Keep
           case w: WatchConfirmed[_] =>
-            checkConfirmed(w)
+            checkConfirmed(w, BlockHeight(blockHeight.get()))
             Keep
           case w: WatchPublished =>
             checkPublished(w)
@@ -333,16 +378,29 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
           case Keep =>
             log.debug("adding watch {}", w)
             context.watchWith(w.replyTo, StopWatching(w.replyTo))
-            watching(watches + w, addWatchedUtxos(watchedUtxos, w))
+            watching(watches + (w -> None), addWatchedUtxos(watchedUtxos, w), analyzedBlocks)
           case Ignore =>
             Behaviors.same
         }
 
       case StopWatching(origin) =>
-        // we remove watches associated to dead actors
-        val deprecatedWatches = watches.filter(_.replyTo == origin)
+        // We remove watches associated to dead actors.
+        val deprecatedWatches = watches.keySet.filter(_.replyTo == origin)
         val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
-        watching(watches -- deprecatedWatches, watchedUtxos1)
+        watching(watches -- deprecatedWatches, watchedUtxos1, analyzedBlocks)
+
+      case UnwatchTxConfirmed(txId) =>
+        // We remove watches that match the given txId.
+        val deprecatedWatches = watches.keySet.filter {
+          case w: WatchConfirmed[_] => w.txId == txId
+          case _ => false
+        }
+        watching(watches -- deprecatedWatches, watchedUtxos, analyzedBlocks)
+
+      case UnwatchExternalChannelSpent(txId, outputIndex) =>
+        val deprecatedWatches = watches.keySet.collect { case w: WatchExternalChannelSpent if w.txId == txId && w.outputIndex == outputIndex => w }
+        val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
+        watching(watches -- deprecatedWatches, watchedUtxos1, analyzedBlocks)
 
       case ValidateRequest(replyTo, ann) =>
         client.validate(ann).map(replyTo ! _)
@@ -353,20 +411,9 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         Behaviors.same
 
       case r: ListWatches =>
-        r.replyTo ! watches
+        r.replyTo ! watches.keySet
         Behaviors.same
 
-    }
-  }
-
-  private def checkSpentBasic(w: WatchSpentBasic[_ <: WatchSpentBasicTriggered]): Future[Unit] = {
-    // NB: we assume parent tx was published, we just need to make sure this particular output has not been spent
-    client.isTransactionOutputSpendable(w.txId, w.outputIndex, includeMempool = true).collect {
-      case false =>
-        log.info(s"output=${w.txId}:${w.outputIndex} has already been spent")
-        w match {
-          case w: WatchExternalChannelSpent => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId))
-        }
     }
   }
 
@@ -414,7 +461,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
     client.getTransaction(w.txId).map(tx => context.self ! TriggerEvent(w.replyTo, w, WatchPublishedTriggered(tx)))
   }
 
-  private def checkConfirmed(w: WatchConfirmed[_ <: WatchConfirmedTriggered]): Future[Unit] = {
+  private def checkConfirmed(w: WatchConfirmed[_ <: WatchConfirmedTriggered], currentHeight: BlockHeight): Future[Unit] = {
     log.debug("checking confirmations of txid={}", w.txId)
     // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
     // matter because this only happens once, when the watched transaction has reached min_depth
@@ -424,14 +471,39 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
           client.getTransactionShortId(w.txId).map {
             case (height, index) => w match {
               case w: WatchFundingConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchFundingConfirmedTriggered(height, index, tx))
-              case w: WatchFundingDeeplyBuried => context.self ! TriggerEvent(w.replyTo, w, WatchFundingDeeplyBuriedTriggered(height, index, tx))
               case w: WatchTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchTxConfirmedTriggered(height, index, tx))
               case w: WatchParentTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchParentTxConfirmedTriggered(height, index, tx))
               case w: WatchAlternativeCommitTxConfirmed => context.self ! TriggerEvent(w.replyTo, w, WatchAlternativeCommitTxConfirmedTriggered(height, index, tx))
             }
           }
         }
-      case _ => Future.successful((): Unit)
+      case Some(confirmations) =>
+        // Once the transaction is confirmed, we don't need to check again at every new block, we only need to check
+        // again once we should have reached the minimum depth to verify that there hasn't been a reorg.
+        context.self ! SetWatchHint(w, CheckAfterBlock(currentHeight + w.minDepth - confirmations))
+        Future.successful(())
+      case None =>
+        w match {
+          case WatchTxConfirmed(_, _, _, Some(relativeDelay)) =>
+            log.debug("txId={} has a relative delay of {} blocks, checking parentTxId={}", w.txId, relativeDelay.delay, relativeDelay.parentTxId)
+            // Note how we add one block to avoid an off-by-one:
+            //  - if the parent is confirmed at block P
+            //  - the CSV delay is D and the minimum depth is M
+            //  - the first block that can include the child is P + D
+            //  - the first block at which we can reach minimum depth is P + D + M
+            //  - if we are currently at block P + N, the parent has C = N + 1 confirmations
+            //  - we want to check at block P + N + D + M + 1 - C = P + N + D + M + 1 - (N + 1) = P + D + M
+            val delay = relativeDelay.delay + w.minDepth + 1
+            client.getTxConfirmations(relativeDelay.parentTxId).map(_.getOrElse(0)).collect {
+              case confirmations if confirmations < delay => context.self ! SetWatchHint(w, CheckAfterBlock(currentHeight + delay - confirmations))
+            }
+          case _ =>
+            // The transaction is unconfirmed: we don't need to check again at every new block: we can check only once
+            // every minDepth blocks, which is more efficient. If the transaction is included at the current height in
+            // a reorg, we will trigger the watch one block later than expected, but this is fine.
+            context.self ! SetWatchHint(w, CheckAfterBlock(currentHeight + w.minDepth))
+            Future.successful(())
+        }
     }
   }
 

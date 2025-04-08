@@ -4,15 +4,18 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, TxId}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db.AuditDb.PublishedTransaction
 import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.DualDatabases.runAsync
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli}
+import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{CltvExpiry, Features, InitFeature, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond}
 import grizzled.slf4j.Logging
+import scodec.bits.ByteVector
 
 import java.io.File
 import java.util.UUID
@@ -29,16 +32,13 @@ import scala.util.{Failure, Success, Try}
 case class DualDatabases(primary: Databases, secondary: Databases) extends Databases with FileBackup {
 
   override val network: NetworkDb = DualNetworkDb(primary.network, secondary.network)
-
   override val audit: AuditDb = DualAuditDb(primary.audit, secondary.audit)
-
   override val channels: ChannelsDb = DualChannelsDb(primary.channels, secondary.channels)
-
   override val peers: PeersDb = DualPeersDb(primary.peers, secondary.peers)
-
   override val payments: PaymentsDb = DualPaymentsDb(primary.payments, secondary.payments)
-
+  override val offers: OffersDb = DualOffersDb(primary.offers, secondary.offers)
   override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(primary.pendingCommands, secondary.pendingCommands)
+  override val liquidity: LiquidityDb = DualLiquidityDb(primary.liquidity, secondary.liquidity)
 
   /** if one of the database supports file backup, we use it */
   override def backup(backupFile: File): Unit = (primary, secondary) match {
@@ -175,6 +175,11 @@ case class DualAuditDb(primary: AuditDb, secondary: AuditDb) extends AuditDb {
     primary.addPathFindingExperimentMetrics(metrics)
   }
 
+  override def listPublished(channelId: ByteVector32): Seq[PublishedTransaction] = {
+    runAsync(secondary.listPublished(channelId))
+    primary.listPublished(channelId)
+  }
+
   override def listSent(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[PaymentSent] = {
     runAsync(secondary.listSent(from, to, paginated_opt))
     primary.listSent(from, to, paginated_opt)
@@ -195,9 +200,9 @@ case class DualAuditDb(primary: AuditDb, secondary: AuditDb) extends AuditDb {
     primary.listNetworkFees(from, to)
   }
 
-  override def stats(from: TimestampMilli, to: TimestampMilli): Seq[AuditDb.Stats] = {
-    runAsync(secondary.stats(from, to))
-    primary.stats(from, to)
+  override def stats(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[AuditDb.Stats] = {
+    runAsync(secondary.stats(from, to, paginated_opt))
+    primary.stats(from, to, paginated_opt)
   }
 }
 
@@ -225,6 +230,16 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
     primary.removeChannel(channelId)
   }
 
+  override def markHtlcInfosForRemoval(channelId: ByteVector32, beforeCommitIndex: Long): Unit = {
+    runAsync(secondary.markHtlcInfosForRemoval(channelId, beforeCommitIndex))
+    primary.markHtlcInfosForRemoval(channelId, beforeCommitIndex)
+  }
+
+  override def removeHtlcInfos(batchSize: Int): Unit = {
+    runAsync(secondary.removeHtlcInfos(batchSize))
+    primary.removeHtlcInfos(batchSize)
+  }
+
   override def listLocalChannels(): Seq[PersistentChannelData] = {
     runAsync(secondary.listLocalChannels())
     primary.listLocalChannels()
@@ -250,9 +265,14 @@ case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-peers").build()))
 
-  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: NodeAddress): Unit = {
-    runAsync(secondary.addOrUpdatePeer(nodeId, address))
-    primary.addOrUpdatePeer(nodeId, address)
+  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: NodeAddress, features: Features[InitFeature]): Unit = {
+    runAsync(secondary.addOrUpdatePeer(nodeId, address, features))
+    primary.addOrUpdatePeer(nodeId, address, features)
+  }
+
+  override def addOrUpdatePeerFeatures(nodeId: Crypto.PublicKey, features: Features[InitFeature]): Unit = {
+    runAsync(secondary.addOrUpdatePeerFeatures(nodeId, features))
+    primary.addOrUpdatePeerFeatures(nodeId, features)
   }
 
   override def removePeer(nodeId: Crypto.PublicKey): Unit = {
@@ -260,12 +280,12 @@ case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
     primary.removePeer(nodeId)
   }
 
-  override def getPeer(nodeId: Crypto.PublicKey): Option[NodeAddress] = {
+  override def getPeer(nodeId: Crypto.PublicKey): Option[NodeInfo] = {
     runAsync(secondary.getPeer(nodeId))
     primary.getPeer(nodeId)
   }
 
-  override def listPeers(): Map[Crypto.PublicKey, NodeAddress] = {
+  override def listPeers(): Map[Crypto.PublicKey, NodeInfo] = {
     runAsync(secondary.listPeers())
     primary.listPeers()
   }
@@ -278,6 +298,21 @@ case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
   override def getRelayFees(nodeId: Crypto.PublicKey): Option[RelayFees] = {
     runAsync(secondary.getRelayFees(nodeId))
     primary.getRelayFees(nodeId)
+  }
+
+  override def updateStorage(nodeId: PublicKey, data: ByteVector): Unit = {
+    runAsync(secondary.updateStorage(nodeId, data))
+    primary.updateStorage(nodeId, data)
+  }
+
+  override def getStorage(nodeId: PublicKey): Option[ByteVector] = {
+    runAsync(secondary.getStorage(nodeId))
+    primary.getStorage(nodeId)
+  }
+
+  override def removePeerStorage(peerRemovedBefore: TimestampSecond): Unit = {
+    runAsync(secondary.removePeerStorage(peerRemovedBefore))
+    primary.removePeerStorage(peerRemovedBefore)
   }
 }
 
@@ -371,6 +406,26 @@ case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends Pa
   }
 }
 
+case class DualOffersDb(primary: OffersDb, secondary: OffersDb) extends OffersDb {
+
+  private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-offers").build()))
+
+  override def addOffer(offer: OfferTypes.Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Unit = {
+    runAsync(secondary.addOffer(offer, pathId_opt, createdAt))
+    primary.addOffer(offer, pathId_opt, createdAt)
+  }
+
+  override def disableOffer(offer: OfferTypes.Offer, disabledAt: TimestampMilli = TimestampMilli.now()): Unit = {
+    runAsync(secondary.disableOffer(offer, disabledAt))
+    primary.disableOffer(offer, disabledAt)
+  }
+
+  override def listOffers(onlyActive: Boolean): Seq[OfferData] = {
+    runAsync(secondary.listOffers(onlyActive))
+    primary.listOffers(onlyActive)
+  }
+}
+
 case class DualPendingCommandsDb(primary: PendingCommandsDb, secondary: PendingCommandsDb) extends PendingCommandsDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-pending-commands").build()))
@@ -394,4 +449,75 @@ case class DualPendingCommandsDb(primary: PendingCommandsDb, secondary: PendingC
     runAsync(secondary.listSettlementCommands())
     primary.listSettlementCommands()
   }
+}
+
+case class DualLiquidityDb(primary: LiquidityDb, secondary: LiquidityDb) extends LiquidityDb {
+
+  private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-liquidity").build()))
+
+  override def addPurchase(liquidityPurchase: ChannelLiquidityPurchased): Unit = {
+    runAsync(secondary.addPurchase(liquidityPurchase))
+    primary.addPurchase(liquidityPurchase)
+  }
+
+  override def setConfirmed(remoteNodeId: PublicKey, txId: TxId): Unit = {
+    runAsync(secondary.setConfirmed(remoteNodeId, txId))
+    primary.setConfirmed(remoteNodeId, txId)
+  }
+
+  override def listPurchases(remoteNodeId: PublicKey): Seq[LiquidityPurchase] = {
+    runAsync(secondary.listPurchases(remoteNodeId))
+    primary.listPurchases(remoteNodeId)
+  }
+
+  override def addPendingOnTheFlyFunding(remoteNodeId: PublicKey, pending: OnTheFlyFunding.Pending): Unit = {
+    runAsync(secondary.addPendingOnTheFlyFunding(remoteNodeId, pending))
+    primary.addPendingOnTheFlyFunding(remoteNodeId, pending)
+  }
+
+  override def removePendingOnTheFlyFunding(remoteNodeId: PublicKey, paymentHash: ByteVector32): Unit = {
+    runAsync(secondary.removePendingOnTheFlyFunding(remoteNodeId, paymentHash))
+    primary.removePendingOnTheFlyFunding(remoteNodeId, paymentHash)
+  }
+
+  override def listPendingOnTheFlyFunding(remoteNodeId: PublicKey): Map[ByteVector32, OnTheFlyFunding.Pending] = {
+    runAsync(secondary.listPendingOnTheFlyFunding(remoteNodeId))
+    primary.listPendingOnTheFlyFunding(remoteNodeId)
+  }
+
+  override def listPendingOnTheFlyFunding(): Map[PublicKey, Map[ByteVector32, OnTheFlyFunding.Pending]] = {
+    runAsync(secondary.listPendingOnTheFlyFunding())
+    primary.listPendingOnTheFlyFunding()
+  }
+
+  override def listPendingOnTheFlyPayments(): Map[PublicKey, Set[ByteVector32]] = {
+    runAsync(secondary.listPendingOnTheFlyPayments())
+    primary.listPendingOnTheFlyPayments()
+  }
+
+  override def addOnTheFlyFundingPreimage(preimage: ByteVector32): Unit = {
+    runAsync(secondary.addOnTheFlyFundingPreimage(preimage))
+    primary.addOnTheFlyFundingPreimage(preimage)
+  }
+
+  override def getOnTheFlyFundingPreimage(paymentHash: ByteVector32): Option[ByteVector32] = {
+    runAsync(secondary.getOnTheFlyFundingPreimage(paymentHash))
+    primary.getOnTheFlyFundingPreimage(paymentHash)
+  }
+
+  override def addFeeCredit(nodeId: PublicKey, amount: MilliSatoshi, receivedAt: TimestampMilli): MilliSatoshi = {
+    runAsync(secondary.addFeeCredit(nodeId, amount, receivedAt))
+    primary.addFeeCredit(nodeId, amount, receivedAt)
+  }
+
+  override def getFeeCredit(nodeId: PublicKey): MilliSatoshi = {
+    runAsync(secondary.getFeeCredit(nodeId))
+    primary.getFeeCredit(nodeId)
+  }
+
+  override def removeFeeCredit(nodeId: PublicKey, amountUsed: MilliSatoshi): MilliSatoshi = {
+    runAsync(secondary.removeFeeCredit(nodeId, amountUsed))
+    primary.removeFeeCredit(nodeId, amountUsed)
+  }
+
 }

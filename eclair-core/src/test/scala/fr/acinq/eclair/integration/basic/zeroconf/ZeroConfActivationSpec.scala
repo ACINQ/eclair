@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.ZeroConf
 import fr.acinq.eclair.channel.ChannelTypes.AnchorOutputsZeroFeeHtlcTx
-import fr.acinq.eclair.channel.{ChannelDataWithCommitments, DATA_NORMAL, NORMAL, SupportedChannelType}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.integration.basic.fixtures.composite.TwoNodesFixture
 import fr.acinq.eclair.testutils.FixtureSpec
 import org.scalatest.concurrent.IntegrationPatience
@@ -46,8 +46,8 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
   private def createChannel(f: FixtureParam, channelType_opt: Option[SupportedChannelType] = None): ByteVector32 = {
     import f._
 
-    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob), confirm = false, deepConfirm = false))
-    bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob), confirm = false, deepConfirm = false))
+    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob), confirm = false))
+    bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob), confirm = false))
 
     connect(alice, bob)
     openChannel(alice, bob, 100_000 sat, channelType_opt).channelId
@@ -60,8 +60,10 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     assert(!bob.nodeParams.features.activated.contains(ZeroConf))
 
     val channelId = createChannel(f)
-    assert(!getChannelData(alice, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.params.channelFeatures.hasFeature(ZeroConf))
-    assert(!getChannelData(bob, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.params.channelFeatures.hasFeature(ZeroConf))
+    eventually {
+      assert(!getChannelData(alice, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.params.channelFeatures.hasFeature(ZeroConf))
+      assert(!getChannelData(bob, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.params.channelFeatures.hasFeature(ZeroConf))
+    }
   }
 
   test("open a channel alice-bob (zero-conf disabled on both sides, requested via channel type by alice)") { f =>

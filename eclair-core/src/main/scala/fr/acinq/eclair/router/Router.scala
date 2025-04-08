@@ -26,19 +26,19 @@ import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, Satoshi, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.payment.send.BlindedPathsResolver.ResolvedPath
 import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePath, WeightRatios}
+import fr.acinq.eclair.router.Graph.MessageWeightRatios
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
 
@@ -99,7 +99,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
     // on restart we update our node announcement
     // note that if we don't currently have public channels, this will be ignored
-    val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features.nodeAnnouncementFeatures())
+    val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features.nodeAnnouncementFeatures(), fundingRates_opt = nodeParams.liquidityAdsConfig.rates_opt)
     self ! nodeAnn
 
     log.info("initialization completed, ready to process messages")
@@ -113,7 +113,8 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       scid2PrivateChannels = Map.empty,
       excludedChannels = Map.empty,
       graphWithBalances = GraphWithBalanceEstimates(graph, nodeParams.routerConf.balanceEstimateHalfLife),
-      sync = Map.empty)
+      sync = Map.empty,
+      spentChannels = Map.empty)
     val holder = new VolatileRouterDataHolder(data)
     startWith(NORMAL, data)
     holder
@@ -141,7 +142,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       sender() ! RoutingState(d.channels.values, d.nodes.values)
       stay()
 
-    case Event(GetRoutingStateStreaming, d) =>
+    case Event(GetRoutingStateStreaming, d: Data) =>
       val listener = sender()
       d.nodes
         .values
@@ -169,7 +170,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       }))
       stay()
 
-    case Event(TickBroadcast, d) =>
+    case Event(TickBroadcast, d: Data) =>
       if (d.rebroadcast.channels.isEmpty && d.rebroadcast.updates.isEmpty && d.rebroadcast.nodes.isEmpty) {
         stay()
       } else {
@@ -178,10 +179,10 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
         stayUsing(d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty)))
       }
 
-    case Event(TickPruneStaleChannels, d) =>
+    case Event(TickPruneStaleChannels, d: Data) =>
       stayUsing(StaleChannels.handlePruneStaleChannels(d, nodeParams.db.network, nodeParams.currentBlockHeight))
 
-    case Event(ExcludeChannel(desc, duration_opt), d) =>
+    case Event(ExcludeChannel(desc, duration_opt), d: Data) =>
       log.info("excluding shortChannelId={} from nodeId={} for duration={}", desc.shortChannelId, desc.a, duration_opt.getOrElse("n/a"))
       val (excludedUntil, oldTimer) = d.excludedChannels.get(desc) match {
         case Some(ExcludedForever) => (TimestampSecond.max, None)
@@ -203,15 +204,15 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       }
       stayUsing(d.copy(excludedChannels = d.excludedChannels + (desc -> newState)))
 
-    case Event(LiftChannelExclusion(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
+    case Event(LiftChannelExclusion(desc@ChannelDesc(shortChannelId, nodeId, _)), d: Data) =>
       log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId, nodeId)
       stayUsing(d.copy(excludedChannels = d.excludedChannels - desc))
 
-    case Event(GetExcludedChannels, d) =>
+    case Event(GetExcludedChannels, d: Data) =>
       sender() ! d.excludedChannels
       stay()
 
-    case Event(GetNode(replyTo, nodeId), d) =>
+    case Event(GetNode(replyTo, nodeId), d: Data) =>
       d.nodes.get(nodeId) match {
         case Some(announcement) =>
           // This only provides a lower bound on the number of channels this peer has: disabled channels will be filtered out.
@@ -223,19 +224,19 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       }
       stay()
 
-    case Event(GetNodes, d) =>
+    case Event(GetNodes, d: Data) =>
       sender() ! d.nodes.values
       stay()
 
-    case Event(GetChannels, d) =>
+    case Event(GetChannels, d: Data) =>
       sender() ! d.channels.values.map(_.ann)
       stay()
 
-    case Event(GetChannelsMap, d) =>
+    case Event(GetChannelsMap, d: Data) =>
       sender() ! d.channels
       stay()
 
-    case Event(GetChannelUpdates, d) =>
+    case Event(GetChannelUpdates, d: Data) =>
       val updates: Iterable[ChannelUpdate] = d.channels.values.flatMap(d => d.update_1_opt ++ d.update_2_opt) ++ d.privateChannels.values.flatMap(d => d.update_1_opt ++ d.update_2_opt)
       sender() ! updates
       stay()
@@ -252,11 +253,13 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       worker ! Worker.FindRoutes(r, sender())
       stay()
 
-    case Event(r: MessageRouteRequest, _) =>
-      worker ! Worker.FindMessageRoutes(r, nodeParams.routerConf.messageRouteParams)
-      stay()
+    case Event(r: BlindedRouteRequest, d: Data) =>
+      stayUsing(RouteCalculation.handleBlindedRouteRequest(d, nodeParams.currentBlockHeight, r))
 
-    case Event(GetNodeId(replyTo, shortChannelId, isNode1), d) =>
+    case Event(r: MessageRouteRequest, d: Data) =>
+      stayUsing(RouteCalculation.handleMessageRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.messageRouteParams))
+
+    case Event(GetNodeId(replyTo, shortChannelId, isNode1), d: Data) =>
       replyTo ! d.channels.get(shortChannelId).map(channel => if (isNode1) channel.nodeId1 else channel.nodeId2)
       stay()
 
@@ -266,14 +269,23 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       log.warning("message {} for wrong chain {}, we're on {}", routingMessage, routingMessage.chainHash, nodeParams.chainHash)
       stay()
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, c: ChannelAnnouncement), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, c: ChannelAnnouncement), d: Data) =>
       stayUsing(Validation.handleChannelAnnouncement(d, watcher, RemoteGossip(peerConnection, remoteNodeId), c))
 
-    case Event(r: ValidateResult, d) =>
+    case Event(r: ValidateResult, d: Data) =>
       stayUsing(Validation.handleChannelValidationResponse(d, nodeParams, watcher, r))
 
-    case Event(WatchExternalChannelSpentTriggered(shortChannelId), d) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
-      stayUsing(Validation.handleChannelSpent(d, nodeParams.db.network, shortChannelId))
+    case Event(WatchExternalChannelSpentTriggered(shortChannelId, spendingTx), d: Data) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
+      val fundingTxId = d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)).get.fundingTxId
+      log.info("funding tx txId={} of channelId={} has been spent by txId={}: waiting for the spending tx to have enough confirmations before removing the channel from the graph", fundingTxId, shortChannelId, spendingTx.txid)
+      watcher ! WatchTxConfirmed(self, spendingTx.txid, ANNOUNCEMENTS_MINCONF * 2)
+      stayUsing(d.copy(spentChannels = d.spentChannels.updated(spendingTx.txid, d.spentChannels.getOrElse(spendingTx.txid, Set.empty) + shortChannelId)))
+
+    case Event(WatchTxConfirmedTriggered(_, _, spendingTx), d: Data) =>
+      d.spentChannels.get(spendingTx.txid) match {
+        case Some(shortChannelIds) => stayUsing(Validation.handleChannelSpent(d, watcher, nodeParams.db.network, spendingTx.txid, shortChannelIds))
+        case None => stay()
+      }
 
     case Event(n: NodeAnnouncement, d: Data) =>
       stayUsing(Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(LocalGossip), n))
@@ -299,30 +311,30 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(e: AvailableBalanceChanged, d: Data) =>
       stayUsing(Validation.handleAvailableBalanceChanged(d, e))
 
-    case Event(s: SendChannelQuery, d) =>
+    case Event(s: SendChannelQuery, d: Data) =>
       stayUsing(Sync.handleSendChannelQuery(d, s))
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d: Data) =>
       Sync.handleQueryChannelRange(d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
       stay()
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyChannelRange), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyChannelRange), d: Data) =>
       stayUsing(Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r))
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d: Data) =>
       Sync.handleQueryShortChannelIds(d.nodes, d.channels, RemoteGossip(peerConnection, remoteNodeId), q)
       stay()
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d) =>
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d: Data) =>
       stayUsing(Sync.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r))
 
-    case Event(RouteCouldRelay(route), d) =>
+    case Event(RouteCouldRelay(route), d: Data) =>
       stayUsing(d.copy(graphWithBalances = d.graphWithBalances.routeCouldRelay(route)))
 
-    case Event(RouteDidRelay(route), d) =>
+    case Event(RouteDidRelay(route), d: Data) =>
       stayUsing(d.copy(graphWithBalances = d.graphWithBalances.routeDidRelay(route)))
 
-    case Event(ChannelCouldNotRelay(amount, hop), d) =>
+    case Event(ChannelCouldNotRelay(amount, hop), d: Data) =>
       stayUsing(d.copy(graphWithBalances = d.graphWithBalances.channelCouldNotSend(hop, amount)))
   }
 
@@ -354,6 +366,9 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 }
 
 object Router {
+
+  // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
+  val ANNOUNCEMENTS_MINCONF = 6
 
   def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
@@ -400,7 +415,7 @@ object Router {
 
   case class PathFindingConf(randomize: Boolean,
                              boundaries: SearchBoundaries,
-                             heuristics: Either[WeightRatios, HeuristicsConstants],
+                             heuristics: Graph.WeightRatios[Graph.PaymentPathWeight],
                              mpp: MultiPartParams,
                              experimentName: String,
                              experimentPercentage: Int) {
@@ -414,20 +429,24 @@ object Router {
     )
   }
 
-  case class RouterConf(watchSpentWindow: FiniteDuration,
-                        channelExcludeDuration: FiniteDuration,
-                        routerBroadcastInterval: FiniteDuration,
-                        requestNodeAnnouncements: Boolean,
-                        encodingType: EncodingType,
-                        channelRangeChunkSize: Int,
-                        channelQueryChunkSize: Int,
-                        pathFindingExperimentConf: PathFindingExperimentConf,
-                        messageRouteParams: MessageRouteParams,
-                        balanceEstimateHalfLife: FiniteDuration,
-                        numberOfWorkers: Int) {
+  case class SyncConf(requestNodeAnnouncements: Boolean,
+                      encodingType: EncodingType,
+                      channelRangeChunkSize: Int,
+                      channelQueryChunkSize: Int,
+                      peerLimit: Int,
+                      whitelist: Set[PublicKey]) {
     require(channelRangeChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel range chunk size exceeds the size of a lightning message")
     require(channelQueryChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel query chunk size exceeds the size of a lightning message")
   }
+
+  case class RouterConf(watchSpentWindow: FiniteDuration,
+                        channelExcludeDuration: FiniteDuration,
+                        routerBroadcastInterval: FiniteDuration,
+                        syncConf: SyncConf,
+                        pathFindingExperimentConf: PathFindingExperimentConf,
+                        messageRouteParams: MessageRouteParams,
+                        balanceEstimateHalfLife: FiniteDuration,
+                        numberOfWorkers: Int)
 
   // @formatter:off
   case class ChannelDesc private(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey){
@@ -440,7 +459,7 @@ object Router {
     }
     def apply(u: ChannelUpdate, pc: PrivateChannel): ChannelDesc = {
       // the least significant bit tells us if it is node1 or node2
-      if (u.channelFlags.isNode1) ChannelDesc(pc.shortIds.localAlias, pc.nodeId1, pc.nodeId2) else ChannelDesc(pc.shortIds.localAlias, pc.nodeId2, pc.nodeId1)
+      if (u.channelFlags.isNode1) ChannelDesc(pc.aliases.localAlias, pc.nodeId1, pc.nodeId2) else ChannelDesc(pc.aliases.localAlias, pc.nodeId2, pc.nodeId1)
     }
   }
   case class ChannelMeta(balance1: MilliSatoshi, balance2: MilliSatoshi)
@@ -469,16 +488,16 @@ object Router {
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (u.channelFlags.isNode1) meta_opt.map(_.balance1) else meta_opt.map(_.balance2)
     def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (u.channelFlags.isNode1) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
     def updateBalances(commitments: Commitments): PublicChannel = if (commitments.localNodeId == ann.nodeId1) {
-      copy(meta_opt = Some(ChannelMeta(commitments.availableBalanceForSend, commitments.availableBalanceForReceive)))
+      copy(capacity = commitments.capacity, meta_opt = Some(ChannelMeta(commitments.availableBalanceForSend, commitments.availableBalanceForReceive)))
     } else {
-      copy(meta_opt = Some(ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend)))
+      copy(capacity = commitments.capacity, meta_opt = Some(ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend)))
     }
     def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): PublicChannel = update match {
       case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
   }
-  case class PrivateChannel(channelId: ByteVector32, shortIds: ShortIds, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
+  case class PrivateChannel(channelId: ByteVector32, aliases: ShortIdAliases, localNodeId: PublicKey, remoteNodeId: PublicKey, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta: ChannelMeta) extends KnownChannel {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(localNodeId, remoteNodeId)) (localNodeId, remoteNodeId) else (remoteNodeId, localNodeId)
     val capacity: Satoshi = (meta.balance1 + meta.balance2).truncateToSatoshi
 
@@ -495,18 +514,17 @@ object Router {
       case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
-    /** Create an invoice routing hint from that channel. Note that if the channel is private, the invoice will leak its existence. */
+    /** Create an invoice routing hint for that channel. */
     def toIncomingExtraHop: Option[Bolt11Invoice.ExtraHop] = {
-      // we want the incoming channel_update
+      // We use the incoming channel_update because we want to route to ourselves.
       val remoteUpdate_opt = if (localNodeId == nodeId1) update_2_opt else update_1_opt
-      // for incoming payments we preferably use the *remote alias*, otherwise the real scid if we have it
-      val scid_opt = shortIds.remoteAlias_opt.orElse(shortIds.real.toOption)
-      // we override the remote update's scid, because it contains either the real scid or our local alias
-      scid_opt.flatMap { scid =>
-        remoteUpdate_opt.map { remoteUpdate =>
-          Bolt11Invoice.ExtraHop(remoteNodeId, scid, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
-        }
-      }
+      // They sent us their channel update using either the real scid or our local alias (to allow us to map the update
+      // to the right channel): we need to override it with the alias *they* are using for that channel. If they didn't
+      // provide one, we won't use this channel as routing hint, because it would leak its short_channel_id.
+      for {
+        scid <- aliases.remoteAlias_opt
+        update <- remoteUpdate_opt
+      } yield Bolt11Invoice.ExtraHop(remoteNodeId, scid, update.feeBaseMsat, update.feeProportionalMillionths, update.cltvExpiryDelta)
     }
   }
   // @formatter:on
@@ -577,21 +595,30 @@ object Router {
     // @formatter:on
   }
 
+  object ChannelHop {
+    /** Create a dummy channel hop, used for example when padding blinded routes to a fixed length. */
+    def dummy(nodeId: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelHop = {
+      val dummyEdge = ExtraEdge(nodeId, nodeId, ShortChannelId.toSelf, feeBase, feeProportionalMillionths, cltvExpiryDelta, 1 msat, None)
+      ChannelHop(ShortChannelId.toSelf, nodeId, nodeId, HopRelayParams.FromHint(dummyEdge))
+    }
+  }
+
   sealed trait FinalHop extends Hop
 
   /**
    * A directed hop over a blinded route composed of multiple (blinded) channels.
    * Since a blinded route has to be used from start to end, we model it as a single virtual hop.
    *
-   * @param dummyId     dummy identifier to allow indexing in maps: unlike normal scid aliases, this one doesn't exist
-   *                    in our routing tables and should be used carefully.
-   * @param route       blinded route covered by that hop.
-   * @param paymentInfo payment information about the blinded route.
+   * @param dummyId  dummy identifier to allow indexing in maps: unlike normal scid aliases, this one doesn't exist in
+   *                 our routing tables and should be used carefully.
+   * @param resolved blinded route covered by that hop: it must be resolved to ensure that we know the node_id of the
+   *                 first node that isn't us in the blinded route.
    */
-  case class BlindedHop(dummyId: Alias, route: BlindedRoute, paymentInfo: OfferTypes.PaymentInfo) extends FinalHop {
+  case class BlindedHop(dummyId: Alias, resolved: ResolvedPath) extends FinalHop {
     // @formatter:off
-    override val nodeId = route.introductionNodeId
-    override val nextNodeId = route.blindedNodes.last.blindedPublicKey
+    override val nodeId = resolved.route.firstNodeId
+    override val nextNodeId = resolved.route.blindedNodeIds.last
+    val paymentInfo: OfferTypes.PaymentInfo = resolved.paymentInfo
     override val cltvExpiryDelta = paymentInfo.cltvExpiryDelta
     override def fee(amount: MilliSatoshi): MilliSatoshi = paymentInfo.fee(amount)
     // @formatter:on
@@ -615,7 +642,7 @@ object Router {
 
   case class RouteParams(randomize: Boolean,
                          boundaries: SearchBoundaries,
-                         heuristics: Either[WeightRatios, HeuristicsConstants],
+                         heuristics: Graph.WeightRatios[Graph.PaymentPathWeight],
                          mpp: MultiPartParams,
                          experimentName: String,
                          includeLocalChannelCost: Boolean) {
@@ -625,14 +652,13 @@ object Router {
     }
   }
 
-  case class MessageRouteParams(maxRouteLength: Int, ratios: MessagePath.WeightRatios)
+  case class MessageRouteParams(maxRouteLength: Int, ratios: MessageWeightRatios)
 
   case class Ignore(nodes: Set[PublicKey], channels: Set[ChannelDesc]) {
     // @formatter:off
     def +(ignoreNode: PublicKey): Ignore = copy(nodes = nodes + ignoreNode)
     def ++(ignoreNodes: Set[PublicKey]): Ignore = copy(nodes = nodes ++ ignoreNodes)
     def +(ignoreChannel: ChannelDesc): Ignore = copy(channels = channels + ignoreChannel)
-    def emptyNodes(): Ignore = copy(nodes = Set.empty)
     def emptyChannels(): Ignore = copy(channels = Set.empty)
     // @formatter:on
   }
@@ -641,7 +667,8 @@ object Router {
     def empty: Ignore = Ignore(Set.empty, Set.empty)
   }
 
-  case class RouteRequest(source: PublicKey,
+  case class RouteRequest(replyTo: typed.ActorRef[PaymentRouteResponse],
+                          source: PublicKey,
                           target: Recipient,
                           routeParams: RouteParams,
                           ignore: Ignore = Ignore.empty,
@@ -649,7 +676,16 @@ object Router {
                           pendingPayments: Seq[Route] = Nil,
                           paymentContext: Option[PaymentContext] = None)
 
-  case class FinalizeRoute(route: PredefinedRoute,
+  case class BlindedRouteRequest(replyTo: typed.ActorRef[PaymentRouteResponse],
+                                 source: PublicKey,
+                                 target: PublicKey,
+                                 amount: MilliSatoshi,
+                                 routeParams: RouteParams,
+                                 pathsToFind: Int,
+                                 ignore: Ignore = Ignore.empty)
+
+  case class FinalizeRoute(replyTo: typed.ActorRef[PaymentRouteResponse],
+                           route: PredefinedRoute,
                            extraEdges: Seq[ExtraEdge] = Nil,
                            paymentContext: Option[PaymentContext] = None)
 
@@ -676,16 +712,10 @@ object Router {
   case class PaymentContext(id: UUID, parentId: UUID, paymentHash: ByteVector32)
 
   case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop], finalHop_opt: Option[FinalHop]) {
-    require(hops.nonEmpty || finalHop_opt.nonEmpty, "route cannot be empty")
+    require(hops.nonEmpty, "route cannot be empty")
 
     /** Full route including the final hop, if any. */
     val fullRoute: Seq[Hop] = hops ++ finalHop_opt.toSeq
-
-    /**
-     * Fee paid for the trampoline hop, if any.
-     * Note that when using MPP to reach the trampoline node, the trampoline fee must be counted only once.
-     */
-    val trampolineFee: MilliSatoshi = finalHop_opt.collect { case hop: NodeHop => hop.fee(amount) }.getOrElse(0 msat)
 
     /**
      * Fee paid for the blinded route, if any.
@@ -716,9 +746,13 @@ object Router {
     }
   }
 
-  case class RouteResponse(routes: Seq[Route]) {
+  // @formatter:off
+  sealed trait PaymentRouteResponse
+  case class RouteResponse(routes: Seq[Route]) extends PaymentRouteResponse {
     require(routes.nonEmpty, "routes cannot be empty")
   }
+  case class PaymentRouteNotFound(error: Throwable) extends PaymentRouteResponse
+  // @formatter:on
 
   // @formatter:off
   /** A pre-defined route chosen outside of eclair (e.g. manually by a user to do some re-balancing). */
@@ -816,7 +850,8 @@ object Router {
                   scid2PrivateChannels: Map[Long, ByteVector32], // real scid or alias to channel_id, only to be used for private channels
                   excludedChannels: Map[ChannelDesc, ExcludedChannelStatus], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graphWithBalances: GraphWithBalanceEstimates,
-                  sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
+                  sync: Map[PublicKey, Syncing], // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
+                  spentChannels: Map[TxId, Set[RealShortChannelId]], // transactions that spend funding txs that are not yet deeply buried
                  ) {
     def resolve(scid: ShortChannelId): Option[KnownChannel] = {
       // let's assume this is a real scid

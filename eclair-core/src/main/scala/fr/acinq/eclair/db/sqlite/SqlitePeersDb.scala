@@ -18,21 +18,21 @@ package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.scalacompat.Crypto
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PeersDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, setVersion, using}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{Features, InitFeature, MilliSatoshi, TimestampSecond}
 import grizzled.slf4j.Logging
-import scodec.bits.BitVector
+import scodec.bits.ByteVector
 
 import java.sql.{Connection, Statement}
 
 object SqlitePeersDb {
   val DB_NAME = "peers"
-  val CURRENT_VERSION = 2
+  val CURRENT_VERSION = 4
 }
 
 class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
@@ -46,28 +46,69 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
       statement.executeUpdate("CREATE TABLE relay_fees (node_id BLOB NOT NULL PRIMARY KEY, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL)")
     }
 
+    def migration23(statement: Statement): Unit = {
+      statement.executeUpdate("CREATE TABLE peer_storage (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, last_updated_at INTEGER NOT NULL, removed_peer_at INTEGER)")
+      statement.executeUpdate("CREATE INDEX removed_peer_at_idx ON peer_storage(removed_peer_at)")
+    }
+
+    def migration34(statement: Statement): Unit = {
+      statement.executeUpdate("CREATE TABLE peers_v4 (node_id BLOB NOT NULL PRIMARY KEY, node_address BLOB, init_features BLOB)")
+      statement.executeUpdate("INSERT INTO peers_v4 (node_id, node_address, init_features) SELECT node_id, data, NULL FROM peers")
+      statement.executeUpdate("DROP TABLE peers")
+      statement.executeUpdate("ALTER TABLE peers_v4 RENAME TO peers")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
-        statement.executeUpdate("CREATE TABLE peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+        statement.executeUpdate("CREATE TABLE peers (node_id BLOB NOT NULL PRIMARY KEY, node_address BLOB, init_features BLOB)")
         statement.executeUpdate("CREATE TABLE relay_fees (node_id BLOB NOT NULL PRIMARY KEY, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL)")
-      case Some(v@1) =>
+        statement.executeUpdate("CREATE TABLE peer_storage (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, last_updated_at INTEGER NOT NULL, removed_peer_at INTEGER)")
+
+        statement.executeUpdate("CREATE INDEX removed_peer_at_idx ON peer_storage(removed_peer_at)")
+      case Some(v@(1 | 2 | 3)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-        migration12(statement)
+        if (v < 2) {
+          migration12(statement)
+        }
+        if (v < 3) {
+          migration23(statement)
+        }
+        if (v < 4) {
+          migration34(statement)
+        }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
     setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
-  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeaddress: NodeAddress): Unit = withMetrics("peers/add-or-update", DbBackends.Sqlite) {
-    val data = CommonCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
-    using(sqlite.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
-      update.setBytes(1, data)
+  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: NodeAddress, features: Features[InitFeature]): Unit = withMetrics("peers/add-or-update", DbBackends.Sqlite) {
+    val encodedFeatures = CommonCodecs.initFeaturesCodec.encode(features).require.toByteArray
+    val encodedAddress = CommonCodecs.nodeaddress.encode(address).require.toByteArray
+    using(sqlite.prepareStatement("UPDATE peers SET node_address=?, init_features=? WHERE node_id=?")) { update =>
+      update.setBytes(1, encodedAddress)
+      update.setBytes(2, encodedFeatures)
+      update.setBytes(3, nodeId.value.toArray)
+      if (update.executeUpdate() == 0) {
+        using(sqlite.prepareStatement("INSERT INTO peers VALUES (?, ?, ?)")) { statement =>
+          statement.setBytes(1, nodeId.value.toArray)
+          statement.setBytes(2, encodedAddress)
+          statement.setBytes(3, encodedFeatures)
+          statement.executeUpdate()
+        }
+      }
+    }
+  }
+
+  override def addOrUpdatePeerFeatures(nodeId: Crypto.PublicKey, features: Features[InitFeature]): Unit = withMetrics("peers/add-or-update", DbBackends.Sqlite) {
+    val encodedFeatures = CommonCodecs.initFeaturesCodec.encode(features).require.toByteArray
+    using(sqlite.prepareStatement("UPDATE peers SET init_features=? WHERE node_id=?")) { update =>
+      update.setBytes(1, encodedFeatures)
       update.setBytes(2, nodeId.value.toArray)
       if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO peers VALUES (?, ?)")) { statement =>
+        using(sqlite.prepareStatement("INSERT INTO peers VALUES (?, NULL, ?)")) { statement =>
           statement.setBytes(1, nodeId.value.toArray)
-          statement.setBytes(2, data)
+          statement.setBytes(2, encodedFeatures)
           statement.executeUpdate()
         }
       }
@@ -79,26 +120,39 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
       statement.setBytes(1, nodeId.value.toArray)
       statement.executeUpdate()
     }
-  }
-
-  override def getPeer(nodeId: PublicKey): Option[NodeAddress] = withMetrics("peers/get", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("SELECT data FROM peers WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.value.toArray)
-      statement.executeQuery()
-        .mapCodec(CommonCodecs.nodeaddress)
-        .headOption
+    using(sqlite.prepareStatement("UPDATE peer_storage SET removed_peer_at = ? WHERE node_id = ?")) { statement =>
+      statement.setLong(1, TimestampSecond.now().toLong)
+      statement.setBytes(2, nodeId.value.toArray)
+      statement.executeUpdate()
     }
   }
 
-  override def listPeers(): Map[PublicKey, NodeAddress] = withMetrics("peers/list", DbBackends.Sqlite) {
-    using(sqlite.createStatement()) { statement =>
-      statement.executeQuery("SELECT node_id, data FROM peers")
-        .map { rs =>
-          val nodeid = PublicKey(rs.getByteVector("node_id"))
-          val nodeaddress = CommonCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
-          nodeid -> nodeaddress
-        }
-        .toMap
+  override def removePeerStorage(peerRemovedBefore: TimestampSecond): Unit = withMetrics("peers/remove-storage", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("DELETE FROM peer_storage WHERE removed_peer_at < ?")) { statement =>
+      statement.setLong(1, peerRemovedBefore.toLong)
+      statement.executeUpdate()
+    }
+  }
+
+  override def getPeer(nodeId: PublicKey): Option[NodeInfo] = withMetrics("peers/get", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT node_address, init_features FROM peers WHERE node_id=?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      statement.executeQuery().map { rs =>
+        val nodeAddress_opt = rs.getBitVectorOpt("node_address").map(CommonCodecs.nodeaddress.decode(_).require.value)
+        val nodeFeatures_opt = rs.getBitVectorOpt("init_features").map(CommonCodecs.initFeaturesCodec.decode(_).require.value)
+        NodeInfo(nodeFeatures_opt.getOrElse(Features.empty), nodeAddress_opt)
+      }.headOption
+    }
+  }
+
+  override def listPeers(): Map[PublicKey, NodeInfo] = withMetrics("peers/list", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT node_id, node_address, init_features FROM peers")) { statement =>
+      statement.executeQuery().map { rs =>
+        val nodeId = PublicKey(rs.getByteVector("node_id"))
+        val nodeAddress_opt = rs.getBitVectorOpt("node_address").map(CommonCodecs.nodeaddress.decode(_).require.value)
+        val nodeFeatures_opt = rs.getBitVectorOpt("init_features").map(CommonCodecs.initFeaturesCodec.decode(_).require.value)
+        nodeId -> NodeInfo(nodeFeatures_opt.getOrElse(Features.empty), nodeAddress_opt)
+      }.toMap
     }
   }
 
@@ -126,6 +180,31 @@ class SqlitePeersDb(val sqlite: Connection) extends PeersDb with Logging {
         .map(rs =>
           RelayFees(MilliSatoshi(rs.getLong("fee_base_msat")), rs.getLong("fee_proportional_millionths"))
         )
+    }
+  }
+
+  override def updateStorage(nodeId: PublicKey, data: ByteVector): Unit = withMetrics("peers/update-storage", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("UPDATE peer_storage SET data = ?, last_updated_at = ?, removed_peer_at = NULL WHERE node_id = ?")) { update =>
+      update.setBytes(1, data.toArray)
+      update.setLong(2, TimestampSecond.now().toLong)
+      update.setBytes(3, nodeId.value.toArray)
+      if (update.executeUpdate() == 0) {
+        using(sqlite.prepareStatement("INSERT INTO peer_storage VALUES (?, ?, ?, NULL)")) { statement =>
+          statement.setBytes(1, nodeId.value.toArray)
+          statement.setBytes(2, data.toArray)
+          statement.setLong(3, TimestampSecond.now().toLong)
+          statement.executeUpdate()
+        }
+      }
+    }
+  }
+
+  override def getStorage(nodeId: PublicKey): Option[ByteVector] = withMetrics("peers/get-storage", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT data FROM peer_storage WHERE node_id = ?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      statement.executeQuery()
+        .headOption
+        .map(rs => ByteVector(rs.getBytes("data")))
     }
   }
 }

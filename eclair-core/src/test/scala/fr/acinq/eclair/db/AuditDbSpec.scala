@@ -78,7 +78,7 @@ class AuditDbSpec extends AnyFunSuite {
       val e5 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 84100 msat, randomKey().publicKey, pp5a :: pp5b :: Nil)
       val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = now + 10.minutes)
       val e6 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 42000 msat, randomKey().publicKey, pp6 :: Nil)
-      val e7 = ChannelEvent(randomBytes32(), randomKey().publicKey, 456123000 sat, isInitiator = true, isPrivate = false, ChannelEvent.EventType.Closed(MutualClose(null)))
+      val e7 = ChannelEvent(randomBytes32(), randomKey().publicKey, 456123000 sat, isChannelOpener = true, isPrivate = false, ChannelEvent.EventType.Closed(MutualClose(null)))
       val e8 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, LocalError(new RuntimeException("oops")), isFatal = true)
       val e9 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, RemoteError(Error(randomBytes32(), "remote oops")), isFatal = true)
       val e10 = TrampolinePaymentRelayed(randomBytes32(),
@@ -140,12 +140,12 @@ class AuditDbSpec extends AnyFunSuite {
       val n3 = randomKey().publicKey
       val n4 = randomKey().publicKey
 
-      val c1 = randomBytes32()
-      val c2 = randomBytes32()
-      val c3 = randomBytes32()
-      val c4 = randomBytes32()
-      val c5 = randomBytes32()
-      val c6 = randomBytes32()
+      val c1 = ByteVector32.One
+      val c2 = c1.copy(bytes = 0x02b +: c1.tail)
+      val c3 = c1.copy(bytes = 0x03b +: c1.tail)
+      val c4 = c1.copy(bytes = 0x04b +: c1.tail)
+      val c5 = c1.copy(bytes = 0x05b +: c1.tail)
+      val c6 = c1.copy(bytes = 0x06b +: c1.tail)
 
       db.add(ChannelPaymentRelayed(46000 msat, 44000 msat, randomBytes32(), c6, c1, 1000 unixms, 1001 unixms))
       db.add(ChannelPaymentRelayed(41000 msat, 40000 msat, randomBytes32(), c6, c1, 1002 unixms, 1003 unixms))
@@ -169,8 +169,12 @@ class AuditDbSpec extends AnyFunSuite {
       db.add(TransactionPublished(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(4500 sat, hex"1111222233")), 0), 500 sat, "funding")) // unconfirmed
       db.add(TransactionConfirmed(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(2500 sat, hex"ffffff")), 0))) // doesn't match a published tx
 
+      assert(db.listPublished(randomBytes32()).isEmpty)
+      assert(db.listPublished(c4).map(_.txId).toSet.size == 2)
+      assert(db.listPublished(c4).map(_.desc) == Seq("funding", "funding"))
+
       // NB: we only count a relay fee for the outgoing channel, no the incoming one.
-      assert(db.stats(0 unixms, TimestampMilli.now() + 1.milli).toSet == Set(
+      assert(db.stats(0 unixms, TimestampMilli.now() + 1.milli) == Seq(
         Stats(channelId = c1, direction = "IN", avgPaymentAmount = 0 sat, paymentCount = 0, relayFee = 0 sat, networkFee = 0 sat),
         Stats(channelId = c1, direction = "OUT", avgPaymentAmount = 42 sat, paymentCount = 3, relayFee = 4 sat, networkFee = 0 sat),
         Stats(channelId = c2, direction = "IN", avgPaymentAmount = 0 sat, paymentCount = 0, relayFee = 0 sat, networkFee = 500 sat),
@@ -183,6 +187,10 @@ class AuditDbSpec extends AnyFunSuite {
         Stats(channelId = c5, direction = "OUT", avgPaymentAmount = 0 sat, paymentCount = 0, relayFee = 0 sat, networkFee = 0 sat),
         Stats(channelId = c6, direction = "IN", avgPaymentAmount = 39 sat, paymentCount = 4, relayFee = 0 sat, networkFee = 0 sat),
         Stats(channelId = c6, direction = "OUT", avgPaymentAmount = 40 sat, paymentCount = 1, relayFee = 5 sat, networkFee = 0 sat),
+      ))
+      assert(db.stats(0 unixms, TimestampMilli.now() + 1.milli, Some(Paginated(2, 3))) == Seq(
+        Stats(channelId = c2, direction = "OUT", avgPaymentAmount = 28 sat, paymentCount = 2, relayFee = 4 sat, networkFee = 500 sat),
+        Stats(channelId = c3, direction = "IN", avgPaymentAmount = 0 sat, paymentCount = 0, relayFee = 0 sat, networkFee = 400 sat),
       ))
     }
   }

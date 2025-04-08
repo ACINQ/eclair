@@ -39,13 +39,13 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   test("scale funding tx min depth according to funding amount") {
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(1)) == 4)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 6, Btc(1)) == 6) // 4 conf would be enough but we use min-depth=6
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(6.25)) == 16) // we use scaling_factor=15 and a fixed block reward of 6.25BTC
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(12.5)) == 31)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(12.6)) == 32)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(30)) == 73)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(50)) == 121)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(1)) == 5)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 6, Btc(1)) == 6) // 5 conf would be enough but we use min-depth=6
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(3.125)) == 11) // we use scaling_factor=10 and a fixed block reward of 3.125BTC
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(6.25)) == 21)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(10)) == 33)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(25)) == 81)
+    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(50)) == 161)
   }
 
   test("compute refresh delay") {
@@ -68,14 +68,14 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     awaitCond(bob.stateName == NORMAL)
     // We have two identical HTLCs (MPP):
     val (_, htlca1a) = addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
-    val aliceMppCmd = CMD_ADD_HTLC(TestProbe().ref, 15_000_000 msat, htlca1a.paymentHash, htlca1a.cltvExpiry, htlca1a.onionRoutingPacket, None, Origin.LocalHot(TestProbe().ref, UUID.randomUUID()))
+    val aliceMppCmd = CMD_ADD_HTLC(TestProbe().ref, 15_000_000 msat, htlca1a.paymentHash, htlca1a.cltvExpiry, htlca1a.onionRoutingPacket, None, 1.0, None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
     val htlca1b = addHtlc(aliceMppCmd, alice, bob, alice2bob, bob2alice)
     val (ra2, htlca2) = addHtlc(16_000_000 msat, alice, bob, alice2bob, bob2alice)
     addHtlc(500_000 msat, alice, bob, alice2bob, bob2alice) // below dust
     crossSign(alice, bob, alice2bob, bob2alice)
     // We have two identical HTLCs (MPP):
     val (_, htlcb1a) = addHtlc(17_000_000 msat, bob, alice, bob2alice, alice2bob)
-    val bobMppCmd = CMD_ADD_HTLC(TestProbe().ref, 17_000_000 msat, htlcb1a.paymentHash, htlcb1a.cltvExpiry, htlcb1a.onionRoutingPacket, None, Origin.LocalHot(TestProbe().ref, UUID.randomUUID()))
+    val bobMppCmd = CMD_ADD_HTLC(TestProbe().ref, 17_000_000 msat, htlcb1a.paymentHash, htlcb1a.cltvExpiry, htlcb1a.onionRoutingPacket, None, 1.0, None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
     val htlcb1b = addHtlc(bobMppCmd, bob, alice, bob2alice, alice2bob)
     val (rb2, htlcb2) = addHtlc(18_000_000 msat, bob, alice, bob2alice, alice2bob)
     addHtlc(400_000 msat, bob, alice, bob2alice, alice2bob) // below dust
@@ -225,6 +225,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       TxOut(294 sat, OP_0 :: OP_PUSHDATA(hex"0000000000000000000000000000000000000000") :: Nil),
       TxOut(330 sat, OP_0 :: OP_PUSHDATA(hex"0000000000000000000000000000000000000000000000000000000000000000") :: Nil),
       TxOut(354 sat, OP_3 :: OP_PUSHDATA(hex"0000000000") :: Nil),
+      TxOut(0 sat, OP_RETURN :: OP_PUSHDATA(hex"deadbeef") :: Nil),
     )
 
     def toClosingTx(txOut: Seq[TxOut]): ClosingTx = {

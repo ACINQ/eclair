@@ -18,10 +18,8 @@ package fr.acinq.eclair.db
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
-import fr.acinq.eclair.channel.RealScidStatus
 import fr.acinq.eclair.db.ChannelsDbSpec.{getPgTimestamp, getTimestamp, testCases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
@@ -31,7 +29,7 @@ import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.{CltvExpiry, RealShortChannelId, TestDatabases, TimestampSecond, randomBytes32, randomKey}
+import fr.acinq.eclair.{Alias, CltvExpiry, TestDatabases, randomBytes32, randomKey, randomLong}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
@@ -59,11 +57,10 @@ class ChannelsDbSpec extends AnyFunSuite {
   test("add/remove/list channels") {
     forAllDbs { dbs =>
       val db = dbs.channels
-      dbs.pendingCommands // needed by db.removeChannel
 
       val channel1 = ChannelCodecsSpec.normal
       val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(randomBytes32())
-      val channel2b = channel2a.modify(_.shortIds.real).setTo(RealScidStatus.Final(RealShortChannelId(189371)))
+      val channel2b = channel2a.modify(_.aliases.remoteAlias_opt).setTo(Some(Alias(randomLong())))
 
       val commitNumber = 42
       val paymentHash1 = ByteVector32.Zeroes
@@ -73,7 +70,7 @@ class ChannelsDbSpec extends AnyFunSuite {
 
       intercept[SQLException](db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
 
-      assert(db.listLocalChannels().toSet == Set.empty)
+      assert(db.listLocalChannels().isEmpty)
       db.addOrUpdateChannel(channel1)
       db.addOrUpdateChannel(channel1)
       assert(db.listLocalChannels() == List(channel1))
@@ -85,11 +82,11 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listLocalChannels() == List(channel1, channel2b))
       assert(db.getChannel(channel2b.channelId).contains(channel2b))
 
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber).isEmpty)
       db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash1, cltvExpiry1)
       db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash2, cltvExpiry2)
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList.toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
-      assert(db.listHtlcInfos(channel1.channelId, 43).toList == Nil)
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber).toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber + 1).isEmpty)
 
       assert(db.listClosedChannels(None, None).isEmpty)
       db.removeChannel(channel1.channelId)
@@ -97,11 +94,70 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listLocalChannels() == List(channel2b))
       assert(db.listClosedChannels(None, None) == List(channel1))
       assert(db.listClosedChannels(Some(channel1.remoteNodeId), None) == List(channel1))
-      assert(db.listClosedChannels(Some(PrivateKey(randomBytes32()).publicKey), None) == Nil)
-      assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
+      assert(db.listClosedChannels(Some(PrivateKey(randomBytes32()).publicKey), None).isEmpty)
+
       db.removeChannel(channel2b.channelId)
       assert(db.getChannel(channel2b.channelId).isEmpty)
-      assert(db.listLocalChannels() == Nil)
+      assert(db.listLocalChannels().isEmpty)
+    }
+  }
+
+  test("remove htlc infos") {
+    forAllDbs { dbs =>
+      val db = dbs.channels
+
+      val channel1 = ChannelCodecsSpec.normal
+      val channel2 = ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(randomBytes32())
+      db.addOrUpdateChannel(channel1)
+      db.addOrUpdateChannel(channel2)
+
+      val commitNumberSplice1 = 50
+      val commitNumberSplice2 = 75
+
+      // The first channel has one splice transaction and is then closed.
+      db.addHtlcInfo(channel1.channelId, 49, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel1.channelId, 50, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel1.channelId, 50, randomBytes32(), CltvExpiry(561))
+      db.markHtlcInfosForRemoval(channel1.channelId, commitNumberSplice1)
+      db.addHtlcInfo(channel1.channelId, 51, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel1.channelId, 52, randomBytes32(), CltvExpiry(561))
+      db.removeChannel(channel1.channelId)
+
+      // The second channel has two splice transactions.
+      db.addHtlcInfo(channel2.channelId, 48, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel2.channelId, 48, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel2.channelId, 49, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel2.channelId, 50, randomBytes32(), CltvExpiry(561))
+      db.markHtlcInfosForRemoval(channel2.channelId, commitNumberSplice1)
+      db.addHtlcInfo(channel2.channelId, 74, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel2.channelId, 75, randomBytes32(), CltvExpiry(561))
+      db.addHtlcInfo(channel2.channelId, 76, randomBytes32(), CltvExpiry(561))
+      db.markHtlcInfosForRemoval(channel2.channelId, commitNumberSplice2)
+
+      // We asynchronously clean-up the HTLC data from the DB in small batches.
+      val obsoleteHtlcInfo = Seq(
+        (channel1.channelId, 49),
+        (channel1.channelId, 50),
+        (channel1.channelId, 51),
+        (channel1.channelId, 52),
+        (channel2.channelId, 48),
+        (channel2.channelId, 49),
+        (channel2.channelId, 50),
+        (channel2.channelId, 74),
+      )
+      db.removeHtlcInfos(10) // This should remove all the data for one of the two channels in one batch
+      assert(obsoleteHtlcInfo.flatMap { case (channelId, commitNumber) => db.listHtlcInfos(channelId, commitNumber) }.size == 5)
+      db.removeHtlcInfos(3) // This should remove only part of the data for the remaining channel
+      assert(obsoleteHtlcInfo.flatMap { case (channelId, commitNumber) => db.listHtlcInfos(channelId, commitNumber) }.size == 2)
+      db.removeHtlcInfos(3) // This should remove the rest of the data for the remaining channel
+      obsoleteHtlcInfo.foreach { case (channelId, commitNumber) => db.listHtlcInfos(channelId, commitNumber).isEmpty }
+
+      // The remaining HTLC data shouldn't be removed.
+      assert(db.listHtlcInfos(channel2.channelId, 75).nonEmpty)
+      assert(db.listHtlcInfos(channel2.channelId, 76).nonEmpty)
+      db.removeHtlcInfos(10) // no-op
+      assert(db.listHtlcInfos(channel2.channelId, 75).nonEmpty)
+      assert(db.listHtlcInfos(channel2.channelId, 76).nonEmpty)
     }
   }
 

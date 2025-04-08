@@ -22,11 +22,10 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.FullCommitment
-import fr.acinq.eclair.transactions.Transactions.{ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
+import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.{BlockHeight, Logs, NodeParams}
 
 import java.util.UUID
@@ -81,17 +80,29 @@ object TxPublisher {
    * NB: the parent tx should only be provided when it's being concurrently published, it's unnecessary when it is
    * confirmed or when the tx has a relative delay.
    *
+   * @param amount amount we are claiming with this transaction.
    * @param fee the fee that we're actually paying: it must be set to the mining fee, unless our peer is paying it (in
    *            which case it must be set to zero here).
    */
-  case class PublishFinalTx(tx: Transaction, input: OutPoint, desc: String, fee: Satoshi, parentTx_opt: Option[TxId]) extends PublishTx
+  case class PublishFinalTx(tx: Transaction, input: OutPoint, amount: Satoshi, desc: String, fee: Satoshi, parentTx_opt: Option[TxId]) extends PublishTx
   object PublishFinalTx {
-    def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[TxId]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, fee, parentTx_opt)
+    def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[TxId]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.amountIn, txInfo.desc, fee, parentTx_opt)
   }
-  /** Publish an unsigned transaction that can be RBF-ed. */
-  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment) extends PublishTx {
+
+  /**
+   * Publish an unsigned transaction that can be RBF-ed.
+   *
+   * @param commitTx commitment transaction that this transaction is spending.
+   */
+  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment, commitTx: Transaction) extends PublishTx {
     override def input: OutPoint = txInfo.input.outPoint
     override def desc: String = txInfo.desc
+
+    /** True if we're trying to bump our local commit with an anchor transaction. */
+    lazy val isLocalCommitAnchor = txInfo match {
+      case txInfo: ClaimLocalAnchorOutputTx => txInfo.input.outPoint.txid == commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid
+      case _ => false
+    }
   }
 
   sealed trait PublishTxResult extends Command { def cmd: PublishTx }
@@ -140,13 +151,13 @@ object TxPublisher {
     // @formatter:on
   }
 
-  case class SimpleChildFactory(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command]) extends ChildFactory {
+  case class SimpleChildFactory(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient) extends ChildFactory {
     // @formatter:off
     override def spawnFinalTxPublisher(context: ActorContext[TxPublisher.Command], txPublishContext: TxPublishContext): ActorRef[FinalTxPublisher.Command] = {
-      context.spawn(FinalTxPublisher(nodeParams, bitcoinClient, watcher, txPublishContext), s"final-tx-${txPublishContext.id}")
+      context.spawn(FinalTxPublisher(nodeParams, bitcoinClient, txPublishContext), s"final-tx-${txPublishContext.id}")
     }
     override def spawnReplaceableTxPublisher(context: ActorContext[Command], txPublishContext: TxPublishContext): ActorRef[ReplaceableTxPublisher.Command] = {
-      context.spawn(ReplaceableTxPublisher(nodeParams, bitcoinClient, watcher, txPublishContext), s"replaceable-tx-${txPublishContext.id}")
+      context.spawn(ReplaceableTxPublisher(nodeParams, bitcoinClient, txPublishContext), s"replaceable-tx-${txPublishContext.id}")
     }
     // @formatter:on
   }

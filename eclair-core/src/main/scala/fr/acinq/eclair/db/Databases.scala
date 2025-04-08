@@ -43,7 +43,9 @@ trait Databases {
   def channels: ChannelsDb
   def peers: PeersDb
   def payments: PaymentsDb
+  def offers: OffersDb
   def pendingCommands: PendingCommandsDb
+  def liquidity: LiquidityDb
   //@formatter:on
 }
 
@@ -60,10 +62,12 @@ object Databases extends Logging {
   }
 
   case class SqliteDatabases private(network: SqliteNetworkDb,
+                                     liquidity: SqliteLiquidityDb,
                                      audit: SqliteAuditDb,
                                      channels: SqliteChannelsDb,
                                      peers: SqlitePeersDb,
                                      payments: SqlitePaymentsDb,
+                                     offers: SqliteOffersDb,
                                      pendingCommands: SqlitePendingCommandsDb,
                                      private val backupConnection: Connection) extends Databases with FileBackup {
     override def backup(backupFile: File): Unit = SqliteUtils.using(backupConnection.createStatement()) {
@@ -78,10 +82,12 @@ object Databases extends Logging {
       jdbcUrlFile_opt.foreach(checkIfDatabaseUrlIsUnchanged("sqlite", _))
       SqliteDatabases(
         network = new SqliteNetworkDb(networkJdbc),
+        liquidity = new SqliteLiquidityDb(eclairJdbc),
         audit = new SqliteAuditDb(auditJdbc),
         channels = new SqliteChannelsDb(eclairJdbc),
         peers = new SqlitePeersDb(eclairJdbc),
         payments = new SqlitePaymentsDb(eclairJdbc),
+        offers = new SqliteOffersDb(eclairJdbc),
         pendingCommands = new SqlitePendingCommandsDb(eclairJdbc),
         backupConnection = eclairJdbc
       )
@@ -89,10 +95,12 @@ object Databases extends Logging {
   }
 
   case class PostgresDatabases private(network: PgNetworkDb,
+                                       liquidity: PgLiquidityDb,
                                        audit: PgAuditDb,
                                        channels: PgChannelsDb,
                                        peers: PgPeersDb,
                                        payments: PgPaymentsDb,
+                                       offers: PgOffersDb,
                                        pendingCommands: PgPendingCommandsDb,
                                        dataSource: HikariDataSource,
                                        lock: PgLock) extends Databases with ExclusiveLock {
@@ -106,8 +114,7 @@ object Databases extends Logging {
                             auditRelayedMaxAge: FiniteDuration,
                             localChannelsMinCount: Int,
                             networkNodesMinCount: Int,
-                            networkChannelsMinCount: Int
-                           )
+                            networkChannelsMinCount: Int)
 
     def apply(hikariConfig: HikariConfig,
               instanceId: UUID,
@@ -149,10 +156,12 @@ object Databases extends Logging {
 
       val databases = PostgresDatabases(
         network = new PgNetworkDb,
+        liquidity = new PgLiquidityDb,
         audit = new PgAuditDb,
         channels = new PgChannelsDb,
         peers = new PgPeersDb,
         payments = new PgPaymentsDb,
+        offers = new PgOffersDb,
         pendingCommands = new PgPendingCommandsDb,
         dataSource = ds,
         lock = lock)
@@ -160,7 +169,7 @@ object Databases extends Logging {
       readOnlyUser_opt.foreach { readOnlyUser =>
         PgUtils.inTransaction { connection =>
           using(connection.createStatement()) { statement =>
-            val schemas = "public" :: "audit" :: "local" :: "network" :: "payments" :: Nil
+            val schemas = "public" :: "audit" :: "local" :: "network" :: "payments" :: "liquidity" :: Nil
             schemas.foreach { schema =>
               logger.info(s"granting read-only access to user=$readOnlyUser schema=$schema")
               statement.executeUpdate(s"GRANT USAGE ON SCHEMA $schema TO $readOnlyUser")

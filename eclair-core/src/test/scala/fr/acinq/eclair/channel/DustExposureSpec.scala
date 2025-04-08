@@ -26,7 +26,7 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 class DustExposureSpec extends AnyFunSuiteLike {
 
   def createHtlc(id: Long, amount: MilliSatoshi): UpdateAddHtlc = {
-    UpdateAddHtlc(ByteVector32.Zeroes, id, amount, randomBytes32(), CltvExpiry(500), TestConstants.emptyOnionPacket, None)
+    UpdateAddHtlc(ByteVector32.Zeroes, id, amount, randomBytes32(), CltvExpiry(500), TestConstants.emptyOnionPacket, None, 1.0, None)
   }
 
   test("compute dust exposure") {

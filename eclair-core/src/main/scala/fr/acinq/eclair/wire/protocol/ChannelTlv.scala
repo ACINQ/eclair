@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.{Satoshi, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, Satoshi, TxId}
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tmillisatoshi}
@@ -32,6 +32,10 @@ sealed trait AcceptChannelTlv extends Tlv
 sealed trait OpenDualFundedChannelTlv extends Tlv
 
 sealed trait AcceptDualFundedChannelTlv extends Tlv
+
+sealed trait TxInitRbfTlv extends Tlv
+
+sealed trait TxAckRbfTlv extends Tlv
 
 sealed trait SpliceInitTlv extends Tlv
 
@@ -56,13 +60,34 @@ object ChannelTlv {
     tlv => Features(tlv.channelType.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector
   ))
 
-  case class RequireConfirmedInputsTlv() extends OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv with SpliceInitTlv with SpliceAckTlv
+  case class RequireConfirmedInputsTlv() extends OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv with TxInitRbfTlv with TxAckRbfTlv with SpliceInitTlv with SpliceAckTlv
 
   val requireConfirmedInputsCodec: Codec[RequireConfirmedInputsTlv] = tlvField(provide(RequireConfirmedInputsTlv()))
+
+  /** Request inbound liquidity from our peer. */
+  case class RequestFundingTlv(request: LiquidityAds.RequestFunding) extends OpenDualFundedChannelTlv with TxInitRbfTlv with SpliceInitTlv
+
+  val requestFundingCodec: Codec[RequestFundingTlv] = tlvField(LiquidityAds.Codecs.requestFunding)
+
+  /** Accept inbound liquidity request. */
+  case class ProvideFundingTlv(willFund: LiquidityAds.WillFund) extends AcceptDualFundedChannelTlv with TxAckRbfTlv with SpliceAckTlv
+
+  val provideFundingCodec: Codec[ProvideFundingTlv] = tlvField(LiquidityAds.Codecs.willFund)
+
+  /** Fee credit that will be used for the given on-the-fly funding operation. */
+  case class FeeCreditUsedTlv(amount: MilliSatoshi) extends AcceptDualFundedChannelTlv with SpliceAckTlv
+
+  val feeCreditUsedCodec: Codec[FeeCreditUsedTlv] = tlvField(tmillisatoshi)
 
   case class PushAmountTlv(amount: MilliSatoshi) extends OpenDualFundedChannelTlv with AcceptDualFundedChannelTlv with SpliceInitTlv with SpliceAckTlv
 
   val pushAmountCodec: Codec[PushAmountTlv] = tlvField(tmillisatoshi)
+
+  /**
+   * This is an internal TLV for which we DON'T specify a codec: this isn't meant to be read or written on the wire.
+   * This is only used to decorate open_channel2 and splice_init with the [[Features.FundingFeeCredit]] available.
+   */
+  case class UseFeeCredit(amount: MilliSatoshi) extends OpenDualFundedChannelTlv with SpliceInitTlv
 
 }
 
@@ -95,7 +120,43 @@ object OpenDualFundedChannelTlv {
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
+    // We use a temporary TLV while the spec is being reviewed.
+    .typecase(UInt64(1339), requestFundingCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
+  )
+}
+
+object TxRbfTlv {
+  /**
+   * Amount that the peer will contribute to the transaction's shared output.
+   * When used for splicing, this is a signed value that represents funds that are added or removed from the channel.
+   */
+  case class SharedOutputContributionTlv(amount: Satoshi) extends TxInitRbfTlv with TxAckRbfTlv
+}
+
+object TxInitRbfTlv {
+
+  import ChannelTlv._
+  import TxRbfTlv._
+
+  val txInitRbfTlvCodec: Codec[TlvStream[TxInitRbfTlv]] = tlvStream(discriminated[TxInitRbfTlv].by(varint)
+    .typecase(UInt64(0), tlvField(satoshiSigned.as[SharedOutputContributionTlv]))
+    .typecase(UInt64(2), requireConfirmedInputsCodec)
+    // We use a temporary TLV while the spec is being reviewed.
+    .typecase(UInt64(1339), requestFundingCodec)
+  )
+}
+
+object TxAckRbfTlv {
+
+  import ChannelTlv._
+  import TxRbfTlv._
+
+  val txAckRbfTlvCodec: Codec[TlvStream[TxAckRbfTlv]] = tlvStream(discriminated[TxAckRbfTlv].by(varint)
+    .typecase(UInt64(0), tlvField(satoshiSigned.as[SharedOutputContributionTlv]))
+    .typecase(UInt64(2), requireConfirmedInputsCodec)
+    // We use a temporary TLV while the spec is being reviewed.
+    .typecase(UInt64(1339), provideFundingCodec)
   )
 }
 
@@ -105,6 +166,8 @@ object SpliceInitTlv {
 
   val spliceInitTlvCodec: Codec[TlvStream[SpliceInitTlv]] = tlvStream(discriminated[SpliceInitTlv].by(varint)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
+    // We use a temporary TLV while the spec is being reviewed.
+    .typecase(UInt64(1339), requestFundingCodec)
     .typecase(UInt64(0x47000007), tlvField(tmillisatoshi.as[PushAmountTlv]))
   )
 }
@@ -115,6 +178,9 @@ object SpliceAckTlv {
 
   val spliceAckTlvCodec: Codec[TlvStream[SpliceAckTlv]] = tlvStream(discriminated[SpliceAckTlv].by(varint)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
+    // We use a temporary TLV while the spec is being reviewed.
+    .typecase(UInt64(1339), provideFundingCodec)
+    .typecase(UInt64(41042), feeCreditUsedCodec)
     .typecase(UInt64(0x47000007), tlvField(tmillisatoshi.as[PushAmountTlv]))
   )
 }
@@ -131,6 +197,9 @@ object AcceptDualFundedChannelTlv {
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
     .typecase(UInt64(2), requireConfirmedInputsCodec)
+    // We use a temporary TLV while the spec is being reviewed.
+    .typecase(UInt64(1339), provideFundingCodec)
+    .typecase(UInt64(41042), feeCreditUsedCodec)
     .typecase(UInt64(0x47000007), pushAmountCodec)
   )
 
@@ -166,13 +235,24 @@ sealed trait ChannelReestablishTlv extends Tlv
 object ChannelReestablishTlv {
 
   case class NextFundingTlv(txId: TxId) extends ChannelReestablishTlv
+  case class YourLastFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
+  case class MyCurrentFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
 
   object NextFundingTlv {
     val codec: Codec[NextFundingTlv] = tlvField(txIdAsHash)
   }
 
+  object YourLastFundingLockedTlv {
+    val codec: Codec[YourLastFundingLockedTlv] = tlvField("your_last_funding_locked_txid" | txIdAsHash)
+  }
+  object MyCurrentFundingLockedTlv {
+    val codec: Codec[MyCurrentFundingLockedTlv] = tlvField("my_current_funding_locked_txid" | txIdAsHash)
+  }
+
   val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
     .typecase(UInt64(0), NextFundingTlv.codec)
+    .typecase(UInt64(1), YourLastFundingLockedTlv.codec)
+    .typecase(UInt64(3), MyCurrentFundingLockedTlv.codec)
   )
 }
 
@@ -198,6 +278,26 @@ object ClosingSignedTlv {
 
   val closingSignedTlvCodec: Codec[TlvStream[ClosingSignedTlv]] = tlvStream(discriminated[ClosingSignedTlv].by(varint)
     .typecase(UInt64(1), feeRange)
+  )
+
+}
+
+sealed trait ClosingTlv extends Tlv
+
+object ClosingTlv {
+  /** Signature for a closing transaction containing only the closer's output. */
+  case class CloserOutputOnly(sig: ByteVector64) extends ClosingTlv
+
+  /** Signature for a closing transaction containing only the closee's output. */
+  case class CloseeOutputOnly(sig: ByteVector64) extends ClosingTlv
+
+  /** Signature for a closing transaction containing the closer and closee's outputs. */
+  case class CloserAndCloseeOutputs(sig: ByteVector64) extends ClosingTlv
+
+  val closingTlvCodec: Codec[TlvStream[ClosingTlv]] = tlvStream(discriminated[ClosingTlv].by(varint)
+    .typecase(UInt64(1), tlvField(bytes64.as[CloserOutputOnly]))
+    .typecase(UInt64(2), tlvField(bytes64.as[CloseeOutputOnly]))
+    .typecase(UInt64(3), tlvField(bytes64.as[CloserAndCloseeOutputs]))
   )
 
 }

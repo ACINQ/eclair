@@ -34,8 +34,8 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
   test("generate the same secrets from the same seed") {
     // data was generated with eclair 0.3 
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
-    val nodeKeyManager = new LocalNodeKeyManager(seed, Block.TestnetGenesisBlock.hash)
-    val channelKeyManager = new LocalChannelKeyManager(seed, Block.TestnetGenesisBlock.hash)
+    val nodeKeyManager = new LocalNodeKeyManager(seed, Block.Testnet3GenesisBlock.hash)
+    val channelKeyManager = new LocalChannelKeyManager(seed, Block.Testnet3GenesisBlock.hash)
     assert(nodeKeyManager.nodeId == PublicKey(hex"02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee"))
     val keyPath = KeyPath("m/1'/2'/3'/4'")
     assert(channelKeyManager.commitmentSecret(keyPath, 0L).value == ByteVector32.fromValidHex("fa7a8c2fc62642f7a9a19ea0bfad14d39a430f3c9899c185dcecc61c8077891e"))
@@ -64,7 +64,7 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
 
   test("test vectors (testnet, funder)") {
     val seed = ByteVector.fromValidHex("17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501")
-    val channelKeyManager = new LocalChannelKeyManager(seed, Block.TestnetGenesisBlock.hash)
+    val channelKeyManager = new LocalChannelKeyManager(seed, Block.Testnet3GenesisBlock.hash)
     val fundingKeyPath = makefundingKeyPath(hex"be4fa97c62b9f88437a3be577b31eb48f2165c7bc252194a15ff92d995778cfb", isInitiator = true)
     val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath, fundingTxIndex = 0)
 
@@ -81,7 +81,7 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
 
   test("test vectors (testnet, fundee)") {
     val seed = ByteVector.fromValidHex("aeb3e9b5642cd4523e9e09164047f60adb413633549c3c6189192921311894d501")
-    val channelKeyManager = new LocalChannelKeyManager(seed, Block.TestnetGenesisBlock.hash)
+    val channelKeyManager = new LocalChannelKeyManager(seed, Block.Testnet3GenesisBlock.hash)
     val fundingKeyPath = makefundingKeyPath(hex"06535806c1aa73971ec4877a5e2e684fa636136c073810f190b63eefc58ca488", isInitiator = false)
     val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath, fundingTxIndex = 0)
 

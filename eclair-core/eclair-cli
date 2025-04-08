@@ -74,10 +74,12 @@ and COMMAND is one of the available commands:
   === Payment ===
     - usablebalances
     - payinvoice
+    - payoffer
     - sendtonode
     - sendtoroute
     - getsentinfo
     - getreceivedinfo
+    - listreceivedpayments
 
   === Message ===
     - signmessage
@@ -91,6 +93,11 @@ and COMMAND is one of the available commands:
     - onchainbalance
     - onchaintransactions
     - globalbalance
+    - getmasterxpub
+    - getdescriptors
+    
+  === Control ===
+    - enablefromfuturehtlc
 
 Examples
 --------
@@ -148,7 +155,7 @@ jq_filter='if type=="object" and .error != null then .error else .';
 
 # apply special jq filter if we are in "short" output mode -- only for specific commands such as 'channels'
 if [ "$short" = true ]; then
-  jq_channel_filter="{ nodeId, shortChannelId: .data.shortIds.real.realScid, channelId, state, commitments: (.data.commitments.active | map({balanceSat: (try (.localCommit.spec.toLocal / 1000 | floor) catch null), capacitySat: .fundingTx.amountSatoshis, fundingTxIndex: .fundingTxIndex, channelPoint: .fundingTx.outPoint})) }";
+  jq_channel_filter="{ nodeId, shortChannelId: .data.lastAnnouncement_opt.shortChannelId, channelId, state, commitments: (.data.commitments.active | map({balanceSat: (try (.localCommit.spec.toLocal / 1000 | floor) catch null), capacitySat: .fundingTx.amountSatoshis, fundingTxIndex: .fundingTxIndex, channelPoint: .fundingTx.outPoint})) }";
   case $api_endpoint in
     "channels")   jq_filter="$jq_filter | map( $jq_channel_filter )" ;;
     "channel")    jq_filter="$jq_filter | $jq_channel_filter" ;;

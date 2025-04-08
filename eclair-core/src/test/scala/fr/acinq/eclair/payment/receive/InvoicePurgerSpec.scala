@@ -39,19 +39,19 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     val count = 10
 
     // create expired invoices
-    val expiredInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice"), CltvExpiryDelta(18),
+    val expiredInvoices = Seq.fill(count)(Bolt11Invoice(Block.Testnet3GenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice"), CltvExpiryDelta(18),
       timestamp = 1 unixsec))
     val expiredPayments = expiredInvoices.map(invoice => IncomingStandardPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired))
     expiredPayments.foreach(payment => db.addIncomingPayment(payment.invoice, payment.paymentPreimage))
 
     // create pending invoices
-    val pendingInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("pending invoice"), CltvExpiryDelta(18)))
+    val pendingInvoices = Seq.fill(count)(Bolt11Invoice(Block.Testnet3GenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("pending invoice"), CltvExpiryDelta(18)))
     val pendingPayments = pendingInvoices.map(invoice => IncomingStandardPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Pending))
     pendingPayments.foreach(payment => db.addIncomingPayment(payment.invoice, payment.paymentPreimage))
 
     // create paid invoices
     val receivedAt = TimestampMilli.now() + 1.milli
-    val paidInvoices = Seq.fill(count)(Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("paid invoice"), CltvExpiryDelta(18)))
+    val paidInvoices = Seq.fill(count)(Bolt11Invoice(Block.Testnet3GenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("paid invoice"), CltvExpiryDelta(18)))
     val paidPayments = paidInvoices.map(invoice => IncomingStandardPayment(invoice, randomBytes32(), PaymentType.Standard, invoice.createdAt.toTimestampMilli, IncomingPaymentStatus.Received(100 msat, receivedAt)))
     paidPayments.foreach(payment => {
       db.addIncomingPayment(payment.invoice, payment.paymentPreimage)
@@ -86,13 +86,13 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     val interval = 5 seconds
 
     // add an expired invoice from before the 15 days look back period
-    val expiredInvoice1 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice2"), CltvExpiryDelta(18),
+    val expiredInvoice1 = Bolt11Invoice(Block.Testnet3GenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice2"), CltvExpiryDelta(18),
       timestamp = 5 unixsec)
     val expiredPayment1 = IncomingStandardPayment(expiredInvoice1, randomBytes32(), PaymentType.Standard, expiredInvoice1.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
     db.addIncomingPayment(expiredPayment1.invoice, expiredPayment1.paymentPreimage)
 
     // add an expired invoice from after the 15 day look back period
-    val expiredInvoice2 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice2"), CltvExpiryDelta(18),
+    val expiredInvoice2 = Bolt11Invoice(Block.Testnet3GenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice2"), CltvExpiryDelta(18),
       timestamp = TimestampSecond.now() - 10.days)
     val expiredPayment2 = IncomingStandardPayment(expiredInvoice2, randomBytes32(), PaymentType.Standard, expiredInvoice2.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
     db.addIncomingPayment(expiredPayment2.invoice, expiredPayment2.paymentPreimage)
@@ -108,13 +108,13 @@ class InvoicePurgerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("ap
     assert(db.listExpiredIncomingPayments(0 unixms, TimestampMilli.now(), None).isEmpty)
 
     // add an expired invoice from before the 15 days look back period
-    val expiredInvoice3 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice3"), CltvExpiryDelta(18),
+    val expiredInvoice3 = Bolt11Invoice(Block.Testnet3GenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice3"), CltvExpiryDelta(18),
       timestamp = 5 unixsec)
     val expiredPayment3 = IncomingStandardPayment(expiredInvoice3, randomBytes32(), PaymentType.Standard, expiredInvoice3.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
     db.addIncomingPayment(expiredPayment3.invoice, expiredPayment3.paymentPreimage)
 
     // add another expired invoice from after the 15 day look back period
-    val expiredInvoice4 = Bolt11Invoice(Block.TestnetGenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice4"), CltvExpiryDelta(18),
+    val expiredInvoice4 = Bolt11Invoice(Block.Testnet3GenesisBlock.hash, Some(100 msat), randomBytes32(), alicePriv, Left("expired invoice4"), CltvExpiryDelta(18),
       timestamp = TimestampSecond.now() - 10.days)
     val expiredPayment4 = IncomingStandardPayment(expiredInvoice4, randomBytes32(), PaymentType.Standard, expiredInvoice4.createdAt.toTimestampMilli, IncomingPaymentStatus.Expired)
     db.addIncomingPayment(expiredPayment4.invoice, expiredPayment4.paymentPreimage)

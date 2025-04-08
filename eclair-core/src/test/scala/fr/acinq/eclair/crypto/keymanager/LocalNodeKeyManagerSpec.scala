@@ -33,15 +33,15 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
     // if this test breaks it means that we will generate a different node id  from
     // the same seed, which could be a problem during an upgrade
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
-    val nodeKeyManager = new LocalNodeKeyManager(seed, Block.TestnetGenesisBlock.hash)
+    val nodeKeyManager = new LocalNodeKeyManager(seed, Block.Testnet3GenesisBlock.hash)
     assert(nodeKeyManager.nodeId == PublicKey(hex"02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee"))
   }
 
   test("generate different node ids from the same seed on different chains") {
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
-    val nodeKeyManager1 = new LocalNodeKeyManager(seed, Block.TestnetGenesisBlock.hash)
+    val nodeKeyManager1 = new LocalNodeKeyManager(seed, Block.Testnet3GenesisBlock.hash)
     val nodeKeyManager2 = new LocalNodeKeyManager(seed, Block.LivenetGenesisBlock.hash)
-    val channelKeyManager1 = new LocalChannelKeyManager(seed, Block.TestnetGenesisBlock.hash)
+    val channelKeyManager1 = new LocalChannelKeyManager(seed, Block.Testnet3GenesisBlock.hash)
     val channelKeyManager2 = new LocalChannelKeyManager(seed, Block.LivenetGenesisBlock.hash)
     assert(nodeKeyManager1.nodeId != nodeKeyManager2.nodeId)
     val keyPath = KeyPath(1L :: Nil)

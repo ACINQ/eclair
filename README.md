@@ -62,7 +62,7 @@ This means that instead of re-implementing them, Eclair benefits from the verifi
 
 * Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
 * You must configure your Bitcoin node to use `bech32` or `bech32m` (segwit) addresses. If your wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit`, `bech32` or `bech32m`), you must send them to a `bech32` or `bech32m` address before running Eclair.
-* Eclair requires Bitcoin Core 24.1 or higher. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
+* Eclair requires Bitcoin Core 28.1 or higher. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 
@@ -94,7 +94,7 @@ rpcclienttimeout=30
 
 Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful functional language that runs on the JVM, and is packaged as a ZIP archive.
 
-To run Eclair, you first need to install Java, we recommend that you use [OpenJDK 11](https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot). Other runtimes also work, but we don't recommend using them.
+To run Eclair, you first need to install Java. Eclair targets Java 21 and will run on any compatible Java runtime, we recommend that you use [OpenJDK 21](https://adoptium.net/temurin/releases/?package=jdk&version=21).
 
 Then download our latest [release](https://github.com/ACINQ/eclair/releases), unzip the archive and run the following command:
 
@@ -321,10 +321,8 @@ zmqpubrawtx=tcp://127.0.0.1:29001
 ## Tools
 
 * [Demo Shop](https://starblocks.acinq.co/) - an example testnet Lightning web shop.
-* [Network Explorer](https://explorer.acinq.co/) - a Lightning network visualization tool.
 
 ## Resources
 
 * [1] [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
 * [2] [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
-* [3] [Lightning Network Explorer](https://explorer.acinq.co) - Explore testnet LN nodes you can connect to

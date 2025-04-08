@@ -19,12 +19,15 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.UInt64.Conversions._
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
+import fr.acinq.eclair.payment.PaymentBlindedRoute
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.PaymentOnion._
 import fr.acinq.eclair.wire.protocol.PaymentOnionCodecs._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, FeatureSupport, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, UInt64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -86,7 +89,7 @@ class PaymentOnionSpec extends AnyFunSuite {
       val Right(payload) = IntermediatePayload.ChannelRelay.Standard.validate(decoded)
       assert(payload.amountOut == 561.msat)
       assert(payload.cltvOut == CltvExpiry(42))
-      assert(payload.outgoingChannelId == ShortChannelId(1105))
+      assert(payload.outgoing.contains(ShortChannelId(1105)))
       val encoded = perHopPayloadCodec.encode(expected).require.bytes
       assert(encoded == bin)
     }
@@ -100,20 +103,37 @@ class PaymentOnionSpec extends AnyFunSuite {
     )
     val testCases = Map(
       TlvStream[OnionPaymentPayloadTlv](EncryptedRecipientData(hex"0123456789abcdef")) -> hex"0a 0a080123456789abcdef ",
-      TlvStream[OnionPaymentPayloadTlv](EncryptedRecipientData(hex"0123456789abcdef"), BlindingPoint(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"))) -> hex"2d 0a080123456789abcdef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
+      TlvStream[OnionPaymentPayloadTlv](EncryptedRecipientData(hex"0123456789abcdef"), PathKey(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2"))) -> hex"2d 0a080123456789abcdef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2",
     )
 
     for ((expected, bin) <- testCases) {
       val decoded = perHopPayloadCodec.decode(bin.bits).require.value
       assert(decoded == expected)
       val Right(payload) = IntermediatePayload.ChannelRelay.Blinded.validate(decoded, blindedTlvs, randomKey().publicKey)
-      assert(payload.outgoingChannelId == ShortChannelId(42))
+      assert(payload.outgoing.contains(ShortChannelId(42)))
       assert(payload.amountToForward(10_000 msat) == 9990.msat)
       assert(payload.outgoingCltv(CltvExpiry(1000)) == CltvExpiry(856))
-      assert(payload.allowedFeatures.isEmpty)
+      assert(payload.paymentRelayData.allowedFeatures.isEmpty)
       val encoded = perHopPayloadCodec.encode(expected).require.bytes
       assert(encoded == bin)
     }
+  }
+
+  test("encode/decode channel relay blinded per-hop-payload (with node_id)") {
+    val nextNodeId = PublicKey(hex"0221cd519eba9c8b840a5e40b65dc2c040e159a766979723ed770efceb97260ec8")
+    Seq(EncodedNodeId.WithPublicKey.Wallet(nextNodeId), EncodedNodeId.WithPublicKey.Plain(nextNodeId)).foreach(outgoingNodeId => {
+      val blindedTlvs = TlvStream[RouteBlindingEncryptedDataTlv](
+        RouteBlindingEncryptedDataTlv.OutgoingNodeId(outgoingNodeId),
+        RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat),
+        RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat),
+      )
+      val Right(payload) = IntermediatePayload.ChannelRelay.Blinded.validate(TlvStream(EncryptedRecipientData(hex"deadbeef")), blindedTlvs, randomKey().publicKey)
+      val Left(nodeId) = payload.outgoing
+      assert(nodeId.publicKey == nextNodeId)
+      assert(payload.amountToForward(10_000 msat) == 9990.msat)
+      assert(payload.outgoingCltv(CltvExpiry(1000)) == CltvExpiry(856))
+      assert(payload.paymentRelayData.allowedFeatures.isEmpty)
+    })
   }
 
   test("encode/decode node relay per-hop payload") {
@@ -125,12 +145,8 @@ class PaymentOnionSpec extends AnyFunSuite {
     assert(decoded == expected)
     val Right(payload) = IntermediatePayload.NodeRelay.Standard.validate(decoded)
     assert(payload.amountToForward == 561.msat)
-    assert(payload.totalAmount == 561.msat)
     assert(payload.outgoingCltv == CltvExpiry(42))
     assert(payload.outgoingNodeId == nodeId)
-    assert(payload.paymentSecret.isEmpty)
-    assert(payload.invoiceFeatures.isEmpty)
-    assert(payload.invoiceRoutingInfo.isEmpty)
 
     val encoded = perHopPayloadCodec.encode(expected).require.bytes
     assert(encoded == bin)
@@ -149,14 +165,37 @@ class PaymentOnionSpec extends AnyFunSuite {
 
     val decoded = perHopPayloadCodec.decode(bin.bits).require.value
     assert(decoded == expected)
-    val Right(payload) = IntermediatePayload.NodeRelay.Standard.validate(decoded)
+    val Right(payload) = IntermediatePayload.NodeRelay.ToNonTrampoline.validate(decoded)
     assert(payload.amountToForward == 561.msat)
     assert(payload.totalAmount == 1105.msat)
-    assert(payload.paymentSecret.contains(ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")))
+    assert(payload.paymentSecret == ByteVector32(hex"eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
     assert(payload.outgoingCltv == CltvExpiry(42))
     assert(payload.outgoingNodeId == nodeId)
-    assert(payload.invoiceFeatures.contains(features))
-    assert(payload.invoiceRoutingInfo.contains(routingHints))
+    assert(payload.invoiceFeatures == features)
+    assert(payload.invoiceRoutingInfo == routingHints)
+
+    val encoded = perHopPayloadCodec.encode(expected).require.bytes
+    assert(encoded == bin)
+  }
+
+  test("encode/decode node relay to blinded paths per-hop payload") {
+    val features = Features(Features.BasicMultiPartPayment -> FeatureSupport.Optional).toByteVector
+    val blindedRoute = BlindedRoute(
+      EncodedNodeId.ShortChannelIdDir(isNode1 = false, RealShortChannelId(468)),
+      PublicKey(hex"0232882c4982576e00f0d6bd4998f5b3e92d47ecc8fbad5b6a5e7521819d891d9e"),
+      Seq(RouteBlinding.BlindedHop(PublicKey(hex"03823aa560d631e9d7b686be4a9227e577009afb5173023b458a6a6aff056ac980"), hex""))
+    )
+    val path = PaymentBlindedRoute(blindedRoute, OfferTypes.PaymentInfo(1000 msat, 678, CltvExpiryDelta(82), 300 msat, 4000000 msat, Features.empty))
+    val expected = TlvStream[OnionPaymentPayloadTlv](AmountToForward(341 msat), OutgoingCltv(CltvExpiry(826483)), OutgoingBlindedPaths(Seq(path)), InvoiceFeatures(features))
+    val bin = hex"82 02020155 04030c9c73 fe0001023103020000 fe000102366a0100000000000001d40232882c4982576e00f0d6bd4998f5b3e92d47ecc8fbad5b6a5e7521819d891d9e0103823aa560d631e9d7b686be4a9227e577009afb5173023b458a6a6aff056ac9800000000003e8000002a60052000000000000012c00000000003d09000000"
+
+    val decoded = perHopPayloadCodec.decode(bin.bits).require.value
+    assert(decoded == expected)
+    val Right(payload) = IntermediatePayload.NodeRelay.ToBlindedPaths.validate(decoded)
+    assert(payload.amountToForward == 341.msat)
+    assert(payload.outgoingCltv == CltvExpiry(826483))
+    assert(payload.outgoingBlindedPaths == Seq(path))
+    assert(payload.invoiceFeatures == features)
 
     val encoded = perHopPayloadCodec.encode(expected).require.bytes
     assert(encoded == bin)
@@ -202,7 +241,7 @@ class PaymentOnionSpec extends AnyFunSuite {
     )
     val testCases = Map(
       TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(1234567)), EncryptedRecipientData(hex"deadbeef"), TotalAmount(1105 msat)) -> hex"13 02020231 040312d687 0a04deadbeef 12020451",
-      TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(1234567)), EncryptedRecipientData(hex"deadbeef"), BlindingPoint(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")), TotalAmount(1105 msat)) -> hex"36 02020231 040312d687 0a04deadbeef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2 12020451",
+      TlvStream[OnionPaymentPayloadTlv](AmountToForward(561 msat), OutgoingCltv(CltvExpiry(1234567)), EncryptedRecipientData(hex"deadbeef"), PathKey(PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")), TotalAmount(1105 msat)) -> hex"36 02020231 040312d687 0a04deadbeef 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2 12020451",
     )
 
     for ((expected, bin) <- testCases) {
@@ -269,7 +308,7 @@ class PaymentOnionSpec extends AnyFunSuite {
       // Missing encrypted payment relay data.
       TestCase(MissingRequiredTlv(UInt64(10)), hex"0a 0a080123456789abcdef", TlvStream(RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId(42)), RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat))),
       // Missing encrypted payment constraint.
-      TestCase(MissingRequiredTlv(UInt64(12)), hex"0a 0a080123456789abcdef", TlvStream(RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId(42)), RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat))), // Forbidden encrypted path id.
+      TestCase(MissingRequiredTlv(UInt64(12)), hex"0a 0a080123456789abcdef", TlvStream(RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId(42)), RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat))),
       // Forbidden encrypted path id.
       TestCase(ForbiddenTlv(UInt64(6)), hex"0a 0a080123456789abcdef", TlvStream(RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId(42)), RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(144), 100, 10 msat), RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(1500), 1 msat), RouteBlindingEncryptedDataTlv.PathId(hex"deadbeef"))),
     )
@@ -286,7 +325,7 @@ class PaymentOnionSpec extends AnyFunSuite {
       (MissingRequiredTlv(UInt64(4)), hex"2b 02020231 fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // missing cltv
       (MissingRequiredTlv(UInt64(66098)), hex"07 02020231 04012a"), // missing node id
       (ForbiddenTlv(UInt64(10)), hex"34 02020231 04012a 0a04ffffffff fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // forbidden encrypted data
-      (ForbiddenTlv(UInt64(12)), hex"51 02020231 04012a 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2 fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // forbidden blinding point
+      (ForbiddenTlv(UInt64(12)), hex"51 02020231 04012a 0c21036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2 fe000102322102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), // forbidden path key
     )
 
     for ((expectedErr, bin) <- testCases) {
@@ -315,7 +354,6 @@ class PaymentOnionSpec extends AnyFunSuite {
       (MissingRequiredTlv(UInt64(2)), hex"11 04012a 0a080123456789abcdef 12020451"), // missing amount
       (MissingRequiredTlv(UInt64(4)), hex"12 02020231 0a080123456789abcdef 12020451"), // missing expiry
       (MissingRequiredTlv(UInt64(10)), hex"0b 02020231 04012a 12020451"), // missing encrypted data
-      (MissingRequiredTlv(UInt64(18)), hex"11 02020231 04012a 0a080123456789abcdef"), // missing total amount
       (ForbiddenTlv(UInt64(0)), hex"1f 02020231 04012a 06080000000000000451 0a080123456789abcdef 12020451"), // forbidden outgoing_channel_id
       (ForbiddenTlv(UInt64(0)), hex"39 02020231 04012a 0822eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866190451 0a080123456789abcdef 12020451"), // forbidden payment_data
       (ForbiddenTlv(UInt64(0)), hex"1b 02020231 04012a 0a080123456789abcdef 1004deadbeef 12020451"), // forbidden payment_metadata

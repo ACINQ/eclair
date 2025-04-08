@@ -23,7 +23,7 @@ import akka.testkit.TestProbe
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, OP_1, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxHash, TxId, TxOut, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, OP_1, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxHash, TxId, TxIn, TxOut, addressToPublicKeyScript}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
@@ -34,8 +34,8 @@ import fr.acinq.eclair.blockchain.{OnChainWallet, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.io.OpenChannelInterceptor.makeChannelParams
-import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.InputInfo
+import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
@@ -122,60 +122,60 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       copy(fundingParamsA = fundingParamsA, fundingParamsB = fundingParamsB)
     }
 
-    def spawnTxBuilderAlice(wallet: OnChainWallet, fundingParams: InteractiveTxParams = fundingParamsA): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
+    def spawnTxBuilderAlice(wallet: OnChainWallet, fundingParams: InteractiveTxParams = fundingParamsA, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
       FundingTx(commitFeerate, firstPerCommitmentPointB, feeBudget_opt = None),
-      0 msat, 0 msat,
+      0 msat, 0 msat, liquidityPurchase_opt,
       wallet))
 
     def spawnTxBuilderRbfAlice(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
-      PreviousTxRbf(commitment, 0 msat, 0 msat, previousTransactions, feeBudget_opt = None),
-      0 msat, 0 msat,
+      FundingTxRbf(commitment, previousTransactions, feeBudget_opt = None),
+      0 msat, 0 msat, None,
       wallet))
 
-    def spawnTxBuilderSpliceAlice(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
+    def spawnTxBuilderSpliceAlice(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
-      SpliceTx(commitment),
-      0 msat, 0 msat,
+      SpliceTx(commitment, CommitmentChanges.init()),
+      0 msat, 0 msat, liquidityPurchase_opt,
       wallet))
 
-    def spawnTxBuilderSpliceRbfAlice(fundingParams: InteractiveTxParams, parentCommitment: Commitment, replacedCommitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
+    def spawnTxBuilderSpliceRbfAlice(fundingParams: InteractiveTxParams, parentCommitment: Commitment, latestFundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsA, fundingParams, channelParamsA,
-      PreviousTxRbf(replacedCommitment, parentCommitment.localCommit.spec.toLocal, parentCommitment.remoteCommit.spec.toLocal, previousTransactions, feeBudget_opt = None),
-      0 msat, 0 msat,
+      SpliceTxRbf(parentCommitment, CommitmentChanges.init(), latestFundingTx, previousTransactions, feeBudget_opt = None),
+      0 msat, 0 msat, None,
       wallet))
 
-    def spawnTxBuilderBob(wallet: OnChainWallet, fundingParams: InteractiveTxParams = fundingParamsB): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
+    def spawnTxBuilderBob(wallet: OnChainWallet, fundingParams: InteractiveTxParams = fundingParamsB, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
       FundingTx(commitFeerate, firstPerCommitmentPointA, feeBudget_opt = None),
-      0 msat, 0 msat,
+      0 msat, 0 msat, liquidityPurchase_opt,
       wallet))
 
     def spawnTxBuilderRbfBob(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
-      PreviousTxRbf(commitment, 0 msat, 0 msat, previousTransactions, feeBudget_opt = None),
-      0 msat, 0 msat,
+      FundingTxRbf(commitment, previousTransactions, feeBudget_opt = None),
+      0 msat, 0 msat, None,
       wallet))
 
-    def spawnTxBuilderSpliceBob(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
+    def spawnTxBuilderSpliceBob(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
-      SpliceTx(commitment),
-      0 msat, 0 msat,
+      SpliceTx(commitment, CommitmentChanges.init()),
+      0 msat, 0 msat, liquidityPurchase_opt,
       wallet))
 
-    def spawnTxBuilderSpliceRbfBob(fundingParams: InteractiveTxParams, parentCommitment: Commitment, replacedCommitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
+    def spawnTxBuilderSpliceRbfBob(fundingParams: InteractiveTxParams, parentCommitment: Commitment, latestFundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
       nodeParamsB, fundingParams, channelParamsB,
-      PreviousTxRbf(replacedCommitment, parentCommitment.localCommit.spec.toLocal, parentCommitment.remoteCommit.spec.toLocal, previousTransactions, feeBudget_opt = None),
-      0 msat, 0 msat,
+      SpliceTxRbf(parentCommitment, CommitmentChanges.init(), latestFundingTx, previousTransactions, feeBudget_opt = None),
+      0 msat, 0 msat, None,
       wallet))
 
     def exchangeSigsAliceFirst(fundingParams: InteractiveTxParams, successA: InteractiveTxBuilder.Succeeded, successB: InteractiveTxBuilder.Succeeded): (FullySignedSharedTransaction, Commitment, FullySignedSharedTransaction, Commitment) = {
@@ -211,11 +211,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
-  private def createFixtureParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false)): FixtureParams = {
+  private def createFixtureParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false), nonInitiatorPaysCommitTxFees: Boolean = false): FixtureParams = {
     val channelFeatures = ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), announceChannel = true)
     val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(features = Features(channelFeatures.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport])))
-    val localParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, None, isInitiator = true, dualFunded = true, fundingAmountA, unlimitedMaxHtlcValueInFlight = false)
-    val localParamsB = makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), None, None, isInitiator = false, dualFunded = true, fundingAmountB, unlimitedMaxHtlcValueInFlight = false)
+    val localParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, None, isChannelOpener = true, paysCommitTxFees = !nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountA, unlimitedMaxHtlcValueInFlight = false)
+    val localParamsB = makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), None, None, isChannelOpener = false, paysCommitTxFees = nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountB, unlimitedMaxHtlcValueInFlight = false)
 
     val Seq(remoteParamsA, remoteParamsB) = Seq((nodeParamsA, localParamsA), (nodeParamsB, localParamsB)).map {
       case (nodeParams, localParams) =>
@@ -236,8 +236,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val fundingPubKeyB = nodeParamsB.channelKeyManager.fundingPublicKey(localParamsB.fundingKeyPath, fundingTxIndex = 0).publicKey
     val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, None, fundingPubKeyB, Nil, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
     val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, None, fundingPubKeyA, Nil, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
-    val channelParamsA = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParamsA, remoteParamsB, ChannelFlags.Public)
-    val channelParamsB = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParamsB, remoteParamsA, ChannelFlags.Public)
+    val channelParamsA = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParamsA, remoteParamsB, ChannelFlags(announceChannel = true))
+    val channelParamsB = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParamsB, remoteParamsA, ChannelFlags(announceChannel = true))
 
     FixtureParams(fundingParamsA, nodeParamsA, channelParamsA, fundingParamsB, nodeParamsB, channelParamsB, channelFeatures)
   }
@@ -276,7 +276,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
-  private def withFixture(fundingAmountA: Satoshi, utxosA: Seq[Satoshi], fundingAmountB: Satoshi, utxosB: Seq[Satoshi], targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs)(testFun: Fixture => Any): Unit = {
+  private def withFixture(fundingAmountA: Satoshi, utxosA: Seq[Satoshi], fundingAmountB: Satoshi, utxosB: Seq[Satoshi], targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None)(testFun: Fixture => Any): Unit = {
     // Initialize wallets with a few confirmed utxos.
     val probe = TestProbe()
     val rpcClientA = createWallet(UUID.randomUUID().toString)
@@ -287,9 +287,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     utxosB.foreach(amount => addUtxo(walletB, amount, probe))
     generateBlocks(1)
 
-    val fixtureParams = createFixtureParams(fundingAmountA, fundingAmountB, targetFeerate, dustLimit, lockTime, requireConfirmedInputs)
-    val alice = fixtureParams.spawnTxBuilderAlice(walletA)
-    val bob = fixtureParams.spawnTxBuilderBob(walletB)
+    val fixtureParams = createFixtureParams(fundingAmountA, fundingAmountB, targetFeerate, dustLimit, lockTime, requireConfirmedInputs, nonInitiatorPaysCommitTxFees = liquidityPurchase_opt.nonEmpty)
+    val alice = fixtureParams.spawnTxBuilderAlice(walletA, liquidityPurchase_opt = liquidityPurchase_opt)
+    val bob = fixtureParams.spawnTxBuilderBob(walletB, liquidityPurchase_opt = liquidityPurchase_opt)
     testFun(Fixture(alice, bob, fixtureParams, walletA, rpcClientA, walletB, rpcClientB, TestProbe(), TestProbe()))
   }
 
@@ -564,12 +564,150 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
+  test("initiator does not contribute -- on-the-fly funding") {
+    val targetFeerate = FeeratePerKw(5000 sat)
+    val fundingB = 150_000.sat
+    val utxosB = Seq(200_000 sat)
+    // When on-the-fly funding is used, the initiator may not contribute to the funding transaction.
+    // It will receive HTLCs later that use the purchased inbound liquidity, and liquidity fees will be deduced from those HTLCs.
+    val purchase = LiquidityAds.Purchase.Standard(fundingB, LiquidityAds.Fees(2500 sat, 7500 sat), LiquidityAds.PaymentDetails.FromFutureHtlc(Nil))
+    withFixture(0 sat, Nil, fundingB, utxosB, targetFeerate, 330 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false), Some(purchase)) { f =>
+      import f._
+
+      alice ! Start(alice2bob.ref)
+      bob ! Start(bob2alice.ref)
+
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_add_input --- Bob
+      fwd.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+      // Alice <-- tx_add_output --- Bob
+      fwd.forwardBob2Alice[TxAddOutput]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
+
+      // Alice is responsible for adding the shared output, but Bob is paying for everything.
+      assert(aliceParams.fundingAmount == fundingB)
+
+      // Alice sends signatures first as she did not contribute at all.
+      val successA = alice2bob.expectMsgType[Succeeded]
+      val successB = bob2alice.expectMsgType[Succeeded]
+      val (txA, _, txB, commitmentB) = fixtureParams.exchangeSigsAliceFirst(aliceParams, successA, successB)
+      // Alice doesn't pay any fees to Bob during the interactive-tx, fees will be paid from future HTLCs.
+      assert(commitmentB.localCommit.spec.toLocal == fundingB.toMilliSatoshi)
+
+      // The resulting transaction is valid but has a lower feerate than expected.
+      assert(txA.txId == txB.txId)
+      assert(txA.tx.localAmountIn == 0.msat)
+      assert(txA.tx.localFees == 0.msat)
+      assert(txB.tx.remoteAmountIn == 0.msat)
+      assert(txB.tx.remoteFees == 0.msat)
+      assert(txB.tx.localFees > 0.msat)
+      val probe = TestProbe()
+      walletA.publishTransaction(txA.signedTx).pipeTo(probe.ref)
+      probe.expectMsg(txA.txId)
+      walletA.getMempoolTx(txA.txId).pipeTo(probe.ref)
+      val mempoolTx = probe.expectMsgType[MempoolTx]
+      assert(mempoolTx.fees == txA.tx.fees)
+      assert(targetFeerate * 0.5 <= txA.feerate && txA.feerate < targetFeerate, s"unexpected feerate (target=$targetFeerate actual=${txA.feerate})")
+    }
+  }
+
+  test("initiator does not contribute -- on-the-fly funding with fee credit") {
+    val targetFeerate = FeeratePerKw(5000 sat)
+    val fundingA = 2_500.sat
+    val utxosA = Seq(5_000 sat)
+    val fundingB = 150_000.sat
+    val utxosB = Seq(200_000 sat)
+    // The initiator contributes a small amount, and pays the remaining liquidity fees from its fee credit.
+    val purchase = LiquidityAds.Purchase.WithFeeCredit(fundingB, LiquidityAds.Fees(2500 sat, 7500 sat), 7_500_000 msat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(Nil))
+    withFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 330 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false), Some(purchase)) { f =>
+      import f._
+
+      // Alice has enough fee credit.
+      fixtureParams.nodeParamsB.db.liquidity.addFeeCredit(fixtureParams.nodeParamsA.nodeId, 7_500_000 msat)
+
+      alice ! Start(alice2bob.ref)
+      bob ! Start(bob2alice.ref)
+
+      // Alice --- tx_add_input --> Bob
+      fwd.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_add_input --- Bob
+      fwd.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_add_output --- Bob
+      fwd.forwardBob2Alice[TxAddOutput]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
+
+      // Alice sends signatures first as she contributed less.
+      val successA = alice2bob.expectMsgType[Succeeded]
+      val successB = bob2alice.expectMsgType[Succeeded]
+      val (txA, _, txB, commitmentB) = fixtureParams.exchangeSigsAliceFirst(aliceParams, successA, successB)
+      // Alice partially paid fees to Bob during the interactive-tx using her channel balance, the rest was paid from fee credit.
+      assert(commitmentB.localCommit.spec.toLocal == (fundingA + fundingB).toMilliSatoshi)
+      assert(commitmentB.localCommit.spec.toRemote == 0.msat)
+
+      // The resulting transaction is valid.
+      assert(txA.txId == txB.txId)
+      assert(txA.tx.localFees == 2_500_000.msat)
+      assert(txB.tx.remoteFees == 2_500_000.msat)
+      assert(txB.tx.localFees > 0.msat)
+      val probe = TestProbe()
+      walletA.publishTransaction(txA.signedTx).pipeTo(probe.ref)
+      probe.expectMsg(txA.txId)
+      walletA.getMempoolTx(txA.txId).pipeTo(probe.ref)
+      val mempoolTx = probe.expectMsgType[MempoolTx]
+      assert(mempoolTx.fees == txA.tx.fees)
+      assert(targetFeerate * 0.9 <= txA.feerate && txA.feerate < targetFeerate * 1.25, s"unexpected feerate (target=$targetFeerate actual=${txA.feerate})")
+    }
+  }
+
+  test("initiator does not contribute -- on-the-fly funding without enough fee credit") {
+    val targetFeerate = FeeratePerKw(5000 sat)
+    val fundingB = 150_000.sat
+    val utxosB = Seq(200_000 sat)
+    // The initiator wants to pay the liquidity fees from their fee credit, but they don't have enough of it.
+    val purchase = LiquidityAds.Purchase.WithFeeCredit(fundingB, LiquidityAds.Fees(2500 sat, 7500 sat), 10_000_000 msat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(Nil))
+    withFixture(0 sat, Nil, fundingB, utxosB, targetFeerate, 330 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false), Some(purchase)) { f =>
+      import f._
+
+      // Alice doesn't have enough fee credit.
+      fixtureParams.nodeParamsB.db.liquidity.addFeeCredit(fixtureParams.nodeParamsA.nodeId, 9_000_000 msat)
+
+      alice ! Start(alice2bob.ref)
+      bob ! Start(bob2alice.ref)
+
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_add_input --- Bob
+      fwd.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+      // Alice <-- tx_add_output --- Bob
+      fwd.forwardBob2Alice[TxAddOutput]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
+      // Bob rejects the funding attempt because Alice doesn't have enough fee credit.
+      assert(bob2alice.expectMsgType[RemoteFailure].cause.isInstanceOf[InvalidCompleteInteractiveTx])
+    }
+  }
+
   test("initiator and non-initiator splice-in") {
     val targetFeerate = FeeratePerKw(1000 sat)
     // We chose those amounts to ensure that Bob always signs first:
     //  - funding tx: Alice has one 380 000 sat input and Bob has one 350 000 sat input
     //  - splice tx: Alice has the shared input (150 000 sat) and one 380 000 sat input, Bob has one 350 000 sat input
-    // It verifies that we don't split the shared input amount: if we did,
+    // It verifies that we don't split the shared input amount: if we did, Alice would sign first.
     val fundingA1 = 50_000 sat
     val utxosA = Seq(380_000 sat, 380_000 sat)
     val fundingB1 = 100_000 sat
@@ -1436,8 +1574,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice wants to increase the feerate of the splice transaction.
       val fundingParamsA2 = spliceFixtureParams.fundingParamsA.copy(targetFeerate = targetFeerate * 2)
       val fundingParamsB2 = spliceFixtureParams.fundingParamsB.copy(targetFeerate = targetFeerate * 2)
-      val aliceRbf = fixtureParams.spawnTxBuilderSpliceRbfAlice(fundingParamsA2, parentCommitment = commitmentA1, replacedCommitment = commitmentA2, Seq(spliceTxA1), walletA)
-      val bobRbf = fixtureParams.spawnTxBuilderSpliceRbfBob(fundingParamsB2, parentCommitment = commitmentB1, replacedCommitment = commitmentB2, Seq(spliceTxB1), walletB)
+      val aliceRbf = fixtureParams.spawnTxBuilderSpliceRbfAlice(fundingParamsA2, parentCommitment = commitmentA1, commitmentA2.localFundingStatus.asInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx], Seq(spliceTxA1), walletA)
+      val bobRbf = fixtureParams.spawnTxBuilderSpliceRbfBob(fundingParamsB2, parentCommitment = commitmentB1, commitmentB2.localFundingStatus.asInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx], Seq(spliceTxB1), walletB)
       val fwdRbf = TypeCheckedForwarder(aliceRbf, bobRbf, alice2bob, bob2alice)
 
       aliceRbf ! Start(alice2bob.ref)
@@ -1469,7 +1607,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val successA3 = alice2bob.expectMsgType[Succeeded]
       val successB3 = bob2alice.expectMsgType[Succeeded]
       val (spliceTxA2, _, _, _) = fixtureParams.exchangeSigsBobFirst(fundingParamsB2, successA3, successB3)
-      assert(fundingParamsB2.targetFeerate * 0.9 <= spliceTxA2.feerate && spliceTxA2.feerate <= fundingParamsB2.targetFeerate * 1.25)
+      // The funding transaction isn't confirmed: the splice transaction CPFPs it to the latest feerate.
+      val packageFeerate = Transactions.fee2rate(txA1.tx.fees + spliceTxA2.tx.fees, txA1.signedTx.weight() + spliceTxA2.signedTx.weight())
+      assert(fundingParamsB2.targetFeerate * 0.9 <= packageFeerate && packageFeerate <= fundingParamsB2.targetFeerate * 1.25)
       assert(spliceTxA1.signedTx.txIn.map(_.outPoint).toSet == spliceTxA2.signedTx.txIn.map(_.outPoint).toSet)
       (spliceOutputsA ++ spliceOutputsB).foreach(txOut => assert(spliceTxA2.signedTx.txOut.contains(txOut)))
       assert(spliceTxA1.txId != spliceTxA2.txId)
@@ -1561,10 +1701,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       probe.expectMsg(spliceTxA1.txId)
 
       // Alice wants to make a large increase to the feerate of the splice transaction, which requires additional inputs.
-      val fundingParamsA2 = fundingParamsA1.copy(targetFeerate = FeeratePerKw(10_000 sat))
-      val fundingParamsB2 = fundingParamsB1.copy(targetFeerate = FeeratePerKw(10_000 sat))
-      val aliceRbf = fixtureParams.spawnTxBuilderSpliceRbfAlice(fundingParamsA2, parentCommitment = commitmentA1, replacedCommitment = commitmentA2, Seq(spliceTxA1), walletA)
-      val bobRbf = fixtureParams.spawnTxBuilderSpliceRbfBob(fundingParamsB2, parentCommitment = commitmentB1, replacedCommitment = commitmentB2, Seq(spliceTxB1), walletB)
+      val fundingParamsA2 = fundingParamsA1.copy(targetFeerate = FeeratePerKw(5_000 sat))
+      val fundingParamsB2 = fundingParamsB1.copy(targetFeerate = FeeratePerKw(5_000 sat))
+      val aliceRbf = fixtureParams.spawnTxBuilderSpliceRbfAlice(fundingParamsA2, parentCommitment = commitmentA1, commitmentA2.localFundingStatus.asInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx], Seq(spliceTxA1), walletA)
+      val bobRbf = fixtureParams.spawnTxBuilderSpliceRbfBob(fundingParamsB2, parentCommitment = commitmentB1, commitmentB2.localFundingStatus.asInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx], Seq(spliceTxB1), walletB)
       val fwdRbf = TypeCheckedForwarder(aliceRbf, bobRbf, alice2bob, bob2alice)
 
       aliceRbf ! Start(alice2bob.ref)
@@ -1600,7 +1740,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val successA3 = alice2bob.expectMsgType[Succeeded]
       val successB3 = bob2alice.expectMsgType[Succeeded]
       val (spliceTxA2, _, _, _) = fixtureParams.exchangeSigsBobFirst(fundingParamsB2, successA3, successB3)
-      assert(fundingParamsB2.targetFeerate * 0.9 <= spliceTxA2.feerate && spliceTxA2.feerate <= fundingParamsB2.targetFeerate * 1.25)
+      // The funding transaction isn't confirmed: the splice transaction CPFPs it to the latest feerate.
+      val packageFeerate = Transactions.fee2rate(txA1.tx.fees + spliceTxA2.tx.fees, txA1.signedTx.weight() + spliceTxA2.signedTx.weight())
+      assert(fundingParamsB2.targetFeerate * 0.9 <= packageFeerate && packageFeerate <= fundingParamsB2.targetFeerate * 1.25)
       // Alice and Bob both added a new input to fund the feerate increase.
       assert(spliceTxA2.signedTx.txIn.length == spliceTxA1.signedTx.txIn.length + 2)
       assert(spliceTxA1.signedTx.txIn.map(_.outPoint).toSet.subsetOf(spliceTxA2.signedTx.txIn.map(_.outPoint).toSet))
@@ -1612,7 +1754,99 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
-  test("funding splice transaction with previous inputs (different balance)") {
+  test("fund splice transaction from non-initiator without change output") {
+    val targetFeerate = FeeratePerKw(10_000 sat)
+    val fundingA = 100_000 sat
+    val utxosA = Seq(150_000 sat)
+    val fundingB = 92_000 sat
+    val utxosB = Seq(50_000 sat, 50_000 sat, 50_000 sat, 50_000 sat)
+    withFixture(fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
+      import f._
+
+      val probe = TestProbe()
+      alice ! Start(alice2bob.ref)
+      bob ! Start(bob2alice.ref)
+
+      // Alice --- tx_add_input --> Bob
+      fwd.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_add_input --- Bob
+      fwd.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_add_input --- Bob
+      fwd.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+
+      val successA1 = alice2bob.expectMsgType[Succeeded]
+      val successB1 = bob2alice.expectMsgType[Succeeded]
+      val (txA1, commitmentA1, _, commitmentB1) = fixtureParams.exchangeSigsBobFirst(bobParams, successA1, successB1)
+      assert(targetFeerate * 0.9 <= txA1.feerate && txA1.feerate <= targetFeerate * 1.25)
+      walletA.publishTransaction(txA1.signedTx).pipeTo(probe.ref)
+      probe.expectMsg(txA1.txId)
+
+      val eventListener = TestProbe()
+      system.eventStream.subscribe(eventListener.ref, classOf[ChannelLiquidityPurchased])
+
+      // Alice initiates a splice that is only funded by Bob, because she is purchasing liquidity.
+      val purchase = LiquidityAds.Purchase.Standard(50_000 sat, LiquidityAds.Fees(1000 sat, 1500 sat), LiquidityAds.PaymentDetails.FromChannelBalance)
+      // Alice pays fees for the common fields of the transaction, by decreasing her balance in the shared output.
+      val spliceFeeA = {
+        val dummySpliceTx = Transaction(
+          version = 2,
+          txIn = Seq(TxIn(commitmentA1.commitInput.outPoint, ByteVector.empty, 0, Scripts.witness2of2(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey))),
+          txOut = Seq(commitmentA1.commitInput.txOut),
+          lockTime = 0
+        )
+        Transactions.weight2fee(targetFeerate, dummySpliceTx.weight())
+      }
+      val (sharedInputA, sharedInputB) = sharedInputs(commitmentA1, commitmentB1)
+      val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = -spliceFeeA, fundingAmountB = fundingB, targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, spliceOutputsA = Nil, spliceOutputsB = Nil, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
+      val fundingParamsA1 = spliceFixtureParams.fundingParamsA
+      val fundingParamsB1 = spliceFixtureParams.fundingParamsB
+      val aliceSplice = fixtureParams.spawnTxBuilderSpliceAlice(fundingParamsA1, commitmentA1, walletA, liquidityPurchase_opt = Some(purchase))
+      val bobSplice = fixtureParams.spawnTxBuilderSpliceBob(fundingParamsB1, commitmentB1, walletB, liquidityPurchase_opt = Some(purchase))
+      val fwdSplice = TypeCheckedForwarder(aliceSplice, bobSplice, alice2bob, bob2alice)
+
+      aliceSplice ! Start(alice2bob.ref)
+      bobSplice ! Start(bob2alice.ref)
+
+      // Alice --- tx_add_input --> Bob
+      fwdSplice.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_add_input --- Bob
+      fwdSplice.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_add_output --> Bob
+      fwdSplice.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_add_input --- Bob
+      fwdSplice.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_complete --> Bob
+      fwdSplice.forwardAlice2Bob[TxComplete]
+      // Alice <-- tx_complete --- Bob
+      fwdSplice.forwardBob2Alice[TxComplete]
+
+      val successA2 = alice2bob.expectMsgType[Succeeded]
+      assert(successA2.signingSession.liquidityPurchase_opt.contains(purchase.basicInfo(isBuyer = true)))
+      val successB2 = bob2alice.expectMsgType[Succeeded]
+      assert(successB2.signingSession.liquidityPurchase_opt.contains(purchase.basicInfo(isBuyer = false)))
+      val (spliceTxA1, commitmentA2, _, commitmentB2) = fixtureParams.exchangeSigsBobFirst(fundingParamsB1, successA2, successB2)
+      assert(commitmentA2.localCommit.spec.toLocal == commitmentA1.localCommit.spec.toLocal - spliceFeeA - purchase.fees.total)
+      assert(commitmentB2.localCommit.spec.toLocal == commitmentB1.localCommit.spec.toLocal + fundingB + purchase.fees.total)
+      assert(targetFeerate * 0.9 <= spliceTxA1.feerate && spliceTxA1.feerate <= targetFeerate * 1.25)
+      walletA.publishTransaction(spliceTxA1.signedTx).pipeTo(probe.ref)
+      probe.expectMsg(spliceTxA1.txId)
+
+      val event = eventListener.expectMsgType[ChannelLiquidityPurchased]
+      assert(event.purchase.fees == purchase.fees)
+      assert(event.purchase.fundingTxIndex == 1)
+      assert(event.purchase.fundingTxId == spliceTxA1.txId)
+    }
+  }
+
+  test("fund splice transaction with previous inputs (different balance)") {
     val targetFeerate = FeeratePerKw(2_500 sat)
     val fundingA1 = 100_000 sat
     val utxosA = Seq(340_000 sat, 40_000 sat, 35_000 sat)
@@ -1714,8 +1948,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val additionalFundingA2 = 50_000 sat
       val fundingParamsA2 = fundingParamsA1.copy(targetFeerate = FeeratePerKw(5_000 sat), localContribution = additionalFundingA2, remoteContribution = 0 sat)
       val fundingParamsB2 = fundingParamsB1.copy(targetFeerate = FeeratePerKw(5_000 sat), localContribution = 0 sat, remoteContribution = additionalFundingA2)
-      val aliceRbf = fixtureParams.spawnTxBuilderSpliceRbfAlice(fundingParamsA2, parentCommitment = commitmentA1bis, replacedCommitment = commitmentA2bis, Seq(spliceTxA1), walletA)
-      val bobRbf = fixtureParams.spawnTxBuilderSpliceRbfBob(fundingParamsB2, parentCommitment = commitmentB1bis, replacedCommitment = commitmentB2bis, Seq(spliceTxB1), walletB)
+      val aliceRbf = fixtureParams.spawnTxBuilderSpliceRbfAlice(fundingParamsA2, parentCommitment = commitmentA1bis, commitmentA2bis.localFundingStatus.asInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx], Seq(spliceTxA1), walletA)
+      val bobRbf = fixtureParams.spawnTxBuilderSpliceRbfBob(fundingParamsB2, parentCommitment = commitmentB1bis, commitmentB2bis.localFundingStatus.asInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx], Seq(spliceTxB1), walletB)
       val fwdRbf = TypeCheckedForwarder(aliceRbf, bobRbf, alice2bob, bob2alice)
 
       aliceRbf ! Start(alice2bob.ref)
@@ -1757,7 +1991,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       walletA.getMempoolTx(spliceTxA2.txId).pipeTo(probe.ref)
       val mempoolTx = probe.expectMsgType[MempoolTx]
       assert(mempoolTx.fees == spliceTxA2.tx.fees)
-      assert(fundingParamsB2.targetFeerate * 0.9 <= spliceTxA2.feerate && spliceTxA2.feerate <= fundingParamsB2.targetFeerate * 1.25)
+      // The funding transaction isn't confirmed: the splice transaction CPFPs it to the latest feerate.
+      val packageFeerate = Transactions.fee2rate(txA1.tx.fees + spliceTxA2.tx.fees, txA1.signedTx.weight() + spliceTxA2.signedTx.weight())
+      assert(fundingParamsB2.targetFeerate * 0.9 <= packageFeerate && packageFeerate <= fundingParamsB2.targetFeerate * 1.25)
       assert(spliceTxA1.signedTx.txIn.map(_.outPoint).toSet.subsetOf(spliceTxA2.signedTx.txIn.map(_.outPoint).toSet))
       assert(spliceTxA1.txId != spliceTxA2.txId)
       assert(spliceTxA1.tx.fees < spliceTxA2.tx.fees)
@@ -2089,6 +2325,37 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
+  test("invalid funding contributions for liquidity purchase") {
+    val probe = TestProbe()
+    val wallet = new SingleKeyOnChainWallet()
+    val purchase = LiquidityAds.Purchase.Standard(500_000 sat, LiquidityAds.Fees(5000 sat, 20_000 sat), LiquidityAds.PaymentDetails.FromChannelBalance)
+    val params = createFixtureParams(24_000 sat, 500_000 sat, FeeratePerKw(5000 sat), 500 sat, 0)
+    // Bob will reject Alice's proposal, since she doesn't have enough funds to pay the liquidity fees.
+    val bob = params.spawnTxBuilderBob(wallet, params.fundingParamsB, Some(purchase))
+    bob ! Start(probe.ref)
+    assert(probe.expectMsgType[LocalFailure].cause == InvalidFundingBalances(params.channelId, 524_000 sat, 525_000_000 msat, -1_000_000 msat))
+    // Bob rejects a splice proposed by Alice where she doesn't have enough funds to pay the liquidity fees.
+    val previousCommitment = CommitmentsSpec.makeCommitments(450_000_000 msat, 50_000_000 msat).active.head
+    val sharedInput = params.dummySharedInputB(500_000 sat)
+    val spliceParams = params.fundingParamsB.copy(localContribution = 150_000 sat, remoteContribution = -30_000 sat, sharedInput_opt = Some(sharedInput))
+    val bobSplice = params.spawnTxBuilderSpliceBob(spliceParams, previousCommitment, wallet, Some(purchase))
+    bobSplice ! Start(probe.ref)
+    assert(probe.expectMsgType[LocalFailure].cause == InvalidFundingBalances(params.channelId, 620_000 sat, 625_000_000 msat, -5_000_000 msat))
+    // If Alice is using fee credit to pay the liquidity fees, the funding attempt is valid.
+    val bobFeeCredit = params.spawnTxBuilderBob(wallet, params.fundingParamsB, Some(LiquidityAds.Purchase.WithFeeCredit(500_000 sat, LiquidityAds.Fees(5000 sat, 20_000 sat), 25_000_000 msat, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(Nil))))
+    bobFeeCredit ! Start(probe.ref)
+    probe.expectNoMessage(100 millis)
+    // If we use a payment type where fees are paid outside of the interactive-tx session, the funding attempt is valid.
+    val bobFutureHtlc = params.spawnTxBuilderBob(wallet, params.fundingParamsB, Some(purchase.copy(paymentDetails = LiquidityAds.PaymentDetails.FromFutureHtlc(Nil))))
+    bobFutureHtlc ! Start(probe.ref)
+    probe.expectNoMessage(100 millis)
+    // Bob rejects a splice proposed by Alice where she has enough funds to pay the liquidity fees, but wants to pay
+    // them outside of the interactive-tx session, which requires some trust.
+    val bobFutureHtlcWithBalance = params.spawnTxBuilderSpliceBob(spliceParams, previousCommitment, wallet, Some(purchase.copy(fees = LiquidityAds.Fees(1000 sat, 4000 sat), paymentDetails = LiquidityAds.PaymentDetails.FromFutureHtlc(Nil))))
+    bobFutureHtlcWithBalance ! Start(probe.ref)
+    assert(probe.expectMsgType[LocalFailure].cause == InvalidLiquidityAdsPaymentType(params.channelId, LiquidityAds.PaymentType.FromFutureHtlc, Set(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc)))
+  }
+
   test("invalid input") {
     val probe = TestProbe()
     // Create a transaction with a mix of segwit and non-segwit inputs.
@@ -2402,7 +2669,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     probe.expectMsgType[SendMessage]
     // Alice --- tx_complete --> Bob
     bob ! ReceiveMessage(TxComplete(params.channelId))
-    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId))
+    assert(probe.expectMsgType[RemoteFailure].cause.isInstanceOf[InvalidSpliceFeerate])
   }
 
   test("previous attempts not double-spent") {

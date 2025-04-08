@@ -24,7 +24,7 @@ import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
-import fr.acinq.eclair.{CltvExpiry, Paginated, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{CltvExpiry, Paginated, TimestampMilli}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -32,7 +32,7 @@ import java.sql.{Connection, Statement}
 
 object SqliteChannelsDb {
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 4
+  val CURRENT_VERSION = 6
 }
 
 class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
@@ -79,12 +79,27 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
       )(logger)
     }
 
+    def migration45(): Unit = {
+      statement.executeUpdate("CREATE TABLE htlc_infos_to_remove (channel_id BLOB NOT NULL PRIMARY KEY, before_commitment_number INTEGER NOT NULL)")
+    }
+
+    def migration56(): Unit = {
+      // We're changing our composite index to two distinct indices to improve performance.
+      statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON htlc_infos(channel_id)")
+      statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON htlc_infos(commitment_number)")
+      statement.executeUpdate("DROP INDEX IF EXISTS htlc_infos_idx")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0, created_timestamp INTEGER, last_payment_sent_timestamp INTEGER, last_payment_received_timestamp INTEGER, last_connected_timestamp INTEGER, closed_timestamp INTEGER)")
         statement.executeUpdate("CREATE TABLE htlc_infos (channel_id BLOB NOT NULL, commitment_number INTEGER NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
-        statement.executeUpdate("CREATE INDEX htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
-      case Some(v@(1 | 2 | 3)) =>
+        statement.executeUpdate("CREATE TABLE htlc_infos_to_remove (channel_id BLOB NOT NULL PRIMARY KEY, before_commitment_number INTEGER NOT NULL)")
+        // Note that we use two distinct indices instead of a composite index on (channel_id, commitment_number).
+        // This is more efficient because we're writing a lot to this table but only reading when a channel is force-closed.
+        statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON htlc_infos(channel_id)")
+        statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON htlc_infos(commitment_number)")
+      case Some(v@(1 | 2 | 3 | 4 | 5)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -94,6 +109,12 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         }
         if (v < 4) {
           migration34()
+        }
+        if (v < 5) {
+          migration45()
+        }
+        if (v < 6) {
+          migration56()
         }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -152,15 +173,56 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
       statement.executeUpdate()
     }
 
-    using(sqlite.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
-      statement.executeUpdate()
-    }
+    // The htlc_infos may contain millions of rows, which is very expensive to delete synchronously.
+    // We instead run an asynchronous job to clean up that data in small batches.
+    markHtlcInfosForRemoval(channelId, Long.MaxValue)
 
     using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1, closed_timestamp=? WHERE channel_id=?")) { statement =>
       statement.setLong(1, TimestampMilli.now().toLong)
       statement.setBytes(2, channelId.toArray)
       statement.executeUpdate()
+    }
+  }
+
+  override def markHtlcInfosForRemoval(channelId: ByteVector32, beforeCommitIndex: Long): Unit = withMetrics("channels/forget-htlc-infos", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("UPDATE htlc_infos_to_remove SET before_commitment_number=? WHERE channel_id=?")) { update =>
+      update.setLong(1, beforeCommitIndex)
+      update.setBytes(2, channelId.toArray)
+      if (update.executeUpdate() == 0) {
+        using(sqlite.prepareStatement("INSERT INTO htlc_infos_to_remove VALUES (?, ?)")) { statement =>
+          statement.setBytes(1, channelId.toArray)
+          statement.setLong(2, beforeCommitIndex)
+          statement.executeUpdate()
+        }
+      }
+    }
+  }
+
+  override def removeHtlcInfos(batchSize: Int): Unit = withMetrics("channels/remove-htlc-infos", DbBackends.Sqlite) {
+    // Check if there are channels that need to be cleaned up.
+    val channelToCleanUp_opt = using(sqlite.prepareStatement("SELECT channel_id, before_commitment_number FROM htlc_infos_to_remove LIMIT 1")) { statement =>
+      statement.executeQuery().map(rs => {
+        val channelId = ByteVector32(rs.getByteVector32("channel_id"))
+        val beforeCommitmentNumber = rs.getLong("before_commitment_number")
+        (channelId, beforeCommitmentNumber)
+      }).lastOption
+    }
+    // Remove a batch of HTLC information for that channel.
+    channelToCleanUp_opt.foreach { case (channelId, beforeCommitmentNumber) =>
+      val deletedCount = using(sqlite.prepareStatement(s"DELETE FROM htlc_infos WHERE channel_id=? AND commitment_number IN (SELECT commitment_number FROM htlc_infos WHERE channel_id=? AND commitment_number<? LIMIT $batchSize)")) { statement =>
+        statement.setBytes(1, channelId.toArray)
+        statement.setBytes(2, channelId.toArray)
+        statement.setLong(3, beforeCommitmentNumber)
+        statement.executeUpdate()
+      }
+      logger.info(s"deleted $deletedCount rows from htlc_infos for channelId=$channelId beforeCommitmentNumber=$beforeCommitmentNumber")
+      // If we've deleted all HTLC information for that channel, we can now remove it from the DB.
+      if (deletedCount < batchSize) {
+        using(sqlite.prepareStatement("DELETE FROM htlc_infos_to_remove WHERE channel_id=?")) { statement =>
+          statement.setBytes(1, channelId.toArray)
+          statement.executeUpdate()
+        }
+      }
     }
   }
 
@@ -175,21 +237,21 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
   override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Sqlite) {
     val sql = "SELECT data FROM local_channels WHERE is_closed=1 ORDER BY closed_timestamp DESC"
     remoteNodeId_opt match {
-        case None =>
-          using(sqlite.prepareStatement(limited(sql, paginated_opt))) { statement =>
-            statement.executeQuery().mapCodec(channelDataCodec).toSeq
+      case None =>
+        using(sqlite.prepareStatement(limited(sql, paginated_opt))) { statement =>
+          statement.executeQuery().mapCodec(channelDataCodec).toSeq
+        }
+      case Some(nodeId) =>
+        using(sqlite.prepareStatement(sql)) { statement =>
+          val filtered = statement.executeQuery()
+            .mapCodec(channelDataCodec).filter(_.remoteNodeId == nodeId)
+          val limited = paginated_opt match {
+            case None => filtered
+            case Some(p) => filtered.slice(p.skip, p.skip + p.count)
           }
-        case Some(nodeId) =>
-          using(sqlite.prepareStatement(sql)) { statement =>
-            val filtered = statement.executeQuery()
-              .mapCodec(channelDataCodec).filter(_.remoteNodeId == nodeId)
-            val limited = paginated_opt match {
-              case None => filtered
-              case Some(p) => filtered.slice(p.skip, p.skip + p.count)
-            }
-            limited.toSeq
-          }
-      }
+          limited.toSeq
+        }
+    }
   }
 
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = withMetrics("channels/add-htlc-info", DbBackends.Sqlite) {

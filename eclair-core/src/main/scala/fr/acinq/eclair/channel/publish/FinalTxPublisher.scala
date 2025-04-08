@@ -19,7 +19,6 @@ package fr.acinq.eclair.channel.publish
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.CheckTx
@@ -50,12 +49,12 @@ object FinalTxPublisher {
   case object Stop extends Command
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], txPublishContext: TxPublishContext): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, txPublishContext: TxPublishContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(txPublishContext.mdc()) {
           Behaviors.receiveMessagePartial {
-            case Publish(replyTo, cmd) => new FinalTxPublisher(nodeParams, replyTo, cmd, bitcoinClient, watcher, context, timers, txPublishContext).checkTimeLocks()
+            case Publish(replyTo, cmd) => new FinalTxPublisher(nodeParams, replyTo, cmd, bitcoinClient, context, timers, txPublishContext).checkTimeLocks()
             case Stop => Behaviors.stopped
           }
         }
@@ -69,7 +68,6 @@ private class FinalTxPublisher(nodeParams: NodeParams,
                                replyTo: ActorRef[TxPublisher.PublishTxResult],
                                cmd: TxPublisher.PublishFinalTx,
                                bitcoinClient: BitcoinCoreClient,
-                               watcher: ActorRef[ZmqWatcher.Command],
                                context: ActorContext[FinalTxPublisher.Command],
                                timers: TimerScheduler[FinalTxPublisher.Command],
                                txPublishContext: TxPublishContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
@@ -79,7 +77,7 @@ private class FinalTxPublisher(nodeParams: NodeParams,
   private val log = context.log
 
   def checkTimeLocks(): Behavior[Command] = {
-    val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, txPublishContext), "time-locks-monitor")
+    val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, bitcoinClient, txPublishContext), "time-locks-monitor")
     timeLocksChecker ! CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.tx, cmd.desc)
     Behaviors.receiveMessagePartial {
       case TimeLocksOk => checkParentPublished()
@@ -114,8 +112,9 @@ private class FinalTxPublisher(nodeParams: NodeParams,
   }
 
   def publish(): Behavior[Command] = {
+    val minDepth = nodeParams.channelConf.minDepthScaled(cmd.amount)
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), "mempool-tx-monitor")
-    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, cmd.input, cmd.desc, cmd.fee)
+    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, cmd.input, minDepth, cmd.desc, cmd.fee)
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(txResult) =>
         txResult match {

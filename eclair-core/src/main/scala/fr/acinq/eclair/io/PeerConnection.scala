@@ -103,14 +103,20 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
   }
 
   when(BEFORE_INIT) {
-    case Event(InitializeConnection(peer, chainHash, localFeatures, doSync), d: BeforeInitData) =>
+    case Event(InitializeConnection(peer, chainHash, localFeatures, doSync, fundingRates_opt), d: BeforeInitData) =>
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       log.debug(s"using features=$localFeatures")
-      val localInit = d.pendingAuth.address match {
-        case remoteAddress if !d.pendingAuth.outgoing && conf.sendRemoteAddressInit && NodeAddress.isPublicIPAddress(remoteAddress) => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil), InitTlv.RemoteAddress(remoteAddress)))
-        case _ => protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
+      val remoteAddress_opt = d.pendingAuth.address match {
+        case remoteAddress if !d.pendingAuth.outgoing && conf.sendRemoteAddressInit && NodeAddress.isPublicIPAddress(remoteAddress) => Some(InitTlv.RemoteAddress(remoteAddress))
+        case _ => None
       }
+      val tlvs = TlvStream(Set(
+        Some(InitTlv.Networks(chainHash :: Nil)),
+        remoteAddress_opt,
+        fundingRates_opt.map(InitTlv.OptionWillFund)
+      ).flatten[InitTlv])
+      val localInit = protocol.Init(localFeatures, tlvs)
       d.transport ! localInit
       startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
       unstashAll() // unstash remote init if it already arrived
@@ -182,19 +188,19 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           d.transport ! TransportHandler.ReadAck(msg)
           if (incomingRateLimiter.tryAcquire()) {
             d.peer ! msg
-            Metrics.OnionMessagesReceived.withoutTags().increment()
+            Metrics.OnionMessagesProcessed.withTag(Tags.Direction, Tags.Directions.Incoming).increment()
           } else {
-            Metrics.OnionMessagesThrottled.withoutTags().increment()
+            Metrics.OnionMessagesThrottled.withTag(Tags.Direction, Tags.Directions.Incoming).increment()
           }
         } else {
           if (outgoingRateLimiter.tryAcquire()) {
             d.transport forward msg
-            Metrics.OnionMessagesSent.withoutTags().increment()
+            Metrics.OnionMessagesProcessed.withTag(Tags.Direction, Tags.Directions.Outgoing).increment()
             if (!d.isPersistent) {
               startSingleTimer(KILL_IDLE_TIMER, KillIdle, conf.killIdleDelay)
             }
           } else {
-            Metrics.OnionMessagesThrottled.withoutTags().increment()
+            Metrics.OnionMessagesThrottled.withTag(Tags.Direction, Tags.Directions.Outgoing).increment()
           }
         }
         stay()
@@ -394,11 +400,13 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         stay() using d.copy(behavior = behavior1)
 
       case Event(DoSync(replacePrevious), d: ConnectedData) =>
-        // We assume support for standard range queries since https://github.com/lightning/bolts/pull/1092
+        val canUseChannelRangeQueries = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueries)
         val canUseChannelRangeQueriesEx = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueriesExtended)
-        val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
-        log.debug(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
-        router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)
+        if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
+          val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
+          log.debug(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
+          router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)
+        }
         stay()
 
       case Event(ResumeAnnouncements, d: ConnectedData) =>
@@ -572,7 +580,7 @@ object PeerConnection {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey, outgoing: Boolean) extends RemoteTypes
-  case class InitializeConnection(peer: ActorRef, chainHash: BlockHash, features: Features[InitFeature], doSync: Boolean) extends RemoteTypes
+  case class InitializeConnection(peer: ActorRef, chainHash: BlockHash, features: Features[InitFeature], doSync: Boolean, fundingRates_opt: Option[LiquidityAds.WillFundRates]) extends RemoteTypes
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: NodeAddress, outgoing: Boolean, localInit: protocol.Init, remoteInit: protocol.Init) extends RemoteTypes
 
   sealed trait ConnectionResult extends RemoteTypes

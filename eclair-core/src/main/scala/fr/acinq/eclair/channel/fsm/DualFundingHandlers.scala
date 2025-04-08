@@ -58,7 +58,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
 
   /** Return true if we should stop waiting for confirmations when receiving our peer's channel_ready. */
   def switchToZeroConf(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Boolean = {
-    if (d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepthBlocks, d.latestFundingTx.sharedTx.tx).nonEmpty) {
+    if (d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepth, d.latestFundingTx.sharedTx.tx).nonEmpty) {
       // We're not using zero-conf, but our peer decided to trust us anyway. We can skip waiting for confirmations if:
       //  - they provided a channel alias
       //  - there is a single version of the funding tx (otherwise we don't know which one to use)
@@ -117,7 +117,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
    * never sent us their signatures, or the transaction wasn't accepted in our mempool), their inputs may still be locked.
    */
   def rollbackDualFundingTxs(txs: Seq[SignedSharedTransaction]): Unit = {
-    val inputs = txs.flatMap(_.tx.localInputs).distinctBy(_.serialId).map(i => TxIn(i.outPoint, Nil, 0))
+    val inputs = txs.flatMap(sharedTx => sharedTx.tx.localInputs ++ sharedTx.tx.sharedInput_opt.toSeq).distinctBy(_.serialId).map(i => TxIn(i.outPoint, Nil, 0))
     if (inputs.nonEmpty) {
       wallet.rollback(Transaction(2, inputs, Nil, 0))
     }
@@ -137,10 +137,10 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     rollbackFundingAttempt(signingSession.fundingTx.tx, d.allFundingTxs.map(_.sharedTx))
   }
 
-  def reportRbfFailure(rbfStatus: RbfStatus, f: Throwable): Unit = {
-    rbfStatus match {
-      case RbfStatus.RbfRequested(cmd) => cmd.replyTo ! RES_FAILURE(cmd, f)
-      case RbfStatus.RbfInProgress(cmd_opt, txBuilder, _) =>
+  def reportRbfFailure(fundingStatus: DualFundingStatus, f: Throwable): Unit = {
+    fundingStatus match {
+      case DualFundingStatus.RbfRequested(cmd) => cmd.replyTo ! RES_FAILURE(cmd, f)
+      case DualFundingStatus.RbfInProgress(cmd_opt, txBuilder, _) =>
         txBuilder ! InteractiveTxBuilder.Abort
         cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, f))
       case _ => ()

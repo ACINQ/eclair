@@ -165,7 +165,7 @@ addDebugger () {
 
 addKanelaAgent () {
   # make sure that the lib version matches the one defined in pom.xml
-  addJava "-javaagent:$lib_dir/kanela-agent-1.0.17.jar"
+  addJava "-javaagent:$lib_dir/kanela-agent-1.0.18.jar"
 }
 
 require_arg () {
@@ -283,7 +283,8 @@ java_version_check() {
   if [[ "$java_version" == "" ]]; then
     echo
     echo No java installations was detected.
-    echo Please go to 'https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot' and download
+    echo Please go to "https://adoptium.net/temurin/releases/?package=jre&version=$min_java_version" and download
+    echo a valid Java Runtime and install before running eclair-node.
     echo
     exit 1
   else
@@ -291,12 +292,12 @@ java_version_check() {
     if [[ "$major" -eq "1" ]]; then
      local major=$(echo "$java_version" | cut -d'.' -f2)
     fi
-    if [[ "$major" -lt "8" ]]; then
+    if [[ "$major" -lt "$min_java_version" ]]; then
       echo
       echo The java installation you have is not up to date, eclair-node requires
-      echo at least version 1.8+ \(version 11 recommended\) but you have version $java_version
+      echo at least version ${min_java_version}+ \(version $min_java_version recommended\) but you have version $java_version
       echo
-      echo Please go to 'https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot' and download
+      echo Please go to "https://adoptium.net/temurin/releases/?package=jre&version=$min_java_version" and download
       echo a valid Java Runtime and install before running eclair-node.
       echo
       exit 1
@@ -349,8 +350,9 @@ declare -r real_script_path="$(realpath "$0")"
 declare -r app_home="$(realpath "$(dirname "$real_script_path")")"
 declare -r lib_dir="$(realpath "${app_home:0:${#app_home}-4}/lib")" # {app_home:0:${#app_home}-4} transforms ../bin in ../
 declare -a app_mainclass=("fr.acinq.eclair.Boot")
-declare -a app_entrypoint=$(ls $lib_dir |grep eclair-node) # TODO: improve this
+declare -a app_entrypoint=$(ls "$lib_dir" | grep eclair-node) # TODO: improve this
 declare -a app_classpath=("$lib_dir:$lib_dir/$app_entrypoint")
+declare -ir min_java_version=21
 
 # java_cmd is overrode in process_args when -java-home is used
 declare java_cmd=$(get_java_cmd)

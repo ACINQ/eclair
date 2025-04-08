@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.blockchain
 
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import kamon.Kamon
 import kamon.metric.Metric
 
@@ -30,10 +31,20 @@ object Monitoring {
     val CannotRetrieveFeeratesCount: Metric.Counter = Kamon.counter("bitcoin.rpc.feerates.error", "Number of failures to retrieve on-chain feerates")
   }
 
+  def recordFeerates(feerates: FeeratesPerKw, provider: String) = {
+    val metric = Metrics.FeeratesPerByte.withTag(Tags.Provider, provider)
+    metric.withTag(Tags.Priority, Tags.Priorities.Minimum).update(feerates.minimum.perByte.feerate.toLong.toDouble)
+    metric.withTag(Tags.Priority, Tags.Priorities.Slow).update(feerates.slow.perByte.feerate.toLong.toDouble)
+    metric.withTag(Tags.Priority, Tags.Priorities.Medium).update(feerates.medium.perByte.feerate.toLong.toDouble)
+    metric.withTag(Tags.Priority, Tags.Priorities.Fast).update(feerates.fast.perByte.feerate.toLong.toDouble)
+    metric.withTag(Tags.Priority, Tags.Priorities.Fastest).update(feerates.fastest.perByte.feerate.toLong.toDouble)
+  }
+
   object Tags {
     val Method = "method"
     val Wallet = "wallet"
     val Priority = "priority"
+    val Provider = "provider"
 
     object Priorities {
       val Minimum = "0-minimum"
@@ -41,6 +52,10 @@ object Monitoring {
       val Medium = "2-medium"
       val Fast = "3-fast"
       val Fastest = "4-fastest"
+    }
+
+    object Providers {
+      val BitcoinCore = "bitcoin-core"
     }
   }
 

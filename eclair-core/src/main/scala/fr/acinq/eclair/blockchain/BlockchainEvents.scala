@@ -32,4 +32,14 @@ case class NewTransaction(tx: Transaction) extends BlockchainEvent
 
 case class CurrentBlockHeight(blockHeight: BlockHeight) extends BlockchainEvent
 
-case class CurrentFeerates(feeratesPerKw: FeeratesPerKw) extends BlockchainEvent
+sealed trait CurrentFeerates extends BlockchainEvent {
+  val feeratesPerKw: FeeratesPerKw
+}
+
+object CurrentFeerates {
+  //@formatter:off
+  case class BitcoinCore(feeratesPerKw: FeeratesPerKw) extends CurrentFeerates
+  //@formatter:on
+}
+
+

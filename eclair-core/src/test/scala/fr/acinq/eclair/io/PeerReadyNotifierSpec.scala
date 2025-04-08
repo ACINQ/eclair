@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.PeerReadyNotifier.{NotifyWhenPeerReady, PeerUnavailable}
-import fr.acinq.eclair.{BlockHeight, randomKey}
+import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -33,17 +33,26 @@ import scala.concurrent.duration.DurationInt
 
 class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(remoteNodeId: PublicKey, switchboard: TestProbe[Switchboard.GetPeerInfo], peer: TestProbe[Peer.GetPeerChannels], probe: TestProbe[PeerReadyNotifier.Result])
+  private val remoteFeatures = Features(
+    Features.StaticRemoteKey -> FeatureSupport.Optional,
+    Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Optional,
+    Features.RouteBlinding -> FeatureSupport.Optional,
+  ).initFeatures()
+
+  case class FixtureParam(remoteNodeId: PublicKey, peerReadyManager: TestProbe[PeerReadyManager.Register], switchboard: TestProbe[Switchboard.GetPeerInfo], peer: TestProbe[Peer.GetPeerChannels], probe: TestProbe[PeerReadyNotifier.Result])
 
   override def withFixture(test: OneArgTest): Outcome = {
     val remoteNodeId = randomKey().publicKey
+    val peerReadyManager = TestProbe[PeerReadyManager.Register]("peer-ready-manager")
+    system.receptionist ! Receptionist.Register(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
     val switchboard = TestProbe[Switchboard.GetPeerInfo]("switchboard")
     system.receptionist ! Receptionist.Register(Switchboard.SwitchboardServiceKey, switchboard.ref)
     val peer = TestProbe[Peer.GetPeerChannels]("peer")
     val probe = TestProbe[PeerReadyNotifier.Result]()
     try {
-      withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, switchboard, peer, probe)))
+      withFixture(test.toNoArgTest(FixtureParam(remoteNodeId, peerReadyManager, switchboard, peer, probe)))
     } finally {
+      system.receptionist ! Receptionist.Deregister(PeerReadyManager.PeerReadyManagerServiceKey, peerReadyManager.ref)
       system.receptionist ! Receptionist.Deregister(Switchboard.SwitchboardServiceKey, switchboard.ref)
     }
   }
@@ -53,7 +62,6 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
 
     val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Left(10 millis))))
     notifier ! NotifyWhenPeerReady(probe.ref)
-    assert(switchboard.expectMessageType[Switchboard.GetPeerInfo].remoteNodeId == remoteNodeId)
     probe.expectMessage(PeerUnavailable(remoteNodeId))
   }
 
@@ -62,6 +70,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
 
     val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Right(BlockHeight(100)))))
     notifier ! NotifyWhenPeerReady(probe.ref)
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     assert(switchboard.expectMessageType[Switchboard.GetPeerInfo].remoteNodeId == remoteNodeId)
 
     // We haven't reached the timeout yet.
@@ -78,9 +87,10 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
 
     val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Right(BlockHeight(500)))))
     notifier ! NotifyWhenPeerReady(probe.ref)
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     val request = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set.empty)
-    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, Seq.empty))
+    request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, Some(remoteFeatures), None, Set.empty)
+    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, remoteFeatures, Seq.empty))
   }
 
   test("peer connected (with channels)") { f =>
@@ -88,8 +98,9 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
 
     val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Right(BlockHeight(500)))))
     notifier ! NotifyWhenPeerReady(probe.ref)
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic, TestProbe().ref.toClassic))
+    request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, Some(remoteFeatures), None, Set(TestProbe().ref.toClassic, TestProbe().ref.toClassic))
 
     // Channels are not ready yet.
     val channels2 = Seq(Peer.ChannelInfo(null, SYNCING, null), Peer.ChannelInfo(null, SYNCING, null))
@@ -107,7 +118,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
     val channels4 = Seq(Peer.ChannelInfo(null, NORMAL, null), Peer.ChannelInfo(null, SHUTDOWN, null))
     val request4 = peer.expectMessageType[Peer.GetPeerChannels]
     request4.replyTo ! Peer.PeerChannels(remoteNodeId, channels4)
-    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, channels4))
+    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, remoteFeatures, channels4))
   }
 
   test("peer connects after initial request") { f =>
@@ -115,8 +126,9 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
 
     val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Right(BlockHeight(500)))))
     notifier ! NotifyWhenPeerReady(probe.ref)
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 1)
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, Set(TestProbe().ref.toClassic, TestProbe().ref.toClassic))
+    request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, None, Set(TestProbe().ref.toClassic, TestProbe().ref.toClassic))
     peer.expectNoMessage(100 millis)
 
     // An unrelated peer connects.
@@ -126,10 +138,10 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
     // The target peer connects.
     system.eventStream ! EventStream.Publish(PeerConnected(TestProbe().ref.toClassic, remoteNodeId, null))
     val request2 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic, TestProbe().ref.toClassic))
+    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, Some(remoteFeatures), None, Set(TestProbe().ref.toClassic, TestProbe().ref.toClassic))
     val channels = Seq(Peer.ChannelInfo(null, NEGOTIATING, null))
     peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, channels)
-    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, channels))
+    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, remoteFeatures, channels))
   }
 
   test("peer connects then disconnects") { f =>
@@ -137,6 +149,7 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
 
     val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = None))
     notifier ! NotifyWhenPeerReady(probe.ref)
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     request1.replyTo ! Peer.PeerNotFound(remoteNodeId)
     peer.expectNoMessage(100 millis)
@@ -144,16 +157,16 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
     // The target peer connects and instantly disconnects.
     system.eventStream ! EventStream.Publish(PeerConnected(TestProbe().ref.toClassic, remoteNodeId, null))
     val request2 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, Set(TestProbe().ref.toClassic))
+    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, None, Set(TestProbe().ref.toClassic))
     peer.expectNoMessage(100 millis)
 
     // The target peer reconnects and stays connected.
     system.eventStream ! EventStream.Publish(PeerConnected(TestProbe().ref.toClassic, remoteNodeId, null))
     val request3 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request3.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic))
+    request3.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, Some(remoteFeatures), None, Set(TestProbe().ref.toClassic))
     val channels = Seq(Peer.ChannelInfo(null, CLOSING, null))
     peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, channels)
-    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, channels))
+    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, remoteFeatures, channels))
   }
 
   test("peer connects then disconnects (while waiting for channel states)") { f =>
@@ -161,23 +174,25 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
 
     val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Right(BlockHeight(500)))))
     notifier ! NotifyWhenPeerReady(probe.ref)
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 5)
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, Set.empty)
+    request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, None, Set.empty)
     peer.expectNoMessage(100 millis)
 
     // The target peer connects.
     system.eventStream ! EventStream.Publish(PeerConnected(TestProbe().ref.toClassic, remoteNodeId, null))
     val request2 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic))
+    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, Some(remoteFeatures), None, Set(TestProbe().ref.toClassic))
     peer.expectMessageType[Peer.GetPeerChannels]
 
     // The target peer disconnects, so we wait for them to connect again.
     system.eventStream ! EventStream.Publish(PeerDisconnected(TestProbe().ref.toClassic, remoteNodeId))
     val request3 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request3.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic))
+    val remoteFeatures1 = remoteFeatures.add(Features.OnionMessages, FeatureSupport.Optional)
+    request3.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, Some(remoteFeatures1), None, Set(TestProbe().ref.toClassic))
     val channels = Seq(Peer.ChannelInfo(null, NORMAL, null))
     peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, channels)
-    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, channels))
+    probe.expectMessage(PeerReadyNotifier.PeerReady(remoteNodeId, peer.ref.toClassic, remoteFeatures1, channels))
   }
 
   test("peer connected (duration timeout)") { f =>
@@ -185,8 +200,9 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
 
     val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Left(1 second))))
     notifier ! NotifyWhenPeerReady(probe.ref)
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 0)
     val request = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic))
+    request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, Some(Features.empty), None, Set(TestProbe().ref.toClassic))
     peer.expectMessageType[Peer.GetPeerChannels]
     probe.expectMessage(PeerUnavailable(remoteNodeId))
   }
@@ -196,8 +212,9 @@ class PeerReadyNotifierSpec extends ScalaTestWithActorTestKit(ConfigFactory.load
 
     val notifier = testKit.spawn(PeerReadyNotifier(remoteNodeId, timeout_opt = Some(Right(BlockHeight(100)))))
     notifier ! NotifyWhenPeerReady(probe.ref)
+    peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(remoteNodeId, otherAttempts = 2)
     val request = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, Set(TestProbe().ref.toClassic))
+    request.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, None, Set(TestProbe().ref.toClassic))
     peer.expectMessageType[Peer.GetPeerChannels]
     system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100)))
     probe.expectMessage(PeerUnavailable(remoteNodeId))

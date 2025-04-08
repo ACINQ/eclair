@@ -13,7 +13,8 @@
         "htlcMinimum" : 0,
         "toSelfDelay" : 144,
         "maxAcceptedHtlcs" : 100,
-        "isInitiator" : true,
+        "isChannelOpener" : true,
+        "paysCommitTxFees" : true,
         "upfrontShutdownScript_opt" : "0014fe2baa428e1f6b4b4134d444b3de42a86cffbabc",
         "initFeatures" : {
           "activated" : {
@@ -61,6 +62,7 @@
         }
       },
       "channelFlags" : {
+        "nonInitiatorPaysCommitFees" : false,
         "announceChannel" : false
       }
     },
@@ -124,11 +126,7 @@
     "remotePerCommitmentSecrets" : null,
     "originChannels" : { }
   },
-  "shortIds" : {
-    "real" : {
-      "status" : "temporary",
-      "realScid" : "400000x42x0"
-    },
+  "aliases" : {
     "localAlias" : "0x2d1583d8409d217"
   }
 }

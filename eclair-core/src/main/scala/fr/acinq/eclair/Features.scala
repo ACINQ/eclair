@@ -249,7 +249,7 @@ object Features {
     val mandatory = 22
   }
 
-  case object RouteBlinding extends Feature with InitFeature with NodeFeature with Bolt11Feature {
+  case object RouteBlinding extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_route_blinding"
     val mandatory = 24
   }
@@ -273,6 +273,11 @@ object Features {
   case object OnionMessages extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_onion_messages"
     val mandatory = 38
+  }
+
+  case object ProvideStorage extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_provide_storage"
+    val mandatory = 42
   }
 
   case object ChannelType extends Feature with InitFeature with NodeFeature {
@@ -300,6 +305,17 @@ object Features {
     val mandatory = 54
   }
 
+  case object SimpleClose extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_simple_close"
+    val mandatory = 60
+  }
+
+  /** This feature bit indicates that the node is a mobile wallet that can be woken up via push notifications. */
+  case object WakeUpNotificationClient extends Feature with InitFeature {
+    val rfcName = "wake_up_notification_client"
+    val mandatory = 132
+  }
+
   // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
   // We're not advertising these bits yet in our announcements, clients have to assume support.
   // This is why we haven't added them yet to `areSupported`.
@@ -323,6 +339,23 @@ object Features {
     val mandatory = 154
   }
 
+  /**
+   * Activate this feature to provide on-the-fly funding to remote nodes, as specified in bLIP 36: https://github.com/lightning/blips/blob/master/blip-0036.md.
+   * TODO: add NodeFeature once bLIP is merged.
+   */
+  case object OnTheFlyFunding extends Feature with InitFeature {
+    val rfcName = "on_the_fly_funding"
+    val mandatory = 560
+  }
+
+  // TODO:
+  //  - add NodeFeature once stable
+  //  - add link to bLIP
+  case object FundingFeeCredit extends Feature with InitFeature {
+    val rfcName = "funding_fee_credit"
+    val mandatory = 562
+  }
+
   val knownFeatures: Set[Feature] = Set(
     DataLossProtect,
     InitialRoutingSync,
@@ -341,14 +374,19 @@ object Features {
     DualFunding,
     Quiescence,
     OnionMessages,
+    ProvideStorage,
     ChannelType,
     ScidAlias,
     PaymentMetadata,
     ZeroConf,
     KeySend,
+    SimpleClose,
+    WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
     SplicePrototype,
+    OnTheFlyFunding,
+    FundingFeeCredit
   )
 
   // Features may depend on other features, as specified in Bolt 9.
@@ -361,7 +399,10 @@ object Features {
     RouteBlinding -> (VariableLengthOnion :: Nil),
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
-    AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil)
+    SimpleClose -> (ShutdownAnySegwit :: Nil),
+    AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
+    OnTheFlyFunding -> (SplicePrototype :: Nil),
+    FundingFeeCredit -> (OnTheFlyFunding :: Nil)
   )
 
   case class FeatureException(message: String) extends IllegalArgumentException(message)

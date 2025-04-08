@@ -21,12 +21,17 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.BasicMultiPartPayment
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedHop, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceRequestTlvCodec, offerTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
-import fr.acinq.eclair.{Features, MilliSatoshiLong, RealShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, EncodedNodeId, Features, MilliSatoshiLong, RealShortChannelId, randomBytes32, randomKey}
+import org.json4s.DefaultFormats
+import org.json4s.jackson.JsonMethods
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
+
+import java.io.File
+import scala.io.Source
 
 class OfferTypesSpec extends AnyFunSuite {
   val nodeKey = PrivateKey(hex"85d08273493e489b9330c85a3e54123874c8cd67c1bf531f4b926c9c555f8e1d")
@@ -34,22 +39,20 @@ class OfferTypesSpec extends AnyFunSuite {
 
   test("invoice request is signed") {
     val sellerKey = randomKey()
-    val offer = Offer(Some(100_000 msat), "test offer", sellerKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val offer = Offer(Some(100_000 msat), Some("test offer"), sellerKey.publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 100_000 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.checkSignature())
   }
 
   test("minimal offer") {
-    val tlvs = Set[OfferTlv](
-      OfferDescription("basic offer"),
-      OfferNodeId(nodeId))
+    val tlvs = Set[OfferTlv](OfferNodeId(nodeId))
     val offer = Offer(TlvStream(tlvs))
-    val encoded = "lno1pg9kyctnd93jqmmxvejhy93pqvxl9c6mjgkeaxa6a0vtxqteql688v0ywa8qqwx4j05cyskn8ncrj"
+    val encoded = "lno1zcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe"
     assert(Offer.decode(encoded).get == offer)
     assert(offer.amount.isEmpty)
-    assert(offer.description == "basic offer")
-    assert(offer.nodeId == nodeId)
+    assert(offer.description.isEmpty)
+    assert(offer.nodeId.contains(nodeId))
     // Removing any TLV from the minimal offer makes it invalid.
     for (tlv <- tlvs) {
       val incomplete = TlvStream[OfferTlv](tlvs.filterNot(_ == tlv))
@@ -61,7 +64,7 @@ class OfferTypesSpec extends AnyFunSuite {
 
   test("offer with amount and quantity") {
     val offer = Offer(TlvStream[OfferTlv](
-      OfferChains(Seq(Block.TestnetGenesisBlock.hash)),
+      OfferChains(Seq(Block.Testnet3GenesisBlock.hash)),
       OfferAmount(50 msat),
       OfferDescription("offer with quantity"),
       OfferIssuer("alice@bigshop.com"),
@@ -70,8 +73,8 @@ class OfferTypesSpec extends AnyFunSuite {
     val encoded = "lno1qgsyxjtl6luzd9t3pr62xr7eemp6awnejusgf6gw45q75vcfqqqqqqqgqyeq5ym0venx2u3qwa5hg6pqw96kzmn5d968jys3v9kxjcm9gp3xjemndphhqtnrdak3gqqkyypsmuhrtwfzm85mht4a3vcp0yrlgua3u3m5uqpc6kf7nqjz6v70qwg"
     assert(Offer.decode(encoded).get == offer)
     assert(offer.amount.contains(50 msat))
-    assert(offer.description == "offer with quantity")
-    assert(offer.nodeId == nodeId)
+    assert(offer.description.contains("offer with quantity"))
+    assert(offer.nodeId.contains(nodeId))
     assert(offer.issuer.contains("alice@bigshop.com"))
     assert(offer.quantityMax.contains(Long.MaxValue))
   }
@@ -85,7 +88,7 @@ class OfferTypesSpec extends AnyFunSuite {
   }
 
   test("check that invoice request matches offer") {
-    val offer = Offer(Some(2500 msat), "basic offer", randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val offer = Offer(Some(2500 msat), Some("basic offer"), randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 2500 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.isValid)
@@ -100,7 +103,7 @@ class OfferTypesSpec extends AnyFunSuite {
   }
 
   test("check that invoice request matches offer (with features)") {
-    val offer = Offer(Some(2500 msat), "offer with features", randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val offer = Offer(Some(2500 msat), Some("offer with features"), randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 2500 msat, 1, Features(BasicMultiPartPayment -> Optional), payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.isValid)
@@ -114,13 +117,16 @@ class OfferTypesSpec extends AnyFunSuite {
   }
 
   test("check that invoice request matches offer (without amount)") {
-    val offer = Offer(None, "offer without amount", randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
+    val offer = Offer(None, Some("offer without amount"), randomKey().publicKey, Features.empty, Block.LivenetGenesisBlock.hash)
     val payerKey = randomKey()
     val request = InvoiceRequest(offer, 500 msat, 1, Features.empty, payerKey, Block.LivenetGenesisBlock.hash)
     assert(request.isValid)
     assert(request.offer == offer)
-    val withoutAmount = signInvoiceRequest(request.copy(records = TlvStream(request.records.records.filter { case InvoiceRequestAmount(_) => false case _ => true })), payerKey)
-    assert(!withoutAmount.isValid)
+    // Since the offer doesn't contain an amount, the invoice_request must contain one to be valid.
+    assertThrows[Exception](request.copy(records = TlvStream(request.records.records.filter {
+      case InvoiceRequestAmount(_) => false
+      case _ => true
+    })))
   }
 
   test("check that invoice request matches offer (chain compatibility)") {
@@ -141,7 +147,7 @@ class OfferTypesSpec extends AnyFunSuite {
       val withDefaultChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(InvoiceRequestChain(Block.LivenetGenesisBlock.hash)))), payerKey)
       assert(withDefaultChain.isValid)
       assert(withDefaultChain.offer == offer)
-      val otherChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(InvoiceRequestChain(Block.TestnetGenesisBlock.hash)))), payerKey)
+      val otherChain = signInvoiceRequest(request.copy(records = TlvStream(request.records.records ++ Seq(InvoiceRequestChain(Block.Testnet3GenesisBlock.hash)))), payerKey)
       assert(!otherChain.isValid)
     }
     {
@@ -183,18 +189,18 @@ class OfferTypesSpec extends AnyFunSuite {
     val payerKey = PrivateKey(hex"527d410ec920b626ece685e8af9abc976a48dbf2fe698c1b35d90a1c5fa2fbca")
     val tlvsWithoutSignature = Set[InvoiceRequestTlv](
       InvoiceRequestMetadata(hex"abcdef"),
-      OfferDescription("basic offer"),
       OfferNodeId(nodeId),
       InvoiceRequestPayerId(payerKey.publicKey),
+      InvoiceRequestAmount(21000 msat)
     )
     val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream[InvoiceRequestTlv](tlvsWithoutSignature), OfferCodecs.invoiceRequestTlvCodec), payerKey)
     val tlvs = tlvsWithoutSignature + Signature(signature)
     val invoiceRequest = InvoiceRequest(TlvStream(tlvs))
-    val encoded = "lnr1qqp6hn00pg9kyctnd93jqmmxvejhy93pqvxl9c6mjgkeaxa6a0vtxqteql688v0ywa8qqwx4j05cyskn8ncrjkppqfxajawru7sa7rt300hfzs2lyk2jrxduxrkx9lmzy6lxcvfhk0j7ruzqc4mtjj5fwukrqp7faqrxn664nmwykad76pu997terewcklsx47apag59wf8exly4tky7y63prr7450n28stqssmzuf48w7e6rjad2eq"
+    val encoded = "lnr1qqp6hn00zcssxr0juddeytv7nwawhk9nq9us0arnk8j8wnsq8r2e86vzgtfneupe2gp9yzzcyypymkt4c0n6rhcdw9a7ay2ptuje2gvehscwcchlvgntump3x7e7tc0sgp9k43qeu892gfnz2hrr7akh2x8erh7zm2tv52884vyl462dm5tfcahgtuzt7j0npy7getf4trv5d4g78a9fkwu3kke6hcxdr6t2n7vz"
     assert(InvoiceRequest.decode(encoded).get == invoiceRequest)
     assert(invoiceRequest.offer.amount.isEmpty)
-    assert(invoiceRequest.offer.description == "basic offer")
-    assert(invoiceRequest.offer.nodeId == nodeId)
+    assert(invoiceRequest.offer.description.isEmpty)
+    assert(invoiceRequest.offer.nodeId.contains(nodeId))
     assert(invoiceRequest.metadata == hex"abcdef")
     assert(invoiceRequest.payerId == payerKey.publicKey)
     // Removing any TLV from the minimal invoice request makes it invalid.
@@ -258,28 +264,76 @@ class OfferTypesSpec extends AnyFunSuite {
         val tlvs = genericTlvStream.decode(tlvStream.bits).require.value
         assert(tlvs.records.size == tlvCount)
         val root = OfferTypes.rootHash(tlvs, genericTlvStream)
-      assert(root == expectedRoot)
+        assert(root == expectedRoot)
     }
   }
 
   test("compact blinded route") {
-    case class TestCase(encoded: ByteVector, decoded: BlindedContactInfo)
+    case class TestCase(encoded: ByteVector, decoded: BlindedRoute)
 
     val testCases = Seq(
       TestCase(hex"00 00000000000004d2 0379b470d00b78ded936f8972a0f3ecda2bb6e6df40dcd581dbaeb3742b30008ff 01 02fba71b72623187dd24670110eec870e28b848f255ba2edc0486d3a8e89ec44b7 0002 1dea",
-        CompactBlindedPath(ShortChannelIdDir(isNode1 = true, RealShortChannelId(1234)), PublicKey(hex"0379b470d00b78ded936f8972a0f3ecda2bb6e6df40dcd581dbaeb3742b30008ff"), Seq(BlindedNode(PublicKey(hex"02fba71b72623187dd24670110eec870e28b848f255ba2edc0486d3a8e89ec44b7"), hex"1dea")))),
+        BlindedRoute(EncodedNodeId.ShortChannelIdDir(isNode1 = true, RealShortChannelId(1234)), PublicKey(hex"0379b470d00b78ded936f8972a0f3ecda2bb6e6df40dcd581dbaeb3742b30008ff"), Seq(BlindedHop(PublicKey(hex"02fba71b72623187dd24670110eec870e28b848f255ba2edc0486d3a8e89ec44b7"), hex"1dea")))),
       TestCase(hex"01 000000000000ddd5 0353a081bb02d6e361be3df3e92b41b788ca65667f6ea0c01e2bfa03664460ef86 01 03bce3f0cdb4172caac82ec8a9251eb35df1201bdcb977c5a03f3624ec4156a65f 0003 c0ffee",
-        CompactBlindedPath(ShortChannelIdDir(isNode1 = false, RealShortChannelId(56789)), PublicKey(hex"0353a081bb02d6e361be3df3e92b41b788ca65667f6ea0c01e2bfa03664460ef86"), Seq(BlindedNode(PublicKey(hex"03bce3f0cdb4172caac82ec8a9251eb35df1201bdcb977c5a03f3624ec4156a65f"), hex"c0ffee")))),
+        BlindedRoute(EncodedNodeId.ShortChannelIdDir(isNode1 = false, RealShortChannelId(56789)), PublicKey(hex"0353a081bb02d6e361be3df3e92b41b788ca65667f6ea0c01e2bfa03664460ef86"), Seq(BlindedHop(PublicKey(hex"03bce3f0cdb4172caac82ec8a9251eb35df1201bdcb977c5a03f3624ec4156a65f"), hex"c0ffee")))),
       TestCase(hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73 0379a3b6e4bceb7519d09db776994b1f82cf6a9fa4d3ec2e52314c5938f2f9f966 01 02b446aaa523df82a992ab468e5298eabb6168e2c466455c210d8c97dbb8981328 0002 cafe",
-        BlindedPath(BlindedRoute(PublicKey(hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73"), PublicKey(hex"0379a3b6e4bceb7519d09db776994b1f82cf6a9fa4d3ec2e52314c5938f2f9f966"), Seq(BlindedNode(PublicKey(hex"02b446aaa523df82a992ab468e5298eabb6168e2c466455c210d8c97dbb8981328"), hex"cafe"))))),
+        BlindedRoute(EncodedNodeId.WithPublicKey.Plain(PublicKey(hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")), PublicKey(hex"0379a3b6e4bceb7519d09db776994b1f82cf6a9fa4d3ec2e52314c5938f2f9f966"), Seq(BlindedHop(PublicKey(hex"02b446aaa523df82a992ab468e5298eabb6168e2c466455c210d8c97dbb8981328"), hex"cafe")))),
       TestCase(hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922 028aa5d1a10463d598a0a0ab7296af21619049f94fe03ef664a87561009e58c3dd 01 02988d7381d0434cfebbe521031505fb9987ae6cefd0bab0e5927852eb96bb6cc2 0003 ec1a13",
-        BlindedPath(BlindedRoute(PublicKey(hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922"), PublicKey(hex"028aa5d1a10463d598a0a0ab7296af21619049f94fe03ef664a87561009e58c3dd"), Seq(BlindedNode(PublicKey(hex"02988d7381d0434cfebbe521031505fb9987ae6cefd0bab0e5927852eb96bb6cc2"), hex"ec1a13"))))),
+        BlindedRoute(EncodedNodeId.WithPublicKey.Plain(PublicKey(hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")), PublicKey(hex"028aa5d1a10463d598a0a0ab7296af21619049f94fe03ef664a87561009e58c3dd"), Seq(BlindedHop(PublicKey(hex"02988d7381d0434cfebbe521031505fb9987ae6cefd0bab0e5927852eb96bb6cc2"), hex"ec1a13")))),
     )
 
     testCases.foreach {
       case TestCase(encoded, decoded) =>
-        assert(OfferCodecs.pathCodec.encode(decoded).require.bytes == encoded)
-        assert(OfferCodecs.pathCodec.decode(encoded.bits).require.value == decoded)
+        assert(OfferCodecs.blindedRouteCodec.encode(decoded).require.bytes == encoded)
+        assert(OfferCodecs.blindedRouteCodec.decode(encoded.bits).require.value == decoded)
+    }
+  }
+
+  test("encoded node id") {
+    val testCases = Map(
+      hex"00 0d950b0001c80000" -> EncodedNodeId.ShortChannelIdDir(isNode1 = true, RealShortChannelId(BlockHeight(890123), 456, 0)),
+      hex"01 0c0a14000d800005" -> EncodedNodeId.ShortChannelIdDir(isNode1 = false, RealShortChannelId(BlockHeight(789012), 3456, 5)),
+      hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73" -> EncodedNodeId.WithPublicKey.Plain(PublicKey(hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
+      hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922" -> EncodedNodeId.WithPublicKey.Plain(PublicKey(hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922")),
+      hex"042d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73" -> EncodedNodeId.WithPublicKey.Wallet(PublicKey(hex"022d3b15cea00ee4a8e710b082bef18f0f3409cc4e7aff41c26eb0a4d3ab20dd73")),
+      hex"05ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922" -> EncodedNodeId.WithPublicKey.Wallet(PublicKey(hex"03ba3c458e3299eb19d2e07ae86453f4290bcdf8689707f0862f35194397c45922"))
+    )
+
+    for ((encoded, decoded) <- testCases) {
+      assert(OfferCodecs.encodedNodeIdCodec.encode(decoded).require.bytes == encoded)
+      assert(OfferCodecs.encodedNodeIdCodec.decode(encoded.bits).require.value == decoded)
+    }
+  }
+
+  case class TestVector(description: String, valid: Boolean, bolt12: String)
+
+  test("spec test vectors") {
+    implicit val formats: DefaultFormats.type = DefaultFormats
+
+    val src = Source.fromFile(new File(getClass.getResource(s"/offers-test.json").getFile))
+    val testVectors = JsonMethods.parse(src.mkString).extract[Seq[TestVector]]
+    src.close()
+    for (vector <- testVectors) {
+      if (vector.description == "with currency") {
+        // We don't support currency conversion yet.
+        assert(Offer.decode(vector.bolt12).isFailure)
+      } else {
+        val offer = Offer.decode(vector.bolt12)
+        assert((offer.isSuccess && offer.get.features.unknown.forall(_.bitIndex % 2 == 1)) == vector.valid, vector.description)
+      }
+    }
+  }
+
+  case class FormatTestVector(comment: String, valid: Boolean, string: String)
+
+  test("string format spec test vectors") {
+    implicit val formats: DefaultFormats.type = DefaultFormats
+
+    val src = Source.fromFile(new File(getClass.getResource(s"/format-string-test.json").getFile))
+    val testVectors = JsonMethods.parse(src.mkString).extract[Seq[FormatTestVector]]
+    src.close()
+    for (vector <- testVectors) {
+      assert(Offer.decode(vector.string).isSuccess == vector.valid, vector.comment)
     }
   }
 }

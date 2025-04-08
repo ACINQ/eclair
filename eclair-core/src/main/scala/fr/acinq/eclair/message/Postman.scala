@@ -21,7 +21,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.io.MessageRelay
 import fr.acinq.eclair.message.OnionMessages.{Destination, RoutingStrategy}
@@ -29,9 +29,9 @@ import fr.acinq.eclair.payment.offer.OfferManager
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.{MessageRoute, MessageRouteNotFound, MessageRouteResponse}
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, InvoiceRequestPayload}
-import fr.acinq.eclair.wire.protocol.OfferTypes.{CompactBlindedPath, ContactInfo}
+import fr.acinq.eclair.wire.protocol.OfferTypes.ContactInfo
 import fr.acinq.eclair.wire.protocol.{OfferTypes, OnionMessagePayloadTlv, TlvStream}
-import fr.acinq.eclair.{NodeParams, randomBytes32, randomKey}
+import fr.acinq.eclair.{EncodedNodeId, NodeParams, randomBytes32, randomKey}
 
 import scala.collection.mutable
 
@@ -54,7 +54,7 @@ object Postman {
                          replyTo: ActorRef[OnionMessageResponse]) extends Command
   case class Subscribe(pathId: ByteVector32, replyTo: ActorRef[OnionMessageResponse]) extends Command
   private case class Unsubscribe(pathId: ByteVector32) extends Command
-  case class WrappedMessage(finalPayload: FinalPayload) extends Command
+  case class WrappedMessage(finalPayload: FinalPayload, blindedKey: PrivateKey) extends Command
 
   sealed trait OnionMessageResponse
   case object NoReply extends OnionMessageResponse
@@ -66,16 +66,16 @@ object Postman {
 
   def apply(nodeParams: NodeParams, switchboard: akka.actor.ActorRef, router: ActorRef[Router.PostmanRequest], register: akka.actor.ActorRef, offerManager: typed.ActorRef[OfferManager.RequestInvoice]): Behavior[Command] = {
     Behaviors.setup(context => {
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[OnionMessages.ReceiveMessage](r => WrappedMessage(r.finalPayload)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[OnionMessages.ReceiveMessage](r => WrappedMessage(r.finalPayload, r.blindedKey)))
 
       // For messages expecting a reply, send reply or failure to send
       val subscribed = new mutable.HashMap[ByteVector32, ActorRef[OnionMessageResponse]]()
 
       Behaviors.receiveMessage {
-        case WrappedMessage(invoiceRequestPayload: InvoiceRequestPayload) =>
-          offerManager ! OfferManager.RequestInvoice(invoiceRequestPayload, context.self)
+        case WrappedMessage(invoiceRequestPayload: InvoiceRequestPayload, blindedKey) =>
+          offerManager ! OfferManager.RequestInvoice(invoiceRequestPayload, blindedKey, context.self)
           Behaviors.same
-        case WrappedMessage(finalPayload) =>
+        case WrappedMessage(finalPayload, _) =>
           finalPayload.pathId_opt match {
             case Some(pathId) if pathId.length == 32 =>
               val id = ByteVector32(pathId)
@@ -149,42 +149,47 @@ private class SendingMessage(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case SendMessage =>
         contactInfo match {
-          case compact: OfferTypes.CompactBlindedPath =>
-            router ! Router.GetNodeId(context.messageAdapter(WrappedNodeIdResponse), compact.introductionNode.scid, compact.introductionNode.isNode1)
-            waitForNodeId(compact)
-          case OfferTypes.BlindedPath(route) => sendToDestination(OnionMessages.BlindedPath(route))
-          case OfferTypes.RecipientNodeId(nodeId) => sendToDestination(OnionMessages.Recipient(nodeId, None))
+          case blindedPath: OfferTypes.BlindedPath =>
+            blindedPath.route.firstNodeId match {
+              case EncodedNodeId.ShortChannelIdDir(isNode1, scid) =>
+                router ! Router.GetNodeId(context.messageAdapter(WrappedNodeIdResponse), scid, isNode1)
+                waitForNodeId(blindedPath.route)
+              case introductionNode: EncodedNodeId.WithPublicKey =>
+                sendToDestination(OnionMessages.BlindedPath(blindedPath.route), introductionNode.publicKey)
+            }
+          case OfferTypes.RecipientNodeId(nodeId) => sendToDestination(OnionMessages.Recipient(nodeId, None), nodeId)
         }
     }
   }
 
-  private def waitForNodeId(compactBlindedPath: CompactBlindedPath): Behavior[Command] = {
+  private def waitForNodeId(compactBlindedPath: BlindedRoute): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedNodeIdResponse(None) =>
-        replyTo ! Postman.MessageFailed(s"Could not resolve introduction node for compact blinded path (scid=${compactBlindedPath.introductionNode.scid.toCoordinatesString})")
+        replyTo ! Postman.MessageFailed(s"Could not resolve introduction node for compact blinded path: ${compactBlindedPath.firstNode.nodeId}")
         Behaviors.stopped
       case WrappedNodeIdResponse(Some(nodeId)) =>
-        sendToDestination(OnionMessages.BlindedPath(BlindedRoute(nodeId, compactBlindedPath.blindingKey, compactBlindedPath.blindedNodes)))
+        sendToDestination(OnionMessages.BlindedPath(compactBlindedPath), nodeId)
     }
   }
 
-  private def sendToDestination(destination: Destination): Behavior[Command] = {
+  private def sendToDestination(destination: Destination, plainNodeId: PublicKey): Behavior[Command] = {
     routingStrategy match {
-      case RoutingStrategy.UseRoute(intermediateNodes) => sendToRoute(intermediateNodes, destination)
-      case RoutingStrategy.FindRoute if destination.nodeId == nodeParams.nodeId =>
-        context.self ! WrappedMessageRouteResponse(MessageRoute(Nil, destination.nodeId))
-        waitForRouteFromRouter(destination)
+      case RoutingStrategy.UseRoute(intermediateNodes) =>
+        sendToRoute(intermediateNodes, destination, plainNodeId)
+      case RoutingStrategy.FindRoute if plainNodeId == nodeParams.nodeId =>
+        context.self ! WrappedMessageRouteResponse(MessageRoute(Nil, plainNodeId))
+        waitForRouteFromRouter(destination, plainNodeId)
       case RoutingStrategy.FindRoute =>
-        router ! Router.MessageRouteRequest(context.messageAdapter(WrappedMessageRouteResponse), nodeParams.nodeId, destination.nodeId, Set.empty)
-        waitForRouteFromRouter(destination)
+        router ! Router.MessageRouteRequest(context.messageAdapter(WrappedMessageRouteResponse), nodeParams.nodeId, plainNodeId, Set.empty)
+        waitForRouteFromRouter(destination, plainNodeId)
     }
   }
 
-  private def waitForRouteFromRouter(destination: Destination): Behavior[Command] = {
+  private def waitForRouteFromRouter(destination: Destination, plainNodeId: PublicKey): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedMessageRouteResponse(MessageRoute(intermediateNodes, targetNodeId)) =>
         context.log.debug("Found route: {}", (intermediateNodes :+ targetNodeId).mkString(" -> "))
-        sendToRoute(intermediateNodes, destination)
+        sendToRoute(intermediateNodes, destination, plainNodeId)
       case WrappedMessageRouteResponse(MessageRouteNotFound(targetNodeId)) =>
         context.log.debug("No route found to {}", targetNodeId)
         replyTo ! Postman.MessageFailed("No route found")
@@ -192,19 +197,18 @@ private class SendingMessage(nodeParams: NodeParams,
     }
   }
 
-  private def sendToRoute(intermediateNodes: Seq[PublicKey], destination: Destination): Behavior[Command] = {
+  private def sendToRoute(intermediateNodes: Seq[PublicKey], destination: Destination, plainNodeId: PublicKey): Behavior[Command] = {
     val messageId = randomBytes32()
     val replyRoute =
       if (expectsReply) {
         val numHopsToAdd = 0.max(nodeParams.onionMessageConfig.minIntermediateHops - intermediateNodes.length - 1)
-        val intermediateHops = (Seq(destination.nodeId) ++ intermediateNodes.reverse ++ Seq.fill(numHopsToAdd)(nodeParams.nodeId)).map(OnionMessages.IntermediateNode(_))
+        val intermediateHops = OnionMessages.IntermediateNode(plainNodeId, destination.introductionNodeId) +: (intermediateNodes.reverse ++ Seq.fill(numHopsToAdd)(nodeParams.nodeId)).map(OnionMessages.IntermediateNode(_))
         val lastHop = OnionMessages.Recipient(nodeParams.nodeId, Some(messageId))
-        Some(OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop))
+        Some(OnionMessages.buildRoute(randomKey(), intermediateHops, lastHop).route)
       } else {
         None
       }
     OnionMessages.buildMessage(
-      nodeParams.privateKey,
       randomKey(),
       randomKey(),
       intermediateNodes.map(OnionMessages.IntermediateNode(_)),
@@ -213,9 +217,10 @@ private class SendingMessage(nodeParams: NodeParams,
       case Left(failure) =>
         replyTo ! Postman.MessageFailed(failure.toString)
         Behaviors.stopped
-      case Right((nextNodeId, message)) =>
-        val relay = context.spawn(Behaviors.supervise(MessageRelay()).onFailure(typed.SupervisorStrategy.stop), s"relay-message-$messageId")
-        relay ! MessageRelay.RelayMessage(messageId, switchboard, register, nodeParams.nodeId, Right(nextNodeId), message, MessageRelay.RelayAll, Some(context.messageAdapter[MessageRelay.Status](SendingStatus)))
+      case Right(message) =>
+        val nextNodeId = EncodedNodeId.WithPublicKey.Plain(intermediateNodes.headOption.getOrElse(plainNodeId))
+        val relay = context.spawn(Behaviors.supervise(MessageRelay(nodeParams, switchboard, register, router)).onFailure(typed.SupervisorStrategy.stop), s"relay-message-$messageId")
+        relay ! MessageRelay.RelayMessage(messageId, nodeParams.nodeId, Right(nextNodeId), message, MessageRelay.RelayAll, Some(context.messageAdapter[MessageRelay.Status](SendingStatus)))
         waitForSent()
     }
   }
