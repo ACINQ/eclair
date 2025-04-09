@@ -22,14 +22,14 @@ import akka.testkit.{TestActorRef, TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.crypto.Noise.{Chacha20Poly1305CipherFunctions, CipherState}
 import fr.acinq.eclair.crypto.TransportHandler.{Encryptor, ExtendedCipherState, Listener}
-import fr.acinq.eclair.wire.protocol.CommonCodecs
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{lightningMessageCodec, pingCodec}
+import fr.acinq.eclair.wire.protocol.{LightningMessage, Ping, Pong}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.Codec
 import scodec.bits._
 import scodec.codecs._
 
-import java.nio.charset.Charset
 import scala.annotation.tailrec
 import scala.concurrent.duration._
 
@@ -38,19 +38,19 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
   import TransportHandlerSpec._
 
   object Initiator {
-    val s = Noise.Secp256k1DHFunctions.generateKeyPair(hex"1111111111111111111111111111111111111111111111111111111111111111")
+    val s: Noise.KeyPair = Noise.Secp256k1DHFunctions.generateKeyPair(hex"1111111111111111111111111111111111111111111111111111111111111111")
   }
 
   object Responder {
-    val s = Noise.Secp256k1DHFunctions.generateKeyPair(hex"2121212121212121212121212121212121212121212121212121212121212121")
+    val s: Noise.KeyPair = Noise.Secp256k1DHFunctions.generateKeyPair(hex"2121212121212121212121212121212121212121212121212121212121212121")
   }
 
   test("successful handshake") {
     val pipe = system.actorOf(Props[MyPipe]())
     val probe1 = TestProbe()
     val probe2 = TestProbe()
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, CommonCodecs.varsizebinarydata))
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, CommonCodecs.varsizebinarydata))
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, lightningMessageCodec))
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, lightningMessageCodec))
     pipe ! (initiator, responder)
 
     awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
@@ -62,43 +62,11 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
     awaitCond(initiator.stateName == TransportHandler.Normal)
     awaitCond(responder.stateName == TransportHandler.Normal)
 
-    initiator.tell(ByteVector("hello".getBytes), probe1.ref)
-    probe2.expectMsg(ByteVector("hello".getBytes))
+    initiator.tell(Ping(1105, ByteVector("hello".getBytes)), probe1.ref)
+    probe2.expectMsg(Ping(1105, ByteVector("hello".getBytes)))
 
-    responder.tell(ByteVector("bonjour".getBytes), probe2.ref)
-    probe1.expectMsg(ByteVector("bonjour".getBytes))
-
-    probe1.watch(pipe)
-    initiator.stop()
-    responder.stop()
-    system.stop(pipe)
-    probe1.expectTerminated(pipe)
-  }
-
-  test("successful handshake with custom serializer") {
-    case class MyMessage(payload: String)
-    val mycodec: Codec[MyMessage] = ("payload" | scodec.codecs.string32L(Charset.defaultCharset())).as[MyMessage]
-    val pipe = system.actorOf(Props[MyPipe]())
-    val probe1 = TestProbe()
-    val probe2 = TestProbe()
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, mycodec))
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, mycodec))
-    pipe ! (initiator, responder)
-
-    awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
-    awaitCond(responder.stateName == TransportHandler.WaitingForListener)
-
-    initiator ! Listener(probe1.ref)
-    responder ! Listener(probe2.ref)
-
-    awaitCond(initiator.stateName == TransportHandler.Normal)
-    awaitCond(responder.stateName == TransportHandler.Normal)
-
-    initiator.tell(MyMessage("hello"), probe1.ref)
-    probe2.expectMsg(MyMessage("hello"))
-
-    responder.tell(MyMessage("bonjour"), probe2.ref)
-    probe1.expectMsg(MyMessage("bonjour"))
+    responder.tell(Pong(ByteVector("bonjour".getBytes)), probe2.ref)
+    probe1.expectMsg(Pong(ByteVector("bonjour".getBytes)))
 
     probe1.watch(pipe)
     initiator.stop()
@@ -108,22 +76,14 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
   }
 
   test("handle unknown messages") {
-    sealed trait Message
-    case object Msg1 extends Message
-    case object Msg2 extends Message
-
-    val codec1: Codec[Message] = discriminated[Message].by(uint8)
-      .typecase(1, provide(Msg1))
-
-    val codec12: Codec[Message] = discriminated[Message].by(uint8)
-      .typecase(1, provide(Msg1))
-      .typecase(2, provide(Msg2))
+    val incompleteCodec: Codec[LightningMessage] = discriminated[LightningMessage].by(uint16)
+      .typecase(18, pingCodec)
 
     val pipe = system.actorOf(Props[MyPipePull]())
     val probe1 = TestProbe()
     val probe2 = TestProbe()
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, codec1))
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, codec12))
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, incompleteCodec))
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, lightningMessageCodec))
     pipe ! (initiator, responder)
 
     awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
@@ -135,16 +95,18 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
     awaitCond(initiator.stateName == TransportHandler.Normal)
     awaitCond(responder.stateName == TransportHandler.Normal)
 
-    responder ! Msg1
-    probe1.expectMsg(Msg1)
-    probe1.reply(TransportHandler.ReadAck(Msg1))
+    val msg1 = Ping(130, hex"deadbeef")
+    responder ! msg1
+    probe1.expectMsg(msg1)
+    probe1.reply(TransportHandler.ReadAck(msg1))
 
-    responder ! Msg2
+    responder ! Pong(hex"deadbeef")
     probe1.expectNoMessage(2 seconds) // unknown message
 
-    responder ! Msg1
-    probe1.expectMsg(Msg1)
-    probe1.reply(TransportHandler.ReadAck(Msg1))
+    val msg2 = Ping(42, hex"beefdead")
+    responder ! msg2
+    probe1.expectMsg(msg2)
+    probe1.reply(TransportHandler.ReadAck(msg2))
 
     probe1.watch(pipe)
     initiator.stop()
@@ -157,8 +119,8 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
     val pipe = system.actorOf(Props[MyPipeSplitter]())
     val probe1 = TestProbe()
     val probe2 = TestProbe()
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, CommonCodecs.varsizebinarydata))
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, CommonCodecs.varsizebinarydata))
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, lightningMessageCodec))
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, lightningMessageCodec))
     pipe ! (initiator, responder)
 
     awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
@@ -170,11 +132,11 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
     awaitCond(initiator.stateName == TransportHandler.Normal)
     awaitCond(responder.stateName == TransportHandler.Normal)
 
-    initiator.tell(ByteVector("hello".getBytes), probe1.ref)
-    probe2.expectMsg(ByteVector("hello".getBytes))
+    initiator.tell(Ping(187, ByteVector("hello".getBytes)), probe1.ref)
+    probe2.expectMsg(Ping(187, ByteVector("hello".getBytes)))
 
-    responder.tell(ByteVector("bonjour".getBytes), probe2.ref)
-    probe1.expectMsg(ByteVector("bonjour".getBytes))
+    responder.tell(Pong(ByteVector("bonjour".getBytes)), probe2.ref)
+    probe1.expectMsg(Pong(ByteVector("bonjour".getBytes)))
 
     probe1.watch(pipe)
     initiator.stop()
@@ -187,11 +149,11 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
     val pipe = system.actorOf(Props[MyPipe]())
     val probe1 = TestProbe()
     val supervisor = TestActorRef(Props(new MySupervisor()))
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Initiator.s.pub), pipe, CommonCodecs.varsizebinarydata), supervisor, "ini")
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, CommonCodecs.varsizebinarydata), supervisor, "res")
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Initiator.s.pub), pipe, lightningMessageCodec), supervisor, "ini")
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, lightningMessageCodec), supervisor, "res")
     probe1.watch(responder)
     pipe ! (initiator, responder)
-
+    // We automatically disconnect after a while if the handshake doesn't succeed.
     probe1.expectTerminated(responder, 3 seconds)
   }
 
@@ -219,9 +181,7 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
     */
     val ck = hex"919219dbb2920afa8db80f9a51787a840bcf111ed8d588caf9ab4be716e42b01"
     val sk = hex"969ab31b4d288cedf6218839b27a3e2140827047f2c0f01bf5c04435d43511a9"
-    val rk = hex"bb9020b8965f4df047e07f955f3c4b88418984aadc5cdb35096b9ea8fa5c3442"
     val enc = ExtendedCipherState(CipherState(sk, Chacha20Poly1305CipherFunctions), ck)
-    val dec = ExtendedCipherState(CipherState(rk, Chacha20Poly1305CipherFunctions), ck)
 
     @tailrec
     def loop(cs: Encryptor, count: Int, acc: Vector[ByteVector] = Vector.empty[ByteVector]): Vector[ByteVector] = {
@@ -244,15 +204,13 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
 object TransportHandlerSpec {
 
   class MyPipe extends Actor with Stash with ActorLogging {
-
-    def receive = {
+    def receive: Receive = {
       case (a: ActorRef, b: ActorRef) =>
         unstashAll()
         context watch a
         context watch b
         context become ready(a, b)
-
-      case msg => stash()
+      case _ => stash()
     }
 
     def ready(a: ActorRef, b: ActorRef): Receive = {
@@ -267,15 +225,13 @@ object TransportHandlerSpec {
   }
 
   class MyPipeSplitter extends Actor with Stash {
-
-    def receive = {
+    def receive: Receive = {
       case (a: ActorRef, b: ActorRef) =>
         unstashAll()
         context watch a
         context watch b
         context become ready(a, b)
-
-      case msg => stash()
+      case _ => stash()
     }
 
     def ready(a: ActorRef, b: ActorRef): Receive = {
@@ -296,15 +252,13 @@ object TransportHandlerSpec {
   }
 
   class MyPipePull extends Actor with Stash {
-
-    def receive = {
+    def receive: Receive = {
       case (a: ActorRef, b: ActorRef) =>
         unstashAll()
         context watch a
         context watch b
         context become ready(a, b, aResume = true, bResume = true)
-
-      case msg => stash()
+      case _ => stash()
     }
 
     def ready(a: ActorRef, b: ActorRef, aResume: Boolean, bResume: Boolean): Receive = {
@@ -336,7 +290,7 @@ object TransportHandlerSpec {
       case _ => SupervisorStrategy.stop
     }
 
-    def receive = {
+    def receive: Receive = {
       case _ => ()
     }
   }

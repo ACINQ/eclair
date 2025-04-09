@@ -27,7 +27,7 @@ import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.ChaCha20Poly1305Error
 import fr.acinq.eclair.crypto.Noise._
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, RoutingMessage}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, LightningMessage, RoutingMessage}
 import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs, getSimpleClassName}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
@@ -40,7 +40,7 @@ import scala.reflect.ClassTag
 /**
  * see BOLT #8
  * This class handles the transport layer:
- * - initial handshake. upon completion we will have  a pair of cipher states (one for encryption, one for decryption)
+ * - initial handshake. upon completion we will have a pair of cipher states (one for encryption, one for decryption)
  * - encryption/decryption of messages
  *
  * Once the initial handshake has been completed successfully, the handler will create a listener actor with the
@@ -50,23 +50,22 @@ import scala.reflect.ClassTag
  * @param rs         remote node static public key (which must be known before we initiate communication)
  * @param connection actor that represents the other node's
  */
-class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], connection: ActorRef, codec: Codec[T]) extends Actor with FSMDiagnosticActorLogging[TransportHandler.State, TransportHandler.Data] {
+class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: ActorRef, codec: Codec[LightningMessage]) extends Actor with FSMDiagnosticActorLogging[TransportHandler.State, TransportHandler.Data] {
 
   // will hold the peer's public key once it is available (we don't know it right away in case of an incoming connection)
   var remoteNodeId_opt: Option[PublicKey] = rs.map(PublicKey(_))
 
-  val wireLog = new BusLogging(context.system.eventStream, "", classOf[Diagnostics], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
+  private val wireLog = new BusLogging(context.system.eventStream, "", classOf[Diagnostics], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
 
-  def diag(message: T, direction: String): Unit = {
-    require(direction == "IN" || direction == "OUT")
+  private def logMessage(message: LightningMessage, direction: String): Unit = {
     val channelId_opt = Logs.channelId(message)
     wireLog.mdc(Logs.mdc(LogCategory(message), remoteNodeId_opt, channelId_opt))
     if (channelId_opt.isDefined) {
       // channel-related messages are logged as info
-      wireLog.info(s"$direction msg={}", message)
+      wireLog.info("{} msg={}", direction, message)
     } else {
       // other messages (e.g. routing gossip) are logged as debug
-      wireLog.debug(s"$direction msg={}", message)
+      wireLog.debug("{} msg={}", direction, message)
     }
     wireLog.clearMDC()
   }
@@ -79,11 +78,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
   def buf(message: ByteVector): ByteString = ByteString.fromArray(message.toArray)
 
   // it means we initiate the dialog
-  val isWriter = rs.isDefined
+  private val isWriter = rs.isDefined
 
   context.watch(connection)
 
-  val reader = if (isWriter) {
+  private val reader = if (isWriter) {
     val state = makeWriter(keyPair, rs.get)
     val (state1, message, None) = state.write(ByteVector.empty)
     log.debug(s"sending prefix + $message")
@@ -93,12 +92,12 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
     makeReader(keyPair)
   }
 
-  def decodeAndSendToListener(listener: ActorRef, plaintextMessages: Seq[ByteVector]): Map[T, Int] = {
+  private def decodeAndSendToListener(listener: ActorRef, plaintextMessages: Seq[ByteVector]): Map[LightningMessage, Int] = {
     log.debug("decoding {} plaintext messages", plaintextMessages.size)
-    var m: Map[T, Int] = Map()
+    var m = Map.empty[LightningMessage, Int]
     plaintextMessages.foreach(plaintext => codec.decode(plaintext.bits) match {
       case Attempt.Successful(DecodeResult(message, _)) =>
-        diag(message, "IN")
+        logMessage(message, "IN")
         Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.IN).record(plaintext.size)
         listener ! message
         m += (message -> (m.getOrElse(message, 0) + 1))
@@ -132,25 +131,22 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
               val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
               goto(WaitingForListener) using nextStateData
 
-            case (writer, _, None) => {
+            case (writer, _, None) =>
               writer.write(ByteVector.empty) match {
-                case (reader1, message, None) => {
+                case (reader1, message, None) =>
                   // we're still in the middle of the handshake process and the other end must first received our next
                   // message before they can reply
                   if (remainder.nonEmpty) throw UnexpectedDataDuringHandshake(ByteVector(remainder))
                   connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
                   stay() using HandshakeData(reader1, remainder)
-                }
-                case (_, message, Some((enc, dec, ck))) => {
+                case (_, message, Some((enc, dec, ck))) =>
                   connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
                   val remoteNodeId = PublicKey(writer.rs)
                   remoteNodeId_opt = Some(remoteNodeId)
                   context.parent ! HandshakeCompleted(remoteNodeId)
                   val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
                   goto(WaitingForListener) using nextStateData
-                }
               }
-            }
           }
         }
     }
@@ -169,13 +165,13 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
           log.debug("no decoded messages, resuming reading")
           connection ! Tcp.ResumeReading
         }
-        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[T], Queue.empty[T]), unackedReceived = unackedReceived1, unackedSent = None)
+        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[LightningMessage], Queue.empty[LightningMessage]), unackedReceived = unackedReceived1, unackedSent = None)
     }
   }
 
   when(Normal) {
     handleExceptions {
-      case Event(Tcp.Received(data), d: NormalData[T @unchecked]) =>
+      case Event(Tcp.Received(data), d: NormalData) =>
         log.debug("received chunk of size={}", data.size)
         val (dec1, plaintextMessages) = d.decryptor.copy(buffer = d.decryptor.buffer ++ data).decrypt()
         val unackedReceived1 = decodeAndSendToListener(d.listener, plaintextMessages)
@@ -185,7 +181,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         }
         stay() using d.copy(decryptor = dec1, unackedReceived = unackedReceived1)
 
-      case Event(ReadAck(msg: T), d: NormalData[T @unchecked]) =>
+      case Event(ReadAck(msg: LightningMessage), d: NormalData) =>
         // how many occurrences of this message are still unacked?
         val remaining = d.unackedReceived.getOrElse(msg, 0) - 1
         log.debug("acking message {}", msg)
@@ -199,7 +195,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         }
         stay() using d.copy(unackedReceived = unackedReceived1)
 
-      case Event(t: T, d: NormalData[T @unchecked]) =>
+      case Event(t: LightningMessage, d: NormalData) =>
         if (d.sendBuffer.normalPriority.size + d.sendBuffer.lowPriority.size >= MAX_BUFFERED) {
           log.warning("send buffer overrun, closing connection")
           connection ! PoisonPill
@@ -213,7 +209,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
           }
           stay() using d.copy(sendBuffer = sendBuffer1)
         } else {
-          diag(t, "OUT")
+          logMessage(t, "OUT")
           val blob = codec.encode(t).require.toByteVector
           Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.OUT).record(blob.size)
           val (enc1, ciphertext) = d.encryptor.encrypt(blob)
@@ -221,9 +217,9 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
           stay() using d.copy(encryptor = enc1, unackedSent = Some(t))
         }
 
-      case Event(WriteAck, d: NormalData[T @unchecked]) =>
-        def send(t: T) = {
-          diag(t, "OUT")
+      case Event(WriteAck, d: NormalData) =>
+        def send(t: LightningMessage) = {
+          logMessage(t, "OUT")
           val blob = codec.encode(t).require.toByteVector
           Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.OUT).record(blob.size)
           val (enc1, ciphertext) = d.encryptor.encrypt(blob)
@@ -260,7 +256,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
 
       case Event(msg, d) =>
         d match {
-          case n: NormalData[_] => log.warning(s"unhandled message $msg in state normal unackedSent=${n.unackedSent.size} unackedReceived=${n.unackedReceived.size} sendBuffer.lowPriority=${n.sendBuffer.lowPriority.size} sendBuffer.normalPriority=${n.sendBuffer.normalPriority.size}")
+          case n: NormalData => log.warning(s"unhandled message $msg in state normal unackedSent=${n.unackedSent.size} unackedReceived=${n.unackedReceived.size} sendBuffer.lowPriority=${n.sendBuffer.lowPriority.size} sendBuffer.normalPriority=${n.sendBuffer.normalPriority.size}")
           case _ => log.warning(s"unhandled message $msg in state ${d.getClass.getSimpleName}")
         }
         stay()
@@ -273,7 +269,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
       Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION), remoteNodeId_opt = remoteNodeId_opt)) {
         connection ! Tcp.Close // attempts to gracefully close the connection when dying
         stateData match {
-          case normal: NormalData[_] =>
+          case normal: NormalData =>
             // NB: we deduplicate on the class name: each class will appear once but there may be many instances (less verbose and gives debug hints)
             log.info("stopping (unackedReceived={} unackedSent={})", normal.unackedReceived.keys.map(getSimpleClassName).toSet.mkString(","), normal.unackedSent.map(getSimpleClassName))
           case _ =>
@@ -297,8 +293,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         case t: Throwable =>
           t match {
             // for well known crypto error, we don't display the stack trace
-            case _: InvalidTransportPrefix => log.error(s"crypto error: ${t.getMessage}")
-            case _: ChaCha20Poly1305Error => log.error(s"crypto error: ${t.getMessage}")
+            case _: InvalidTransportPrefix | _: ChaCha20Poly1305Error => log.error(s"crypto error: ${t.getMessage}")
             case _ => log.error(t, "")
           }
           throw t
@@ -309,19 +304,19 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
 
 object TransportHandler {
 
-  def props[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], connection: ActorRef, codec: Codec[T]): Props = Props(new TransportHandler(keyPair, rs, connection, codec))
+  def props[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], connection: ActorRef, codec: Codec[LightningMessage]): Props = Props(new TransportHandler(keyPair, rs, connection, codec))
 
-  val MAX_BUFFERED = 1000000L
+  private val MAX_BUFFERED = 1000000L
 
   // see BOLT #8
   // this prefix is prepended to all Noise messages sent during the handshake phase
   val prefix: Byte = 0x00
+  private val prologue = ByteVector.view("lightning".getBytes("UTF-8"))
 
-  case class InvalidTransportPrefix(buffer: ByteVector) extends RuntimeException(s"invalid transport prefix first64=${buffer.take(64).toHex}")
-
-  case class UnexpectedDataDuringHandshake(buffer: ByteVector) extends RuntimeException(s"unexpected additional data received during handshake first64=${buffer.take(64).toHex}")
-
-  val prologue = ByteVector.view("lightning".getBytes("UTF-8"))
+  // @formatter:off
+  private case class InvalidTransportPrefix(buffer: ByteVector) extends RuntimeException(s"invalid transport prefix first64=${buffer.take(64).toHex}")
+  private case class UnexpectedDataDuringHandshake(buffer: ByteVector) extends RuntimeException(s"unexpected additional data received during handshake first64=${buffer.take(64).toHex}")
+  // @formatter:on
 
   /**
    * See BOLT #8: during the handshake phase we are expecting 3 messages of 50, 50 and 66 bytes (including the prefix)
@@ -329,17 +324,17 @@ object TransportHandler {
    * @param reader handshake state reader
    * @return the size of the message the reader is expecting
    */
-  def expectedLength(reader: Noise.HandshakeStateReader) = reader.messages.length match {
+  private def expectedLength(reader: Noise.HandshakeStateReader): Int = reader.messages.length match {
     case 3 | 2 => 50
     case 1 => 66
   }
 
-  def makeWriter(localStatic: KeyPair, remoteStatic: ByteVector) = Noise.HandshakeState.initializeWriter(
+  private def makeWriter(localStatic: KeyPair, remoteStatic: ByteVector): HandshakeStateWriter = Noise.HandshakeState.initializeWriter(
     Noise.handshakePatternXK, prologue,
     localStatic, KeyPair(ByteVector.empty, ByteVector.empty), remoteStatic, ByteVector.empty,
     Noise.Secp256k1DHFunctions, Noise.Chacha20Poly1305CipherFunctions, Noise.SHA256HashFunctions)
 
-  def makeReader(localStatic: KeyPair) = Noise.HandshakeState.initializeReader(
+  private def makeReader(localStatic: KeyPair): HandshakeStateReader = Noise.HandshakeState.initializeReader(
     Noise.handshakePatternXK, prologue,
     localStatic, KeyPair(ByteVector.empty, ByteVector.empty), ByteVector.empty, ByteVector.empty,
     Noise.Secp256k1DHFunctions, Noise.Chacha20Poly1305CipherFunctions, Noise.SHA256HashFunctions)
@@ -351,37 +346,32 @@ object TransportHandler {
    * @param ck chaining key
    */
   case class ExtendedCipherState(cs: CipherState, ck: ByteVector) extends CipherState {
-    override def cipher: CipherFunctions = cs.cipher
-
-    override def hasKey: Boolean = cs.hasKey
+    override val cipher: CipherFunctions = cs.cipher
+    override val hasKey: Boolean = cs.hasKey
 
     override def encryptWithAd(ad: ByteVector, plaintext: ByteVector): (CipherState, ByteVector) = {
       cs match {
         case UninitializedCipherState(_) => (this, plaintext)
-        case InitializedCipherState(k, n, _) if n == 999 => {
+        case InitializedCipherState(k, n, _) if n == 999 =>
           val (_, ciphertext) = cs.encryptWithAd(ad, plaintext)
           val (ck1, k1) = SHA256HashFunctions.hkdf(ck, k)
           (this.copy(cs = cs.initializeKey(k1), ck = ck1), ciphertext)
-        }
-        case InitializedCipherState(_, n, _) => {
+        case _: InitializedCipherState =>
           val (cs1, ciphertext) = cs.encryptWithAd(ad, plaintext)
           (this.copy(cs = cs1), ciphertext)
-        }
       }
     }
 
     override def decryptWithAd(ad: ByteVector, ciphertext: ByteVector): (CipherState, ByteVector) = {
       cs match {
         case UninitializedCipherState(_) => (this, ciphertext)
-        case InitializedCipherState(k, n, _) if n == 999 => {
+        case InitializedCipherState(k, n, _) if n == 999 =>
           val (_, plaintext) = cs.decryptWithAd(ad, ciphertext)
           val (ck1, k1) = SHA256HashFunctions.hkdf(ck, k)
           (this.copy(cs = cs.initializeKey(k1), ck = ck1), plaintext)
-        }
-        case InitializedCipherState(_, n, _) => {
+        case _: InitializedCipherState =>
           val (cs1, plaintext) = cs.decryptWithAd(ad, ciphertext)
           (this.copy(cs = cs1), plaintext)
-        }
       }
     }
   }
@@ -438,23 +428,23 @@ object TransportHandler {
 
   // @formatter:off
   sealed trait State
-  case object Handshake extends State
+  private case object Handshake extends State
   case object WaitingForListener extends State
   case object Normal extends State
 
   sealed trait Data
-  case class HandshakeData(reader: Noise.HandshakeStateReader, buffer: ByteString = ByteString.empty) extends Data
-  case class WaitingForListenerData(encryptor: Encryptor, decryptor: Decryptor) extends Data
-  case class NormalData[T](encryptor: Encryptor, decryptor: Decryptor, listener: ActorRef, sendBuffer: SendBuffer[T], unackedReceived: Map[T, Int], unackedSent: Option[T]) extends Data
+  private case class HandshakeData(reader: Noise.HandshakeStateReader, buffer: ByteString = ByteString.empty) extends Data
+  private case class WaitingForListenerData(encryptor: Encryptor, decryptor: Decryptor) extends Data
+  private case class NormalData(encryptor: Encryptor, decryptor: Decryptor, listener: ActorRef, sendBuffer: SendBuffer, unackedReceived: Map[LightningMessage, Int], unackedSent: Option[LightningMessage]) extends Data
 
-  case class SendBuffer[T](normalPriority: Queue[T], lowPriority: Queue[T])
+  private case class SendBuffer(normalPriority: Queue[LightningMessage], lowPriority: Queue[LightningMessage])
 
   case class Listener(listener: ActorRef)
 
   case class HandshakeCompleted(remoteNodeId: PublicKey)
 
   case class ReadAck(msg: Any) extends RemoteTypes
-  case object WriteAck extends Tcp.Event
+  private case object WriteAck extends Tcp.Event
   // @formatter:on
 
 }
