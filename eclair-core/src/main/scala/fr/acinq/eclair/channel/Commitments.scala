@@ -697,7 +697,7 @@ object Commitment {
     val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
     val outputs = makeCommitTxOutputs(localParams.paysCommitTxFees, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, localFundingPubkey, remoteFundingPubKey, spec, channelFeatures.commitmentFormat)
     val commitTx = makeCommitTx(commitmentInput, redeemInfo, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isChannelOpener, outputs)
-    val htlcTxs = makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
+    val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, channelFeatures.commitmentFormat)
     (commitTx, htlcTxs)
   }
 
@@ -727,7 +727,7 @@ object Commitment {
     val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
     val outputs = makeCommitTxOutputs(!localParams.paysCommitTxFees, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteFundingPubKey, localFundingPubkey, spec, channelFeatures.commitmentFormat)
     val commitTx = makeCommitTx(commitmentInput, redeemInfo, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isChannelOpener, outputs)
-    val htlcTxs = makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
+    val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, channelFeatures.commitmentFormat)
     (commitTx, htlcTxs)
   }
 }

@@ -1108,9 +1108,9 @@ object Helpers {
         val remoteDelayedPaymentPubkey = Generators.derivePubKey(commitment.remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
         val localPaymentBasepoint = commitment.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
         val localPaymentPubkey = if (commitment.params.channelFeatures.hasFeature(Features.StaticRemoteKey)) localPaymentBasepoint else Generators.derivePubKey(localPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
+        val feeratePerKwHtlc = feerates.fast
         val outputs = makeCommitTxOutputs(!commitment.localParams.paysCommitTxFees, commitment.remoteParams.dustLimit, remoteRevocationPubkey, commitment.localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, commitment.remoteFundingPubKey, localFundingPubkey, remoteCommit.spec, commitment.params.commitmentFormat)
         // We need to use a rather high fee for htlc-claim because we compete with the counterparty.
-        val feeratePerKwHtlc = feerates.fast
 
         // We collect all the preimages we wanted to reveal to our peer.
         val hash2Preimage: Map[ByteVector32, ByteVector32] = commitment.changes.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap

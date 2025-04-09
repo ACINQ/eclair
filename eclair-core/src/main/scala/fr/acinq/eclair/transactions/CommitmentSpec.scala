@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.scalacompat.SatoshiLong
+import fr.acinq.bitcoin.scalacompat.{LexicographicalOrdering, SatoshiLong, TxOut}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, RedeemInfo, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
@@ -27,18 +27,27 @@ import fr.acinq.eclair.wire.protocol._
  */
 
 sealed trait CommitmentOutput {
-  def redeemInfo: RedeemInfo
+  val txOut: TxOut
+  val redeemInfo: RedeemInfo
 }
 
 object CommitmentOutput {
   // @formatter:off
-  case class ToLocal(redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0) extends CommitmentOutput
-  case class ToRemote(redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0) extends CommitmentOutput
-  case class ToLocalAnchor(redeemInfo: RedeemInfo.TaprootKeyPathOrSegwitV0) extends CommitmentOutput
-  case class ToRemoteAnchor(redeemInfo: RedeemInfo.TaprootKeyPathOrSegwitV0) extends CommitmentOutput
-  case class InHtlc(redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0, incomingHtlc: IncomingHtlc) extends CommitmentOutput
-  case class OutHtlc(redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0, outgoingHtlc: OutgoingHtlc) extends CommitmentOutput
+  case class ToLocal(override val txOut: TxOut, redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0) extends CommitmentOutput
+  case class ToRemote(override val txOut: TxOut, redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0) extends CommitmentOutput
+  case class ToLocalAnchor(override val txOut: TxOut, redeemInfo: RedeemInfo.TaprootKeyPathOrSegwitV0) extends CommitmentOutput
+  case class ToRemoteAnchor(override val txOut: TxOut, redeemInfo: RedeemInfo.TaprootKeyPathOrSegwitV0) extends CommitmentOutput
+  case class HtlcSuccessOutput(txOut: TxOut, redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0)
+  case class InHtlc(override val txOut: TxOut, incomingHtlc: IncomingHtlc, redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0, htlcSuccessOutput: Option[HtlcSuccessOutput]) extends CommitmentOutput
+  case class HtlcTimeoutOutput(txOut: TxOut, redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0)
+  case class OutHtlc(override val txOut: TxOut, outgoingHtlc: OutgoingHtlc, redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0, htlcTimeoutOutput: Option[HtlcTimeoutOutput]) extends CommitmentOutput
   // @formatter:on
+
+  def isLessThan(a: CommitmentOutput, b: CommitmentOutput): Boolean = (a, b) match {
+    case (a: OutHtlc, b: OutHtlc) if a.outgoingHtlc.add.paymentHash == b.outgoingHtlc.add.paymentHash && a.outgoingHtlc.add.amountMsat.truncateToSatoshi == b.outgoingHtlc.add.amountMsat.truncateToSatoshi =>
+      a.outgoingHtlc.add.cltvExpiry <= b.outgoingHtlc.add.cltvExpiry
+    case _ => LexicographicalOrdering.isLessThan(a.txOut, b.txOut)
+  }
 }
 
 sealed trait DirectedHtlc {
