@@ -17,14 +17,16 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
+import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, KeyAggCache, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Transaction, TxId, TxOut}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
-import fr.acinq.eclair.{KamonExt, randomLong}
+import fr.acinq.eclair.{KamonExt, randomBytes32, randomLong}
 import grizzled.slf4j.Logging
 import kamon.tag.TagSet
 import scodec.bits.ByteVector
@@ -95,16 +97,38 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
 
   private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value :+ 1.toByte)
 
+  private def nonceSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = Crypto.sha256(shaSeed(channelKeyPath))
+
   override def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PrivateKey = Generators.perCommitSecret(shaSeed(channelKeyPath), index)
 
   override def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PublicKey = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
+
+  private def generateNonce(sessionId: ByteVector32, publicKey: PublicKey, extraInput: Option[ByteVector32] = None): (SecretNonce, IndividualNonce) = {
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+    val keyAggCache = KeyAggCache.create(java.util.List.of(publicKey)).getSecond
+    val nonces = fr.acinq.bitcoin.crypto.musig2.SecretNonce.generate(sessionId, null, publicKey, null, keyAggCache, extraInput.map(scala2kmp).orNull)
+    nonces.getFirst -> nonces.getSecond
+  }
+
+  override def verificationNonce(fundingTxId: TxId, fundingPubKey: PublicKey, index: Long): (SecretNonce, IndividualNonce) = {
+    val keyPath = ChannelKeyManager.keyPath(fundingPubKey)
+    val sessionId = Generators.perCommitSecret(nonceSeed(keyPath), index).value
+    val nonce = generateNonce(sessionId, fundingPubKey, Some(fundingTxId.value))
+    nonce
+  }
+
+  override def signingNonce(fundingPubKey: PublicKey): (SecretNonce, IndividualNonce) = {
+    val sessionId = randomBytes32()
+    val nonce = generateNonce(sessionId, fundingPubKey)
+    nonce
+  }
 
   /**
    * @param tx               input transaction
    * @param publicKey        extended public key
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to our [[fr.acinq.eclair.transactions.Transactions.InputInfo]] output, which is assumed to always be the first spent output)
    * @return a signature generated with the private key that matches the input extended public key
    */
   override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
@@ -117,6 +141,16 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
     }
   }
 
+  override def partialSign(tx: Transaction, inputIndex: Int, spentOutputs: Seq[TxOut], localPublicKey: ExtendedPublicKey, remotePublicKey: PublicKey, txOwner: TxOwner, localNonce: (SecretNonce, IndividualNonce), remoteNextLocalNonce: IndividualNonce): Either[Throwable, ByteVector32] = {
+    val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.CommitTx)
+    Metrics.SignTxCount.withTags(tags).increment()
+    KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
+      val privateKey = privateKeys.get(localPublicKey.path).privateKey
+      val psig = Transactions.partialSign(privateKey, tx, inputIndex, spentOutputs, localPublicKey.publicKey, remotePublicKey, localNonce, remoteNextLocalNonce)
+      psig
+    }
+  }
+
   /**
    * This method is used to spend funds sent to htlc keys/delayed keys
    *
@@ -125,7 +159,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
    * @param remotePoint      remote point
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to our [[fr.acinq.eclair.transactions.Transactions.InputInfo]] output, which is assumed to always be the first spent output)
    * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
    */
   override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
@@ -147,7 +181,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
    * @param remoteSecret     remote secret
    * @param txOwner          owner of the transaction (local/remote)
    * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
+   * @param extraUtxos       extra outputs spent by this transaction (in addition to our [[fr.acinq.eclair.transactions.Transactions.InputInfo]] output, which is assumed to always be the first spent output)
    * @return a signature generated with a private key generated from the input key's matching private key and the remote secret.
    */
   override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
