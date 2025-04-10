@@ -351,9 +351,9 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
     // We create a PSBT with the non-wallet input already signed:
-    val witnessScript = locallySignedTx.txInfo.input match {
-      case InputInfo.SegwitInput(_, _, redeemScript) => fr.acinq.bitcoin.Script.parse(redeemScript)
-      case _: InputInfo.TaprootInput => null
+    val witnessScript = locallySignedTx.txInfo.redeemInfo match {
+      case RedeemInfo.SegwitV0(redeemScript) => fr.acinq.bitcoin.Script.parse(redeemScript)
+      case _: RedeemInfo.Taproot => null // TODO: PSBT must be updated differently in that case
     }
     val sigHash = locallySignedTx.txInfo.sighash(TxOwner.Local, cmd.commitment.params.commitmentFormat)
     val psbt = new Psbt(locallySignedTx.txInfo.tx)

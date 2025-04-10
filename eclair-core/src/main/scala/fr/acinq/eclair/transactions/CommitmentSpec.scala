@@ -19,23 +19,25 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, RedeemInfo, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.wire.protocol._
 
 /**
  * Created by PM on 07/12/2016.
  */
 
-sealed trait CommitmentOutput
+sealed trait CommitmentOutput {
+  def redeemInfo: RedeemInfo
+}
 
 object CommitmentOutput {
   // @formatter:off
-  case object ToLocal extends CommitmentOutput
-  case object ToRemote extends CommitmentOutput
-  case object ToLocalAnchor extends CommitmentOutput
-  case object ToRemoteAnchor extends CommitmentOutput
-  case class InHtlc(incomingHtlc: IncomingHtlc) extends CommitmentOutput
-  case class OutHtlc(outgoingHtlc: OutgoingHtlc) extends CommitmentOutput
+  case class ToLocal(redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0) extends CommitmentOutput
+  case class ToRemote(redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0) extends CommitmentOutput
+  case class ToLocalAnchor(redeemInfo: RedeemInfo.TaprootKeyPathOrSegwitV0) extends CommitmentOutput
+  case class ToRemoteAnchor(redeemInfo: RedeemInfo.TaprootKeyPathOrSegwitV0) extends CommitmentOutput
+  case class InHtlc(redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0, incomingHtlc: IncomingHtlc) extends CommitmentOutput
+  case class OutHtlc(redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0, outgoingHtlc: OutgoingHtlc) extends CommitmentOutput
   // @formatter:on
 }
 
