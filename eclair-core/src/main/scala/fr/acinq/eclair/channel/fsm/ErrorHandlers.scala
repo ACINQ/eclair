@@ -334,9 +334,10 @@ trait ErrorHandlers extends CommonHandlers {
           log.warning(s"they published a future commit (because we asked them to) in txid=${tx.txid}")
           context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(d.commitments.latest.commitInput, tx, d.commitments.latest.localParams.paysCommitTxFees), "future-remote-commit"))
           val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
+          val keys = d.commitments.latest.remoteKeys(keyManager, remotePerCommitmentPoint)
           val remoteCommitPublished = RemoteCommitPublished(
             commitTx = tx,
-            claimMainOutputTx = Closing.RemoteClose.claimMainOutput(keyManager, d.commitments.params, remotePerCommitmentPoint, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey),
+            claimMainOutputTx = Closing.RemoteClose.claimMainOutput(keyManager, keys, d.commitments.params, remotePerCommitmentPoint, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey),
             claimHtlcTxs = Map.empty,
             claimAnchorTxs = List.empty,
             irrevocablySpent = Map.empty)
