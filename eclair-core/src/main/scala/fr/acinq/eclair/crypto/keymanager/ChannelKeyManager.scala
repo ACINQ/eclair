@@ -29,13 +29,21 @@ import java.nio.ByteOrder
 trait ChannelKeyManager {
   def fundingPublicKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey
 
-  def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
+  def fundingKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): PrivateKey
+
+  def revocationBasePoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
   def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
+  def paymentBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey
+
   def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
+  def delayedPaymentBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey
+
   def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
+
+  def htlcBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey
 
   def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PrivateKey
 

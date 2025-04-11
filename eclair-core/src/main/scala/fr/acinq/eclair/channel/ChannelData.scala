@@ -23,6 +23,7 @@ import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
+import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
@@ -699,6 +700,11 @@ case class LocalParams(nodeId: PublicKey,
   // The node responsible for the commit tx fees is also the node paying the mutual close fees.
   // The other node's balance may be empty, which wouldn't allow them to pay the closing fees.
   val paysClosingFees: Boolean = paysCommitTxFees
+
+  def paymentBasepoint(keyManager: ChannelKeyManager, channelConfig: ChannelConfig): PublicKey = walletStaticPaymentBasepoint.getOrElse {
+    val channelKeyPath = keyManager.keyPath(this, channelConfig)
+    keyManager.paymentPoint(channelKeyPath).publicKey
+  }
 }
 
 /**

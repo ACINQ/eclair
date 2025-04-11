@@ -187,20 +187,23 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"to_remote_msat: ${spec.toRemote}")
     logger.info(s"local_feerate_per_kw: ${spec.commitTxFeerate}")
 
+    val commitmentKeys = LocalCommitmentKeys(
+      ourDelayedPaymentKey = Local.delayed_payment_privkey,
+      theirPaymentPublicKey = Remote.payment_privkey.publicKey,
+      ourHtlcKey = Local.htlc_privkey,
+      theirHtlcPublicKey = Remote.htlc_privkey.publicKey,
+      revocationPublicKey = Local.revocation_pubkey
+    )
     val outputs = Transactions.makeCommitTxOutputs(
-      localPaysCommitTxFees = true,
-      localDustLimit = dustLimit,
-      localRevocationPubkey = Local.revocation_pubkey,
-      toLocalDelay = Local.toSelfDelay,
-      localDelayedPaymentPubkey = Local.delayed_payment_privkey.publicKey,
-      remotePaymentPubkey = Remote.payment_privkey.publicKey,
-      localHtlcPubkey = Local.htlc_privkey.publicKey,
-      remoteHtlcPubkey = Remote.htlc_privkey.publicKey,
-      localFundingPubkey = Local.funding_pubkey,
-      remoteFundingPubkey = Remote.funding_pubkey,
+      Local.funding_pubkey,
+      Remote.funding_pubkey,
+      commitmentKeys.publicKeys,
+      payCommitTxFees = true,
+      dustLimit,
+      Local.toSelfDelay,
       spec,
-      commitmentFormat)
-
+      commitmentFormat
+    )
     val commitTx = {
       val tx = Transactions.makeCommitTx(
         commitTxInput = commitmentInput,
@@ -235,14 +238,14 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"output commit_tx: ${commitTx.tx}")
 
     val unsignedHtlcTxs = Transactions.makeHtlcTxs(
+      commitmentKeys.publicKeys,
       commitTx.tx,
       dustLimit,
-      Local.revocation_pubkey,
-      Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
+      Local.toSelfDelay,
       spec.htlcTxFeerate(commitmentFormat),
       outputs,
-      commitmentFormat)
-
+      commitmentFormat
+    )
     val htlcTxs: Seq[TransactionWithInputInfo] = unsignedHtlcTxs.sortBy(_.input.outPoint.index)
     logger.info(s"num_htlcs: ${htlcTxs.length}")
 

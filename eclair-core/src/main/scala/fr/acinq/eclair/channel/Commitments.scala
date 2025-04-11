@@ -364,7 +364,7 @@ case class Commitment(fundingTxIndex: Long,
     }
   }
 
-  def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && nextRemoteCommit_opt.isEmpty
+  private def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && nextRemoteCommit_opt.isEmpty
 
   def hasNoPendingHtlcsOrFeeUpdate(changes: CommitmentChanges): Boolean = hasNoPendingHtlcs &&
     (changes.localChanges.signed ++ changes.localChanges.acked ++ changes.remoteChanges.signed ++ changes.remoteChanges.acked).collectFirst { case _: UpdateFee => true }.isEmpty
@@ -682,20 +682,18 @@ object Commitment {
                    localPerCommitmentPoint: PublicKey,
                    spec: CommitmentSpec): (CommitTx, Seq[HtlcTx]) = {
     val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex).publicKey
-    val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-    val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-    val remotePaymentPubkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) {
-      remoteParams.paymentBasepoint
-    } else {
-      Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
-    }
-    val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
-    val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
-    val outputs = makeCommitTxOutputs(localParams.paysCommitTxFees, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, localFundingPubkey, remoteFundingPubKey, spec, channelFeatures.commitmentFormat)
+    val localPaymentBasepoint = localParams.paymentBasepoint(keyManager, channelConfig)
+    val commitmentKeys = LocalCommitmentKeys(
+      ourDelayedPaymentKey = Generators.derivePrivKey(keyManager.delayedPaymentBaseKey(channelKeyPath), localPerCommitmentPoint),
+      theirPaymentPublicKey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) remoteParams.paymentBasepoint else Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint),
+      ourHtlcKey = Generators.derivePrivKey(keyManager.htlcBaseKey(channelKeyPath), localPerCommitmentPoint),
+      theirHtlcPublicKey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint),
+      revocationPublicKey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
+    )
+    val ourFundingKey = keyManager.fundingKey(localParams.fundingKeyPath, fundingTxIndex)
+    val outputs = makeCommitTxOutputs(ourFundingKey.publicKey, remoteFundingPubKey, commitmentKeys.publicKeys, localParams.paysCommitTxFees, localParams.dustLimit, remoteParams.toSelfDelay, spec, channelFeatures.commitmentFormat)
     val commitTx = makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isChannelOpener, outputs)
-    val htlcTxs = makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
+    val htlcTxs = makeHtlcTxs(commitmentKeys.publicKeys, commitTx.tx, localParams.dustLimit, remoteParams.toSelfDelay, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
     (commitTx, htlcTxs)
   }
 
@@ -711,20 +709,22 @@ object Commitment {
                     remotePerCommitmentPoint: PublicKey,
                     spec: CommitmentSpec): (CommitTx, Seq[HtlcTx]) = {
     val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex).publicKey
-    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
-    val localPaymentPubkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) {
-      localPaymentBasepoint
-    } else {
-      Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
-    }
-    val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-    val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-    val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
-    val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-    val outputs = makeCommitTxOutputs(!localParams.paysCommitTxFees, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteFundingPubKey, localFundingPubkey, spec, channelFeatures.commitmentFormat)
+    val localPaymentBasepoint = localParams.paymentBasepoint(keyManager, channelConfig)
+    val commitmentKeys = RemoteCommitmentKeys(
+      ourPaymentKey = localParams.walletStaticPaymentBasepoint match {
+        case Some(walletPublicKey) => Left(walletPublicKey)
+        case None if channelFeatures.hasFeature(Features.StaticRemoteKey) => Right(keyManager.paymentBaseKey(channelKeyPath))
+        case None => Right(Generators.derivePrivKey(keyManager.paymentBaseKey(channelKeyPath), remotePerCommitmentPoint))
+      },
+      theirDelayedPaymentPublicKey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint),
+      ourHtlcKey = Generators.derivePrivKey(keyManager.htlcBaseKey(channelKeyPath), remotePerCommitmentPoint),
+      theirHtlcPublicKey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint),
+      revocationPublicKey = Generators.revocationPubKey(keyManager.revocationBasePoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+    )
+    val ourFundingKey = keyManager.fundingKey(localParams.fundingKeyPath, fundingTxIndex)
+    val outputs = makeCommitTxOutputs(remoteFundingPubKey, ourFundingKey.publicKey, commitmentKeys.publicKeys, !localParams.paysCommitTxFees, remoteParams.dustLimit, localParams.toSelfDelay, spec, channelFeatures.commitmentFormat)
     val commitTx = makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isChannelOpener, outputs)
-    val htlcTxs = makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
+    val htlcTxs = makeHtlcTxs(commitmentKeys.publicKeys, commitTx.tx, remoteParams.dustLimit, localParams.toSelfDelay, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
     (commitTx, htlcTxs)
   }
 }
@@ -743,17 +743,17 @@ case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
                           remoteFundingPubKey: PublicKey,
                           localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
                           localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
-  val channelId = params.channelId
-  val shortChannelId_opt = localFundingStatus match {
+  val channelId: ByteVector32 = params.channelId
+  val shortChannelId_opt: Option[RealShortChannelId] = localFundingStatus match {
     case f: LocalFundingStatus.ConfirmedFundingTx => Some(f.shortChannelId)
     case _ => None
   }
-  val localParams = params.localParams
-  val remoteParams = params.remoteParams
-  val commitInput = localCommit.commitTxAndRemoteSig.commitTx.input
-  val fundingTxId = commitInput.outPoint.txid
-  val capacity = commitInput.txOut.amount
-  val commitment = Commitment(fundingTxIndex, firstRemoteCommitIndex, remoteFundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, nextRemoteCommit_opt)
+  val localParams: LocalParams = params.localParams
+  val remoteParams: RemoteParams = params.remoteParams
+  val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
+  val fundingTxId: TxId = commitInput.outPoint.txid
+  val capacity: Satoshi = commitInput.txOut.amount
+  val commitment: Commitment = Commitment(fundingTxIndex, firstRemoteCommitIndex, remoteFundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, nextRemoteCommit_opt)
 
   def localChannelReserve: Satoshi = commitment.localChannelReserve(params)
 
@@ -809,19 +809,19 @@ case class Commitments(params: ChannelParams,
   val announceChannel: Boolean = params.announceChannel
 
   // Commitment numbers are the same for all active commitments.
-  val localCommitIndex = active.head.localCommit.index
-  val remoteCommitIndex = active.head.remoteCommit.index
-  val nextRemoteCommitIndex = remoteCommitIndex + 1
+  val localCommitIndex: Long = active.head.localCommit.index
+  val remoteCommitIndex: Long = active.head.remoteCommit.index
+  val nextRemoteCommitIndex: Long = remoteCommitIndex + 1
 
   // While we have multiple active commitments, we use the most restrictive one.
-  val capacity = active.map(_.capacity).min
+  val capacity: Satoshi = active.map(_.capacity).min
   lazy val availableBalanceForSend: MilliSatoshi = active.map(_.availableBalanceForSend(params, changes)).min
   lazy val availableBalanceForReceive: MilliSatoshi = active.map(_.availableBalanceForReceive(params, changes)).min
 
   val all: Seq[Commitment] = active ++ inactive
 
   // We always use the last commitment that was created, to make sure we never go back in time.
-  val latest = FullCommitment(params, changes, active.head.fundingTxIndex, active.head.firstRemoteCommitIndex, active.head.remoteFundingPubKey, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
+  val latest: FullCommitment = FullCommitment(params, changes, active.head.fundingTxIndex, active.head.firstRemoteCommitIndex, active.head.remoteFundingPubKey, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
 
   val lastLocalLocked_opt: Option[Commitment] = active.filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).sortBy(_.fundingTxIndex).lastOption
   val lastRemoteLocked_opt: Option[Commitment] = active.filter(c => c.remoteFundingStatus == RemoteFundingStatus.Locked).sortBy(_.fundingTxIndex).lastOption
@@ -837,7 +837,7 @@ case class Commitments(params: ChannelParams,
   def hasPendingOrProposedHtlcs: Boolean = active.head.hasPendingOrProposedHtlcs(changes)
   def timedOutOutgoingHtlcs(currentHeight: BlockHeight): Set[UpdateAddHtlc] = active.head.timedOutOutgoingHtlcs(currentHeight)
   def almostTimedOutIncomingHtlcs(currentHeight: BlockHeight, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = active.head.almostTimedOutIncomingHtlcs(currentHeight, fulfillSafety)
-  def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = active.head.getOutgoingHtlcCrossSigned(htlcId)
+  private def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = active.head.getOutgoingHtlcCrossSigned(htlcId)
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = active.head.getIncomingHtlcCrossSigned(htlcId)
   // @formatter:on
 

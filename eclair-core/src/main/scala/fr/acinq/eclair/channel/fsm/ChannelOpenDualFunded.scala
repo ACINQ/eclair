@@ -127,7 +127,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         maxAcceptedHtlcs = input.localParams.maxAcceptedHtlcs,
         lockTime = nodeParams.currentBlockHeight.toLong,
         fundingPubkey = fundingPubKey,
-        revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
+        revocationBasepoint = keyManager.revocationBasePoint(channelKeyPath).publicKey,
         paymentBasepoint = input.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
         delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
         htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
@@ -163,7 +163,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             upfrontShutdownScript_opt = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
           val channelKeyPath = keyManager.keyPath(localParams, d.init.channelConfig)
-          val revocationBasePoint = keyManager.revocationPoint(channelKeyPath).publicKey
+          val revocationBasePoint = keyManager.revocationBasePoint(channelKeyPath).publicKey
           // We've exchanged open_channel2 and accept_channel2, we now know the final channelId.
           val channelId = Helpers.computeChannelId(open.revocationBasepoint, revocationBasePoint)
           val channelParams = ChannelParams(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, open.channelFlags)

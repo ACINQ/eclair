@@ -223,7 +223,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
         RemoteParams(
           nodeParams.nodeId,
           localParams.dustLimit, UInt64(localParams.maxHtlcValueInFlightMsat.toLong), None, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs,
-          nodeParams.channelKeyManager.revocationPoint(channelKeyPath).publicKey,
+          nodeParams.channelKeyManager.revocationBasePoint(channelKeyPath).publicKey,
           nodeParams.channelKeyManager.paymentPoint(channelKeyPath).publicKey,
           nodeParams.channelKeyManager.delayedPaymentPoint(channelKeyPath).publicKey,
           nodeParams.channelKeyManager.htlcPoint(channelKeyPath).publicKey,
@@ -1167,7 +1167,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
         val publicKey = probe.expectMsgType[PublicKey]
         val tx = Transaction(2, Nil, TxOut(100_000 sat, Script.pay2wpkh(publicKey)) +: (1 to 2500).map(_ => TxOut(5000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
         val minerWallet = makeBitcoinCoreClient()
-        minerWallet.fundTransaction(tx, FeeratePerKw(500 sat), replaceable = true).pipeTo(probe.ref)
+        minerWallet.fundTransaction(tx, FeeratePerKw(500 sat)).pipeTo(probe.ref)
         val unsignedTx = probe.expectMsgType[FundTransactionResponse].tx
         minerWallet.signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, Nil).pipeTo(probe.ref)
         val Right(signedTx) = probe.expectMsgType[ProcessPsbtResponse].finalTx_opt

@@ -49,9 +49,13 @@ object LocalChannelKeyManager {
  *  funding txs:
  *     47' / 1' / <fundingKeyPath> / <1' or 0'> / <index>'
  *
- *  others channel basepoint keys (payment, revocation, htlc, etc.):
+ *  other channel basepoint keys (payment, revocation, htlc, etc.):
  *     47' / 1' / <channelKeyPath> / <1'-5'>
  * }}}
+ *
+ * Note that the channel basepoint keys are usually not used directly: they are instead tweaked every time the channel
+ * is updated using the [[ChannelKeyManager.commitmentPoint]]. This is why they are called basepoint keys (from which
+ * key derivation starts).
  *
  * @param seed seed from which the channel keys will be derived
  */
@@ -85,13 +89,24 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
     publicKeys.get(keyPath)
   }
 
-  override def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(1)))
+  override def fundingKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): PrivateKey = {
+    val keyPath = internalKeyPath(fundingKeyPath, hardened(fundingTxIndex))
+    privateKeys.get(keyPath).privateKey
+  }
+
+  override def revocationBasePoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(1)))
 
   override def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(2)))
 
+  override def paymentBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(2))).privateKey
+
   override def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(3)))
 
+  override def delayedPaymentBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(3))).privateKey
+
   override def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(4)))
+
+  override def htlcBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(4))).privateKey
 
   private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value :+ 1.toByte)
 

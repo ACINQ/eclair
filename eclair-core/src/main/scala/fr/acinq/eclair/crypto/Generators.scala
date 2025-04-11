@@ -18,17 +18,11 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
-import scodec.bits.ByteVector
 
 /**
-  * Created by PM on 07/12/2016.
-  */
+ * Created by PM on 07/12/2016.
+ */
 object Generators {
-
-  def fixSize(data: ByteVector): ByteVector32 = data.length match {
-    case 32 => ByteVector32(data)
-    case length if length < 32 => ByteVector32(data.padLeft(32))
-  }
 
   def perCommitSecret(seed: ByteVector32, index: Long): PrivateKey = PrivateKey(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFL - index))
 
@@ -40,7 +34,7 @@ object Generators {
   }
 
   def derivePubKey(basePoint: PublicKey, perCommitPoint: PublicKey): PublicKey = {
-    //pubkey = basepoint + SHA256(per-commitment-point || basepoint)*G
+    // pubkey = basepoint + SHA256(per-commitment-point || basepoint)*G
     val a = PrivateKey(Crypto.sha256(perCommitPoint.value ++ basePoint.value))
     basePoint.add(a.publicKey)
   }
