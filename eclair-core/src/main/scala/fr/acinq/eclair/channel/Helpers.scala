@@ -423,28 +423,25 @@ object Helpers {
                       remoteFundingPubKey: PublicKey,
                       remotePerCommitmentPoint: PublicKey,
                       localCommitmentIndex: Long, remoteCommitmentIndex: Long): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx, Seq[HtlcTx])] = {
-      import params._
       val localSpec = CommitmentSpec(localHtlcs, commitTxFeerate, toLocal = toLocal, toRemote = toRemote)
       val remoteSpec = CommitmentSpec(localHtlcs.map(_.opposite), commitTxFeerate, toLocal = toRemote, toRemote = toLocal)
 
-      if (!localParams.paysCommitTxFees) {
+      if (!params.localParams.paysCommitTxFees) {
         // They are responsible for paying the commitment transaction fee: we need to make sure they can afford it!
         // Note that the reserve may not always be met: we could be using dual funding with a large funding amount on
         // our side and a small funding amount on their side. But we shouldn't care as long as they can pay the fees for
         // the commitment transaction.
-        val fees = commitTxTotalCost(remoteParams.dustLimit, remoteSpec, channelFeatures.commitmentFormat)
+        val fees = commitTxTotalCost(params.remoteParams.dustLimit, remoteSpec, params.commitmentFormat)
         val missing = fees - toRemote.truncateToSatoshi
         if (missing > 0.sat) {
-          return Left(CannotAffordFirstCommitFees(channelId, missing = missing, fees = fees))
+          return Left(CannotAffordFirstCommitFees(params.channelId, missing = missing, fees = fees))
         }
       }
 
-      val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex)
-      val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-      val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, fundingPubKey.publicKey, remoteFundingPubKey)
-      val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, localCommitmentIndex)
-      val (localCommitTx, _) = Commitment.makeLocalTxs(keyManager, channelConfig, channelFeatures, localCommitmentIndex, localParams, remoteParams, fundingTxIndex, remoteFundingPubKey, commitmentInput, localPerCommitmentPoint, localSpec)
-      val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, channelConfig, channelFeatures, remoteCommitmentIndex, localParams, remoteParams, fundingTxIndex, remoteFundingPubKey, commitmentInput, remotePerCommitmentPoint, remoteSpec)
+      val localFundingPubKey = params.localFundingKey(keyManager, fundingTxIndex).publicKey
+      val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, localFundingPubKey, remoteFundingPubKey)
+      val (localCommitTx, _) = Commitment.makeLocalTxs(keyManager, params, localCommitmentIndex, fundingTxIndex, remoteFundingPubKey, commitmentInput, localSpec)
+      val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, params, remoteCommitmentIndex, fundingTxIndex, remoteFundingPubKey, commitmentInput, remotePerCommitmentPoint, remoteSpec)
       val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
       Right(localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)
     }
@@ -1088,21 +1085,11 @@ object Helpers {
        * Claim our htlc outputs only from the remote commitment.
        */
       def claimHtlcOutputs(keyManager: ChannelKeyManager, commitment: FullCommitment, remoteCommit: RemoteCommit, feerates: FeeratesPerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Map[OutPoint, Option[ClaimHtlcTx]] = {
-        val (remoteCommitTx, _) = Commitment.makeRemoteTxs(keyManager, commitment.params.channelConfig, commitment.params.channelFeatures, remoteCommit.index, commitment.localParams, commitment.remoteParams, commitment.fundingTxIndex, commitment.remoteFundingPubKey, commitment.commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
+        val (remoteCommitTx, _) = Commitment.makeRemoteTxs(keyManager, commitment.params, remoteCommit.index, commitment.fundingTxIndex, commitment.remoteFundingPubKey, commitment.commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
         require(remoteCommitTx.tx.txid == remoteCommit.txid, "txid mismatch, cannot recompute the current remote commit tx")
         val channelKeyPath = keyManager.keyPath(commitment.localParams, commitment.params.channelConfig)
-        val ourFundingKey = keyManager.fundingKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex)
-        val commitmentKeys = RemoteCommitmentKeys(
-          ourPaymentKey = commitment.localParams.walletStaticPaymentBasepoint match {
-            case Some(walletPublicKey) => Left(walletPublicKey)
-            case None if commitment.params.channelFeatures.hasFeature(Features.StaticRemoteKey) => Right(keyManager.paymentBaseKey(channelKeyPath))
-            case None => Right(Generators.derivePrivKey(keyManager.paymentBaseKey(channelKeyPath), remoteCommit.remotePerCommitmentPoint))
-          },
-          theirDelayedPaymentPublicKey = Generators.derivePubKey(commitment.remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint),
-          ourHtlcKey = Generators.derivePrivKey(keyManager.htlcBaseKey(channelKeyPath), remoteCommit.remotePerCommitmentPoint),
-          theirHtlcPublicKey = Generators.derivePubKey(commitment.remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint),
-          revocationPublicKey = Generators.revocationPubKey(keyManager.revocationBasePoint(channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
-        )
+        val ourFundingKey = commitment.params.localFundingKey(keyManager, commitment.fundingTxIndex)
+        val commitmentKeys = RemoteCommitmentKeys(keyManager, commitment.params, remoteCommit.remotePerCommitmentPoint)
         val outputs = makeCommitTxOutputs(commitment.remoteFundingPubKey, ourFundingKey.publicKey, commitmentKeys.publicKeys, !commitment.localParams.paysCommitTxFees, commitment.remoteParams.dustLimit, commitment.localParams.toSelfDelay, remoteCommit.spec, commitment.params.commitmentFormat)
         // We need to use a rather high fee for htlc-claim because we compete with the counterparty.
         val feeratePerKwHtlc = feerates.fast

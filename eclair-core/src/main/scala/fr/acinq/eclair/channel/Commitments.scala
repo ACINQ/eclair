@@ -49,6 +49,17 @@ case class ChannelParams(channelId: ByteVector32,
     remoteParams = remoteParams.copy(initFeatures = remoteInit.features)
   )
 
+  def localFundingKey(keyManager: ChannelKeyManager, fundingTxIndex: Long): PrivateKey = {
+    keyManager.fundingKey(localParams.fundingKeyPath, fundingTxIndex)
+  }
+
+  def localPaymentBasepoint(keyManager: ChannelKeyManager): PublicKey = {
+    localParams.walletStaticPaymentBasepoint.getOrElse {
+      val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
+      keyManager.paymentPoint(channelKeyPath).publicKey
+    }
+  }
+
   /**
    * Returns the number of confirmations needed to make a channel transaction safe from reorgs.
    * A malicious miner that can create a longer reorg will be able to steal all of the channel funds.
@@ -194,7 +205,7 @@ object LocalCommit {
   def fromCommitSig(keyManager: ChannelKeyManager, params: ChannelParams, fundingTxId: TxId,
                     fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo,
                     commit: CommitSig, localCommitIndex: Long, spec: CommitmentSpec, localPerCommitmentPoint: PublicKey): Either[ChannelException, LocalCommit] = {
-    val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(keyManager, params.channelConfig, params.channelFeatures, localCommitIndex, params.localParams, params.remoteParams, fundingTxIndex, remoteFundingPubKey, commitInput, localPerCommitmentPoint, spec)
+    val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(keyManager, params, localCommitIndex, fundingTxIndex, remoteFundingPubKey, commitInput, spec)
     if (!localCommitTx.checkSig(commit.signature, remoteFundingPubKey, TxOwner.Remote, params.commitmentFormat)) {
       return Left(InvalidCommitmentSignature(params.channelId, fundingTxId, fundingTxIndex, localCommitTx.tx))
     }
@@ -217,7 +228,7 @@ object LocalCommit {
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: TxId, remotePerCommitmentPoint: PublicKey) {
   def sign(keyManager: ChannelKeyManager, params: ChannelParams, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo): CommitSig = {
-    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, params.channelConfig, params.channelFeatures, index, params.localParams, params.remoteParams, fundingTxIndex, remoteFundingPubKey, commitInput, remotePerCommitmentPoint, spec)
+    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, params, index, fundingTxIndex, remoteFundingPubKey, commitInput, remotePerCommitmentPoint, spec)
     val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex), TxOwner.Remote, params.commitmentFormat, Map.empty)
     val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
@@ -621,7 +632,7 @@ case class Commitment(fundingTxIndex: Long,
   def sendCommit(keyManager: ChannelKeyManager, params: ChannelParams, changes: CommitmentChanges, remoteNextPerCommitmentPoint: PublicKey, batchSize: Int)(implicit log: LoggingAdapter): (Commitment, CommitSig) = {
     // remote commitment will include all local proposed changes + remote acked changes
     val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
-    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, params.channelConfig, params.channelFeatures, remoteCommit.index + 1, params.localParams, params.remoteParams, fundingTxIndex, remoteFundingPubKey, commitInput, remoteNextPerCommitmentPoint, spec)
+    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(keyManager, params, remoteCommit.index + 1, fundingTxIndex, remoteFundingPubKey, commitInput, remoteNextPerCommitmentPoint, spec)
     val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex), TxOwner.Remote, params.commitmentFormat, Map.empty)
 
     val sortedHtlcTxs: Seq[TransactionWithInputInfo] = htlcTxs.sortBy(_.input.outPoint.index)
@@ -671,60 +682,35 @@ case class Commitment(fundingTxIndex: Long,
 
 object Commitment {
   def makeLocalTxs(keyManager: ChannelKeyManager,
-                   channelConfig: ChannelConfig,
-                   channelFeatures: ChannelFeatures,
+                   params: ChannelParams,
                    commitTxNumber: Long,
-                   localParams: LocalParams,
-                   remoteParams: RemoteParams,
                    fundingTxIndex: Long,
                    remoteFundingPubKey: PublicKey,
                    commitmentInput: InputInfo,
-                   localPerCommitmentPoint: PublicKey,
                    spec: CommitmentSpec): (CommitTx, Seq[HtlcTx]) = {
-    val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-    val localPaymentBasepoint = localParams.paymentBasepoint(keyManager, channelConfig)
-    val commitmentKeys = LocalCommitmentKeys(
-      ourDelayedPaymentKey = Generators.derivePrivKey(keyManager.delayedPaymentBaseKey(channelKeyPath), localPerCommitmentPoint),
-      theirPaymentPublicKey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) remoteParams.paymentBasepoint else Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint),
-      ourHtlcKey = Generators.derivePrivKey(keyManager.htlcBaseKey(channelKeyPath), localPerCommitmentPoint),
-      theirHtlcPublicKey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint),
-      revocationPublicKey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-    )
-    val ourFundingKey = keyManager.fundingKey(localParams.fundingKeyPath, fundingTxIndex)
-    val outputs = makeCommitTxOutputs(ourFundingKey.publicKey, remoteFundingPubKey, commitmentKeys.publicKeys, localParams.paysCommitTxFees, localParams.dustLimit, remoteParams.toSelfDelay, spec, channelFeatures.commitmentFormat)
-    val commitTx = makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isChannelOpener, outputs)
-    val htlcTxs = makeHtlcTxs(commitmentKeys.publicKeys, commitTx.tx, localParams.dustLimit, remoteParams.toSelfDelay, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
+    val localFundingPubKey = params.localFundingKey(keyManager, fundingTxIndex).publicKey
+    val localPaymentBasepoint = params.localPaymentBasepoint(keyManager)
+    val commitmentKeys = LocalCommitmentKeys(keyManager, params, commitTxNumber)
+    val outputs = makeCommitTxOutputs(localFundingPubKey, remoteFundingPubKey, commitmentKeys.publicKeys, params.localParams.paysCommitTxFees, params.localParams.dustLimit, params.remoteParams.toSelfDelay, spec, params.commitmentFormat)
+    val commitTx = makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, params.remoteParams.paymentBasepoint, params.localParams.isChannelOpener, outputs)
+    val htlcTxs = makeHtlcTxs(commitmentKeys.publicKeys, commitTx.tx, params.localParams.dustLimit, params.remoteParams.toSelfDelay, spec.htlcTxFeerate(params.commitmentFormat), outputs, params.commitmentFormat)
     (commitTx, htlcTxs)
   }
 
   def makeRemoteTxs(keyManager: ChannelKeyManager,
-                    channelConfig: ChannelConfig,
-                    channelFeatures: ChannelFeatures,
+                    params: ChannelParams,
                     commitTxNumber: Long,
-                    localParams: LocalParams,
-                    remoteParams: RemoteParams,
                     fundingTxIndex: Long,
                     remoteFundingPubKey: PublicKey,
                     commitmentInput: InputInfo,
                     remotePerCommitmentPoint: PublicKey,
                     spec: CommitmentSpec): (CommitTx, Seq[HtlcTx]) = {
-    val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-    val localPaymentBasepoint = localParams.paymentBasepoint(keyManager, channelConfig)
-    val commitmentKeys = RemoteCommitmentKeys(
-      ourPaymentKey = localParams.walletStaticPaymentBasepoint match {
-        case Some(walletPublicKey) => Left(walletPublicKey)
-        case None if channelFeatures.hasFeature(Features.StaticRemoteKey) => Right(keyManager.paymentBaseKey(channelKeyPath))
-        case None => Right(Generators.derivePrivKey(keyManager.paymentBaseKey(channelKeyPath), remotePerCommitmentPoint))
-      },
-      theirDelayedPaymentPublicKey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint),
-      ourHtlcKey = Generators.derivePrivKey(keyManager.htlcBaseKey(channelKeyPath), remotePerCommitmentPoint),
-      theirHtlcPublicKey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint),
-      revocationPublicKey = Generators.revocationPubKey(keyManager.revocationBasePoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
-    )
-    val ourFundingKey = keyManager.fundingKey(localParams.fundingKeyPath, fundingTxIndex)
-    val outputs = makeCommitTxOutputs(remoteFundingPubKey, ourFundingKey.publicKey, commitmentKeys.publicKeys, !localParams.paysCommitTxFees, remoteParams.dustLimit, localParams.toSelfDelay, spec, channelFeatures.commitmentFormat)
-    val commitTx = makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isChannelOpener, outputs)
-    val htlcTxs = makeHtlcTxs(commitmentKeys.publicKeys, commitTx.tx, remoteParams.dustLimit, localParams.toSelfDelay, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
+    val localFundingPubKey = params.localFundingKey(keyManager, fundingTxIndex).publicKey
+    val localPaymentBasepoint = params.localPaymentBasepoint(keyManager)
+    val commitmentKeys = RemoteCommitmentKeys(keyManager, params, remotePerCommitmentPoint)
+    val outputs = makeCommitTxOutputs(remoteFundingPubKey, localFundingPubKey, commitmentKeys.publicKeys, !params.localParams.paysCommitTxFees, params.remoteParams.dustLimit, params.localParams.toSelfDelay, spec, params.commitmentFormat)
+    val commitTx = makeCommitTx(commitmentInput, commitTxNumber, params.remoteParams.paymentBasepoint, localPaymentBasepoint, !params.localParams.isChannelOpener, outputs)
+    val htlcTxs = makeHtlcTxs(commitmentKeys.publicKeys, commitTx.tx, params.remoteParams.dustLimit, params.localParams.toSelfDelay, spec.htlcTxFeerate(params.commitmentFormat), outputs, params.commitmentFormat)
     (commitTx, htlcTxs)
   }
 }
