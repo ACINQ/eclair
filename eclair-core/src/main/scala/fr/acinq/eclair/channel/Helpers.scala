@@ -1065,7 +1065,7 @@ object Helpers {
             case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
               Transactions.makeClaimP2WPKHOutputTx(keys, tx, params.localParams.dustLimit, finalScriptPubKey, feeratePerKwMain).map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, params.commitmentFormat, Map.empty)
-                Transactions.addSigs(claimMain, keys.ourPaymentPublicKey, sig)
+                Transactions.addSigs(claimMain, keys, sig)
               })
             }
             case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
@@ -1202,7 +1202,7 @@ object Helpers {
             case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
               Transactions.makeClaimP2WPKHOutputTx(commitmentKeys, commitTx, localParams.dustLimit, finalScriptPubKey, feerateMain).map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitmentFormat, Map.empty)
-                Transactions.addSigs(claimMain, commitmentKeys.ourPaymentPublicKey, sig)
+                Transactions.addSigs(claimMain, commitmentKeys, sig)
               })
             }
             case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
@@ -1226,8 +1226,8 @@ object Helpers {
         val htlcInfos = db.listHtlcInfos(channelId, commitmentNumber)
         log.info("got {} htlcs for commitmentNumber={}", htlcInfos.size, commitmentNumber)
         val htlcsRedeemScripts = (
-          htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(commitmentKeys.theirHtlcPublicKey, commitmentKeys.ourHtlcKey.publicKey, commitmentKeys.revocationPublicKey, Crypto.ripemd160(paymentHash), cltvExpiry, commitmentFormat) } ++
-            htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(commitmentKeys.theirHtlcPublicKey, commitmentKeys.ourHtlcKey.publicKey, commitmentKeys.revocationPublicKey, Crypto.ripemd160(paymentHash), commitmentFormat) }
+          htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(commitmentKeys.publicKeys, paymentHash, cltvExpiry, commitmentFormat) } ++
+            htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(commitmentKeys.publicKeys, paymentHash, commitmentFormat) }
           )
           .map(redeemScript => Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript))
           .toMap
@@ -1238,7 +1238,7 @@ object Helpers {
           withTxGenerationLog("htlc-penalty") {
             Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, htlcRedeemScript, localParams.dustLimit, finalScriptPubKey, feeratePenalty).map(htlcPenalty => {
               val sig = keyManager.sign(htlcPenalty, keyManager.revocationBasePoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat, Map.empty)
-              Transactions.addSigs(htlcPenalty, sig, commitmentKeys.revocationPublicKey)
+              Transactions.addSigs(htlcPenalty, commitmentKeys, sig)
             })
           }
         }.toList.flatten

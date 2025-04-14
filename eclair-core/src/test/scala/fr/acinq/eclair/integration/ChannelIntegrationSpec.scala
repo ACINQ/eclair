@@ -587,11 +587,14 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     assert(initialStateDataF.commitments.params.commitmentFormat == expectedCommitmentFormat)
     val initialCommitmentIndex = initialStateDataF.commitments.localCommitIndex
 
-    // the 'to remote' address is a simple script spending to the remote payment basepoint with a 1-block CSV delay
-    val toRemoteAddress = Script.pay2wsh(Scripts.toRemoteDelayed(initialStateDataF.commitments.params.remoteParams.paymentBasepoint))
+    val toRemoteAddress = {
+      val keyManager = nodes("F").nodeParams.channelKeyManager
+      val toRemote = Scripts.toRemoteDelayed(initialStateDataF.commitments.latest.localKeys(keyManager).publicKeys)
+      Script.write(Script.pay2wsh(toRemote))
+    }
 
     // toRemote output of C as seen by F
-    val Some(toRemoteOutC) = initialStateDataF.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
+    val Some(toRemoteOutC) = initialStateDataF.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.find(_.publicKeyScript == toRemoteAddress)
 
     // let's make a payment to advance the commit index
     val amountMsat = 4200000.msat
@@ -616,7 +619,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     val stateDataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     val commitmentIndex = stateDataF.commitments.localCommitIndex
     val commitTx = stateDataF.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
+    val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == toRemoteAddress)
 
     // there is a new commitment index in the channel state
     assert(commitmentIndex > initialCommitmentIndex)

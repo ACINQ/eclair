@@ -18,7 +18,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.SigVersion._
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey, ripemd160}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.bitcoin.{ScriptFlags, ScriptTree}
@@ -435,12 +435,12 @@ object Transactions {
     val outputs = collection.mutable.ArrayBuffer.empty[CommitmentOutputLink[CommitmentOutput]]
 
     trimOfferedHtlcs(dustLimit, spec, commitmentFormat).foreach { htlc =>
-      val redeemScript = htlcOffered(commitmentKeys.localHtlcPublicKey, commitmentKeys.remoteHtlcPublicKey, commitmentKeys.revocationPublicKey, ripemd160(htlc.add.paymentHash.bytes), commitmentFormat)
+      val redeemScript = htlcOffered(commitmentKeys, htlc.add.paymentHash, commitmentFormat)
       outputs.append(CommitmentOutputLink(TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(redeemScript)), redeemScript, OutHtlc(htlc)))
     }
 
     trimReceivedHtlcs(dustLimit, spec, commitmentFormat).foreach { htlc =>
-      val redeemScript = htlcReceived(commitmentKeys.localHtlcPublicKey, commitmentKeys.remoteHtlcPublicKey, commitmentKeys.revocationPublicKey, ripemd160(htlc.add.paymentHash.bytes), htlc.add.cltvExpiry, commitmentFormat)
+      val redeemScript = htlcReceived(commitmentKeys, htlc.add.paymentHash, htlc.add.cltvExpiry, commitmentFormat)
       outputs.append(CommitmentOutputLink(TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(redeemScript)), redeemScript, InHtlc(htlc)))
     }
 
@@ -453,32 +453,30 @@ object Transactions {
     } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
     if (toLocalAmount >= dustLimit) {
-      outputs.append(CommitmentOutputLink(
-        TxOut(toLocalAmount, pay2wsh(toLocalDelayed(commitmentKeys.revocationPublicKey, toSelfDelay, commitmentKeys.localDelayedPaymentPublicKey))),
-        toLocalDelayed(commitmentKeys.revocationPublicKey, toSelfDelay, commitmentKeys.localDelayedPaymentPublicKey),
-        ToLocal))
+      val redeemScript = toLocalDelayed(commitmentKeys, toSelfDelay)
+      outputs.append(CommitmentOutputLink(TxOut(toLocalAmount, pay2wsh(redeemScript)), redeemScript, ToLocal))
     }
 
     if (toRemoteAmount >= dustLimit) {
       commitmentFormat match {
-        case DefaultCommitmentFormat => outputs.append(CommitmentOutputLink(
-          TxOut(toRemoteAmount, pay2wpkh(commitmentKeys.remotePaymentPublicKey)),
-          pay2pkh(commitmentKeys.remotePaymentPublicKey),
-          ToRemote))
-        case _: AnchorOutputsCommitmentFormat => outputs.append(CommitmentOutputLink(
-          TxOut(toRemoteAmount, pay2wsh(toRemoteDelayed(commitmentKeys.remotePaymentPublicKey))),
-          toRemoteDelayed(commitmentKeys.remotePaymentPublicKey),
-          ToRemote))
+        case DefaultCommitmentFormat =>
+          val redeemKey = commitmentKeys.remotePaymentPublicKey
+          outputs.append(CommitmentOutputLink(TxOut(toRemoteAmount, pay2wpkh(redeemKey)), pay2pkh(redeemKey), ToRemote))
+        case _: AnchorOutputsCommitmentFormat =>
+          val redeemScript = toRemoteDelayed(commitmentKeys)
+          outputs.append(CommitmentOutputLink(TxOut(toRemoteAmount, pay2wsh(redeemScript)), redeemScript, ToRemote))
       }
     }
 
     commitmentFormat match {
       case _: AnchorOutputsCommitmentFormat =>
         if (toLocalAmount >= dustLimit || hasHtlcs) {
-          outputs.append(CommitmentOutputLink(TxOut(AnchorOutputsCommitmentFormat.anchorAmount, pay2wsh(anchor(localFundingPublicKey))), anchor(localFundingPublicKey), ToLocalAnchor))
+          val redeemScript = anchor(localFundingPublicKey)
+          outputs.append(CommitmentOutputLink(TxOut(AnchorOutputsCommitmentFormat.anchorAmount, pay2wsh(redeemScript)), redeemScript, ToLocalAnchor))
         }
         if (toRemoteAmount >= dustLimit || hasHtlcs) {
-          outputs.append(CommitmentOutputLink(TxOut(AnchorOutputsCommitmentFormat.anchorAmount, pay2wsh(anchor(remoteFundingPublicKey))), anchor(remoteFundingPublicKey), ToRemoteAnchor))
+          val redeemScript = anchor(remoteFundingPublicKey)
+          outputs.append(CommitmentOutputLink(TxOut(AnchorOutputsCommitmentFormat.anchorAmount, pay2wsh(redeemScript)), redeemScript, ToRemoteAnchor))
         }
       case _ =>
     }
@@ -523,7 +521,7 @@ object Transactions {
       val tx = Transaction(
         version = 2,
         txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
-        txOut = TxOut(amount, pay2wsh(toLocalDelayed(keys.revocationPublicKey, toSelfDelay, keys.localDelayedPaymentPublicKey))) :: Nil,
+        txOut = TxOut(amount, pay2wsh(toLocalDelayed(keys, toSelfDelay))) :: Nil,
         lockTime = htlc.cltvExpiry.toLong
       )
       Right(HtlcTimeoutTx(input, tx, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong))))
@@ -549,7 +547,7 @@ object Transactions {
       val tx = Transaction(
         version = 2,
         txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
-        txOut = TxOut(amount, pay2wsh(toLocalDelayed(keys.revocationPublicKey, toSelfDelay, keys.localDelayedPaymentPublicKey))) :: Nil,
+        txOut = TxOut(amount, pay2wsh(toLocalDelayed(keys, toSelfDelay))) :: Nil,
         lockTime = 0
       )
       Right(HtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong))))
@@ -584,7 +582,7 @@ object Transactions {
                              htlc: UpdateAddHtlc,
                              feeratePerKw: FeeratePerKw,
                              commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimHtlcSuccessTx] = {
-    val redeemScript = htlcOffered(keys.theirHtlcPublicKey, keys.ourHtlcKey.publicKey, keys.revocationPublicKey, ripemd160(htlc.paymentHash.bytes), commitmentFormat)
+    val redeemScript = htlcOffered(keys.publicKeys, htlc.paymentHash, commitmentFormat)
     outputs.zipWithIndex.collectFirst {
       case (CommitmentOutputLink(_, _, OutHtlc(OutgoingHtlc(outgoingHtlc))), outIndex) if outgoingHtlc.id == htlc.id => outIndex
     } match {
@@ -617,7 +615,7 @@ object Transactions {
                              htlc: UpdateAddHtlc,
                              feeratePerKw: FeeratePerKw,
                              commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimHtlcTimeoutTx] = {
-    val redeemScript = htlcReceived(keys.theirHtlcPublicKey, keys.ourHtlcKey.publicKey, keys.revocationPublicKey, ripemd160(htlc.paymentHash.bytes), htlc.cltvExpiry, commitmentFormat)
+    val redeemScript = htlcReceived(keys.publicKeys, htlc.paymentHash, htlc.cltvExpiry, commitmentFormat)
     outputs.zipWithIndex.collectFirst {
       case (CommitmentOutputLink(_, _, InHtlc(IncomingHtlc(incomingHtlc))), outIndex) if incomingHtlc.id == htlc.id => outIndex
     } match {
@@ -655,8 +653,8 @@ object Transactions {
           txIn = TxIn(input.outPoint, ByteVector.empty, 0x00000000L) :: Nil,
           txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
           lockTime = 0)
-        // compute weight with a dummy 73 bytes signature (the largest you can get) and a dummy 33 bytes pubkey
-        val weight = addSigs(ClaimP2WPKHOutputTx(input, tx), PlaceHolderPubKey, PlaceHolderSig).tx.weight()
+        // compute weight with a dummy 73 bytes signature (the largest you can get)
+        val weight = addSigs(ClaimP2WPKHOutputTx(input, tx), keys, PlaceHolderSig).tx.weight()
         val fee = weight2fee(feeratePerKw, weight)
         val amount = input.txOut.amount - fee
         if (amount < localDustLimit) {
@@ -669,7 +667,7 @@ object Transactions {
   }
 
   def makeClaimRemoteDelayedOutputTx(keys: RemoteCommitmentKeys, commitTx: Transaction, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, ClaimRemoteDelayedOutputTx] = {
-    val redeemScript = toRemoteDelayed(keys.ourPaymentPublicKey)
+    val redeemScript = toRemoteDelayed(keys.publicKeys)
     val pubkeyScript = write(pay2wsh(redeemScript))
     findPubKeyScriptIndex(commitTx, pubkeyScript) match {
       case Left(skip) => Left(skip)
@@ -707,7 +705,7 @@ object Transactions {
   }
 
   private def makeLocalDelayedOutputTx(keys: LocalCommitmentKeys, parentTx: Transaction, localDustLimit: Satoshi, toLocalDelay: CltvExpiryDelta, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, (InputInfo, Transaction)] = {
-    val redeemScript = toLocalDelayed(keys.revocationPublicKey, toLocalDelay, keys.ourDelayedPaymentKey.publicKey)
+    val redeemScript = toLocalDelayed(keys.publicKeys, toLocalDelay)
     val pubkeyScript = write(pay2wsh(redeemScript))
     findPubKeyScriptIndex(parentTx, pubkeyScript) match {
       case Left(skip) => Left(skip)
@@ -750,7 +748,7 @@ object Transactions {
   }
 
   def makeClaimHtlcDelayedOutputPenaltyTxs(keys: RemoteCommitmentKeys, htlcTx: Transaction, localDustLimit: Satoshi, toLocalDelay: CltvExpiryDelta, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Seq[Either[TxGenerationSkipped, ClaimHtlcDelayedOutputPenaltyTx]] = {
-    val redeemScript = toLocalDelayed(keys.revocationPublicKey, toLocalDelay, keys.theirDelayedPaymentPublicKey)
+    val redeemScript = toLocalDelayed(keys.publicKeys, toLocalDelay)
     val pubkeyScript = write(pay2wsh(redeemScript))
     findPubKeyScriptIndexes(htlcTx, pubkeyScript) match {
       case Left(skip) => Seq(Left(skip))
@@ -777,7 +775,7 @@ object Transactions {
   }
 
   def makeMainPenaltyTx(keys: RemoteCommitmentKeys, commitTx: Transaction, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, toRemoteDelay: CltvExpiryDelta, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, MainPenaltyTx] = {
-    val redeemScript = toLocalDelayed(keys.revocationPublicKey, toRemoteDelay, keys.theirDelayedPaymentPublicKey)
+    val redeemScript = toLocalDelayed(keys.publicKeys, toRemoteDelay)
     val pubkeyScript = write(pay2wsh(redeemScript))
     findPubKeyScriptIndex(commitTx, pubkeyScript) match {
       case Left(skip) => Left(skip)
@@ -958,9 +956,9 @@ object Transactions {
     case _: InputInfo.TaprootInput => mainPenaltyTx
   }
 
-  def addSigs(htlcPenaltyTx: HtlcPenaltyTx, revocationSig: ByteVector64, revocationPubkey: PublicKey): HtlcPenaltyTx = htlcPenaltyTx.input match {
+  def addSigs(htlcPenaltyTx: HtlcPenaltyTx, keys: RemoteCommitmentKeys, revocationSig: ByteVector64): HtlcPenaltyTx = htlcPenaltyTx.input match {
     case InputInfo.SegwitInput(_, _, redeemScript) =>
-      val witness = Scripts.witnessHtlcWithRevocationSig(revocationSig, revocationPubkey, redeemScript)
+      val witness = Scripts.witnessHtlcWithRevocationSig(keys, revocationSig, redeemScript)
       htlcPenaltyTx.copy(tx = htlcPenaltyTx.tx.updateWitness(0, witness))
     case _: InputInfo.TaprootInput => htlcPenaltyTx
   }
@@ -993,8 +991,8 @@ object Transactions {
     case _: InputInfo.TaprootInput => claimHtlcTimeoutTx
   }
 
-  def addSigs(claimP2WPKHOutputTx: ClaimP2WPKHOutputTx, localPaymentPubkey: PublicKey, localSig: ByteVector64): ClaimP2WPKHOutputTx = {
-    val witness = ScriptWitness(Seq(der(localSig), localPaymentPubkey.value))
+  def addSigs(claimP2WPKHOutputTx: ClaimP2WPKHOutputTx, keys: RemoteCommitmentKeys, localSig: ByteVector64): ClaimP2WPKHOutputTx = {
+    val witness = ScriptWitness(Seq(der(localSig), keys.ourPaymentPublicKey.value))
     claimP2WPKHOutputTx.copy(tx = claimP2WPKHOutputTx.tx.updateWitness(0, witness))
   }
 

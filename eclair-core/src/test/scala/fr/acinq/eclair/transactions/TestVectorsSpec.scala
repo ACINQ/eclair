@@ -118,6 +118,14 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val payment_privkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
   }
 
+  val commitmentKeys = LocalCommitmentKeys(
+    ourDelayedPaymentKey = Local.delayed_payment_privkey,
+    theirPaymentPublicKey = Remote.payment_privkey.publicKey,
+    ourHtlcKey = Local.htlc_privkey,
+    theirHtlcPublicKey = Remote.htlc_privkey.publicKey,
+    revocationPublicKey = Local.revocation_pubkey
+  )
+
   val coinbaseTx = Transaction.read("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0100f2052a010000001976a9143ca33c2e4446f4a305f23c80df8ad1afdcf652f988ac00000000")
 
   val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
@@ -162,8 +170,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 3, 5000000.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(506), TestConstants.emptyOnionPacket, None, 1.0, None))
   )
   val htlcScripts = htlcs.map {
-    case OutgoingHtlc(add) => Scripts.htlcOffered(Local.htlc_privkey.publicKey, Remote.htlc_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash), commitmentFormat)
-    case IncomingHtlc(add) => Scripts.htlcReceived(Local.htlc_privkey.publicKey, Remote.htlc_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash), add.cltvExpiry, commitmentFormat)
+    case OutgoingHtlc(add) => Scripts.htlcOffered(commitmentKeys.publicKeys, add.paymentHash, commitmentFormat)
+    case IncomingHtlc(add) => Scripts.htlcReceived(commitmentKeys.publicKeys, add.paymentHash, add.cltvExpiry, commitmentFormat)
   }
   val defaultHtlcs = htlcs.take(5) // most test cases only use the first 5 htlcs
 
@@ -187,13 +195,6 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"to_remote_msat: ${spec.toRemote}")
     logger.info(s"local_feerate_per_kw: ${spec.commitTxFeerate}")
 
-    val commitmentKeys = LocalCommitmentKeys(
-      ourDelayedPaymentKey = Local.delayed_payment_privkey,
-      theirPaymentPublicKey = Remote.payment_privkey.publicKey,
-      ourHtlcKey = Local.htlc_privkey,
-      theirHtlcPublicKey = Remote.htlc_privkey.publicKey,
-      revocationPublicKey = Local.revocation_pubkey
-    )
     val outputs = Transactions.makeCommitTxOutputs(
       Local.funding_pubkey,
       Remote.funding_pubkey,
@@ -228,7 +229,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         case 22 => logger.info(s"# to-remote amount ${txOut.amount.toLong} P2WPKH(${Remote.payment_privkey.publicKey})")
         case 34 =>
           val index = htlcScripts.indexWhere(s => Script.write(Script.pay2wsh(s)) == txOut.publicKeyScript)
-          if (index == -1) logger.info(s"# to-local amount ${txOut.amount.toLong} wscript ${Script.write(Scripts.toLocalDelayed(Local.revocation_pubkey, Local.toSelfDelay, Local.delayed_payment_privkey.publicKey))}")
+          if (index == -1) logger.info(s"# to-local amount ${txOut.amount.toLong} wscript ${Script.write(Scripts.toLocalDelayed(commitmentKeys.publicKeys, Local.toSelfDelay))}")
           else logger.info(s"# HTLC #${if (htlcs(index).isInstanceOf[OutgoingHtlc]) "offered" else "received"} amount ${txOut.amount.toLong} wscript ${Script.write(htlcScripts(index))}")
       }
     })
