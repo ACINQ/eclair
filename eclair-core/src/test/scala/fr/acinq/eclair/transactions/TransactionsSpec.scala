@@ -135,20 +135,20 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // ClaimP2WPKHOutputTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimP2WPKHOutputTx
-      val pubKeyScript = write(pay2wpkh(localPaymentPriv.publicKey))
-      val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(20000 sat, pubKeyScript) :: Nil, lockTime = 0)
-      val Right(claimP2WPKHOutputTx) = makeClaimP2WPKHOutputTx(commitTx, localDustLimit, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val pubKeyScript = write(pay2wpkh(remotePaymentPriv.publicKey))
+      val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(20_000 sat, pubKeyScript) :: Nil, lockTime = 0)
+      val Right(claimP2WPKHOutputTx) = makeClaimP2WPKHOutputTx(remoteKeys, commitTx, localDustLimit, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(claimP2WPKHOutputTx, localPaymentPriv.publicKey, PlaceHolderSig).tx)
+      val weight = Transaction.weight(addSigs(claimP2WPKHOutputTx, remotePaymentPriv.publicKey, PlaceHolderSig).tx)
       assert(claimP2WPKHOutputWeight == weight)
       assert(claimP2WPKHOutputTx.fee >= claimP2WPKHOutputTx.minRelayFee)
     }
     {
       // HtlcDelayedTx
       // first we create a fake htlcSuccessOrTimeoutTx tx, containing only the output that will be spent by the 3rd-stage tx
-      val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey)))
+      val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey)))
       val htlcSuccessOrTimeoutTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(20000 sat, pubKeyScript) :: Nil, lockTime = 0)
-      val Right(htlcDelayedTx) = makeHtlcDelayedTx(htlcSuccessOrTimeoutTx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Right(htlcDelayedTx) = makeHtlcDelayedTx(localKeys, htlcSuccessOrTimeoutTx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(htlcDelayedTx, PlaceHolderSig).tx)
       assert(htlcDelayedWeight == weight)
@@ -157,9 +157,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // MainPenaltyTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the MainPenaltyTx
-      val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey)))
+      val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey)))
       val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(20000 sat, pubKeyScript) :: Nil, lockTime = 0)
-      val Right(mainPenaltyTx) = makeMainPenaltyTx(commitTx, localDustLimit, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localPaymentPriv.publicKey, feeratePerKw)
+      val Right(mainPenaltyTx) = makeMainPenaltyTx(remoteKeys, commitTx, localDustLimit, finalPubKeyScript, toLocalDelay, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(mainPenaltyTx, PlaceHolderSig).tx)
       assert(mainPenaltyWeight == weight)
@@ -214,7 +214,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimAnchorOutputTx
       val pubKeyScript = write(pay2wsh(anchor(localFundingPriv.publicKey)))
       val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(anchorAmount, pubKeyScript) :: Nil, lockTime = 0)
-      val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(commitTx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(1105)))
+      val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(localFundingPriv, commitTx, ConfirmationTarget.Absolute(BlockHeight(1105)))
       assert(claimAnchorOutputTx.tx.txOut.isEmpty)
       assert(claimAnchorOutputTx.confirmationTarget == ConfirmationTarget.Absolute(BlockHeight(1105)))
       // we will always add at least one input and one output to be able to set our desired feerate
@@ -340,13 +340,13 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // local spends delayed output of htlc1 timeout tx
-      val Right(htlcDelayed) = makeHtlcDelayedTx(htlcTimeoutTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Right(htlcDelayed) = makeHtlcDelayedTx(localKeys, htlcTimeoutTxs(1).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       val localSig = htlcDelayed.sign(localDelayedPaymentPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
       val signedTx = addSigs(htlcDelayed, localSig)
       assert(checkSpendable(signedTx).isSuccess)
       // local can't claim delayed output of htlc3 timeout tx because it is below the dust limit
-      val htlcDelayed1 = makeHtlcDelayedTx(htlcTimeoutTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
-      assert(htlcDelayed1 == Left(OutputNotFound))
+      val htlcDelayed1 = makeHtlcDelayedTx(localKeys, htlcTimeoutTxs(0).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
+      assert(htlcDelayed1 == Left(AmountBelowDustLimit))
     }
     {
       // remote spends local->remote htlc1/htlc3 output directly in case of success
@@ -370,24 +370,24 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // local spends delayed output of htlc2 success tx
-      val Right(htlcDelayed) = makeHtlcDelayedTx(htlcSuccessTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Right(htlcDelayed) = makeHtlcDelayedTx(localKeys, htlcSuccessTxs(1).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       val localSig = htlcDelayed.sign(localDelayedPaymentPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
       val signedTx = addSigs(htlcDelayed, localSig)
       assert(checkSpendable(signedTx).isSuccess)
       // local can't claim delayed output of htlc4 success tx because it is below the dust limit
-      val htlcDelayed1 = makeHtlcDelayedTx(htlcSuccessTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val htlcDelayed1 = makeHtlcDelayedTx(localKeys, htlcSuccessTxs(0).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       assert(htlcDelayed1 == Left(AmountBelowDustLimit))
     }
     {
       // local spends main delayed output
-      val Right(claimMainOutputTx) = makeClaimLocalDelayedOutputTx(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Right(claimMainOutputTx) = makeClaimLocalDelayedOutputTx(localKeys, commitTx.tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       val localSig = claimMainOutputTx.sign(localDelayedPaymentPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
       val signedTx = addSigs(claimMainOutputTx, localSig)
       assert(checkSpendable(signedTx).isSuccess)
     }
     {
       // remote spends main output
-      val Right(claimP2WPKHOutputTx) = makeClaimP2WPKHOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Right(claimP2WPKHOutputTx) = makeClaimP2WPKHOutputTx(remoteKeys, commitTx.tx, localDustLimit, finalPubKeyScript, feeratePerKw)
       val localSig = claimP2WPKHOutputTx.sign(remotePaymentPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
       val signedTx = addSigs(claimP2WPKHOutputTx, remotePaymentPriv.publicKey, localSig)
       assert(checkSpendable(signedTx).isSuccess)
@@ -401,19 +401,19 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends local main delayed output with revocation key
-      val Right(mainPenaltyTx) = makeMainPenaltyTx(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localDelayedPaymentPriv.publicKey, feeratePerKw)
+      val Right(mainPenaltyTx) = makeMainPenaltyTx(remoteKeys, commitTx.tx, localDustLimit, finalPubKeyScript, toLocalDelay, feeratePerKw)
       val sig = mainPenaltyTx.sign(localRevocationPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
       val signed = addSigs(mainPenaltyTx, sig)
       assert(checkSpendable(signed).isSuccess)
     }
     {
       // remote spends htlc1's htlc-timeout tx with revocation key
-      val Seq(Right(claimHtlcDelayedPenaltyTx)) = makeClaimHtlcDelayedOutputPenaltyTxs(htlcTimeoutTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Seq(Right(claimHtlcDelayedPenaltyTx)) = makeClaimHtlcDelayedOutputPenaltyTxs(remoteKeys, htlcTimeoutTxs(1).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       val sig = claimHtlcDelayedPenaltyTx.sign(localRevocationPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
       val signed = addSigs(claimHtlcDelayedPenaltyTx, sig)
       assert(checkSpendable(signed).isSuccess)
       // remote can't claim revoked output of htlc3's htlc-timeout tx because it is below the dust limit
-      val claimHtlcDelayedPenaltyTx1 = makeClaimHtlcDelayedOutputPenaltyTxs(htlcTimeoutTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val claimHtlcDelayedPenaltyTx1 = makeClaimHtlcDelayedOutputPenaltyTxs(remoteKeys, htlcTimeoutTxs(0).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       assert(claimHtlcDelayedPenaltyTx1 == Seq(Left(AmountBelowDustLimit)))
     }
     {
@@ -430,12 +430,12 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends htlc2's htlc-success tx with revocation key
-      val Seq(Right(claimHtlcDelayedPenaltyTx)) = makeClaimHtlcDelayedOutputPenaltyTxs(htlcSuccessTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Seq(Right(claimHtlcDelayedPenaltyTx)) = makeClaimHtlcDelayedOutputPenaltyTxs(remoteKeys, htlcSuccessTxs(1).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       val sig = claimHtlcDelayedPenaltyTx.sign(localRevocationPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
       val signed = addSigs(claimHtlcDelayedPenaltyTx, sig)
       assert(checkSpendable(signed).isSuccess)
       // remote can't claim revoked output of htlc4's htlc-success tx because it is below the dust limit
-      val claimHtlcDelayedPenaltyTx1 = makeClaimHtlcDelayedOutputPenaltyTxs(htlcSuccessTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val claimHtlcDelayedPenaltyTx1 = makeClaimHtlcDelayedOutputPenaltyTxs(remoteKeys, htlcSuccessTxs(0).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       assert(claimHtlcDelayedPenaltyTx1 == Seq(Left(AmountBelowDustLimit)))
     }
     {
@@ -579,19 +579,19 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
     {
       // local spends main delayed output
-      val Right(claimMainOutputTx) = makeClaimLocalDelayedOutputTx(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Right(claimMainOutputTx) = makeClaimLocalDelayedOutputTx(localKeys, commitTx.tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       val localSig = claimMainOutputTx.sign(localDelayedPaymentPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
       val signedTx = addSigs(claimMainOutputTx, localSig)
       assert(checkSpendable(signedTx).isSuccess)
     }
     {
       // remote cannot spend main output with default commitment format
-      val Left(failure) = makeClaimP2WPKHOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Left(failure) = makeClaimP2WPKHOutputTx(remoteKeys, commitTx.tx, localDustLimit, finalPubKeyScript, feeratePerKw)
       assert(failure == OutputNotFound)
     }
     {
       // remote spends main delayed output
-      val Right(claimRemoteDelayedOutputTx) = makeClaimRemoteDelayedOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Right(claimRemoteDelayedOutputTx) = makeClaimRemoteDelayedOutputTx(remoteKeys, commitTx.tx, localDustLimit, finalPubKeyScript, feeratePerKw)
       val localSig = claimRemoteDelayedOutputTx.sign(remotePaymentPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
       val signedTx = addSigs(claimRemoteDelayedOutputTx, localSig)
       assert(checkSpendable(signedTx).isSuccess)
@@ -603,7 +603,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         OutPoint(randomTxId(), 3) -> TxOut(walletAmount, Script.pay2wpkh(walletPub)),
         OutPoint(randomTxId(), 0) -> TxOut(walletAmount, Script.pay2wpkh(walletPub)),
       )
-      val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(commitTx.tx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(0))).map(anchorTx => {
+      val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(localFundingPriv, commitTx.tx, ConfirmationTarget.Absolute(BlockHeight(0))).map(anchorTx => {
         val walletTxIn = walletInputs.map { case (outpoint, _) => TxIn(outpoint, ByteVector.empty, 0) }
         val unsignedTx = anchorTx.tx.copy(txIn = anchorTx.tx.txIn ++ walletTxIn)
         val sig1 = unsignedTx.signInput(1, Script.pay2pkh(walletPub), SIGHASH_ALL, walletAmount, SigVersion.SIGVERSION_WITNESS_V0, walletPriv)
@@ -624,7 +624,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends remote anchor
-      val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(commitTx.tx, remoteFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(0)))
+      val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(remoteFundingPriv, commitTx.tx, ConfirmationTarget.Absolute(BlockHeight(0)))
       assert(checkSpendable(claimAnchorOutputTx).isFailure)
       val localSig = claimAnchorOutputTx.sign(remoteFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
       val signedTx = addSigs(claimAnchorOutputTx, localSig)
@@ -632,7 +632,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends local main delayed output with revocation key
-      val Right(mainPenaltyTx) = makeMainPenaltyTx(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localDelayedPaymentPriv.publicKey, feeratePerKw)
+      val Right(mainPenaltyTx) = makeMainPenaltyTx(remoteKeys, commitTx.tx, localDustLimit, finalPubKeyScript, toLocalDelay, feeratePerKw)
       val sig = mainPenaltyTx.sign(localRevocationPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
       val signed = addSigs(mainPenaltyTx, sig)
       assert(checkSpendable(signed).isSuccess)
@@ -655,13 +655,13 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // local spends delayed output of htlc1 timeout tx
-      val Right(htlcDelayed) = makeHtlcDelayedTx(htlcTimeoutTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Right(htlcDelayed) = makeHtlcDelayedTx(localKeys, htlcTimeoutTxs(1).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       val localSig = htlcDelayed.sign(localDelayedPaymentPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
       val signedTx = addSigs(htlcDelayed, localSig)
       assert(checkSpendable(signedTx).isSuccess)
       // local can't claim delayed output of htlc3 timeout tx because it is below the dust limit
-      val htlcDelayed1 = makeHtlcDelayedTx(htlcTimeoutTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
-      assert(htlcDelayed1 == Left(OutputNotFound))
+      val htlcDelayed1 = makeHtlcDelayedTx(localKeys, htlcTimeoutTxs(0).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
+      assert(htlcDelayed1 == Left(AmountBelowDustLimit))
     }
     {
       // local spends offered htlc with HTLC-success tx
@@ -684,15 +684,15 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // local spends delayed output of htlc2a and htlc2b success txs
-      val Right(htlcDelayedA) = makeHtlcDelayedTx(htlcSuccessTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
-      val Right(htlcDelayedB) = makeHtlcDelayedTx(htlcSuccessTxs(2).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Right(htlcDelayedA) = makeHtlcDelayedTx(localKeys, htlcSuccessTxs(1).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
+      val Right(htlcDelayedB) = makeHtlcDelayedTx(localKeys, htlcSuccessTxs(2).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       for (htlcDelayed <- Seq(htlcDelayedA, htlcDelayedB)) {
         val localSig = htlcDelayed.sign(localDelayedPaymentPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
         val signedTx = addSigs(htlcDelayed, localSig)
         assert(checkSpendable(signedTx).isSuccess)
       }
       // local can't claim delayed output of htlc4 success tx because it is below the dust limit
-      val claimHtlcDelayed1 = makeClaimLocalDelayedOutputTx(htlcSuccessTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val claimHtlcDelayed1 = makeClaimLocalDelayedOutputTx(localKeys, htlcSuccessTxs(0).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       assert(claimHtlcDelayed1 == Left(AmountBelowDustLimit))
     }
     {
@@ -706,12 +706,12 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends htlc1's htlc-timeout tx with revocation key
-      val Seq(Right(claimHtlcDelayedPenaltyTx)) = makeClaimHtlcDelayedOutputPenaltyTxs(htlcTimeoutTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Seq(Right(claimHtlcDelayedPenaltyTx)) = makeClaimHtlcDelayedOutputPenaltyTxs(remoteKeys, htlcTimeoutTxs(1).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       val sig = claimHtlcDelayedPenaltyTx.sign(localRevocationPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
       val signed = addSigs(claimHtlcDelayedPenaltyTx, sig)
       assert(checkSpendable(signed).isSuccess)
       // remote can't claim revoked output of htlc3's htlc-timeout tx because it is below the dust limit
-      val claimHtlcDelayedPenaltyTx1 = makeClaimHtlcDelayedOutputPenaltyTxs(htlcTimeoutTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val claimHtlcDelayedPenaltyTx1 = makeClaimHtlcDelayedOutputPenaltyTxs(remoteKeys, htlcTimeoutTxs(0).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       assert(claimHtlcDelayedPenaltyTx1 == Seq(Left(AmountBelowDustLimit)))
     }
     {
@@ -725,15 +725,15 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends htlc2a/htlc2b's htlc-success tx with revocation key
-      val Seq(Right(claimHtlcDelayedPenaltyTxA)) = makeClaimHtlcDelayedOutputPenaltyTxs(htlcSuccessTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
-      val Seq(Right(claimHtlcDelayedPenaltyTxB)) = makeClaimHtlcDelayedOutputPenaltyTxs(htlcSuccessTxs(2).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val Seq(Right(claimHtlcDelayedPenaltyTxA)) = makeClaimHtlcDelayedOutputPenaltyTxs(remoteKeys, htlcSuccessTxs(1).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
+      val Seq(Right(claimHtlcDelayedPenaltyTxB)) = makeClaimHtlcDelayedOutputPenaltyTxs(remoteKeys, htlcSuccessTxs(2).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       for (claimHtlcSuccessPenaltyTx <- Seq(claimHtlcDelayedPenaltyTxA, claimHtlcDelayedPenaltyTxB)) {
         val sig = claimHtlcSuccessPenaltyTx.sign(localRevocationPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
         val signed = addSigs(claimHtlcSuccessPenaltyTx, sig)
         assert(checkSpendable(signed).isSuccess)
       }
       // remote can't claim revoked output of htlc4's htlc-success tx because it is below the dust limit
-      val claimHtlcDelayedPenaltyTx1 = makeClaimHtlcDelayedOutputPenaltyTxs(htlcSuccessTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val claimHtlcDelayedPenaltyTx1 = makeClaimHtlcDelayedOutputPenaltyTxs(remoteKeys, htlcSuccessTxs(0).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       assert(claimHtlcDelayedPenaltyTx1 == Seq(Left(AmountBelowDustLimit)))
     }
     {
@@ -741,7 +741,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val txIn = htlcTimeoutTxs.flatMap(_.tx.txIn) ++ htlcSuccessTxs.flatMap(_.tx.txIn)
       val txOut = htlcTimeoutTxs.flatMap(_.tx.txOut) ++ htlcSuccessTxs.flatMap(_.tx.txOut)
       val aggregatedHtlcTx = Transaction(2, txIn, txOut, 0)
-      val claimHtlcDelayedPenaltyTxs = makeClaimHtlcDelayedOutputPenaltyTxs(aggregatedHtlcTx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val claimHtlcDelayedPenaltyTxs = makeClaimHtlcDelayedOutputPenaltyTxs(remoteKeys, aggregatedHtlcTx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       assert(claimHtlcDelayedPenaltyTxs.size == 5)
       val skipped = claimHtlcDelayedPenaltyTxs.collect { case Left(reason) => reason }
       assert(skipped.size == 2)
