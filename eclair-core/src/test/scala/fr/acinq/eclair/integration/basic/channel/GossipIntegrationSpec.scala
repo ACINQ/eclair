@@ -107,8 +107,15 @@ class GossipIntegrationSpec extends FixtureSpec with IntegrationPatience {
 
       // Bob also creates a channel_announcement for the splice transaction and updates the graph.
       inside(getRouterData(bob)) { routerData =>
-        assert(routerData.channels.keys == Set(splice_scid_ab, scid_bc))
-        assert(routerData.spentChannels.isEmpty)
+        routerData.spentChannels match {
+          case spentChannels if spentChannels.isEmpty =>
+            assert(routerData.channels.keys == Set(splice_scid_ab, scid_bc))
+          case spentChannels =>
+            // Handle the special case where Bob receives ExternalChannelSpent after validating the local channel update
+            // for the splice and treating it as a new channel; the original splice will be removed when the splice tx confirms.
+            assert(spentChannels.contains(spliceTxId) && spentChannels(spliceTxId) == Set(scid_ab))
+            assert(routerData.channels.keys == Set(splice_scid_ab, scid_bc, scid_ab))
+        }
         assert(routerData.channels.get(splice_scid_ab).map(_.ann).contains(spliceAnn))
         routerData.channels.get(splice_scid_ab).foreach(c => {
           assert(c.capacity == 200_000.sat)
@@ -124,8 +131,15 @@ class GossipIntegrationSpec extends FixtureSpec with IntegrationPatience {
 
       // The channel_announcement for the splice propagates to Carol.
       inside(getRouterData(carol)) { routerData =>
-        assert(routerData.channels.keys == Set(splice_scid_ab, scid_bc))
-        assert(routerData.spentChannels.isEmpty)
+        routerData.spentChannels match {
+          case spentChannels if spentChannels.isEmpty =>
+            assert(routerData.channels.keys == Set(splice_scid_ab, scid_bc))
+          case spentChannels =>
+            // Handle the special case where Carol receives ExternalChannelSpent after validating the local channel update
+            // for the splice and treating it as a new channel; the original splice will be removed when the splice tx confirms.
+            assert(spentChannels.contains(spliceTxId) && spentChannels(spliceTxId) == Set(scid_ab))
+            assert(routerData.channels.keys == Set(splice_scid_ab, scid_bc, scid_ab))
+        }
         assert(routerData.channels.get(splice_scid_ab).map(_.ann).contains(spliceAnn))
         routerData.channels.get(splice_scid_ab).foreach(c => {
           assert(c.capacity == 200_000.sat)
