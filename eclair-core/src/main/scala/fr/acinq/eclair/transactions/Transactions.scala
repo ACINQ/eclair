@@ -27,7 +27,6 @@ import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts.Taproot.NUMS_POINT
 import fr.acinq.eclair.transactions.Scripts._
-import fr.acinq.eclair.transactions.Transactions.TxGenerationSkipped
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import scodec.bits.ByteVector
 
@@ -864,91 +863,78 @@ object Transactions {
     makeClaimRemoteDelayedOutputTxTaproot() orElse makeClaimRemoteDelayedOutputTxSegwit()
   }
 
-  def makeHtlcDelayedTx(htlcTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, HtlcDelayedTx] = {
-
-    def makeHtlcDelayedTxTaproot(): Either[TxGenerationSkipped, HtlcDelayedTx] = {
-      import KotlinUtils._
-
-      val htlcTxTree = Taproot.htlcDelayedScriptTree(localDelayedPaymentPubkey, toLocalDelay)
-      findPubKeyScriptIndex(htlcTx, Script.pay2tr(localRevocationPubkey.xOnly, Some(htlcTxTree))) match {
-        case Left(skip) => Left(skip)
-        case Right(outputIndex) =>
-          val input = InputInfo(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex))
-          val redeemInfo = RedeemInfo.TaprootScriptPath(localRevocationPubkey.xOnly, htlcTxTree, htlcTxTree.hash())
-          // unsigned transaction
-          val tx = Transaction(
-            version = 2,
-            txIn = TxIn(input.outPoint, ByteVector.empty, toLocalDelay.toInt) :: Nil,
-            txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-            lockTime = 0)
-          val weight = {
-            val witness = Script.witnessScriptPathPay2tr(localRevocationPubkey.xOnly, htlcTxTree, ScriptWitness(Seq(ByteVector64.Zeroes)), htlcTxTree)
-            tx.updateWitness(0, witness).weight()
-          }
-          val fee = weight2fee(feeratePerKw, weight)
-          val amount = input.txOut.amount - fee
-          if (amount < localDustLimit) {
-            Left(AmountBelowDustLimit)
-          } else {
-            val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-            Right(HtlcDelayedTx(input, redeemInfo, tx1))
-          }
-      }
-    }
-
-    def makeHtlcDelayedTxSegwit() = {
-      makeLocalDelayedOutputTx(htlcTx, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, localFinalScriptPubKey, feeratePerKw, commitmentFormat).map {
-        case (input, redeemInfo, tx) => HtlcDelayedTx(input, redeemInfo, tx)
-      }
-    }
-
-    makeHtlcDelayedTxTaproot() orElse makeHtlcDelayedTxSegwit()
-  }
-
-  def makeClaimLocalDelayedOutputTx(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimLocalDelayedOutputTx] = {
-    makeLocalDelayedOutputTx(commitTx, localDustLimit, localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey, localFinalScriptPubKey, feeratePerKw, commitmentFormat).map {
-      case (input, redeemInfo, tx) => ClaimLocalDelayedOutputTx(input, redeemInfo, tx)
+  def makeHtlcDelayedTx(htlcSuccess: CommitmentOutput.HtlcSuccessOutput, outputIndex: Int, htlcTx: Transaction, localDustLimit: Satoshi, toLocalDelay: CltvExpiryDelta, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, HtlcDelayedTx] = {
+    val input = InputInfo(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex))
+    // unsigned transaction
+    val tx = Transaction(
+      version = 2,
+      txIn = TxIn(input.outPoint, ByteVector.empty, toLocalDelay.toInt) :: Nil,
+      txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
+      lockTime = 0)
+    val weight = addSigs(HtlcDelayedTx(input, htlcSuccess.redeemInfo, tx), PlaceHolderSig).tx.weight()
+    val fee = weight2fee(feeratePerKw, weight)
+    val amount = input.txOut.amount - fee
+    if (amount < localDustLimit) {
+      Left(AmountBelowDustLimit)
+    } else {
+      val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
+      Right(HtlcDelayedTx(input, htlcSuccess.redeemInfo, tx1))
     }
   }
 
-  private def makeLocalDelayedOutputTx(parentTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, (InputInfo, RedeemInfo.TaprootScriptPathOrSegwitV0, Transaction)] = {
-    import KotlinUtils._
-
-    def makeUnsignedTx(input: InputInfo, redeemInfo: RedeemInfo.TaprootScriptPathOrSegwitV0): Either[TxGenerationSkipped, (InputInfo, RedeemInfo.TaprootScriptPathOrSegwitV0, Transaction)] = {
-      val tx = Transaction(
-        version = 2,
-        txIn = TxIn(input.outPoint, ByteVector.empty, toLocalDelay.toInt) :: Nil,
-        txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-        lockTime = 0)
-      val weight = addSigs(ClaimLocalDelayedOutputTx(input, redeemInfo, tx), PlaceHolderSig).tx.weight()
-      val fee = weight2fee(feeratePerKw, weight)
-      val amount = input.txOut.amount - fee
-      if (amount < localDustLimit) {
-        Left(AmountBelowDustLimit)
-      } else {
-        val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-        Right(input, redeemInfo, tx1)
-      }
+  def makeHtlcDelayedTx(htlcSTimeout: CommitmentOutput.HtlcTimeoutOutput, outputIndex: Int, htlcTx: Transaction, localDustLimit: Satoshi, toLocalDelay: CltvExpiryDelta, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, HtlcDelayedTx] = {
+    val input = InputInfo(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex))
+    // unsigned transaction
+    val tx = Transaction(
+      version = 2,
+      txIn = TxIn(input.outPoint, ByteVector.empty, toLocalDelay.toInt) :: Nil,
+      txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
+      lockTime = 0)
+    val weight = addSigs(HtlcDelayedTx(input, htlcSTimeout.redeemInfo, tx), PlaceHolderSig).tx.weight()
+    val fee = weight2fee(feeratePerKw, weight)
+    val amount = input.txOut.amount - fee
+    if (amount < localDustLimit) {
+      Left(AmountBelowDustLimit)
+    } else {
+      val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
+      Right(HtlcDelayedTx(input, htlcSTimeout.redeemInfo, tx1))
     }
+  }
 
-    def makeLocalDelayedOutputTxTaproot(): Either[TxGenerationSkipped, (InputInfo, RedeemInfo.TaprootScriptPathOrSegwitV0, Transaction)] = {
-      val scriptTree = Scripts.Taproot.toLocalScriptTree(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
-      val pubkeyScript = pay2tr(NUMS_POINT.xOnly, Some(scriptTree))
-      findPubKeyScriptIndex(parentTx, pubkeyScript) flatMap { outputIndex =>
-        val input = InputInfo(OutPoint(parentTx, outputIndex), parentTx.txOut(outputIndex))
-        makeUnsignedTx(input, RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, scriptTree, scriptTree.getLeft.hash()))
-      }
+  def makeClaimLocalDelayedOutputTx(toLocal: CommitmentOutput.HtlcSuccessOutput, outputIndex: Int, commitTx: Transaction, localDustLimit: Satoshi, toLocalDelay: CltvExpiryDelta, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, ClaimLocalDelayedOutputTx] = {
+    val inputInfo = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
+    val tx = Transaction(
+      version = 2,
+      txIn = TxIn(inputInfo.outPoint, ByteVector.empty, toLocalDelay.toInt) :: Nil,
+      txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
+      lockTime = 0)
+    val weight = addSigs(ClaimLocalDelayedOutputTx(inputInfo, toLocal.redeemInfo, tx), PlaceHolderSig).tx.weight()
+    val fee = weight2fee(feeratePerKw, weight)
+    val amount = inputInfo.txOut.amount - fee
+    if (amount < localDustLimit) {
+      Left(AmountBelowDustLimit)
+    } else {
+      val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
+      Right(ClaimLocalDelayedOutputTx(inputInfo, toLocal.redeemInfo, tx1))
     }
+  }
 
-    def makeLocalDelayedOutputTxSegwit(): Either[TxGenerationSkipped, (InputInfo, RedeemInfo.TaprootScriptPathOrSegwitV0, Transaction)] = {
-      val pubkeyScript = pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey))
-      findPubKeyScriptIndex(parentTx, pubkeyScript) flatMap { outputIndex =>
-        val input = InputInfo(OutPoint(parentTx, outputIndex), parentTx.txOut(outputIndex))
-        makeUnsignedTx(input, RedeemInfo.SegwitV0(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)))
-      }
+  def makeClaimLocalDelayedOutputTx(toLocal: ToLocal, outputIndex: Int, commitTx: Transaction, localDustLimit: Satoshi, toLocalDelay: CltvExpiryDelta, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, ClaimLocalDelayedOutputTx] = {
+    val inputInfo = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
+    val tx = Transaction(
+      version = 2,
+      txIn = TxIn(inputInfo.outPoint, ByteVector.empty, toLocalDelay.toInt) :: Nil,
+      txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
+      lockTime = 0)
+    val weight = addSigs(ClaimLocalDelayedOutputTx(inputInfo, toLocal.redeemInfo, tx), PlaceHolderSig).tx.weight()
+    val fee = weight2fee(feeratePerKw, weight)
+    val amount = inputInfo.txOut.amount - fee
+    if (amount < localDustLimit) {
+      Left(AmountBelowDustLimit)
+    } else {
+      val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
+      Right(ClaimLocalDelayedOutputTx(inputInfo, toLocal.redeemInfo, tx1))
     }
-
-    makeLocalDelayedOutputTxTaproot() orElse makeLocalDelayedOutputTxSegwit()
   }
 
   private def makeClaimAnchorOutputTx(commitTx: Transaction, anchorKey: PublicKey, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, (InputInfo, RedeemInfo.TaprootKeyPathOrSegwitV0, Transaction)] = {
