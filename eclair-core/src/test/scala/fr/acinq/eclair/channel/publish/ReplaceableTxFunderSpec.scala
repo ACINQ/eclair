@@ -37,7 +37,7 @@ import scala.util.Random
 
 class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
-  private def createAnchorTx(): (CommitTx, ClaimLocalAnchorOutputTx) = {
+  private def createAnchorTx(): (CommitTx, ClaimAnchorOutputTx) = {
     val anchorScript = Scripts.anchor(PlaceHolderPubKey)
     val commitInput = Funding.makeFundingInputInfo(randomTxId(), 1, 500 sat, PlaceHolderPubKey, PlaceHolderPubKey)
     val commitTx = Transaction(
@@ -46,7 +46,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       Seq(TxOut(330 sat, Script.pay2wsh(anchorScript))),
       0
     )
-    val anchorTx = ClaimLocalAnchorOutputTx(
+    val anchorTx = ClaimAnchorOutputTx(
       InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, anchorScript),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Nil, 0),
       ConfirmationTarget.Absolute(BlockHeight(0))
@@ -136,7 +136,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("adjust previous anchor transaction outputs") {
     val (commitTx, initialAnchorTx) = createAnchorTx()
-    val previousAnchorTx = ClaimLocalAnchorWithWitnessData(initialAnchorTx).updateTx(initialAnchorTx.tx.copy(
+    val previousAnchorTx = ClaimAnchorWithWitnessData(initialAnchorTx).updateTx(initialAnchorTx.tx.copy(
       txIn = Seq(
         initialAnchorTx.tx.txIn.head,
         // The previous funding attempt added two wallet inputs:

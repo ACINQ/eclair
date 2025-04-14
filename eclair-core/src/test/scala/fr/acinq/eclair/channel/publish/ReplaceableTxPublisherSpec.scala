@@ -196,8 +196,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     // Forward the anchor tx to the publisher.
     val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.tx.txid)
-    assert(publishAnchor.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
-    val anchorTx = publishAnchor.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideCommitTarget))
+    assert(publishAnchor.txInfo.isInstanceOf[ClaimAnchorOutputTx])
+    val anchorTx = publishAnchor.txInfo.asInstanceOf[ClaimAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideCommitTarget))
 
     (publishCommitTx, publishAnchor.copy(txInfo = anchorTx))
   }
@@ -213,8 +213,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     // Forward the anchor tx to the publisher.
     val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.txid)
-    assert(publishAnchor.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
-    val anchorTx = publishAnchor.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideCommitTarget))
+    assert(publishAnchor.txInfo.isInstanceOf[ClaimAnchorOutputTx])
+    val anchorTx = publishAnchor.txInfo.asInstanceOf[ClaimAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideCommitTarget))
 
     (commitTx, publishAnchor.copy(txInfo = anchorTx))
   }
@@ -593,11 +593,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
       assert(publishAnchor.commitTx == commitTx)
       assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.txid)
-      assert(publishAnchor.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(publishAnchor.txInfo.isInstanceOf[ClaimAnchorOutputTx])
 
       val targetFeerate = FeeratePerKw(3000 sat)
       setFeerate(targetFeerate)
-      val anchorTx = publishAnchor.copy(txInfo = publishAnchor.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 6)))
+      val anchorTx = publishAnchor.copy(txInfo = publishAnchor.txInfo.asInstanceOf[ClaimAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 6)))
       publisher ! Publish(probe.ref, anchorTx)
       // wait for the commit tx and anchor tx to be published
       val mempoolTxs = getMempoolTxs(2)
@@ -939,7 +939,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       probe.send(alice, CMD_FORCECLOSE(probe.ref))
       probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
       alice2blockchain.expectMsgType[PublishFinalTx]
-      assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimAnchorOutputTx])
       alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
       val htlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
       assert(htlcSuccess.txInfo.isInstanceOf[HtlcSuccessTx])
@@ -1011,7 +1011,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       probe.send(alice, CMD_FORCECLOSE(probe.ref))
       probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
       alice2blockchain.expectMsgType[PublishFinalTx]
-      assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimAnchorOutputTx])
       alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
       val htlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
       assert(htlcTimeout.txInfo.isInstanceOf[HtlcTimeoutTx])
@@ -1058,7 +1058,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     probe.expectMsg(commitTx.tx.txid)
     generateBlocks(1)
 
-    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimAnchorOutputTx])
     alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
     val htlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(htlcSuccess.txInfo.isInstanceOf[HtlcSuccessTx])

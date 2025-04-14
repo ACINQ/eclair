@@ -94,7 +94,7 @@ object ReplaceableTxFunder {
     val maxFee = txInfo match {
       case tx: HtlcTx => tx.input.txOut.amount
       case tx: ClaimHtlcTx => tx.input.txOut.amount
-      case _: ClaimLocalAnchorOutputTx =>
+      case _: ClaimAnchorOutputTx =>
         val htlcBalance = commitment.localCommit.htlcTxsAndRemoteSigs.map(_.htlcTx.input.txOut.amount).sum
         val mainBalance = commitment.localCommit.spec.toLocal.truncateToSatoshi
         // If there are no HTLCs or a low HTLC amount, we still want to get back our main balance.
@@ -110,7 +110,7 @@ object ReplaceableTxFunder {
       case _: ClaimHtlcSuccessTx => Transactions.claimHtlcSuccessWeight
       case _: LegacyClaimHtlcSuccessTx => Transactions.claimHtlcSuccessWeight
       case _: ClaimHtlcTimeoutTx => Transactions.claimHtlcTimeoutWeight
-      case _: ClaimLocalAnchorOutputTx => commitTx.weight() + Transactions.claimAnchorOutputMinWeight
+      case _: ClaimAnchorOutputTx => commitTx.weight() + Transactions.claimAnchorOutputMinWeight
     }
     // It doesn't make sense to use a feerate that is much higher than the current feerate for inclusion into the next block.
     Transactions.fee2rate(maxFee, weight).min(currentFeerates.fastest * 1.25)
@@ -158,7 +158,7 @@ object ReplaceableTxFunder {
   def adjustPreviousTxOutput(previousTx: FundedTx, targetFeerate: FeeratePerKw, commitment: FullCommitment, commitTx: Transaction): AdjustPreviousTxOutputResult = {
     val dustLimit = commitment.localParams.dustLimit
     val targetFee = previousTx.signedTxWithWitnessData match {
-      case _: ClaimLocalAnchorWithWitnessData =>
+      case _: ClaimAnchorWithWitnessData =>
         val commitFee = commitment.localCommit.commitTxAndRemoteSig.commitTx.fee
         val totalWeight = previousTx.signedTx.weight() + commitTx.weight()
         weight2fee(targetFeerate, totalWeight) - commitFee
@@ -166,7 +166,7 @@ object ReplaceableTxFunder {
         weight2fee(targetFeerate, previousTx.signedTx.weight())
     }
     previousTx.signedTxWithWitnessData match {
-      case claimLocalAnchor: ClaimLocalAnchorWithWitnessData =>
+      case claimLocalAnchor: ClaimAnchorWithWitnessData =>
         val changeAmount = previousTx.totalAmountIn - targetFee
         if (changeAmount < dustLimit) {
           AdjustPreviousTxOutputResult.AddWalletInputs(claimLocalAnchor)
@@ -233,7 +233,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   def fund(txWithWitnessData: ReplaceableTxWithWitnessData, targetFeerate: FeeratePerKw): Behavior[Command] = {
     log.info("funding {} tx (targetFeerate={})", txWithWitnessData.txInfo.desc, targetFeerate)
     txWithWitnessData match {
-      case claimLocalAnchor: ClaimLocalAnchorWithWitnessData =>
+      case claimLocalAnchor: ClaimAnchorWithWitnessData =>
         val commitFeerate = cmd.commitment.localCommit.spec.commitTxFeerate
         if (targetFeerate <= commitFeerate) {
           log.info("skipping {}: commit feerate is high enough (feerate={})", cmd.desc, commitFeerate)
@@ -312,7 +312,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   private def sign(fundedTx: ReplaceableTxWithWitnessData, txFeerate: FeeratePerKw, amountIn: Satoshi, walletUtxos: Map[OutPoint, TxOut]): Behavior[Command] = {
     val channelKeyPath = keyManager.keyPath(cmd.commitment.localParams, cmd.commitment.params.channelConfig)
     fundedTx match {
-      case claimAnchorTx: ClaimLocalAnchorWithWitnessData =>
+      case claimAnchorTx: ClaimAnchorWithWitnessData =>
         val localSig = keyManager.sign(claimAnchorTx.txInfo, keyManager.fundingPublicKey(cmd.commitment.localParams.fundingKeyPath, cmd.commitment.fundingTxIndex), TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
         val signedTx = claimAnchorTx.copy(txInfo = addSigs(claimAnchorTx.txInfo, localSig))
         signWalletInputs(signedTx, txFeerate, amountIn, walletUtxos)
@@ -378,7 +378,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
         // For "claim anchor txs" there is a single change output that sends to our on-chain wallet.
         // For htlc txs the first output is the one we want to fund/bump, additional outputs send to our on-chain wallet.
         val ourWalletOutputs = locallySignedTx match {
-          case _: ClaimLocalAnchorWithWitnessData => Seq(0)
+          case _: ClaimAnchorWithWitnessData => Seq(0)
           case _: HtlcWithWitnessData => locallySignedTx.txInfo.tx.txOut.indices.tail
         }
         context.pipeToSelf(bitcoinClient.signPsbt(psbt1, ourWalletInputs, ourWalletOutputs)) {
@@ -387,7 +387,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
               case Right(signedTx) =>
                 val actualFees = kmp2scala(processPsbtResponse.psbt.computeFees())
                 val actualWeight = locallySignedTx match {
-                  case _: ClaimLocalAnchorWithWitnessData => signedTx.weight() + cmd.commitTx.weight()
+                  case _: ClaimAnchorWithWitnessData => signedTx.weight() + cmd.commitTx.weight()
                   case _ => signedTx.weight()
                 }
                 val actualFeerate = Transactions.fee2rate(actualFees, actualWeight)
@@ -438,14 +438,14 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   private def addInputs(tx: ReplaceableTxWithWalletInputs, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(ReplaceableTxWithWalletInputs, Satoshi, Map[OutPoint, TxOut])] = {
     for {
       (fundedTx, amountIn) <- tx match {
-        case anchorTx: ClaimLocalAnchorWithWitnessData => addInputs(anchorTx, targetFeerate, commitment)
+        case anchorTx: ClaimAnchorWithWitnessData => addInputs(anchorTx, targetFeerate, commitment)
         case htlcTx: HtlcWithWitnessData => addInputs(htlcTx, targetFeerate, commitment)
       }
       spentUtxos <- getWalletUtxos(fundedTx.txInfo)
     } yield (fundedTx, amountIn, spentUtxos)
   }
 
-  private def addInputs(anchorTx: ClaimLocalAnchorWithWitnessData, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(ClaimLocalAnchorWithWitnessData, Satoshi)] = {
+  private def addInputs(anchorTx: ClaimAnchorWithWitnessData, targetFeerate: FeeratePerKw, commitment: FullCommitment): Future[(ClaimAnchorWithWitnessData, Satoshi)] = {
     // We want to pay the commit fees using CPFP. Since the commit tx may not be in the mempool yet (its feerate may be
     // below the minimum acceptable mempool feerate), we cannot ask bitcoind to fund a transaction that spends that
     // commit tx: it would fail because it cannot find the input in the utxo set. So we instead ask bitcoind to fund an

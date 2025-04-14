@@ -2987,7 +2987,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobCommitTx1)
     // we're back to the normal handling of remote commit
     inside(alice2blockchain.expectMsgType[PublishReplaceableTx]) { tx =>
-      assert(tx.txInfo.isInstanceOf[Transactions.ClaimLocalAnchorOutputTx])
+      assert(tx.txInfo.isInstanceOf[Transactions.ClaimAnchorOutputTx])
       assert(tx.commitTx == bobCommitTx1)
     }
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx

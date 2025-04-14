@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.FullCommitment
-import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
+import fr.acinq.eclair.transactions.Transactions.{ClaimAnchorOutputTx, ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.{BlockHeight, Logs, NodeParams}
 
 import java.util.UUID
@@ -99,8 +99,8 @@ object TxPublisher {
     override def desc: String = txInfo.desc
 
     /** True if we're trying to bump our local commit with an anchor transaction. */
-    lazy val isLocalCommitAnchor = txInfo match {
-      case txInfo: ClaimLocalAnchorOutputTx => txInfo.input.outPoint.txid == commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid
+    lazy val isLocalCommitAnchor: Boolean = txInfo match {
+      case txInfo: ClaimAnchorOutputTx => txInfo.input.outPoint.txid == commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid
       case _ => false
     }
   }
@@ -136,7 +136,7 @@ object TxPublisher {
   // @formatter:on
 
   // @formatter:off
-  case class ChannelContext(remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {
+  private case class ChannelContext(remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {
     def mdc(): Map[String, String] = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = channelId_opt)
   }
   case class TxPublishContext(id: UUID, remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {

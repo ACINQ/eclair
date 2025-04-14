@@ -43,19 +43,17 @@ import scala.util.{Random, Try}
  */
 
 class TransactionsSpec extends AnyFunSuite with Logging {
-  val localFundingPriv = PrivateKey(randomBytes32())
-  val remoteFundingPriv = PrivateKey(randomBytes32())
-  val localRevocationPriv = PrivateKey(randomBytes32())
-  val localPaymentPriv = PrivateKey(randomBytes32())
-  val localDelayedPaymentPriv = PrivateKey(randomBytes32())
-  val remotePaymentPriv = PrivateKey(randomBytes32())
-  val localHtlcPriv = PrivateKey(randomBytes32())
-  val remoteHtlcPriv = PrivateKey(randomBytes32())
-  val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
-  val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
-  val toLocalDelay = CltvExpiryDelta(144)
-  val localDustLimit = Satoshi(546)
-  val feeratePerKw = FeeratePerKw(22000 sat)
+  private val localFundingPriv = randomKey()
+  private val remoteFundingPriv = randomKey()
+  private val localRevocationPriv = randomKey()
+  private val localPaymentPriv = randomKey()
+  private val localDelayedPaymentPriv = randomKey()
+  private val remotePaymentPriv = randomKey()
+  private val localHtlcPriv = randomKey()
+  private val remoteHtlcPriv = randomKey()
+  private val toLocalDelay = CltvExpiryDelta(144)
+  private val localDustLimit = Satoshi(546)
+  private val feeratePerKw = FeeratePerKw(22000 sat)
 
   test("extract csv and cltv timeouts") {
     val parentTxId1 = randomTxId()
@@ -200,7 +198,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimAnchorOutputTx
       val pubKeyScript = write(pay2wsh(anchor(localFundingPriv.publicKey)))
       val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(anchorAmount, pubKeyScript) :: Nil, lockTime = 0)
-      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(1105)))
+      val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(commitTx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(1105)))
       assert(claimAnchorOutputTx.tx.txOut.isEmpty)
       assert(claimAnchorOutputTx.confirmationTarget == ConfirmationTarget.Absolute(BlockHeight(1105)))
       // we will always add at least one input and one output to be able to set our desired feerate
@@ -589,7 +587,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         OutPoint(randomTxId(), 3) -> TxOut(walletAmount, Script.pay2wpkh(walletPub)),
         OutPoint(randomTxId(), 0) -> TxOut(walletAmount, Script.pay2wpkh(walletPub)),
       )
-      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(0))).map(anchorTx => {
+      val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(commitTx.tx, localFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(0))).map(anchorTx => {
         val walletTxIn = walletInputs.map { case (outpoint, _) => TxIn(outpoint, ByteVector.empty, 0) }
         val unsignedTx = anchorTx.tx.copy(txIn = anchorTx.tx.txIn ++ walletTxIn)
         val sig1 = unsignedTx.signInput(1, Script.pay2pkh(walletPub), SIGHASH_ALL, walletAmount, SigVersion.SIGVERSION_WITNESS_V0, walletPriv)
@@ -610,7 +608,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends remote anchor
-      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, remoteFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(0)))
+      val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(commitTx.tx, remoteFundingPriv.publicKey, ConfirmationTarget.Absolute(BlockHeight(0)))
       assert(checkSpendable(claimAnchorOutputTx).isFailure)
       val localSig = claimAnchorOutputTx.sign(remoteFundingPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
       val signedTx = addSigs(claimAnchorOutputTx, localSig)

@@ -401,7 +401,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Bob claims the htlc output from Alice's commit tx using its preimage.
     bob ! WatchFundingSpentTriggered(lcp.commitTx)
     if (initialState.commitments.params.channelFeatures.hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
-      assert(bob2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(bob2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimAnchorOutputTx])
       bob2blockchain.expectMsgType[PublishFinalTx] // main-delayed
     }
     val claimHtlcSuccessTx1 = bob2blockchain.expectMsgType[PublishReplaceableTx]
@@ -514,7 +514,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Alice prepares Claim-HTLC-timeout transactions for each HTLC.
     alice ! WatchFundingSpentTriggered(rcp.commitTx)
     if (alice.stateData.asInstanceOf[DATA_CLOSING].commitments.params.channelFeatures.hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
-      assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimAnchorOutputTx])
       assert(alice2blockchain.expectMsgType[PublishFinalTx].desc == "remote-main-delayed")
     }
     Seq(htlc1, htlc2, htlc3).foreach(_ => assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimHtlcTimeoutTx]))
@@ -604,7 +604,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Alice prepares Claim-HTLC-timeout transactions for each HTLC.
     alice ! WatchFundingSpentTriggered(rcp.commitTx)
     if (alice.stateData.asInstanceOf[DATA_CLOSING].commitments.params.channelFeatures.hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
-      assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimAnchorOutputTx])
       assert(alice2blockchain.expectMsgType[PublishFinalTx].desc == "remote-main-delayed")
     }
     Seq(htlc1, htlc2, htlc3).foreach(_ => assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimHtlcTimeoutTx]))
@@ -664,16 +664,16 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(initialState.localCommitPublished.nonEmpty)
     val localCommitPublished1 = initialState.localCommitPublished.get
     assert(localCommitPublished1.claimAnchorTxs.nonEmpty)
-    val Some(localAnchor1) = localCommitPublished1.claimAnchorTxs.collectFirst { case tx: ClaimLocalAnchorOutputTx => tx }
+    val Some(localAnchor1) = localCommitPublished1.claimAnchorTxs.collectFirst { case tx: ClaimAnchorOutputTx => tx }
     assert(localAnchor1.confirmationTarget == ConfirmationTarget.Priority(ConfirmationPriority.Medium))
 
     val replyTo = TestProbe()
     alice ! CMD_BUMP_FORCE_CLOSE_FEE(replyTo.ref, ConfirmationTarget.Priority(ConfirmationPriority.Fast))
     replyTo.expectMsgType[RES_SUCCESS[CMD_BUMP_FORCE_CLOSE_FEE]]
     val localAnchor2 = inside(alice2blockchain.expectMsgType[PublishReplaceableTx]) { tx =>
-      assert(tx.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(tx.txInfo.isInstanceOf[ClaimAnchorOutputTx])
       assert(tx.commitTx == localCommitPublished1.commitTx)
-      tx.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx]
+      tx.txInfo.asInstanceOf[ClaimAnchorOutputTx]
     }
     assert(localAnchor2.confirmationTarget == ConfirmationTarget.Priority(ConfirmationPriority.Fast))
     val localCommitPublished2 = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
@@ -683,9 +683,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! CMD_BUMP_FORCE_CLOSE_FEE(replyTo.ref, ConfirmationTarget.Priority(ConfirmationPriority.Medium))
     replyTo.expectMsgType[RES_SUCCESS[CMD_BUMP_FORCE_CLOSE_FEE]]
     val localAnchor3 = inside(alice2blockchain.expectMsgType[PublishReplaceableTx]) { tx =>
-      assert(tx.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(tx.txInfo.isInstanceOf[ClaimAnchorOutputTx])
       assert(tx.commitTx == localCommitPublished1.commitTx)
-      tx.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx]
+      tx.txInfo.asInstanceOf[ClaimAnchorOutputTx]
     }
     assert(localAnchor3.confirmationTarget == ConfirmationTarget.Priority(ConfirmationPriority.Fast))
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.contains(localCommitPublished2))
@@ -1189,16 +1189,16 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobCommitTx = bobCommitTxs.last.commitTx.tx
     val closingState1 = remoteClose(bobCommitTx, alice, alice2blockchain)
     assert(closingState1.claimAnchorTxs.nonEmpty)
-    val Some(localAnchor1) = closingState1.claimAnchorTxs.collectFirst { case tx: ClaimLocalAnchorOutputTx => tx }
+    val Some(localAnchor1) = closingState1.claimAnchorTxs.collectFirst { case tx: ClaimAnchorOutputTx => tx }
     assert(localAnchor1.confirmationTarget == ConfirmationTarget.Priority(ConfirmationPriority.Medium))
 
     val replyTo = TestProbe()
     alice ! CMD_BUMP_FORCE_CLOSE_FEE(replyTo.ref, ConfirmationTarget.Priority(ConfirmationPriority.Fast))
     replyTo.expectMsgType[RES_SUCCESS[CMD_BUMP_FORCE_CLOSE_FEE]]
     val localAnchor2 = inside(alice2blockchain.expectMsgType[PublishReplaceableTx]) { tx =>
-      assert(tx.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(tx.txInfo.isInstanceOf[ClaimAnchorOutputTx])
       assert(tx.commitTx == bobCommitTx)
-      tx.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx]
+      tx.txInfo.asInstanceOf[ClaimAnchorOutputTx]
     }
     assert(localAnchor2.confirmationTarget == ConfirmationTarget.Priority(ConfirmationPriority.Fast))
     val closingState2 = alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
@@ -1208,9 +1208,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! CMD_BUMP_FORCE_CLOSE_FEE(replyTo.ref, ConfirmationTarget.Priority(ConfirmationPriority.Medium))
     replyTo.expectMsgType[RES_SUCCESS[CMD_BUMP_FORCE_CLOSE_FEE]]
     val localAnchor3 = inside(alice2blockchain.expectMsgType[PublishReplaceableTx]) { tx =>
-      assert(tx.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(tx.txInfo.isInstanceOf[ClaimAnchorOutputTx])
       assert(tx.commitTx == bobCommitTx)
-      tx.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx]
+      tx.txInfo.asInstanceOf[ClaimAnchorOutputTx]
     }
     assert(localAnchor3.confirmationTarget == ConfirmationTarget.Priority(ConfirmationPriority.Fast))
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.contains(closingState2))
@@ -1570,7 +1570,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectMsgType[WatchFundingSpent]
     // then we should re-publish unconfirmed transactions
     inside(alice2blockchain.expectMsgType[PublishReplaceableTx]) { tx =>
-      assert(tx.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(tx.txInfo.isInstanceOf[ClaimAnchorOutputTx])
       assert(tx.commitTx == bobCommitTx)
     }
     closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishFinalTx].tx == claimMain.tx))

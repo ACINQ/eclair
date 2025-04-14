@@ -70,8 +70,8 @@ object ReplaceableTxPrePublisher {
   sealed trait ReplaceableTxWithWalletInputs extends ReplaceableTxWithWitnessData {
     override def updateTx(tx: Transaction): ReplaceableTxWithWalletInputs
   }
-  case class ClaimLocalAnchorWithWitnessData(txInfo: ClaimLocalAnchorOutputTx) extends ReplaceableTxWithWalletInputs {
-    override def updateTx(tx: Transaction): ClaimLocalAnchorWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
+  case class ClaimAnchorWithWitnessData(txInfo: ClaimAnchorOutputTx) extends ReplaceableTxWithWalletInputs {
+    override def updateTx(tx: Transaction): ClaimAnchorWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
   }
   sealed trait HtlcWithWitnessData extends ReplaceableTxWithWalletInputs {
     override def txInfo: HtlcTx
@@ -105,7 +105,7 @@ object ReplaceableTxPrePublisher {
           case CheckPreconditions(replyTo, cmd) =>
             val prePublisher = new ReplaceableTxPrePublisher(nodeParams, replyTo, cmd, bitcoinClient, context)
             cmd.txInfo match {
-              case localAnchorTx: Transactions.ClaimLocalAnchorOutputTx => prePublisher.checkAnchorPreconditions(localAnchorTx)
+              case localAnchorTx: Transactions.ClaimAnchorOutputTx => prePublisher.checkAnchorPreconditions(localAnchorTx)
               case htlcTx: Transactions.HtlcTx => prePublisher.checkHtlcPreconditions(htlcTx)
               case claimHtlcTx: Transactions.ClaimHtlcTx => prePublisher.checkClaimHtlcPreconditions(claimHtlcTx)
             }
@@ -126,7 +126,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
 
   private val log = context.log
 
-  private def checkAnchorPreconditions(localAnchorTx: ClaimLocalAnchorOutputTx): Behavior[Command] = {
+  private def checkAnchorPreconditions(localAnchorTx: ClaimAnchorOutputTx): Behavior[Command] = {
     // We verify that:
     //  - our commit is not confirmed (if it is, no need to claim our anchor)
     //  - their commit is not confirmed (if it is, no need to claim our anchor either)
@@ -162,7 +162,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     }
     Behaviors.receiveMessagePartial {
       case ParentTxOk =>
-        replyTo ! PreconditionsOk(ClaimLocalAnchorWithWitnessData(localAnchorTx))
+        replyTo ! PreconditionsOk(ClaimAnchorWithWitnessData(localAnchorTx))
         Behaviors.stopped
       case FundingTxNotFound =>
         log.debug("funding tx could not be found, we don't know yet if we need to claim our anchor")
@@ -179,7 +179,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
       case UnknownFailure(reason) =>
         log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway: ", reason)
         // If our checks fail, we don't want it to prevent us from trying to publish our commit tx.
-        replyTo ! PreconditionsOk(ClaimLocalAnchorWithWitnessData(localAnchorTx))
+        replyTo ! PreconditionsOk(ClaimAnchorWithWitnessData(localAnchorTx))
         Behaviors.stopped
     }
   }

@@ -585,7 +585,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val commitInput = closingState.commitments.latest.commitInput
     Transaction.correctlySpends(publishedLocalCommitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     if (closingState.commitments.params.commitmentFormat.isInstanceOf[Transactions.AnchorOutputsCommitmentFormat]) {
-      assert(s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimAnchorOutputTx])
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(TxPublisher.PublishFinalTx(tx, tx.fee, None)))
@@ -611,7 +611,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     })
 
     // we watch outputs of the commitment tx that both parties may spend and anchor outputs
-    val watchedOutputIndexes = localCommitPublished.htlcTxs.keySet.map(_.index) ++ localCommitPublished.claimAnchorTxs.collect { case tx: ClaimLocalAnchorOutputTx => tx.input.outPoint.index }
+    val watchedOutputIndexes = localCommitPublished.htlcTxs.keySet.map(_.index) ++ localCommitPublished.claimAnchorTxs.collect { case tx: ClaimAnchorOutputTx => tx.input.outPoint.index }
     val spentWatches = watchedOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchOutputSpent])
     spentWatches.foreach(ws => assert(ws.txId == commitTx.txid))
     assert(spentWatches.map(_.outputIndex) == watchedOutputIndexes)
@@ -635,7 +635,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     closingData.commitments.params.commitmentFormat match {
       case _: AnchorOutputsCommitmentFormat =>
         val anchorTx = s2blockchain.expectMsgType[PublishReplaceableTx]
-        assert(anchorTx.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+        assert(anchorTx.txInfo.isInstanceOf[ClaimAnchorOutputTx])
       case Transactions.DefaultCommitmentFormat => ()
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
