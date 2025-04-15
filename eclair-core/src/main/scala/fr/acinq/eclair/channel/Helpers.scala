@@ -558,6 +558,7 @@ object Helpers {
         }
       }
     }
+
   }
 
   object Closing {
@@ -816,7 +817,7 @@ object Helpers {
        * The various dust limits are detailed in https://github.com/lightningnetwork/lightning-rfc/blob/master/03-transactions.md#dust-limits
        */
       def checkClosingDustAmounts(closingTx: ClosingTx): Boolean = {
-        closingTx.tx.txOut.forall(txOut => txOut.amount >= Transactions.dustLimit(txOut.publicKeyScript))
+        closingTx.tx.txOut.forall(txOut => txOut.amount >= Scripts.dustLimit(txOut.publicKeyScript))
       }
     }
 
@@ -850,7 +851,7 @@ object Helpers {
      */
     private def shouldUpdateAnchorTxs(anchorTxs: List[ClaimAnchorOutputTx], confirmationTarget: ConfirmationTarget): Boolean = {
       anchorTxs
-        .collect { case tx: ClaimLocalAnchorOutputTx => tx.confirmationTarget }
+        .collect { case tx: ClaimAnchorOutputTx => tx.confirmationTarget }
         .forall {
           case ConfirmationTarget.Absolute(current) => confirmationTarget match {
             case ConfirmationTarget.Absolute(proposed) => proposed < current
@@ -912,11 +913,8 @@ object Helpers {
           val localFundingPubKey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
           val claimAnchorTxs = List(
             withTxGenerationLog("local-anchor") {
-              Transactions.makeClaimLocalAnchorOutputTx(lcp.commitTx, localFundingPubKey, confirmationTarget)
+              Transactions.makeClaimAnchorOutputTx(lcp.commitTx, localFundingPubKey, confirmationTarget)
             },
-            withTxGenerationLog("remote-anchor") {
-              Transactions.makeClaimRemoteAnchorOutputTx(lcp.commitTx, commitment.remoteFundingPubKey)
-            }
           ).flatten
           lcp.copy(claimAnchorTxs = claimAnchorTxs)
         } else {
@@ -1001,6 +999,7 @@ object Helpers {
           (localCommitPublished, None)
         }
       }
+
     }
 
     object RemoteClose {
@@ -1040,12 +1039,9 @@ object Helpers {
         if (shouldUpdateAnchorTxs(rcp.claimAnchorTxs, confirmationTarget)) {
           val localFundingPubkey = keyManager.fundingPublicKey(commitment.localParams.fundingKeyPath, commitment.fundingTxIndex).publicKey
           val claimAnchorTxs = List(
-            withTxGenerationLog("local-anchor") {
-              Transactions.makeClaimLocalAnchorOutputTx(rcp.commitTx, localFundingPubkey, confirmationTarget)
-            },
             withTxGenerationLog("remote-anchor") {
-              Transactions.makeClaimRemoteAnchorOutputTx(rcp.commitTx, commitment.remoteFundingPubKey)
-            }
+              Transactions.makeClaimAnchorOutputTx(rcp.commitTx, localFundingPubkey, confirmationTarget)
+            },
           ).flatten
           rcp.copy(claimAnchorTxs = claimAnchorTxs)
         } else {
@@ -1158,6 +1154,7 @@ object Helpers {
             })
         }.toSeq.flatten.flatten.toMap
       }
+
     }
 
     object RevokedClose {
@@ -1328,6 +1325,7 @@ object Helpers {
           (revokedCommitPublished, Nil)
         }
       }
+
     }
 
     /**

@@ -4,8 +4,8 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, addressToPublicKeyScript}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, InputInfo, PlaceHolderPubKey, PlaceHolderSig, TxOwner}
 import scodec.bits.ByteVector
 
 import scala.concurrent.Future
@@ -29,7 +29,7 @@ trait SpendFromChannelAddress {
       Right(pubKeyScript) = addressToPublicKeyScript(appKit.nodeParams.chainHash, address).map(Script.write)
       // build the tx a first time with a zero amount to compute the weight
       fee = Transactions.weight2fee(feerate, buildTx(outPoint, 0.sat, pubKeyScript, dummy2of2Witness).weight())
-      _ = assert(inputAmount - fee > Transactions.dustLimit(pubKeyScript), s"amount insufficient (fee=$fee)")
+      _ = assert(inputAmount - fee > Scripts.dustLimit(pubKeyScript), s"amount insufficient (fee=$fee)")
       unsignedTx = buildTx(outPoint, inputAmount - fee, pubKeyScript, dummy2of2Witness)
       // the following are not used, but need to be sent to the counterparty
       localFundingPubkey = appKit.nodeParams.channelKeyManager.fundingPublicKey(fundingKeyPath, fundingTxIndex).publicKey

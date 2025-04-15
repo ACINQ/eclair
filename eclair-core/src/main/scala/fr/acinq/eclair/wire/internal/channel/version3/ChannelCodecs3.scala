@@ -143,9 +143,10 @@ private[channel] object ChannelCodecs3 {
     val mainPenaltyTxCodec: Codec[MainPenaltyTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[MainPenaltyTx]
     val htlcPenaltyTxCodec: Codec[HtlcPenaltyTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcPenaltyTx]
     val claimHtlcDelayedOutputPenaltyTxCodec: Codec[ClaimHtlcDelayedOutputPenaltyTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcDelayedOutputPenaltyTx]
-    val claimLocalAnchorOutputTxCodec: Codec[ClaimLocalAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("confirmationTarget" | blockHeightConfirmationTarget).upcast[ConfirmationTarget]).as[ClaimLocalAnchorOutputTx]
-    private val claimLocalAnchorOutputTxNoConfirmCodec: Codec[ClaimLocalAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("confirmationTarget" | defaultConfirmationTarget).upcast[ConfirmationTarget]).as[ClaimLocalAnchorOutputTx]
-    val claimRemoteAnchorOutputTxCodec: Codec[ClaimRemoteAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimRemoteAnchorOutputTx]
+    val claimLocalAnchorOutputTxCodec: Codec[ClaimAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("confirmationTarget" | blockHeightConfirmationTarget).upcast[ConfirmationTarget]).as[ClaimAnchorOutputTx]
+    private val claimLocalAnchorOutputTxNoConfirmCodec: Codec[ClaimAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("confirmationTarget" | defaultConfirmationTarget).upcast[ConfirmationTarget]).as[ClaimAnchorOutputTx]
+    // We previously created an unused transaction spending the remote anchor (after the 16-blocks delay).
+    val unusedRemoteAnchorOutputTxCodec: Codec[ClaimAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: provide(ConfirmationTarget.Absolute(BlockHeight(42))).upcast[ConfirmationTarget]).as[ClaimAnchorOutputTx]
     val closingTxCodec: Codec[ClosingTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("outputIndex" | optional(bool8, outputInfoCodec))).as[ClosingTx]
 
     val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
@@ -166,7 +167,7 @@ private[channel] object ChannelCodecs3 {
       .typecase(0x09, htlcPenaltyTxCodec)
       .typecase(0x10, closingTxCodec)
       .typecase(0x11, claimLocalAnchorOutputTxNoConfirmCodec)
-      .typecase(0x12, claimRemoteAnchorOutputTxCodec)
+      .typecase(0x12, unusedRemoteAnchorOutputTxCodec)
       .typecase(0x13, claimRemoteDelayedOutputTxCodec)
       .typecase(0x14, claimHtlcDelayedOutputPenaltyTxCodec)
       .typecase(0x15, htlcDelayedTxCodec)
@@ -180,7 +181,9 @@ private[channel] object ChannelCodecs3 {
       // Important: order matters!
       .typecase(0x11, claimLocalAnchorOutputTxCodec)
       .typecase(0x01, claimLocalAnchorOutputTxNoConfirmCodec)
-      .typecase(0x02, claimRemoteAnchorOutputTxCodec)
+      .typecase(0x02, unusedRemoteAnchorOutputTxCodec)
+
+    def filterUnusedRemoteAnchorOutputTx(anchorTxs: List[ClaimAnchorOutputTx]): List[ClaimAnchorOutputTx] = anchorTxs.filter(_.confirmationTarget != ConfirmationTarget.Absolute(BlockHeight(42)))
 
     val htlcTxCodec: Codec[HtlcTx] = discriminated[HtlcTx].by(uint8)
       // Important: order matters!
@@ -312,14 +315,14 @@ private[channel] object ChannelCodecs3 {
         ("claimMainDelayedOutputTx" | optional(bool8, claimLocalDelayedOutputTxCodec)) ::
         ("htlcTxs" | mapCodec(outPointCodec, optional(bool8, htlcTxCodec))) ::
         ("claimHtlcDelayedTx" | listOfN(uint16, htlcDelayedTxCodec)) ::
-        ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ::
+        ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec).xmap(txs => filterUnusedRemoteAnchorOutputTx(txs), { txs: List[ClaimAnchorOutputTx] => txs })) ::
         ("spent" | spentMapCodec)).as[LocalCommitPublished]
 
     val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainOutputTx" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ::
         ("claimHtlcTxs" | mapCodec(outPointCodec, optional(bool8, claimHtlcTxCodec))) ::
-        ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ::
+        ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec).xmap(txs => filterUnusedRemoteAnchorOutputTx(txs), { txs: List[ClaimAnchorOutputTx] => txs })) ::
         ("spent" | spentMapCodec)).as[RemoteCommitPublished]
 
     val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (

@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.FundedTx
-import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher.{ClaimLocalAnchorWithWitnessData, ReplaceableTxWithWitnessData}
+import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher.{ClaimAnchorWithWitnessData, ReplaceableTxWithWitnessData}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.{BlockHeight, NodeParams}
@@ -118,7 +118,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   /** The confirmation target may be updated in some corner cases (e.g. for a htlc if we learn a payment preimage). */
   private var confirmationTarget: ConfirmationTarget = cmd.txInfo.confirmationTarget
 
-  def checkPreconditions(): Behavior[Command] = {
+  private def checkPreconditions(): Behavior[Command] = {
     val prePublisher = context.spawn(ReplaceableTxPrePublisher(nodeParams, bitcoinClient, txPublishContext), "pre-publisher")
     prePublisher ! ReplaceableTxPrePublisher.CheckPreconditions(context.messageAdapter[ReplaceableTxPrePublisher.PreconditionsResult](WrappedPreconditionsResult), cmd)
     Behaviors.receiveMessagePartial {
@@ -137,7 +137,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   def checkTimeLocks(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
     txWithWitnessData match {
       // There are no time locks on anchor transactions, we can claim them right away.
-      case _: ClaimLocalAnchorWithWitnessData => chooseFeerate(txWithWitnessData)
+      case _: ClaimAnchorWithWitnessData => chooseFeerate(txWithWitnessData)
       case _ =>
         val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, bitcoinClient, txPublishContext), "time-locks-monitor")
         timeLocksChecker ! TxTimeLocksMonitor.CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.txInfo.tx, cmd.desc)
@@ -151,7 +151,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def chooseFeerate(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
+  private def chooseFeerate(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
     context.pipeToSelf(hasEnoughSafeUtxos(nodeParams.onChainFeeConf.safeUtxosThreshold)) {
       case Success(isSafe) => CheckUtxosResult(isSafe, nodeParams.currentBlockHeight)
       case Failure(_) => CheckUtxosResult(isSafe = false, nodeParams.currentBlockHeight) // if we can't check our utxos, we assume the worst
@@ -201,14 +201,14 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
 
   // Wait for our transaction to be confirmed or rejected from the mempool.
   // If we get close to the confirmation target and our transaction is stuck in the mempool, we will initiate an RBF attempt.
-  def wait(tx: FundedTx): Behavior[Command] = {
+  private def wait(tx: FundedTx): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(txResult) =>
         txResult match {
           case MempoolTxMonitor.TxInMempool(_, currentBlockHeight, parentConfirmed) =>
             val shouldRbf = cmd.txInfo match {
               // Our commit tx was confirmed on its own, so there's no need to increase fees on the anchor tx.
-              case _: Transactions.ClaimLocalAnchorOutputTx if parentConfirmed => false
+              case _: Transactions.ClaimAnchorOutputTx if parentConfirmed => false
               case _ => true
             }
             if (shouldRbf) {
@@ -259,7 +259,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   }
 
   // Fund a replacement transaction because our previous attempt seems to be stuck in the mempool.
-  def fundReplacement(targetFeerate: FeeratePerKw, previousTx: FundedTx): Behavior[Command] = {
+  private def fundReplacement(targetFeerate: FeeratePerKw, previousTx: FundedTx): Behavior[Command] = {
     log.info("bumping {} fees: previous feerate={}, next feerate={}", cmd.desc, previousTx.feerate, targetFeerate)
     val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, txPublishContext), "tx-funder-rbf")
     txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Left(previousTx), targetFeerate)
@@ -290,7 +290,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   // Publish an RBF attempt. We then have two concurrent transactions: the previous one and the updated one.
   // Only one of them can be in the mempool, so we wait for the other to be rejected. Once that's done, we're back to a
   // situation where we have one transaction in the mempool and wait for it to confirm.
-  def publishReplacement(previousTx: FundedTx, bumpedTx: FundedTx): Behavior[Command] = {
+  private def publishReplacement(previousTx: FundedTx, bumpedTx: FundedTx): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), s"mempool-tx-monitor-${bumpedTx.signedTx.txid}")
     val parentTx_opt = cmd.txInfo match {
       // Anchor output transactions are packaged with the corresponding commitment transaction.
@@ -333,7 +333,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   }
 
   // Clean up the failed transaction attempt. Once that's done, go back to the waiting state with the new transaction.
-  def cleanUpFailedTxAndWait(failedTx: Transaction, mempoolTx: FundedTx): Behavior[Command] = {
+  private def cleanUpFailedTxAndWait(failedTx: Transaction, mempoolTx: FundedTx): Behavior[Command] = {
     // Note that we don't need to filter inputs from the previous transaction, they have already been unlocked when the
     // previous transaction was published (but the bitcoin wallet ensures that they won't be double-spent).
     val toUnlock = failedTx.txIn.map(_.outPoint).toSet

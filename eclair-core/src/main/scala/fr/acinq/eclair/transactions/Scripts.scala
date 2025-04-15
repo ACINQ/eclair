@@ -28,6 +28,7 @@ import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
 import scodec.bits.ByteVector
 
 import scala.jdk.CollectionConverters.SeqHasAsJava
+import scala.util.{Success, Try}
 
 /**
  * Created by PM on 02/12/2016.
@@ -70,11 +71,32 @@ object Scripts {
    * @param n input number
    * @return a script element that represents n
    */
-  def encodeNumber(n: Long): ScriptElt = n match {
+  private def encodeNumber(n: Long): ScriptElt = n match {
     case 0 => OP_0
     case -1 => OP_1NEGATE
     case x if x >= 1 && x <= 16 => ScriptElt.code2elt((ScriptElt.elt2code(OP_1) + x - 1).toInt).get
     case _ => OP_PUSHDATA(Script.encodeNumber(n))
+  }
+
+  /** As defined in https://github.com/lightning/bolts/blob/master/03-transactions.md#dust-limits */
+  def dustLimit(scriptPubKey: ByteVector): Satoshi = {
+    Try(Script.parse(scriptPubKey)) match {
+      case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => 546.sat
+      case Success(OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil) if scriptHash.size == 20 => 540.sat
+      case Success(OP_0 :: OP_PUSHDATA(pubkeyHash, _) :: Nil) if pubkeyHash.size == 20 => 294.sat
+      case Success(OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil) if scriptHash.size == 32 => 330.sat
+      case Success((OP_1 | OP_2 | OP_3 | OP_4 | OP_5 | OP_6 | OP_7 | OP_8 | OP_9 | OP_10 | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16) :: OP_PUSHDATA(program, _) :: Nil) if 2 <= program.length && program.length <= 40 => 354.sat
+      case Success(OP_RETURN :: _) => 0.sat // OP_RETURN is never dust
+      case _ => 546.sat
+    }
+  }
+
+  /** Checks if the given script is an OP_RETURN. */
+  def isOpReturn(scriptPubKey: ByteVector): Boolean = {
+    Try(Script.parse(scriptPubKey)) match {
+      case Success(OP_RETURN :: _) => true
+      case _ => false
+    }
   }
 
   /**
@@ -89,8 +111,7 @@ object Scripts {
     if (tx.lockTime <= LOCKTIME_THRESHOLD) {
       // locktime is a number of blocks
       BlockHeight(tx.lockTime)
-    }
-    else {
+    } else {
       // locktime is a unix epoch timestamp
       require(tx.lockTime <= 0x20FFFFFF, "locktime should be lesser than 0x20FFFFFF")
       // since locktime is very well in the past (0x20FFFFFF is in 1987), it is equivalent to no locktime at all
@@ -140,14 +161,14 @@ object Scripts {
   /**
    * This witness script spends a [[toLocalDelayed]] output using a local sig after a delay
    */
-  def witnessToLocalDelayedAfterDelay(localSig: ByteVector64, toLocalDelayedScript: ByteVector) =
+  def witnessToLocalDelayedAfterDelay(localSig: ByteVector64, toLocalDelayedScript: ByteVector): ScriptWitness =
     ScriptWitness(der(localSig) :: ByteVector.empty :: toLocalDelayedScript :: Nil)
 
   /**
    * This witness script spends (steals) a [[toLocalDelayed]] output using a revocation key as a punishment
    * for having published a revoked transaction
    */
-  def witnessToLocalDelayedWithRevocationSig(revocationSig: ByteVector64, toLocalScript: ByteVector) =
+  def witnessToLocalDelayedWithRevocationSig(revocationSig: ByteVector64, toLocalScript: ByteVector): ScriptWitness =
     ScriptWitness(der(revocationSig) :: ByteVector(1) :: toLocalScript :: Nil)
 
   /**
@@ -161,7 +182,7 @@ object Scripts {
    * If remote publishes its commit tx where there was a to_remote delayed output (anchor outputs format), then local
    * uses this script to claim its funds (consumes to_remote script from commit tx).
    */
-  def witnessClaimToRemoteDelayedFromCommitTx(localSig: ByteVector64, toRemoteDelayedScript: ByteVector) =
+  def witnessClaimToRemoteDelayedFromCommitTx(localSig: ByteVector64, toRemoteDelayedScript: ByteVector): ScriptWitness =
     ScriptWitness(der(localSig) :: toRemoteDelayedScript :: Nil)
 
   /**
@@ -180,12 +201,7 @@ object Scripts {
   /**
    * This witness script spends a local [[anchor]] output using a local sig.
    */
-  def witnessAnchor(localSig: ByteVector64, anchorScript: ByteVector) = ScriptWitness(der(localSig) :: anchorScript :: Nil)
-
-  /**
-   * This witness script spends either a local or remote [[anchor]] output after its CSV delay.
-   */
-  def witnessAnchorAfterDelay(anchorScript: ByteVector) = ScriptWitness(ByteVector.empty :: anchorScript :: Nil)
+  def witnessAnchor(localSig: ByteVector64, anchorScript: ByteVector): ScriptWitness = ScriptWitness(der(localSig) :: anchorScript :: Nil)
 
   def htlcOffered(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteVector, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
@@ -218,7 +234,7 @@ object Scripts {
   /**
    * This is the witness script of the 2nd-stage HTLC Success transaction (consumes htlcOffered script from commit tx)
    */
-  def witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector, commitmentFormat: CommitmentFormat) =
+  def witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector, commitmentFormat: CommitmentFormat): ScriptWitness =
     ScriptWitness(ByteVector.empty :: der(remoteSig, htlcRemoteSighash(commitmentFormat)) :: der(localSig) :: paymentPreimage.bytes :: htlcOfferedScript :: Nil)
 
   /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
@@ -233,7 +249,7 @@ object Scripts {
    * If remote publishes its commit tx where there was a remote->local htlc, then local uses this script to
    * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
    */
-  def witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, paymentPreimage: ByteVector32, htlcOffered: ByteVector) =
+  def witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, paymentPreimage: ByteVector32, htlcOffered: ByteVector): ScriptWitness =
     ScriptWitness(der(localSig) :: paymentPreimage.bytes :: htlcOffered :: Nil)
 
   /** Extract the payment preimage from from a fulfilled offered htlc. */
@@ -277,21 +293,21 @@ object Scripts {
   /**
    * This is the witness script of the 2nd-stage HTLC Timeout transaction (consumes htlcOffered script from commit tx)
    */
-  def witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcOfferedScript: ByteVector, commitmentFormat: CommitmentFormat) =
+  def witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcOfferedScript: ByteVector, commitmentFormat: CommitmentFormat): ScriptWitness =
     ScriptWitness(ByteVector.empty :: der(remoteSig, htlcRemoteSighash(commitmentFormat)) :: der(localSig) :: ByteVector.empty :: htlcOfferedScript :: Nil)
 
   /**
    * If remote publishes its commit tx where there was a local->remote htlc, then local uses this script to
    * claim its funds after timeout (consumes htlcReceived script from commit tx)
    */
-  def witnessClaimHtlcTimeoutFromCommitTx(localSig: ByteVector64, htlcReceivedScript: ByteVector) =
+  def witnessClaimHtlcTimeoutFromCommitTx(localSig: ByteVector64, htlcReceivedScript: ByteVector): ScriptWitness =
     ScriptWitness(der(localSig) :: ByteVector.empty :: htlcReceivedScript :: Nil)
 
   /**
    * This witness script spends (steals) a [[htlcOffered]] or [[htlcReceived]] output using a revocation key as a punishment
    * for having published a revoked transaction
    */
-  def witnessHtlcWithRevocationSig(revocationSig: ByteVector64, revocationPubkey: PublicKey, htlcScript: ByteVector) =
+  def witnessHtlcWithRevocationSig(revocationSig: ByteVector64, revocationPubkey: PublicKey, htlcScript: ByteVector): ScriptWitness =
     ScriptWitness(der(revocationSig) :: revocationPubkey.value :: htlcScript :: Nil)
 
   /**
@@ -324,7 +340,7 @@ object Scripts {
     /**
      * "Nothing Up My Sleeve" point, for which there is no known private key.
      */
-    val NUMS_POINT = PublicKey(ByteVector.fromValidHex("02dca094751109d0bd055d03565874e8276dd53e926b44e3bd1bb6bf4bc130a279"))
+    val NUMS_POINT: PublicKey = PublicKey(ByteVector.fromValidHex("02dca094751109d0bd055d03565874e8276dd53e926b44e3bd1bb6bf4bc130a279"))
 
     // miniscript: older(16)
     private val anchorScript: Seq[ScriptElt] = OP_16 :: OP_CHECKSEQUENCEVERIFY :: Nil

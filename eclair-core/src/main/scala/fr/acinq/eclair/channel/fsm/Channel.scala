@@ -2169,15 +2169,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
           val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.claimAnchors(keyManager, d.commitments.latest, nrcp, c.confirmationTarget))
           // We favor the remote commitment(s) because they're more interesting than the local commitment (no CSV delays).
           if (rcp1.nonEmpty) {
-            rcp1.foreach(rcp => rcp.claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest, rcp.commitTx) })
+            rcp1.foreach(rcp => rcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest, rcp.commitTx) })
             c.replyTo ! RES_SUCCESS(c, d.channelId)
             stay() using d.copy(remoteCommitPublished = rcp1) storing()
           } else if (nrcp1.nonEmpty) {
-            nrcp1.foreach(rcp => rcp.claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest, rcp.commitTx) })
+            nrcp1.foreach(rcp => rcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest, rcp.commitTx) })
             c.replyTo ! RES_SUCCESS(c, d.channelId)
             stay() using d.copy(nextRemoteCommitPublished = nrcp1) storing()
           } else if (lcp1.nonEmpty) {
-            lcp1.foreach(lcp => lcp.claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest, lcp.commitTx) })
+            lcp1.foreach(lcp => lcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, d.commitments.latest, lcp.commitTx) })
             c.replyTo ! RES_SUCCESS(c, d.channelId)
             stay() using d.copy(localCommitPublished = lcp1) storing()
           } else {
