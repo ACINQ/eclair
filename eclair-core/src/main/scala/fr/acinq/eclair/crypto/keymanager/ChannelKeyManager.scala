@@ -17,103 +17,62 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, DeterministicWallet, OutPoint, Protocol, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Crypto, DeterministicWallet, Protocol}
 import fr.acinq.eclair.channel.{ChannelConfig, LocalParams}
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
-import scodec.bits.ByteVector
 
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
 
 trait ChannelKeyManager {
-  def fundingPublicKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey
-
-  def fundingKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): PrivateKey
-
-  def revocationBasePoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
-
-  def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
-
-  def paymentBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey
-
-  def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
-
-  def delayedPaymentBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey
-
-  def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
-
-  def htlcBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey
-
-  def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PrivateKey
-
-  def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PublicKey
-
-  def keyPath(localParams: LocalParams, channelConfig: ChannelConfig): DeterministicWallet.KeyPath = {
-    if (channelConfig.hasOption(ChannelConfig.FundingPubKeyBasedChannelKeyPath)) {
-      // deterministic mode: use the funding pubkey to compute the channel key path
-      ChannelKeyManager.keyPath(fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex = 0))
-    } else {
-      // legacy mode:  we reuse the funding key path as our channel key path
-      localParams.fundingKeyPath
-    }
-  }
 
   /**
    * @param isChannelOpener true if we initiated the channel open
-   * @return a partial key path for a new funding public key. This key path will be extended:
+   * @return a *partial* key path for a new funding public key. This key path will be extended:
    *         - with a specific "chain" prefix
    *         - with a specific "funding pubkey" suffix
+   *         - using the [[channelKeyPath]] function
    */
   def newFundingKeyPath(isChannelOpener: Boolean): DeterministicWallet.KeyPath
 
   /**
-   * @param tx               input transaction
-   * @param publicKey        extended public key
-   * @param txOwner          owner of the transaction (local/remote)
-   * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
-   * @return a signature generated with the private key that matches the input extended public key
+   * @return the base key path used for the provided channel: we will derive per-commitment keys based on this path.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64
+  def channelKeyPath(localParams: LocalParams, channelConfig: ChannelConfig): DeterministicWallet.KeyPath = {
+    if (channelConfig.hasOption(ChannelConfig.FundingPubKeyBasedChannelKeyPath)) {
+      // Deterministic mode: use the funding public key itself to compute the channel key path.
+      val fundingPublicKey = fundingKey(localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
+      ChannelKeyManager.keyPathFromPublicKey(fundingPublicKey)
+    } else {
+      // Legacy mode: we simply reuse the funding key path as our channel key path.
+      localParams.fundingKeyPath
+    }
+  }
 
+  /** Get the private key for the channel funding transaction at the funding index requested. */
+  def fundingKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): PrivateKey
 
-  /**
-   * This method is used to spend funds sent to htlc keys/delayed keys
-   *
-   * @param tx               input transaction
-   * @param publicKey        extended public key
-   * @param remotePoint      remote point
-   * @param txOwner          owner of the transaction (local/remote)
-   * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
-   * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
-   */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64
+  /** Get the base revocation key that will then be tweaked everytime the commitment changes. */
+  def revocationBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey
 
-  /**
-   * Ths method is used to spend revoked transactions, with the corresponding revocation key
-   *
-   * @param tx               input transaction
-   * @param publicKey        extended public key
-   * @param remoteSecret     remote secret
-   * @param txOwner          owner of the transaction (local/remote)
-   * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
-   * @return a signature generated with a private key generated from the input key's matching private key and the remote secret.
-   */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64
+  /** Get the base payment key that will then be tweaked everytime the commitment changes. */
+  def paymentBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey
 
-  /**
-   * Sign a channel announcement message
-   *
-   * @param witness channel announcement message
-   * @return the signature of the channel announcement with the channel's funding private key
-   */
-  def signChannelAnnouncement(witness: ByteVector, fundingKeyPath: DeterministicWallet.KeyPath): ByteVector64
+  /** Get the base delayed payment key that will then be tweaked everytime the commitment changes. */
+  def delayedPaymentBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey
+
+  /** Get the base HTLC key that will then be tweaked everytime the commitment changes. */
+  def htlcBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey
+
+  /** Get the commitment secret for the given commitment number. */
+  def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, commitmentNumber: Long): PrivateKey
+
+  /** Get the commitment point for the given commitment number (public key of [[commitmentSecret]]). */
+  def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, commitmentNumber: Long): PublicKey
+
 }
 
 object ChannelKeyManager {
+
   /**
    * Create a BIP32 path from a public key. This path will be used to derive channel keys.
    * Having channel keys derived from the funding public keys makes it very easy to retrieve your funds when you've lost your data:
@@ -124,7 +83,8 @@ object ChannelKeyManager {
    * @param fundingPubKey funding public key
    * @return a BIP32 path
    */
-  def keyPath(fundingPubKey: PublicKey): DeterministicWallet.KeyPath = {
+  def keyPathFromPublicKey(fundingPubKey: PublicKey): DeterministicWallet.KeyPath = {
+    // We simply hash the public key, and then read the result in 4-bytes chunks to create a BIP32 path.
     val buffer = Crypto.sha256(fundingPubKey.value)
     val bis = new ByteArrayInputStream(buffer.toArray)
 
@@ -133,5 +93,4 @@ object ChannelKeyManager {
     DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next()))
   }
 
-  def keyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey): DeterministicWallet.KeyPath = keyPath(fundingPubKey.publicKey)
 }

@@ -104,8 +104,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_INIT_DUAL_FUNDED_CHANNEL)(handleExceptions {
     case Event(input: INPUT_INIT_CHANNEL_INITIATOR, _) =>
-      val fundingPubKey = keyManager.fundingPublicKey(input.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
-      val channelKeyPath = keyManager.keyPath(input.localParams, input.channelConfig)
+      val fundingPubKey = keyManager.fundingKey(input.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
+      val channelKeyPath = keyManager.channelKeyPath(input.localParams, input.channelConfig)
       val upfrontShutdownScript_opt = input.localParams.upfrontShutdownScript_opt.map(scriptPubKey => ChannelTlv.UpfrontShutdownScriptTlv(scriptPubKey))
       val tlvs: Set[OpenDualFundedChannelTlv] = Set(
         upfrontShutdownScript_opt,
@@ -127,10 +127,10 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         maxAcceptedHtlcs = input.localParams.maxAcceptedHtlcs,
         lockTime = nodeParams.currentBlockHeight.toLong,
         fundingPubkey = fundingPubKey,
-        revocationBasepoint = keyManager.revocationBasePoint(channelKeyPath).publicKey,
-        paymentBasepoint = input.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
-        delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
-        htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
+        revocationBasepoint = keyManager.revocationBaseKey(channelKeyPath).publicKey,
+        paymentBasepoint = input.localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentBaseKey(channelKeyPath).publicKey),
+        delayedPaymentBasepoint = keyManager.delayedPaymentBaseKey(channelKeyPath).publicKey,
+        htlcBasepoint = keyManager.htlcBaseKey(channelKeyPath).publicKey,
         firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
         secondPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1),
         channelFlags = input.channelFlags,
@@ -141,7 +141,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
   when(WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL)(handleExceptions {
     case Event(open: OpenDualFundedChannel, d: DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL) =>
       import d.init.{localParams, remoteInit}
-      val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
+      val localFundingPubkey = keyManager.fundingKey(localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
       val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubkey, open.fundingPubkey)
       Helpers.validateParamsDualFundedNonInitiator(nodeParams, d.init.channelType, open, fundingScript, remoteNodeId, localParams.initFeatures, remoteInit.features, d.init.fundingContribution_opt) match {
         case Left(t) => handleLocalError(t, d, Some(open))
@@ -162,8 +162,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             initFeatures = remoteInit.features,
             upfrontShutdownScript_opt = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
-          val channelKeyPath = keyManager.keyPath(localParams, d.init.channelConfig)
-          val revocationBasePoint = keyManager.revocationBasePoint(channelKeyPath).publicKey
+          val channelKeyPath = keyManager.channelKeyPath(localParams, d.init.channelConfig)
+          val revocationBasePoint = keyManager.revocationBaseKey(channelKeyPath).publicKey
           // We've exchanged open_channel2 and accept_channel2, we now know the final channelId.
           val channelId = Helpers.computeChannelId(open.revocationBasepoint, revocationBasePoint)
           val channelParams = ChannelParams(channelId, d.init.channelConfig, channelFeatures, localParams, remoteParams, open.channelFlags)
@@ -189,9 +189,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
             fundingPubkey = localFundingPubkey,
             revocationBasepoint = revocationBasePoint,
-            paymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
-            delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
-            htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
+            paymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentBaseKey(channelKeyPath).publicKey),
+            delayedPaymentBasepoint = keyManager.delayedPaymentBaseKey(channelKeyPath).publicKey,
+            htlcBasepoint = keyManager.htlcBaseKey(channelKeyPath).publicKey,
             firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
             secondPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1),
             tlvStream = TlvStream(tlvs))

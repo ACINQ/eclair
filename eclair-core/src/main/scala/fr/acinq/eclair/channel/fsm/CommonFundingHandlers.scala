@@ -123,7 +123,7 @@ trait CommonFundingHandlers extends CommonHandlers {
   }
 
   def createChannelReady(aliases: ShortIdAliases, params: ChannelParams): ChannelReady = {
-    val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
+    val channelKeyPath = keyManager.channelKeyPath(params.localParams, params.channelConfig)
     val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
     // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
     ChannelReady(params.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(aliases.localAlias)))

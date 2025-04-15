@@ -35,7 +35,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Purpose
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, TxOwner}
-import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, Scripts, Transactions}
+import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, LocalCommitmentKeys, RemoteCommitmentKeys, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ToMilliSatoshiConversion, UInt64}
 import scodec.bits.ByteVector
@@ -112,8 +112,8 @@ object InteractiveTxBuilder {
     override val weight: Int = 388
 
     def sign(keyManager: ChannelKeyManager, params: ChannelParams, tx: Transaction, spentUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
-      val localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, fundingTxIndex)
-      keyManager.sign(Transactions.SpliceTx(info, tx), localFundingPubkey, TxOwner.Local, params.commitmentFormat, spentUtxos)
+      val localFundingKey = params.localFundingKey(keyManager, fundingTxIndex)
+      Transactions.SpliceTx(info, tx).sign(localFundingKey, TxOwner.Local, params.commitmentFormat, spentUtxos)
     }
   }
 
@@ -456,7 +456,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   private val log = context.log
   private val keyManager = nodeParams.channelKeyManager
-  private val localFundingPubKey: PublicKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex).publicKey
+  private val localFundingPubKey: PublicKey = channelParams.localFundingKey(keyManager, purpose.fundingTxIndex).publicKey
   private val fundingPubkeyScript: ByteVector = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubKey, fundingParams.remoteFundingPubKey)))
   private val remoteNodeId = channelParams.remoteParams.nodeId
   private val previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction] = purpose match {
@@ -832,6 +832,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val fundingTx = completeTx.buildUnsignedTx()
     val fundingOutputIndex = fundingTx.txOut.indexWhere(_.publicKeyScript == fundingPubkeyScript)
     val liquidityFee = fundingParams.liquidityFees(liquidityPurchase_opt)
+    val fundingKey = channelParams.localFundingKey(keyManager, purpose.fundingTxIndex)
+    val localCommitmentKeys = LocalCommitmentKeys(keyManager, channelParams, purpose.localCommitIndex)
+    val remoteCommitmentKeys = RemoteCommitmentKeys(keyManager, channelParams, purpose.remotePerCommitmentPoint)
     Funding.makeCommitTxs(keyManager, channelParams,
       fundingAmount = fundingParams.fundingAmount,
       toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - liquidityFee,
@@ -840,17 +843,16 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       purpose.commitTxFeerate,
       fundingTxIndex = purpose.fundingTxIndex,
       fundingTx.txid, fundingOutputIndex,
-      remotePerCommitmentPoint = purpose.remotePerCommitmentPoint, remoteFundingPubKey = fundingParams.remoteFundingPubKey,
+      fundingKey, fundingParams.remoteFundingPubKey,
+      localCommitmentKeys, remoteCommitmentKeys,
       localCommitmentIndex = purpose.localCommitIndex, remoteCommitmentIndex = purpose.remoteCommitIndex) match {
       case Left(cause) =>
         replyTo ! RemoteFailure(cause)
         unlockAndStop(completeTx)
       case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)) =>
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
-        val fundingPubKey = keyManager.fundingPublicKey(channelParams.localParams.fundingKeyPath, purpose.fundingTxIndex)
-        val localSigOfRemoteTx = keyManager.sign(remoteCommitTx, fundingPubKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat, Map.empty)
-        val localPerCommitmentPoint = keyManager.htlcPoint(keyManager.keyPath(channelParams.localParams, channelParams.channelConfig))
-        val htlcSignatures = sortedHtlcTxs.map(keyManager.sign(_, localPerCommitmentPoint, purpose.remotePerCommitmentPoint, TxOwner.Remote, channelParams.commitmentFormat, Map.empty)).toList
+        val localSigOfRemoteTx = remoteCommitTx.sign(fundingKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat, Map.empty)
+        val htlcSignatures = sortedHtlcTxs.map(_.sign(remoteCommitmentKeys.ourHtlcKey, TxOwner.Remote, channelParams.commitmentFormat, Map.empty)).toList
         val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures)
         val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx, htlcTxs = Nil)
         val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)
@@ -1043,7 +1045,7 @@ object InteractiveTxSigningSession {
       case Some(sharedInput: Multisig2of2Input) =>
         (partiallySignedTx.localSigs.previousFundingTxSig_opt, remoteSigs.previousFundingTxSig_opt) match {
           case (Some(localSig), Some(remoteSig)) =>
-            val localFundingPubkey = keyManager.fundingPublicKey(params.localParams.fundingKeyPath, sharedInput.fundingTxIndex).publicKey
+            val localFundingPubkey = params.localFundingKey(keyManager, sharedInput.fundingTxIndex).publicKey
             Some(Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, sharedInput.remoteFundingPubkey))
           case _ =>
             log.info("invalid tx_signatures: missing shared input signatures")

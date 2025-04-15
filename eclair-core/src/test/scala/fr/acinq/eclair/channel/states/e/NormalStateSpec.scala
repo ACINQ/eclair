@@ -3657,7 +3657,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
     assert(annSigsB.shortChannelId == realShortChannelId)
     bob2alice.expectMsgType[ChannelUpdate]
-    val aliceFundingKey = Alice.channelKeyManager.fundingPublicKey(initialState.commitments.params.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
+    val aliceFundingKey = Alice.channelKeyManager.fundingKey(initialState.commitments.params.localParams.fundingKeyPath, fundingTxIndex = 0).publicKey
     val bobFundingKey = initialState.commitments.latest.remoteFundingPubKey
     val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, Bob.nodeParams.nodeId, aliceFundingKey, bobFundingKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
     // actual test starts here

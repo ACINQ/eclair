@@ -313,7 +313,7 @@ object ChannelCodecsSpec {
     val fundingAmount = fundingTx.txOut.head.amount
     val fundingTxIndex = 0
     val remoteFundingPubKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)) :+ 1.toByte).publicKey
-    val commitmentInput = Funding.makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, channelKeyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex).publicKey, remoteFundingPubKey)
+    val commitmentInput = Funding.makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, channelKeyManager.fundingKey(localParams.fundingKeyPath, fundingTxIndex).publicKey, remoteFundingPubKey)
     val remoteSig = ByteVector64(hex"2148d2d4aac8c793eb82d31bcf22d4db707b9fd7eee1b89b4b1444c9e19ab7172bab8c3d997d29163fa0cb255c75afb8ade13617ad1350c1515e9be4a222a04d")
     val commitTx = Transaction(
       version = 2,
@@ -321,7 +321,7 @@ object ChannelCodecsSpec {
         outPoint = commitmentInput.outPoint,
         signatureScript = ByteVector.empty,
         sequence = 0,
-        witness = Scripts.witness2of2(randomBytes64(), remoteSig, channelKeyManager.fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex).publicKey, remoteFundingPubKey)) :: Nil,
+        witness = Scripts.witness2of2(randomBytes64(), remoteSig, channelKeyManager.fundingKey(localParams.fundingKeyPath, fundingTxIndex).publicKey, remoteFundingPubKey)) :: Nil,
       txOut = Nil,
       lockTime = 0
     )

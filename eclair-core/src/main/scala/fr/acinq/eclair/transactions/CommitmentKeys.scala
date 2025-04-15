@@ -40,7 +40,7 @@ import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
  * @param remotePaymentPublicKey       key used for the main balance of the transaction non-owner (not delayed).
  * @param localHtlcPublicKey           key used to sign HTLC transactions by the transaction owner.
  * @param remoteHtlcPublicKey          key used to sign HTLC transactions by the transaction non-owner.
- * @param revocationPublicKey          key used to revoke this commitment after signing the next one (by revealing the private key).
+ * @param revocationPublicKey          key used to revoke this commitment after signing the next one (by revealing the per-commitment secret).
  */
 case class CommitmentPublicKeys(localDelayedPaymentPublicKey: PublicKey,
                                 remotePaymentPublicKey: PublicKey,
@@ -67,7 +67,7 @@ case class LocalCommitmentKeys(ourDelayedPaymentKey: PrivateKey,
 
 object LocalCommitmentKeys {
   def apply(keyManager: ChannelKeyManager, params: ChannelParams, localCommitIndex: Long): LocalCommitmentKeys = {
-    val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
+    val channelKeyPath = keyManager.channelKeyPath(params.localParams, params.channelConfig)
     val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, localCommitIndex)
     LocalCommitmentKeys(
       ourDelayedPaymentKey = Generators.derivePrivKey(keyManager.delayedPaymentBaseKey(channelKeyPath), localPerCommitmentPoint),
@@ -110,7 +110,7 @@ case class RemoteCommitmentKeys(ourPaymentKey: Either[PublicKey, PrivateKey],
 
 object RemoteCommitmentKeys {
   def apply(keyManager: ChannelKeyManager, params: ChannelParams, remotePerCommitmentPoint: PublicKey): RemoteCommitmentKeys = {
-    val channelKeyPath = keyManager.keyPath(params.localParams, params.channelConfig)
+    val channelKeyPath = keyManager.channelKeyPath(params.localParams, params.channelConfig)
     RemoteCommitmentKeys(
       ourPaymentKey = params.localParams.walletStaticPaymentBasepoint match {
         case Some(walletPublicKey) => Left(walletPublicKey)
@@ -120,7 +120,7 @@ object RemoteCommitmentKeys {
       theirDelayedPaymentPublicKey = Generators.derivePubKey(params.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint),
       ourHtlcKey = Generators.derivePrivKey(keyManager.htlcBaseKey(channelKeyPath), remotePerCommitmentPoint),
       theirHtlcPublicKey = Generators.derivePubKey(params.remoteParams.htlcBasepoint, remotePerCommitmentPoint),
-      revocationPublicKey = Generators.revocationPubKey(keyManager.revocationBasePoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+      revocationPublicKey = Generators.revocationPubKey(keyManager.revocationBaseKey(channelKeyPath).publicKey, remotePerCommitmentPoint)
     )
   }
 }

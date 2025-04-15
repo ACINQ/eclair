@@ -337,7 +337,7 @@ trait ErrorHandlers extends CommonHandlers {
           val keys = d.commitments.latest.remoteKeys(keyManager, remotePerCommitmentPoint)
           val remoteCommitPublished = RemoteCommitPublished(
             commitTx = tx,
-            claimMainOutputTx = Closing.RemoteClose.claimMainOutput(keyManager, keys, d.commitments.params, remotePerCommitmentPoint, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey),
+            claimMainOutputTx = Closing.RemoteClose.claimMainOutput(keys, d.commitments.params, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey),
             claimHtlcTxs = Map.empty,
             claimAnchorTxs = List.empty,
             irrevocablySpent = Map.empty)

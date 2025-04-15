@@ -19,14 +19,10 @@ package fr.acinq.eclair.crypto.keymanager
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.crypto.Generators
-import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
-import fr.acinq.eclair.{KamonExt, randomLong}
+import fr.acinq.eclair.randomLong
 import grizzled.slf4j.Logging
-import kamon.tag.TagSet
 import scodec.bits.ByteVector
 
 object LocalChannelKeyManager {
@@ -68,12 +64,6 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
       override def load(keyPath: KeyPath): ExtendedPrivateKey = derivePrivateKey(master, keyPath)
     })
 
-  private val publicKeys: LoadingCache[KeyPath, ExtendedPublicKey] = CacheBuilder.newBuilder()
-    .maximumSize(6 * 200) // 6 keys per channel * 200 channels
-    .build[KeyPath, ExtendedPublicKey](new CacheLoader[KeyPath, ExtendedPublicKey] {
-      override def load(keyPath: KeyPath): ExtendedPublicKey = publicKey(privateKeys.get(keyPath))
-    })
-
   private def internalKeyPath(keyPath: DeterministicWallet.KeyPath, index: Long): KeyPath = KeyPath((LocalChannelKeyManager.keyBasePath(chainHash) ++ keyPath.path) :+ index)
 
   override def newFundingKeyPath(isInitiator: Boolean): KeyPath = {
@@ -84,27 +74,16 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
     DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next(), last))
   }
 
-  override def fundingPublicKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey = {
-    val keyPath = internalKeyPath(fundingKeyPath, hardened(fundingTxIndex))
-    publicKeys.get(keyPath)
-  }
-
   override def fundingKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): PrivateKey = {
     val keyPath = internalKeyPath(fundingKeyPath, hardened(fundingTxIndex))
     privateKeys.get(keyPath).privateKey
   }
 
-  override def revocationBasePoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(1)))
-
-  override def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(2)))
+  override def revocationBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(1))).privateKey
 
   override def paymentBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(2))).privateKey
 
-  override def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(3)))
-
   override def delayedPaymentBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(3))).privateKey
-
-  override def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(4)))
 
   override def htlcBaseKey(channelKeyPath: DeterministicWallet.KeyPath): PrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(4))).privateKey
 
@@ -114,67 +93,4 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extends Cha
 
   override def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PublicKey = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
 
-  /**
-   * @param tx               input transaction
-   * @param publicKey        extended public key
-   * @param txOwner          owner of the transaction (local/remote)
-   * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
-   * @return a signature generated with the private key that matches the input extended public key
-   */
-  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
-    // NB: not all those transactions are actually commit txs (especially during closing), but this is good enough for monitoring purposes
-    val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.CommitTx)
-    Metrics.SignTxCount.withTags(tags).increment()
-    KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
-      val privateKey = privateKeys.get(publicKey.path)
-      tx.sign(privateKey.privateKey, txOwner, commitmentFormat, extraUtxos)
-    }
-  }
-
-  /**
-   * This method is used to spend funds sent to htlc keys/delayed keys
-   *
-   * @param tx               input transaction
-   * @param publicKey        extended public key
-   * @param remotePoint      remote point
-   * @param txOwner          owner of the transaction (local/remote)
-   * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
-   * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
-   */
-  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
-    // NB: not all those transactions are actually htlc txs (especially during closing), but this is good enough for monitoring purposes
-    val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.HtlcTx)
-    Metrics.SignTxCount.withTags(tags).increment()
-    KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
-      val privateKey = privateKeys.get(publicKey.path)
-      val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
-      tx.sign(currentKey, txOwner, commitmentFormat, extraUtxos)
-    }
-  }
-
-  /**
-   * Ths method is used to spend revoked transactions, with the corresponding revocation key
-   *
-   * @param tx               input transaction
-   * @param publicKey        extended public key
-   * @param remoteSecret     remote secret
-   * @param txOwner          owner of the transaction (local/remote)
-   * @param commitmentFormat format of the commitment tx
-   * @param extraUtxos       extra outputs spent by this transaction (in addition to [[fr.acinq.eclair.transactions.Transactions.InputInfo]])
-   * @return a signature generated with a private key generated from the input key's matching private key and the remote secret.
-   */
-  override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
-    val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.RevokedTx)
-    Metrics.SignTxCount.withTags(tags).increment()
-    KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
-      val privateKey = privateKeys.get(publicKey.path)
-      val currentKey = Generators.revocationPrivKey(privateKey.privateKey, remoteSecret)
-      tx.sign(currentKey, txOwner, commitmentFormat, extraUtxos)
-    }
-  }
-
-  override def signChannelAnnouncement(witness: ByteVector, fundingKeyPath: KeyPath): ByteVector64 =
-    Announcements.signChannelAnnouncement(witness, privateKeys.get(fundingKeyPath).privateKey)
 }

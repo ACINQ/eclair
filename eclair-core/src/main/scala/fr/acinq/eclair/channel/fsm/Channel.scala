@@ -821,8 +821,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case Some(c) =>
           c.signAnnouncement(nodeParams, d.commitments.params) match {
             case Some(localAnnSigs) =>
-              val fundingPubKey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, c.fundingTxIndex)
-              val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, nodeParams.nodeId, remoteNodeId, fundingPubKey.publicKey, c.remoteFundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
+              val fundingPubKey = d.commitments.params.localFundingKey(keyManager, c.fundingTxIndex).publicKey
+              val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, nodeParams.nodeId, remoteNodeId, fundingPubKey, c.remoteFundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
               if (!Announcements.checkSigs(channelAnn)) {
                 handleLocalError(InvalidAnnouncementSignatures(d.channelId, remoteAnnSigs), d, Some(remoteAnnSigs))
               } else {
@@ -1026,7 +1026,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceWithUnconfirmedTx(d.channelId, d.commitments.latest.fundingTxId).getMessage)
           } else {
             val parentCommitment = d.commitments.latest.commitment
-            val localFundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey
+            val localFundingPubKey = d.commitments.params.localFundingKey(keyManager, parentCommitment.fundingTxIndex + 1).publicKey
             val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubKey, msg.fundingPubKey)
             LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = false, msg.requestFunding_opt, nodeParams.liquidityAdsConfig.rates_opt, msg.useFeeCredit_opt) match {
               case Left(t) =>
@@ -1865,7 +1865,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         case Right((commitments1, _)) =>
           log.info("got valid settlement for htlc={}, recalculating htlc transactions", c.id)
           val commitment = commitments1.latest
-          val localCommitPublished1 = d.localCommitPublished.map(localCommitPublished => localCommitPublished.copy(htlcTxs = Closing.LocalClose.claimHtlcOutputs(keyManager, commitment)))
+          val localCommitPublished1 = d.localCommitPublished.map(localCommitPublished => localCommitPublished.copy(htlcTxs = Closing.LocalClose.claimHtlcOutputs(commitment.localKeys(keyManager), commitment)))
           val remoteCommitPublished1 = d.remoteCommitPublished.map(remoteCommitPublished => remoteCommitPublished.copy(claimHtlcTxs = Closing.RemoteClose.claimHtlcOutputs(keyManager, commitment.remoteKeys(keyManager, commitment.remoteCommit.remotePerCommitmentPoint), commitment, commitment.remoteCommit, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)))
           val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map(remoteCommitPublished => remoteCommitPublished.copy(claimHtlcTxs = Closing.RemoteClose.claimHtlcOutputs(keyManager, commitment.remoteKeys(keyManager, commitment.nextRemoteCommit_opt.get.commit.remotePerCommitmentPoint), commitment, commitment.nextRemoteCommit_opt.get.commit, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)))
 
@@ -2257,7 +2257,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
 
     case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
       activeConnection = r
-      val channelKeyPath = keyManager.keyPath(d.channelParams.localParams, d.channelParams.channelConfig)
+      val channelKeyPath = keyManager.channelKeyPath(d.channelParams.localParams, d.channelParams.channelConfig)
       val myFirstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0)
       val nextFundingTlv: Set[ChannelReestablishTlv] = Set(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTx.txId))
       val channelReestablish = ChannelReestablish(
@@ -2275,7 +2275,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
       activeConnection = r
       val remotePerCommitmentSecrets = d.commitments.remotePerCommitmentSecrets
       val yourLastPerCommitmentSecret = remotePerCommitmentSecrets.lastIndex.flatMap(remotePerCommitmentSecrets.getHash).getOrElse(ByteVector32.Zeroes)
-      val channelKeyPath = keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
+      val channelKeyPath = keyManager.channelKeyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
       val myCurrentPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommitIndex)
       // If we disconnected while signing a funding transaction, we may need our peer to retransmit their commit_sig.
       val nextLocalCommitmentNumber = d match {
@@ -2447,7 +2447,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
               val notAnnouncedYet = d.commitments.announceChannel && c.shortChannelId_opt.nonEmpty && d.lastAnnouncement_opt.isEmpty
               if (notAnnouncedYet || notReceivedByRemote || notReceivedByRemoteLegacy) {
                 log.debug("re-sending channel_ready")
-                val channelKeyPath = keyManager.keyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
+                val channelKeyPath = keyManager.channelKeyPath(d.commitments.params.localParams, d.commitments.params.channelConfig)
                 val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
                 sendQueue = sendQueue :+ ChannelReady(d.commitments.channelId, nextPerCommitmentPoint)
               }
@@ -3292,7 +3292,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder with 
         fundingContribution = fundingContribution,
         lockTime = nodeParams.currentBlockHeight.toLong,
         feerate = targetFeerate,
-        fundingPubKey = keyManager.fundingPublicKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey,
+        fundingPubKey = keyManager.fundingKey(d.commitments.params.localParams.fundingKeyPath, parentCommitment.fundingTxIndex + 1).publicKey,
         pushAmount = cmd.pushAmount,
         requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
         requestFunding_opt = cmd.requestFunding_opt

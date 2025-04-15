@@ -101,8 +101,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val channelId: ByteVector32 = fundingParamsA.channelId
     val commitFeerate: FeeratePerKw = TestConstants.anchorOutputsFeeratePerKw
 
-    private val firstPerCommitmentPointA = nodeParamsA.channelKeyManager.commitmentPoint(nodeParamsA.channelKeyManager.keyPath(channelParamsA.localParams, ChannelConfig.standard), 0)
-    private val firstPerCommitmentPointB = nodeParamsB.channelKeyManager.commitmentPoint(nodeParamsB.channelKeyManager.keyPath(channelParamsB.localParams, ChannelConfig.standard), 0)
+    private val firstPerCommitmentPointA = nodeParamsA.channelKeyManager.commitmentPoint(nodeParamsA.channelKeyManager.channelKeyPath(channelParamsA.localParams, ChannelConfig.standard), 0)
+    private val firstPerCommitmentPointB = nodeParamsB.channelKeyManager.commitmentPoint(nodeParamsB.channelKeyManager.channelKeyPath(channelParamsB.localParams, ChannelConfig.standard), 0)
     val fundingPubkeyScript: ByteVector = Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey)))
 
     def dummySharedInputB(amount: Satoshi): SharedFundingInput = {
@@ -115,8 +115,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
 
     def createSpliceFixtureParams(fundingTxIndex: Long, fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, sharedInputA: SharedFundingInput, sharedInputB: SharedFundingInput, spliceOutputsA: List[TxOut] = Nil, spliceOutputsB: List[TxOut] = Nil, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false)): FixtureParams = {
-      val fundingPubKeyA = nodeParamsA.channelKeyManager.fundingPublicKey(channelParamsA.localParams.fundingKeyPath, fundingTxIndex).publicKey
-      val fundingPubKeyB = nodeParamsB.channelKeyManager.fundingPublicKey(channelParamsB.localParams.fundingKeyPath, fundingTxIndex).publicKey
+      val fundingPubKeyA = channelParamsA.localFundingKey(nodeParamsA.channelKeyManager, fundingTxIndex).publicKey
+      val fundingPubKeyB = channelParamsB.localFundingKey(nodeParamsB.channelKeyManager, fundingTxIndex).publicKey
       val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, Some(sharedInputA), fundingPubKeyB, spliceOutputsA, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
       val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, Some(sharedInputB), fundingPubKeyA, spliceOutputsB, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
       copy(fundingParamsA = fundingParamsA, fundingParamsB = fundingParamsB)
@@ -219,21 +219,21 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
     val Seq(remoteParamsA, remoteParamsB) = Seq((nodeParamsA, localParamsA), (nodeParamsB, localParamsB)).map {
       case (nodeParams, localParams) =>
-        val channelKeyPath = nodeParams.channelKeyManager.keyPath(localParams, ChannelConfig.standard)
+        val channelKeyPath = nodeParams.channelKeyManager.channelKeyPath(localParams, ChannelConfig.standard)
         RemoteParams(
           nodeParams.nodeId,
           localParams.dustLimit, UInt64(localParams.maxHtlcValueInFlightMsat.toLong), None, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs,
-          nodeParams.channelKeyManager.revocationBasePoint(channelKeyPath).publicKey,
-          nodeParams.channelKeyManager.paymentPoint(channelKeyPath).publicKey,
-          nodeParams.channelKeyManager.delayedPaymentPoint(channelKeyPath).publicKey,
-          nodeParams.channelKeyManager.htlcPoint(channelKeyPath).publicKey,
+          nodeParams.channelKeyManager.revocationBaseKey(channelKeyPath).publicKey,
+          nodeParams.channelKeyManager.paymentBaseKey(channelKeyPath).publicKey,
+          nodeParams.channelKeyManager.delayedPaymentBaseKey(channelKeyPath).publicKey,
+          nodeParams.channelKeyManager.htlcBaseKey(channelKeyPath).publicKey,
           localParams.initFeatures,
           None)
     }
 
     val channelId = randomBytes32()
-    val fundingPubKeyA = nodeParamsA.channelKeyManager.fundingPublicKey(localParamsA.fundingKeyPath, fundingTxIndex = 0).publicKey
-    val fundingPubKeyB = nodeParamsB.channelKeyManager.fundingPublicKey(localParamsB.fundingKeyPath, fundingTxIndex = 0).publicKey
+    val fundingPubKeyA = nodeParamsA.channelKeyManager.fundingKey(localParamsA.fundingKeyPath, fundingTxIndex = 0).publicKey
+    val fundingPubKeyB = nodeParamsB.channelKeyManager.fundingKey(localParamsB.fundingKeyPath, fundingTxIndex = 0).publicKey
     val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, None, fundingPubKeyB, Nil, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
     val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, None, fundingPubKeyA, Nil, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
     val channelParamsA = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParamsA, remoteParamsB, ChannelFlags(announceChannel = true))
