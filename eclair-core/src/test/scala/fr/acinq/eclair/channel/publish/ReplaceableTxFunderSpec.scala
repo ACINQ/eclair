@@ -24,8 +24,9 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.AdjustPreviousTxOutputResult.{AddWalletInputs, TxOutputAdjusted}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder._
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
-import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.crypto.keymanager.CommitmentPublicKeys
 import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, TestKitBaseClass, randomBytes32}
 import org.mockito.IdiomaticMockito.StubbingOps
 import org.mockito.MockitoSugar.mock
@@ -57,8 +58,9 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
   private def createHtlcTxs(): (Transaction, HtlcSuccessWithWitnessData, HtlcTimeoutWithWitnessData) = {
     val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
-    val htlcSuccessScript = Scripts.htlcReceived(PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, paymentHash, CltvExpiry(0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
-    val htlcTimeoutScript = Scripts.htlcOffered(PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, randomBytes32(), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val commitmentKeys = CommitmentPublicKeys(PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey)
+    val htlcSuccessScript = Scripts.htlcReceived(commitmentKeys, paymentHash, CltvExpiry(0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val htlcTimeoutScript = Scripts.htlcOffered(commitmentKeys, randomBytes32(), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val commitTx = Transaction(
       2,
       Seq(TxIn(OutPoint(randomTxId(), 1), Script.write(Script.pay2wpkh(PlaceHolderPubKey)), 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig))),
@@ -84,8 +86,9 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
   private def createClaimHtlcTx(): (Transaction, ClaimHtlcSuccessWithWitnessData, ClaimHtlcTimeoutWithWitnessData) = {
     val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
-    val htlcSuccessScript = Scripts.htlcReceived(PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, paymentHash, CltvExpiry(0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
-    val htlcTimeoutScript = Scripts.htlcOffered(PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, randomBytes32(), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val commitmentKeys = CommitmentPublicKeys(PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey)
+    val htlcSuccessScript = Scripts.htlcReceived(commitmentKeys, paymentHash, CltvExpiry(0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val htlcTimeoutScript = Scripts.htlcOffered(commitmentKeys, randomBytes32(), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val commitTx = Transaction(
       2,
       Seq(TxIn(OutPoint(randomTxId(), 1), Script.write(Script.pay2wpkh(PlaceHolderPubKey)), 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig))),

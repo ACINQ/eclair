@@ -33,6 +33,7 @@ import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates, OnChainC
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.MessageRelay.Status
 import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
@@ -82,7 +83,8 @@ class Peer(val nodeParams: NodeParams,
     case Event(init: Init, _) =>
       pendingOnTheFlyFunding = init.pendingOnTheFlyFunding
       val channels = init.storedChannels.map { state =>
-        val channel = spawnChannel()
+        val channelKeys = nodeParams.channelKeyManager.channelKeys(state.channelParams.channelConfig, state.channelParams.localParams.fundingKeyPath)
+        val channel = spawnChannel(channelKeys)
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
@@ -206,12 +208,13 @@ class Peer(val nodeParams: NodeParams,
         stay()
 
       case Event(SpawnChannelInitiator(replyTo, c, channelConfig, channelType, localParams), d: ConnectedData) =>
-        val channel = spawnChannel()
+        val channelKeys = nodeParams.channelKeyManager.channelKeys(channelConfig, localParams.fundingKeyPath)
+        val channel = spawnChannel(channelKeys)
         context.system.scheduler.scheduleOnce(c.timeout_opt.map(_.duration).getOrElse(nodeParams.channelConf.channelFundingTimeout), channel, Channel.TickChannelOpenTimeout)(context.dispatcher)
         val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
         val requireConfirmedInputs = c.requireConfirmedInputsOverride_opt.getOrElse(nodeParams.channelConf.requireConfirmedInputsForDualFunding)
         val temporaryChannelId = if (dualFunded) {
-          Helpers.dualFundedTemporaryChannelId(nodeParams, localParams, channelConfig)
+          Helpers.dualFundedTemporaryChannelId(channelKeys)
         } else {
           randomBytes32()
         }
@@ -260,7 +263,8 @@ class Peer(val nodeParams: NodeParams,
               context.system.eventStream.publish(ChannelAborted(ActorRef.noSender, remoteNodeId, temporaryChannelId))
               stay()
             case accept: OnTheFlyFunding.ValidationResult.Accept =>
-              val channel = spawnChannel()
+              val channelKeys = nodeParams.channelKeyManager.channelKeys(channelConfig, localParams.fundingKeyPath)
+              val channel = spawnChannel(channelKeys)
               context.system.scheduler.scheduleOnce(nodeParams.channelConf.channelFundingTimeout, channel, Channel.TickChannelOpenTimeout)(context.dispatcher)
               log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
               open match {
@@ -872,8 +876,8 @@ class Peer(val nodeParams: NodeParams,
       s(e)
   }
 
-  private def spawnChannel(): ActorRef = {
-    val channel = channelFactory.spawn(context, remoteNodeId)
+  private def spawnChannel(channelKeys: ChannelKeys): ActorRef = {
+    val channel = channelFactory.spawn(context, remoteNodeId, channelKeys)
     context.watchWith(channel, ChannelTerminated(channel.ref))
     channel
   }
@@ -976,12 +980,12 @@ object Peer {
   val CHANNELID_ZERO: ByteVector32 = ByteVector32.Zeroes
 
   trait ChannelFactory {
-    def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef
+    def spawn(context: ActorContext, remoteNodeId: PublicKey, channelKeys: ChannelKeys): ActorRef
   }
 
   case class SimpleChannelFactory(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, wallet: OnChainChannelFunder with OnChainPubkeyCache, txPublisherFactory: Channel.TxPublisherFactory) extends ChannelFactory {
-    override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef =
-      context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory))
+    override def spawn(context: ActorContext, remoteNodeId: PublicKey, channelKeys: ChannelKeys): ActorRef =
+      context.actorOf(Channel.props(nodeParams, channelKeys, wallet, remoteNodeId, watcher, relayer, txPublisherFactory))
   }
 
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainPubkeyCache, channelFactory: ChannelFactory, switchboard: ActorRef, register: ActorRef, router: typed.ActorRef[Router.GetNodeId], pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]): Props =

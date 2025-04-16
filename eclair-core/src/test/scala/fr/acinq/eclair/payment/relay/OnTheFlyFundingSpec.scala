@@ -26,6 +26,7 @@ import fr.acinq.eclair.blockchain.{CurrentBlockHeight, DummyOnChainWallet}
 import fr.acinq.eclair.channel.Upstream.Hot
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.io.{Peer, PeerConnection, PendingChannelsRateLimiter}
@@ -171,7 +172,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   }
 
   case class FakeChannelFactory(remoteNodeId: PublicKey, channel: TestProbe) extends ChannelFactory {
-    override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef = {
+    override def spawn(context: ActorContext, remoteNodeId: PublicKey, channelKeys: ChannelKeys): ActorRef = {
       assert(remoteNodeId == remoteNodeId)
       channel.ref
     }

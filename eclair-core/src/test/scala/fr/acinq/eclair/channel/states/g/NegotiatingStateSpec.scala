@@ -336,13 +336,13 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   private def makeLegacyClosingSigned(f: FixtureParam, closingFee: Satoshi): (ClosingSigned, ClosingSigned) = {
     import f._
     val aliceState = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
-    val aliceKeyManager = alice.underlyingActor.nodeParams.channelKeyManager
+    val aliceKeys = alice.underlyingActor.channelKeys
     val aliceScript = aliceState.localShutdown.scriptPubKey
     val bobState = bob.stateData.asInstanceOf[DATA_NEGOTIATING]
-    val bobKeyManager = bob.underlyingActor.nodeParams.channelKeyManager
+    val bobKeys = bob.underlyingActor.channelKeys
     val bobScript = bobState.localShutdown.scriptPubKey
-    val (_, aliceClosingSigned) = Closing.MutualClose.makeClosingTx(aliceKeyManager, aliceState.commitments.latest, aliceScript, bobScript, ClosingFees(closingFee, closingFee, closingFee))
-    val (_, bobClosingSigned) = Closing.MutualClose.makeClosingTx(bobKeyManager, bobState.commitments.latest, bobScript, aliceScript, ClosingFees(closingFee, closingFee, closingFee))
+    val (_, aliceClosingSigned) = Closing.MutualClose.makeClosingTx(aliceKeys, aliceState.commitments.latest, aliceScript, bobScript, ClosingFees(closingFee, closingFee, closingFee))
+    val (_, bobClosingSigned) = Closing.MutualClose.makeClosingTx(bobKeys, bobState.commitments.latest, bobScript, aliceScript, ClosingFees(closingFee, closingFee, closingFee))
     (aliceClosingSigned.copy(tlvStream = TlvStream.empty), bobClosingSigned.copy(tlvStream = TlvStream.empty))
   }
 

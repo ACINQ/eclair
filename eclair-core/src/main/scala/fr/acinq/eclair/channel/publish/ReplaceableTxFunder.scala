@@ -75,7 +75,7 @@ object ReplaceableTxFunder {
         Behaviors.receiveMessagePartial {
           case FundTransaction(replyTo, cmd, tx, requestedFeerate) =>
             val targetFeerate = requestedFeerate.min(maxFeerate(cmd.txInfo, cmd.commitment, cmd.commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf))
-            val txFunder = new ReplaceableTxFunder(nodeParams, replyTo, cmd, bitcoinClient, context)
+            val txFunder = new ReplaceableTxFunder(replyTo, cmd, bitcoinClient, context)
             tx match {
               case Right(txWithWitnessData) => txFunder.fund(txWithWitnessData, targetFeerate)
               case Left(previousTx) => txFunder.bump(previousTx, targetFeerate)
@@ -219,14 +219,12 @@ object ReplaceableTxFunder {
 
 }
 
-private class ReplaceableTxFunder(nodeParams: NodeParams,
-                                  replyTo: ActorRef[ReplaceableTxFunder.FundingResult],
+private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingResult],
                                   cmd: TxPublisher.PublishReplaceableTx,
                                   bitcoinClient: BitcoinCoreClient,
                                   context: ActorContext[ReplaceableTxFunder.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import ReplaceableTxFunder._
-  import nodeParams.{channelKeyManager => keyManager}
 
   private val log = context.log
 
@@ -310,16 +308,15 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
   }
 
   private def sign(fundedTx: ReplaceableTxWithWitnessData, txFeerate: FeeratePerKw, amountIn: Satoshi, walletUtxos: Map[OutPoint, TxOut]): Behavior[Command] = {
-    val channelKeyPath = keyManager.keyPath(cmd.commitment.localParams, cmd.commitment.params.channelConfig)
     fundedTx match {
       case claimAnchorTx: ClaimAnchorWithWitnessData =>
-        val localSig = keyManager.sign(claimAnchorTx.txInfo, keyManager.fundingPublicKey(cmd.commitment.localParams.fundingKeyPath, cmd.commitment.fundingTxIndex), TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
+        val fundingKey = cmd.channelKeys.fundingKey(cmd.commitment.fundingTxIndex)
+        val localSig = claimAnchorTx.txInfo.sign(fundingKey, TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
         val signedTx = claimAnchorTx.copy(txInfo = addSigs(claimAnchorTx.txInfo, localSig))
         signWalletInputs(signedTx, txFeerate, amountIn, walletUtxos)
       case htlcTx: HtlcWithWitnessData =>
-        val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitment.localCommit.index)
-        val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
-        val localSig = keyManager.sign(htlcTx.txInfo, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
+        val commitmentKeys = cmd.commitment.localKeys(cmd.channelKeys)
+        val localSig = htlcTx.txInfo.sign(commitmentKeys.ourHtlcKey, TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
         val signedTx = htlcTx match {
           case htlcSuccess: HtlcSuccessWithWitnessData => htlcSuccess.copy(txInfo = addSigs(htlcSuccess.txInfo, localSig, htlcSuccess.remoteSig, htlcSuccess.preimage, cmd.commitment.params.commitmentFormat))
           case htlcTimeout: HtlcTimeoutWithWitnessData => htlcTimeout.copy(txInfo = addSigs(htlcTimeout.txInfo, localSig, htlcTimeout.remoteSig, cmd.commitment.params.commitmentFormat))
@@ -336,7 +333,8 @@ private class ReplaceableTxFunder(nodeParams: NodeParams,
           case Some(c) if claimHtlcTx.txInfo.input.outPoint.txid == c.commit.txid => c.commit.remotePerCommitmentPoint
           case _ => cmd.commitment.remoteCommit.remotePerCommitmentPoint
         }
-        val sig = keyManager.sign(claimHtlcTx.txInfo, keyManager.htlcPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
+        val commitmentKeys = cmd.commitment.remoteKeys(cmd.channelKeys, remotePerCommitmentPoint)
+        val sig = claimHtlcTx.txInfo.sign(commitmentKeys.ourHtlcKey, TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
         val signedTx = claimHtlcTx match {
           case claimSuccess: ClaimHtlcSuccessWithWitnessData => claimSuccess.copy(txInfo = addSigs(claimSuccess.txInfo, sig, claimSuccess.preimage))
           case legacyClaimHtlcSuccess: LegacyClaimHtlcSuccessWithWitnessData => legacyClaimHtlcSuccess

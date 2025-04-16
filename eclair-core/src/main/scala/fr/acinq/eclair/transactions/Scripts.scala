@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.TxIn.{SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_
 import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
 import scodec.bits.ByteVector
@@ -146,13 +147,13 @@ object Scripts {
     }
   }
 
-  def toLocalDelayed(revocationPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey): Seq[ScriptElt] = {
+  def toLocalDelayed(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): Seq[ScriptElt] = {
     // @formatter:off
     OP_IF ::
-      OP_PUSHDATA(revocationPubkey) ::
+      OP_PUSHDATA(keys.revocationPublicKey) ::
     OP_ELSE ::
       encodeNumber(toSelfDelay.toInt) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
-      OP_PUSHDATA(localDelayedPaymentPubkey) ::
+      OP_PUSHDATA(keys.localDelayedPaymentPublicKey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
     // @formatter:on
@@ -174,8 +175,8 @@ object Scripts {
   /**
    * With the anchor outputs format, the to_remote output is delayed with a CSV 1 to allow CPFP carve-out on anchors.
    */
-  def toRemoteDelayed(remotePaymentPubkey: PublicKey): Seq[ScriptElt] = {
-    OP_PUSHDATA(remotePaymentPubkey) :: OP_CHECKSIGVERIFY :: OP_1 :: OP_CHECKSEQUENCEVERIFY :: Nil
+  def toRemoteDelayed(keys: CommitmentPublicKeys): Seq[ScriptElt] = {
+    OP_PUSHDATA(keys.remotePaymentPublicKey) :: OP_CHECKSIGVERIFY :: OP_1 :: OP_CHECKSEQUENCEVERIFY :: Nil
   }
 
   /**
@@ -189,9 +190,9 @@ object Scripts {
    * Each participant has its own anchor output that locks to their funding key. This allows using CPFP carve-out (see
    * https://github.com/bitcoin/bitcoin/pull/15681) to speed up confirmation of a commitment transaction.
    */
-  def anchor(fundingPubkey: PublicKey): Seq[ScriptElt] = {
+  def anchor(anchorKey: PublicKey): Seq[ScriptElt] = {
     // @formatter:off
-    OP_PUSHDATA(fundingPubkey) :: OP_CHECKSIG :: OP_IFDUP ::
+    OP_PUSHDATA(anchorKey) :: OP_CHECKSIG :: OP_IFDUP ::
     OP_NOTIF ::
       OP_16 :: OP_CHECKSEQUENCEVERIFY ::
     OP_ENDIF :: Nil
@@ -203,23 +204,23 @@ object Scripts {
    */
   def witnessAnchor(localSig: ByteVector64, anchorScript: ByteVector): ScriptWitness = ScriptWitness(der(localSig) :: anchorScript :: Nil)
 
-  def htlcOffered(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteVector, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
+  def htlcOffered(keys: CommitmentPublicKeys, paymentHash: ByteVector32, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case DefaultCommitmentFormat => false
       case _: AnchorOutputsCommitmentFormat => true
     }
     // @formatter:off
     // To you with revocation key
-    OP_DUP :: OP_HASH160 :: OP_PUSHDATA(revocationPubKey.hash160) :: OP_EQUAL ::
+    OP_DUP :: OP_HASH160 :: OP_PUSHDATA(keys.revocationPublicKey.hash160) :: OP_EQUAL ::
     OP_IF ::
         OP_CHECKSIG ::
     OP_ELSE ::
-        OP_PUSHDATA(remoteHtlcPubkey) :: OP_SWAP  :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
+        OP_PUSHDATA(keys.remoteHtlcPublicKey) :: OP_SWAP  :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
         OP_NOTIF ::
             // To me via HTLC-timeout transaction (timelocked).
-            OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(localHtlcPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
+            OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(keys.localHtlcPublicKey) :: OP_2 :: OP_CHECKMULTISIG ::
         OP_ELSE ::
-            OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
+            OP_HASH160 :: OP_PUSHDATA(Crypto.ripemd160(paymentHash)) :: OP_EQUALVERIFY ::
             OP_CHECKSIG ::
         OP_ENDIF ::
     (if (addCsvDelay) {
@@ -260,22 +261,22 @@ object Scripts {
   /** Extract payment preimages from a (potentially batched) claim HTLC transaction's witnesses. */
   def extractPreimagesFromClaimHtlcSuccess(tx: Transaction): Set[ByteVector32] = tx.txIn.map(_.witness).collect(extractPreimageFromClaimHtlcSuccess).toSet
 
-  def htlcReceived(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: ByteVector, lockTime: CltvExpiry, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
+  def htlcReceived(keys: CommitmentPublicKeys, paymentHash: ByteVector32, lockTime: CltvExpiry, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case DefaultCommitmentFormat => false
       case _: AnchorOutputsCommitmentFormat => true
     }
     // @formatter:off
     // To you with revocation key
-    OP_DUP :: OP_HASH160 :: OP_PUSHDATA(revocationPubKey.hash160) :: OP_EQUAL ::
+    OP_DUP :: OP_HASH160 :: OP_PUSHDATA(keys.revocationPublicKey.hash160) :: OP_EQUAL ::
     OP_IF ::
         OP_CHECKSIG ::
     OP_ELSE ::
-        OP_PUSHDATA(remoteHtlcPubkey) :: OP_SWAP :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
+        OP_PUSHDATA(keys.remoteHtlcPublicKey) :: OP_SWAP :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
         OP_IF ::
             // To me via HTLC-success transaction.
-            OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
-            OP_2 :: OP_SWAP :: OP_PUSHDATA(localHtlcPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
+            OP_HASH160 :: OP_PUSHDATA(Crypto.ripemd160(paymentHash)) :: OP_EQUALVERIFY ::
+            OP_2 :: OP_SWAP :: OP_PUSHDATA(keys.localHtlcPublicKey) :: OP_2 :: OP_CHECKMULTISIG ::
         OP_ELSE ::
             // To you after timeout.
             OP_DROP :: encodeNumber(lockTime.toLong) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
@@ -307,8 +308,8 @@ object Scripts {
    * This witness script spends (steals) a [[htlcOffered]] or [[htlcReceived]] output using a revocation key as a punishment
    * for having published a revoked transaction
    */
-  def witnessHtlcWithRevocationSig(revocationSig: ByteVector64, revocationPubkey: PublicKey, htlcScript: ByteVector): ScriptWitness =
-    ScriptWitness(der(revocationSig) :: revocationPubkey.value :: htlcScript :: Nil)
+  def witnessHtlcWithRevocationSig(keys: RemoteCommitmentKeys, revocationSig: ByteVector64, htlcScript: ByteVector): ScriptWitness =
+    ScriptWitness(der(revocationSig) :: keys.revocationPublicKey.value :: htlcScript :: Nil)
 
   /**
    * Specific scripts for taproot channels
@@ -348,11 +349,10 @@ object Scripts {
 
     /**
      * Script used for local or remote anchor outputs.
-     *
-     * @param paymentPubkey local or remote payment key.
+     * The key used matches the key for the matching node's main output.
      */
-    def anchor(paymentPubkey: PublicKey): Seq[ScriptElt] = {
-      Script.pay2tr(paymentPubkey.xOnly, Some(anchorScriptTree))
+    def anchor(anchorKey: PublicKey): Seq[ScriptElt] = {
+      Script.pay2tr(anchorKey.xOnly, Some(anchorScriptTree))
     }
 
     /**
@@ -361,12 +361,10 @@ object Scripts {
      *
      * miniscript: this is not miniscript compatible
      *
-     * @param localDelayedPaymentPubkey local delayed key
-     * @param revocationPubkey          revocation key
      * @return a script that will be used to add a "revocation" leaf to a script tree
      */
-    private def toRevocationKey(localDelayedPaymentPubkey: PublicKey, revocationPubkey: PublicKey): Seq[ScriptElt] = {
-      OP_PUSHDATA(localDelayedPaymentPubkey.xOnly) :: OP_DROP :: OP_PUSHDATA(revocationPubkey.xOnly) :: OP_CHECKSIG :: Nil
+    private def toRevocationKey(keys: CommitmentPublicKeys): Seq[ScriptElt] = {
+      OP_PUSHDATA(keys.localDelayedPaymentPublicKey.xOnly) :: OP_DROP :: OP_PUSHDATA(keys.revocationPublicKey.xOnly) :: OP_CHECKSIG :: Nil
     }
 
     /**
@@ -374,33 +372,27 @@ object Scripts {
      *
      * miniscript: and_v(v:pk(delayed_key),older(delay))
      *
-     * @param localDelayedPaymentPubkey delayed payment key
-     * @param toSelfDelay               to-self CSV delay
      * @return a script that will be used to add a "to local key" leaf to a script tree
      */
-    private def toLocalDelayed(localDelayedPaymentPubkey: PublicKey, toSelfDelay: CltvExpiryDelta): Seq[ScriptElt] = {
-      OP_PUSHDATA(localDelayedPaymentPubkey.xOnly) :: OP_CHECKSIGVERIFY :: Scripts.encodeNumber(toSelfDelay.toInt) :: OP_CHECKSEQUENCEVERIFY :: Nil
+    private def toLocalDelayed(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): Seq[ScriptElt] = {
+      OP_PUSHDATA(keys.localDelayedPaymentPublicKey.xOnly) :: OP_CHECKSIGVERIFY :: Scripts.encodeNumber(toSelfDelay.toInt) :: OP_CHECKSEQUENCEVERIFY :: Nil
     }
 
     /**
-     *
-     * @param revocationPubkey          revocation key
-     * @param toSelfDelay               to-self CSV delay
-     * @param localDelayedPaymentPubkey local delayed payment key
      * @return a script tree with two leaves (to self with delay, and to revocation key)
      */
-    def toLocalScriptTree(revocationPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey): ScriptTree.Branch = {
+    def toLocalScriptTree(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): ScriptTree.Branch = {
       new ScriptTree.Branch(
-        new ScriptTree.Leaf(toLocalDelayed(localDelayedPaymentPubkey, toSelfDelay)),
-        new ScriptTree.Leaf(toRevocationKey(localDelayedPaymentPubkey, revocationPubkey)),
+        new ScriptTree.Leaf(toLocalDelayed(keys, toSelfDelay)),
+        new ScriptTree.Leaf(toRevocationKey(keys)),
       )
     }
 
     /**
      * Script used for the main balance of the owner of the commitment transaction.
      */
-    def toLocal(localDelayedPaymentPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, revocationPubkey: PublicKey): Seq[ScriptElt] = {
-      Script.pay2tr(NUMS_POINT.xOnly, Some(toLocalScriptTree(revocationPubkey, toSelfDelay, localDelayedPaymentPubkey)))
+    def toLocal(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): Seq[ScriptElt] = {
+      Script.pay2tr(NUMS_POINT.xOnly, Some(toLocalScriptTree(keys, toSelfDelay)))
     }
 
     /**
@@ -408,29 +400,27 @@ object Scripts {
      *
      * miniscript: and_v(v:pk(remote_key),older(1))
      *
-     * @param remotePaymentPubkey remote payment key
      * @return a script that will be used to add a "to remote key" leaf to a script tree
      */
-    private def toRemoteDelayed(remotePaymentPubkey: PublicKey): Seq[ScriptElt] = {
-      OP_PUSHDATA(remotePaymentPubkey.xOnly) :: OP_CHECKSIGVERIFY :: OP_1 :: OP_CHECKSEQUENCEVERIFY :: Nil
+    private def toRemoteDelayed(keys: CommitmentPublicKeys): Seq[ScriptElt] = {
+      OP_PUSHDATA(keys.remotePaymentPublicKey.xOnly) :: OP_CHECKSIGVERIFY :: OP_1 :: OP_CHECKSEQUENCEVERIFY :: Nil
     }
 
     /**
      * Script tree used for the main balance of the remote node in our commitment transaction.
      * Note that there is no need for a revocation leaf in that case.
      *
-     * @param remotePaymentPubkey remote key
      * @return a script tree with a single leaf (to remote key, with a 1-block CSV delay)
      */
-    def toRemoteScriptTree(remotePaymentPubkey: PublicKey): ScriptTree.Leaf = {
-      new ScriptTree.Leaf(toRemoteDelayed(remotePaymentPubkey))
+    def toRemoteScriptTree(keys: CommitmentPublicKeys): ScriptTree.Leaf = {
+      new ScriptTree.Leaf(toRemoteDelayed(keys))
     }
 
     /**
      * Script used for the main balance of the remote node in our commitment transaction.
      */
-    def toRemote(remotePaymentPubkey: PublicKey): Seq[ScriptElt] = {
-      Script.pay2tr(NUMS_POINT.xOnly, Some(toRemoteScriptTree(remotePaymentPubkey)))
+    def toRemote(keys: CommitmentPublicKeys): Seq[ScriptElt] = {
+      Script.pay2tr(NUMS_POINT.xOnly, Some(toRemoteScriptTree(keys)))
     }
 
     /**
@@ -439,12 +429,10 @@ object Scripts {
      *
      * miniscript: and_v(v:pk(local_htlc_key),pk(remote_htlc_key))
      *
-     * @param localHtlcPubkey  local HTLC key
-     * @param remoteHtlcPubkey remote HTLC key
      * @return a script used to create a "HTLC timeout" leaf in a script tree
      */
-    private def offeredHtlcTimeout(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey): Seq[ScriptElt] = {
-      OP_PUSHDATA(localHtlcPubkey.xOnly) :: OP_CHECKSIGVERIFY :: OP_PUSHDATA(remoteHtlcPubkey.xOnly) :: OP_CHECKSIG :: Nil
+    private def offeredHtlcTimeout(keys: CommitmentPublicKeys): Seq[ScriptElt] = {
+      OP_PUSHDATA(keys.localHtlcPublicKey.xOnly) :: OP_CHECKSIGVERIFY :: OP_PUSHDATA(keys.remoteHtlcPublicKey.xOnly) :: OP_CHECKSIG :: Nil
     }
 
     /**
@@ -453,15 +441,13 @@ object Scripts {
      *
      * miniscript: and_v(v:hash160(H),and_v(v:pk(remote_htlc_key),older(1)))
      *
-     * @param remoteHtlcPubkey remote HTLC key
-     * @param paymentHash      payment hash
      * @return a script used to create a "spend offered HTLC" leaf in a script tree
      */
-    private def offeredHtlcSuccess(remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32): Seq[ScriptElt] = {
+    private def offeredHtlcSuccess(keys: CommitmentPublicKeys, paymentHash: ByteVector32): Seq[ScriptElt] = {
       // @formatter:off
       OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
       OP_HASH160 :: OP_PUSHDATA(Crypto.ripemd160(paymentHash)) :: OP_EQUALVERIFY ::
-      OP_PUSHDATA(remoteHtlcPubkey.xOnly) :: OP_CHECKSIGVERIFY ::
+      OP_PUSHDATA(keys.remoteHtlcPublicKey.xOnly) :: OP_CHECKSIGVERIFY ::
       OP_1 :: OP_CHECKSEQUENCEVERIFY :: Nil
       // @formatter:on
     }
@@ -469,18 +455,18 @@ object Scripts {
     /**
      * Script tree used for offered HTLCs.
      */
-    def offeredHtlcScriptTree(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32): ScriptTree.Branch = {
+    def offeredHtlcScriptTree(keys: CommitmentPublicKeys, paymentHash: ByteVector32): ScriptTree.Branch = {
       new ScriptTree.Branch(
-        new ScriptTree.Leaf(offeredHtlcTimeout(localHtlcPubkey, remoteHtlcPubkey)),
-        new ScriptTree.Leaf(offeredHtlcSuccess(remoteHtlcPubkey, paymentHash)),
+        new ScriptTree.Leaf(offeredHtlcTimeout(keys)),
+        new ScriptTree.Leaf(offeredHtlcSuccess(keys, paymentHash)),
       )
     }
 
     /**
      * Script used for offered HTLCs.
      */
-    def offeredHtlc(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32, revocationPubkey: PublicKey): Seq[ScriptElt] = {
-      Script.pay2tr(revocationPubkey.xOnly, Some(offeredHtlcScriptTree(localHtlcPubkey, remoteHtlcPubkey, paymentHash)))
+    def offeredHtlc(keys: CommitmentPublicKeys, paymentHash: ByteVector32): Seq[ScriptElt] = {
+      Script.pay2tr(keys.revocationPublicKey.xOnly, Some(offeredHtlcScriptTree(keys, paymentHash)))
     }
 
     /**
@@ -488,15 +474,12 @@ object Scripts {
      * It is spent using a signature from the receiving node after an absolute delay and a 1-block relative delay.
      *
      * miniscript: and_v(v:pk(remote_htlc_key),and_v(v:older(1),after(delay)))
-     *
-     * @param remoteHtlcPubkey remote HTLC key
-     * @param lockTime         HTLC expiry
      */
-    private def receivedHtlcTimeout(remoteHtlcPubkey: PublicKey, lockTime: CltvExpiry): Seq[ScriptElt] = {
+    private def receivedHtlcTimeout(keys: CommitmentPublicKeys, expiry: CltvExpiry): Seq[ScriptElt] = {
       // @formatter:off
-      OP_PUSHDATA(remoteHtlcPubkey.xOnly) :: OP_CHECKSIGVERIFY ::
+      OP_PUSHDATA(keys.remoteHtlcPublicKey.xOnly) :: OP_CHECKSIGVERIFY ::
       OP_1 :: OP_CHECKSEQUENCEVERIFY :: OP_VERIFY ::
-      encodeNumber(lockTime.toLong) :: OP_CHECKLOCKTIMEVERIFY :: Nil
+      encodeNumber(expiry.toLong) :: OP_CHECKLOCKTIMEVERIFY :: Nil
       // @formatter:on
     }
 
@@ -505,53 +488,45 @@ object Scripts {
      * It is spent using a pre-signed HTLC transaction signed with both keys and the preimage.
      *
      * miniscript: and_v(v:hash160(H),and_v(v:pk(local_key),pk(remote_key)))
-     *
-     * @param localHtlcPubkey  local HTLC key
-     * @param remoteHtlcPubkey remote HTLC key
-     * @param paymentHash      payment hash
      */
-    private def receivedHtlcSuccess(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32): Seq[ScriptElt] = {
+    private def receivedHtlcSuccess(keys: CommitmentPublicKeys, paymentHash: ByteVector32): Seq[ScriptElt] = {
       // @formatter:off
       OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
       OP_HASH160 :: OP_PUSHDATA(Crypto.ripemd160(paymentHash)) :: OP_EQUALVERIFY ::
-      OP_PUSHDATA(localHtlcPubkey.xOnly) :: OP_CHECKSIGVERIFY ::
-      OP_PUSHDATA(remoteHtlcPubkey.xOnly) :: OP_CHECKSIG :: Nil
+      OP_PUSHDATA(keys.localHtlcPublicKey.xOnly) :: OP_CHECKSIGVERIFY ::
+      OP_PUSHDATA(keys.remoteHtlcPublicKey.xOnly) :: OP_CHECKSIG :: Nil
       // @formatter:on
     }
 
     /**
      * Script tree used for received HTLCs.
      */
-    def receivedHtlcScriptTree(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32, lockTime: CltvExpiry): ScriptTree.Branch = {
+    def receivedHtlcScriptTree(keys: CommitmentPublicKeys, paymentHash: ByteVector32, expiry: CltvExpiry): ScriptTree.Branch = {
       new ScriptTree.Branch(
-        new ScriptTree.Leaf(receivedHtlcTimeout(remoteHtlcPubkey, lockTime)),
-        new ScriptTree.Leaf(receivedHtlcSuccess(localHtlcPubkey, remoteHtlcPubkey, paymentHash)),
+        new ScriptTree.Leaf(receivedHtlcTimeout(keys, expiry)),
+        new ScriptTree.Leaf(receivedHtlcSuccess(keys, paymentHash)),
       )
     }
 
     /**
      * Script used for received HTLCs.
      */
-    def receivedHtlc(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, paymentHash: ByteVector32, lockTime: CltvExpiry, revocationPubkey: PublicKey): Seq[ScriptElt] = {
-      Script.pay2tr(revocationPubkey.xOnly, Some(receivedHtlcScriptTree(localHtlcPubkey, remoteHtlcPubkey, paymentHash, lockTime)))
+    def receivedHtlc(keys: CommitmentPublicKeys, paymentHash: ByteVector32, expiry: CltvExpiry): Seq[ScriptElt] = {
+      Script.pay2tr(keys.revocationPublicKey.xOnly, Some(receivedHtlcScriptTree(keys, paymentHash, expiry)))
     }
 
     /**
      * Script tree used for the output of pre-signed HTLC 2nd-stage transactions.
      */
-    def htlcDelayedScriptTree(localDelayedPaymentPubkey: PublicKey, toSelfDelay: CltvExpiryDelta): ScriptTree.Leaf = {
-      new ScriptTree.Leaf(toLocalDelayed(localDelayedPaymentPubkey, toSelfDelay))
+    def htlcDelayedScriptTree(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): ScriptTree.Leaf = {
+      new ScriptTree.Leaf(toLocalDelayed(keys, toSelfDelay))
     }
 
     /**
      * Script used for the output of pre-signed HTLC 2nd-stage transactions.
-     *
-     * @param localDelayedPaymentPubkey local delayed payment key
-     * @param toSelfDelay               to-self CSV delay
-     * @param revocationPubkey          revocation key
      */
-    def htlcDelayed(localDelayedPaymentPubkey: PublicKey, toSelfDelay: CltvExpiryDelta, revocationPubkey: PublicKey): Seq[ScriptElt] = {
-      Script.pay2tr(revocationPubkey.xOnly, Some(htlcDelayedScriptTree(localDelayedPaymentPubkey, toSelfDelay)))
+    def htlcDelayed(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): Seq[ScriptElt] = {
+      Script.pay2tr(keys.revocationPublicKey.xOnly, Some(htlcDelayedScriptTree(keys, toSelfDelay)))
     }
   }
 }

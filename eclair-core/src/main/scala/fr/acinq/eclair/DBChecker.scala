@@ -32,7 +32,11 @@ object DBChecker extends Logging {
     Try(nodeParams.db.channels.listLocalChannels()) match {
       case Success(channels) =>
         channels.foreach {
-          case data: ChannelDataWithCommitments if !data.commitments.validateSeed(nodeParams.channelKeyManager) => throw InvalidChannelSeedException(data.channelId)
+          case data: ChannelDataWithCommitments =>
+            val channelKeys = nodeParams.channelKeyManager.channelKeys(data.channelParams.channelConfig, data.channelParams.localParams.fundingKeyPath)
+            if (!data.commitments.validateSeed(channelKeys)) {
+              throw InvalidChannelSeedException(data.channelId)
+            }
           case _ => ()
         }
         channels

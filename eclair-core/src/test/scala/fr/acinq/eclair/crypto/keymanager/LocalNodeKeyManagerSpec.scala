@@ -17,9 +17,9 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.Setup.Seeds
+import fr.acinq.eclair.channel.ChannelConfig
 import fr.acinq.eclair.{NodeParams, TestUtils}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -39,15 +39,15 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
 
   test("generate different node ids from the same seed on different chains") {
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
-    val nodeKeyManager1 = new LocalNodeKeyManager(seed, Block.Testnet3GenesisBlock.hash)
-    val nodeKeyManager2 = new LocalNodeKeyManager(seed, Block.LivenetGenesisBlock.hash)
-    val channelKeyManager1 = new LocalChannelKeyManager(seed, Block.Testnet3GenesisBlock.hash)
-    val channelKeyManager2 = new LocalChannelKeyManager(seed, Block.LivenetGenesisBlock.hash)
+    val nodeKeyManager1 = LocalNodeKeyManager(seed, Block.Testnet3GenesisBlock.hash)
+    val nodeKeyManager2 = LocalNodeKeyManager(seed, Block.LivenetGenesisBlock.hash)
     assert(nodeKeyManager1.nodeId != nodeKeyManager2.nodeId)
-    val keyPath = KeyPath(1L :: Nil)
-    assert(channelKeyManager1.fundingPublicKey(keyPath, fundingTxIndex = 0) != channelKeyManager2.fundingPublicKey(keyPath, fundingTxIndex = 0))
-    assert(channelKeyManager1.fundingPublicKey(keyPath, fundingTxIndex = 42) != channelKeyManager2.fundingPublicKey(keyPath, fundingTxIndex = 42))
-    assert(channelKeyManager1.commitmentPoint(keyPath, 1) != channelKeyManager2.commitmentPoint(keyPath, 1))
+    val channelKeyManager = LocalChannelKeyManager(seed, Block.Testnet3GenesisBlock.hash)
+    val channelKeys1 = channelKeyManager.channelKeys(ChannelConfig.standard, channelKeyManager.newFundingKeyPath(isChannelOpener = true))
+    val channelKeys2 = channelKeyManager.channelKeys(ChannelConfig.standard, channelKeyManager.newFundingKeyPath(isChannelOpener = true))
+    assert(channelKeys1.fundingKey(fundingTxIndex = 0) != channelKeys2.fundingKey(fundingTxIndex = 0))
+    assert(channelKeys1.fundingKey(fundingTxIndex = 42) != channelKeys2.fundingKey(fundingTxIndex = 42))
+    assert(channelKeys1.commitmentPoint(1) != channelKeys2.commitmentPoint(1))
   }
 
   test("keep the same node seed after a migration from the old seed.dat file") {
