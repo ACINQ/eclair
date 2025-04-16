@@ -101,8 +101,8 @@ class Setup(val datadir: File,
 
   val chaindir = new File(datadir, chain)
   chaindir.mkdirs()
-  val nodeKeyManager = new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
-  val channelKeyManager = new LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
+  val nodeKeyManager = LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
+  val channelKeyManager = LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
 
   /**
    * This counter holds the current blockchain height.

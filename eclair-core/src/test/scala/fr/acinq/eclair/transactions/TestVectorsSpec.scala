@@ -121,6 +121,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   val commitmentKeys = LocalCommitmentKeys(
     ourDelayedPaymentKey = Local.delayed_payment_privkey,
     theirPaymentPublicKey = Remote.payment_privkey.publicKey,
+    ourPaymentBasePoint = Local.payment_basepoint,
     ourHtlcKey = Local.htlc_privkey,
     theirHtlcPublicKey = Remote.htlc_privkey.publicKey,
     revocationPublicKey = Local.revocation_pubkey

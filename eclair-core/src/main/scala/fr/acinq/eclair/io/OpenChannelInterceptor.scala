@@ -99,7 +99,7 @@ object OpenChannelInterceptor {
   def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], walletStaticPaymentBasepoint_opt: Option[PublicKey], isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
-      nodeParams.channelKeyManager.newFundingKeyPath(isChannelOpener), // we make sure that opener and non-opener key paths end differently
+      nodeParams.channelKeyManager.newFundingKeyPath(isChannelOpener),
       dustLimit = nodeParams.channelConf.dustLimit,
       maxHtlcValueInFlightMsat = computeMaxHtlcValueInFlight(nodeParams, fundingAmount, unlimitedMaxHtlcValueInFlight),
       initialRequestedChannelReserve_opt = if (dualFunded) None else Some((fundingAmount * nodeParams.channelConf.reserveToFundingRatio).max(nodeParams.channelConf.dustLimit)), // BOLT #2: make sure that our reserve is above our dust limit

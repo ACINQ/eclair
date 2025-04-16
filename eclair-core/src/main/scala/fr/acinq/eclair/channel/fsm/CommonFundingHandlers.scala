@@ -74,7 +74,7 @@ trait CommonFundingHandlers extends CommonHandlers {
       case _: SingleFundedUnconfirmedFundingTx =>
         // in the single-funding case, as fundee, it is the first time we see the full funding tx, we must verify that it is
         // valid (it pays the correct amount to the correct script). We also check as funder even if it's not really useful
-        Try(Transaction.correctlySpends(d.commitments.latest.fullySignedLocalCommitTx(keyManager).tx, Seq(w.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
+        Try(Transaction.correctlySpends(d.commitments.latest.fullySignedLocalCommitTx(channelKeys).tx, Seq(w.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
           case Success(_) => ()
           case Failure(t) =>
             log.error(t, s"rejecting channel with invalid funding tx: ${w.tx.bin}")
@@ -123,8 +123,7 @@ trait CommonFundingHandlers extends CommonHandlers {
   }
 
   def createChannelReady(aliases: ShortIdAliases, params: ChannelParams): ChannelReady = {
-    val channelKeyPath = keyManager.channelKeyPath(params.localParams, params.channelConfig)
-    val nextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 1)
+    val nextPerCommitmentPoint = channelKeys.commitmentPoint(1)
     // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
     ChannelReady(params.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(aliases.localAlias)))
   }

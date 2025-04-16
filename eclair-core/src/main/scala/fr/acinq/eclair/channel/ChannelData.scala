@@ -544,6 +544,7 @@ case object Nothing extends TransientChannelData {
 
 sealed trait PersistentChannelData extends ChannelData {
   def remoteNodeId: PublicKey
+  def channelParams: ChannelParams
 }
 sealed trait ChannelDataWithoutCommitments extends PersistentChannelData {
   val channelId: ByteVector32 = channelParams.channelId
@@ -553,6 +554,7 @@ sealed trait ChannelDataWithoutCommitments extends PersistentChannelData {
 sealed trait ChannelDataWithCommitments extends PersistentChannelData {
   val channelId: ByteVector32 = commitments.channelId
   val remoteNodeId: PublicKey = commitments.remoteNodeId
+  val channelParams: ChannelParams = commitments.params
   def commitments: Commitments
 }
 

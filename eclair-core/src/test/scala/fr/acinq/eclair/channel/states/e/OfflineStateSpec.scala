@@ -920,14 +920,10 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
 
     val aliceCommitments = alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments
-    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.channelKeyManager.commitmentPoint(
-      TestConstants.Alice.channelKeyManager.channelKeyPath(aliceCommitments.params.localParams, aliceCommitments.params.channelConfig),
-      aliceCommitments.localCommitIndex)
+    val aliceCurrentPerCommitmentPoint = alice.underlyingActor.channelKeys.commitmentPoint(aliceCommitments.localCommitIndex)
 
     val bobCommitments = bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments
-    val bobCurrentPerCommitmentPoint = TestConstants.Bob.channelKeyManager.commitmentPoint(
-      TestConstants.Bob.channelKeyManager.channelKeyPath(bobCommitments.params.localParams, bobCommitments.params.channelConfig),
-      bobCommitments.localCommitIndex)
+    val bobCurrentPerCommitmentPoint = bob.underlyingActor.channelKeys.commitmentPoint(bobCommitments.localCommitIndex)
 
     (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint)
   }

@@ -47,6 +47,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   private val remoteFundingPriv = randomKey()
   private val localRevocationPriv = randomKey()
   private val localPaymentPriv = randomKey()
+  private val localPaymentBasePoint = randomKey().publicKey
   private val localDelayedPaymentPriv = randomKey()
   private val remotePaymentPriv = randomKey()
   private val localHtlcPriv = randomKey()
@@ -55,6 +56,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   private val localKeys = LocalCommitmentKeys(
     ourDelayedPaymentKey = localDelayedPaymentPriv,
     theirPaymentPublicKey = remotePaymentPriv.publicKey,
+    ourPaymentBasePoint = localPaymentBasePoint,
     ourHtlcKey = localHtlcPriv,
     theirHtlcPublicKey = remoteHtlcPriv.publicKey,
     revocationPublicKey = localRevocationPriv.publicKey,
@@ -63,6 +65,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   private val remoteKeys = RemoteCommitmentKeys(
     ourPaymentKey = Right(remotePaymentPriv),
     theirDelayedPaymentPublicKey = localDelayedPaymentPriv.publicKey,
+    ourPaymentBasePoint = localPaymentBasePoint,
     ourHtlcKey = remoteHtlcPriv,
     theirHtlcPublicKey = localHtlcPriv.publicKey,
     revocationPublicKey = localRevocationPriv.publicKey,
@@ -1049,6 +1052,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val localKeys = LocalCommitmentKeys(
       ourDelayedPaymentKey = localDelayedPaymentPriv,
       theirPaymentPublicKey = remotePaymentPriv.publicKey,
+      ourPaymentBasePoint = localPaymentBasePoint,
       ourHtlcKey = localHtlcPriv,
       theirHtlcPublicKey = remoteHtlcPriv.publicKey,
       revocationPublicKey = localRevocationPriv.publicKey,

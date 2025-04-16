@@ -436,10 +436,9 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]]
     val Right(finalAddressC) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, nodes("C").wallet.getReceivePublicKeyScript(renew = false))
     // we prepare the revoked transactions F will publish
-    val keyManagerF = nodes("F").nodeParams.channelKeyManager
-    val channelKeyPathF = keyManagerF.channelKeyPath(commitmentsF.params.localParams, commitmentsF.params.channelConfig)
-    val fundingKeyF = commitmentsF.params.localFundingKey(keyManagerF, commitmentsF.latest.fundingTxIndex)
-    val commitmentKeysF = commitmentsF.latest.localKeys(keyManagerF)
+    val channelKeysF = nodes("F").nodeParams.channelKeyManager.channelKeys(commitmentsF.params.channelConfig, commitmentsF.params.localParams.fundingKeyPath)
+    val fundingKeyF = channelKeysF.fundingKey(commitmentsF.latest.fundingTxIndex)
+    val commitmentKeysF = commitmentsF.latest.localKeys(channelKeysF)
     val revokedCommitTx = {
       val commitTx = localCommitF.commitTxAndRemoteSig.commitTx
       val localSig = commitTx.sign(fundingKeyF, TxOwner.Local, commitmentFormat, Map.empty)
@@ -589,8 +588,8 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     val initialCommitmentIndex = initialStateDataF.commitments.localCommitIndex
 
     val toRemoteAddress = {
-      val keyManager = nodes("F").nodeParams.channelKeyManager
-      val toRemote = Scripts.toRemoteDelayed(initialStateDataF.commitments.latest.localKeys(keyManager).publicKeys)
+      val channelKeys = nodes("F").nodeParams.channelKeyManager.channelKeys(initialStateDataF.channelParams.channelConfig, initialStateDataF.channelParams.localParams.fundingKeyPath)
+      val toRemote = Scripts.toRemoteDelayed(initialStateDataF.commitments.latest.localKeys(channelKeys).publicKeys)
       Script.write(Script.pay2wsh(toRemote))
     }
 

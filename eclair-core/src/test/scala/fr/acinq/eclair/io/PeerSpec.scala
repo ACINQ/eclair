@@ -30,6 +30,7 @@ import fr.acinq.eclair.blockchain.{CurrentFeerates, DummyOnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
+import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
 import fr.acinq.eclair.testutils.FixtureSpec
@@ -85,7 +86,7 @@ class PeerSpec extends FixtureSpec {
     }
 
     case class FakeChannelFactory(channel: TestProbe) extends ChannelFactory {
-      override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef = {
+      override def spawn(context: ActorContext, remoteNodeId: PublicKey, channelKeys: ChannelKeys): ActorRef = {
         assert(remoteNodeId == Bob.nodeParams.nodeId)
         channel.ref
       }
