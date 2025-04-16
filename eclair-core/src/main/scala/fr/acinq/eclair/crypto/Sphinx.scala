@@ -23,8 +23,10 @@ import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.ByteVector
+import scodec.codecs.uint32
 
 import scala.annotation.tailrec
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -294,12 +296,19 @@ object Sphinx extends Logging {
      * @param failure      failure message.
      * @return a failure packet that can be sent to the destination node.
      */
+    def createAndWrap(sharedSecret: ByteVector32, failure: FailureMessage): ByteVector = {
+      wrap(create(sharedSecret, failure), sharedSecret)
+    }
+
+    /**
+     * Create a failure packet that needs to be wrapped before being returned to the sender.
+     */
     def create(sharedSecret: ByteVector32, failure: FailureMessage): ByteVector = {
       val um = generateKey("um", sharedSecret)
       val packet = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).encode(failure).require.toByteVector
       logger.debug(s"um key: $um")
       logger.debug(s"raw error packet: ${packet.toHex}")
-      wrap(packet, sharedSecret)
+      packet
     }
 
     /**
@@ -341,6 +350,28 @@ object Sphinx extends Logging {
       }
     }
 
+    def attribution(previousAttribution_opt: Option[ByteVector], reason: ByteVector, holdTime: FiniteDuration, sharedSecret: ByteVector32): ByteVector = {
+      val previousAttribution = previousAttribution_opt.getOrElse(ByteVector.low(920))
+      val previousHmacs = (0 until 19).map(i => (1 until (20 - i)).map(j => {
+        val start = 80 + (20 * i - (i * (i - 1)) / 2 + j) * 4
+        previousAttribution.slice(start, start + 4)
+      }))
+      val mac = Hmac256(generateKey("um", sharedSecret))
+      val holdTimes = uint32.encode(holdTime.toMillis).require.bytes ++ previousAttribution.take(19 * 4)
+      val hmacs = computeHmacs(mac, reason, holdTimes, previousHmacs) +: previousHmacs
+      val key = generateKey("ammagext", sharedSecret)
+      val stream = generateStream(key, 920)
+      (holdTimes ++ ByteVector.concat(hmacs.map(ByteVector.concat(_)))) xor stream
+    }
+
+    private def computeHmacs(mac: Mac32, reason: ByteVector, holdTimes: ByteVector, hmacs: Seq[Seq[ByteVector]]): Seq[ByteVector] = {
+      (0 until 20).map(i => {
+        val y = 20 - i
+        mac.mac(reason ++
+          holdTimes.take(y * 4) ++
+          ByteVector.concat((0 until y - 1).map(j => hmacs(j)(i)))).bytes.take(4)
+      })
+    }
   }
 
   /**
