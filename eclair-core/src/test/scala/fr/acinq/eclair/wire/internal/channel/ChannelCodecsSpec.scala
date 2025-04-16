@@ -27,7 +27,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, LocalChannelKeyManager, LocalNodeKeyManager, NodeKeyManager}
 import fr.acinq.eclair.json.JsonSerializers
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, DefaultCommitmentFormat, TxOwner}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs._
 import fr.acinq.eclair.wire.protocol.{CommonCodecs, UpdateAddHtlc}
@@ -314,7 +314,7 @@ object ChannelCodecsSpec {
     val fundingTxIndex = 0
     val localFundingPubKey = channelKeyManager.channelKeys(ChannelConfig.standard, localParams.fundingKeyPath).fundingKey(fundingTxIndex = 0).publicKey
     val remoteFundingPubKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)) :+ 1.toByte).publicKey
-    val commitmentInput = Funding.makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, localFundingPubKey, remoteFundingPubKey)
+    val commitmentInput = Funding.makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, localFundingPubKey, remoteFundingPubKey, DefaultCommitmentFormat)
     val remoteSig = ByteVector64(hex"2148d2d4aac8c793eb82d31bcf22d4db707b9fd7eee1b89b4b1444c9e19ab7172bab8c3d997d29163fa0cb255c75afb8ade13617ad1350c1515e9be4a222a04d")
     val commitTx = Transaction(
       version = 2,

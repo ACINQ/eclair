@@ -1585,7 +1585,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
     bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => assert(remoteCommitTx.tx.txOut.size == 4)
-      case _: AnchorOutputsCommitmentFormat => assert(remoteCommitTx.tx.txOut.size == 6)
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => assert(remoteCommitTx.tx.txOut.size == 6)
     }
     probe.send(alice, WatchFundingSpentTriggered(remoteCommitTx.tx))
 
@@ -1596,7 +1596,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => ()
-      case _: AnchorOutputsCommitmentFormat => alice2blockchain.expectMsgType[PublishReplaceableTx] // claim anchor
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => alice2blockchain.expectMsgType[PublishReplaceableTx] // claim anchor
     }
     if (!bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.paysDirectlyToWallet) alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
     val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]

@@ -108,6 +108,14 @@ object InteractiveTxBuilder {
     // @formatter:on
   }
 
+  object SharedFundingInput {
+    def apply(commitment: Commitment): SharedFundingInput = commitment.commitInput.redeemInfo match {
+      case _: RedeemInfo.SegwitV0 => Multisig2of2Input(commitment.commitInput, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
+      case _: RedeemInfo.TaprootKeyPath => Musig2Input(commitment.commitInput, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
+      case _ => throw new IllegalArgumentException(s"invalid commitment input")
+    }
+  }
+
   case class Multisig2of2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
     override val weight: Int = 388
 
@@ -117,12 +125,10 @@ object InteractiveTxBuilder {
     }
   }
 
-  object Multisig2of2Input {
-    def apply(commitment: Commitment): Multisig2of2Input = Multisig2of2Input(
-      info = commitment.commitInput,
-      fundingTxIndex = commitment.fundingTxIndex,
-      remoteFundingPubkey = commitment.remoteFundingPubKey
-    )
+  case class Musig2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
+    // witness is a single 64 bytes signature, weight = 1 (# of items) + 1 (size) + 64 = 66
+    // weight is 4 * (unsigned input weight) + witness weight = 4 * (32 + 4 + 4 + 1) + 66 = 230
+    override val weight: Int = 230
   }
 
   /**
@@ -1051,6 +1057,7 @@ object InteractiveTxSigningSession {
             log.info("invalid tx_signatures: missing shared input signatures")
             return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
         }
+      case Some(_: Musig2Input) => return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId))) // TODO: not implemented
       case None => None
     }
     val txWithSigs = FullySignedSharedTransaction(partiallySignedTx.tx, partiallySignedTx.localSigs, remoteSigs, sharedSigs_opt)

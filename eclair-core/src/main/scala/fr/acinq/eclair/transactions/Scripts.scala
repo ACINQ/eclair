@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, RemoteCommitmentKeys}
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
 import scodec.bits.ByteVector
 
@@ -46,7 +46,7 @@ object Scripts {
 
   private def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
     case DefaultCommitmentFormat => SIGHASH_ALL
-    case _: AnchorOutputsCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
+    case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
   }
 
   /** Sort public keys using lexicographic ordering. */
@@ -207,7 +207,7 @@ object Scripts {
   def htlcOffered(keys: CommitmentPublicKeys, paymentHash: ByteVector32, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case DefaultCommitmentFormat => false
-      case _: AnchorOutputsCommitmentFormat => true
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => true
     }
     // @formatter:off
     // To you with revocation key
@@ -264,7 +264,7 @@ object Scripts {
   def htlcReceived(keys: CommitmentPublicKeys, paymentHash: ByteVector32, lockTime: CltvExpiry, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case DefaultCommitmentFormat => false
-      case _: AnchorOutputsCommitmentFormat => true
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => true
     }
     // @formatter:off
     // To you with revocation key
@@ -319,6 +319,8 @@ object Scripts {
     import KotlinUtils._
 
     implicit def scala2kmpscript(input: Seq[fr.acinq.bitcoin.scalacompat.ScriptElt]): java.util.List[fr.acinq.bitcoin.ScriptElt] = input.map(e => scala2kmp(e)).asJava
+
+    def musig2FundingScript(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] = Script.pay2tr(musig2Aggregate(pubkey1, pubkey2), None)
 
     /**
      * Taproot signatures are usually 64 bytes, unless a non-default sighash is used, in which case it is appended.

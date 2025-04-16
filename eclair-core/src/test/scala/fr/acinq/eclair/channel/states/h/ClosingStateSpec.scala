@@ -31,9 +31,10 @@ import fr.acinq.eclair.channel.fsm.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITC
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx, SetChannelId}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.crypto.keymanager.CommitmentPublicKeys
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.{Solver, SolverData, Transactions}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
@@ -1289,7 +1290,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Bob publishes the latest commit tx.
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     channelFeatures.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat => assert(bobCommitTx.txOut.length == 7) // two main outputs + two anchors + 3 HTLCs
+      case _: AnchorOutputsCommitmentFormat | Transactions.SimpleTaprootChannelCommitmentFormat => assert(bobCommitTx.txOut.length == 7) // two main outputs + two anchors + 3 HTLCs
       case DefaultCommitmentFormat => assert(bobCommitTx.txOut.length == 5) // two main outputs + 3 HTLCs
     }
     val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
@@ -1423,7 +1424,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Bob publishes the next commit tx.
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     channelFeatures.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat => assert(bobCommitTx.txOut.length == 7) // two main outputs + two anchors + 3 HTLCs
+      case _: AnchorOutputsCommitmentFormat | Transactions.SimpleTaprootChannelCommitmentFormat => assert(bobCommitTx.txOut.length == 7) // two main outputs + two anchors + 3 HTLCs
       case DefaultCommitmentFormat => assert(bobCommitTx.txOut.length == 5) // two main outputs + 3 HTLCs
     }
     val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
@@ -1618,7 +1619,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob is nice and publishes its commitment
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
     channelFeatures.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat => assert(bobCommitTx.txOut.length == 6) // two main outputs + two anchors + 2 HTLCs
+      case _: AnchorOutputsCommitmentFormat | Transactions.SimpleTaprootChannelCommitmentFormat => assert(bobCommitTx.txOut.length == 6) // two main outputs + two anchors + 2 HTLCs
       case DefaultCommitmentFormat => assert(bobCommitTx.txOut.length == 4) // two main outputs + 2 HTLCs
     }
     alice ! WatchFundingSpentTriggered(bobCommitTx)
@@ -1692,7 +1693,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Bob's first commit tx doesn't contain any htlc
     val localCommit1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit
     channelFeatures.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat => assert(localCommit1.commitTxAndRemoteSig.commitTx.tx.txOut.size == 4) // 2 main outputs + 2 anchors
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => assert(localCommit1.commitTxAndRemoteSig.commitTx.tx.txOut.size == 4) // 2 main outputs + 2 anchors
       case DefaultCommitmentFormat => assert(localCommit1.commitTxAndRemoteSig.commitTx.tx.txOut.size == 2) // 2 main outputs
     }
 
@@ -1708,7 +1709,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.size == localCommit2.commitTxAndRemoteSig.commitTx.tx.txOut.size)
     channelFeatures.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat => assert(localCommit2.commitTxAndRemoteSig.commitTx.tx.txOut.size == 6)
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => assert(localCommit2.commitTxAndRemoteSig.commitTx.tx.txOut.size == 6)
       case DefaultCommitmentFormat => assert(localCommit2.commitTxAndRemoteSig.commitTx.tx.txOut.size == 4)
     }
 
@@ -1724,7 +1725,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.size == localCommit3.commitTxAndRemoteSig.commitTx.tx.txOut.size)
     channelFeatures.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat => assert(localCommit3.commitTxAndRemoteSig.commitTx.tx.txOut.size == 8)
+      case _: AnchorOutputsCommitmentFormat | Transactions.SimpleTaprootChannelCommitmentFormat => assert(localCommit3.commitTxAndRemoteSig.commitTx.tx.txOut.size == 8)
       case DefaultCommitmentFormat => assert(localCommit3.commitTxAndRemoteSig.commitTx.tx.txOut.size == 6)
     }
 
@@ -1738,7 +1739,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.size == localCommit4.commitTxAndRemoteSig.commitTx.tx.txOut.size)
     channelFeatures.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat => assert(localCommit4.commitTxAndRemoteSig.commitTx.tx.txOut.size == 4)
+      case _: AnchorOutputsCommitmentFormat | Transactions.SimpleTaprootChannelCommitmentFormat => assert(localCommit4.commitTxAndRemoteSig.commitTx.tx.txOut.size == 4)
       case DefaultCommitmentFormat => assert(localCommit4.commitTxAndRemoteSig.commitTx.tx.txOut.size == 2)
     }
 
@@ -1959,11 +1960,13 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobHtlcSuccessTx1 = bobRevokedCommit.htlcTxsAndRemoteSigs.collectFirst {
       case HtlcTxAndRemoteSig(txInfo: HtlcSuccessTx, _) if txInfo.htlcId == fulfilledHtlc.id =>
         assert(fulfilledHtlc.paymentHash == txInfo.paymentHash)
-        txInfo.addSigs(ByteVector64.Zeroes, ByteVector64.Zeroes, preimage, commitmentFormat)
+        val solver = Solver.HtlcSuccess(CommitmentPublicKeys(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey), txInfo, commitmentFormat)
+        solver.addSig(txInfo, SolverData.HtlcSuccess(ByteVector64.Zeroes, ByteVector64.Zeroes, preimage))
     }.get
     val bobHtlcTimeoutTx = bobRevokedCommit.htlcTxsAndRemoteSigs.collectFirst {
       case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, _) if txInfo.htlcId == failedHtlc.id =>
-        txInfo.addSigs(ByteVector64.Zeroes, ByteVector64.Zeroes, commitmentFormat)
+        val solver = Solver.HtlcTimeout(CommitmentPublicKeys(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey), txInfo, commitmentFormat)
+        solver.addSig(txInfo, SolverData.HtlcTimeout(ByteVector64.Zeroes, ByteVector64.Zeroes))
     }.get
     val bobOutpoints = Seq(bobHtlcSuccessTx1, bobHtlcTimeoutTx).map(_.input.outPoint).toSet
     assert(bobOutpoints.size == 2)
@@ -2066,9 +2069,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       case HtlcTxAndRemoteSig(txInfo: HtlcSuccessTx, _) =>
         val preimage = revokedCloseFixture.htlcsAlice.collectFirst { case (add, preimage) if add.id == txInfo.htlcId => preimage }.get
         assert(Crypto.sha256(preimage) == txInfo.paymentHash)
-        txInfo.addSigs(ByteVector64.Zeroes, ByteVector64.Zeroes, preimage, commitmentFormat)
+        val solver = Solver.HtlcSuccess(CommitmentPublicKeys(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey), txInfo, commitmentFormat)
+        solver.addSig(txInfo, SolverData.HtlcSuccess(ByteVector64.Zeroes, ByteVector64.Zeroes, preimage))
       case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, _) =>
-        txInfo.addSigs(ByteVector64.Zeroes, ByteVector64.Zeroes, commitmentFormat)
+        val solver = Solver.HtlcTimeout(CommitmentPublicKeys(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey), txInfo, commitmentFormat)
+        solver.addSig(txInfo, SolverData.HtlcTimeout(ByteVector64.Zeroes, ByteVector64.Zeroes))
     }
     assert(bobHtlcTxs.map(_.input.outPoint).size == 4)
     val bobHtlcTx = Transaction(
@@ -2119,7 +2124,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures == channelFeatures)
     val initOutputCount = channelFeatures.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat => 4
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => 4
       case DefaultCommitmentFormat => 2
     }
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.size == initOutputCount)

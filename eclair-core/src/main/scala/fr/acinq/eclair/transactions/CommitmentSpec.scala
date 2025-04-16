@@ -16,7 +16,9 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.scalacompat.SatoshiLong
+import fr.acinq.bitcoin.ScriptTree
+import fr.acinq.bitcoin.scalacompat.Crypto.XonlyPublicKey
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, LexicographicalOrdering, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, SatoshiLong, Script, ScriptElt, TxOut}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
@@ -26,17 +28,61 @@ import fr.acinq.eclair.wire.protocol._
  * Created by PM on 07/12/2016.
  */
 
-sealed trait CommitmentOutput
+sealed trait RedeemInfo {
+  def publicKeyScript: Seq[ScriptElt]
+}
+
+object RedeemInfo {
+  case class SegwitV0(redeemScript: Seq[ScriptElt]) extends RedeemInfo {
+    override def publicKeyScript: Seq[ScriptElt] = redeemScript match {
+      case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(data, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil if data.size == 20 => Script.pay2wpkh(data)
+      case _ => Script.pay2wsh(redeemScript)
+    }
+  }
+
+  case class TaprootScriptPath(internalKey: XonlyPublicKey, scriptTree: ScriptTree, leafHash: ByteVector32) extends RedeemInfo {
+
+    import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
+    val leaf: ScriptTree.Leaf = Option(scriptTree.findScript(leafHash)).getOrElse(throw new IllegalArgumentException(s"leaf $leafHash not found in script tree"))
+
+    override def publicKeyScript: Seq[ScriptElt] = Script.pay2tr(internalKey, Some(scriptTree))
+  }
+
+  case class TaprootKeyPath(internalKey: XonlyPublicKey, scriptTree_opt: Option[ScriptTree]) extends RedeemInfo {
+    override def publicKeyScript: Seq[ScriptElt] = Script.pay2tr(internalKey, scriptTree_opt)
+  }
+}
+
+sealed trait CommitmentOutput {
+  val amount: Satoshi
+  val redeemInfo: RedeemInfo
+  val txOut: TxOut = TxOut(amount, redeemInfo.publicKeyScript)
+}
 
 object CommitmentOutput {
   // @formatter:off
-  case object ToLocal extends CommitmentOutput
-  case object ToRemote extends CommitmentOutput
-  case object ToLocalAnchor extends CommitmentOutput
-  case object ToRemoteAnchor extends CommitmentOutput
-  case class InHtlc(incomingHtlc: IncomingHtlc) extends CommitmentOutput
-  case class OutHtlc(outgoingHtlc: OutgoingHtlc) extends CommitmentOutput
+  case class ToLocal(amount: Satoshi, redeemInfo: RedeemInfo) extends CommitmentOutput
+  case class ToRemote(amount: Satoshi, redeemInfo: RedeemInfo) extends CommitmentOutput
+  case class ToLocalAnchor(amount: Satoshi, redeemInfo: RedeemInfo) extends CommitmentOutput
+  case class ToRemoteAnchor(amount: Satoshi, redeemInfo: RedeemInfo) extends CommitmentOutput
+  case class HtlcSuccessOutput(amount: Satoshi, redeemInfo: RedeemInfo) {
+    val txOut: TxOut = TxOut(amount, redeemInfo.publicKeyScript)
+  }
+  case class InHtlcWithoutHtlcSuccess(amount: Satoshi, incomingHtlc: IncomingHtlc, redeemInfo: RedeemInfo) extends CommitmentOutput
+  case class InHtlc(amount: Satoshi, incomingHtlc: IncomingHtlc, redeemInfo: RedeemInfo, htlcSuccessOutput: HtlcSuccessOutput) extends CommitmentOutput
+  case class HtlcTimeoutOutput(amount: Satoshi, redeemInfo: RedeemInfo) {
+    val txOut: TxOut = TxOut(amount, redeemInfo.publicKeyScript)
+  }
+  case class OutHtlcWithoutHtlcTimeout(amount: Satoshi, outgoingHtlc: OutgoingHtlc, redeemInfo: RedeemInfo) extends CommitmentOutput
+  case class OutHtlc(amount: Satoshi, outgoingHtlc: OutgoingHtlc, redeemInfo: RedeemInfo, htlcTimeoutOutput: HtlcTimeoutOutput) extends CommitmentOutput
   // @formatter:on
+
+  def isLessThan(a: CommitmentOutput, b: CommitmentOutput): Boolean = (a, b) match {
+    case (a: OutHtlc, b: OutHtlc) if a.outgoingHtlc.add.paymentHash == b.outgoingHtlc.add.paymentHash && a.outgoingHtlc.add.amountMsat.truncateToSatoshi == b.outgoingHtlc.add.amountMsat.truncateToSatoshi =>
+      a.outgoingHtlc.add.cltvExpiry <= b.outgoingHtlc.add.cltvExpiry
+    case _ => LexicographicalOrdering.isLessThan(a.txOut, b.txOut)
+  }
 }
 
 sealed trait DirectedHtlc {

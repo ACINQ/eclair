@@ -1025,7 +1025,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           } else {
             val parentCommitment = d.commitments.latest.commitment
             val localFundingPubKey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey
-            val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubKey, msg.fundingPubKey)
+            val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubKey, msg.fundingPubKey, d.commitments.params.commitmentFormat)
             LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = false, msg.requestFunding_opt, nodeParams.liquidityAdsConfig.rates_opt, msg.useFeeCredit_opt) match {
               case Left(t) =>
                 log.warning("rejecting splice request with invalid liquidity ads: {}", t.getMessage)
@@ -1045,7 +1045,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   isInitiator = false,
                   localContribution = spliceAck.fundingContribution,
                   remoteContribution = msg.fundingContribution,
-                  sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
+                  sharedInput_opt = Some(SharedFundingInput(parentCommitment)),
                   remoteFundingPubKey = msg.fundingPubKey,
                   localOutputs = Nil,
                   lockTime = msg.lockTime,
@@ -1089,7 +1089,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             isInitiator = true,
             localContribution = spliceInit.fundingContribution,
             remoteContribution = msg.fundingContribution,
-            sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
+            sharedInput_opt = Some(SharedFundingInput(parentCommitment)),
             remoteFundingPubKey = msg.fundingPubKey,
             localOutputs = cmd.spliceOutputs,
             lockTime = spliceInit.lockTime,
@@ -1097,7 +1097,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             targetFeerate = spliceInit.feerate,
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceInit.requireConfirmedInputs)
           )
-          val fundingScript = Funding.makeFundingPubKeyScript(spliceInit.fundingPubKey, msg.fundingPubKey)
+          val fundingScript = Funding.makeFundingPubKeyScript(spliceInit.fundingPubKey, msg.fundingPubKey, d.commitments.params.commitmentFormat)
           LiquidityAds.validateRemoteFunding(spliceInit.requestFunding_opt, remoteNodeId, d.channelId, fundingScript, msg.fundingContribution, spliceInit.feerate, isChannelCreation = false, msg.willFund_opt) match {
             case Left(t) =>
               log.info("rejecting splice attempt: invalid liquidity ads response ({})", t.getMessage)
@@ -1165,7 +1165,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                     isInitiator = false,
                     localContribution = fundingContribution,
                     remoteContribution = msg.fundingContribution,
-                    sharedInput_opt = Some(Multisig2of2Input(rbf.parentCommitment)),
+                    sharedInput_opt = Some(SharedFundingInput(rbf.parentCommitment)),
                     remoteFundingPubKey = rbf.latestFundingTx.fundingParams.remoteFundingPubKey,
                     localOutputs = rbf.latestFundingTx.fundingParams.localOutputs,
                     lockTime = msg.lockTime,
@@ -1219,7 +1219,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                     isInitiator = true,
                     localContribution = txInitRbf.fundingContribution,
                     remoteContribution = msg.fundingContribution,
-                    sharedInput_opt = Some(Multisig2of2Input(rbf.parentCommitment)),
+                    sharedInput_opt = Some(SharedFundingInput(rbf.parentCommitment)),
                     remoteFundingPubKey = rbf.latestFundingTx.fundingParams.remoteFundingPubKey,
                     localOutputs = rbf.latestFundingTx.fundingParams.localOutputs,
                     lockTime = txInitRbf.lockTime,
@@ -2167,9 +2167,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       d.commitments.params.commitmentFormat match {
         case _: Transactions.AnchorOutputsCommitmentFormat =>
           val fundingKey = channelKeys.fundingKey(d.commitments.latest.fundingTxIndex)
-          val lcp1 = d.localCommitPublished.map(lcp => Closing.LocalClose.claimAnchors(fundingKey, lcp, c.confirmationTarget))
-          val rcp1 = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.claimAnchors(fundingKey, rcp, c.confirmationTarget))
-          val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.claimAnchors(fundingKey, nrcp, c.confirmationTarget))
+          val lcp1 = d.localCommitPublished.map(lcp => Closing.LocalClose.claimAnchors(fundingKey, lcp, c.confirmationTarget, d.commitments.params.commitmentFormat))
+          val rcp1 = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.claimAnchors(fundingKey, rcp, c.confirmationTarget, d.commitments.params.commitmentFormat))
+          val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.claimAnchors(fundingKey, nrcp, c.confirmationTarget, d.commitments.params.commitmentFormat))
           // We favor the remote commitment(s) because they're more interesting than the local commitment (no CSV delays).
           if (rcp1.nonEmpty) {
             rcp1.foreach(rcp => rcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, channelKeys, d.commitments.latest, rcp.commitTx) })
@@ -3269,7 +3269,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     val targetFeerate = nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing)
     val fundingContribution = InteractiveTxFunder.computeSpliceContribution(
       isInitiator = true,
-      sharedInput = Multisig2of2Input(parentCommitment),
+      sharedInput = SharedFundingInput(parentCommitment),
       spliceInAmount = cmd.additionalLocalFunding,
       spliceOut = cmd.spliceOutputs,
       targetFeerate = targetFeerate)

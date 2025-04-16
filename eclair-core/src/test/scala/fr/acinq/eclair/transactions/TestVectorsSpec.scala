@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants, transactions}
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -133,7 +133,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   val fundingAmount = fundingTx.txOut(0).amount
   logger.info(s"# funding-tx: $fundingTx}")
 
-  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey)
+  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey, DefaultCommitmentFormat)
 
   val obscured_tx_number = Transactions.obscuredCommitTxNumber(42, localIsChannelOpener = true, Local.payment_basepoint, Remote.payment_basepoint)
   assert(obscured_tx_number == (0x2bb038521914L ^ 42L))
@@ -149,8 +149,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   logger.info(s"remotekey: ${Remote.payment_privkey.publicKey}")
   logger.info(s"local_delayedkey: ${Local.delayed_payment_privkey.publicKey}")
   logger.info(s"local_revocation_key: ${Local.revocation_pubkey}")
-  logger.info(s"# funding wscript = ${commitmentInput.redeemScript}")
-  assert(commitmentInput.redeemScript == hex"5221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae")
+  logger.info(s"# funding wscript = ${commitmentInput.redeemInfo.asInstanceOf[RedeemInfo.SegwitV0].redeemScript}")
+  assert(Script.write(commitmentInput.redeemInfo.asInstanceOf[RedeemInfo.SegwitV0].redeemScript) == hex"5221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae")
 
   val paymentPreimages = Seq(
     ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"),
@@ -240,11 +240,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"output commit_tx: ${commitTx.tx}")
 
     val unsignedHtlcTxs = Transactions.makeHtlcTxs(
-      commitmentKeys.publicKeys,
       commitTx.tx,
-      dustLimit,
-      Local.toSelfDelay,
-      spec.htlcTxFeerate(commitmentFormat),
       outputs,
       commitmentFormat
     )
@@ -255,9 +251,10 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       case tx: HtlcSuccessTx =>
         val localSig = tx.sign(Local.htlc_privkey, TxOwner.Local, commitmentFormat, Map.empty)
         val remoteSig = tx.sign(Remote.htlc_privkey, TxOwner.Remote, commitmentFormat, Map.empty)
-        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.asInstanceOf[InputInfo.SegwitInput].redeemScript))
+        val htlcIndex = htlcScripts.indexOf(tx.input.redeemInfo.asInstanceOf[RedeemInfo.SegwitV0].redeemScript)
         val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
-        val tx1 = tx.addSigs(localSig, remoteSig, preimage, commitmentFormat)
+        val solver = Solver.HtlcSuccess(commitmentKeys.publicKeys, tx, commitmentFormat)
+        val tx1 = solver.addSig(tx, SolverData.HtlcSuccess(localSig, remoteSig, preimage))
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-success for htlc #$htlcIndex)")
         logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")
@@ -265,10 +262,11 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         logger.info(s"htlc_success_tx (htlc #$htlcIndex): ${tx1.tx}")
         tx1
       case tx: HtlcTimeoutTx =>
+        val solver = Solver.HtlcTimeout(commitmentKeys.publicKeys, tx, commitmentFormat)
         val localSig = tx.sign(Local.htlc_privkey, TxOwner.Local, commitmentFormat, Map.empty)
         val remoteSig = tx.sign(Remote.htlc_privkey, TxOwner.Remote, commitmentFormat, Map.empty)
-        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.asInstanceOf[InputInfo.SegwitInput].redeemScript))
-        val tx1 = tx.addSigs(localSig, remoteSig, commitmentFormat)
+        val htlcIndex = htlcScripts.indexOf(tx.input.redeemInfo.asInstanceOf[RedeemInfo.SegwitV0].redeemScript)
+        val tx1 = solver.addSig(tx, SolverData.HtlcTimeout(localSig, remoteSig))
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-timeout for htlc #$htlcIndex)")
         logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")

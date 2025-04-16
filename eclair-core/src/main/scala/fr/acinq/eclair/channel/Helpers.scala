@@ -275,7 +275,7 @@ object Helpers {
 
     for {
       script_opt <- extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt)
-      fundingScript = Funding.makeFundingPubKeyScript(open.fundingPubkey, accept.fundingPubkey)
+      fundingScript = Funding.makeFundingPubKeyScript(open.fundingPubkey, accept.fundingPubkey, commitmentFormat = channelType.commitmentFormat)
       liquidityPurchase_opt <- LiquidityAds.validateRemoteFunding(open.requestFunding_opt, remoteNodeId, accept.temporaryChannelId, fundingScript, accept.fundingAmount, open.fundingFeerate, isChannelCreation = true, accept.willFund_opt)
     } yield {
       val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
@@ -370,13 +370,20 @@ object Helpers {
   }
 
   object Funding {
+    def makeFundingPubKeyScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat): ByteVector = commitmentFormat match {
+      case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => write(pay2wsh(multiSig2of2(localFundingKey, remoteFundingKey)))
+      case SimpleTaprootChannelCommitmentFormat => write(Taproot.musig2FundingScript(localFundingKey, remoteFundingKey))
+    }
 
-    def makeFundingPubKeyScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey): ByteVector = write(pay2wsh(multiSig2of2(localFundingKey, remoteFundingKey)))
-
-    def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo.SegwitInput = {
-      val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
-      val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
-      InputInfo.SegwitInput(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, write(fundingScript))
+    def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey, commitmentFormat: CommitmentFormat): InputInfo = commitmentFormat match {
+      case SimpleTaprootChannelCommitmentFormat =>
+        val fundingScript = Taproot.musig2FundingScript(fundingPubkey1, fundingPubkey2)
+        val fundingTxOut = TxOut(fundingSatoshis, fundingScript)
+        InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, RedeemInfo.TaprootKeyPath(Taproot.musig2Aggregate(fundingPubkey1, fundingPubkey2), None))
+      case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
+        val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
+        InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, fundingScript)
     }
 
     /**
@@ -435,7 +442,7 @@ object Helpers {
         }
       }
 
-      val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, localFundingKey.publicKey, remoteFundingPubKey)
+      val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, localFundingKey.publicKey, remoteFundingPubKey, params.commitmentFormat)
       val (localCommitTx, _) = Commitment.makeLocalTxs(params, localCommitKeys, localCommitmentIndex, localFundingKey, remoteFundingPubKey, commitmentInput, localSpec)
       val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, remoteCommitKeys, remoteCommitmentIndex, localFundingKey, remoteFundingPubKey, commitmentInput, remoteSpec)
       val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
@@ -671,7 +678,7 @@ object Helpers {
           case DefaultCommitmentFormat =>
             // we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
             requestedFeerate.min(commitment.localCommit.spec.commitTxFeerate)
-          case _: AnchorOutputsCommitmentFormat => requestedFeerate
+          case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => requestedFeerate
         }
         // NB: we choose a minimum fee that ensures the tx will easily propagate while allowing low fees since we can
         // always use CPFP to speed up confirmation if necessary.
@@ -872,10 +879,11 @@ object Helpers {
 
         // first we will claim our main output as soon as the delay is over
         val mainDelayedTx = withTxGenerationLog("local-main-delayed") {
-          Transactions.makeClaimLocalDelayedOutputTx(commitmentKeys, commitTx, commitment.localParams.dustLimit, commitment.remoteParams.toSelfDelay, finalScriptPubKey, feeratePerKwDelayed).map(claimDelayed => {
-            val sig = claimDelayed.sign(commitmentKeys.ourDelayedPaymentKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
-            claimDelayed.addSigs(sig)
-          })
+          val solver = Solver.ToLocal(commitmentKeys.publicKeys, commitment.remoteParams.toSelfDelay, commitment.params.commitmentFormat)
+          solver.createSpendingTx(commitTx, commitment.localParams.dustLimit, finalScriptPubKey, feeratePerKwDelayed).map { claimDelayed =>
+            val sig = solver.sign(commitmentKeys.ourDelayedPaymentKey, claimDelayed, Map.empty)
+            solver.addSig(claimDelayed, SolverData.SingleSig(sig))
+          }
         }
 
         val htlcTxs: Map[OutPoint, Option[HtlcTx]] = claimHtlcOutputs(commitmentKeys, commitment)
@@ -892,17 +900,18 @@ object Helpers {
         if (spendAnchors) {
           // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
           val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmationTarget).minByOption(_.confirmBefore).getOrElse(ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing))
-          claimAnchors(fundingKey, lcp, confirmCommitBefore)
+          claimAnchors(fundingKey, lcp, confirmCommitBefore, commitment.params.commitmentFormat)
         } else {
           lcp
         }
       }
 
-      def claimAnchors(anchorKey: PrivateKey, lcp: LocalCommitPublished, confirmationTarget: ConfirmationTarget)(implicit log: LoggingAdapter): LocalCommitPublished = {
+      def claimAnchors(anchorKey: PrivateKey, lcp: LocalCommitPublished, confirmationTarget: ConfirmationTarget, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): LocalCommitPublished = {
         if (shouldUpdateAnchorTxs(lcp.claimAnchorTxs, confirmationTarget)) {
+          val solver = Solver.ToAnchor(anchorKey.publicKey, confirmationTarget, commitmentFormat)
           val claimAnchorTxs = List(
             withTxGenerationLog("local-anchor") {
-              Transactions.makeClaimAnchorOutputTx(anchorKey, lcp.commitTx, confirmationTarget)
+              solver.createSpendingTx(lcp.commitTx, Satoshi(0), ByteVector.empty, FeeratePerKw(Satoshi(0)))
             },
           ).flatten
           lcp.copy(claimAnchorTxs = claimAnchorTxs)
@@ -927,12 +936,13 @@ object Helpers {
         val nonRelayedIncomingHtlcs: Set[Long] = commitment.changes.remoteChanges.all.collect { case add: UpdateAddHtlc => add.id }.toSet
 
         commitment.localCommit.htlcTxsAndRemoteSigs.collect {
-          case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _, _), remoteSig) =>
+          case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _, _, _), remoteSig) =>
             if (hash2Preimage.contains(paymentHash)) {
               // We immediately spend incoming htlcs for which we have the preimage.
               Some(txInfo.input.outPoint -> withTxGenerationLog("htlc-success") {
-                val localSig = txInfo.sign(commitKeys.ourHtlcKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
-                Right(txInfo.addSigs(localSig, remoteSig, hash2Preimage(paymentHash), commitment.params.commitmentFormat))
+                val solver = Solver.HtlcSuccess(commitKeys.publicKeys, txInfo, commitment.params.commitmentFormat)
+                val localSig = solver.sign(commitKeys.ourHtlcKey, txInfo, Map.empty)
+                Right(solver.addSig(txInfo, SolverData.HtlcSuccess(localSig, remoteSig, hash2Preimage(paymentHash))))
               })
             } else if (failedIncomingHtlcs.contains(txInfo.htlcId)) {
               // We can ignore incoming htlcs that we started failing: our peer will claim them after the timeout.
@@ -952,8 +962,9 @@ object Helpers {
             // claim the output, we will learn the preimage from their transaction, otherwise we will get our funds
             // back after the timeout.
             Some(txInfo.input.outPoint -> withTxGenerationLog("htlc-timeout") {
-              val localSig = txInfo.sign(commitKeys.ourHtlcKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
-              Right(txInfo.addSigs(localSig, remoteSig, commitment.params.commitmentFormat))
+              val solver = Solver.HtlcTimeout(commitKeys.publicKeys, txInfo, commitment.params.commitmentFormat)
+              val localSig = solver.sign(commitKeys.ourHtlcKey, txInfo, Map.empty)
+              Right(solver.addSig(txInfo, SolverData.HtlcTimeout(localSig, remoteSig)))
             })
         }.flatten.toMap
       }
@@ -971,10 +982,11 @@ object Helpers {
           val htlcDelayedTx_opt = withTxGenerationLog("htlc-delayed") {
             // Note that this will return None if the transaction wasn't one of our HTLC transactions, which may happen
             // if our peer was able to claim the HTLC output before us (race condition between success and timeout).
-            Transactions.makeHtlcDelayedTx(commitKeys, tx, commitment.localParams.dustLimit, commitment.remoteParams.toSelfDelay, finalScriptPubKey, feeratePerKwDelayed).map(claimDelayed => {
-              val sig = claimDelayed.sign(commitKeys.ourDelayedPaymentKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
-              claimDelayed.addSigs(sig)
-            })
+            val solver = Solver.HtlcDelayed(commitKeys.publicKeys, commitment.remoteParams.toSelfDelay, commitment.params.commitmentFormat)
+            solver.createSpendingTx(tx, commitment.localParams.dustLimit, finalScriptPubKey, feeratePerKwDelayed).map { claimDelayed =>
+              val sig = solver.sign(commitKeys.ourDelayedPaymentKey, claimDelayed, Map.empty)
+              solver.addSig(claimDelayed, SolverData.SingleSig(sig))
+            }
           }
           val localCommitPublished1 = localCommitPublished.copy(claimHtlcDelayedTxs = localCommitPublished.claimHtlcDelayedTxs ++ htlcDelayedTx_opt.toSeq)
           (localCommitPublished1, htlcDelayedTx_opt)
@@ -1012,17 +1024,18 @@ object Helpers {
         if (spendAnchors) {
           // If we don't have pending HTLCs, we don't have funds at risk, so we use the normal closing priority.
           val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmationTarget).minByOption(_.confirmBefore).getOrElse(ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing))
-          claimAnchors(fundingKey, rcp, confirmCommitBefore)
+          claimAnchors(fundingKey, rcp, confirmCommitBefore, commitment.params.commitmentFormat)
         } else {
           rcp
         }
       }
 
-      def claimAnchors(anchorKey: PrivateKey, rcp: RemoteCommitPublished, confirmationTarget: ConfirmationTarget)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+      def claimAnchors(anchorKey: PrivateKey, rcp: RemoteCommitPublished, confirmationTarget: ConfirmationTarget, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): RemoteCommitPublished = {
         if (shouldUpdateAnchorTxs(rcp.claimAnchorTxs, confirmationTarget)) {
           val claimAnchorTxs = List(
             withTxGenerationLog("remote-anchor") {
-              Transactions.makeClaimAnchorOutputTx(anchorKey, rcp.commitTx, confirmationTarget)
+              val solver = Solver.ToAnchor(anchorKey.publicKey, confirmationTarget, commitmentFormat)
+              solver.createSpendingTx(rcp.commitTx, Satoshi(0), ByteVector.empty, FeeratePerKw(Satoshi(0)))
             },
           ).flatten
           rcp.copy(claimAnchorTxs = claimAnchorTxs)
@@ -1045,17 +1058,18 @@ object Helpers {
           case Right(ourPaymentKey) =>
             val feeratePerKwMain = onChainFeeConf.getClosingFeerate(feerates)
             params.commitmentFormat match {
-              case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
-                Transactions.makeClaimP2WPKHOutputTx(commitKeys, commitTx, params.localParams.dustLimit, finalScriptPubKey, feeratePerKwMain).map(claimMain => {
-                  val sig = claimMain.sign(ourPaymentKey, TxOwner.Local, params.commitmentFormat, Map.empty)
-                  claimMain.addSigs(commitKeys, sig)
-                })
-              }
-              case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
-                Transactions.makeClaimRemoteDelayedOutputTx(commitKeys, commitTx, params.localParams.dustLimit, finalScriptPubKey, feeratePerKwMain).map(claimMain => {
-                  val sig = claimMain.sign(ourPaymentKey, TxOwner.Local, params.commitmentFormat, Map.empty)
-                  claimMain.addSigs(sig)
-                })
+              //              case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
+              //                Transactions.makeClaimP2WPKHOutputTx(commitKeys, commitTx, params.localParams.dustLimit, finalScriptPubKey, feeratePerKwMain).map(claimMain => {
+              //                  val sig = claimMain.sign(ourPaymentKey, TxOwner.Local, params.commitmentFormat, Map.empty)
+              //                  claimMain.addSigs(commitKeys, sig)
+              //                })
+              //              }
+              case _ => withTxGenerationLog("remote-main-delayed") {
+                val solver = Solver.ToRemote(commitKeys, params.commitmentFormat)
+                solver.createSpendingTx(commitTx, params.localParams.dustLimit, finalScriptPubKey, feeratePerKwMain).map { claimMain =>
+                  val sig = solver.sign(ourPaymentKey, claimMain, Map.empty)
+                  solver.addSig(claimMain, SolverData.SingleSig(sig))
+                }
               }
             }
         }
@@ -1088,13 +1102,14 @@ object Helpers {
           case OutgoingHtlc(add: UpdateAddHtlc) =>
             // NB: we first generate the tx skeleton and finalize it below if we have the preimage, so we set logSuccess to false to avoid logging twice.
             withTxGenerationLog("claim-htlc-success", logSuccess = false) {
-              Transactions.makeClaimHtlcSuccessTx(commitKeys, remoteCommitTx.tx, commitment.localParams.dustLimit, outputs, finalScriptPubKey, add, feeratePerKwHtlc, commitment.params.commitmentFormat)
+              Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, outputs, commitment.localParams.dustLimit, finalScriptPubKey, add, feeratePerKwHtlc, commitment.params.commitmentFormat)
             }.map(claimHtlcTx => {
               if (hash2Preimage.contains(add.paymentHash)) {
                 // We immediately spend incoming htlcs for which we have the preimage.
                 Some(claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-success") {
-                  val sig = claimHtlcTx.sign(commitKeys.ourHtlcKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
-                  Right(claimHtlcTx.addSigs(sig, hash2Preimage(add.paymentHash)))
+                  val solver = Solver.ClaimHtlcSuccess(commitKeys, claimHtlcTx, commitment.params.commitmentFormat)
+                  val sig = solver.sign(commitKeys.ourHtlcKey, claimHtlcTx, Map.empty)
+                  Right(solver.addSig(claimHtlcTx, SolverData.ClaimHtlcSuccess(sig, hash2Preimage(add.paymentHash))))
                 })
               } else if (failedIncomingHtlcs.contains(add.id)) {
                 // We can ignore incoming htlcs that we started failing: our peer will claim them after the timeout.
@@ -1116,11 +1131,12 @@ object Helpers {
             // back after the timeout.
             // NB: we first generate the tx skeleton and finalize it below, so we set logSuccess to false to avoid logging twice.
             withTxGenerationLog("claim-htlc-timeout", logSuccess = false) {
-              Transactions.makeClaimHtlcTimeoutTx(commitKeys, remoteCommitTx.tx, commitment.localParams.dustLimit, outputs, finalScriptPubKey, add, feeratePerKwHtlc, commitment.params.commitmentFormat)
+              Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputs, commitment.localParams.dustLimit, finalScriptPubKey, add, feeratePerKwHtlc, commitment.params.commitmentFormat)
             }.map(claimHtlcTx => {
               Some(claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-timeout") {
-                val sig = claimHtlcTx.sign(commitKeys.ourHtlcKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
-                Right(claimHtlcTx.addSigs(sig))
+                val solver = Solver.ClaimHtlcTimeout(commitKeys, claimHtlcTx, commitment.params.commitmentFormat)
+                val sig = solver.sign(commitKeys.ourHtlcKey, claimHtlcTx, Map.empty)
+                Right(solver.addSig(claimHtlcTx, SolverData.SingleSig(sig)))
               })
             })
         }.toSeq.flatten.flatten.toMap
@@ -1167,7 +1183,6 @@ object Helpers {
         log.warning("a revoked commit has been published with commitmentNumber={}", commitmentNumber)
 
         val commitKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentSecret.publicKey)
-        val revocationKey = channelKeys.revocationKey(remotePerCommitmentSecret)
 
         val feerateMain = onChainFeeConf.getClosingFeerate(feerates)
         // We need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty.
@@ -1179,39 +1194,52 @@ object Helpers {
             log.info("channel uses option_static_remotekey to pay directly to our wallet, there is nothing to do")
             None
           case Right(ourPaymentKey) => commitmentFormat match {
-            case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
-              Transactions.makeClaimP2WPKHOutputTx(commitKeys, commitTx, localParams.dustLimit, finalScriptPubKey, feerateMain).map(claimMain => {
-                val sig = claimMain.sign(ourPaymentKey, TxOwner.Local, commitmentFormat, Map.empty)
-                claimMain.addSigs(commitKeys, sig)
-              })
-            }
-            case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
-              Transactions.makeClaimRemoteDelayedOutputTx(commitKeys, commitTx, localParams.dustLimit, finalScriptPubKey, feerateMain).map(claimMain => {
-                val sig = claimMain.sign(ourPaymentKey, TxOwner.Local, commitmentFormat, Map.empty)
-                claimMain.addSigs(sig)
-              })
+            //            case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
+            //              Transactions.makeClaimP2WPKHOutputTx(commitKeys, commitTx, localParams.dustLimit, finalScriptPubKey, feerateMain).map(claimMain => {
+            //                val sig = claimMain.sign(ourPaymentKey, TxOwner.Local, commitmentFormat, Map.empty)
+            //                claimMain.addSigs(commitKeys, sig)
+            //              })
+            //            }
+            case _ => withTxGenerationLog("remote-main-delayed") {
+              val solver = Solver.ToRemote(commitKeys, commitmentFormat)
+              solver.createSpendingTx(commitTx, localParams.dustLimit, finalScriptPubKey, feerateMain).map { claimMain =>
+                val sig = solver.sign(ourPaymentKey, claimMain, Map.empty)
+                solver.addSig(claimMain, SolverData.SingleSig(sig))
+              }
             }
           }
         }
 
+        val revocationPriKey = channelKeys.revocationKey(remotePerCommitmentSecret)
+        val mainSolver = Solver.MainPenalty(commitKeys.publicKeys, localParams.toSelfDelay, commitmentFormat)
+
         // Then we punish them by stealing their main output.
         val mainPenaltyTx = withTxGenerationLog("main-penalty") {
-          Transactions.makeMainPenaltyTx(commitKeys, commitTx, localParams.dustLimit, finalScriptPubKey, localParams.toSelfDelay, feeratePenalty).map(txinfo => {
-            val sig = txinfo.sign(revocationKey, TxOwner.Local, commitmentFormat, Map.empty)
-            txinfo.addSigs(sig)
-          })
+          for {
+            penaltyTx <- mainSolver.createSpendingTx(commitTx, localParams.dustLimit, finalScriptPubKey, feeratePenalty)
+            sig = mainSolver.sign(revocationPriKey, penaltyTx, Map.empty)
+          } yield mainSolver.addSig(penaltyTx, SolverData.SingleSig(sig))
         }
 
         // We retrieve the historical information needed to rebuild htlc scripts.
         val htlcInfos = db.listHtlcInfos(channelId, commitmentNumber)
         log.info("got {} htlcs for commitmentNumber={}", htlcInfos.size, commitmentNumber)
-        // And finally we steal the htlc outputs.
-        val htlcPenaltyTxs = Transactions.makeHtlcPenaltyTxs(commitKeys, commitTx, htlcInfos, localParams.dustLimit, finalScriptPubKey, feeratePenalty, commitmentFormat).flatMap { htlcPenalty =>
-          withTxGenerationLog("htlc-penalty") {
-            val sig = htlcPenalty.sign(revocationKey, TxOwner.Local, commitmentFormat, Map.empty)
-            Right(htlcPenalty.addSigs(commitKeys, sig))
-          }
-        }.toList
+
+        val htlcSolvers = collection.mutable.HashSet[Solver[SolverData.SingleSig, HtlcPenaltyTx]]()
+        htlcInfos.map { case (paymentHash, cltvExpiry) =>
+          htlcSolvers.add(Solver.OfferedHtlcPenalty(commitKeys, paymentHash, commitmentFormat))
+          htlcSolvers.add(Solver.ReceivedHtlcPenalty(commitKeys, paymentHash, cltvExpiry, commitmentFormat))
+        }
+        val htlcPenaltyTxs = htlcSolvers.toList.flatMap { solver =>
+          solver.createSpendingTxs(commitTx, localParams.dustLimit, finalScriptPubKey, feeratePenalty).flatMap(r =>
+            withTxGenerationLog("htlc-penalty") {
+              r.map { tx =>
+                val sig = solver.sign(revocationPriKey, tx, Map.empty)
+                solver.addSig(tx, SolverData.SingleSig(sig))
+              }
+            }
+          )
+        }
 
         RevokedCommitPublished(
           commitTx = commitTx,
@@ -1250,11 +1278,12 @@ object Helpers {
               val revocationKey = channelKeys.revocationKey(remotePerCommitmentSecret)
               // We need to use a high fee when spending HTLC txs because after a delay they can also be spent by the counterparty.
               val feeratePerKwPenalty = feerates.fastest
-              val penaltyTxs = Transactions.makeClaimHtlcDelayedOutputPenaltyTxs(commitmentKeys, htlcTx, params.localParams.dustLimit, params.localParams.toSelfDelay, finalScriptPubKey, feeratePerKwPenalty).flatMap(claimHtlcDelayedOutputPenaltyTx => {
+              val solver = Solver.ClaimHtlcDelayedOutputPenalty(commitmentKeys, params.localParams.toSelfDelay, params.commitmentFormat)
+              val penaltyTxs = solver.createSpendingTxs(htlcTx, params.localParams.dustLimit, finalScriptPubKey, feeratePerKwPenalty).flatMap(claimHtlcDelayedOutputPenaltyTx => {
                 withTxGenerationLog("htlc-delayed-penalty") {
                   claimHtlcDelayedOutputPenaltyTx.map(htlcDelayedPenalty => {
-                    val sig = htlcDelayedPenalty.sign(revocationKey, TxOwner.Local, params.commitmentFormat, Map.empty)
-                    val signedTx = htlcDelayedPenalty.addSigs(sig)
+                    val sig = solver.sign(revocationKey, htlcDelayedPenalty, Map.empty)
+                    val signedTx = solver.addSig(htlcDelayedPenalty, SolverData.SingleSig(sig))
                     // We need to make sure that the tx is indeed valid.
                     Transaction.correctlySpends(signedTx.tx, Seq(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
                     log.warning("txId={} is a 2nd level htlc tx spending revoked commit txId={}: publishing htlc-penalty txId={}", htlcTx.txid, revokedCommitPublished.commitTx.txid, signedTx.tx.txid)
@@ -1325,7 +1354,7 @@ object Helpers {
         tx.txIn.flatMap(txIn => localCommitPublished.htlcTxs.get(txIn.outPoint) match {
           // This may also be our peer claiming the HTLC by revealing the preimage: in that case we have already
           // extracted the preimage with [[extractPreimages]] and relayed it upstream.
-          case Some(Some(HtlcTimeoutTx(_, _, htlcId, _))) if Scripts.extractPreimagesFromClaimHtlcSuccess(tx).isEmpty =>
+          case Some(Some(HtlcTimeoutTx(_, _, htlcId, _, _))) if Scripts.extractPreimagesFromClaimHtlcSuccess(tx).isEmpty =>
             untrimmedHtlcs.find(_.id == htlcId) match {
               case Some(htlc) =>
                 log.info("htlc-timeout tx for htlc #{} paymentHash={} expiry={} has been confirmed (tx={})", htlcId, htlc.paymentHash, tx.lockTime, tx)
@@ -1357,13 +1386,13 @@ object Helpers {
         tx.txIn.flatMap(txIn => remoteCommitPublished.claimHtlcTxs.get(txIn.outPoint) match {
           // This may also be our peer claiming the HTLC by revealing the preimage: in that case we have already
           // extracted the preimage with [[extractPreimages]] and relayed it upstream.
-          case Some(Some(ClaimHtlcTimeoutTx(_, _, htlcId, _))) if Scripts.extractPreimagesFromHtlcSuccess(tx).isEmpty =>
-            untrimmedHtlcs.find(_.id == htlcId) match {
+          case Some(Some(cto: ClaimHtlcTimeoutTx)) if Scripts.extractPreimagesFromHtlcSuccess(tx).isEmpty =>
+            untrimmedHtlcs.find(_.id == cto.htlcId) match {
               case Some(htlc) =>
-                log.info("claim-htlc-timeout tx for htlc #{} paymentHash={} expiry={} has been confirmed (tx={})", htlcId, htlc.paymentHash, tx.lockTime, tx)
+                log.info("claim-htlc-timeout tx for htlc #{} paymentHash={} expiry={} has been confirmed (tx={})", cto.htlcId, htlc.paymentHash, tx.lockTime, tx)
                 Some(htlc)
               case None =>
-                log.error("could not find htlc #{} for claim-htlc-timeout tx={}", htlcId, tx)
+                log.error("could not find htlc #{} for claim-htlc-timeout tx={}", cto.htlcId, tx)
                 None
             }
           case _ => None

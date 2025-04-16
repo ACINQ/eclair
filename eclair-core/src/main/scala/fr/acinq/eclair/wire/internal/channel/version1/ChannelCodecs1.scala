@@ -17,19 +17,19 @@
 package fr.acinq.eclair.wire.internal.channel.version1
 
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Transaction, TxId, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Script, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
+import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSigs, PublishableTxs}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, MilliSatoshiLong}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, MilliSatoshiLong}
 import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -95,11 +95,12 @@ private[channel] object ChannelCodecs1 {
       tx => ChannelTypes0.migrateClosingTx(tx),
       closingTx => closingTx.tx
     )
+    val redeemInfoCodec: Codec[RedeemInfo.SegwitV0] = lengthDelimited(bytes).xmap(b => RedeemInfo.SegwitV0(Script.parse(b)), s => Script.write(s.redeemScript))
 
     val inputInfoCodec: Codec[InputInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo.SegwitInput].upcast[InputInfo].decodeOnly
+        ("redeemScript" | redeemInfoCodec.upcast[RedeemInfo])).as[InputInfo].decodeOnly
 
     private val defaultConfirmationTarget: Codec[ConfirmationTarget.Absolute] = provide(ConfirmationTarget.Absolute(BlockHeight(0)))
 
@@ -107,10 +108,10 @@ private[channel] object ChannelCodecs1 {
     // downstream htlc times out, and `Helpers.Closing.timedOutHtlcs` explicitly handles the case where htlcId is missing.
     val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
       .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx])
-      .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | provide(0L)) :: ("confirmationTargetBefore" | defaultConfirmationTarget)).as[HtlcSuccessTx])
-      .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[HtlcTimeoutTx])
+      .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: provide(CltvExpiry(0)) :: ("htlcId" | provide(0L)) :: ("confirmationTargetBefore" | defaultConfirmationTarget)).as[HtlcSuccessTx])
+      .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget) :: provide(ByteVector32.Zeroes)).as[HtlcTimeoutTx])
       .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | provide(ByteVector32.Zeroes)) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[ClaimHtlcSuccessTx])
-      .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[ClaimHtlcTimeoutTx])
+      .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: provide(ByteVector32.Zeroes) :: provide(CltvExpiry(0)) :: ("confirmBefore" | defaultConfirmationTarget)).as[ClaimHtlcTimeoutTx])
       .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
       .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx])
       .typecase(0x08, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[MainPenaltyTx])

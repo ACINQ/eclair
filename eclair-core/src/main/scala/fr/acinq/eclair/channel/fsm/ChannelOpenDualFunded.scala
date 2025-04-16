@@ -141,7 +141,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(open: OpenDualFundedChannel, d: DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL) =>
       import d.init.{localParams, remoteInit}
       val localFundingPubkey = channelKeys.fundingKey(fundingTxIndex = 0).publicKey
-      val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubkey, open.fundingPubkey)
+      val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubkey, open.fundingPubkey, d.init.channelType.commitmentFormat)
       Helpers.validateParamsDualFundedNonInitiator(nodeParams, d.init.channelType, open, fundingScript, remoteNodeId, localParams.initFeatures, remoteInit.features, d.init.fundingContribution_opt) match {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript, willFund_opt)) =>

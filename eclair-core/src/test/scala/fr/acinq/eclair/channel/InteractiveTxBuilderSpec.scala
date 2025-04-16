@@ -87,8 +87,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   private def sharedInputs(commitmentA: Commitment, commitmentB: Commitment): (SharedFundingInput, SharedFundingInput) = {
-    val sharedInputA = Multisig2of2Input(commitmentA)
-    val sharedInputB = Multisig2of2Input(commitmentB)
+    val sharedInputA = SharedFundingInput(commitmentA)
+    val sharedInputB = SharedFundingInput(commitmentB)
     (sharedInputA, sharedInputB)
   }
 

@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.channel.publish
 
-import fr.acinq.bitcoin.scalacompat.{Crypto, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -24,9 +25,9 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.AdjustPreviousTxOutputResult.{AddWalletInputs, TxOutputAdjusted}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder._
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
-import fr.acinq.eclair.crypto.keymanager.CommitmentPublicKeys
+import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.transactions.{Scripts, Solver, SolverData}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, TestKitBaseClass, randomBytes32}
 import org.mockito.IdiomaticMockito.StubbingOps
 import org.mockito.MockitoSugar.mock
@@ -40,10 +41,10 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   private def createAnchorTx(): (CommitTx, ClaimAnchorOutputTx) = {
     val anchorScript = Scripts.anchor(PlaceHolderPubKey)
-    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 1, 500 sat, PlaceHolderPubKey, PlaceHolderPubKey)
+    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 1, 500 sat, PlaceHolderPubKey, PlaceHolderPubKey, DefaultCommitmentFormat)
     val commitTx = Transaction(
       2,
-      Seq(TxIn(commitInput.outPoint, commitInput.redeemScript, 0, Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey))),
+      Seq(TxIn(commitInput.outPoint, ByteVector.empty, 0, Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey))),
       Seq(TxOut(330 sat, Script.pay2wsh(anchorScript))),
       0
     )
@@ -71,6 +72,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, htlcSuccessScript),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       paymentHash,
+      CltvExpiry(0),
       17,
       ConfirmationTarget.Absolute(BlockHeight(0))
     ), PlaceHolderSig, preimage)
@@ -78,7 +80,8 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last, htlcTimeoutScript),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(4000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       12,
-      ConfirmationTarget.Absolute(BlockHeight(0))
+      ConfirmationTarget.Absolute(BlockHeight(0)),
+      paymentHash
     ), PlaceHolderSig)
     (commitTx, htlcSuccess, htlcTimeout)
   }
@@ -106,6 +109,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last, htlcTimeoutScript),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       7,
+      ByteVector32.Zeroes, CltvExpiry(0),
       ConfirmationTarget.Absolute(BlockHeight(0))
     ))
     (commitTx, claimHtlcSuccess, claimHtlcTimeout)
@@ -118,7 +122,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       var previousAmount = claimHtlc.txInfo.tx.txOut.head.amount
       for (i <- 1 to 100) {
         val targetFeerate = FeeratePerKw(250 * i sat)
-        adjustClaimHtlcTxOutput(claimHtlc, targetFeerate, dustLimit) match {
+        adjustClaimHtlcTxOutput(claimHtlc, targetFeerate, dustLimit, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) match {
           case Left(_) => assert(targetFeerate >= FeeratePerKw(7000 sat))
           case Right(updatedClaimHtlc) =>
             assert(updatedClaimHtlc.txInfo.tx.txIn.length == 1)
@@ -126,8 +130,12 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
             assert(updatedClaimHtlc.txInfo.tx.txOut.head.amount < previousAmount)
             previousAmount = updatedClaimHtlc.txInfo.tx.txOut.head.amount
             val signedTx = updatedClaimHtlc match {
-              case ClaimHtlcSuccessWithWitnessData(txInfo, preimage) => txInfo.addSigs(PlaceHolderSig, preimage)
-              case ClaimHtlcTimeoutWithWitnessData(txInfo) => txInfo.addSigs(PlaceHolderSig)
+              case ClaimHtlcSuccessWithWitnessData(txInfo, preimage) =>
+                val solver = Solver.ClaimHtlcSuccess(RemoteCommitmentKeys(Left(PlaceHolderPubKey), PlaceHolderPubKey, PlaceHolderPubKey, PrivateKey(ByteVector32.One), PlaceHolderPubKey, PlaceHolderPubKey), txInfo, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+                solver.addSig(txInfo, SolverData.ClaimHtlcSuccess(PlaceHolderSig, preimage))
+              case ClaimHtlcTimeoutWithWitnessData(txInfo) =>
+                val solver = Solver.ClaimHtlcTimeout(RemoteCommitmentKeys(Left(PlaceHolderPubKey), PlaceHolderPubKey, PlaceHolderPubKey, PrivateKey(ByteVector32.One), PlaceHolderPubKey, PlaceHolderPubKey), txInfo, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+                solver.addSig(txInfo, SolverData.SingleSig(PlaceHolderSig))
             }
             val txFeerate = fee2rate(signedTx.fee, signedTx.tx.weight())
             assert(targetFeerate * 0.9 <= txFeerate && txFeerate <= targetFeerate * 1.1, s"actualFeerate=$txFeerate targetFeerate=$targetFeerate")
