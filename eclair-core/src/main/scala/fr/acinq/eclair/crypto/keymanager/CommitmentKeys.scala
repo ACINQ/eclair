@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto.keymanager
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.channel.ChannelParams
-import fr.acinq.eclair.crypto.Generators
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat}
 
 /**
  * Created by t-bast on 10/04/2025.
@@ -69,12 +69,16 @@ object LocalCommitmentKeys {
   def apply(params: ChannelParams, channelKeys: ChannelKeys, localCommitIndex: Long): LocalCommitmentKeys = {
     val localPerCommitmentPoint = channelKeys.commitmentPoint(localCommitIndex)
     LocalCommitmentKeys(
-      ourDelayedPaymentKey = Generators.derivePrivKey(channelKeys.delayedPaymentBaseKey, localPerCommitmentPoint),
-      theirPaymentPublicKey = if (params.channelFeatures.hasFeature(Features.StaticRemoteKey)) params.remoteParams.paymentBasepoint else Generators.derivePubKey(params.remoteParams.paymentBasepoint, localPerCommitmentPoint),
+      ourDelayedPaymentKey = channelKeys.delayedPaymentKey(localPerCommitmentPoint),
+      theirPaymentPublicKey = params.commitmentFormat match {
+        case DefaultCommitmentFormat if params.channelFeatures.hasFeature(Features.StaticRemoteKey) => params.remoteParams.paymentBasepoint
+        case DefaultCommitmentFormat => ChannelKeys.remotePerCommitmentPublicKey(params.remoteParams.paymentBasepoint, localPerCommitmentPoint)
+        case _: AnchorOutputsCommitmentFormat => params.remoteParams.paymentBasepoint
+      },
       ourPaymentBasePoint = params.localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBaseKey.publicKey),
-      ourHtlcKey = Generators.derivePrivKey(channelKeys.htlcBaseKey, localPerCommitmentPoint),
-      theirHtlcPublicKey = Generators.derivePubKey(params.remoteParams.htlcBasepoint, localPerCommitmentPoint),
-      revocationPublicKey = Generators.revocationPubKey(params.remoteParams.revocationBasepoint, localPerCommitmentPoint)
+      ourHtlcKey = channelKeys.htlcKey(localPerCommitmentPoint),
+      theirHtlcPublicKey = ChannelKeys.remotePerCommitmentPublicKey(params.remoteParams.htlcBasepoint, localPerCommitmentPoint),
+      revocationPublicKey = ChannelKeys.revocationPublicKey(params.remoteParams.revocationBasepoint, localPerCommitmentPoint)
     )
   }
 }
@@ -114,14 +118,17 @@ object RemoteCommitmentKeys {
     RemoteCommitmentKeys(
       ourPaymentKey = params.localParams.walletStaticPaymentBasepoint match {
         case Some(walletPublicKey) => Left(walletPublicKey)
-        case None if params.channelFeatures.hasFeature(Features.StaticRemoteKey) => Right(channelKeys.paymentBaseKey)
-        case None => Right(Generators.derivePrivKey(channelKeys.paymentBaseKey, remotePerCommitmentPoint))
+        case None => params.commitmentFormat match {
+          case DefaultCommitmentFormat if params.channelFeatures.hasFeature(Features.StaticRemoteKey) => Right(channelKeys.paymentBaseKey)
+          case DefaultCommitmentFormat => Right(channelKeys.paymentKey(remotePerCommitmentPoint))
+          case _: AnchorOutputsCommitmentFormat => Right(channelKeys.paymentBaseKey)
+        }
       },
-      theirDelayedPaymentPublicKey = Generators.derivePubKey(params.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint),
+      theirDelayedPaymentPublicKey = ChannelKeys.remotePerCommitmentPublicKey(params.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint),
       ourPaymentBasePoint = params.localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBaseKey.publicKey),
-      ourHtlcKey = Generators.derivePrivKey(channelKeys.htlcBaseKey, remotePerCommitmentPoint),
-      theirHtlcPublicKey = Generators.derivePubKey(params.remoteParams.htlcBasepoint, remotePerCommitmentPoint),
-      revocationPublicKey = Generators.revocationPubKey(channelKeys.revocationBaseKey.publicKey, remotePerCommitmentPoint)
+      ourHtlcKey = channelKeys.htlcKey(remotePerCommitmentPoint),
+      theirHtlcPublicKey = ChannelKeys.remotePerCommitmentPublicKey(params.remoteParams.htlcBasepoint, remotePerCommitmentPoint),
+      revocationPublicKey = ChannelKeys.revocationPublicKey(channelKeys.revocationBaseKey.publicKey, remotePerCommitmentPoint)
     )
   }
 }

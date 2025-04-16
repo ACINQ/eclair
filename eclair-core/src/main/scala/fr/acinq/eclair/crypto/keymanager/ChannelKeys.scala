@@ -17,10 +17,10 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, hardened}
-import fr.acinq.eclair.crypto.Generators
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
+import fr.acinq.eclair.crypto.ShaChain
 
 /**
  * Keys used for a specific channel instance:
@@ -46,11 +46,63 @@ case class ChannelKeys(private val fundingMasterKey: ExtendedPrivateKey, private
   lazy val delayedPaymentBaseKey: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(3)).privateKey
   lazy val htlcBaseKey: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(4)).privateKey
 
+  // @formatter:off
   // Per-commitment keys are derived using a sha-chain, which provides efficient storage and retrieval mechanisms.
   private lazy val shaSeed: ByteVector32 = Crypto.sha256(commitmentMasterKey.derivePrivateKey(hardened(5)).privateKey.value :+ 1.toByte)
+  def commitmentSecret(localCommitmentNumber: Long): PrivateKey = PrivateKey(ShaChain.shaChainFromSeed(shaSeed, 0xFFFFFFFFFFFFL - localCommitmentNumber))
+  def commitmentPoint(localCommitmentNumber: Long): PublicKey = commitmentSecret(localCommitmentNumber).publicKey
+  // @formatter:on
 
-  def commitmentSecret(localCommitmentNumber: Long): PrivateKey = Generators.perCommitSecret(shaSeed, localCommitmentNumber)
+  /**
+   * Derive our local payment key for our main output in the remote commitment transaction.
+   * Warning: when using option_staticremotekey or anchor_outputs, we must always use the base key instead of a per-commitment key.
+   */
+  def paymentKey(commitmentPoint: PublicKey): PrivateKey = ChannelKeys.derivePerCommitmentKey(paymentBaseKey, commitmentPoint)
 
-  def commitmentPoint(localCommitmentNumber: Long): PublicKey = Generators.perCommitPoint(shaSeed, localCommitmentNumber)
+  /** Derive our local delayed payment key for our main output in the local commitment transaction. */
+  def delayedPaymentKey(commitmentPoint: PublicKey): PrivateKey = ChannelKeys.derivePerCommitmentKey(delayedPaymentBaseKey, commitmentPoint)
+
+  /** Derive our HTLC key for our HTLC transactions, in either the local or remote commitment transaction. */
+  def htlcKey(commitmentPoint: PublicKey): PrivateKey = ChannelKeys.derivePerCommitmentKey(htlcBaseKey, commitmentPoint)
+
+  /** With the remote per-commitment secret, we can derive the private key to spend revoked commitments. */
+  def revocationKey(remoteCommitmentSecret: PrivateKey): PrivateKey = ChannelKeys.revocationKey(revocationBaseKey, remoteCommitmentSecret)
+
+}
+
+object ChannelKeys {
+
+  /** Derive the local per-commitment key for the base key provided. */
+  def derivePerCommitmentKey(baseKey: PrivateKey, commitmentPoint: PublicKey): PrivateKey = {
+    // secretkey = basepoint-secret + SHA256(per-commitment-point || basepoint)
+    baseKey + PrivateKey(Crypto.sha256(commitmentPoint.value ++ baseKey.publicKey.value))
+  }
+
+  /** Derive the remote per-commitment key for the base point provided. */
+  def remotePerCommitmentPublicKey(basePoint: PublicKey, commitmentPoint: PublicKey): PublicKey = {
+    // pubkey = basepoint + SHA256(per-commitment-point || basepoint)*G
+    basePoint + PrivateKey(Crypto.sha256(commitmentPoint.value ++ basePoint.value)).publicKey
+  }
+
+  /** Derive the revocation private key from our local base revocation key and the remote per-commitment secret. */
+  def revocationKey(baseKey: PrivateKey, remoteCommitmentSecret: PrivateKey): PrivateKey = {
+    val a = PrivateKey(Crypto.sha256(baseKey.publicKey.value ++ remoteCommitmentSecret.publicKey.value))
+    val b = PrivateKey(Crypto.sha256(remoteCommitmentSecret.publicKey.value ++ baseKey.publicKey.value))
+    (baseKey * a) + (remoteCommitmentSecret * b)
+  }
+
+  /**
+   * We create two distinct revocation public keys:
+   *   - one for the local commitment using the remote revocation base point and our local per-commitment point
+   *   - one for the remote commitment using our revocation base point and the remote per-commitment point
+   *
+   * The owner of the commitment transaction is providing the per-commitment point, which ensures that they can revoke
+   * their previous commitment transactions by revealing the corresponding secret.
+   */
+  def revocationPublicKey(revocationBasePoint: PublicKey, commitmentPoint: PublicKey): PublicKey = {
+    val a = PrivateKey(Crypto.sha256(revocationBasePoint.value ++ commitmentPoint.value))
+    val b = PrivateKey(Crypto.sha256(commitmentPoint.value ++ revocationBasePoint.value))
+    (revocationBasePoint * a) + (commitmentPoint * b)
+  }
 
 }

@@ -31,6 +31,7 @@ import java.nio.file.Files
 
 
 class LocalChannelKeyManagerSpec extends AnyFunSuite {
+
   test("generate the same secrets from the same seed") {
     // data was generated with eclair 0.3 
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
@@ -136,6 +137,34 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     assert(channelKeys.commitmentSecret(0).value == ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("eeb3bad6808e8bb5f1774581ccf64aa265fef38eca80a1463d6310bb801b3ba7"), 0xFFFFFFFFFFFFL))
   }
 
+  test("derivation of local key from base key and per-commitment-point") {
+    val baseKey: PrivateKey = PrivateKey(hex"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+    val commitmentPoint = PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
+    val localprivkey = ChannelKeys.derivePerCommitmentKey(baseKey, commitmentPoint)
+    assert(localprivkey.value == ByteVector32(hex"cbced912d3b21bf196a766651e436aff192362621ce317704ea2f75d87e7be0f"))
+  }
+
+  test("derivation remote public key from base point and per-commitment-point") {
+    val basePoint = PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")
+    val commitmentPoint = PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
+    val publicKey = ChannelKeys.remotePerCommitmentPublicKey(basePoint, commitmentPoint)
+    assert(publicKey.value == hex"0235f2dbfaa89b57ec7b055afe29849ef7ddfeb1cefdb9ebdc43f5494984db29e5")
+  }
+
+  test("derivation of revocation key from base key and per-commitment-secret") {
+    val baseKey: PrivateKey = PrivateKey(hex"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+    val commitmentSecret: PrivateKey = PrivateKey(hex"1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100")
+    val revocationKey = ChannelKeys.revocationKey(baseKey, commitmentSecret)
+    assert(revocationKey.value == ByteVector32(hex"d09ffff62ddb2297ab000cc85bcb4283fdeb6aa052affbc9dddcf33b61078110"))
+  }
+
+  test("derivation of revocation public key from base point and per-commitment-point") {
+    val basePoint = PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")
+    val commitmentPoint = PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
+    val revocationKey = ChannelKeys.revocationPublicKey(basePoint, commitmentPoint)
+    assert(revocationKey.value == hex"02916e326636d19c33f13e8c0c3a03dd157f332f3e99c317c141dd865eb01f8ff0")
+  }
+
   test("keep the same channel seed after a migration from the old seed.dat file") {
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
     val seedDatFile = TestUtils.createSeedFile("seed.dat", seed.toArray)
@@ -148,4 +177,5 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val channelSeedContent = ByteVector(Files.readAllBytes(channelSeedDatFile.toPath))
     assert(seed == channelSeedContent)
   }
+
 }

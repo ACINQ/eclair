@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
-import fr.acinq.eclair.crypto.{Generators, ShaChain}
+import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
@@ -1168,7 +1168,7 @@ object Helpers {
         log.warning("a revoked commit has been published with commitmentNumber={}", commitmentNumber)
 
         val commitKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentSecret.publicKey)
-        val revocationKey = Generators.revocationPrivKey(channelKeys.revocationBaseKey, remotePerCommitmentSecret)
+        val revocationKey = channelKeys.revocationKey(remotePerCommitmentSecret)
 
         val feerateMain = onChainFeeConf.getClosingFeerate(feerates)
         // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
@@ -1258,7 +1258,7 @@ object Helpers {
           getRemotePerCommitmentSecret(params, channelKeys, remotePerCommitmentSecrets, revokedCommitPublished.commitTx).map {
             case (_, remotePerCommitmentSecret) =>
               val commitmentKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentSecret.publicKey)
-              val revocationKey = Generators.revocationPrivKey(channelKeys.revocationBaseKey, remotePerCommitmentSecret)
+              val revocationKey = channelKeys.revocationKey(remotePerCommitmentSecret)
               // We need to use a high fee when spending HTLC txs because after a delay they can also be spent by the counterparty.
               val feeratePerKwPenalty = feerates.fastest
               val penaltyTxs = Transactions.makeClaimHtlcDelayedOutputPenaltyTxs(commitmentKeys, htlcTx, params.localParams.dustLimit, params.localParams.toSelfDelay, finalScriptPubKey, feeratePerKwPenalty).flatMap(claimHtlcDelayedOutputPenaltyTx => {

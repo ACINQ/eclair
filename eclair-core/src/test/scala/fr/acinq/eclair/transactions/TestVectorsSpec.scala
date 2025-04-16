@@ -22,8 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong,
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelFeatures
 import fr.acinq.eclair.channel.Helpers.Funding
-import fr.acinq.eclair.crypto.Generators
-import fr.acinq.eclair.crypto.keymanager.LocalCommitmentKeys
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants}
@@ -98,9 +97,9 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val funding_privkey = PrivateKey(hex"30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901")
     val funding_pubkey = funding_privkey.publicKey
     val per_commitment_point = PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
-    val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
+    val htlc_privkey = ChannelKeys.derivePerCommitmentKey(payment_basepoint_secret, per_commitment_point)
     val payment_privkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
-    val delayed_payment_privkey = Generators.derivePrivKey(delayed_payment_basepoint_secret, per_commitment_point)
+    val delayed_payment_privkey = ChannelKeys.derivePerCommitmentKey(delayed_payment_basepoint_secret, per_commitment_point)
     val revocation_pubkey = PublicKey(hex"0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19")
     val feerate_per_kw = 15000
   }
@@ -115,7 +114,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val revocation_basepoint = revocation_basepoint_secret.publicKey
     val funding_privkey = PrivateKey(hex"1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301")
     val funding_pubkey = funding_privkey.publicKey
-    val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
+    val htlc_privkey = ChannelKeys.derivePerCommitmentKey(payment_basepoint_secret, Local.per_commitment_point)
     val payment_privkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
   }
 
