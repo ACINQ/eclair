@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.OnChainPubkeyCache
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
-import fr.acinq.eclair.crypto.keymanager.ChannelKeys
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees

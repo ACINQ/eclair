@@ -24,8 +24,9 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.AdjustPreviousTxOutputResult.{AddWalletInputs, TxOutputAdjusted}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder._
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
+import fr.acinq.eclair.crypto.keymanager.CommitmentPublicKeys
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.transactions.{CommitmentPublicKeys, Scripts}
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, TestKitBaseClass, randomBytes32}
 import org.mockito.IdiomaticMockito.StubbingOps
 import org.mockito.MockitoSugar.mock

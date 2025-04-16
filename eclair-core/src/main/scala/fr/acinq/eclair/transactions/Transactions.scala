@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.bitcoin.{ScriptFlags, ScriptTree}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc

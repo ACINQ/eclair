@@ -9,7 +9,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel.fsm.Channel.ChannelConf
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.crypto.keymanager.ChannelKeys
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions._

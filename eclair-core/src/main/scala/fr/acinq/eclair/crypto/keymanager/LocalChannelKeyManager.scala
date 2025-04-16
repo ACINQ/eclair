@@ -16,12 +16,9 @@
 
 package fr.acinq.eclair.crypto.keymanager
 
-import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, DeterministicWallet}
 import fr.acinq.eclair.channel.ChannelConfig
-import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.randomLong
 import scodec.bits.ByteVector
 
@@ -75,38 +72,5 @@ case class LocalChannelKeyManager(seed: ByteVector, chainHash: BlockHash) extend
     }
     ChannelKeys(fundingMasterKey, commitmentMasterKey)
   }
-
-}
-
-/**
- * Keys used for a specific channel instance:
- *  - funding keys (channel funding, splicing and closing)
- *  - commitment "base" keys, which are static for the channel lifetime
- *  - per-commitment keys, which change everytime we create a new commitment transaction:
- *    - derived from the commitment "base" keys
- *    - and tweaked with a per-commitment point
- */
-case class ChannelKeys(private val fundingMasterKey: ExtendedPrivateKey, private val commitmentMasterKey: ExtendedPrivateKey) {
-
-  private val fundingKeys: LoadingCache[Long, PrivateKey] = CacheBuilder.newBuilder()
-    .maximumSize(2) // we cache the current funding key and the funding key of a pending splice
-    .build[Long, PrivateKey](new CacheLoader[Long, PrivateKey] {
-      override def load(fundingTxIndex: Long): PrivateKey = fundingMasterKey.derivePrivateKey(hardened(fundingTxIndex)).privateKey
-    })
-
-  def fundingKey(fundingTxIndex: Long): PrivateKey = fundingKeys.get(fundingTxIndex)
-
-  // Note that we use lazy values here to avoid deriving keys for all of our channels immediately after a restart.
-  lazy val revocationBaseKey: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(1)).privateKey
-  lazy val paymentBaseKey: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(2)).privateKey
-  lazy val delayedPaymentBaseKey: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(3)).privateKey
-  lazy val htlcBaseKey: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(4)).privateKey
-
-  // Per-commitment keys are derived using a sha-chain, which provides efficient storage and retrieval mechanisms.
-  private lazy val shaSeed: ByteVector32 = Crypto.sha256(commitmentMasterKey.derivePrivateKey(hardened(5)).privateKey.value :+ 1.toByte)
-
-  def commitmentSecret(localCommitmentNumber: Long): PrivateKey = Generators.perCommitSecret(shaSeed, localCommitmentNumber)
-
-  def commitmentPoint(localCommitmentNumber: Long): PublicKey = Generators.perCommitPoint(shaSeed, localCommitmentNumber)
 
 }

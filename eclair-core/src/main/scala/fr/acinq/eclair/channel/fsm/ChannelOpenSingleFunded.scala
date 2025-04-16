@@ -28,9 +28,10 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.transactions.Transactions.TxOwner
-import fr.acinq.eclair.transactions.{LocalCommitmentKeys, RemoteCommitmentKeys, Scripts, Transactions}
+import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
 import fr.acinq.eclair.{MilliSatoshiLong, UInt64, randomKey, toLongId}
 import scodec.bits.ByteVector

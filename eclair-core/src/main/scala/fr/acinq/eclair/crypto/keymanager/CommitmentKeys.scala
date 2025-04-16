@@ -14,13 +14,12 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.transactions
+package fr.acinq.eclair.crypto.keymanager
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.channel.ChannelParams
 import fr.acinq.eclair.crypto.Generators
-import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 
 /**
  * Created by t-bast on 10/04/2025.

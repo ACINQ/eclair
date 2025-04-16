@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.TxIn.{SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_
 import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
+import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
 import scodec.bits.ByteVector
