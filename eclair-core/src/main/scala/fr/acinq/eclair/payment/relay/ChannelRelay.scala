@@ -38,7 +38,7 @@ import fr.acinq.eclair.{EncodedNodeId, Features, InitFeature, Logs, NodeParams, 
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import scala.concurrent.duration.DurationLong
+import scala.concurrent.duration.{DurationLong, FiniteDuration}
 import scala.util.Random
 
 object ChannelRelay {
@@ -97,13 +97,13 @@ object ChannelRelay {
     }
   }
 
-  def translateRelayFailure(originHtlcId: Long, fail: HtlcResult.Fail): CMD_FAIL_HTLC = {
+  def translateRelayFailure(originHtlcId: Long, fail: HtlcResult.Fail, startHoldTime: TimestampMilli): CMD_FAIL_HTLC = {
     fail match {
-      case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(originHtlcId, FailureReason.EncryptedDownstreamFailure(f.fail.reason), commit = true)
-      case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(createBadOnionFailure(f.fail.onionHash, f.fail.failureCode)), commit = true)
-      case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(PermanentChannelFailure()), commit = true)
-      case HtlcResult.ChannelFailureBeforeSigned => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(PermanentChannelFailure()), commit = true)
-      case f: HtlcResult.DisconnectedBeforeSigned => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(TemporaryChannelFailure(Some(f.channelUpdate))), commit = true)
+      case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(originHtlcId, FailureReason.EncryptedDownstreamFailure(f.fail.reason, f.fail.attribution_opt), startHoldTime, commit = true)
+      case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(createBadOnionFailure(f.fail.onionHash, f.fail.failureCode)), startHoldTime, commit = true)
+      case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(PermanentChannelFailure()), startHoldTime, commit = true)
+      case HtlcResult.ChannelFailureBeforeSigned => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(PermanentChannelFailure()), startHoldTime, commit = true)
+      case f: HtlcResult.DisconnectedBeforeSigned => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(TemporaryChannelFailure(Some(f.channelUpdate))), startHoldTime, commit = true)
     }
   }
 
@@ -166,7 +166,7 @@ class ChannelRelay private(nodeParams: NodeParams,
       case WrappedPeerReadyResult(_: PeerReadyNotifier.PeerUnavailable) =>
         Metrics.recordPaymentRelayFailed(Tags.FailureType.WakeUp, Tags.RelayType.Channel)
         context.log.info("rejecting htlc: failed to wake-up remote peer")
-        safeSendAndStop(r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), commit = true))
+        safeSendAndStop(r.add.channelId, makeCmdFailHtlc(r.add.id, UnknownNextPeer()))
       case WrappedPeerReadyResult(r: PeerReadyNotifier.PeerReady) =>
         context.self ! DoRelay
         relay(Some(r.remoteFeatures), Seq.empty)
@@ -203,7 +203,7 @@ class ChannelRelay private(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case WrappedForwardFailure(Register.ForwardFailure(Register.Forward(_, channelId, _))) =>
         context.log.warn(s"couldn't resolve downstream channel $channelId, failing htlc #${upstream.add.id}")
-        val cmdFail = CMD_FAIL_HTLC(upstream.add.id, FailureReason.LocalFailure(UnknownNextPeer()), commit = true)
+        val cmdFail = makeCmdFailHtlc(upstream.add.id, UnknownNextPeer())
         Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
         safeSendAndStop(upstream.add.channelId, cmdFail)
 
@@ -231,7 +231,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         context.log.info("relaying fail to upstream, startedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, TimestampMilli.now(), confidence, upstream.receivedFrom, htlc.channelId)
         Metrics.relayFail(confidence)
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
-        val cmd = translateRelayFailure(upstream.add.id, fail)
+        val cmd = translateRelayFailure(upstream.add.id, fail, upstream.receivedAt)
         recordRelayDuration(isSuccess = false)
         safeSendAndStop(upstream.add.channelId, cmd)
     }
@@ -265,7 +265,7 @@ class ChannelRelay private(nodeParams: NodeParams,
               cmd match {
                 // However, when the failure comes from us, we don't want to leak the unannounced channel by revealing
                 // its channel_update: in that case, we always return a temporary node failure instead.
-                case cmd@CMD_FAIL_HTLC(_, FailureReason.LocalFailure(_: Update), _, _, _) => cmd.copy(reason = FailureReason.LocalFailure(TemporaryNodeFailure()))
+                case cmd@CMD_FAIL_HTLC(_, FailureReason.LocalFailure(_: Update), _, _, _, _) => cmd.copy(reason = FailureReason.LocalFailure(TemporaryNodeFailure()))
                 case _ => cmd
               }
             case None =>
@@ -275,7 +275,7 @@ class ChannelRelay private(nodeParams: NodeParams,
                 case Some(_) =>
                   // We are the introduction node: we add a delay to make it look like it could come from further downstream.
                   val delay = Some(Random.nextLong(1000).millis)
-                  CMD_FAIL_HTLC(cmd.id, FailureReason.LocalFailure(failure), delay, commit = true)
+                  makeCmdFailHtlc(cmd.id, failure, delay)
                 case None =>
                   // We are not the introduction node.
                   CMD_FAIL_MALFORMED_HTLC(cmd.id, failure.onionHash, failure.code, commit = true)
@@ -309,9 +309,9 @@ class ChannelRelay private(nodeParams: NodeParams,
             // Otherwise we return the error for the first channel tried.
             .getOrElse(previousFailures.head)
             .failure
-          CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(translateLocalError(error.t, error.channelUpdate)), commit = true)
+          makeCmdFailHtlc(r.add.id, translateLocalError(error.t, error.channelUpdate))
         } else {
-          CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), commit = true)
+          makeCmdFailHtlc(r.add.id, UnknownNextPeer())
         }
         walletNodeId_opt match {
           case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(remoteFeatures_opt, previousFailures) => RelayNeedsFunding(walletNodeId, cmdFail)
@@ -342,7 +342,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           channel.channelUpdate,
           relayResult match {
             case _: RelaySuccess => "success"
-            case RelayFailure(CMD_FAIL_HTLC(_, FailureReason.LocalFailure(failureReason), _, _, _)) => failureReason
+            case RelayFailure(CMD_FAIL_HTLC(_, FailureReason.LocalFailure(failureReason), _, _, _, _)) => failureReason
             case other => other
           })
         (channel, relayResult)
@@ -389,7 +389,7 @@ class ChannelRelay private(nodeParams: NodeParams,
       case Some(fail) =>
         RelayFailure(fail)
       case None if !update.channelFlags.isEnabled =>
-        RelayFailure(CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(ChannelDisabled(update.messageFlags, update.channelFlags, Some(update))), commit = true))
+        RelayFailure(makeCmdFailHtlc(r.add.id, ChannelDisabled(update.messageFlags, update.channelFlags, Some(update))))
       case None =>
         val origin = Origin.Hot(addResponseAdapter.toClassic, upstream)
         RelaySuccess(outgoingChannel.channelId, CMD_ADD_HTLC(addResponseAdapter.toClassic, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, nextPathKey_opt, confidence, fundingFee_opt = None, origin, commit = true))
@@ -405,11 +405,11 @@ class ChannelRelay private(nodeParams: NodeParams,
     val expiryDeltaOk = update.cltvExpiryDelta <= r.expiryDelta || prevUpdate_opt.exists(_.cltvExpiryDelta <= r.expiryDelta)
     val feesOk = nodeFee(update.relayFees, r.amountToForward) <= r.relayFeeMsat || prevUpdate_opt.exists(u => nodeFee(u.relayFees, r.amountToForward) <= r.relayFeeMsat)
     if (!htlcMinimumOk) {
-      Some(CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(AmountBelowMinimum(r.amountToForward, Some(update))), commit = true))
+      Some(makeCmdFailHtlc(r.add.id, AmountBelowMinimum(r.amountToForward, Some(update))))
     } else if (!expiryDeltaOk) {
-      Some(CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(IncorrectCltvExpiry(r.outgoingCltv, Some(update))), commit = true))
+      Some(makeCmdFailHtlc(r.add.id, IncorrectCltvExpiry(r.outgoingCltv, Some(update))))
     } else if (!feesOk) {
-      Some(CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(FeeInsufficient(r.add.amountMsat, Some(update))), commit = true))
+      Some(makeCmdFailHtlc(r.add.id, FeeInsufficient(r.add.amountMsat, Some(update))))
     } else {
       None
     }
@@ -428,6 +428,9 @@ class ChannelRelay private(nodeParams: NodeParams,
     val relayParamsOk = channels.values.forall(c => validateRelayParams(c).isEmpty)
     featureOk && liquidityIssue && relayParamsOk
   }
+
+  private def makeCmdFailHtlc(originHtlcId: Long, failure: FailureMessage, delay_opt: Option[FiniteDuration] = None): CMD_FAIL_HTLC =
+    CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(failure), upstream.receivedAt, delay_opt, commit = true)
 
   private def recordRelayDuration(isSuccess: Boolean): Unit =
     Metrics.RelayedPaymentDuration

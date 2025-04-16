@@ -19,6 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.HoldTime
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
@@ -150,7 +151,7 @@ case class LocalFailure(amount: MilliSatoshi, route: Seq[Hop], t: Throwable) ext
 case class RemoteFailure(amount: MilliSatoshi, route: Seq[Hop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
 
 /** A remote node failed the payment but we couldn't decrypt the failure (e.g. a malicious node tampered with the message). */
-case class UnreadableRemoteFailure(amount: MilliSatoshi, route: Seq[Hop], failurePacket: ByteVector) extends PaymentFailure
+case class UnreadableRemoteFailure(amount: MilliSatoshi, route: Seq[Hop], failurePacket: ByteVector, holdTimes: Seq[HoldTime]) extends PaymentFailure
 
 object PaymentFailure {
 
@@ -235,13 +236,14 @@ object PaymentFailure {
       }
     case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
       ignoreNodeOutgoingEdge(nodeId, hops, ignore)
-    case UnreadableRemoteFailure(_, hops, _) =>
+    case UnreadableRemoteFailure(_, hops, _, holdTimes) =>
       // We don't know which node is sending garbage, let's blacklist all nodes except:
+      //  - the nodes that returned attribution data (except the last one)
       //  - the one we are directly connected to: it would be too restrictive for retries
       //  - the final recipient: they have no incentive to send garbage since they want that payment
       //  - the introduction point of a blinded route: we don't want a node before the blinded path to force us to ignore that blinded path
       //  - the trampoline node: we don't want a node before the trampoline node to force us to ignore that trampoline node
-      val blacklist = hops.collect { case hop: ChannelHop => hop }.map(_.nextNodeId).drop(1).dropRight(1).toSet
+      val blacklist = hops.collect { case hop: ChannelHop => hop }.map(_.nextNodeId).drop(1 max (holdTimes.length - 1)).dropRight(1).toSet
       ignore ++ blacklist
     case LocalFailure(_, hops, _) => hops.headOption match {
       case Some(hop: ChannelHop) =>

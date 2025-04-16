@@ -22,7 +22,7 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULF
 import fr.acinq.eclair.db.pg.PgPendingCommandsDb
 import fr.acinq.eclair.db.sqlite.SqlitePendingCommandsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{setVersion, using}
-import fr.acinq.eclair.randomBytes32
+import fr.acinq.eclair.{TimestampMilli, randomBytes32}
 import fr.acinq.eclair.wire.internal.CommandCodecs.cmdCodec
 import fr.acinq.eclair.wire.protocol.{FailureMessageCodecs, FailureReason, UnknownNextPeer}
 import org.scalatest.funsuite.AnyFunSuite
@@ -53,14 +53,14 @@ class PendingCommandsDbSpec extends AnyFunSuite {
       val channelId2 = randomBytes32()
       val msg0 = CMD_FULFILL_HTLC(0, randomBytes32())
       val msg1 = CMD_FULFILL_HTLC(1, randomBytes32())
-      val msg2 = CMD_FAIL_HTLC(2, FailureReason.EncryptedDownstreamFailure(randomBytes32()))
-      val msg3 = CMD_FAIL_HTLC(3, FailureReason.EncryptedDownstreamFailure(randomBytes32()))
+      val msg2 = CMD_FAIL_HTLC(2, FailureReason.EncryptedDownstreamFailure(randomBytes32(), None), TimestampMilli.min)
+      val msg3 = CMD_FAIL_HTLC(3, FailureReason.EncryptedDownstreamFailure(randomBytes32(), None), TimestampMilli.min)
       val msg4 = CMD_FAIL_MALFORMED_HTLC(4, randomBytes32(), FailureMessageCodecs.BADONION)
 
       assert(db.listSettlementCommands(channelId1).toSet == Set.empty)
       db.addSettlementCommand(channelId1, msg0)
       db.addSettlementCommand(channelId1, msg0) // duplicate
-      db.addSettlementCommand(channelId1, CMD_FAIL_HTLC(msg0.id, FailureReason.EncryptedDownstreamFailure(randomBytes32()))) // conflicting command
+      db.addSettlementCommand(channelId1, CMD_FAIL_HTLC(msg0.id, FailureReason.EncryptedDownstreamFailure(randomBytes32(), None), TimestampMilli.min)) // conflicting command
       db.addSettlementCommand(channelId1, msg1)
       db.addSettlementCommand(channelId1, msg2)
       db.addSettlementCommand(channelId1, msg3)
@@ -139,7 +139,7 @@ object PendingCommandsDbSpec {
     val cmds = (0 until Random.nextInt(5)).map { _ =>
       Random.nextInt(2) match {
         case 0 => CMD_FULFILL_HTLC(Random.nextLong(100_000), randomBytes32())
-        case 1 => CMD_FAIL_HTLC(Random.nextLong(100_000), FailureReason.LocalFailure(UnknownNextPeer()))
+        case 1 => CMD_FAIL_HTLC(Random.nextLong(100_000), FailureReason.LocalFailure(UnknownNextPeer()), TimestampMilli.min)
       }
     }
     cmds.map(cmd => TestCase(channelId, cmd))

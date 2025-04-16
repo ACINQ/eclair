@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire.internal
 
 import akka.actor.ActorRef
+import fr.acinq.eclair.TimestampMilli
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs._
@@ -34,14 +35,15 @@ object CommandCodecs {
     (("id" | int64) ::
       ("reason" | either(bool, varsizebinarydata, provide(TemporaryNodeFailure()).upcast[FailureMessage]).xmap[FailureReason](
         {
-          case Left(packet) => FailureReason.EncryptedDownstreamFailure(packet)
+          case Left(packet) => FailureReason.EncryptedDownstreamFailure(packet, None)
           case Right(f) => FailureReason.LocalFailure(f)
         },
         {
-          case FailureReason.EncryptedDownstreamFailure(packet) => Left(packet)
+          case FailureReason.EncryptedDownstreamFailure(packet, _) => Left(packet)
           case FailureReason.LocalFailure(f) => Right(f)
         }
       )) ::
+      ("start_hold_time" | provide(TimestampMilli.min)) ::
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
@@ -57,14 +59,24 @@ object CommandCodecs {
     (("id" | int64) ::
       ("reason" | either(bool8, varsizebinarydata, variableSizeBytes(uint16, failureMessageCodec)).xmap[FailureReason](
         {
-          case Left(packet) => FailureReason.EncryptedDownstreamFailure(packet)
+          case Left(packet) => FailureReason.EncryptedDownstreamFailure(packet, None)
           case Right(f) => FailureReason.LocalFailure(f)
         },
         {
-          case FailureReason.EncryptedDownstreamFailure(packet) => Left(packet)
+          case FailureReason.EncryptedDownstreamFailure(packet, _) => Left(packet)
           case FailureReason.LocalFailure(f) => Right(f)
         }
       )) ::
+      ("start_hold_time" | provide(TimestampMilli.min)) ::
+      // No need to delay commands after a restart, we've been offline which already created a random delay.
+      ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
+      ("commit" | provide(false)) ::
+      ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
+
+  private val cmdFailWithoutHoldTimeCodec: Codec[CMD_FAIL_HTLC] =
+    (("id" | int64) ::
+      ("reason" | failureReasonCodec) ::
+      ("start_hold_time" | provide(TimestampMilli.min)) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
@@ -73,6 +85,7 @@ object CommandCodecs {
   private val cmdFailCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
       ("reason" | failureReasonCodec) ::
+      ("start_hold_time" | uint64overflow.as[TimestampMilli]) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
@@ -87,7 +100,8 @@ object CommandCodecs {
 
   val cmdCodec: Codec[HtlcSettlementCommand] = discriminated[HtlcSettlementCommand].by(uint16)
     // NB: order matters!
-    .typecase(4, cmdFailCodec)
+    .typecase(5, cmdFailCodec)
+    .typecase(4, cmdFailWithoutHoldTimeCodec)
     .typecase(3, cmdFailEitherCodec)
     .typecase(2, cmdFailMalformedCodec)
     .typecase(1, cmdFailWithoutLengthCodec)

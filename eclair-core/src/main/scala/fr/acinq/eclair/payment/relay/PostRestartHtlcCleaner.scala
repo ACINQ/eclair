@@ -136,7 +136,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                       val failure = InvalidOnionBlinding(ByteVector32.Zeroes)
                       CMD_FAIL_MALFORMED_HTLC(htlc.id, failure.onionHash, failure.code, commit = true)
                     case None =>
-                      CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(TemporaryNodeFailure()), commit = true)
+                      // We don't actually know when we've received this HTLC
+                      CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(TemporaryNodeFailure()), startHoldTime = TimestampMilli.min, commit = true)
                   }
                   channel ! cmd
                 } else {
@@ -269,7 +270,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                     val failure = InvalidOnionBlinding(ByteVector32.Zeroes)
                     CMD_FAIL_MALFORMED_HTLC(originHtlcId, failure.onionHash, failure.code, commit = true)
                   case None =>
-                    ChannelRelay.translateRelayFailure(originHtlcId, fail)
+                    // We don't actually know when we've received this HTLC
+                    ChannelRelay.translateRelayFailure(originHtlcId, fail, startHoldTime = TimestampMilli.min)
                 }
                 PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, originChannelId, cmd)
               case Upstream.Cold.Trampoline(originHtlcs) =>
@@ -278,7 +280,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                   Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
                   // We don't bother decrypting the downstream failure to forward a more meaningful error upstream, it's
                   // very likely that it won't be actionable anyway because of our node restart.
-                  PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(TemporaryNodeFailure()), commit = true))
+                  PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(TemporaryNodeFailure()), startHoldTime = TimestampMilli.min, commit = true))
                 }
             }
           }

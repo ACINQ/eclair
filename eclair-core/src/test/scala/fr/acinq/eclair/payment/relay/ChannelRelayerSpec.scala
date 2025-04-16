@@ -86,9 +86,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     }
   }
 
-  def expectFwdFail(register: TestProbe[Any], channelId: ByteVector32, cmd: channel.Command): Register.Forward[channel.Command] = {
-    val fwd = register.expectMessageType[Register.Forward[channel.Command]]
-    assert(fwd.message == cmd)
+  def expectFwdFail(register: TestProbe[Any], channelId: ByteVector32, cmd: CMD_FAIL_HTLC): Register.Forward[CMD_FAIL_HTLC] = {
+    val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fwd.message.copy(startHoldTime = TimestampMilli.min) == cmd.copy(startHoldTime = TimestampMilli.min))
     assert(fwd.channelId == channelId)
     fwd
   }
@@ -116,7 +116,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     if (success) {
       expectFwdAdd(register, lcu.channelId, outgoingAmount, outgoingExpiry, 7)
     } else {
-      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), commit = true))
+      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), TimestampMilli.min, commit = true))
     }
   }
 
@@ -240,7 +240,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     cleanUpWakeUpActors(peerReadyManager, switchboard)
 
     // We fail without attempting on-the-fly funding.
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), TimestampMilli.min, commit = true))
   }
 
   test("relay blinded payment (on-the-fly funding failed)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
@@ -265,7 +265,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val fwdNodeId = register.expectMessageType[ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
     assert(fwdNodeId.nodeId == outgoingNodeId)
     fwdNodeId.replyTo ! Register.ForwardNodeIdFailure(fwdNodeId)
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), TimestampMilli.min, commit = true))
   }
 
   test("relay blinded payment (on-the-fly funding not attempted)", Tag(wakeUpEnabled), Tag(onTheFlyFunding)) { f =>
@@ -292,7 +292,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     fwd.message.replyTo ! RES_ADD_FAILED(fwd.message, TooManyAcceptedHtlcs(channelIds(realScid1), 10), Some(u.channelUpdate))
 
     // We fail without attempting on-the-fly funding.
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(TemporaryNodeFailure()), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true))
   }
 
   test("relay with retries") { f =>
@@ -322,7 +322,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     fwd1.message.replyTo ! RES_ADD_FAILED(fwd2.message, HtlcValueTooHighInFlight(channelIds(realScid1), 1000000000 msat, 1516977616 msat), Some(u1.channelUpdate))
 
     // the relayer should give up
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(u1.channelUpdate))), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(u1.channelUpdate))), TimestampMilli.min, commit = true))
   }
 
   test("fail to relay when we have no channel_update for the next channel") { f =>
@@ -333,7 +333,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), TimestampMilli.min, commit = true))
   }
 
   test("fail to relay when register returns an error") { f =>
@@ -349,7 +349,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
     fwd.replyTo ! Register.ForwardFailure(fwd)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), TimestampMilli.min, commit = true))
   }
 
   test("fail to relay when the channel is advertised as unusable (down)") { f =>
@@ -364,7 +364,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelDown(d)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), TimestampMilli.min, commit = true))
   }
 
   test("fail to relay when channel is disabled") { f =>
@@ -377,7 +377,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(ChannelDisabled(u.channelUpdate.messageFlags, u.channelUpdate.channelFlags, Some(u.channelUpdate))), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(ChannelDisabled(u.channelUpdate.messageFlags, u.channelUpdate.channelFlags, Some(u.channelUpdate))), TimestampMilli.min, commit = true))
   }
 
   test("fail to relay when amount is below minimum") { f =>
@@ -390,7 +390,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(AmountBelowMinimum(outgoingAmount, Some(u.channelUpdate))), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(AmountBelowMinimum(outgoingAmount, Some(u.channelUpdate))), TimestampMilli.min, commit = true))
   }
 
   test("fail to relay blinded payment") { f =>
@@ -466,7 +466,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(IncorrectCltvExpiry(r.outgoingCltv, Some(u.channelUpdate))), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(IncorrectCltvExpiry(r.outgoingCltv, Some(u.channelUpdate))), TimestampMilli.min, commit = true))
   }
 
   test("fail to relay when fee is insufficient") { f =>
@@ -479,7 +479,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(FeeInsufficient(r.add.amountMsat, Some(u.channelUpdate))), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(FeeInsufficient(r.add.amountMsat, Some(u.channelUpdate))), TimestampMilli.min, commit = true))
   }
 
   test("relay that would fail (fee insufficient) with a recent channel update but succeed with the previous update") { f =>
@@ -510,7 +510,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
 
     // relay fails because the current update (u3) with higher fees occurred more than 10 minutes ago
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(FeeInsufficient(r.add.amountMsat, Some(u3.channelUpdate))), commit = true))
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(FeeInsufficient(r.add.amountMsat, Some(u3.channelUpdate))), TimestampMilli.min, commit = true))
   }
 
   test("fail to relay when there is a local error") { f =>
@@ -539,7 +539,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
       val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
       fwd.message.replyTo ! RES_ADD_FAILED(fwd.message, testCase.exc, Some(testCase.update))
-      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(testCase.failure), commit = true))
+      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(testCase.failure), TimestampMilli.min, commit = true))
     }
   }
 
@@ -586,7 +586,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val cmd4 = expectFwdAdd(register, channelUpdates(ShortChannelId(11111)).channelId, r.amountToForward, r.outgoingCltv, 5).message
       cmd4.replyTo ! RES_ADD_FAILED(cmd4, HtlcValueTooHighInFlight(randomBytes32(), 100000000 msat, 100000000 msat), Some(channelUpdates(ShortChannelId(11111)).channelUpdate))
       // all the suitable channels have been tried
-      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(channelUpdates(ShortChannelId(12345)).channelUpdate))), commit = true))
+      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(channelUpdates(ShortChannelId(12345)).channelUpdate))), TimestampMilli.min, commit = true))
     }
     {
       // higher amount payment (have to increased incoming htlc amount for fees to be sufficient)
@@ -621,7 +621,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val payload = ChannelRelay.Standard(ShortChannelId(12345), 998900 msat, CltvExpiry(61))
       val r = createValidIncomingPacket(payload, 1000000 msat, CltvExpiry(70))
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
-      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(IncorrectCltvExpiry(CltvExpiry(61), Some(channelUpdates(ShortChannelId(12345)).channelUpdate))), commit = true))
+      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(IncorrectCltvExpiry(CltvExpiry(61), Some(channelUpdates(ShortChannelId(12345)).channelUpdate))), TimestampMilli.min, commit = true))
     }
   }
 
@@ -634,14 +634,14 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val u_disabled = createLocalUpdate(channelId1, enabled = false)
     val downstream_htlc = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket, None, 1.0, None)
 
-    case class TestCase(result: HtlcResult, cmd: channel.HtlcSettlementCommand)
+    case class TestCase(result: HtlcResult, cmd: CMD_FAIL_HTLC)
 
     val testCases = Seq(
-      TestCase(HtlcResult.RemoteFail(UpdateFailHtlc(channelId1, downstream_htlc.id, hex"deadbeef")), CMD_FAIL_HTLC(r.add.id, FailureReason.EncryptedDownstreamFailure(hex"deadbeef"), commit = true)),
-      TestCase(HtlcResult.RemoteFailMalformed(UpdateFailMalformedHtlc(channelId1, downstream_htlc.id, ByteVector32.One, FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5)), CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(InvalidOnionHmac(ByteVector32.One)), commit = true)),
-      TestCase(HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId1, downstream_htlc)), CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(PermanentChannelFailure()), commit = true)),
-      TestCase(HtlcResult.DisconnectedBeforeSigned(u_disabled.channelUpdate), CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(u_disabled.channelUpdate))), commit = true)),
-      TestCase(HtlcResult.ChannelFailureBeforeSigned, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(PermanentChannelFailure()), commit = true))
+      TestCase(HtlcResult.RemoteFail(UpdateFailHtlc(channelId1, downstream_htlc.id, hex"deadbeef")), CMD_FAIL_HTLC(r.add.id, FailureReason.EncryptedDownstreamFailure(hex"deadbeef", None), TimestampMilli.min, commit = true)),
+      TestCase(HtlcResult.RemoteFailMalformed(UpdateFailMalformedHtlc(channelId1, downstream_htlc.id, ByteVector32.One, FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5)), CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(InvalidOnionHmac(ByteVector32.One)), TimestampMilli.min, commit = true)),
+      TestCase(HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId1, downstream_htlc)), CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(PermanentChannelFailure()), TimestampMilli.min, commit = true)),
+      TestCase(HtlcResult.DisconnectedBeforeSigned(u_disabled.channelUpdate), CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(u_disabled.channelUpdate))), TimestampMilli.min, commit = true)),
+      TestCase(HtlcResult.ChannelFailureBeforeSigned, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(PermanentChannelFailure()), TimestampMilli.min, commit = true))
     )
 
     testCases.foreach { testCase =>

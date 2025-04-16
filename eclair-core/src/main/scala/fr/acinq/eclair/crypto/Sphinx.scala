@@ -23,8 +23,10 @@ import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.ByteVector
+import scodec.codecs.uint32
 
 import scala.annotation.tailrec
+import scala.concurrent.duration.{DurationLong, FiniteDuration}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -282,6 +284,10 @@ object Sphinx extends Logging {
    */
   case class CannotDecryptFailurePacket(unwrapped: ByteVector)
 
+  case class HoldTime(duration: FiniteDuration, remoteNodeId: PublicKey)
+
+  case class HtlcFailure(holdTimes: Seq[HoldTime], failure: Either[CannotDecryptFailurePacket, DecryptedFailurePacket])
+
   object FailurePacket {
 
     /**
@@ -294,12 +300,19 @@ object Sphinx extends Logging {
      * @param failure      failure message.
      * @return a failure packet that can be sent to the destination node.
      */
+    def createAndWrap(sharedSecret: ByteVector32, failure: FailureMessage): ByteVector = {
+      wrap(create(sharedSecret, failure), sharedSecret)
+    }
+
+    /**
+     * Create a failure packet that needs to be wrapped before being returned to the sender.
+     */
     def create(sharedSecret: ByteVector32, failure: FailureMessage): ByteVector = {
       val um = generateKey("um", sharedSecret)
       val packet = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).encode(failure).require.toByteVector
       logger.debug(s"um key: $um")
       logger.debug(s"raw error packet: ${packet.toHex}")
-      wrap(packet, sharedSecret)
+      packet
     }
 
     /**
@@ -322,25 +335,78 @@ object Sphinx extends Logging {
      * it was sent by the corresponding node.
      * Note that malicious nodes in the route may have altered the packet, triggering a decryption failure.
      *
-     * @param packet        failure packet.
-     * @param sharedSecrets nodes shared secrets.
+     * @param packet          failure packet.
+     * @param attribution_opt attribution data for this failure packet.
+     * @param sharedSecrets   nodes shared secrets.
      * @return failure message if the origin of the packet could be identified and the packet decrypted, the unwrapped
      *         failure packet otherwise.
      */
-    @tailrec
-    def decrypt(packet: ByteVector, sharedSecrets: Seq[SharedSecret]): Either[CannotDecryptFailurePacket, DecryptedFailurePacket] = {
+    def decrypt(packet: ByteVector, attribution_opt: Option[ByteVector], sharedSecrets: Seq[SharedSecret], hopIndex: Int = 0): HtlcFailure = {
       sharedSecrets match {
-        case Nil => Left(CannotDecryptFailurePacket(packet))
+        case Nil => HtlcFailure(Nil, Left(CannotDecryptFailurePacket(packet)))
         case ss :: tail =>
           val packet1 = wrap(packet, ss.secret)
+          val attribution1_opt = attribution_opt.flatMap(Attribution.unwrap(_, packet1, ss.secret, hopIndex))
           val um = generateKey("um", ss.secret)
-          FailureMessageCodecs.failureOnionCodec(Hmac256(um)).decode(packet1.toBitVector) match {
-            case Attempt.Successful(value) => Right(DecryptedFailurePacket(ss.remoteNodeId, value.value))
-            case _ => decrypt(packet1, tail)
+          val HtlcFailure(holdTimes, failure) = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).decode(packet1.toBitVector) match {
+            case Attempt.Successful(value) => HtlcFailure(Nil, Right(DecryptedFailurePacket(ss.remoteNodeId, value.value)))
+            case _ => decrypt(packet1, attribution1_opt.map(_._2), tail, hopIndex + 1)
           }
+          HtlcFailure(attribution1_opt.map(n => HoldTime(n._1, ss.remoteNodeId) +: holdTimes).getOrElse(Nil), failure)
       }
     }
 
+    object Attribution {
+      private def cipher(bytes: ByteVector, sharedSecret: ByteVector32): ByteVector = {
+        val key = generateKey("ammagext", sharedSecret)
+        val stream = generateStream(key, 920)
+        bytes xor stream
+      }
+
+      private def getHmacs(bytes: ByteVector): Seq[Seq[ByteVector]] =
+        (0 until 20).map(i => (0 until (20 - i)).map(j => {
+          val start = (20 + 20 * i - (i * (i - 1)) / 2 + j) * 4
+          bytes.slice(start, start + 4)
+        }))
+
+      private def computeHmacs(mac: Mac32, reason: ByteVector, holdTimes: ByteVector, hmacs: Seq[Seq[ByteVector]], minNumHop: Int): Seq[ByteVector] = {
+        (minNumHop until 20).map(i => {
+          val y = 20 - i
+          mac.mac(reason ++
+            holdTimes.take(y * 4) ++
+            ByteVector.concat((0 until y - 1).map(j => hmacs(j)(i)))).bytes.take(4)
+        })
+      }
+
+      /**
+       * Create attribution data to send with the failure packet
+       */
+      def create(previousAttribution_opt: Option[ByteVector], reason: ByteVector, holdTime: FiniteDuration, sharedSecret: ByteVector32): ByteVector = {
+        val previousAttribution = previousAttribution_opt.getOrElse(ByteVector.low(920))
+        val previousHmacs = getHmacs(previousAttribution).dropRight(1).map(_.drop(1))
+        val mac = Hmac256(generateKey("um", sharedSecret))
+        val holdTimes = uint32.encode(holdTime.toMillis).require.bytes ++ previousAttribution.take(19 * 4)
+        val hmacs = computeHmacs(mac, reason, holdTimes, previousHmacs, 0) +: previousHmacs
+        cipher(holdTimes ++ ByteVector.concat(hmacs.map(ByteVector.concat(_))), sharedSecret)
+      }
+
+      /**
+       * Unwrap one hop of attribution data
+       * @return a pair with the hold time for this hop and the attribution data for the next hop, or None if the attribution data was invalid
+       */
+      def unwrap(encrypted: ByteVector, reason: ByteVector, sharedSecret: ByteVector32, minNumHop: Int): Option[(FiniteDuration, ByteVector)] = {
+        val bytes = cipher(encrypted, sharedSecret)
+        val holdTime = uint32.decode(bytes.take(4).bits).require.value.milliseconds
+        val hmacs = getHmacs(bytes)
+        val mac = Hmac256(generateKey("um", sharedSecret))
+        if (computeHmacs(mac, reason, bytes.take(20 * 4), hmacs.drop(1), minNumHop) == hmacs.head.drop(minNumHop)) {
+          val unwraped = bytes.slice(4, 20 * 4) ++ ByteVector.low(4) ++ ByteVector.concat((hmacs.drop(1) :+ Seq()).map(s => ByteVector.low(4) ++ ByteVector.concat(s)))
+          Some(holdTime, unwraped)
+        } else {
+          None
+        }
+      }
+    }
   }
 
   /**

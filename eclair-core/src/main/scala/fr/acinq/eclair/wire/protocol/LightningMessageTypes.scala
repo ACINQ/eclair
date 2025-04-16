@@ -29,6 +29,7 @@ import scodec.bits.ByteVector
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 import java.nio.charset.StandardCharsets
+import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
 
 /**
@@ -419,7 +420,9 @@ case class UpdateFulfillHtlc(channelId: ByteVector32,
 case class UpdateFailHtlc(channelId: ByteVector32,
                           id: Long,
                           reason: ByteVector,
-                          tlvStream: TlvStream[UpdateFailHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcFailureMessage
+                          tlvStream: TlvStream[UpdateFailHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcFailureMessage {
+  val attribution_opt: Option[ByteVector] = tlvStream.get[UpdateFailHtlcTlv.AttributionData].flatMap(attribution => if (attribution.data.length == 920) Some(attribution.data) else None)
+}
 
 case class UpdateFailMalformedHtlc(channelId: ByteVector32,
                                    id: Long,
@@ -685,7 +688,9 @@ object WillAddHtlc {
 }
 
 /** This message is similar to [[UpdateFailHtlc]], but for [[WillAddHtlc]]. */
-case class WillFailHtlc(id: ByteVector32, paymentHash: ByteVector32, reason: ByteVector) extends OnTheFlyFundingFailureMessage
+case class WillFailHtlc(id: ByteVector32, paymentHash: ByteVector32, reason: ByteVector, tlvStream: TlvStream[UpdateFailHtlcTlv] = TlvStream.empty) extends OnTheFlyFundingFailureMessage {
+  val attribution_opt: Option[ByteVector] = tlvStream.get[UpdateFailHtlcTlv.AttributionData].flatMap(attribution => if (attribution.data.length == 920) Some(attribution.data) else None)
+}
 
 /** This message is similar to [[UpdateFailMalformedHtlc]], but for [[WillAddHtlc]]. */
 case class WillFailMalformedHtlc(id: ByteVector32, paymentHash: ByteVector32, onionHash: ByteVector32, failureCode: Int) extends OnTheFlyFundingFailureMessage

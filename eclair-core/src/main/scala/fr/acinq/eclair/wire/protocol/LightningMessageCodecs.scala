@@ -471,7 +471,8 @@ object LightningMessageCodecs {
   val willFailHtlcCodec: Codec[WillFailHtlc] = (
     ("id" | bytes32) ::
       ("paymentHash" | bytes32) ::
-      ("reason" | varsizebinarydata)).as[WillFailHtlc]
+      ("reason" | varsizebinarydata) ::
+      ("tlvStream" | UpdateFailHtlcTlv.updateFailHtlcTlvCodec)).as[WillFailHtlc]
 
   val willFailMalformedHtlcCodec: Codec[WillFailMalformedHtlc] = (
     ("id" | bytes32) ::
