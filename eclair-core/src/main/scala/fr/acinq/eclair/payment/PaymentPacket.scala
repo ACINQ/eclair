@@ -25,10 +25,11 @@ import fr.acinq.eclair.router.Router.Route
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{InvoiceRoutingInfo, OutgoingBlindedPaths}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, TimestampMilli, UInt64, randomBytes32, randomKey}
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success}
 
 /**
@@ -345,12 +346,18 @@ object OutgoingPaymentPacket {
     }
   }
 
-  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: FailureReason, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector] = {
+  private def buildHtlcFailure(nodeSecret: PrivateKey, useAttributableFailures: Boolean, reason: FailureReason, add: UpdateAddHtlc, holdTime: FiniteDuration): Either[CannotExtractSharedSecret, (ByteVector, TlvStream[UpdateFailHtlcTlv])] = {
     extractSharedSecret(nodeSecret, add).map(sharedSecret => {
-      reason match {
-        case FailureReason.EncryptedDownstreamFailure(packet) => Sphinx.FailurePacket.wrap(packet, sharedSecret)
-        case FailureReason.LocalFailure(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
+      val (packet, attribution) = reason match {
+        case FailureReason.EncryptedDownstreamFailure(packet, attribution) => (packet, attribution)
+        case FailureReason.LocalFailure(failure) => (Sphinx.FailurePacket.create(sharedSecret, failure), None)
       }
+      val tlvs: TlvStream[UpdateFailHtlcTlv] = if (useAttributableFailures) {
+        TlvStream(UpdateFailHtlcTlv.AttributionData(Sphinx.FailurePacket.Attribution.create(attribution, packet, holdTime, sharedSecret)))
+      } else {
+        TlvStream.empty
+      }
+      (Sphinx.FailurePacket.wrap(packet, sharedSecret), tlvs)
     })
   }
 
@@ -367,14 +374,17 @@ object OutgoingPaymentPacket {
     }
   }
 
-  def buildHtlcFailure(nodeSecret: PrivateKey, cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, HtlcFailureMessage] = {
+  def buildHtlcFailure(nodeSecret: PrivateKey, useAttributableFailures: Boolean, cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, HtlcFailureMessage] = {
     add.pathKey_opt match {
       case Some(_) =>
         // We are part of a blinded route and we're not the introduction node.
         val failure = InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket))
         Right(UpdateFailMalformedHtlc(add.channelId, add.id, failure.onionHash, failure.code))
       case None =>
-        buildHtlcFailure(nodeSecret, cmd.reason, add).map(encryptedReason => UpdateFailHtlc(add.channelId, cmd.id, encryptedReason))
+        val holdTime = TimestampMilli.now() - cmd.startHoldTime
+        buildHtlcFailure(nodeSecret, useAttributableFailures, cmd.reason, add, holdTime).map {
+          case (encryptedReason, tlvs) => UpdateFailHtlc(add.channelId, cmd.id, encryptedReason, tlvs)
+        }
     }
   }
 
