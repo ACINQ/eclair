@@ -450,7 +450,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   }
 
   def failHtlc(id: Long, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
-    s ! CMD_FAIL_HTLC(id, FailureReason.LocalFailure(TemporaryNodeFailure()))
+    s ! CMD_FAIL_HTLC(id, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min)
     val fail = s2r.expectMsgType[UpdateFailHtlc]
     s2r.forward(r)
     eventually(assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.changes.remoteChanges.proposed.contains(fail)))

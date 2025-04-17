@@ -20,9 +20,9 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tu16}
-import scodec.{Attempt, Codec, Err}
-import scodec.bits.HexStringSyntax
+import scodec.bits.{ByteVector, HexStringSyntax}
 import scodec.codecs._
+import scodec.{Attempt, Codec, Err}
 
 /**
  * Created by t-bast on 19/07/2021.
@@ -61,7 +61,11 @@ object UpdateFulfillHtlcTlv {
 sealed trait UpdateFailHtlcTlv extends Tlv
 
 object UpdateFailHtlcTlv {
-  val updateFailHtlcTlvCodec: Codec[TlvStream[UpdateFailHtlcTlv]] = tlvStream(discriminated[UpdateFailHtlcTlv].by(varint))
+  case class AttributionData(data: ByteVector) extends UpdateFailHtlcTlv
+
+  val updateFailHtlcTlvCodec: Codec[TlvStream[UpdateFailHtlcTlv]] = tlvStream(discriminated[UpdateFailHtlcTlv].by(varint)
+    .typecase(UInt64(1), bytes.as[AttributionData])
+  )
 }
 
 sealed trait UpdateFailMalformedHtlcTlv extends Tlv

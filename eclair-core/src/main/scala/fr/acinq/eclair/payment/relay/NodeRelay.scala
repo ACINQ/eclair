@@ -228,7 +228,7 @@ class NodeRelay private(nodeParams: NodeParams,
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
-        parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, Some(failure)) }
+        parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, p.startTime, Some(failure)) }
         stopping()
       case WrappedMultiPartPaymentSucceeded(MultiPartPaymentFSM.MultiPartPaymentSucceeded(_, parts)) =>
         context.log.info("completed incoming multi-part payment with parts={} paidAmount={}", parts.size, parts.map(_.amount).sum)
@@ -464,31 +464,31 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def rejectExtraHtlcPartialFunction: PartialFunction[Command, Behavior[Command]] = {
     case Relay(nodeRelayPacket, _) =>
-      rejectExtraHtlc(nodeRelayPacket.add)
+      rejectExtraHtlc(nodeRelayPacket.add, TimestampMilli.now())
       Behaviors.same
     // NB: this message would be sent from the payment FSM which we stopped before going to this state, but all this is asynchronous.
     // We always fail extraneous HTLCs. They are a spec violation from the sender, but harmless in the relay case.
     // By failing them fast (before the payment has reached the final recipient) there's a good chance the sender won't lose any money.
     // We don't expect to relay pay-to-open payments.
     case WrappedMultiPartExtraPaymentReceived(extraPaymentReceived) =>
-      rejectExtraHtlc(extraPaymentReceived.payment.htlc)
+      rejectExtraHtlc(extraPaymentReceived.payment.htlc, extraPaymentReceived.payment.startTime)
       Behaviors.same
   }
 
-  private def rejectExtraHtlc(add: UpdateAddHtlc): Unit = {
+  private def rejectExtraHtlc(add: UpdateAddHtlc, startHoldTime: TimestampMilli): Unit = {
     context.log.warn("rejecting extra htlc #{} from channel {}", add.id, add.channelId)
-    rejectHtlc(add.id, add.channelId, add.amountMsat)
+    rejectHtlc(add.id, add.channelId, add.amountMsat, startHoldTime)
   }
 
-  private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, failure: Option[FailureMessage] = None): Unit = {
+  private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, startHoldTime: TimestampMilli, failure: Option[FailureMessage] = None): Unit = {
     val failureMessage = failure.getOrElse(IncorrectOrUnknownPaymentDetails(amount, nodeParams.currentBlockHeight))
-    val cmd = CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(failureMessage), commit = true)
+    val cmd = CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(failureMessage), startHoldTime, commit = true)
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
   }
 
   private def rejectPayment(upstream: Upstream.Hot.Trampoline, failure: Option[FailureMessage]): Unit = {
     Metrics.recordPaymentRelayFailed(failure.map(_.getClass.getSimpleName).getOrElse("Unknown"), Tags.RelayType.Trampoline)
-    upstream.received.foreach(r => rejectHtlc(r.add.id, r.add.channelId, upstream.amountIn, failure))
+    upstream.received.foreach(r => rejectHtlc(r.add.id, r.add.channelId, upstream.amountIn, r.receivedAt, failure))
   }
 
   private def fulfillPayment(upstream: Upstream.Hot.Trampoline, paymentPreimage: ByteVector32): Unit = upstream.received.foreach(r => {
