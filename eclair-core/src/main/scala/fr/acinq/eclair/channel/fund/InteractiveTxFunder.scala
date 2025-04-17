@@ -22,9 +22,11 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Output.Local.{Change, NonChange}
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.wire.protocol.TxAddInput
+import fr.acinq.eclair.transactions.Transactions.weight2fee
+import fr.acinq.eclair.wire.protocol.{LiquidityAds, TxAddInput}
 import fr.acinq.eclair.{Logs, UInt64}
 import scodec.bits.ByteVector
 
@@ -127,7 +129,7 @@ object InteractiveTxFunder {
     previousTxSizeOk && isNativeSegwit
   }
 
-  private def sortFundingContributions(fundingParams: InteractiveTxParams, inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput], excess_opt: Option[Satoshi]): FundingContributions = {
+  def sortFundingContributions(fundingParams: InteractiveTxParams, inputs: Seq[OutgoingInput], outputs: Seq[OutgoingOutput], excess_opt: Option[Satoshi]): FundingContributions = {
     // We always randomize the order of inputs and outputs.
     val sortedInputs = Random.shuffle(inputs).zipWithIndex.map { case (input, i) =>
       val serialId = UInt64(2 * i + fundingParams.serialIdParity)
@@ -147,6 +149,33 @@ object InteractiveTxFunder {
     FundingContributions(sortedInputs, sortedOutputs, excess_opt)
   }
 
+  /**
+   * Instead of adding additional funding inputs to achieve a new feerate, reduce our change output amount. For changeless
+   * funding contributions, any excess funding added to our local contribution above the purchased funding amount will be
+   * treated as change that can contribute to fees. Returns a new funding contribution that spends the same inputs and
+   * contributes up to the change output amount to achieve the new feerate. If we cannot achieve the new feerate with the
+   * available change output, we will underpay the fees, which is acceptable.
+   */
+  def adjustRbfFunding(willFund_opt:  Option[LiquidityAds.WillFundPurchase], rbf: InteractiveTxBuilder.SpliceTxRbf, feerate: FeeratePerKw): (Satoshi, Seq[OutgoingOutput]) = {
+    val localContribution = willFund_opt.map(_.purchase.amount).getOrElse(rbf.latestFundingTx.fundingParams.localContribution)
+    val signedSharedTx = rbf.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
+    val localFundedTx = signedSharedTx.signedTx.copy(
+      txIn = signedSharedTx.signedTx.txIn.filter(i => signedSharedTx.tx.localInputs.exists(_.outPoint == i.outPoint)),
+      txOut = signedSharedTx.signedTx.txOut.filter(txo => signedSharedTx.tx.localOutputs.exists(lo => lo.pubkeyScript == txo.publicKeyScript && lo.amount == txo.amount)))
+    val localFees = weight2fee(feerate, localFundedTx.weight())
+    val localNonChange = signedSharedTx.tx.localOutputs.collect { case o: NonChange => o.amount }.sum
+    val change = signedSharedTx.tx.localInputs.map(i => i.txOut.amount).sum - localContribution - localNonChange - localFees
+    val localOutputs = signedSharedTx.tx.localOutputs.collect {
+      // remove our change output unless it is for more than the dust limit
+      case o: Change if change > rbf.latestFundingTx.fundingParams.dustLimit => o.copy(amount = change)
+      case o: NonChange => o
+    }
+    // If we don't have a change output, add any positive change amount to our local contribution.
+    val localContribution1 = if (!localOutputs.exists(_.isInstanceOf[Change]) && change > 0.sat) {
+      localContribution + change
+    } else localContribution
+    (localContribution1, localOutputs)
+  }
 }
 
 private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response],
@@ -264,19 +293,25 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
       case Some(i) if tx.txIn.exists(_.outPoint == i.info.outPoint) => Map(i.info.outPoint -> i.weight.toLong)
       case _ => Map.empty[OutPoint, Long]
     }
-    val dummySignedTx = tx.copy(txIn = tx.txIn.filterNot(i => sharedInputWeight.contains(i.outPoint)).map { txIn =>
+    // Only add splice-in inputs that are not shared inputs, as those are already accounted for in the shared input weight.
+    val inputs1 = tx.txIn.filterNot(i => sharedInputWeight.contains(i.outPoint)).map { txIn =>
       inputs.find(_.outPoint == txIn.outPoint) match {
         case Some(i: Input.Local) =>
           Script.parse(i.previousTx.txOut(i.outPoint.index.toInt).publicKeyScript) match {
-            case script if Script.isNativeWitnessScript(script) =>
-              txIn.copy(witness = Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, ByteVector.fill(73)(0)))
+            // Must check for p2tr before p2wpkh, as a p2tr script can also be a native witness script.
             case script if Script.isPay2tr(script) =>
               txIn.copy(witness = Script.witnessKeyPathPay2tr(Transactions.PlaceHolderSig))
-            case _ => txIn
+            case script if Script.isNativeWitnessScript(script) =>
+              txIn.copy(witness = Script.witnessPay2wpkh(Transactions.PlaceHolderPubKey, ByteVector.fill(73)(0)))
+            case _ =>
+              txIn
           }
         case _ => txIn
       }
-    })
+    }
+    // Remove funding outputs that are not used for splice-out or as a shared output
+    val outputs1 = tx.txOut.filter { txOut => fundingParams.localOutputs.contains(txOut) || (txOut.publicKeyScript == fundingPubkeyScript && fundingParams.isInitiator) }
+    val dummySignedTx = tx.copy(txIn = inputs1, txOut = outputs1)
     Transactions.weight2fee(fundingParams.targetFeerate, dummySignedTx.weight() + sharedInputWeight.values.sum.toInt)
   }
 

@@ -500,7 +500,7 @@ object SpliceStatus {
   /** We told our peer we want to splice funds in the channel. */
   case class SpliceRequested(cmd: CMD_SPLICE, init: SpliceInit, fundingContributions_opt: Option[InteractiveTxFunder.FundingContributions]) extends SpliceStatus
   /** We told our peer we want to RBF the latest splice transaction. */
-  case class RbfRequested(cmd: CMD_BUMP_FUNDING_FEE, rbf: TxInitRbf) extends SpliceStatus
+  case class RbfRequested(cmd: CMD_BUMP_FUNDING_FEE, rbf: TxInitRbf, fundingContributions_opt: Option[InteractiveTxFunder.FundingContributions]) extends SpliceStatus
   /** Our peer initiated a splice */
   case class SpliceInitiated(init: SpliceInit, willFund_opt: Option[LiquidityAds.WillFundPurchase]) extends SpliceStatus
   /** We both agreed to splice/rbf and are building the corresponding transaction. */

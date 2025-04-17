@@ -181,7 +181,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainPubkeyCache {
     val amountOut = tx.txOut.map(_.amount).sum
     if (amountOut >= DummyOnChainWallet.invalidFundingAmount) return Left(new RuntimeException(s"invalid funding amount"))
     // We add a single input to reach the desired feerate.
-    val inputAmount = amountOut + 100_000.sat
+    val inputAmount = if (!changeless) amountOut + 100_000.sat else amountOut
     // We randomly use either p2wpkh or p2tr.
     val script = if (Random.nextBoolean()) p2trScript else p2wpkhScript
     val dummyP2wpkhWitness = Script.witnessPay2wpkh(p2wpkhPublicKey, ByteVector.fill(73)(0))

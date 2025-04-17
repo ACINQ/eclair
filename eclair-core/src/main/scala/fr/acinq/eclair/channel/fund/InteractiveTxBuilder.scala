@@ -349,6 +349,7 @@ object InteractiveTxBuilder {
     val inputDetails: Map[OutPoint, TxOut] = (sharedInput_opt.toSeq.map(i => i.outPoint -> i.txOut) ++ localInputs.map(i => i.outPoint -> i.txOut) ++ remoteInputs.map(i => i.outPoint -> i.txOut)).toMap
 
     def localOnlyNonChangeOutputs: List[Output.Local.NonChange] = localOutputs.collect { case o: Local.NonChange => o }
+    def localLiquidityAdded: Satoshi = localInputs.map(i => i.txOut.amount).sum
 
     def buildUnsignedTx(): Transaction = {
       val sharedTxIn = sharedInput_opt.map(i => (i.serialId, TxIn(i.outPoint, ByteVector.empty, i.sequence))).toSeq
@@ -1059,7 +1060,7 @@ object InteractiveTxSigningSession {
     }
   }
 
-  def addRemoteSigs(channelKeys: ChannelKeys, fundingParams: InteractiveTxParams, partiallySignedTx: PartiallySignedSharedTransaction, remoteSigs: TxSignatures)(implicit log: LoggingAdapter): Either[ChannelException, FullySignedSharedTransaction] = {
+  def addRemoteSigs(channelKeys: ChannelKeys, fundingParams: InteractiveTxParams, partiallySignedTx: PartiallySignedSharedTransaction, remoteSigs: TxSignatures,  liquidityPurchase: Boolean)(implicit log: LoggingAdapter): Either[ChannelException, FullySignedSharedTransaction] = {
     if (partiallySignedTx.tx.localInputs.length != partiallySignedTx.localSigs.witnesses.length) {
       return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
     }
@@ -1087,9 +1088,10 @@ object InteractiveTxSigningSession {
     // We allow a 5% error margin since witness size prediction could be inaccurate.
     // If they didn't contribute to the transaction, they're not responsible, so we don't check the feerate.
     // If we didn't contribute to the transaction, we don't care if they use a lower feerate than expected.
+    // If we are purchasing liquidity, we do not care about their contribution to the feerate for RBFs.
     val localContributed = txWithSigs.tx.localInputs.nonEmpty || txWithSigs.tx.localOutputs.nonEmpty
     val remoteContributed = txWithSigs.tx.remoteInputs.nonEmpty || txWithSigs.tx.remoteOutputs.nonEmpty
-    if (localContributed && remoteContributed && txWithSigs.feerate < fundingParams.targetFeerate * 0.95) {
+    if (!liquidityPurchase && localContributed && remoteContributed && txWithSigs.feerate < fundingParams.targetFeerate * 0.95) {
       return Left(InvalidFundingFeerate(fundingParams.channelId, fundingParams.targetFeerate, txWithSigs.feerate))
     }
     val previousOutputs = {
@@ -1144,15 +1146,15 @@ object InteractiveTxSigningSession {
       }
     }
 
-    def receiveTxSigs(channelKeys: ChannelKeys, remoteTxSigs: TxSignatures, currentBlockHeight: BlockHeight)(implicit log: LoggingAdapter): Either[ChannelException, SendingSigs] = {
+    def receiveTxSigs(channelKeys: ChannelKeys, remoteTxSigs: TxSignatures, currentBlockHeight: BlockHeight, liquidityPurchase: Boolean)(implicit log: LoggingAdapter): Either[ChannelException, SendingSigs] = {
       localCommit match {
         case Left(_) =>
           log.info("received tx_signatures before commit_sig")
           Left(UnexpectedFundingSignatures(fundingParams.channelId))
         case Right(signedLocalCommit) =>
-          addRemoteSigs(channelKeys, fundingParams, fundingTx, remoteTxSigs) match {
+          addRemoteSigs(channelKeys, fundingParams, fundingTx, remoteTxSigs, liquidityPurchase) match {
             case Left(f) =>
-              log.info("received invalid tx_signatures")
+              log.info("received invalid tx_signatures: {}", f.getMessage)
               Left(f)
             case Right(fullySignedTx) =>
               log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", fullySignedTx.tx.localInputs.length, fullySignedTx.tx.remoteInputs.length, fullySignedTx.tx.localOutputs.length, fullySignedTx.tx.remoteOutputs.length)
