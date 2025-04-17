@@ -180,6 +180,7 @@ object PeerReadyNotifier {
     case channel.WAIT_FOR_INIT_INTERNAL => false
     case channel.WAIT_FOR_INIT_SINGLE_FUNDED_CHANNEL => false
     case channel.WAIT_FOR_INIT_DUAL_FUNDED_CHANNEL => false
+    case channel.WAIT_FOR_DUAL_FUNDING_INTERNAL => false
     case channel.OFFLINE => false
     case channel.SYNCING => false
     case channel.WAIT_FOR_OPEN_CHANNEL => true
