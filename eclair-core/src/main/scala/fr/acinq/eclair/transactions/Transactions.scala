@@ -589,20 +589,16 @@ object Transactions {
     } match {
       case Some(outputIndex) =>
         val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
-        // unsigned tx
-        val tx = Transaction(
+        val unsignedTx = Transaction(
           version = 2,
           txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
-          txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-          lockTime = 0)
-        val weight = addSigs(ClaimHtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong))), PlaceHolderSig, ByteVector32.Zeroes).tx.weight()
-        val fee = weight2fee(feeratePerKw, weight)
-        val amount = input.txOut.amount - fee
-        if (amount < dustLimit) {
-          Left(AmountBelowDustLimit)
-        } else {
-          val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-          Right(ClaimHtlcSuccessTx(input, tx1, htlc.paymentHash, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong))))
+          txOut = TxOut(0 sat, localFinalScriptPubKey) :: Nil,
+          lockTime = 0
+        )
+        val dummySignedTx = addSigs(ClaimHtlcSuccessTx(input, unsignedTx, htlc.paymentHash, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong))), PlaceHolderSig, ByteVector32.Zeroes)
+        skipTxIfBelowDust(dummySignedTx, feeratePerKw, dustLimit).map { amount =>
+          val tx = unsignedTx.copy(txOut = TxOut(amount, localFinalScriptPubKey) :: Nil)
+          ClaimHtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong)))
         }
       case None => Left(OutputNotFound)
     }
@@ -622,20 +618,16 @@ object Transactions {
     } match {
       case Some(outputIndex) =>
         val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
-        // unsigned tx
-        val tx = Transaction(
+        val unsignedTx = Transaction(
           version = 2,
           txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
-          txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-          lockTime = htlc.cltvExpiry.toLong)
-        val weight = addSigs(ClaimHtlcTimeoutTx(input, tx, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong))), PlaceHolderSig).tx.weight()
-        val fee = weight2fee(feeratePerKw, weight)
-        val amount = input.txOut.amount - fee
-        if (amount < dustLimit) {
-          Left(AmountBelowDustLimit)
-        } else {
-          val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-          Right(ClaimHtlcTimeoutTx(input, tx1, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong))))
+          txOut = TxOut(0 sat, localFinalScriptPubKey) :: Nil,
+          lockTime = htlc.cltvExpiry.toLong
+        )
+        val dummySignedTx = addSigs(ClaimHtlcTimeoutTx(input, unsignedTx, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong))), PlaceHolderSig)
+        skipTxIfBelowDust(dummySignedTx, feeratePerKw, dustLimit).map { amount =>
+          val tx = unsignedTx.copy(txOut = TxOut(amount, localFinalScriptPubKey) :: Nil)
+          ClaimHtlcTimeoutTx(input, tx, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong)))
         }
       case None => Left(OutputNotFound)
     }
@@ -648,21 +640,16 @@ object Transactions {
       case Left(skip) => Left(skip)
       case Right(outputIndex) =>
         val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
-        // unsigned tx
-        val tx = Transaction(
+        val unsignedTx = Transaction(
           version = 2,
-          txIn = TxIn(input.outPoint, ByteVector.empty, 0x00000000L) :: Nil,
-          txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-          lockTime = 0)
-        // compute weight with a dummy 73 bytes signature (the largest you can get)
-        val weight = addSigs(ClaimP2WPKHOutputTx(input, tx), keys, PlaceHolderSig).tx.weight()
-        val fee = weight2fee(feeratePerKw, weight)
-        val amount = input.txOut.amount - fee
-        if (amount < localDustLimit) {
-          Left(AmountBelowDustLimit)
-        } else {
-          val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-          Right(ClaimP2WPKHOutputTx(input, tx1))
+          txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
+          txOut = TxOut(0 sat, localFinalScriptPubKey) :: Nil,
+          lockTime = 0
+        )
+        val dummySignedTx = addSigs(ClaimP2WPKHOutputTx(input, unsignedTx), keys, PlaceHolderSig)
+        skipTxIfBelowDust(dummySignedTx, feeratePerKw, localDustLimit).map { amount =>
+          val tx = unsignedTx.copy(txOut = TxOut(amount, localFinalScriptPubKey) :: Nil)
+          ClaimP2WPKHOutputTx(input, tx)
         }
     }
   }
@@ -674,21 +661,16 @@ object Transactions {
       case Left(skip) => Left(skip)
       case Right(outputIndex) =>
         val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
-        // unsigned transaction
-        val tx = Transaction(
+        val unsignedTx = Transaction(
           version = 2,
           txIn = TxIn(input.outPoint, ByteVector.empty, 1) :: Nil,
-          txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-          lockTime = 0)
-        // compute weight with a dummy 73 bytes signature (the largest you can get)
-        val weight = addSigs(ClaimRemoteDelayedOutputTx(input, tx), PlaceHolderSig).tx.weight()
-        val fee = weight2fee(feeratePerKw, weight)
-        val amount = input.txOut.amount - fee
-        if (amount < localDustLimit) {
-          Left(AmountBelowDustLimit)
-        } else {
-          val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-          Right(ClaimRemoteDelayedOutputTx(input, tx1))
+          txOut = TxOut(0 sat, localFinalScriptPubKey) :: Nil,
+          lockTime = 0
+        )
+        val dummySignedTx = addSigs(ClaimRemoteDelayedOutputTx(input, unsignedTx), PlaceHolderSig)
+        skipTxIfBelowDust(dummySignedTx, feeratePerKw, localDustLimit).map { amount =>
+          val tx = unsignedTx.copy(txOut = TxOut(amount, localFinalScriptPubKey) :: Nil)
+          ClaimRemoteDelayedOutputTx(input, tx)
         }
     }
   }
@@ -712,21 +694,16 @@ object Transactions {
       case Left(skip) => Left(skip)
       case Right(outputIndex) =>
         val input = InputInfo(OutPoint(parentTx, outputIndex), parentTx.txOut(outputIndex), write(redeemScript))
-        // unsigned transaction
-        val tx = Transaction(
+        val unsignedTx = Transaction(
           version = 2,
           txIn = TxIn(input.outPoint, ByteVector.empty, toLocalDelay.toInt) :: Nil,
-          txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-          lockTime = 0)
-        // compute weight with a dummy 73 bytes signature (the largest you can get)
-        val weight = addSigs(ClaimLocalDelayedOutputTx(input, tx), PlaceHolderSig).tx.weight()
-        val fee = weight2fee(feeratePerKw, weight)
-        val amount = input.txOut.amount - fee
-        if (amount < localDustLimit) {
-          Left(AmountBelowDustLimit)
-        } else {
-          val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-          Right(input, tx1)
+          txOut = TxOut(0 sat, localFinalScriptPubKey) :: Nil,
+          lockTime = 0
+        )
+        val dummySignedTx = addSigs(ClaimLocalDelayedOutputTx(input, unsignedTx), PlaceHolderSig)
+        skipTxIfBelowDust(dummySignedTx, feeratePerKw, localDustLimit).map { amount =>
+          val tx = unsignedTx.copy(txOut = TxOut(amount, localFinalScriptPubKey) :: Nil)
+          (input, tx)
         }
     }
   }
@@ -738,13 +715,13 @@ object Transactions {
       case Left(skip) => Left(skip)
       case Right(outputIndex) =>
         val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
-        // unsigned transaction
-        val tx = Transaction(
+        val unsignedTx = Transaction(
           version = 2,
           txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
           txOut = Nil, // anchor is only used to bump fees, the output will be added later depending on available inputs
-          lockTime = 0)
-        Right(ClaimAnchorOutputTx(input, tx, confirmationTarget))
+          lockTime = 0
+        )
+        Right(ClaimAnchorOutputTx(input, unsignedTx, confirmationTarget))
     }
   }
 
@@ -755,21 +732,16 @@ object Transactions {
       case Left(skip) => Seq(Left(skip))
       case Right(outputIndexes) => outputIndexes.map(outputIndex => {
         val input = InputInfo(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex), write(redeemScript))
-        // unsigned transaction
-        val tx = Transaction(
+        val unsignedTx = Transaction(
           version = 2,
           txIn = TxIn(input.outPoint, ByteVector.empty, 0xffffffffL) :: Nil,
-          txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-          lockTime = 0)
-        // compute weight with a dummy 73 bytes signature (the largest you can get)
-        val weight = addSigs(ClaimHtlcDelayedOutputPenaltyTx(input, tx), PlaceHolderSig).tx.weight()
-        val fee = weight2fee(feeratePerKw, weight)
-        val amount = input.txOut.amount - fee
-        if (amount < localDustLimit) {
-          Left(AmountBelowDustLimit)
-        } else {
-          val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-          Right(ClaimHtlcDelayedOutputPenaltyTx(input, tx1))
+          txOut = TxOut(0 sat, localFinalScriptPubKey) :: Nil,
+          lockTime = 0
+        )
+        val dummySignedTx = addSigs(ClaimHtlcDelayedOutputPenaltyTx(input, unsignedTx), PlaceHolderSig)
+        skipTxIfBelowDust(dummySignedTx, feeratePerKw, localDustLimit).map { amount =>
+          val tx = unsignedTx.copy(txOut = TxOut(amount, localFinalScriptPubKey) :: Nil)
+          ClaimHtlcDelayedOutputPenaltyTx(input, tx)
         }
       })
     }
@@ -782,42 +754,32 @@ object Transactions {
       case Left(skip) => Left(skip)
       case Right(outputIndex) =>
         val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
-        // unsigned transaction
-        val tx = Transaction(
+        val unsignedTx = Transaction(
           version = 2,
           txIn = TxIn(input.outPoint, ByteVector.empty, 0xffffffffL) :: Nil,
-          txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-          lockTime = 0)
-        // compute weight with a dummy 73 bytes signature (the largest you can get)
-        val weight = addSigs(MainPenaltyTx(input, tx), PlaceHolderSig).tx.weight()
-        val fee = weight2fee(feeratePerKw, weight)
-        val amount = input.txOut.amount - fee
-        if (amount < localDustLimit) {
-          Left(AmountBelowDustLimit)
-        } else {
-          val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-          Right(MainPenaltyTx(input, tx1))
+          txOut = TxOut(0 sat, localFinalScriptPubKey) :: Nil,
+          lockTime = 0
+        )
+        val dummySignedTx = addSigs(MainPenaltyTx(input, unsignedTx), PlaceHolderSig)
+        skipTxIfBelowDust(dummySignedTx, feeratePerKw, localDustLimit).map { amount =>
+          val tx = unsignedTx.copy(txOut = TxOut(amount, localFinalScriptPubKey) :: Nil)
+          MainPenaltyTx(input, tx)
         }
     }
   }
 
   def makeHtlcPenaltyTx(commitTx: Transaction, htlcOutputIndex: Int, redeemScript: ByteVector, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, HtlcPenaltyTx] = {
     val input = InputInfo(OutPoint(commitTx, htlcOutputIndex), commitTx.txOut(htlcOutputIndex), redeemScript)
-    // unsigned transaction
-    val tx = Transaction(
+    val unsignedTx = Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, ByteVector.empty, 0xffffffffL) :: Nil,
-      txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
-      lockTime = 0)
-    // compute weight with a dummy 73 bytes signature (the largest you can get)
-    val weight = addSigs(MainPenaltyTx(input, tx), PlaceHolderSig).tx.weight()
-    val fee = weight2fee(feeratePerKw, weight)
-    val amount = input.txOut.amount - fee
-    if (amount < localDustLimit) {
-      Left(AmountBelowDustLimit)
-    } else {
-      val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-      Right(HtlcPenaltyTx(input, tx1))
+      txOut = TxOut(0 sat, localFinalScriptPubKey) :: Nil,
+      lockTime = 0
+    )
+    val dummySignedTx = addSigs(MainPenaltyTx(input, unsignedTx), PlaceHolderSig)
+    skipTxIfBelowDust(dummySignedTx, feeratePerKw, localDustLimit).map { amount =>
+      val tx = unsignedTx.copy(txOut = TxOut(amount, localFinalScriptPubKey) :: Nil)
+      HtlcPenaltyTx(input, tx)
     }
   }
 
@@ -910,6 +872,22 @@ object Transactions {
           remoteOnly_opt = Some(ClosingTx(input, txNoOutput.copy(txOut = Seq(toRemoteOutput)), None))
         )
       case (None, None) => ClosingTxs(None, None, None)
+    }
+  }
+
+  /**
+   * We skip creating transactions spending commitment outputs when the remaining amount is below dust.
+   *
+   * @param dummySignedTx the transaction with a witness filled with dummy signatures (to compute its weight).
+   * @return the output amount, unless the transaction should be skipped because it's below dust.
+   */
+  private def skipTxIfBelowDust[T <: TransactionWithInputInfo](dummySignedTx: T, feerate: FeeratePerKw, dustLimit: Satoshi): Either[TxGenerationSkipped, Satoshi] = {
+    val fee = weight2fee(feerate, dummySignedTx.tx.weight())
+    val amount = dummySignedTx.input.txOut.amount - fee
+    if (amount < dustLimit) {
+      Left(AmountBelowDustLimit)
+    } else {
+      Right(amount)
     }
   }
 
