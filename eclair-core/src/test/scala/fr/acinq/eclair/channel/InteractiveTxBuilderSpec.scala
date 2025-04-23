@@ -227,10 +227,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
         RemoteParams(
           nodeParams.nodeId,
           localParams.dustLimit, UInt64(localParams.maxHtlcValueInFlightMsat.toLong), None, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs,
-          channelKeys.revocationBaseKey.publicKey,
-          localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBaseKey.publicKey),
-          channelKeys.delayedPaymentBaseKey.publicKey,
-          channelKeys.htlcBaseKey.publicKey,
+          channelKeys.revocationBasePoint,
+          localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
+          channelKeys.delayedPaymentBasePoint,
+          channelKeys.htlcBasePoint,
           localParams.initFeatures,
           None)
     }

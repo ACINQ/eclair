@@ -293,8 +293,7 @@ object Helpers {
 
   /** Compute the temporaryChannelId of a dual-funded channel. */
   def dualFundedTemporaryChannelId(channelKeys: ChannelKeys): ByteVector32 = {
-    val revocationBasepoint = channelKeys.revocationBaseKey.publicKey
-    Crypto.sha256(ByteVector.fill(33)(0) ++ revocationBasepoint.value)
+    Crypto.sha256(ByteVector.fill(33)(0) ++ channelKeys.revocationBasePoint.value)
   }
 
   /** Compute the channelId of a dual-funded channel. */
@@ -1147,7 +1146,7 @@ object Helpers {
         // a valid tx will always have at least one input, but this ensures we don't throw in tests
         val sequence = commitTx.txIn.headOption.map(_.sequence).getOrElse(0L)
         val obscuredTxNumber = Transactions.decodeTxNumber(sequence, commitTx.lockTime)
-        val localPaymentPoint = localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBaseKey.publicKey)
+        val localPaymentPoint = localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint)
         // this tx has been published by remote, so we need to invert local/remote params
         val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isChannelOpener, remoteParams.paymentBasepoint, localPaymentPoint)
         if (txNumber > 0xffffffffffffL) {

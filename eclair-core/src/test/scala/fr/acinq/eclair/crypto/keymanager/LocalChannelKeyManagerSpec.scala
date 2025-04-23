@@ -44,14 +44,14 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     assert(channelKeys.commitmentSecret(1).value == ByteVector32.fromValidHex("3e82338d3e487c760ee10448127613d196b040e86ce90d2d437db6425bb7301c"))
     assert(channelKeys.commitmentSecret(2).value == ByteVector32.fromValidHex("102357f7a9b2d0b9147f645c98aa156d3278ddb4745caf0631773dd663e76e6f"))
     assert(channelKeys.commitmentPoint(0).value == hex"0x0237dd5a0ea26ed84ed1249d46cc715679b542939d6943b42232e043825cde3944")
-    assert(channelKeys.delayedPaymentBaseKey == PrivateKey(hex"195f8f7de612978117baaa750c0098362eb17ed287161cc84dc03f869e321317"))
-    assert(channelKeys.htlcBaseKey == PrivateKey(hex"9430df6ca38bf1a00a8ea8f1123ec870ad04c3cbce9641e38b6bf94cb910f7f3"))
-    assert(channelKeys.paymentBaseKey == PrivateKey(hex"6a2577dbac51e4ddc6fc325ff63f3eba6f37b08c3e5ac173168810d20c5632cd"))
-    assert(channelKeys.revocationBaseKey == PrivateKey(hex"0871e813ddc7b29bca128c9c9b048f6e60fbe6a53fda1558f33545951e04e1ab"))
-    assert(DeterministicWallet.ExtendedPublicKey.decode("tpubDMBn7xW1g1Gsok5eThkJAKJnB3ZFqZQnvsdWv8VvM3RjZkqVPZZpjPDAAmbyDHnZPdAZY8EnFBh1ibTBtiuDqb8t9wRcAZiFihma3yYRG1f")._2.publicKey == channelKeys.delayedPaymentBaseKey.publicKey)
-    assert(DeterministicWallet.ExtendedPublicKey.decode("tpubDMBn7xW1g1GsqpsqaVNB1ehpjktQUX44Dycy7fJ6thp774XGzNeWFmQf5L6dVChHREgkoc8BYc2caHqwc2mZzTYCwoxsvrpchBSujsPCvGH")._2.publicKey == channelKeys.htlcBaseKey.publicKey)
-    assert(DeterministicWallet.ExtendedPublicKey.decode("tpubDMBn7xW1g1Gsme9jTAEJwTvizDJtJEgE3jc9vkDqQ9azuh9Es2aM6GsioFiouwdvWPJoNw2zavCkVTMta6UJN6BWR5cMZQsSHvsFyQNfGzv")._2.publicKey == channelKeys.paymentBaseKey.publicKey)
-    assert(DeterministicWallet.ExtendedPublicKey.decode("tpubDMBn7xW1g1GsizhaZ7M4co6sBtUDhRUKgUUPWRv3WfLTpTGYrSjATJy6ZVSoYFCKRnaBop5dFig3Ham1P145NQAKuUgPUbujLAooL7F2vy6")._2.publicKey == channelKeys.revocationBaseKey.publicKey)
+    assert(channelKeys.delayedPaymentBaseSecret == PrivateKey(hex"195f8f7de612978117baaa750c0098362eb17ed287161cc84dc03f869e321317"))
+    assert(channelKeys.htlcBaseSecret == PrivateKey(hex"9430df6ca38bf1a00a8ea8f1123ec870ad04c3cbce9641e38b6bf94cb910f7f3"))
+    assert(channelKeys.paymentBaseSecret == PrivateKey(hex"6a2577dbac51e4ddc6fc325ff63f3eba6f37b08c3e5ac173168810d20c5632cd"))
+    assert(channelKeys.revocationBaseSecret == PrivateKey(hex"0871e813ddc7b29bca128c9c9b048f6e60fbe6a53fda1558f33545951e04e1ab"))
+    assert(DeterministicWallet.ExtendedPublicKey.decode("tpubDMBn7xW1g1Gsok5eThkJAKJnB3ZFqZQnvsdWv8VvM3RjZkqVPZZpjPDAAmbyDHnZPdAZY8EnFBh1ibTBtiuDqb8t9wRcAZiFihma3yYRG1f")._2.publicKey == channelKeys.delayedPaymentBasePoint)
+    assert(DeterministicWallet.ExtendedPublicKey.decode("tpubDMBn7xW1g1GsqpsqaVNB1ehpjktQUX44Dycy7fJ6thp774XGzNeWFmQf5L6dVChHREgkoc8BYc2caHqwc2mZzTYCwoxsvrpchBSujsPCvGH")._2.publicKey == channelKeys.htlcBasePoint)
+    assert(DeterministicWallet.ExtendedPublicKey.decode("tpubDMBn7xW1g1Gsme9jTAEJwTvizDJtJEgE3jc9vkDqQ9azuh9Es2aM6GsioFiouwdvWPJoNw2zavCkVTMta6UJN6BWR5cMZQsSHvsFyQNfGzv")._2.publicKey == channelKeys.paymentBasePoint)
+    assert(DeterministicWallet.ExtendedPublicKey.decode("tpubDMBn7xW1g1GsizhaZ7M4co6sBtUDhRUKgUUPWRv3WfLTpTGYrSjATJy6ZVSoYFCKRnaBop5dFig3Ham1P145NQAKuUgPUbujLAooL7F2vy6")._2.publicKey == channelKeys.revocationBasePoint)
   }
 
   test("compute channel key path from funding keys") {
@@ -89,10 +89,10 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
 
     assert(fundingKey.publicKey == PrivateKey(hex"216414970b4216b197a1040367419ad6922f80e8b73ced083e9afe5e6ddd8e4c").publicKey)
-    assert(channelKeys.revocationBaseKey.publicKey == PrivateKey(hex"a4e7ab3c54752a3487b3c474467843843f28d3bb9113e65e92056ad45d1e318e").publicKey)
-    assert(channelKeys.paymentBaseKey.publicKey == PrivateKey(hex"de24c43d24b8d6bc66b020ac81164206bb577c7924511d4e99431c0d60505012").publicKey)
-    assert(channelKeys.delayedPaymentBaseKey.publicKey == PrivateKey(hex"8aa7b8b14a7035540c331c030be0dd73e8806fb0c97a2519d63775c2f579a950").publicKey)
-    assert(channelKeys.htlcBaseKey.publicKey == PrivateKey(hex"94eca6eade204d6e753344c347b46bb09067c92b2fe371cf4f8362c1594c8c59").publicKey)
+    assert(channelKeys.revocationBasePoint == PrivateKey(hex"a4e7ab3c54752a3487b3c474467843843f28d3bb9113e65e92056ad45d1e318e").publicKey)
+    assert(channelKeys.paymentBasePoint == PrivateKey(hex"de24c43d24b8d6bc66b020ac81164206bb577c7924511d4e99431c0d60505012").publicKey)
+    assert(channelKeys.delayedPaymentBasePoint == PrivateKey(hex"8aa7b8b14a7035540c331c030be0dd73e8806fb0c97a2519d63775c2f579a950").publicKey)
+    assert(channelKeys.htlcBasePoint == PrivateKey(hex"94eca6eade204d6e753344c347b46bb09067c92b2fe371cf4f8362c1594c8c59").publicKey)
     assert(channelKeys.commitmentSecret(0).value == ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("64e9d1e9840add3bb02c1525995edd28feea67f1df7a9ee075179e8541adc7a2"), 0xFFFFFFFFFFFFL))
   }
 
@@ -104,10 +104,10 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
 
     assert(fundingKey.publicKey == PrivateKey(hex"7bb8019c99fcba1c6bd0cc7f3c635c14c658d26751232d6a6350d8b6127d53c3").publicKey)
-    assert(channelKeys.revocationBaseKey.publicKey == PrivateKey(hex"26510db99546c9b08418fe9df2da710a92afa6cc4e5681141610dfb8019052e6").publicKey)
-    assert(channelKeys.paymentBaseKey.publicKey == PrivateKey(hex"0766c93fd06f69287fcc7b343916e678b83942345d4080e83f4c8a061b1a9f4b").publicKey)
-    assert(channelKeys.delayedPaymentBaseKey.publicKey == PrivateKey(hex"094aa052a9647228fd80e42461cae26c04f6cdd1665b816d4660df686915319a").publicKey)
-    assert(channelKeys.htlcBaseKey.publicKey == PrivateKey(hex"8ec62bd03b241a2e522477ae1a9861a668429ab3e443abd2aa0f2f10e2dc2206").publicKey)
+    assert(channelKeys.revocationBasePoint == PrivateKey(hex"26510db99546c9b08418fe9df2da710a92afa6cc4e5681141610dfb8019052e6").publicKey)
+    assert(channelKeys.paymentBasePoint == PrivateKey(hex"0766c93fd06f69287fcc7b343916e678b83942345d4080e83f4c8a061b1a9f4b").publicKey)
+    assert(channelKeys.delayedPaymentBasePoint == PrivateKey(hex"094aa052a9647228fd80e42461cae26c04f6cdd1665b816d4660df686915319a").publicKey)
+    assert(channelKeys.htlcBasePoint == PrivateKey(hex"8ec62bd03b241a2e522477ae1a9861a668429ab3e443abd2aa0f2f10e2dc2206").publicKey)
     assert(channelKeys.commitmentSecret(0).value == ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("c49e98202b0fee19f28fd3af60691aaacdd2c09e20896f5fa3ad1b9b70e4879f"), 0xFFFFFFFFFFFFL))
   }
 
@@ -119,10 +119,10 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
 
     assert(fundingKey.publicKey == PrivateKey(hex"b97c04796850e9d74a06c9d7230d85e2ecca3598b162ddf902895ece820c8f09").publicKey)
-    assert(channelKeys.revocationBaseKey.publicKey == PrivateKey(hex"ee13db7f2d7e672f21395111ee169af8462c6e8d1a6a78d808f7447b27155ffb").publicKey)
-    assert(channelKeys.paymentBaseKey.publicKey == PrivateKey(hex"7fc18e4c925bf3c5a83411eac7f234f0c5eaef9a8022b22ec6e3272ae329e17e").publicKey)
-    assert(channelKeys.delayedPaymentBaseKey.publicKey == PrivateKey(hex"c0d9a3e3601d79b11b948db9d672fcddafcb9a3c0873c6a738bb09087ea2bfc6").publicKey)
-    assert(channelKeys.htlcBaseKey.publicKey == PrivateKey(hex"bd3ba7068d131a9ab47f33202d532c5824cc5fc35a9adada3644ac2994372228").publicKey)
+    assert(channelKeys.revocationBasePoint == PrivateKey(hex"ee13db7f2d7e672f21395111ee169af8462c6e8d1a6a78d808f7447b27155ffb").publicKey)
+    assert(channelKeys.paymentBasePoint == PrivateKey(hex"7fc18e4c925bf3c5a83411eac7f234f0c5eaef9a8022b22ec6e3272ae329e17e").publicKey)
+    assert(channelKeys.delayedPaymentBasePoint == PrivateKey(hex"c0d9a3e3601d79b11b948db9d672fcddafcb9a3c0873c6a738bb09087ea2bfc6").publicKey)
+    assert(channelKeys.htlcBasePoint == PrivateKey(hex"bd3ba7068d131a9ab47f33202d532c5824cc5fc35a9adada3644ac2994372228").publicKey)
     assert(channelKeys.commitmentSecret(0).value == ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("7799de34239f97837a12191f5b60e766e32e9704bb84b0f12b539e9bf6a0dc2a"), 0xFFFFFFFFFFFFL))
   }
 
@@ -134,10 +134,10 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
 
     assert(fundingKey.publicKey == PrivateKey(hex"46a4e818615a48a99ce9f6bd73eea07d5822dcfcdff18081ea781d4e5e6c036c").publicKey)
-    assert(channelKeys.revocationBaseKey.publicKey == PrivateKey(hex"c2cd9e2f9f8203f16b1751bd252285bb2e7fc4688857d620467b99645ebdfbe6").publicKey)
-    assert(channelKeys.paymentBaseKey.publicKey == PrivateKey(hex"1e4d3527788b39dc8ebc0ae6368a67e92eff55a43bea8e93054338ca850fa340").publicKey)
-    assert(channelKeys.delayedPaymentBaseKey.publicKey == PrivateKey(hex"6bc30b0852fbc653451662a1ff6ad530f311d58b5e5661b541eb57dba8206937").publicKey)
-    assert(channelKeys.htlcBaseKey.publicKey == PrivateKey(hex"b1be27b5232e3bc5d6a261949b4ee68d96fa61f481998d36342e2ad99444cf8a").publicKey)
+    assert(channelKeys.revocationBasePoint == PrivateKey(hex"c2cd9e2f9f8203f16b1751bd252285bb2e7fc4688857d620467b99645ebdfbe6").publicKey)
+    assert(channelKeys.paymentBasePoint == PrivateKey(hex"1e4d3527788b39dc8ebc0ae6368a67e92eff55a43bea8e93054338ca850fa340").publicKey)
+    assert(channelKeys.delayedPaymentBasePoint == PrivateKey(hex"6bc30b0852fbc653451662a1ff6ad530f311d58b5e5661b541eb57dba8206937").publicKey)
+    assert(channelKeys.htlcBasePoint == PrivateKey(hex"b1be27b5232e3bc5d6a261949b4ee68d96fa61f481998d36342e2ad99444cf8a").publicKey)
     assert(channelKeys.commitmentSecret(0).value == ShaChain.shaChainFromSeed(ByteVector32.fromValidHex("eeb3bad6808e8bb5f1774581ccf64aa265fef38eca80a1463d6310bb801b3ba7"), 0xFFFFFFFFFFFFL))
   }
 

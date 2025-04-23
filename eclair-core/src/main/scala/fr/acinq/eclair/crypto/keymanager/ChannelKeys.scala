@@ -43,10 +43,14 @@ case class ChannelKeys(private val fundingMasterKey: ExtendedPrivateKey, private
   def fundingKey(fundingTxIndex: Long): PrivateKey = fundingKeys.get(fundingTxIndex)
 
   // Note that we use lazy values here to avoid deriving keys for all of our channels immediately after a restart.
-  lazy val revocationBaseKey: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(1)).privateKey
-  lazy val paymentBaseKey: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(2)).privateKey
-  lazy val delayedPaymentBaseKey: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(3)).privateKey
-  lazy val htlcBaseKey: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(4)).privateKey
+  lazy val revocationBaseSecret: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(1)).privateKey
+  lazy val revocationBasePoint: PublicKey = revocationBaseSecret.publicKey
+  lazy val paymentBaseSecret: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(2)).privateKey
+  lazy val paymentBasePoint: PublicKey = paymentBaseSecret.publicKey
+  lazy val delayedPaymentBaseSecret: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(3)).privateKey
+  lazy val delayedPaymentBasePoint: PublicKey = delayedPaymentBaseSecret.publicKey
+  lazy val htlcBaseSecret: PrivateKey = commitmentMasterKey.derivePrivateKey(hardened(4)).privateKey
+  lazy val htlcBasePoint: PublicKey = htlcBaseSecret.publicKey
 
   // @formatter:off
   // Per-commitment keys are derived using a sha-chain, which provides efficient storage and retrieval mechanisms.
@@ -59,25 +63,25 @@ case class ChannelKeys(private val fundingMasterKey: ExtendedPrivateKey, private
    * Derive our local payment key for our main output in the remote commitment transaction.
    * Warning: when using option_staticremotekey or anchor_outputs, we must always use the base key instead of a per-commitment key.
    */
-  def paymentKey(commitmentPoint: PublicKey): PrivateKey = ChannelKeys.derivePerCommitmentKey(paymentBaseKey, commitmentPoint)
+  def paymentKey(commitmentPoint: PublicKey): PrivateKey = ChannelKeys.derivePerCommitmentKey(paymentBaseSecret, commitmentPoint)
 
   /** Derive our local delayed payment key for our main output in the local commitment transaction. */
-  def delayedPaymentKey(commitmentPoint: PublicKey): PrivateKey = ChannelKeys.derivePerCommitmentKey(delayedPaymentBaseKey, commitmentPoint)
+  def delayedPaymentKey(commitmentPoint: PublicKey): PrivateKey = ChannelKeys.derivePerCommitmentKey(delayedPaymentBaseSecret, commitmentPoint)
 
   /** Derive our HTLC key for our HTLC transactions, in either the local or remote commitment transaction. */
-  def htlcKey(commitmentPoint: PublicKey): PrivateKey = ChannelKeys.derivePerCommitmentKey(htlcBaseKey, commitmentPoint)
+  def htlcKey(commitmentPoint: PublicKey): PrivateKey = ChannelKeys.derivePerCommitmentKey(htlcBaseSecret, commitmentPoint)
 
   /** With the remote per-commitment secret, we can derive the private key to spend revoked commitments. */
-  def revocationKey(remoteCommitmentSecret: PrivateKey): PrivateKey = ChannelKeys.revocationKey(revocationBaseKey, remoteCommitmentSecret)
+  def revocationKey(remoteCommitmentSecret: PrivateKey): PrivateKey = ChannelKeys.revocationKey(revocationBaseSecret, remoteCommitmentSecret)
 
 }
 
 object ChannelKeys {
 
   /** Derive the local per-commitment key for the base key provided. */
-  def derivePerCommitmentKey(baseKey: PrivateKey, commitmentPoint: PublicKey): PrivateKey = {
+  def derivePerCommitmentKey(baseSecret: PrivateKey, commitmentPoint: PublicKey): PrivateKey = {
     // secretkey = basepoint-secret + SHA256(per-commitment-point || basepoint)
-    baseKey + PrivateKey(Crypto.sha256(commitmentPoint.value ++ baseKey.publicKey.value))
+    baseSecret + PrivateKey(Crypto.sha256(commitmentPoint.value ++ baseSecret.publicKey.value))
   }
 
   /** Derive the remote per-commitment key for the base point provided. */
