@@ -124,10 +124,6 @@ object Transactions {
     def tx: Transaction
     def amountIn: Satoshi = input.txOut.amount
     def fee: Satoshi = amountIn - tx.txOut.map(_.amount).sum
-    def minRelayFee: Satoshi = {
-      val vsize = (tx.weight() + 3) / 4
-      Satoshi(FeeratePerKw.MinimumRelayFeeRate * vsize / 1000)
-    }
     /** Sighash flags to use when signing the transaction. */
     def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = SIGHASH_ALL
 
