@@ -29,6 +29,8 @@ import fr.acinq.eclair.crypto.ShaChain
  *  - per-commitment keys, which change everytime we create a new commitment transaction:
  *    - derived from the commitment "base" keys
  *    - and tweaked with a per-commitment point
+ *
+ * WARNING: these private keys must never be stored on disk, in a database, or logged.
  */
 case class ChannelKeys(private val fundingMasterKey: ExtendedPrivateKey, private val commitmentMasterKey: ExtendedPrivateKey) {
 

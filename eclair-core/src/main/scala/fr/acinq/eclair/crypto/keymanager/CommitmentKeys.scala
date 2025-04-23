@@ -49,6 +49,7 @@ case class CommitmentPublicKeys(localDelayedPaymentPublicKey: PublicKey,
 
 /**
  * Keys used for our local commitment.
+ * WARNING: these private keys must never be stored on disk, in a database, or logged.
  */
 case class LocalCommitmentKeys(ourDelayedPaymentKey: PrivateKey,
                                theirPaymentPublicKey: PublicKey,
@@ -85,6 +86,7 @@ object LocalCommitmentKeys {
 
 /**
  * Keys used for the remote commitment.
+ * WARNING: these private keys must never be stored on disk, in a database, or logged.
  *
  * There is a subtlety for [[ourPaymentKey]]: when using option_static_remotekey, our output will directly send funds
  * to a p2wpkh address created by our bitcoin node. We thus don't need the private key, as the output can immediately

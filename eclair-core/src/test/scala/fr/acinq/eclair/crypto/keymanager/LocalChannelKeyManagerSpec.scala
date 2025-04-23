@@ -48,6 +48,10 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     assert(channelKeys.htlcBaseKey == PrivateKey(hex"9430df6ca38bf1a00a8ea8f1123ec870ad04c3cbce9641e38b6bf94cb910f7f3"))
     assert(channelKeys.paymentBaseKey == PrivateKey(hex"6a2577dbac51e4ddc6fc325ff63f3eba6f37b08c3e5ac173168810d20c5632cd"))
     assert(channelKeys.revocationBaseKey == PrivateKey(hex"0871e813ddc7b29bca128c9c9b048f6e60fbe6a53fda1558f33545951e04e1ab"))
+    assert(DeterministicWallet.ExtendedPublicKey.decode("tpubDMBn7xW1g1Gsok5eThkJAKJnB3ZFqZQnvsdWv8VvM3RjZkqVPZZpjPDAAmbyDHnZPdAZY8EnFBh1ibTBtiuDqb8t9wRcAZiFihma3yYRG1f")._2.publicKey == channelKeys.delayedPaymentBaseKey.publicKey)
+    assert(DeterministicWallet.ExtendedPublicKey.decode("tpubDMBn7xW1g1GsqpsqaVNB1ehpjktQUX44Dycy7fJ6thp774XGzNeWFmQf5L6dVChHREgkoc8BYc2caHqwc2mZzTYCwoxsvrpchBSujsPCvGH")._2.publicKey == channelKeys.htlcBaseKey.publicKey)
+    assert(DeterministicWallet.ExtendedPublicKey.decode("tpubDMBn7xW1g1Gsme9jTAEJwTvizDJtJEgE3jc9vkDqQ9azuh9Es2aM6GsioFiouwdvWPJoNw2zavCkVTMta6UJN6BWR5cMZQsSHvsFyQNfGzv")._2.publicKey == channelKeys.paymentBaseKey.publicKey)
+    assert(DeterministicWallet.ExtendedPublicKey.decode("tpubDMBn7xW1g1GsizhaZ7M4co6sBtUDhRUKgUUPWRv3WfLTpTGYrSjATJy6ZVSoYFCKRnaBop5dFig3Ham1P145NQAKuUgPUbujLAooL7F2vy6")._2.publicKey == channelKeys.revocationBaseKey.publicKey)
   }
 
   test("compute channel key path from funding keys") {
