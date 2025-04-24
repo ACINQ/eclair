@@ -121,7 +121,7 @@ object RemoteCommitmentKeys {
       ourPaymentKey = params.localParams.walletStaticPaymentBasepoint match {
         case Some(walletPublicKey) => Left(walletPublicKey)
         case None => params.commitmentFormat match {
-          case DefaultCommitmentFormat if params.channelFeatures.hasFeature(Features.StaticRemoteKey) => Right(channelKeys.paymentBaseSecret)
+          // Note that if we're using option_static_remotekey, a walletStaticPaymentBasepoint will be provided.
           case DefaultCommitmentFormat => Right(channelKeys.paymentKey(remotePerCommitmentPoint))
           case _: AnchorOutputsCommitmentFormat => Right(channelKeys.paymentBaseSecret)
         }
