@@ -108,7 +108,6 @@ object ReplaceableTxFunder {
       case _: HtlcSuccessTx => commitment.params.commitmentFormat.htlcSuccessWeight + Transactions.claimP2WPKHOutputWeight
       case _: HtlcTimeoutTx => commitment.params.commitmentFormat.htlcTimeoutWeight + Transactions.claimP2WPKHOutputWeight
       case _: ClaimHtlcSuccessTx => Transactions.claimHtlcSuccessWeight
-      case _: LegacyClaimHtlcSuccessTx => Transactions.claimHtlcSuccessWeight
       case _: ClaimHtlcTimeoutTx => Transactions.claimHtlcTimeoutWeight
       case _: ClaimAnchorOutputTx => commitTx.weight() + Transactions.claimAnchorOutputMinWeight
     }
@@ -126,18 +125,13 @@ object ReplaceableTxFunder {
     val dummySignedTx = claimHtlcTx.txInfo match {
       case tx: ClaimHtlcSuccessTx => tx.addSigs(PlaceHolderSig, ByteVector32.Zeroes)
       case tx: ClaimHtlcTimeoutTx => tx.addSigs(PlaceHolderSig)
-      case tx: LegacyClaimHtlcSuccessTx => tx
     }
     val targetFee = weight2fee(targetFeerate, dummySignedTx.tx.weight())
     val outputAmount = claimHtlcTx.txInfo.amountIn - targetFee
     if (outputAmount < dustLimit) {
       Left(AmountBelowDustLimit)
     } else {
-      val updatedClaimHtlcTx = claimHtlcTx match {
-        // NB: we don't modify legacy claim-htlc-success, it's already signed.
-        case legacyClaimHtlcSuccess: LegacyClaimHtlcSuccessWithWitnessData => legacyClaimHtlcSuccess
-        case _ => claimHtlcTx.updateTx(claimHtlcTx.txInfo.tx.copy(txOut = Seq(claimHtlcTx.txInfo.tx.txOut.head.copy(amount = outputAmount))))
-      }
+      val updatedClaimHtlcTx = claimHtlcTx.updateTx(claimHtlcTx.txInfo.tx.copy(txOut = Seq(claimHtlcTx.txInfo.tx.txOut.head.copy(amount = outputAmount))))
       Right(updatedClaimHtlcTx)
     }
   }
@@ -208,11 +202,7 @@ object ReplaceableTxFunder {
           AdjustPreviousTxOutputResult.Skip("fee higher than htlc amount")
         } else {
           val updatedTxOut = Seq(claimHtlcTx.txInfo.tx.txOut.head.copy(amount = updatedAmount))
-          claimHtlcTx match {
-            // NB: we don't modify legacy claim-htlc-success, it's already signed.
-            case _: LegacyClaimHtlcSuccessWithWitnessData => AdjustPreviousTxOutputResult.Skip("legacy claim-htlc-success should not be updated")
-            case _ => AdjustPreviousTxOutputResult.TxOutputAdjusted(claimHtlcTx.updateTx(claimHtlcTx.txInfo.tx.copy(txOut = updatedTxOut)))
-          }
+          AdjustPreviousTxOutputResult.TxOutputAdjusted(claimHtlcTx.updateTx(claimHtlcTx.txInfo.tx.copy(txOut = updatedTxOut)))
         }
     }
   }
@@ -337,7 +327,6 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
         val sig = claimHtlcTx.txInfo.sign(commitmentKeys.ourHtlcKey, TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
         val signedTx = claimHtlcTx match {
           case claimSuccess: ClaimHtlcSuccessWithWitnessData => claimSuccess.copy(txInfo = claimSuccess.txInfo.addSigs(sig, claimSuccess.preimage))
-          case legacyClaimHtlcSuccess: LegacyClaimHtlcSuccessWithWitnessData => legacyClaimHtlcSuccess
           case claimTimeout: ClaimHtlcTimeoutWithWitnessData => claimTimeout.copy(txInfo = claimTimeout.txInfo.addSigs(sig))
         }
         replyTo ! TransactionReady(FundedTx(signedTx, amountIn, txFeerate, walletUtxos))

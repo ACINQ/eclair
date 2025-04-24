@@ -279,10 +279,6 @@ object Transactions {
     override def confirmationTarget: ConfirmationTarget.Absolute
   }
 
-  case class LegacyClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, htlcId: Long, confirmationTarget: ConfirmationTarget.Absolute) extends ClaimHtlcTx {
-    override val desc: String = "claim-htlc-success"
-  }
-
   case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, confirmationTarget: ConfirmationTarget.Absolute) extends ClaimHtlcTx {
     override val desc: String = "claim-htlc-success"
 

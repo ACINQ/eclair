@@ -90,9 +90,6 @@ object ReplaceableTxPrePublisher {
   case class ClaimHtlcSuccessWithWitnessData(txInfo: ClaimHtlcSuccessTx, preimage: ByteVector32) extends ClaimHtlcWithWitnessData {
     override def updateTx(tx: Transaction): ClaimHtlcSuccessWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
   }
-  case class LegacyClaimHtlcSuccessWithWitnessData(txInfo: LegacyClaimHtlcSuccessTx, preimage: ByteVector32) extends ClaimHtlcWithWitnessData {
-    override def updateTx(tx: Transaction): LegacyClaimHtlcSuccessWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
-  }
   case class ClaimHtlcTimeoutWithWitnessData(txInfo: ClaimHtlcTimeoutTx) extends ClaimHtlcWithWitnessData {
     override def updateTx(tx: Transaction): ClaimHtlcTimeoutWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
   }
@@ -334,15 +331,6 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
 
   private def extractClaimHtlcWitnessData(claimHtlcTx: ClaimHtlcTx, commitment: FullCommitment): Option[ReplaceableTxWithWitnessData] = {
     claimHtlcTx match {
-      case tx: LegacyClaimHtlcSuccessTx =>
-        commitment.changes.localChanges.all.collectFirst {
-          case u: UpdateFulfillHtlc if u.id == tx.htlcId => u.paymentPreimage
-        } match {
-          case Some(preimage) => Some(LegacyClaimHtlcSuccessWithWitnessData(tx, preimage))
-          case None =>
-            log.error(s"preimage not found for legacy htlcId=${tx.htlcId}, skipping...")
-            None
-        }
       case tx: ClaimHtlcSuccessTx =>
         commitment.changes.localChanges.all.collectFirst {
           case u: UpdateFulfillHtlc if Crypto.sha256(u.paymentPreimage) == tx.paymentHash => u.paymentPreimage

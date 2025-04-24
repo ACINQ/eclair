@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.internal.channel.version0
 
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, OutPoint, Transaction, TxId, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
@@ -140,7 +140,7 @@ private[channel] object ChannelCodecs0 {
       .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx])
       .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | provide(0L)) :: ("confirmationTarget" | defaultConfirmationTarget)).as[HtlcSuccessTx])
       .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[HtlcTimeoutTx])
-      .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[LegacyClaimHtlcSuccessTx])
+      .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | provide(ByteVector32.Zeroes)) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[ClaimHtlcSuccessTx])
       .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[ClaimHtlcTimeoutTx])
       .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
       .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx])
