@@ -363,7 +363,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val signedTx = htlcSuccessTx.addSigs(localSig, remoteSig, paymentPreimage, DefaultCommitmentFormat)
         assert(checkSpendable(signedTx).isSuccess)
         // check remote sig
-        assert(htlcSuccessTx.checkSig(remoteSig, remoteHtlcPriv.publicKey, TxOwner.Remote, DefaultCommitmentFormat))
+        assert(htlcSuccessTx.checkRemoteSig(localKeys, remoteSig, DefaultCommitmentFormat))
       }
     }
     {
@@ -656,14 +656,14 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val signedTx = htlcSuccessTx.addSigs(localSig, remoteSig, paymentPreimage, UnsafeLegacyAnchorOutputsCommitmentFormat)
         assert(checkSpendable(signedTx).isSuccess)
         // check remote sig
-        assert(htlcSuccessTx.checkSig(remoteSig, remoteHtlcPriv.publicKey, TxOwner.Remote, UnsafeLegacyAnchorOutputsCommitmentFormat))
+        assert(htlcSuccessTx.checkRemoteSig(localKeys, remoteSig, UnsafeLegacyAnchorOutputsCommitmentFormat))
         // local detects when remote doesn't use the right sighash flags
         val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         for (sighash <- invalidSighash) {
           val invalidRemoteSig = htlcSuccessTx.sign(remoteHtlcPriv, sighash, Map.empty)
           val invalidTx = htlcSuccessTx.addSigs(localSig, invalidRemoteSig, paymentPreimage, UnsafeLegacyAnchorOutputsCommitmentFormat)
           assert(checkSpendable(invalidTx).isFailure)
-          assert(!invalidTx.checkSig(invalidRemoteSig, remoteHtlcPriv.publicKey, TxOwner.Remote, UnsafeLegacyAnchorOutputsCommitmentFormat))
+          assert(!invalidTx.checkRemoteSig(localKeys, invalidRemoteSig, UnsafeLegacyAnchorOutputsCommitmentFormat))
         }
       }
     }

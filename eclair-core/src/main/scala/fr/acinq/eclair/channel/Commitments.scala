@@ -195,7 +195,7 @@ object LocalCommit {
                     fundingKey: PrivateKey, remoteFundingPubKey: PublicKey, commitInput: InputInfo,
                     commit: CommitSig, localCommitIndex: Long, spec: CommitmentSpec): Either[ChannelException, LocalCommit] = {
     val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(params, commitKeys, localCommitIndex, fundingKey, remoteFundingPubKey, commitInput, spec)
-    if (!localCommitTx.checkSig(commit.signature, remoteFundingPubKey, TxOwner.Remote, params.commitmentFormat)) {
+    if (!localCommitTx.checkRemoteSig(fundingKey.publicKey, remoteFundingPubKey, commit.signature, params.commitmentFormat)) {
       return Left(InvalidCommitmentSignature(params.channelId, fundingTxId, localCommitIndex, localCommitTx.tx))
     }
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
@@ -204,7 +204,7 @@ object LocalCommit {
     }
     val htlcTxsAndRemoteSigs = sortedHtlcTxs.zip(commit.htlcSignatures).toList.map {
       case (htlcTx: HtlcTx, remoteSig) =>
-        if (!htlcTx.checkSig(remoteSig, commitKeys.theirHtlcPublicKey, TxOwner.Remote, params.commitmentFormat)) {
+        if (!htlcTx.checkRemoteSig(commitKeys, remoteSig, params.commitmentFormat)) {
           return Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
         }
         HtlcTxAndRemoteSig(htlcTx, remoteSig)

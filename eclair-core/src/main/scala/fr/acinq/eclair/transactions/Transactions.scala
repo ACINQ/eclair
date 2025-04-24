@@ -152,14 +152,11 @@ object Transactions {
       }
     }
 
-    def checkSig(sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = input match {
-      case _: InputInfo.TaprootInput => false
-      case InputInfo.SegwitInput(outPoint, txOut, redeemScript) =>
-        val sighash = this.sighash(txOwner, commitmentFormat)
-        val inputIndex = tx.txIn.indexWhere(_.outPoint == outPoint)
+    protected def checkSig(sig: ByteVector64, publicKey: PublicKey, sighash: Int, redeemScript: ByteVector): Boolean = {
+        val inputIndex = tx.txIn.indexWhere(_.outPoint == input.outPoint)
         if (inputIndex >= 0) {
-          val data = Transaction.hashForSigning(tx, inputIndex, redeemScript, sighash, txOut.amount, SIGVERSION_WITNESS_V0)
-          Crypto.verifySignature(data, sig, pubKey)
+          val data = Transaction.hashForSigning(tx, inputIndex, redeemScript, sighash, input.txOut.amount, SIGVERSION_WITNESS_V0)
+          Crypto.verifySignature(data, sig, publicKey)
         } else {
           false
         }
@@ -206,6 +203,14 @@ object Transactions {
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo {
     override val desc: String = "commit-tx"
 
+    def checkRemoteSig(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, remoteSig: ByteVector64, commitmentFormat: CommitmentFormat): Boolean = {
+      commitmentFormat match {
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+          val redeemScript = Script.write(Scripts.multiSig2of2(localFundingPubkey, remoteFundingPubkey))
+          checkSig(remoteSig, remoteFundingPubkey, sighash(TxOwner.Local, commitmentFormat), redeemScript)
+      }
+    }
+
     def addSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): CommitTx = {
       val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
       copy(tx = tx.updateWitness(0, witness))
@@ -231,6 +236,8 @@ object Transactions {
     def htlcExpiry: CltvExpiry
     // @formatter:on
 
+    def checkRemoteSig(commitKeys: LocalCommitmentKeys, remoteSig: ByteVector64, commitmentFormat: CommitmentFormat): Boolean
+
     override def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
       case DefaultCommitmentFormat => SIGHASH_ALL
       case _: AnchorOutputsCommitmentFormat => txOwner match {
@@ -245,6 +252,16 @@ object Transactions {
   case class HtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, htlcExpiry: CltvExpiry) extends HtlcTx {
     override val desc: String = "htlc-success"
 
+    override def checkRemoteSig(commitKeys: LocalCommitmentKeys, remoteSig: ByteVector64, commitmentFormat: CommitmentFormat): Boolean = {
+      // The transaction was signed by our remote for us: from their point of view, we're a remote owner.
+      val remoteSighash = sighash(TxOwner.Remote, commitmentFormat)
+      commitmentFormat match {
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+          val redeemScript = Script.write(htlcReceived(commitKeys.publicKeys, paymentHash, CltvExpiry(confirmationTarget.confirmBefore), commitmentFormat))
+          checkSig(remoteSig, commitKeys.theirHtlcPublicKey, remoteSighash, redeemScript)
+      }
+    }
+
     def addSigs(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, commitmentFormat: CommitmentFormat): HtlcSuccessTx = input match {
       case InputInfo.SegwitInput(_, _, redeemScript) =>
         val witness = witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, redeemScript, commitmentFormat)
@@ -255,6 +272,16 @@ object Transactions {
 
   case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, htlcExpiry: CltvExpiry) extends HtlcTx {
     override val desc: String = "htlc-timeout"
+
+    override def checkRemoteSig(commitKeys: LocalCommitmentKeys, remoteSig: ByteVector64, commitmentFormat: CommitmentFormat): Boolean = {
+      // The transaction was signed by our remote for us: from their point of view, we're a remote owner.
+      val remoteSighash = sighash(TxOwner.Remote, commitmentFormat)
+      commitmentFormat match {
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+          val redeemScript = Script.write(htlcOffered(commitKeys.publicKeys, paymentHash, commitmentFormat))
+          checkSig(remoteSig, commitKeys.theirHtlcPublicKey, remoteSighash, redeemScript)
+      }
+    }
 
     def addSigs(localSig: ByteVector64, remoteSig: ByteVector64, commitmentFormat: CommitmentFormat): HtlcTimeoutTx = input match {
       case InputInfo.SegwitInput(_, _, redeemScript) =>
