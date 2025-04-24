@@ -26,8 +26,8 @@ import fr.acinq.eclair.blockchain.OnChainPubkeyCache
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
-import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
@@ -1170,10 +1170,10 @@ object Helpers {
         val revocationKey = channelKeys.revocationKey(remotePerCommitmentSecret)
 
         val feerateMain = onChainFeeConf.getClosingFeerate(feerates)
-        // we need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty
+        // We need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty.
         val feeratePenalty = feerates.fast
 
-        // first we will claim our main output right away
+        // First we will claim our main output right away.
         val mainTx = commitKeys.ourPaymentKey match {
           case Left(_) =>
             log.info("channel uses option_static_remotekey to pay directly to our wallet, there is nothing to do")
@@ -1194,7 +1194,7 @@ object Helpers {
           }
         }
 
-        // then we punish them by stealing their main output
+        // Then we punish them by stealing their main output.
         val mainPenaltyTx = withTxGenerationLog("main-penalty") {
           Transactions.makeMainPenaltyTx(commitKeys, commitTx, localParams.dustLimit, finalScriptPubKey, localParams.toSelfDelay, feeratePenalty).map(txinfo => {
             val sig = txinfo.sign(revocationKey, TxOwner.Local, commitmentFormat, Map.empty)
@@ -1202,26 +1202,16 @@ object Helpers {
           })
         }
 
-        // we retrieve the information needed to rebuild htlc scripts
+        // We retrieve the historical information needed to rebuild htlc scripts.
         val htlcInfos = db.listHtlcInfos(channelId, commitmentNumber)
         log.info("got {} htlcs for commitmentNumber={}", htlcInfos.size, commitmentNumber)
-        val htlcsRedeemScripts = (
-          htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(commitKeys.publicKeys, paymentHash, cltvExpiry, commitmentFormat) } ++
-            htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(commitKeys.publicKeys, paymentHash, commitmentFormat) }
-          )
-          .map(redeemScript => Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript))
-          .toMap
-
-        // and finally we steal the htlc outputs
-        val htlcPenaltyTxs = commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
-          val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
+        // And finally we steal the htlc outputs.
+        val htlcPenaltyTxs = Transactions.makeHtlcPenaltyTxs(commitKeys, commitTx, htlcInfos, localParams.dustLimit, finalScriptPubKey, feeratePenalty, commitmentFormat).flatMap { htlcPenalty =>
           withTxGenerationLog("htlc-penalty") {
-            Transactions.makeHtlcPenaltyTx(commitKeys, commitTx, outputIndex, htlcRedeemScript, localParams.dustLimit, finalScriptPubKey, feeratePenalty).map(htlcPenalty => {
-              val sig = htlcPenalty.sign(revocationKey, TxOwner.Local, commitmentFormat, Map.empty)
-              htlcPenalty.addSigs(commitKeys, sig)
-            })
+            val sig = htlcPenalty.sign(revocationKey, TxOwner.Local, commitmentFormat, Map.empty)
+            Right(htlcPenalty.addSigs(commitKeys, sig))
           }
-        }.toList.flatten
+        }.toList
 
         RevokedCommitPublished(
           commitTx = commitTx,

@@ -868,6 +868,7 @@ object Transactions {
   def makeClaimHtlcDelayedOutputPenaltyTxs(keys: RemoteCommitmentKeys, htlcTx: Transaction, localDustLimit: Satoshi, toLocalDelay: CltvExpiryDelta, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Seq[Either[TxGenerationSkipped, ClaimHtlcDelayedOutputPenaltyTx]] = {
     val redeemScript = toLocalDelayed(keys.publicKeys, toLocalDelay)
     val pubkeyScript = write(pay2wsh(redeemScript))
+    // Note that we check *all* outputs of the tx, because it could spend a batch of HTLC outputs from the commit tx.
     findPubKeyScriptIndexes(htlcTx, pubkeyScript) match {
       case Left(skip) => Seq(Left(skip))
       case Right(outputIndexes) => outputIndexes.map(outputIndex => {
@@ -908,7 +909,35 @@ object Transactions {
     }
   }
 
-  def makeHtlcPenaltyTx(keys: RemoteCommitmentKeys, commitTx: Transaction, htlcOutputIndex: Int, redeemScript: ByteVector, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, HtlcPenaltyTx] = {
+  def makeHtlcPenaltyTxs(keys: RemoteCommitmentKeys,
+                         commitTx: Transaction,
+                         htlcs: Seq[(ByteVector32, CltvExpiry)],
+                         localDustLimit: Satoshi,
+                         localFinalScriptPubKey: ByteVector,
+                         feeratePerKw: FeeratePerKw,
+                         commitmentFormat: CommitmentFormat): Seq[HtlcPenaltyTx] = {
+    // We create the output scripts for the corresponding HTLCs.
+    val redeemInfos: Map[ByteVector, (ByteVector, ByteVector32, CltvExpiry)] = htlcs.flatMap {
+      case (paymentHash, expiry) =>
+        // We don't know if this was an incoming or outgoing HTLC, so we try both cases.
+        val offered = htlcOffered(keys.publicKeys, paymentHash, commitmentFormat)
+        val received = htlcReceived(keys.publicKeys, paymentHash, expiry, commitmentFormat)
+        Seq(
+          write(pay2wsh(offered)) -> (write(offered), paymentHash, expiry),
+          write(pay2wsh(received)) -> (write(received), paymentHash, expiry)
+        )
+    }.toMap
+    // We check every output of the commitment transaction, and create an HTLC-penalty transaction if it is an HTLC output.
+    commitTx.txOut.zipWithIndex.map {
+      case (txOut, outputIndex) =>
+        redeemInfos.get(txOut.publicKeyScript) match {
+          case Some((redeemScript, _, _)) => makeHtlcPenaltyTx(keys, commitTx, outputIndex, redeemScript, localDustLimit, localFinalScriptPubKey, feeratePerKw)
+          case None => Left(OutputNotFound)
+        }
+    }.collect { case Right(tx) => tx }
+  }
+
+  private def makeHtlcPenaltyTx(keys: RemoteCommitmentKeys, commitTx: Transaction, htlcOutputIndex: Int, redeemScript: ByteVector, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, HtlcPenaltyTx] = {
     val input = InputInfo(OutPoint(commitTx, htlcOutputIndex), commitTx.txOut(htlcOutputIndex), redeemScript)
     val unsignedTx = Transaction(
       version = 2,
