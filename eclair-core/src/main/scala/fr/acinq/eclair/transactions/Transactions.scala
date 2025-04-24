@@ -881,7 +881,7 @@ object Transactions {
    * @param dummySignedTx the transaction with a witness filled with dummy signatures (to compute its weight).
    * @return the output amount, unless the transaction should be skipped because it's below dust.
    */
-  private def skipTxIfBelowDust[T <: TransactionWithInputInfo](dummySignedTx: T, feerate: FeeratePerKw, dustLimit: Satoshi): Either[TxGenerationSkipped, Satoshi] = {
+  private def skipTxIfBelowDust(dummySignedTx: TransactionWithInputInfo, feerate: FeeratePerKw, dustLimit: Satoshi): Either[TxGenerationSkipped, Satoshi] = {
     val fee = weight2fee(feerate, dummySignedTx.tx.weight())
     val amount = dummySignedTx.input.txOut.amount - fee
     if (amount < dustLimit) {
