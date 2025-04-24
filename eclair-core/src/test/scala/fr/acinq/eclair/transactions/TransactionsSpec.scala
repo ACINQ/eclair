@@ -26,7 +26,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
-import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
+import fr.acinq.eclair.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions.AnchorOutputsCommitmentFormat.anchorAmount
 import fr.acinq.eclair.transactions.Transactions._
@@ -174,9 +174,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val redeemScript = htlcReceived(localKeys.publicKeys, htlc.paymentHash, htlc.cltvExpiry, DefaultCommitmentFormat)
       val pubKeyScript = write(pay2wsh(redeemScript))
       val commitTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
-      val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(remoteKeys, commitTx, 0, Script.write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
+      val htlcPenaltyTxs = makeHtlcPenaltyTxs(remoteKeys, commitTx, Seq((htlc.paymentHash, htlc.cltvExpiry)), localDustLimit, finalPubKeyScript, feeratePerKw, DefaultCommitmentFormat)
+      assert(htlcPenaltyTxs.size == 1)
       // we use dummy signatures to compute the weight
-      val weight = htlcPenaltyTx.addSigs(remoteKeys, PlaceHolderSig).tx.weight()
+      val weight = htlcPenaltyTxs.head.addSigs(remoteKeys, PlaceHolderSig).tx.weight()
       assert(htlcPenaltyWeight == weight)
     }
     {
@@ -414,16 +415,15 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(claimHtlcDelayedPenaltyTx1 == Seq(Left(AmountBelowDustLimit)))
     }
     {
-      // remote spends offered HTLC output with revocation key
-      val script = Script.write(Scripts.htlcOffered(remoteKeys.publicKeys, htlc1.paymentHash, DefaultCommitmentFormat))
-      val Some(htlcOutputIndex) = outputs.zipWithIndex.find {
-        case (CommitmentOutputLink(_, _, OutHtlc(OutgoingHtlc(someHtlc))), _) => someHtlc.id == htlc1.id
-        case _ => false
-      }.map(_._2)
-      val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(remoteKeys, commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
-      val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
-      val signed = htlcPenaltyTx.addSigs(remoteKeys, sig)
-      assert(checkSpendable(signed).isSuccess)
+      // remote spends HTLC outputs with revocation key
+      val htlcs = spec.htlcs.map(_.add).map(add => (add.paymentHash, add.cltvExpiry)).toSeq
+      val htlcPenaltyTxs = makeHtlcPenaltyTxs(remoteKeys, commitTx.tx, htlcs, localDustLimit, finalPubKeyScript, feeratePerKw, DefaultCommitmentFormat)
+      assert(htlcPenaltyTxs.size == 4) // the first 4 htlcs are above the dust limit
+      htlcPenaltyTxs.foreach(htlcPenaltyTx => {
+        val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
+        val signed = htlcPenaltyTx.addSigs(remoteKeys, sig)
+        assert(checkSpendable(signed).isSuccess)
+      })
     }
     {
       // remote spends htlc2's htlc-success tx with revocation key
@@ -434,18 +434,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // remote can't claim revoked output of htlc4's htlc-success tx because it is below the dust limit
       val claimHtlcDelayedPenaltyTx1 = makeClaimHtlcDelayedOutputPenaltyTxs(remoteKeys, htlcSuccessTxs(0).tx, localDustLimit, toLocalDelay, finalPubKeyScript, feeratePerKw)
       assert(claimHtlcDelayedPenaltyTx1 == Seq(Left(AmountBelowDustLimit)))
-    }
-    {
-      // remote spends received HTLC output with revocation key
-      val script = Script.write(Scripts.htlcReceived(remoteKeys.publicKeys, htlc2.paymentHash, htlc2.cltvExpiry, DefaultCommitmentFormat))
-      val Some(htlcOutputIndex) = outputs.zipWithIndex.find {
-        case (CommitmentOutputLink(_, _, InHtlc(IncomingHtlc(someHtlc))), _) => someHtlc.id == htlc2.id
-        case _ => false
-      }.map(_._2)
-      val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(remoteKeys, commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
-      val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
-      val signed = htlcPenaltyTx.addSigs(remoteKeys, sig)
-      assert(checkSpendable(signed).isSuccess)
     }
   }
 
@@ -748,30 +736,15 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(claimed.map(_.input.outPoint).toSet.size == 3)
     }
     {
-      // remote spends offered htlc output with revocation key
-      val script = Script.write(Scripts.htlcOffered(remoteKeys.publicKeys, htlc1.paymentHash, UnsafeLegacyAnchorOutputsCommitmentFormat))
-      val Some(htlcOutputIndex) = commitTxOutputs.zipWithIndex.find {
-        case (CommitmentOutputLink(_, _, OutHtlc(OutgoingHtlc(someHtlc))), _) => someHtlc.id == htlc1.id
-        case _ => false
-      }.map(_._2)
-      val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(remoteKeys, commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
-      val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
-      val signed = htlcPenaltyTx.addSigs(remoteKeys, sig)
-      assert(checkSpendable(signed).isSuccess)
-    }
-    {
-      // remote spends received htlc output with revocation key
-      for (htlc <- Seq(htlc2a, htlc2b)) {
-        val script = Script.write(Scripts.htlcReceived(remoteKeys.publicKeys, htlc.paymentHash, htlc.cltvExpiry, UnsafeLegacyAnchorOutputsCommitmentFormat))
-        val Some(htlcOutputIndex) = commitTxOutputs.zipWithIndex.find {
-          case (CommitmentOutputLink(_, _, InHtlc(IncomingHtlc(someHtlc))), _) => someHtlc.id == htlc.id
-          case _ => false
-        }.map(_._2)
-        val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(remoteKeys, commitTx.tx, htlcOutputIndex, script, localDustLimit, finalPubKeyScript, feeratePerKw)
+      // remote spends htlc outputs with revocation key
+      val htlcs = spec.htlcs.map(_.add).map(add => (add.paymentHash, add.cltvExpiry)).toSeq
+      val htlcPenaltyTxs = makeHtlcPenaltyTxs(remoteKeys, commitTx.tx, htlcs, localDustLimit, finalPubKeyScript, feeratePerKw, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      assert(htlcPenaltyTxs.size == 5) // the first 5 htlcs are above the dust limit
+      htlcPenaltyTxs.foreach(htlcPenaltyTx => {
         val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
         val signed = htlcPenaltyTx.addSigs(remoteKeys, sig)
         assert(checkSpendable(signed).isSuccess)
-      }
+      })
     }
   }
 
