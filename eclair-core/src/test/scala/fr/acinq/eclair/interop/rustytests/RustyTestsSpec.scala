@@ -67,8 +67,8 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     val bobNodeParams = Bob.nodeParams.copy(blockHeight = blockHeight)
     val channelConfig = ChannelConfig.standard
     val channelType = ChannelTypes.Standard()
-    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(aliceNodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayer, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
-    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(bobNodeParams, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayer, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
+    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(aliceNodeParams, Alice.channelKeys(), wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayer, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(bobNodeParams, Bob.channelKeys(), wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayer, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     val aliceInit = Init(Alice.channelParams.initFeatures)
     val bobInit = Init(Bob.channelParams.initFeatures)
     // alice and bob will both have 1 000 000 sat

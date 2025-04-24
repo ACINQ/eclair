@@ -22,6 +22,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, FailureReason, RevokeAndAck, UnknownNextPeer, UpdateAddHtlc}
 import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, TestKitBaseClass}
@@ -70,7 +71,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     Fixture(alice, HtlcWithPreimage(rb2, htlcb2), bob, HtlcWithPreimage(ra2, htlca2), TestProbe())
   }
 
-  case class LocalFixture(nodeParams: NodeParams, alice: TestFSMRef[ChannelState, ChannelData, Channel], alicePendingHtlc: HtlcWithPreimage, remainingHtlcOutpoint: OutPoint, lcp: LocalCommitPublished, rcp: RemoteCommitPublished, htlcTimeoutTxs: Seq[HtlcTimeoutTx], htlcSuccessTxs: Seq[HtlcSuccessTx], probe: TestProbe) {
+  case class LocalFixture(nodeParams: NodeParams, channelKeys: ChannelKeys, alice: TestFSMRef[ChannelState, ChannelData, Channel], alicePendingHtlc: HtlcWithPreimage, remainingHtlcOutpoint: OutPoint, lcp: LocalCommitPublished, rcp: RemoteCommitPublished, htlcTimeoutTxs: Seq[HtlcTimeoutTx], htlcSuccessTxs: Seq[HtlcSuccessTx], probe: TestProbe) {
     val aliceClosing = alice.stateData.asInstanceOf[DATA_CLOSING]
   }
 
@@ -109,7 +110,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(bobClosing.remoteCommitPublished.nonEmpty)
     val rcp = bobClosing.remoteCommitPublished.get
 
-    LocalFixture(nodeParams, f.alice, alicePendingHtlc, remainingHtlcOutpoint, lcp2, rcp, htlcTimeoutTxs, htlcSuccessTxs, probe)
+    LocalFixture(nodeParams, alice.underlyingActor.channelKeys, f.alice, alicePendingHtlc, remainingHtlcOutpoint, lcp2, rcp, htlcTimeoutTxs, htlcSuccessTxs, probe)
   }
 
   test("local commit published (our HTLC txs are confirmed, they claim the remaining HTLC)") {
@@ -118,7 +119,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
 
     val lcp3 = (htlcSuccessTxs.map(_.tx) ++ htlcTimeoutTxs.map(_.tx)).foldLeft(lcp) {
       case (current, tx) =>
-        val (current1, Some(_)) = Closing.LocalClose.claimHtlcDelayedOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
+        val (current1, Some(_)) = Closing.LocalClose.claimHtlcDelayedOutput(current, channelKeys, aliceClosing.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
         Closing.updateLocalCommitPublished(current1, tx)
     }
     assert(!lcp3.isDone)
@@ -141,7 +142,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
 
     val lcp3 = (htlcSuccessTxs.map(_.tx) ++ htlcTimeoutTxs.map(_.tx)).foldLeft(lcp) {
       case (current, tx) =>
-        val (current1, Some(_)) = Closing.LocalClose.claimHtlcDelayedOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
+        val (current1, Some(_)) = Closing.LocalClose.claimHtlcDelayedOutput(current, channelKeys, aliceClosing.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
         Closing.updateLocalCommitPublished(current1, tx)
     }
     assert(!lcp3.isDone)
@@ -160,7 +161,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(lcp5.claimHtlcDelayedTxs.length == 3)
 
     val newHtlcSuccessTx = lcp5.htlcTxs(remainingHtlcOutpoint).get.tx
-    val (lcp6, Some(newClaimHtlcDelayedTx)) = Closing.LocalClose.claimHtlcDelayedOutput(lcp5, nodeParams.channelKeyManager, aliceClosing.commitments.latest, newHtlcSuccessTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
+    val (lcp6, Some(newClaimHtlcDelayedTx)) = Closing.LocalClose.claimHtlcDelayedOutput(lcp5, channelKeys, aliceClosing.commitments.latest, newHtlcSuccessTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
     assert(lcp6.claimHtlcDelayedTxs.length == 4)
 
     val lcp7 = Closing.updateLocalCommitPublished(lcp6, newHtlcSuccessTx)
@@ -177,7 +178,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     val remoteHtlcSuccess = rcp.claimHtlcTxs.values.collectFirst { case Some(tx: ClaimHtlcSuccessTx) => tx }.get
     val lcp3 = (htlcSuccessTxs.map(_.tx) ++ Seq(remoteHtlcSuccess.tx)).foldLeft(lcp) {
       case (current, tx) =>
-        val (current1, _) = Closing.LocalClose.claimHtlcDelayedOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
+        val (current1, _) = Closing.LocalClose.claimHtlcDelayedOutput(current, channelKeys, aliceClosing.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
         Closing.updateLocalCommitPublished(current1, tx)
     }
     assert(lcp3.claimHtlcDelayedTxs.length == 1)
@@ -188,7 +189,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
 
     val remainingHtlcTimeoutTxs = htlcTimeoutTxs.filter(_.input.outPoint != remoteHtlcSuccess.input.outPoint)
     assert(remainingHtlcTimeoutTxs.length == 1)
-    val (lcp5, Some(remainingClaimHtlcTx)) = Closing.LocalClose.claimHtlcDelayedOutput(lcp4, nodeParams.channelKeyManager, aliceClosing.commitments.latest, remainingHtlcTimeoutTxs.head.tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
+    val (lcp5, Some(remainingClaimHtlcTx)) = Closing.LocalClose.claimHtlcDelayedOutput(lcp4, channelKeys, aliceClosing.commitments.latest, remainingHtlcTimeoutTxs.head.tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
     assert(lcp5.claimHtlcDelayedTxs.length == 2)
 
     val lcp6 = (remainingHtlcTimeoutTxs.map(_.tx) ++ Seq(remainingClaimHtlcTx.tx)).foldLeft(lcp5) {
@@ -207,7 +208,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
 
     val lcp3 = htlcTimeoutTxs.map(_.tx).foldLeft(lcp) {
       case (current, tx) =>
-        val (current1, Some(_)) = Closing.LocalClose.claimHtlcDelayedOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
+        val (current1, Some(_)) = Closing.LocalClose.claimHtlcDelayedOutput(current, channelKeys, aliceClosing.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
         Closing.updateLocalCommitPublished(current1, tx)
     }
     assert(!lcp3.isDone)
@@ -233,7 +234,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
 
     val lcp3 = (htlcSuccessTxs.map(_.tx) ++ htlcTimeoutTxs.map(_.tx)).foldLeft(lcp) {
       case (current, tx) =>
-        val (current1, Some(_)) = Closing.LocalClose.claimHtlcDelayedOutput(current, nodeParams.channelKeyManager, aliceClosing.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
+        val (current1, Some(_)) = Closing.LocalClose.claimHtlcDelayedOutput(current, channelKeys, aliceClosing.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, aliceClosing.finalScriptPubKey)
         Closing.updateLocalCommitPublished(current1, tx)
     }
 
@@ -246,7 +247,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     assert(!lcp4.isDone)
 
     // at this point the pending incoming htlc is waiting for a preimage
-    assert(lcp4.htlcTxs(remainingHtlcOutpoint) == None)
+    assert(lcp4.htlcTxs(remainingHtlcOutpoint).isEmpty)
 
     alice ! CMD_FAIL_HTLC(1, FailureReason.LocalFailure(UnknownNextPeer()), replyTo_opt = Some(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FAIL_HTLC]]

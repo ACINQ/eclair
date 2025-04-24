@@ -277,7 +277,7 @@ final case class RES_ADD_FAILED[+T <: ChannelException](c: CMD_ADD_HTLC, t: T, c
 sealed trait HtlcResult
 object HtlcResult {
   sealed trait Fulfill extends HtlcResult { def paymentPreimage: ByteVector32 }
-  case class RemoteFulfill(fulfill: UpdateFulfillHtlc) extends Fulfill { override val paymentPreimage = fulfill.paymentPreimage }
+  case class RemoteFulfill(fulfill: UpdateFulfillHtlc) extends Fulfill { override val paymentPreimage: ByteVector32 = fulfill.paymentPreimage }
   case class OnChainFulfill(paymentPreimage: ByteVector32) extends Fulfill
   sealed trait Fail extends HtlcResult
   case class RemoteFail(fail: UpdateFailHtlc) extends Fail
@@ -544,6 +544,7 @@ case object Nothing extends TransientChannelData {
 
 sealed trait PersistentChannelData extends ChannelData {
   def remoteNodeId: PublicKey
+  def channelParams: ChannelParams
 }
 sealed trait ChannelDataWithoutCommitments extends PersistentChannelData {
   val channelId: ByteVector32 = channelParams.channelId
@@ -553,6 +554,7 @@ sealed trait ChannelDataWithoutCommitments extends PersistentChannelData {
 sealed trait ChannelDataWithCommitments extends PersistentChannelData {
   val channelId: ByteVector32 = commitments.channelId
   val remoteNodeId: PublicKey = commitments.remoteNodeId
+  val channelParams: ChannelParams = commitments.params
   def commitments: Commitments
 }
 

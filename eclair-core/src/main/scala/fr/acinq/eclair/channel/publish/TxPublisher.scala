@@ -25,6 +25,7 @@ import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.FullCommitment
+import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.transactions.Transactions.{ClaimAnchorOutputTx, ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.{BlockHeight, Logs, NodeParams}
 
@@ -94,7 +95,7 @@ object TxPublisher {
    *
    * @param commitTx commitment transaction that this transaction is spending.
    */
-  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment, commitTx: Transaction) extends PublishTx {
+  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, channelKeys: ChannelKeys, commitment: FullCommitment, commitTx: Transaction) extends PublishTx {
     override def input: OutPoint = txInfo.input.outPoint
     override def desc: String = txInfo.desc
 

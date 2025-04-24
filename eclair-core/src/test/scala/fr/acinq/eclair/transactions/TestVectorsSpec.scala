@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong,
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelFeatures
 import fr.acinq.eclair.channel.Helpers.Funding
-import fr.acinq.eclair.crypto.Generators
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants}
@@ -97,9 +97,9 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val funding_privkey = PrivateKey(hex"30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901")
     val funding_pubkey = funding_privkey.publicKey
     val per_commitment_point = PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
-    val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
+    val htlc_privkey = ChannelKeys.derivePerCommitmentKey(payment_basepoint_secret, per_commitment_point)
     val payment_privkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
-    val delayed_payment_privkey = Generators.derivePrivKey(delayed_payment_basepoint_secret, per_commitment_point)
+    val delayed_payment_privkey = ChannelKeys.derivePerCommitmentKey(delayed_payment_basepoint_secret, per_commitment_point)
     val revocation_pubkey = PublicKey(hex"0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19")
     val feerate_per_kw = 15000
   }
@@ -114,9 +114,18 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val revocation_basepoint = revocation_basepoint_secret.publicKey
     val funding_privkey = PrivateKey(hex"1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301")
     val funding_pubkey = funding_privkey.publicKey
-    val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
+    val htlc_privkey = ChannelKeys.derivePerCommitmentKey(payment_basepoint_secret, Local.per_commitment_point)
     val payment_privkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
   }
+
+  val commitmentKeys = LocalCommitmentKeys(
+    ourDelayedPaymentKey = Local.delayed_payment_privkey,
+    theirPaymentPublicKey = Remote.payment_privkey.publicKey,
+    ourPaymentBasePoint = Local.payment_basepoint,
+    ourHtlcKey = Local.htlc_privkey,
+    theirHtlcPublicKey = Remote.htlc_privkey.publicKey,
+    revocationPublicKey = Local.revocation_pubkey
+  )
 
   val coinbaseTx = Transaction.read("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0100f2052a010000001976a9143ca33c2e4446f4a305f23c80df8ad1afdcf652f988ac00000000")
 
@@ -162,8 +171,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 3, 5000000.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(506), TestConstants.emptyOnionPacket, None, 1.0, None))
   )
   val htlcScripts = htlcs.map {
-    case OutgoingHtlc(add) => Scripts.htlcOffered(Local.htlc_privkey.publicKey, Remote.htlc_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash), commitmentFormat)
-    case IncomingHtlc(add) => Scripts.htlcReceived(Local.htlc_privkey.publicKey, Remote.htlc_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash), add.cltvExpiry, commitmentFormat)
+    case OutgoingHtlc(add) => Scripts.htlcOffered(commitmentKeys.publicKeys, add.paymentHash, commitmentFormat)
+    case IncomingHtlc(add) => Scripts.htlcReceived(commitmentKeys.publicKeys, add.paymentHash, add.cltvExpiry, commitmentFormat)
   }
   val defaultHtlcs = htlcs.take(5) // most test cases only use the first 5 htlcs
 
@@ -188,19 +197,15 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"local_feerate_per_kw: ${spec.commitTxFeerate}")
 
     val outputs = Transactions.makeCommitTxOutputs(
-      localPaysCommitTxFees = true,
-      localDustLimit = dustLimit,
-      localRevocationPubkey = Local.revocation_pubkey,
-      toLocalDelay = Local.toSelfDelay,
-      localDelayedPaymentPubkey = Local.delayed_payment_privkey.publicKey,
-      remotePaymentPubkey = Remote.payment_privkey.publicKey,
-      localHtlcPubkey = Local.htlc_privkey.publicKey,
-      remoteHtlcPubkey = Remote.htlc_privkey.publicKey,
-      localFundingPubkey = Local.funding_pubkey,
-      remoteFundingPubkey = Remote.funding_pubkey,
+      Local.funding_pubkey,
+      Remote.funding_pubkey,
+      commitmentKeys.publicKeys,
+      payCommitTxFees = true,
+      dustLimit,
+      Local.toSelfDelay,
       spec,
-      commitmentFormat)
-
+      commitmentFormat
+    )
     val commitTx = {
       val tx = Transactions.makeCommitTx(
         commitTxInput = commitmentInput,
@@ -225,7 +230,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         case 22 => logger.info(s"# to-remote amount ${txOut.amount.toLong} P2WPKH(${Remote.payment_privkey.publicKey})")
         case 34 =>
           val index = htlcScripts.indexWhere(s => Script.write(Script.pay2wsh(s)) == txOut.publicKeyScript)
-          if (index == -1) logger.info(s"# to-local amount ${txOut.amount.toLong} wscript ${Script.write(Scripts.toLocalDelayed(Local.revocation_pubkey, Local.toSelfDelay, Local.delayed_payment_privkey.publicKey))}")
+          if (index == -1) logger.info(s"# to-local amount ${txOut.amount.toLong} wscript ${Script.write(Scripts.toLocalDelayed(commitmentKeys.publicKeys, Local.toSelfDelay))}")
           else logger.info(s"# HTLC #${if (htlcs(index).isInstanceOf[OutgoingHtlc]) "offered" else "received"} amount ${txOut.amount.toLong} wscript ${Script.write(htlcScripts(index))}")
       }
     })
@@ -235,14 +240,14 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"output commit_tx: ${commitTx.tx}")
 
     val unsignedHtlcTxs = Transactions.makeHtlcTxs(
+      commitmentKeys.publicKeys,
       commitTx.tx,
       dustLimit,
-      Local.revocation_pubkey,
-      Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
+      Local.toSelfDelay,
       spec.htlcTxFeerate(commitmentFormat),
       outputs,
-      commitmentFormat)
-
+      commitmentFormat
+    )
     val htlcTxs: Seq[TransactionWithInputInfo] = unsignedHtlcTxs.sortBy(_.input.outPoint.index)
     logger.info(s"num_htlcs: ${htlcTxs.length}")
 

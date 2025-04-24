@@ -436,22 +436,22 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]]
     val Right(finalAddressC) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, nodes("C").wallet.getReceivePublicKeyScript(renew = false))
     // we prepare the revoked transactions F will publish
-    val keyManagerF = nodes("F").nodeParams.channelKeyManager
-    val channelKeyPathF = keyManagerF.keyPath(commitmentsF.params.localParams, commitmentsF.params.channelConfig)
-    val localPerCommitmentPointF = keyManagerF.commitmentPoint(channelKeyPathF, commitmentsF.localCommitIndex)
+    val channelKeysF = nodes("F").nodeParams.channelKeyManager.channelKeys(commitmentsF.params.channelConfig, commitmentsF.params.localParams.fundingKeyPath)
+    val fundingKeyF = channelKeysF.fundingKey(commitmentsF.latest.fundingTxIndex)
+    val commitmentKeysF = commitmentsF.latest.localKeys(channelKeysF)
     val revokedCommitTx = {
       val commitTx = localCommitF.commitTxAndRemoteSig.commitTx
-      val localSig = keyManagerF.sign(commitTx, keyManagerF.fundingPublicKey(commitmentsF.params.localParams.fundingKeyPath, commitmentsF.latest.fundingTxIndex), TxOwner.Local, commitmentFormat, Map.empty)
+      val localSig = commitTx.sign(fundingKeyF, TxOwner.Local, commitmentFormat, Map.empty)
       val RemoteSignature.FullSignature(remoteSig) = localCommitF.commitTxAndRemoteSig.remoteSig
-      Transactions.addSigs(commitTx, keyManagerF.fundingPublicKey(commitmentsF.params.localParams.fundingKeyPath, commitmentsF.latest.fundingTxIndex).publicKey, commitmentsF.latest.remoteFundingPubKey, localSig, remoteSig).tx
+      Transactions.addSigs(commitTx, fundingKeyF.publicKey, commitmentsF.latest.remoteFundingPubKey, localSig, remoteSig).tx
     }
     val htlcSuccess = htlcSuccessTxs.zip(Seq(preimage1, preimage2)).map {
       case (htlcTxAndSigs, preimage) =>
-        val localSig = keyManagerF.sign(htlcTxAndSigs.htlcTx, keyManagerF.htlcPoint(channelKeyPathF), localPerCommitmentPointF, TxOwner.Local, commitmentFormat, Map.empty)
+        val localSig = htlcTxAndSigs.htlcTx.sign(commitmentKeysF.ourHtlcKey, TxOwner.Local, commitmentFormat, Map.empty)
         Transactions.addSigs(htlcTxAndSigs.htlcTx.asInstanceOf[Transactions.HtlcSuccessTx], localSig, htlcTxAndSigs.remoteSig, preimage, commitmentsF.params.commitmentFormat).tx
     }
     val htlcTimeout = htlcTimeoutTxs.map { htlcTxAndSigs =>
-      val localSig = keyManagerF.sign(htlcTxAndSigs.htlcTx, keyManagerF.htlcPoint(channelKeyPathF), localPerCommitmentPointF, TxOwner.Local, commitmentFormat, Map.empty)
+      val localSig = htlcTxAndSigs.htlcTx.sign(commitmentKeysF.ourHtlcKey, TxOwner.Local, commitmentFormat, Map.empty)
       Transactions.addSigs(htlcTxAndSigs.htlcTx.asInstanceOf[Transactions.HtlcTimeoutTx], localSig, htlcTxAndSigs.remoteSig, commitmentsF.params.commitmentFormat).tx
     }
     htlcSuccess.foreach(tx => Transaction.correctlySpends(tx, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
@@ -587,11 +587,14 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     assert(initialStateDataF.commitments.params.commitmentFormat == expectedCommitmentFormat)
     val initialCommitmentIndex = initialStateDataF.commitments.localCommitIndex
 
-    // the 'to remote' address is a simple script spending to the remote payment basepoint with a 1-block CSV delay
-    val toRemoteAddress = Script.pay2wsh(Scripts.toRemoteDelayed(initialStateDataF.commitments.params.remoteParams.paymentBasepoint))
+    val toRemoteAddress = {
+      val channelKeys = nodes("F").nodeParams.channelKeyManager.channelKeys(initialStateDataF.channelParams.channelConfig, initialStateDataF.channelParams.localParams.fundingKeyPath)
+      val toRemote = Scripts.toRemoteDelayed(initialStateDataF.commitments.latest.localKeys(channelKeys).publicKeys)
+      Script.write(Script.pay2wsh(toRemote))
+    }
 
     // toRemote output of C as seen by F
-    val Some(toRemoteOutC) = initialStateDataF.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
+    val Some(toRemoteOutC) = initialStateDataF.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.find(_.publicKeyScript == toRemoteAddress)
 
     // let's make a payment to advance the commit index
     val amountMsat = 4200000.msat
@@ -616,7 +619,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     val stateDataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
     val commitmentIndex = stateDataF.commitments.localCommitIndex
     val commitTx = stateDataF.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
+    val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == toRemoteAddress)
 
     // there is a new commitment index in the channel state
     assert(commitmentIndex > initialCommitmentIndex)

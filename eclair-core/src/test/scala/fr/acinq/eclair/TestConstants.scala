@@ -19,9 +19,9 @@ package fr.acinq.eclair
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee._
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, RemoteRbfLimits, UnhandledExceptionStrategy}
-import fr.acinq.eclair.channel.{ChannelFlags, LocalParams, Origin, Upstream}
-import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.crypto.keymanager._
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
 import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection, PeerReadyNotifier}
@@ -81,8 +81,11 @@ object TestConstants {
 
   object Alice {
     val seed: ByteVector32 = ByteVector32(hex"b4acd47335b25ab7b84b8c020997b12018592bb4631b868762154d77fa8b93a3") // 02aaaa...
-    val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
-    val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val nodeKeyManager: NodeKeyManager = LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val channelKeyManager: ChannelKeyManager = LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    private val fundingKeyPath = channelKeyManager.newFundingKeyPath(isChannelOpener = true)
+
+    def channelKeys(channelConfig: ChannelConfig = ChannelConfig.standard): ChannelKeys = channelKeyManager.channelKeys(channelConfig, fundingKeyPath)
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams: NodeParams = NodeParams(
@@ -263,14 +266,18 @@ object TestConstants {
       fundingSatoshis,
       unlimitedMaxHtlcValueInFlight = false,
     ).copy(
+      fundingKeyPath = fundingKeyPath,
       initialRequestedChannelReserve_opt = Some(10_000 sat) // Bob will need to keep that much satoshis in his balance
     )
   }
 
   object Bob {
     val seed: ByteVector32 = ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492") // 02bbbb...
-    val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
-    val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val nodeKeyManager: NodeKeyManager = LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val channelKeyManager: ChannelKeyManager = LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    private val fundingKeyPath = channelKeyManager.newFundingKeyPath(isChannelOpener = false)
+
+    def channelKeys(channelConfig: ChannelConfig = ChannelConfig.standard): ChannelKeys = channelKeyManager.channelKeys(channelConfig, fundingKeyPath)
 
     def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
@@ -447,6 +454,7 @@ object TestConstants {
       fundingSatoshis,
       unlimitedMaxHtlcValueInFlight = false,
     ).copy(
+      fundingKeyPath = fundingKeyPath,
       initialRequestedChannelReserve_opt = Some(20_000 sat) // Alice will need to keep that much satoshis in her balance
     )
   }
