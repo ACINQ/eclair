@@ -931,22 +931,25 @@ object Transactions {
     commitTx.txOut.zipWithIndex.map {
       case (txOut, outputIndex) =>
         redeemInfos.get(txOut.publicKeyScript) match {
-          case Some((redeemScript, _, _)) =>
-            val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), redeemScript)
-            val unsignedTx = Transaction(
-              version = 2,
-              txIn = TxIn(input.outPoint, ByteVector.empty, 0xffffffffL) :: Nil,
-              txOut = TxOut(0 sat, localFinalScriptPubKey) :: Nil,
-              lockTime = 0
-            )
-            val dummySignedTx = HtlcPenaltyTx(input, unsignedTx).addSigs(keys, PlaceHolderSig)
-            skipTxIfBelowDust(dummySignedTx, feeratePerKw, localDustLimit).map { amount =>
-              val tx = unsignedTx.copy(txOut = TxOut(amount, localFinalScriptPubKey) :: Nil)
-              HtlcPenaltyTx(input, tx)
-            }
+          case Some((redeemScript, _, _)) => makeHtlcPenaltyTx(keys, commitTx, outputIndex, redeemScript, localDustLimit, localFinalScriptPubKey, feeratePerKw)
           case None => Left(OutputNotFound)
         }
     }.collect { case Right(tx) => tx }
+  }
+
+  private def makeHtlcPenaltyTx(keys: RemoteCommitmentKeys, commitTx: Transaction, htlcOutputIndex: Int, redeemScript: ByteVector, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, HtlcPenaltyTx] = {
+    val input = InputInfo(OutPoint(commitTx, htlcOutputIndex), commitTx.txOut(htlcOutputIndex), redeemScript)
+    val unsignedTx = Transaction(
+      version = 2,
+      txIn = TxIn(input.outPoint, ByteVector.empty, 0xffffffffL) :: Nil,
+      txOut = TxOut(0 sat, localFinalScriptPubKey) :: Nil,
+      lockTime = 0
+    )
+    val dummySignedTx = HtlcPenaltyTx(input, unsignedTx).addSigs(keys, PlaceHolderSig)
+    skipTxIfBelowDust(dummySignedTx, feeratePerKw, localDustLimit).map { amount =>
+      val tx = unsignedTx.copy(txOut = TxOut(amount, localFinalScriptPubKey) :: Nil)
+      HtlcPenaltyTx(input, tx)
+    }
   }
 
   def makeClosingTx(commitTxInput: InputInfo, localScriptPubKey: ByteVector, remoteScriptPubKey: ByteVector, localPaysClosingFees: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec): ClosingTx = {
