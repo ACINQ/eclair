@@ -218,7 +218,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       logger.info(s"# local_signature = ${Scripts.der(local_sig).dropRight(1).toHex}")
       val remote_sig = tx.sign(Remote.funding_privkey, TxOwner.Remote, commitmentFormat, Map.empty)
       logger.info(s"remote_signature: ${Scripts.der(remote_sig).dropRight(1).toHex}")
-      Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
+      tx.addSigs(Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
     val baseFee = Transactions.commitTxFeeMsat(dustLimit, spec, commitmentFormat)
@@ -257,7 +257,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         val remoteSig = tx.sign(Remote.htlc_privkey, TxOwner.Remote, commitmentFormat, Map.empty)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.asInstanceOf[InputInfo.SegwitInput].redeemScript))
         val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
-        val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage, commitmentFormat)
+        val tx1 = tx.addSigs(localSig, remoteSig, preimage, commitmentFormat)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-success for htlc #$htlcIndex)")
         logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")
@@ -268,7 +268,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         val localSig = tx.sign(Local.htlc_privkey, TxOwner.Local, commitmentFormat, Map.empty)
         val remoteSig = tx.sign(Remote.htlc_privkey, TxOwner.Remote, commitmentFormat, Map.empty)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.asInstanceOf[InputInfo.SegwitInput].redeemScript))
-        val tx1 = Transactions.addSigs(tx, localSig, remoteSig, commitmentFormat)
+        val tx1 = tx.addSigs(localSig, remoteSig, commitmentFormat)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-timeout for htlc #$htlcIndex)")
         logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")

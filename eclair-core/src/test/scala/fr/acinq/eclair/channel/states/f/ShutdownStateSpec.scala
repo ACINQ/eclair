@@ -838,8 +838,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     // two main outputs are 300 000 and 200 000, htlcs are 300 000 and 200 000
     assert(mainTx.txOut.head.amount == 291250.sat)
     assert(mainPenaltyTx.txOut.head.amount == 195160.sat)
-    assert(htlc1PenaltyTx.txOut.head.amount == 194510.sat)
-    assert(htlc2PenaltyTx.txOut.head.amount == 294510.sat)
+    assert(htlc1PenaltyTx.txOut.head.amount == 194190.sat)
+    assert(htlc2PenaltyTx.txOut.head.amount == 294190.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
@@ -881,7 +881,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     // two main outputs are 300 000 and 200 000, htlcs are 300 000 and 200 000
     assert(mainTx.txOut(0).amount == 291680.sat)
     assert(mainPenaltyTx.txOut(0).amount == 495160.sat)
-    assert(htlcPenaltyTx.txOut(0).amount == 194510.sat)
+    assert(htlcPenaltyTx.txOut(0).amount == 194190.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)

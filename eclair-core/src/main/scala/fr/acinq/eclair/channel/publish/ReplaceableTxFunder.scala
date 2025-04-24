@@ -124,8 +124,8 @@ object ReplaceableTxFunder {
     require(claimHtlcTx.txInfo.tx.txIn.size == 1, "claim-htlc transaction should have a single input")
     require(claimHtlcTx.txInfo.tx.txOut.size == 1, "claim-htlc transaction should have a single output")
     val dummySignedTx = claimHtlcTx.txInfo match {
-      case tx: ClaimHtlcSuccessTx => addSigs(tx, PlaceHolderSig, ByteVector32.Zeroes)
-      case tx: ClaimHtlcTimeoutTx => addSigs(tx, PlaceHolderSig)
+      case tx: ClaimHtlcSuccessTx => tx.addSigs(PlaceHolderSig, ByteVector32.Zeroes)
+      case tx: ClaimHtlcTimeoutTx => tx.addSigs(PlaceHolderSig)
       case tx: LegacyClaimHtlcSuccessTx => tx
     }
     val targetFee = weight2fee(targetFeerate, dummySignedTx.tx.weight())
@@ -312,14 +312,14 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
       case claimAnchorTx: ClaimAnchorWithWitnessData =>
         val fundingKey = cmd.channelKeys.fundingKey(cmd.commitment.fundingTxIndex)
         val localSig = claimAnchorTx.txInfo.sign(fundingKey, TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
-        val signedTx = claimAnchorTx.copy(txInfo = addSigs(claimAnchorTx.txInfo, localSig))
+        val signedTx = claimAnchorTx.copy(txInfo = claimAnchorTx.txInfo.addSigs(localSig))
         signWalletInputs(signedTx, txFeerate, amountIn, walletUtxos)
       case htlcTx: HtlcWithWitnessData =>
         val commitmentKeys = cmd.commitment.localKeys(cmd.channelKeys)
         val localSig = htlcTx.txInfo.sign(commitmentKeys.ourHtlcKey, TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
         val signedTx = htlcTx match {
-          case htlcSuccess: HtlcSuccessWithWitnessData => htlcSuccess.copy(txInfo = addSigs(htlcSuccess.txInfo, localSig, htlcSuccess.remoteSig, htlcSuccess.preimage, cmd.commitment.params.commitmentFormat))
-          case htlcTimeout: HtlcTimeoutWithWitnessData => htlcTimeout.copy(txInfo = addSigs(htlcTimeout.txInfo, localSig, htlcTimeout.remoteSig, cmd.commitment.params.commitmentFormat))
+          case htlcSuccess: HtlcSuccessWithWitnessData => htlcSuccess.copy(txInfo = htlcSuccess.txInfo.addSigs(localSig, htlcSuccess.remoteSig, htlcSuccess.preimage, cmd.commitment.params.commitmentFormat))
+          case htlcTimeout: HtlcTimeoutWithWitnessData => htlcTimeout.copy(txInfo = htlcTimeout.txInfo.addSigs(localSig, htlcTimeout.remoteSig, cmd.commitment.params.commitmentFormat))
         }
         val hasWalletInputs = htlcTx.txInfo.tx.txIn.size > 1
         if (hasWalletInputs) {
@@ -336,9 +336,9 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
         val commitmentKeys = cmd.commitment.remoteKeys(cmd.channelKeys, remotePerCommitmentPoint)
         val sig = claimHtlcTx.txInfo.sign(commitmentKeys.ourHtlcKey, TxOwner.Local, cmd.commitment.params.commitmentFormat, walletUtxos)
         val signedTx = claimHtlcTx match {
-          case claimSuccess: ClaimHtlcSuccessWithWitnessData => claimSuccess.copy(txInfo = addSigs(claimSuccess.txInfo, sig, claimSuccess.preimage))
+          case claimSuccess: ClaimHtlcSuccessWithWitnessData => claimSuccess.copy(txInfo = claimSuccess.txInfo.addSigs(sig, claimSuccess.preimage))
           case legacyClaimHtlcSuccess: LegacyClaimHtlcSuccessWithWitnessData => legacyClaimHtlcSuccess
-          case claimTimeout: ClaimHtlcTimeoutWithWitnessData => claimTimeout.copy(txInfo = addSigs(claimTimeout.txInfo, sig))
+          case claimTimeout: ClaimHtlcTimeoutWithWitnessData => claimTimeout.copy(txInfo = claimTimeout.txInfo.addSigs(sig))
         }
         replyTo ! TransactionReady(FundedTx(signedTx, amountIn, txFeerate, walletUtxos))
         Behaviors.stopped

@@ -269,7 +269,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           // check remote signature validity
           val localSigOfLocalTx = localCommitTx.sign(fundingKey, TxOwner.Local, params.commitmentFormat, Map.empty)
-          val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
+          val signedLocalCommitTx = localCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
           Transactions.checkSpendable(signedLocalCommitTx) match {
             case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxId, commitmentNumber = 0, localCommitTx.tx), d, None)
             case Success(_) =>
@@ -318,7 +318,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       // we make sure that their sig checks out and that our first commit tx is spendable
       val fundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
       val localSigOfLocalTx = localCommitTx.sign(fundingKey, TxOwner.Local, params.commitmentFormat, Map.empty)
-      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
+      val signedLocalCommitTx = localCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           // we rollback the funding tx, it will never be published

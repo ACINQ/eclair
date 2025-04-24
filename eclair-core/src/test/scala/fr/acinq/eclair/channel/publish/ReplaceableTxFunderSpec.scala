@@ -126,8 +126,8 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
             assert(updatedClaimHtlc.txInfo.tx.txOut.head.amount < previousAmount)
             previousAmount = updatedClaimHtlc.txInfo.tx.txOut.head.amount
             val signedTx = updatedClaimHtlc match {
-              case ClaimHtlcSuccessWithWitnessData(txInfo, preimage) => addSigs(txInfo, PlaceHolderSig, preimage)
-              case ClaimHtlcTimeoutWithWitnessData(txInfo) => addSigs(txInfo, PlaceHolderSig)
+              case ClaimHtlcSuccessWithWitnessData(txInfo, preimage) => txInfo.addSigs(PlaceHolderSig, preimage)
+              case ClaimHtlcTimeoutWithWitnessData(txInfo) => txInfo.addSigs(PlaceHolderSig)
               case _: LegacyClaimHtlcSuccessWithWitnessData => fail("legacy claim htlc success not supported")
             }
             val txFeerate = fee2rate(signedTx.fee, signedTx.tx.weight())

@@ -666,7 +666,7 @@ case class Commitment(fundingTxIndex: Long,
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val localSig = unsignedCommitTx.sign(fundingKey, TxOwner.Local, params.commitmentFormat, Map.empty)
     val RemoteSignature.FullSignature(remoteSig) = localCommit.commitTxAndRemoteSig.remoteSig
-    val commitTx = addSigs(unsignedCommitTx, fundingKey.publicKey, remoteFundingPubKey, localSig, remoteSig)
+    val commitTx = unsignedCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSig, remoteSig)
     // We verify the remote signature when receiving their commit_sig, so this check should always pass.
     require(checkSpendable(commitTx).isSuccess, "commit signatures are invalid")
     commitTx

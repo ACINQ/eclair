@@ -3304,10 +3304,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // two main outputs are 760 000 and 200 000
     assert(mainTx.txOut.head.amount == 750390.sat)
     assert(mainPenaltyTx.txOut.head.amount == 195160.sat)
-    assert(htlcPenaltyTxs(0).txOut.head.amount == 4510.sat)
-    assert(htlcPenaltyTxs(1).txOut.head.amount == 4510.sat)
-    assert(htlcPenaltyTxs(2).txOut.head.amount == 4510.sat)
-    assert(htlcPenaltyTxs(3).txOut.head.amount == 4510.sat)
+    assert(htlcPenaltyTxs(0).txOut.head.amount == 4190.sat)
+    assert(htlcPenaltyTxs(1).txOut.head.amount == 4190.sat)
+    assert(htlcPenaltyTxs(2).txOut.head.amount == 4190.sat)
+    assert(htlcPenaltyTxs(3).txOut.head.amount == 4190.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)

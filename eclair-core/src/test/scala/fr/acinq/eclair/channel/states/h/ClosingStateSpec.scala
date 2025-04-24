@@ -1959,11 +1959,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobHtlcSuccessTx1 = bobRevokedCommit.htlcTxsAndRemoteSigs.collectFirst {
       case HtlcTxAndRemoteSig(txInfo: HtlcSuccessTx, _) if txInfo.htlcId == fulfilledHtlc.id =>
         assert(fulfilledHtlc.paymentHash == txInfo.paymentHash)
-        Transactions.addSigs(txInfo, ByteVector64.Zeroes, ByteVector64.Zeroes, preimage, commitmentFormat)
+        txInfo.addSigs(ByteVector64.Zeroes, ByteVector64.Zeroes, preimage, commitmentFormat)
     }.get
     val bobHtlcTimeoutTx = bobRevokedCommit.htlcTxsAndRemoteSigs.collectFirst {
       case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, _) if txInfo.htlcId == failedHtlc.id =>
-        Transactions.addSigs(txInfo, ByteVector64.Zeroes, ByteVector64.Zeroes, commitmentFormat)
+        txInfo.addSigs(ByteVector64.Zeroes, ByteVector64.Zeroes, commitmentFormat)
     }.get
     val bobOutpoints = Seq(bobHtlcSuccessTx1, bobHtlcTimeoutTx).map(_.input.outPoint).toSet
     assert(bobOutpoints.size == 2)
@@ -2066,9 +2066,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       case HtlcTxAndRemoteSig(txInfo: HtlcSuccessTx, _) =>
         val preimage = revokedCloseFixture.htlcsAlice.collectFirst { case (add, preimage) if add.id == txInfo.htlcId => preimage }.get
         assert(Crypto.sha256(preimage) == txInfo.paymentHash)
-        Transactions.addSigs(txInfo, ByteVector64.Zeroes, ByteVector64.Zeroes, preimage, commitmentFormat)
+        txInfo.addSigs(ByteVector64.Zeroes, ByteVector64.Zeroes, preimage, commitmentFormat)
       case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, _) =>
-        Transactions.addSigs(txInfo, ByteVector64.Zeroes, ByteVector64.Zeroes, commitmentFormat)
+        txInfo.addSigs(ByteVector64.Zeroes, ByteVector64.Zeroes, commitmentFormat)
     }
     assert(bobHtlcTxs.map(_.input.outPoint).size == 4)
     val bobHtlcTx = Transaction(
