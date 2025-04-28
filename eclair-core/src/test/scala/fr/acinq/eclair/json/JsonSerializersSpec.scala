@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, ByteVector64, Det
 import fr.acinq.eclair._
 import fr.acinq.eclair.balance.CheckBalance
 import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, GlobalBalance, MainAndHtlcBalance, PossiblyPublishedMainAndHtlcBalance, PossiblyPublishedMainBalance}
-import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
@@ -386,40 +386,40 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val dummyInputInfo = InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(Satoshi(0), Nil), Nil)
 
     val htlcSuccessTx = Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800")
-    val htlcSuccessTxInfo = HtlcSuccessTx(dummyInputInfo, htlcSuccessTx, ByteVector32.One, 3, ConfirmationTarget.Absolute(BlockHeight(1105)))
+    val htlcSuccessTxInfo = HtlcSuccessTx(dummyInputInfo, htlcSuccessTx, ByteVector32.One, 3, CltvExpiry(1105))
     val htlcSuccessJson =
       s"""{
          |  "txid": "${htlcSuccessTx.txid.value.toHex}",
          |  "tx": "0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800",
          |  "paymentHash": "0100000000000000000000000000000000000000000000000000000000000000",
          |  "htlcId": 3,
-         |  "confirmBeforeBlock": 1105
+         |  "htlcExpiry": 1105
          |}
     """.stripMargin
     assertJsonEquals(JsonSerializers.serialization.write(htlcSuccessTxInfo)(JsonSerializers.formats), htlcSuccessJson)
 
     val claimHtlcTimeoutTx = Transaction.read("010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000")
-    val claimHtlcTimeoutTxInfo = ClaimHtlcTimeoutTx(dummyInputInfo, claimHtlcTimeoutTx, 2, ConfirmationTarget.Absolute(BlockHeight(144)))
+    val claimHtlcTimeoutTxInfo = ClaimHtlcTimeoutTx(dummyInputInfo, claimHtlcTimeoutTx, ByteVector32.One, 2, CltvExpiry(144))
     val claimHtlcTimeoutJson =
       s"""{
          |  "txid": "${claimHtlcTimeoutTx.txid.value.toHex}",
          |  "tx": "010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000",
+         |  "paymentHash": "0100000000000000000000000000000000000000000000000000000000000000",
          |  "htlcId": 2,
-         |  "confirmBeforeBlock": 144
+         |  "htlcExpiry": 144
          |}
     """.stripMargin
     assertJsonEquals(JsonSerializers.serialization.write(claimHtlcTimeoutTxInfo)(JsonSerializers.formats), claimHtlcTimeoutJson)
 
     val closingTx = Transaction.read("0100000001be43e9788523ed4de0b24a007a90009bc25e667ddac0e9ee83049be03e220138000000006b483045022100f74dd6ad3e6a00201d266a0ed860a6379c6e68b473970423f3fc8a15caa1ea0f022065b4852c9da230d9e036df743cb743601ca5229e1cb610efdd99769513f2a2260121020636de7755830fb4a3f136e97ecc6c58941611957ba0364f01beae164b945b2fffffffff0150f80c000000000017a9146809053148799a10480eada3d56d15edf4a648c88700000000")
-    val closingTxWithLocalOutput = ClosingTx(dummyInputInfo, closingTx, Some(OutputInfo(1, Satoshi(15000), hex"deadbeef")))
+    val closingTxWithLocalOutput = ClosingTx(dummyInputInfo, closingTx, Some(0))
     val closingTxWithLocalOutputJson =
       s"""{
          |  "txid": "${closingTx.txid.value.toHex}",
          |  "tx": "0100000001be43e9788523ed4de0b24a007a90009bc25e667ddac0e9ee83049be03e220138000000006b483045022100f74dd6ad3e6a00201d266a0ed860a6379c6e68b473970423f3fc8a15caa1ea0f022065b4852c9da230d9e036df743cb743601ca5229e1cb610efdd99769513f2a2260121020636de7755830fb4a3f136e97ecc6c58941611957ba0364f01beae164b945b2fffffffff0150f80c000000000017a9146809053148799a10480eada3d56d15edf4a648c88700000000",
          |  "toLocalOutput": {
-         |    "index": 1,
-         |    "amount": 15000,
-         |    "publicKeyScript": "deadbeef"
+         |    "amount": 850000,
+         |    "publicKeyScript": "a9146809053148799a10480eada3d56d15edf4a648c887"
          |  }
          |}
     """.stripMargin
@@ -484,7 +484,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   /** utility method that strips line breaks in the expected json */
-  def assertJsonEquals(actual: String, expected: String) = {
+  def assertJsonEquals(actual: String, expected: String): Unit = {
     val cleanedExpected = expected
       .replace("\n", "")
       .replace("\r", "")

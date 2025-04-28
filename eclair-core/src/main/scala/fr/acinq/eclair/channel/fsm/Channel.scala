@@ -353,8 +353,18 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           goto(CLOSED) using closing
         case closing: DATA_CLOSING =>
           val localPaysClosingFees = closing.commitments.params.localParams.paysClosingFees
+          // We made some changes to add more data to TransactionWithInputInfo between v0.12.0 and v0.13.0.
+          // If nodes upgraded while a force-close was ongoing, some data may be missing in their closing transactions.
+          // If that's the case, we recreate closing transactions to fill the missing data.
+          // This migration code can be removed once we're confident that node operators have upgraded (e.g. 1 year after releasing v0.13.0).
+          val closing1 = closing.copy(
+            localCommitPublished = closing.localCommitPublished.map(lcp => Closing.LocalClose.recreateTxsIfNeeded(lcp, channelKeys, closing.commitments.latest, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)),
+            remoteCommitPublished = closing.remoteCommitPublished.map(rcp => Closing.RemoteClose.recreateTxsIfNeeded(rcp, channelKeys, closing.commitments.latest, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)),
+            nextRemoteCommitPublished = closing.nextRemoteCommitPublished.map(rcp => Closing.RemoteClose.recreateTxsIfNeeded(rcp, channelKeys, closing.commitments.latest, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)),
+            revokedCommitPublished = closing.revokedCommitPublished.map(rvk => Closing.RevokedClose.recreateTxsIfNeeded(rvk, channelKeys, closing.commitments, nodeParams.db.channels, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)),
+          )
           // we don't put back the WatchSpent if the commitment tx has already been published and the spending tx already reached mindepth
-          val closingType_opt = Closing.isClosingTypeAlreadyKnown(closing)
+          val closingType_opt = Closing.isClosingTypeAlreadyKnown(closing1)
           log.info(s"channel is closing (closingType=${closingType_opt.map(c => EventType.Closed(c).label).getOrElse("UnknownYet")})")
           // if the closing type is known:
           // - there is no need to watch the funding tx because it has already been spent and the spending tx has already reached mindepth
@@ -364,23 +374,28 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             case Some(c: Closing.MutualClose) =>
               doPublish(c.tx, localPaysClosingFees)
             case Some(c: Closing.LocalClose) =>
-              doPublish(c.localCommitPublished, closing.commitments.latest)
+              doPublish(c.localCommitPublished, closing1.commitments.latest)
             case Some(c: Closing.RemoteClose) =>
-              doPublish(c.remoteCommitPublished, closing.commitments.latest)
+              doPublish(c.remoteCommitPublished, closing1.commitments.latest)
             case Some(c: Closing.RecoveryClose) =>
-              doPublish(c.remoteCommitPublished, closing.commitments.latest)
+              doPublish(c.remoteCommitPublished, closing1.commitments.latest)
             case Some(c: Closing.RevokedClose) =>
               doPublish(c.revokedCommitPublished)
             case None =>
-              closing.mutualClosePublished.foreach(mcp => doPublish(mcp, localPaysClosingFees))
-              closing.localCommitPublished.foreach(lcp => doPublish(lcp, closing.commitments.latest))
-              closing.remoteCommitPublished.foreach(rcp => doPublish(rcp, closing.commitments.latest))
-              closing.nextRemoteCommitPublished.foreach(rcp => doPublish(rcp, closing.commitments.latest))
-              closing.revokedCommitPublished.foreach(doPublish)
-              closing.futureRemoteCommitPublished.foreach(rcp => doPublish(rcp, closing.commitments.latest))
+              closing1.mutualClosePublished.foreach(mcp => doPublish(mcp, localPaysClosingFees))
+              closing1.localCommitPublished.foreach(lcp => doPublish(lcp, closing1.commitments.latest))
+              closing1.remoteCommitPublished.foreach(rcp => doPublish(rcp, closing1.commitments.latest))
+              closing1.nextRemoteCommitPublished.foreach(rcp => doPublish(rcp, closing1.commitments.latest))
+              closing1.revokedCommitPublished.foreach(doPublish)
+              closing1.futureRemoteCommitPublished.foreach(rcp => doPublish(rcp, closing1.commitments.latest))
           }
           // no need to go OFFLINE, we can directly switch to CLOSING
-          goto(CLOSING) using closing
+          if (closing != closing1) {
+            log.debug("storing recreated closing transactions")
+            goto(CLOSING) using closing1 storing()
+          } else {
+            goto(CLOSING) using closing
+          }
         case normal: DATA_NORMAL =>
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.lastAnnouncement_opt, normal.aliases, remoteNodeId))
           // we check the configuration because the values for channel_update may have changed while eclair was down

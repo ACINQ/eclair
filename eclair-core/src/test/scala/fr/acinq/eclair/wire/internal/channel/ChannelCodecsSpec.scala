@@ -185,9 +185,9 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
     val negotiating = channelDataCodec.decode(dataNegotiating.bits).require.value.asInstanceOf[DATA_NEGOTIATING]
     assert(negotiating.bestUnpublishedClosingTx_opt.nonEmpty)
-    negotiating.bestUnpublishedClosingTx_opt.foreach(tx => assert(tx.toLocalOutput.isEmpty))
+    negotiating.bestUnpublishedClosingTx_opt.foreach(tx => assert(tx.toLocalOutput_opt.isEmpty))
     assert(negotiating.closingTxProposed.flatten.nonEmpty)
-    negotiating.closingTxProposed.flatten.foreach(tx => assert(tx.unsignedTx.toLocalOutput.isEmpty))
+    negotiating.closingTxProposed.flatten.foreach(tx => assert(tx.unsignedTx.toLocalOutput_opt.isEmpty))
 
     val normal = channelDataCodec.decode(dataNormal.bits).require.value.asInstanceOf[DATA_NORMAL]
     assert(normal.commitments.latest.localCommit.htlcTxsAndRemoteSigs.nonEmpty)

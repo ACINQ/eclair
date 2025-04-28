@@ -266,7 +266,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         }
       case tx: HtlcTimeoutTx =>
         commitment.localCommit.htlcTxsAndRemoteSigs.collectFirst {
-          case HtlcTxAndRemoteSig(HtlcTimeoutTx(input, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => remoteSig
+          case HtlcTxAndRemoteSig(htlcTimeoutTx: HtlcTimeoutTx, remoteSig) if htlcTimeoutTx.input.outPoint == tx.input.outPoint => remoteSig
         } match {
           case Some(remoteSig) => Some(HtlcTimeoutWithWitnessData(tx, remoteSig))
           case None =>

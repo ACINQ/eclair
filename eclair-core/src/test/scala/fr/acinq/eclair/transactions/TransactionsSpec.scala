@@ -418,7 +418,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // remote spends HTLC outputs with revocation key
       val htlcs = spec.htlcs.map(_.add).map(add => (add.paymentHash, add.cltvExpiry)).toSeq
       val htlcPenaltyTxs = makeHtlcPenaltyTxs(remoteKeys, commitTx.tx, htlcs, localDustLimit, finalPubKeyScript, feeratePerKw, DefaultCommitmentFormat)
-      assert(htlcPenaltyTxs.size == 4) // the first 4 htlcs are above the dust limit
+      assert(htlcPenaltyTxs.map(_.paymentHash).toSet == Set(htlc1, htlc2, htlc3, htlc4).map(_.paymentHash)) // the first 4 htlcs are above the dust limit
       htlcPenaltyTxs.foreach(htlcPenaltyTx => {
         val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
         val signed = htlcPenaltyTx.addSigs(remoteKeys, sig)
@@ -739,7 +739,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // remote spends htlc outputs with revocation key
       val htlcs = spec.htlcs.map(_.add).map(add => (add.paymentHash, add.cltvExpiry)).toSeq
       val htlcPenaltyTxs = makeHtlcPenaltyTxs(remoteKeys, commitTx.tx, htlcs, localDustLimit, finalPubKeyScript, feeratePerKw, UnsafeLegacyAnchorOutputsCommitmentFormat)
-      assert(htlcPenaltyTxs.size == 5) // the first 5 htlcs are above the dust limit
+      assert(htlcPenaltyTxs.map(_.paymentHash).toSet == Set(htlc1, htlc2a, htlc2b, htlc3, htlc4).map(_.paymentHash)) // the first 5 htlcs are above the dust limit
       htlcPenaltyTxs.foreach(htlcPenaltyTx => {
         val sig = htlcPenaltyTx.sign(localRevocationPriv, TxOwner.Local, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
         val signed = htlcPenaltyTx.addSigs(remoteKeys, sig)
@@ -1093,11 +1093,11 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val spec = CommitmentSpec(Set.empty, feeratePerKw, 150_000_000 msat, 250_000_000 msat)
       val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localPaysClosingFees = true, localDustLimit, 1000 sat, spec)
       assert(closingTx.tx.txOut.length == 2)
-      assert(closingTx.toLocalOutput !== None)
-      val toLocal = closingTx.toLocalOutput.get
+      assert(closingTx.toLocalOutput_opt.nonEmpty)
+      val toLocal = closingTx.toLocalOutput_opt.get
       assert(toLocal.publicKeyScript == localPubKeyScript)
       assert(toLocal.amount == 149_000.sat) // funder pays the fee
-      val toRemoteIndex = (toLocal.index + 1) % 2
+      val toRemoteIndex = (closingTx.toLocalOutputIndex_opt.get + 1) % 2
       assert(closingTx.tx.txOut(toRemoteIndex.toInt).amount == 250_000.sat)
     }
     {
@@ -1107,10 +1107,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(closingTxs.localAndRemote_opt.nonEmpty)
       assert(closingTxs.localOnly_opt.nonEmpty)
       assert(closingTxs.remoteOnly_opt.isEmpty)
-      val localAndRemote = closingTxs.localAndRemote_opt.flatMap(_.toLocalOutput).get
+      val localAndRemote = closingTxs.localAndRemote_opt.flatMap(_.toLocalOutput_opt).get
       assert(localAndRemote.publicKeyScript == localPubKeyScript)
       assert(localAndRemote.amount == 145_000.sat)
-      val localOnly = closingTxs.localOnly_opt.flatMap(_.toLocalOutput).get
+      val localOnly = closingTxs.localOnly_opt.flatMap(_.toLocalOutput_opt).get
       assert(localOnly.publicKeyScript == localPubKeyScript)
       assert(localOnly.amount == 145_000.sat)
     }
@@ -1122,13 +1122,14 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(closingTxs.localAndRemote_opt.nonEmpty)
       assert(closingTxs.localOnly_opt.nonEmpty)
       assert(closingTxs.remoteOnly_opt.isEmpty)
-      val localAndRemote = closingTxs.localAndRemote_opt.flatMap(_.toLocalOutput).get
+      val localAndRemoteIndex = closingTxs.localAndRemote_opt.flatMap(_.toLocalOutputIndex_opt).get
+      val localAndRemote = closingTxs.localAndRemote_opt.flatMap(_.toLocalOutput_opt).get
       assert(localAndRemote.publicKeyScript == localPubKeyScript)
       assert(localAndRemote.amount == 145_000.sat)
-      val remoteOutput = closingTxs.localAndRemote_opt.get.tx.txOut((localAndRemote.index.toInt + 1) % 2)
+      val remoteOutput = closingTxs.localAndRemote_opt.get.tx.txOut((localAndRemoteIndex.toInt + 1) % 2)
       assert(remoteOutput.amount == 0.sat)
       assert(remoteOutput.publicKeyScript == remotePubKeyScript)
-      val localOnly = closingTxs.localOnly_opt.flatMap(_.toLocalOutput).get
+      val localOnly = closingTxs.localOnly_opt.flatMap(_.toLocalOutput_opt).get
       assert(localOnly.publicKeyScript == localPubKeyScript)
       assert(localOnly.amount == 145_000.sat)
     }
@@ -1140,13 +1141,14 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(closingTxs.localAndRemote_opt.nonEmpty)
       assert(closingTxs.localOnly_opt.nonEmpty)
       assert(closingTxs.remoteOnly_opt.isEmpty)
-      val localAndRemote = closingTxs.localAndRemote_opt.flatMap(_.toLocalOutput).get
+      val localAndRemoteIndex = closingTxs.localAndRemote_opt.flatMap(_.toLocalOutputIndex_opt).get
+      val localAndRemote = closingTxs.localAndRemote_opt.flatMap(_.toLocalOutput_opt).get
       assert(localAndRemote.publicKeyScript == localPubKeyScript)
       assert(localAndRemote.amount == 150_000.sat)
-      val remoteOutput = closingTxs.localAndRemote_opt.get.tx.txOut((localAndRemote.index.toInt + 1) % 2)
+      val remoteOutput = closingTxs.localAndRemote_opt.get.tx.txOut((localAndRemoteIndex.toInt + 1) % 2)
       assert(remoteOutput.amount == 0.sat)
       assert(remoteOutput.publicKeyScript == remotePubKeyScript)
-      val localOnly = closingTxs.localOnly_opt.flatMap(_.toLocalOutput).get
+      val localOnly = closingTxs.localOnly_opt.flatMap(_.toLocalOutput_opt).get
       assert(localOnly.publicKeyScript == localPubKeyScript)
       assert(localOnly.amount == 150_000.sat)
     }
@@ -1155,11 +1157,11 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val spec = CommitmentSpec(Set.empty, feeratePerKw, 150_000_000 msat, 150_000_000 msat)
       val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localPaysClosingFees = false, localDustLimit, 1000 sat, spec)
       assert(closingTx.tx.txOut.length == 2)
-      assert(closingTx.toLocalOutput !== None)
-      val toLocal = closingTx.toLocalOutput.get
+      assert(closingTx.toLocalOutput_opt.nonEmpty)
+      val toLocal = closingTx.toLocalOutput_opt.get
       assert(toLocal.publicKeyScript == localPubKeyScript)
       assert(toLocal.amount == 150_000.sat)
-      val toRemoteIndex = (toLocal.index + 1) % 2
+      val toRemoteIndex = (closingTx.toLocalOutputIndex_opt.get + 1) % 2
       assert(closingTx.tx.txOut(toRemoteIndex.toInt).amount < 150_000.sat)
     }
     {
@@ -1167,11 +1169,11 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val spec = CommitmentSpec(Set.empty, feeratePerKw, 150_000_000 msat, 1_000 msat)
       val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localPaysClosingFees = false, localDustLimit, 1000 sat, spec)
       assert(closingTx.tx.txOut.length == 1)
-      assert(closingTx.toLocalOutput !== None)
-      val toLocal = closingTx.toLocalOutput.get
+      assert(closingTx.toLocalOutputIndex_opt.contains(0))
+      assert(closingTx.toLocalOutput_opt.nonEmpty)
+      val toLocal = closingTx.toLocalOutput_opt.get
       assert(toLocal.publicKeyScript == localPubKeyScript)
       assert(toLocal.amount == 150_000.sat)
-      assert(toLocal.index == 0)
     }
     {
       // Their output is trimmed (option_simple_close):
@@ -1179,10 +1181,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val closingTxs = makeSimpleClosingTxs(commitInput, spec, SimpleClosingTxFee.PaidByThem(800 sat), 0, localPubKeyScript, remotePubKeyScript)
       assert(closingTxs.all.size == 1)
       assert(closingTxs.localOnly_opt.nonEmpty)
-      val toLocal = closingTxs.localOnly_opt.flatMap(_.toLocalOutput).get
+      val toLocal = closingTxs.localOnly_opt.flatMap(_.toLocalOutput_opt).get
       assert(toLocal.publicKeyScript == localPubKeyScript)
       assert(toLocal.amount == 150_000.sat)
-      assert(toLocal.index == 0)
+      assert(closingTxs.localOnly_opt.flatMap(_.toLocalOutputIndex_opt).contains(0))
     }
     {
       // Their OP_RETURN output is trimmed (option_simple_close):
@@ -1191,17 +1193,17 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val closingTxs = makeSimpleClosingTxs(commitInput, spec, SimpleClosingTxFee.PaidByThem(1_001 sat), 0, localPubKeyScript, remotePubKeyScript)
       assert(closingTxs.all.size == 1)
       assert(closingTxs.localOnly_opt.nonEmpty)
-      val toLocal = closingTxs.localOnly_opt.flatMap(_.toLocalOutput).get
+      val toLocal = closingTxs.localOnly_opt.flatMap(_.toLocalOutput_opt).get
       assert(toLocal.publicKeyScript == localPubKeyScript)
       assert(toLocal.amount == 150_000.sat)
-      assert(toLocal.index == 0)
+      assert(closingTxs.localOnly_opt.flatMap(_.toLocalOutputIndex_opt).contains(0))
     }
     {
       // Our output is trimmed:
       val spec = CommitmentSpec(Set.empty, feeratePerKw, 50_000 msat, 150_000_000 msat)
       val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localPaysClosingFees = true, localDustLimit, 1000 sat, spec)
       assert(closingTx.tx.txOut.length == 1)
-      assert(closingTx.toLocalOutput.isEmpty)
+      assert(closingTx.toLocalOutput_opt.isEmpty)
     }
     {
       // Our output is trimmed (option_simple_close):
@@ -1209,14 +1211,14 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val closingTxs = makeSimpleClosingTxs(commitInput, spec, SimpleClosingTxFee.PaidByUs(800 sat), 0, localPubKeyScript, remotePubKeyScript)
       assert(closingTxs.all.size == 1)
       assert(closingTxs.remoteOnly_opt.nonEmpty)
-      assert(closingTxs.remoteOnly_opt.flatMap(_.toLocalOutput).isEmpty)
+      assert(closingTxs.remoteOnly_opt.flatMap(_.toLocalOutput_opt).isEmpty)
     }
     {
       // Both outputs are trimmed:
       val spec = CommitmentSpec(Set.empty, feeratePerKw, 50_000 msat, 10_000 msat)
       val closingTx = makeClosingTx(commitInput, localPubKeyScript, remotePubKeyScript, localPaysClosingFees = true, localDustLimit, 1000 sat, spec)
       assert(closingTx.tx.txOut.isEmpty)
-      assert(closingTx.toLocalOutput.isEmpty)
+      assert(closingTx.toLocalOutput_opt.isEmpty)
     }
   }
 

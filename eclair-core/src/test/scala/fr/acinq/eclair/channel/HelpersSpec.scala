@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong, randomKey}
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.HexStringSyntax
@@ -225,7 +225,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = Some(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx)),
+          claimMainDelayedOutputTx = Some(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx, CltvExpiryDelta(720))),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,
@@ -247,7 +247,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = Some(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx)),
+          claimMainDelayedOutputTx = Some(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx, CltvExpiryDelta(720))),
           htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
           claimAnchorTxs = Nil,

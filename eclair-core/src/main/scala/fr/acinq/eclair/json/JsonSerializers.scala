@@ -255,41 +255,34 @@ object KeyPathSerializer extends MinimalSerializer({
 })
 
 object TransactionWithInputInfoSerializer extends MinimalSerializer({
-  case x: HtlcSuccessTx => JObject(List(
+  case x: HtlcTx => JObject(List(
     JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString())),
     JField("paymentHash", JString(x.paymentHash.toString())),
     JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
-  ))
-  case x: HtlcTimeoutTx => JObject(List(
-    JField("txid", JString(x.tx.txid.value.toHex)),
-    JField("tx", JString(x.tx.toString())),
-    JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
-  ))
-  case x: ClaimHtlcSuccessTx => JObject(List(
-    JField("txid", JString(x.tx.txid.value.toHex)),
-    JField("tx", JString(x.tx.toString())),
-    JField("paymentHash", JString(x.paymentHash.toString())),
-    JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
+    JField("htlcExpiry", JLong(x.htlcExpiry.toLong))
   ))
   case x: ClaimHtlcTx => JObject(List(
     JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString())),
+    JField("paymentHash", JString(x.paymentHash.toString())),
     JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
+    JField("htlcExpiry", JLong(x.htlcExpiry.toLong))
+  ))
+  case x: HtlcPenaltyTx => JObject(List(
+    JField("txid", JString(x.tx.txid.value.toHex)),
+    JField("tx", JString(x.tx.toString())),
+    JField("paymentHash", JString(x.paymentHash.toString())),
+    JField("htlcExpiry", JLong(x.htlcExpiry.toLong))
   ))
   case x: ClosingTx =>
     val txFields = List(
       JField("txid", JString(x.tx.txid.value.toHex)),
       JField("tx", JString(x.tx.toString()))
     )
-    x.toLocalOutput match {
+    x.toLocalOutput_opt match {
       case Some(toLocal) =>
         val toLocalField = JField("toLocalOutput", JObject(List(
-          JField("index", JLong(toLocal.index)),
           JField("amount", JLong(toLocal.amount.toLong)),
           JField("publicKeyScript", JString(toLocal.publicKeyScript.toHex))
         )))
@@ -303,7 +296,6 @@ object TransactionWithInputInfoSerializer extends MinimalSerializer({
       case ConfirmationTarget.Absolute(confirmBefore) => JField("confirmBeforeBlock", JLong(confirmBefore.toLong))
       case ConfirmationTarget.Priority(priority) => JField("confirmPriority", JString(priority.toString))
     }
-
   ))
   case x: TransactionWithInputInfo => JObject(List(
     JField("txid", JString(x.tx.txid.value.toHex)),
@@ -565,7 +557,7 @@ object OriginSerializer extends MinimalSerializer({
         JField("expiry", JLong(htlc.add.cltvExpiry.toLong)),
         JField("receivedAt", JLong(htlc.receivedAt.toLong)),
       )
-    }.toList)
+    })
     case o: Upstream.Cold.Channel => JObject(
       JField("channelId", JString(o.originChannelId.toHex)),
       JField("htlcId", JLong(o.originHtlcId)),
@@ -577,7 +569,7 @@ object OriginSerializer extends MinimalSerializer({
         JField("htlcId", JLong(htlc.originHtlcId)),
         JField("amount", JLong(htlc.amountIn.toLong)),
       )
-    }.toList)
+    })
   }
 })
 

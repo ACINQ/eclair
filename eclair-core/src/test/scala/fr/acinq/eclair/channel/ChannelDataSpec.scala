@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, FailureReason, RevokeAndAck, UnknownNextPeer, UpdateAddHtlc}
-import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, TestKitBaseClass}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, NodeParams, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -72,7 +72,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
   }
 
   case class LocalFixture(nodeParams: NodeParams, channelKeys: ChannelKeys, alice: TestFSMRef[ChannelState, ChannelData, Channel], alicePendingHtlc: HtlcWithPreimage, remainingHtlcOutpoint: OutPoint, lcp: LocalCommitPublished, rcp: RemoteCommitPublished, htlcTimeoutTxs: Seq[HtlcTimeoutTx], htlcSuccessTxs: Seq[HtlcSuccessTx], probe: TestProbe) {
-    val aliceClosing = alice.stateData.asInstanceOf[DATA_CLOSING]
+    val aliceClosing: DATA_CLOSING = alice.stateData.asInstanceOf[DATA_CLOSING]
   }
 
   private def setupClosingChannelForLocalClose(): LocalFixture = {
@@ -91,7 +91,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
     val htlcSuccessTxs = getHtlcSuccessTxs(lcp)
     assert(htlcSuccessTxs.length == 1) // we only have the preimage for 1 of the 2 non-dust htlcs
     val remainingHtlcOutpoint = lcp.htlcTxs.collect { case (outpoint, None) => outpoint }.head
-    assert(lcp.claimHtlcDelayedTxs.length == 0) // we will publish 3rd-stage txs once htlc txs confirm
+    assert(lcp.claimHtlcDelayedTxs.isEmpty) // we will publish 3rd-stage txs once htlc txs confirm
     assert(!lcp.isConfirmed)
     assert(!lcp.isDone)
 
@@ -601,8 +601,8 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
         case (current, tx) => Closing.updateRevokedCommitPublished(current, tx)
       }.copy(
         claimHtlcDelayedPenaltyTxs = List(
-          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcSuccess, 0), TxOut(2_500 sat, Nil), Nil), Transaction(2, Seq(TxIn(OutPoint(htlcSuccess, 0), ByteVector.empty, 0)), Seq(TxOut(5_000 sat, ByteVector.empty)), 0)),
-          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcTimeout, 0), TxOut(3_000 sat, Nil), Nil), Transaction(2, Seq(TxIn(OutPoint(htlcTimeout, 0), ByteVector.empty, 0)), Seq(TxOut(6_000 sat, ByteVector.empty)), 0))
+          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcSuccess, 0), TxOut(2_500 sat, Nil), Nil), Transaction(2, Seq(TxIn(OutPoint(htlcSuccess, 0), ByteVector.empty, 0)), Seq(TxOut(5_000 sat, ByteVector.empty)), 0), CltvExpiryDelta(720)),
+          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcTimeout, 0), TxOut(3_000 sat, Nil), Nil), Transaction(2, Seq(TxIn(OutPoint(htlcTimeout, 0), ByteVector.empty, 0)), Seq(TxOut(6_000 sat, ByteVector.empty)), 0), CltvExpiryDelta(720))
         )
       )
       assert(!rvk4b.isDone)
