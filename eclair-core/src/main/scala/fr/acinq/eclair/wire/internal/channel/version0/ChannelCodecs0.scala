@@ -126,19 +126,28 @@ private[channel] object ChannelCodecs0 {
 
     val redeemInfoCodec: Codec[RedeemInfo.SegwitV0] = varsizebinarydata.xmap(b => RedeemInfo.SegwitV0(Script.parse(b)), s => Script.write(s.redeemScript))
 
-    val inputInfoCodec: Codec[InputInfo] = (
+    val inputInfoCodec: Codec[InputInfo] = (("outPoint" | outPointCodec) :: ("txOut" | txOutCodec)).as[InputInfo].decodeOnly
+
+    val inputInfoWithRedeemInfoCodec: Codec[InputInfoWithRedeemInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | redeemInfoCodec.upcast[RedeemInfo])).as[InputInfo].decodeOnly
+        ("redeemScript" | redeemInfoCodec.upcast[RedeemInfo])).as[InputInfoWithRedeemInfo].decodeOnly
 
     private val defaultConfirmationTarget: Codec[ConfirmationTarget.Absolute] = provide(ConfirmationTarget.Absolute(BlockHeight(0)))
 
+    private case class LegacyCommitTx(input: InputInfoWithRedeemInfo, tx: Transaction) {
+      val commitTx: CommitTx = CommitTx(input.inputInfo, tx)
+    }
+    private object LegacyCommitTx {
+      def apply(commitTx: CommitTx): LegacyCommitTx = LegacyCommitTx(InputInfoWithRedeemInfo(commitTx.input.outPoint, commitTx.input.txOut, Nil), commitTx.tx)
+    }
     // We can safely set htlcId = 0 for htlc txs. This information is only used to find upstream htlcs to fail when a
     // downstream htlc times out, and `Helpers.Closing.timedOutHtlcs` explicitly handles the case where htlcId is missing.
     // We can also safely set confirmBefore = 0: we will simply use a high feerate to make these transactions confirm
     // as quickly as possible. It's very unlikely that nodes will run into this, so it's a good trade-off between code
     // complexity and real world impact.
     val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
+      //.typecase(0x01, (("inputInfo" | inputInfoWithRedeemInfoCodec) :: ("tx" | txCodec)).as[LegacyCommitTx].xmap[CommitTx](_.commitTx, LegacyCommitTx.apply))
       .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx])
       .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: provide(CltvExpiry(0)) :: ("htlcId" | provide(0L)) :: ("confirmationTarget" | defaultConfirmationTarget)).as[HtlcSuccessTx])
       .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget) :: provide(ByteVector32.Zeroes)).as[HtlcTimeoutTx])

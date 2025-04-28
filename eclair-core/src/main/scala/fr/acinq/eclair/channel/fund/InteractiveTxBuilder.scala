@@ -34,7 +34,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Output.Local
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Purpose
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, CommitmentFormat, DefaultCommitmentFormat, HtlcTx, InputInfo, SimpleTaprootChannelCommitmentFormat, TxOwner}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ToMilliSatoshiConversion, UInt64}
@@ -109,10 +109,9 @@ object InteractiveTxBuilder {
   }
 
   object SharedFundingInput {
-    def apply(commitment: Commitment): SharedFundingInput = commitment.commitInput.redeemInfo match {
-      case _: RedeemInfo.SegwitV0 => Multisig2of2Input(commitment.commitInput, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
-      case _: RedeemInfo.TaprootKeyPath => Musig2Input(commitment.commitInput, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
-      case _ => throw new IllegalArgumentException(s"invalid commitment input")
+    def apply(commitment: Commitment, commitmentFormat: CommitmentFormat): SharedFundingInput = commitmentFormat match {
+      case SimpleTaprootChannelCommitmentFormat => Musig2Input(commitment.commitInput, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
+      case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => Multisig2of2Input(commitment.commitInput, commitment.fundingTxIndex, commitment.remoteFundingPubKey)
     }
   }
 
@@ -121,7 +120,8 @@ object InteractiveTxBuilder {
 
     def sign(channelKeys: ChannelKeys, params: ChannelParams, tx: Transaction, spentUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
       val localFundingKey = channelKeys.fundingKey(fundingTxIndex)
-      Transactions.SpliceTx(info, tx).sign(localFundingKey, TxOwner.Local, params.commitmentFormat, spentUtxos)
+      val redeemInfo = Helpers.Funding.makeFundingRedeemInfo(localFundingKey.publicKey, remoteFundingPubkey, params.commitmentFormat)
+      Transactions.SpliceTx(info, tx).sign(localFundingKey, redeemInfo, TxOwner.Local, params.commitmentFormat, spentUtxos)
     }
   }
 
@@ -855,10 +855,10 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case Left(cause) =>
         replyTo ! RemoteFailure(cause)
         unlockAndStop(completeTx)
-      case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)) =>
+      case Right((localSpec, (localCommitTx, _), remoteSpec, (remoteCommitTx, remoteCommitInfo), sortedHtlcTxs)) =>
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
-        val localSigOfRemoteTx = remoteCommitTx.sign(localFundingKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat, Map.empty)
-        val htlcSignatures = sortedHtlcTxs.map(_.sign(remoteCommitmentKeys.ourHtlcKey, TxOwner.Remote, channelParams.commitmentFormat, Map.empty)).toList
+        val localSigOfRemoteTx = remoteCommitTx.sign(localFundingKey, remoteCommitInfo, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat, Map.empty)
+        val htlcSignatures = sortedHtlcTxs.map{ case (htlcTx, redeemInfo) => htlcTx.sign(remoteCommitmentKeys.ourHtlcKey, redeemInfo, TxOwner.Remote, channelParams.commitmentFormat, Map.empty)}.toList
         val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures)
         val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx, htlcTxs = Nil)
         val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)

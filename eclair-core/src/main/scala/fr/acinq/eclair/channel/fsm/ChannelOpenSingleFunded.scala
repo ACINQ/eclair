@@ -216,9 +216,9 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       val remoteCommitmentKeys = RemoteCommitmentKeys(params, channelKeys, remoteFirstPerCommitmentPoint)
       Funding.makeFirstCommitTxs(params, localFundingAmount = fundingAmount, remoteFundingAmount = 0 sat, localPushAmount = pushMsat, remotePushAmount = 0 msat, commitTxFeerate, fundingTx.txid, fundingTxOutputIndex, fundingKey, remoteFundingPubKey, localCommitmentKeys, remoteCommitmentKeys) match {
         case Left(ex) => handleLocalError(ex, d, None)
-        case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
+        case Right((localSpec, (localCommitTx, localRedeemInfo), remoteSpec, (remoteCommitTx, _))) =>
           require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
-          val localSigOfRemoteTx = remoteCommitTx.sign(fundingKey, TxOwner.Remote, params.commitmentFormat, Map.empty)
+          val localSigOfRemoteTx = remoteCommitTx.sign(fundingKey, localRedeemInfo, TxOwner.Remote, params.commitmentFormat, Map.empty)
           // signature of their initial commitment tx that pays remote pushMsat
           val fundingCreated = FundingCreated(
             temporaryChannelId = temporaryChannelId,
@@ -266,14 +266,14 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       // they fund the channel with their funding tx, so the money is theirs (but we are paid pushMsat)
       Funding.makeFirstCommitTxs(params, localFundingAmount = 0 sat, remoteFundingAmount = fundingAmount, localPushAmount = 0 msat, remotePushAmount = pushMsat, commitTxFeerate, fundingTxId, fundingTxOutputIndex, fundingKey, remoteFundingPubKey, localCommitmentKeys, remoteCommitmentKeys) match {
         case Left(ex) => handleLocalError(ex, d, None)
-        case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
+        case Right((localSpec, (localCommitTx, localReemInfo), remoteSpec, (remoteCommitTx, _))) =>
           // check remote signature validity
-          val localSigOfLocalTx = localCommitTx.sign(fundingKey, TxOwner.Local, params.commitmentFormat, Map.empty)
+          val localSigOfLocalTx = localCommitTx.sign(fundingKey, localReemInfo, TxOwner.Local, params.commitmentFormat, Map.empty)
           val signedLocalCommitTx = localCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
           Transactions.checkSpendable(signedLocalCommitTx) match {
             case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxId, commitmentNumber = 0, localCommitTx.tx), d, None)
             case Success(_) =>
-              val localSigOfRemoteTx = remoteCommitTx.sign(fundingKey, TxOwner.Remote, params.commitmentFormat, Map.empty)
+              val localSigOfRemoteTx = remoteCommitTx.sign(fundingKey, localReemInfo, TxOwner.Remote, params.commitmentFormat, Map.empty)
               val channelId = toLongId(fundingTxId, fundingTxOutputIndex)
               val fundingSigned = FundingSigned(
                 channelId = channelId,
@@ -317,7 +317,8 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
     case Event(msg@FundingSigned(_, remoteSig, _), d@DATA_WAIT_FOR_FUNDING_SIGNED(params, remoteFundingPubKey, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, fundingCreated, _)) =>
       // we make sure that their sig checks out and that our first commit tx is spendable
       val fundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
-      val localSigOfLocalTx = localCommitTx.sign(fundingKey, TxOwner.Local, params.commitmentFormat, Map.empty)
+      val redeemInfo = Helpers.Funding.makeFundingRedeemInfo(fundingKey.publicKey, remoteFundingPubKey, params.commitmentFormat)
+      val localSigOfLocalTx = localCommitTx.sign(fundingKey, redeemInfo, TxOwner.Local, params.commitmentFormat, Map.empty)
       val signedLocalCommitTx = localCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>

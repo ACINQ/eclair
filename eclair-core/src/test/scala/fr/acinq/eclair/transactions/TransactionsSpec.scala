@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.{ScriptFlags, ScriptTree, SigHash, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.channel.Helpers
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{Multisig2of2Input, Musig2Input}
 import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
@@ -398,27 +399,28 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           val expectedCommitTxWeight = commitmentFormat.commitWeight + 5 * commitmentFormat.htlcOutputWeight
           assertWeightMatches(commitTx.tx.weight(), expectedCommitTxWeight, commitmentFormat)
           val aggKey = Taproot.musig2Aggregate(localFundingPriv.publicKey, remoteFundingPriv.publicKey)
-          val sharedInput = Musig2Input(InputInfo(fundingTxOutpoint, fundingOutput, RedeemInfo.TaprootKeyPath(aggKey, None)), 0, remoteFundingPriv.publicKey)
+          val sharedInput = Musig2Input(InputInfo(fundingTxOutpoint, fundingOutput), 0, remoteFundingPriv.publicKey)
           assertWitnessWeightMatches(commitTx.tx.txIn(0).witness, sharedInput.weight, commitmentFormat)
           commitTx
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
-          val localSig = txInfo.sign(localFundingPriv, TxOwner.Local, commitmentFormat, Map.empty)
-          val remoteSig = txInfo.sign(remoteFundingPriv, TxOwner.Remote, commitmentFormat, Map.empty)
+          val redeemInfo = Helpers.Funding.makeFundingRedeemInfo(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitmentFormat)
+          val localSig = txInfo.sign(localFundingPriv, redeemInfo, TxOwner.Local, commitmentFormat, Map.empty)
+          val remoteSig = txInfo.sign(remoteFundingPriv, redeemInfo, TxOwner.Remote, commitmentFormat, Map.empty)
           val commitTx = txInfo.addSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
           val expectedCommitTxWeight = commitmentFormat.commitWeight + 5 * commitmentFormat.htlcOutputWeight
           // we cannot do exact matches because DER signature encoding is variable length
           assertWeightMatches(commitTx.tx.weight(), expectedCommitTxWeight, commitmentFormat)
-          val sharedInput = Multisig2of2Input(InputInfo(fundingTxOutpoint, fundingOutput, Scripts.multiSig2of2(localFundingPriv.publicKey, remoteFundingPriv.publicKey)), 0, remoteFundingPriv.publicKey)
+          val sharedInput = Multisig2of2Input(InputInfo(fundingTxOutpoint, fundingOutput), 0, remoteFundingPriv.publicKey)
           assertWitnessWeightMatches(commitTx.tx.txIn(0).witness, sharedInput.weight, commitmentFormat)
           commitTx
       }
 
       val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, commitmentFormat)
       assert(htlcTxs.length == 5)
-      val confirmationTargets = htlcTxs.map(tx => tx.htlcId -> tx.confirmationTarget.confirmBefore.toLong).toMap
+      val confirmationTargets = htlcTxs.map(_._1).map(tx => tx.htlcId -> tx.confirmationTarget.confirmBefore.toLong).toMap
       assert(confirmationTargets == Map(0 -> 300, 1 -> 310, 2 -> 310, 3 -> 295, 4 -> 300))
-      val htlcSuccessTxs = htlcTxs.collect { case tx: HtlcSuccessTx => tx }
-      val htlcTimeoutTxs = htlcTxs.collect { case tx: HtlcTimeoutTx => tx }
+      val htlcSuccessTxs = htlcTxs.map(_._1).collect { case tx: HtlcSuccessTx => tx }
+      val htlcTimeoutTxs = htlcTxs.map(_._1).collect { case tx: HtlcTimeoutTx => tx }
       assert(htlcTimeoutTxs.size == 2) // htlc1 and htlc3
       assert(htlcTimeoutTxs.map(_.htlcId).toSet == Set(0, 3))
       assert(htlcSuccessTxs.size == 3) // htlc2a, htlc2b and htlc4
@@ -428,10 +430,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val zeroFeeCommitTx = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localIsChannelOpener = true, zeroFeeOutputs)
       val zeroFeeHtlcTxs = makeHtlcTxs(zeroFeeCommitTx.tx, zeroFeeOutputs, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
       assert(zeroFeeHtlcTxs.length == 7)
-      val zeroFeeConfirmationTargets = zeroFeeHtlcTxs.map(tx => tx.htlcId -> tx.confirmationTarget.confirmBefore.toLong).toMap
+      val zeroFeeConfirmationTargets = zeroFeeHtlcTxs.map(_._1).map(tx => tx.htlcId -> tx.confirmationTarget.confirmBefore.toLong).toMap
       assert(zeroFeeConfirmationTargets == Map(0 -> 300, 1 -> 310, 2 -> 310, 3 -> 295, 4 -> 300, 7 -> 300, 8 -> 302))
-      val zeroFeeHtlcSuccessTxs = zeroFeeHtlcTxs.collect { case tx: HtlcSuccessTx => tx }
-      val zeroFeeHtlcTimeoutTxs = zeroFeeHtlcTxs.collect { case tx: HtlcTimeoutTx => tx }
+      val zeroFeeHtlcSuccessTxs = zeroFeeHtlcTxs.map(_._1).collect { case tx: HtlcSuccessTx => tx }
+      val zeroFeeHtlcTimeoutTxs = zeroFeeHtlcTxs.map(_._1).collect { case tx: HtlcTimeoutTx => tx }
       zeroFeeHtlcSuccessTxs.foreach(tx => assert(tx.fee == 0.sat))
       zeroFeeHtlcTimeoutTxs.foreach(tx => assert(tx.fee == 0.sat))
       assert(zeroFeeHtlcTimeoutTxs.size == 3) // htlc1, htlc3 and htlc7
@@ -584,7 +586,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
         assert(checkSpendable(signedTx).isSuccess)
         // check remote sig
-        assert(htlcSuccessTx.checkSig(remoteSig, remoteHtlcPriv.publicKey, TxOwner.Remote, commitmentFormat))
+        assert(htlcSuccessTx.checkSig(remoteSig, solver.redeemInfo, remoteHtlcPriv.publicKey, TxOwner.Remote, commitmentFormat))
         // local detects when remote doesn't use the right sighash flags
         val invalidSighash = commitmentFormat match {
           case DefaultCommitmentFormat => Seq(SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
@@ -594,7 +596,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           val invalidRemoteSig = solver.sign(remoteHtlcPriv, htlcSuccessTx, Map.empty, sighash)
           val invalidTx = solver.addSig(htlcSuccessTx, SolverData.HtlcSuccess(localSig, invalidRemoteSig, paymentPreimage))
           assert(checkSpendable(invalidTx).isFailure)
-          assert(!invalidTx.checkSig(invalidRemoteSig, remoteHtlcPriv.publicKey, TxOwner.Remote, commitmentFormat))
+          assert(!invalidTx.checkSig(invalidRemoteSig, solver.redeemInfo, remoteHtlcPriv.publicKey, TxOwner.Remote, commitmentFormat))
         }
       }
     }
@@ -1059,10 +1061,11 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val (commitTx, outputs, htlcTxs) = {
       val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, spec, DefaultCommitmentFormat)
       val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localIsChannelOpener = true, outputs)
-      val localSig = txInfo.sign(localPaymentPriv, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
-      val remoteSig = txInfo.sign(remotePaymentPriv, TxOwner.Remote, DefaultCommitmentFormat, Map.empty)
+      val redeemInfo = Helpers.Funding.makeFundingRedeemInfo(localFundingPriv.publicKey, remoteFundingPriv.publicKey, DefaultCommitmentFormat)
+      val localSig = txInfo.sign(localPaymentPriv, redeemInfo, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
+      val remoteSig = txInfo.sign(remoteFundingPriv, redeemInfo, TxOwner.Remote, DefaultCommitmentFormat, Map.empty)
       val commitTx = txInfo.addSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
-      val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, DefaultCommitmentFormat)
+      val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, DefaultCommitmentFormat).map(_._1)
       (commitTx, outputs, htlcTxs)
     }
 

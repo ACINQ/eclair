@@ -375,15 +375,15 @@ object Helpers {
       case SimpleTaprootChannelCommitmentFormat => write(Taproot.musig2FundingScript(localFundingKey, remoteFundingKey))
     }
 
-    def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey, commitmentFormat: CommitmentFormat): InputInfo = commitmentFormat match {
-      case SimpleTaprootChannelCommitmentFormat =>
-        val fundingScript = Taproot.musig2FundingScript(fundingPubkey1, fundingPubkey2)
-        val fundingTxOut = TxOut(fundingSatoshis, fundingScript)
-        InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, RedeemInfo.TaprootKeyPath(Taproot.musig2Aggregate(fundingPubkey1, fundingPubkey2), None))
-      case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
-        val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
-        val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
-        InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, fundingScript)
+    def makeFundingRedeemInfo(fundingPubkey1: PublicKey, fundingPubkey2: PublicKey, commitmentFormat: CommitmentFormat): RedeemInfo = commitmentFormat match {
+      case SimpleTaprootChannelCommitmentFormat => RedeemInfo.TaprootKeyPath(Taproot.musig2Aggregate(fundingPubkey1, fundingPubkey2), None)
+      case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => RedeemInfo.SegwitV0(multiSig2of2(fundingPubkey1, fundingPubkey2))
+    }
+
+    def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey, commitmentFormat: CommitmentFormat): InputInfo = {
+      val redeemInfo = makeFundingRedeemInfo(fundingPubkey1, fundingPubkey2, commitmentFormat)
+      val fundingTxOut = TxOut(fundingSatoshis, redeemInfo.publicKeyScript)
+      InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut)
     }
 
     /**
@@ -397,7 +397,7 @@ object Helpers {
                            commitTxFeerate: FeeratePerKw,
                            fundingTxId: TxId, fundingTxOutputIndex: Int,
                            localFundingKey: PrivateKey, remoteFundingPubKey: PublicKey,
-                           localCommitKeys: LocalCommitmentKeys, remoteCommitKeys: RemoteCommitmentKeys): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
+                           localCommitKeys: LocalCommitmentKeys, remoteCommitKeys: RemoteCommitmentKeys): Either[ChannelException, (CommitmentSpec, (CommitTx, RedeemInfo), CommitmentSpec, (CommitTx, RedeemInfo))] = {
       makeCommitTxs(params,
         fundingAmount = localFundingAmount + remoteFundingAmount,
         toLocal = localFundingAmount.toMilliSatoshi - localPushAmount + remotePushAmount,
@@ -426,7 +426,7 @@ object Helpers {
                       fundingTxId: TxId, fundingTxOutputIndex: Int,
                       localFundingKey: PrivateKey, remoteFundingPubKey: PublicKey,
                       localCommitKeys: LocalCommitmentKeys, remoteCommitKeys: RemoteCommitmentKeys,
-                      localCommitmentIndex: Long, remoteCommitmentIndex: Long): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx, Seq[HtlcTx])] = {
+                      localCommitmentIndex: Long, remoteCommitmentIndex: Long): Either[ChannelException, (CommitmentSpec, (CommitTx, RedeemInfo), CommitmentSpec, (CommitTx, RedeemInfo), Seq[(HtlcTx, RedeemInfo)])] = {
       val localSpec = CommitmentSpec(localHtlcs, commitTxFeerate, toLocal = toLocal, toRemote = toRemote)
       val remoteSpec = CommitmentSpec(localHtlcs.map(_.opposite), commitTxFeerate, toLocal = toRemote, toRemote = toLocal)
 
@@ -445,7 +445,7 @@ object Helpers {
       val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, localFundingKey.publicKey, remoteFundingPubKey, params.commitmentFormat)
       val (localCommitTx, _) = Commitment.makeLocalTxs(params, localCommitKeys, localCommitmentIndex, localFundingKey, remoteFundingPubKey, commitmentInput, localSpec)
       val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, remoteCommitKeys, remoteCommitmentIndex, localFundingKey, remoteFundingPubKey, commitmentInput, remoteSpec)
-      val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
+      val sortedHtlcTxs = htlcTxs.sortBy(_._1.input.outPoint.index)
       Right(localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)
     }
 
@@ -700,7 +700,8 @@ object Helpers {
         log.debug("making closing tx with closing fee={} and commitments:\n{}", closingFees.preferred, commitment.specs2String)
         val dustLimit = commitment.localParams.dustLimit.max(commitment.remoteParams.dustLimit)
         val closingTx = Transactions.makeClosingTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.localParams.paysClosingFees, dustLimit, closingFees.preferred, commitment.localCommit.spec)
-        val localClosingSig = closingTx.sign(channelKeys.fundingKey(commitment.fundingTxIndex), TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
+        val redeemInfo = Helpers.Funding.makeFundingRedeemInfo(channelKeys.fundingKey(commitment.fundingTxIndex).publicKey, commitment.remoteFundingPubKey, commitment.params.commitmentFormat)
+        val localClosingSig = closingTx.sign(channelKeys.fundingKey(commitment.fundingTxIndex), redeemInfo, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
         val closingSigned = ClosingSigned(commitment.channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
         log.debug(s"signed closing txid=${closingTx.tx.txid} with closing fee=${closingSigned.feeSatoshis}")
         log.debug(s"closingTxid=${closingTx.tx.txid} closingTx=${closingTx.tx}}")
@@ -739,10 +740,11 @@ object Helpers {
           case _ => return Left(CannotGenerateClosingTx(commitment.channelId))
         }
         val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
+        val redeemInfo = Helpers.Funding.makeFundingRedeemInfo(localFundingKey.publicKey, commitment.remoteFundingPubKey, commitment.params.commitmentFormat)
         val closingComplete = ClosingComplete(commitment.channelId, localScriptPubkey, remoteScriptPubkey, closingFee.fee, currentBlockHeight.toLong, TlvStream(Set(
-          closingTxs.localAndRemote_opt.map(tx => ClosingTlv.CloserAndCloseeOutputs(tx.sign(localFundingKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty))),
-          closingTxs.localOnly_opt.map(tx => ClosingTlv.CloserOutputOnly(tx.sign(localFundingKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty))),
-          closingTxs.remoteOnly_opt.map(tx => ClosingTlv.CloseeOutputOnly(tx.sign(localFundingKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty))),
+          closingTxs.localAndRemote_opt.map(tx => ClosingTlv.CloserAndCloseeOutputs(tx.sign(localFundingKey, redeemInfo, TxOwner.Local, commitment.params.commitmentFormat, Map.empty))),
+          closingTxs.localOnly_opt.map(tx => ClosingTlv.CloserOutputOnly(tx.sign(localFundingKey, redeemInfo, TxOwner.Local, commitment.params.commitmentFormat, Map.empty))),
+          closingTxs.remoteOnly_opt.map(tx => ClosingTlv.CloseeOutputOnly(tx.sign(localFundingKey, redeemInfo, TxOwner.Local, commitment.params.commitmentFormat, Map.empty))),
         ).flatten[ClosingTlv]))
         Right(closingTxs, closingComplete)
       }
@@ -773,7 +775,8 @@ object Helpers {
         closingTxsWithSigs.headOption match {
           case Some((closingTx, remoteSig, sigToTlv)) =>
             val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
-            val localSig = closingTx.sign(localFundingKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
+            val redeemInfo = Helpers.Funding.makeFundingRedeemInfo(localFundingKey.publicKey, commitment.remoteFundingPubKey, commitment.params.commitmentFormat)
+            val localSig = closingTx.sign(localFundingKey, redeemInfo, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
             val signedClosingTx = closingTx.addSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig)
             Transactions.checkSpendable(signedClosingTx) match {
               case Failure(_) => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
@@ -799,7 +802,8 @@ object Helpers {
         closingTxsWithSig.headOption match {
           case Some((closingTx, remoteSig)) =>
             val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
-            val localSig = closingTx.sign(localFundingKey, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
+            val redeemInfo = Helpers.Funding.makeFundingRedeemInfo(localFundingKey.publicKey, commitment.remoteFundingPubKey, commitment.params.commitmentFormat)
+            val localSig = closingTx.sign(localFundingKey, redeemInfo, TxOwner.Local, commitment.params.commitmentFormat, Map.empty)
             val signedClosingTx = closingTx.addSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig)
             Transactions.checkSpendable(signedClosingTx) match {
               case Failure(_) => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))

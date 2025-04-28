@@ -129,13 +129,16 @@ object Transactions {
   // @formatter:off
   case class OutputInfo(index: Long, amount: Satoshi, publicKeyScript: ByteVector)
 
-  // @formatter:off
-  case class InputInfo(outPoint: OutPoint, txOut: TxOut, redeemInfo: RedeemInfo)
+  case class InputInfo(outPoint: OutPoint, txOut: TxOut)
 
-  object InputInfo {
-    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector): InputInfo = InputInfo(outPoint, txOut, SegwitV0(Script.parse(redeemScript)))
-    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]): InputInfo = InputInfo(outPoint, txOut, SegwitV0(redeemScript))
-    def apply(outPoint: OutPoint, txOut: TxOut, internalKey: XonlyPublicKey, scriptTree: ScriptTree, leafHash: ByteVector32): InputInfo = InputInfo(outPoint, txOut, RedeemInfo.TaprootScriptPath(internalKey, scriptTree, leafHash))
+  case class InputInfoWithRedeemInfo(outPoint: OutPoint, txOut: TxOut, redeemInfo: RedeemInfo) {
+    val inputInfo: InputInfo = InputInfo(outPoint, txOut)
+  }
+
+  object InputInfoWithRedeemInfo {
+    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector): InputInfoWithRedeemInfo = InputInfoWithRedeemInfo(outPoint, txOut, SegwitV0(Script.parse(redeemScript)))
+    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]): InputInfoWithRedeemInfo = InputInfoWithRedeemInfo(outPoint, txOut, SegwitV0(redeemScript))
+    def apply(outPoint: OutPoint, txOut: TxOut, internalKey: XonlyPublicKey, scriptTree: ScriptTree, leafHash: ByteVector32): InputInfoWithRedeemInfo = InputInfoWithRedeemInfo(outPoint, txOut, RedeemInfo.TaprootScriptPath(internalKey, scriptTree, leafHash))
   }
 
   /** Owner of a given transaction (local/remote). */
@@ -160,11 +163,11 @@ object Transactions {
     /**
      * @param extraUtxos extra outputs spent by this transaction (in addition to the main [[input]]).
      */
-    def sign(key: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
-      sign(key, sighash(txOwner, commitmentFormat), extraUtxos)
+    def sign(key: PrivateKey, redeemInfo: RedeemInfo, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
+      sign(key, redeemInfo, sighash(txOwner, commitmentFormat), extraUtxos)
     }
 
-    def sign(key: PrivateKey, sighashType: Int, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
+    def sign(key: PrivateKey, redeemInfo: RedeemInfo, sighashType: Int, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
       val inputsMap = extraUtxos + (input.outPoint -> input.txOut)
       tx.txIn.foreach(txIn => {
         // Note that using a require here is dangerous, because callers don't except this function to throw.
@@ -174,7 +177,7 @@ object Transactions {
         require(inputsMap.contains(txIn.outPoint), s"cannot sign $desc with txId=${tx.txid}: missing input details for ${txIn.outPoint}")
       })
       val inputIndex = tx.txIn.indexWhere(_.outPoint == input.outPoint)
-      input.redeemInfo match {
+      redeemInfo match {
         case RedeemInfo.SegwitV0(redeemScript) =>
           // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
           // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
@@ -189,7 +192,7 @@ object Transactions {
       }
     }
 
-    def checkSig(sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = input.redeemInfo match {
+    def checkSig(sig: ByteVector64, redeemInfo: RedeemInfo, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = redeemInfo match {
       case _: RedeemInfo.TaprootKeyPath =>
         val data = Transaction.hashForSigningTaprootKeyPath(tx, inputIndex = 0, Seq(input.txOut), sighash(txOwner, commitmentFormat))
         Crypto.verifySignatureSchnorr(data, sig, pubKey.xOnly)
@@ -631,7 +634,7 @@ object Transactions {
                                 outputIndex: Int,
                                 commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, HtlcTimeoutTx] = {
     val htlc = output.outgoingHtlc.add
-    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), output.redeemInfo)
+    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
     val tx = Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
@@ -646,7 +649,7 @@ object Transactions {
                                 outputIndex: Int,
                                 commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, HtlcSuccessTx] = {
     val htlc = output.incomingHtlc.add
-    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), output.redeemInfo)
+    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
     val tx = Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
@@ -658,14 +661,14 @@ object Transactions {
 
   def makeHtlcTxs(commitTx: Transaction,
                   outputs: Seq[CommitmentOutput],
-                  commitmentFormat: CommitmentFormat): Seq[HtlcTx] = {
+                  commitmentFormat: CommitmentFormat): Seq[(HtlcTx, RedeemInfo)] = {
     val htlcTimeoutTxs = outputs.zipWithIndex.collect {
-      case (co: OutHtlc, outputIndex) => makeHtlcTimeoutTx(commitTx, co, outputIndex, commitmentFormat)
+      case (co: OutHtlc, outputIndex) => makeHtlcTimeoutTx(commitTx, co, outputIndex, commitmentFormat).map(_ -> co.redeemInfo)
     }.collect { case Right(htlcTimeoutTx) => htlcTimeoutTx }
 
 
     val htlcSuccessTxs = outputs.zipWithIndex.collect {
-      case (ci: InHtlc, outputIndex) => makeHtlcSuccessTx(commitTx, ci, outputIndex, commitmentFormat)
+      case (ci: InHtlc, outputIndex) => makeHtlcSuccessTx(commitTx, ci, outputIndex, commitmentFormat).map(_ -> ci.redeemInfo)
     }.collect { case Right(htlcSuccessTx) => htlcSuccessTx }
 
     htlcTimeoutTxs ++ htlcSuccessTxs
@@ -680,11 +683,7 @@ object Transactions {
                              commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimHtlcSuccessTx] = {
     outputs.zipWithIndex.collectFirst {
       case (o: OutHtlc, outputIndex) if o.outgoingHtlc.add.id == htlc.id =>
-        val redeemInfo = o.redeemInfo match {
-          case t@RedeemInfo.TaprootScriptPath(_, scriptTree: ScriptTree.Branch, _) => t.copy(leafHash = scriptTree.getRight.hash())
-          case _ => o.redeemInfo
-        }
-        val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), redeemInfo)
+        val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
         val unsignedTx = Transaction(
           version = 2,
           txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
@@ -710,11 +709,7 @@ object Transactions {
                              commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimHtlcTimeoutTx] = {
     outputs.zipWithIndex.collectFirst {
       case (i: InHtlc, outputIndex) if i.incomingHtlc.add.id == htlc.id =>
-        val redeemInfo = i.redeemInfo match {
-          case t@RedeemInfo.TaprootScriptPath(_, scriptTree: ScriptTree.Branch, _) => t.copy(leafHash = scriptTree.getLeft.hash())
-          case _ => i.redeemInfo
-        }
-        val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), redeemInfo)
+        val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
         val unsignedTx = Transaction(
           version = 2,
           txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,

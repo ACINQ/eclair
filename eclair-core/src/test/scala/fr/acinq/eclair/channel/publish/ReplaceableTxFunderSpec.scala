@@ -49,7 +49,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       0
     )
     val anchorTx = ClaimAnchorOutputTx(
-      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, anchorScript),
+      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Nil, 0),
       ConfirmationTarget.Absolute(BlockHeight(0))
     )
@@ -69,7 +69,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       0
     )
     val htlcSuccess = HtlcSuccessWithWitnessData(HtlcSuccessTx(
-      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, htlcSuccessScript),
+      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       paymentHash,
       CltvExpiry(0),
@@ -77,7 +77,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       ConfirmationTarget.Absolute(BlockHeight(0))
     ), PlaceHolderSig, preimage)
     val htlcTimeout = HtlcTimeoutWithWitnessData(HtlcTimeoutTx(
-      InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last, htlcTimeoutScript),
+      InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(4000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       12,
       ConfirmationTarget.Absolute(BlockHeight(0)),
@@ -99,14 +99,14 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       0
     )
     val claimHtlcSuccess = ClaimHtlcSuccessWithWitnessData(ClaimHtlcSuccessTx(
-      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, htlcSuccessScript),
+      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       paymentHash,
       5,
       ConfirmationTarget.Absolute(BlockHeight(0))
     ), preimage)
     val claimHtlcTimeout = ClaimHtlcTimeoutWithWitnessData(ClaimHtlcTimeoutTx(
-      InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last, htlcTimeoutScript),
+      InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       7,
       ByteVector32.Zeroes, CltvExpiry(0),

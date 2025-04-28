@@ -3,7 +3,7 @@ package fr.acinq.eclair
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, addressToPublicKeyScript}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelConfig
+import fr.acinq.eclair.channel.{ChannelConfig, Helpers}
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
@@ -45,10 +45,10 @@ trait SpendFromChannelAddress {
       inputTx <- appKit.wallet.getTransaction(outPoint.txid)
       channelKeys = appKit.nodeParams.channelKeyManager.channelKeys(ChannelConfig.standard, fundingKeyPath)
       localFundingKey = channelKeys.fundingKey(fundingTxIndex)
-      fundingRedeemScript = multiSig2of2(localFundingKey.publicKey, remoteFundingPubkey)
-      inputInfo = InputInfo(outPoint, inputTx.txOut(outPoint.index.toInt), fundingRedeemScript)
+      redeemInfo = Helpers.Funding.makeFundingRedeemInfo(localFundingKey.publicKey, remoteFundingPubkey, DefaultCommitmentFormat)
+      inputInfo = InputInfo(outPoint, inputTx.txOut(outPoint.index.toInt))
       // classify as splice, doesn't really matter
-      localSig = Transactions.SpliceTx(inputInfo, unsignedTx).sign(localFundingKey, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
+      localSig = Transactions.SpliceTx(inputInfo, unsignedTx).sign(localFundingKey, redeemInfo, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
       witness = Scripts.witness2of2(localSig, remoteSig, localFundingKey.publicKey, remoteFundingPubkey)
       signedTx = unsignedTx.updateWitness(0, witness)
     } yield SpendFromChannelResult(signedTx)

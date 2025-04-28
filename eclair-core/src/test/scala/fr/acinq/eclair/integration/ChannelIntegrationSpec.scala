@@ -441,7 +441,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val commitmentKeysF = commitmentsF.latest.localKeys(channelKeysF)
     val revokedCommitTx = {
       val commitTx = localCommitF.commitTxAndRemoteSig.commitTx
-      val localSig = commitTx.sign(fundingKeyF, TxOwner.Local, commitmentFormat, Map.empty)
+      val localSig = commitTx.sign(fundingKeyF, Helpers.Funding.makeFundingRedeemInfo(fundingKeyF.publicKey, commitmentsF.latest.remoteFundingPubKey, commitmentFormat),  TxOwner.Local, commitmentFormat, Map.empty)
       val RemoteSignature.FullSignature(remoteSig) = localCommitF.commitTxAndRemoteSig.remoteSig
       commitTx.addSigs(fundingKeyF.publicKey, commitmentsF.latest.remoteFundingPubKey, localSig, remoteSig).tx
     }

@@ -24,7 +24,7 @@ sealed trait Solver[T <: SolverData, U <: TransactionWithInputInfo] {
   def createSpendingTxs(parentTx: Transaction, localDustLimit: Satoshi, finalScriptPubkey: ByteVector, feeratePerKw: FeeratePerKw): Seq[Either[TxGenerationSkipped, U]] = {
     parentTx.txOut.zipWithIndex
       .collect { case (txOut: TxOut, outputIndex) if txOut.publicKeyScript == Script.write(publicKeyScript) =>
-        val input = InputInfo(OutPoint(parentTx, outputIndex), parentTx.txOut(outputIndex), redeemInfo)
+        val input = InputInfo(OutPoint(parentTx, outputIndex), parentTx.txOut(outputIndex))
         createSpendingTx(input, localDustLimit, finalScriptPubkey, feeratePerKw)
       }
   }
@@ -32,17 +32,17 @@ sealed trait Solver[T <: SolverData, U <: TransactionWithInputInfo] {
   def createSpendingTx(parentTx: Transaction, localDustLimit: Satoshi, finalScriptPubkey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, U] = {
     parentTx.txOut.zipWithIndex
       .collectFirst { case (txOut: TxOut, outputIndex) if txOut.publicKeyScript == Script.write(publicKeyScript) =>
-        val input = InputInfo(OutPoint(parentTx, outputIndex), parentTx.txOut(outputIndex), redeemInfo)
+        val input = InputInfo(OutPoint(parentTx, outputIndex), parentTx.txOut(outputIndex))
         createSpendingTx(input, localDustLimit, finalScriptPubkey, feeratePerKw)
       }.getOrElse(Left(OutputNotFound))
   }
 
   def sign(privateKey: PrivateKey, unsignedTx: U, extraUtxos: Map[OutPoint, TxOut], owner: TxOwner = TxOwner.Local): ByteVector64 = {
-    unsignedTx.sign(privateKey, owner, commitmentFormat, extraUtxos)
+    unsignedTx.sign(privateKey, redeemInfo, owner, commitmentFormat, extraUtxos)
   }
 
   def sign(privateKey: PrivateKey, unsignedTx: U, extraUtxos: Map[OutPoint, TxOut], sighashType: Int): ByteVector64 = {
-    unsignedTx.sign(privateKey, sighashType, extraUtxos)
+    unsignedTx.sign(privateKey, redeemInfo, sighashType, extraUtxos)
   }
 
   def scriptWitness(data: T): ScriptWitness

@@ -113,10 +113,7 @@ private[channel] object ChannelCodecs4 {
     val redeemInfoCodec: Codec[RedeemInfo.SegwitV0] = lengthDelimited(bytes).xmap(b => RedeemInfo.SegwitV0(Script.parse(b)), s => Script.write(s.redeemScript))
 
     // all v4-encoded channels use segwit inputs, support for taproot inputs will be added later in v5 codecs
-    val inputInfoCodec: Codec[InputInfo] = (
-      ("outPoint" | outPointCodec) ::
-        ("txOut" | txOutCodec) ::
-        ("redeemScript" | redeemInfoCodec.upcast[RedeemInfo])).as[InputInfo]
+    val inputInfoCodec: Codec[InputInfo] = (("outPoint" | outPointCodec) :: ("txOut" | txOutCodec)).as[InputInfo]
 
     val outputInfoCodec: Codec[OutputInfo] = (
       ("index" | uint32) ::

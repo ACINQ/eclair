@@ -97,10 +97,7 @@ private[channel] object ChannelCodecs1 {
     )
     val redeemInfoCodec: Codec[RedeemInfo.SegwitV0] = lengthDelimited(bytes).xmap(b => RedeemInfo.SegwitV0(Script.parse(b)), s => Script.write(s.redeemScript))
 
-    val inputInfoCodec: Codec[InputInfo] = (
-      ("outPoint" | outPointCodec) ::
-        ("txOut" | txOutCodec) ::
-        ("redeemScript" | redeemInfoCodec.upcast[RedeemInfo])).as[InputInfo].decodeOnly
+    val inputInfoCodec: Codec[InputInfo] = (("outPoint" | outPointCodec) :: ("txOut" | txOutCodec)).as[InputInfo].decodeOnly
 
     private val defaultConfirmationTarget: Codec[ConfirmationTarget.Absolute] = provide(ConfirmationTarget.Absolute(BlockHeight(0)))
 
