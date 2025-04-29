@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.internal.channel
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, Satoshi, SatoshiLong, Transaction, TxId, TxIn}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, Satoshi, SatoshiLong, Script, Transaction, TxId, TxIn}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -31,6 +31,7 @@ import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat,
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs._
 import fr.acinq.eclair.wire.protocol.{CommonCodecs, UpdateAddHtlc}
+import fr.acinq.secp256k1.Hex
 import org.json4s.jackson.Serialization
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
@@ -242,8 +243,11 @@ class ChannelCodecsSpec extends AnyFunSuite {
       assert(newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.forall(_.witness.stack.isEmpty))
       assert(newnormal.commitments.latest.localCommit.htlcTxsAndRemoteSigs.forall(_.htlcTx.tx.txIn.forall(_.witness.stack.isEmpty)))
       // make sure that we have extracted the remote sig of the local tx
+      // this is the redeem script that was included in the old serialized data (old InputInfo instances contained a redeem script).
+      // a "real" node would be able to re-generate the local funding key but we cannot do that in this test
+      val redeemScript = Script.parse(Hex.decode("0x5221020d9b51f544c7a1c061a6604badd79d068a7e1078ee06a013e17a39c13cb302f221028b8f6f6eb0ca68d25760a419c007d7e74c2228ee53448042e6e06b1eae254e5e52ae"))
       val RemoteSignature.FullSignature(remoteSig) = newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.remoteSig
-      // newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.checkSig(remoteSig, newnormal.commitments.remoteNodeId, TxOwner.Remote, newnormal.commitments.params.commitmentFormat) // FIXME!!
+      newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.checkSig(remoteSig, RedeemInfo.SegwitV0(redeemScript),newnormal.commitments.remoteNodeId, TxOwner.Remote, newnormal.commitments.params.commitmentFormat)
     }
   }
 

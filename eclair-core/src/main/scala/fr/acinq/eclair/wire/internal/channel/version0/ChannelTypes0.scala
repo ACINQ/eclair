@@ -17,11 +17,12 @@
 package fr.acinq.eclair.wire.internal.channel.version0
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxId, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptElt, ScriptWitness, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.transactions.{CommitmentSpec, Scripts}
+import fr.acinq.eclair.transactions.Scripts.RipemdOfPaymentHash
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.CommitSig
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, UInt64, channel}
@@ -50,6 +51,37 @@ private[channel] object ChannelTypes0 {
     InputInfo(input, parentTx.txOut(input.index.toInt))
   }
 
+  case class InputInfoWithRedeemScript(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]) {
+    def this(inputInfo: InputInfo) = this(inputInfo.outPoint, inputInfo.txOut, Nil)
+    val inputInfo: InputInfo = InputInfo(outPoint, txOut)
+  }
+
+  object InputInfoWithRedeemScript {
+    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector): InputInfoWithRedeemScript = new InputInfoWithRedeemScript(outPoint, txOut, Script.parse(redeemScript))
+    def apply(outPoint: OutPoint, txOut: TxOut): InputInfoWithRedeemScript = new InputInfoWithRedeemScript(outPoint, txOut, Nil)
+  }
+
+  case class HtlcSuccessWithRedeemScriptTx(input: InputInfoWithRedeemScript, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, confirmationTarget: ConfirmationTarget.Absolute) {
+    def this(htlcSuccessTx: HtlcSuccessTx) = this(new InputInfoWithRedeemScript(htlcSuccessTx.input), htlcSuccessTx.tx, htlcSuccessTx.paymentHash, htlcSuccessTx.htlcId, htlcSuccessTx.confirmationTarget)
+
+    val expiry: CltvExpiry = Scripts.extractHtlcInfoFromHtlcReceived(input.redeemScript).map(_._2).getOrElse(CltvExpiry(0))
+    val htlcSuccessTx: HtlcSuccessTx = HtlcSuccessTx(input.inputInfo, tx, paymentHash, expiry, htlcId, confirmationTarget)
+  }
+
+  case class HtlcTimeoutWithRedeemScriptTx(input: InputInfoWithRedeemScript, tx: Transaction, htlcId: Long, confirmationTarget: ConfirmationTarget.Absolute) {
+    def this(htlcTimeOutTx: HtlcTimeoutTx) = this(new InputInfoWithRedeemScript(htlcTimeOutTx.input), htlcTimeOutTx.tx, htlcTimeOutTx.htlcId, htlcTimeOutTx.confirmationTarget)
+
+    val ripemdOfPaymentHash: RipemdOfPaymentHash = Scripts.extractHtlcInfoFromHtlcOfferedScript(input.redeemScript).getOrElse(RipemdOfPaymentHash.empty)
+    val htlcTimeOutTx: HtlcTimeoutTx = HtlcTimeoutTx(input.inputInfo, tx, htlcId, confirmationTarget, ripemdOfPaymentHash)
+  }
+
+  case class ClaimHtlcTimeoutWithRedeemScriptTx(input: InputInfoWithRedeemScript, tx: Transaction, htlcId: Long, confirmationTarget: ConfirmationTarget.Absolute) {
+    def this(claimHtlcTimeOutTx: ClaimHtlcTimeoutTx) = this(new InputInfoWithRedeemScript(claimHtlcTimeOutTx.input), claimHtlcTimeOutTx.tx, claimHtlcTimeOutTx.htlcId, claimHtlcTimeOutTx.confirmationTarget)
+
+    val (ripemdOfPaymentHash, expiry) = Scripts.extractHtlcInfoFromHtlcReceived(input.redeemScript).getOrElse(RipemdOfPaymentHash.empty -> CltvExpiry(0))
+    val claimHtlcTimeOutTx: ClaimHtlcTimeoutTx = ClaimHtlcTimeoutTx(input.inputInfo, tx, htlcId, ripemdOfPaymentHash, expiry, confirmationTarget)
+  }
+
   case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, TxId]) {
     def migrate(): channel.LocalCommitPublished = {
       val htlcTxs = htlcSuccessTxs ++ htlcTimeoutTxs
@@ -58,8 +90,15 @@ private[channel] object ChannelTypes0 {
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
       val claimMainDelayedOutputTxNew = claimMainDelayedOutputTx.map(tx => ClaimLocalDelayedOutputTx(getPartialInputInfo(commitTx, tx), tx))
-      val htlcSuccessTxsNew = htlcSuccessTxs.map(tx => HtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, ByteVector32.Zeroes, CltvExpiry(0), 0, ConfirmationTarget.Absolute(BlockHeight(0))))
-      val htlcTimeoutTxsNew = htlcTimeoutTxs.map(tx => HtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, ConfirmationTarget.Absolute(BlockHeight(0)), ByteVector32.Zeroes))
+      // this txs have been published so they must be properly signed. They are p2wsh transactions, so the last item in their witness stack is the actual redeem script they're spending from.
+      val htlcSuccessTxsNew = htlcSuccessTxs.map { tx =>
+        val expiry = tx.txIn.headOption.flatMap(_.witness.stack.lastOption).flatMap(Scripts.extractHtlcInfoFromHtlcReceived).map(_._2) getOrElse CltvExpiry(0)
+        HtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, ByteVector32.Zeroes, expiry, 0, ConfirmationTarget.Absolute(BlockHeight(0)))
+      }
+      val htlcTimeoutTxsNew = htlcTimeoutTxs.map { tx =>
+        val ripemdOfPaymentHash = tx.txIn.headOption.flatMap(_.witness.stack.lastOption).flatMap(Scripts.extractHtlcInfoFromHtlcOfferedScript) getOrElse RipemdOfPaymentHash.empty
+        HtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, ConfirmationTarget.Absolute(BlockHeight(0)), ripemdOfPaymentHash)
+      }
       val htlcTxsNew = (htlcSuccessTxsNew ++ htlcTimeoutTxsNew).map(tx => tx.input.outPoint -> Some(tx)).toMap
       val claimHtlcDelayedTxsNew = claimHtlcDelayedTxs.map(tx => {
         val htlcTx = htlcTxs.find(_.txid == tx.txIn.head.outPoint.txid)
@@ -79,7 +118,7 @@ private[channel] object ChannelTypes0 {
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
       val claimMainOutputTxNew = claimMainOutputTx.map(tx => ClaimP2WPKHOutputTx(getPartialInputInfo(commitTx, tx), tx))
       val claimHtlcSuccessTxsNew = claimHtlcSuccessTxs.map(tx => ClaimHtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, ByteVector32.Zeroes, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
-      val claimHtlcTimeoutTxsNew = claimHtlcTimeoutTxs.map(tx => ClaimHtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, ByteVector32.Zeroes, CltvExpiry(0), ConfirmationTarget.Absolute(BlockHeight(0))))
+      val claimHtlcTimeoutTxsNew = claimHtlcTimeoutTxs.map(tx => ClaimHtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, RipemdOfPaymentHash.empty, CltvExpiry(0), ConfirmationTarget.Absolute(BlockHeight(0))))
       val claimHtlcTxsNew = (claimHtlcSuccessTxsNew ++ claimHtlcTimeoutTxsNew).map(tx => tx.input.outPoint -> Some(tx)).toMap
       channel.RemoteCommitPublished(commitTx, claimMainOutputTxNew, claimHtlcTxsNew, Nil, irrevocablySpentNew)
     }

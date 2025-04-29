@@ -31,6 +31,7 @@ import fr.acinq.eclair.db.OfferData
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.{Invoice, PaymentSettlingOnChain}
+import fr.acinq.eclair.transactions.Scripts.RipemdOfPaymentHash
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs
@@ -398,7 +399,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     assertJsonEquals(JsonSerializers.serialization.write(htlcSuccessTxInfo)(JsonSerializers.formats), htlcSuccessJson)
 
     val claimHtlcTimeoutTx = Transaction.read("010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000")
-    val claimHtlcTimeoutTxInfo = ClaimHtlcTimeoutTx(dummyInputInfo, claimHtlcTimeoutTx, 2, ByteVector32.Zeroes, CltvExpiry(0), ConfirmationTarget.Absolute(BlockHeight(144)))
+    val claimHtlcTimeoutTxInfo = ClaimHtlcTimeoutTx(dummyInputInfo, claimHtlcTimeoutTx, 2, RipemdOfPaymentHash.empty, CltvExpiry(0), ConfirmationTarget.Absolute(BlockHeight(144)))
     val claimHtlcTimeoutJson =
       s"""{
          |  "txid": "${claimHtlcTimeoutTx.txid.value.toHex}",

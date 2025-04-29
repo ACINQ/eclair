@@ -204,7 +204,18 @@ object Scripts {
    */
   def witnessAnchor(localSig: ByteVector64, anchorScript: ByteVector): ScriptWitness = ScriptWitness(der(localSig) :: anchorScript :: Nil)
 
-  def htlcOffered(keys: CommitmentPublicKeys, paymentHash: ByteVector32, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
+  case class RipemdOfPaymentHash(ripemdHash: ByteVector) {
+    require(ripemdHash.size == 20)
+  }
+
+  object RipemdOfPaymentHash {
+    def apply(paymentHash: ByteVector32): RipemdOfPaymentHash = RipemdOfPaymentHash(Crypto.ripemd160(paymentHash))
+
+    // this value cannot be generated with a real payment hash
+    val empty: RipemdOfPaymentHash = RipemdOfPaymentHash(ByteVector.fill(20)(0))
+  }
+
+  def htlcOffered(keys: CommitmentPublicKeys, paymentHash: RipemdOfPaymentHash, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case DefaultCommitmentFormat => false
       case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => true
@@ -220,7 +231,7 @@ object Scripts {
             // To me via HTLC-timeout transaction (timelocked).
             OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(keys.localHtlcPublicKey) :: OP_2 :: OP_CHECKMULTISIG ::
         OP_ELSE ::
-            OP_HASH160 :: OP_PUSHDATA(Crypto.ripemd160(paymentHash)) :: OP_EQUALVERIFY ::
+            OP_HASH160 :: OP_PUSHDATA(paymentHash.ripemdHash) :: OP_EQUALVERIFY ::
             OP_CHECKSIG ::
         OP_ENDIF ::
     (if (addCsvDelay) {
@@ -231,6 +242,46 @@ object Scripts {
     })
     // @formatter:on
   }
+
+  def htlcOffered(keys: CommitmentPublicKeys, paymentHash: ByteVector32, commitmentFormat: CommitmentFormat): Seq[ScriptElt] =
+    htlcOffered(keys, RipemdOfPaymentHash(paymentHash), commitmentFormat)
+
+  // @formatter::off
+  def extractHtlcInfoFromHtlcOfferedScript(script: Seq[ScriptElt]): Option[RipemdOfPaymentHash] = script match {
+    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(_, _) :: OP_EQUAL ::
+      OP_IF ::
+      OP_CHECKSIG ::
+      OP_ELSE ::
+      OP_PUSHDATA(_, _) :: OP_SWAP :: OP_SIZE :: OP_PUSHDATA(_, _) :: OP_EQUAL ::
+      OP_NOTIF ::
+      // To me via HTLC-timeout transaction (timelocked).
+      OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(_, _) :: OP_2 :: OP_CHECKMULTISIG ::
+      OP_ELSE ::
+      OP_HASH160 :: OP_PUSHDATA(ripemdOfPaymentHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG ::
+      OP_ENDIF ::
+      OP_ENDIF :: Nil if ripemdOfPaymentHash.size == 20 => {
+      Some(RipemdOfPaymentHash(ripemdOfPaymentHash))
+    }
+    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(_, _) :: OP_EQUAL ::
+      OP_IF ::
+      OP_CHECKSIG ::
+      OP_ELSE ::
+      OP_PUSHDATA(_, _) :: OP_SWAP :: OP_SIZE :: OP_PUSHDATA(_, _) :: OP_EQUAL ::
+      OP_NOTIF ::
+      // To me via HTLC-timeout transaction (timelocked).
+      OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(_, _) :: OP_2 :: OP_CHECKMULTISIG ::
+      OP_ELSE ::
+      OP_HASH160 :: OP_PUSHDATA(ripemdOfPaymentHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG ::
+      OP_ENDIF ::
+      OP_1 :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
+      OP_ENDIF :: Nil if ripemdOfPaymentHash.size == 20 => {
+      Some(RipemdOfPaymentHash(ripemdOfPaymentHash))
+    }
+    case _ => None
+  }
+  // @formatter::on
+
+  def extractHtlcInfoFromHtlcOfferedScript(script: ByteVector): Option[RipemdOfPaymentHash] = extractHtlcInfoFromHtlcOfferedScript(Script.parse(script))
 
   /**
    * This is the witness script of the 2nd-stage HTLC Success transaction (consumes htlcOffered script from commit tx)
@@ -261,7 +312,7 @@ object Scripts {
   /** Extract payment preimages from a (potentially batched) claim HTLC transaction's witnesses. */
   def extractPreimagesFromClaimHtlcSuccess(tx: Transaction): Set[ByteVector32] = tx.txIn.map(_.witness).collect(extractPreimageFromClaimHtlcSuccess).toSet
 
-  def htlcReceived(keys: CommitmentPublicKeys, paymentHash: ByteVector32, lockTime: CltvExpiry, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
+  def htlcReceived(keys: CommitmentPublicKeys, paymentHash: RipemdOfPaymentHash, lockTime: CltvExpiry, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case DefaultCommitmentFormat => false
       case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => true
@@ -275,7 +326,7 @@ object Scripts {
         OP_PUSHDATA(keys.remoteHtlcPublicKey) :: OP_SWAP :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
         OP_IF ::
             // To me via HTLC-success transaction.
-            OP_HASH160 :: OP_PUSHDATA(Crypto.ripemd160(paymentHash)) :: OP_EQUALVERIFY ::
+            OP_HASH160 :: OP_PUSHDATA(paymentHash.ripemdHash) :: OP_EQUALVERIFY ::
             OP_2 :: OP_SWAP :: OP_PUSHDATA(keys.localHtlcPublicKey) :: OP_2 :: OP_CHECKMULTISIG ::
         OP_ELSE ::
             // To you after timeout.
@@ -290,6 +341,48 @@ object Scripts {
     })
     // @formatter:on
   }
+
+  // @formatter:off
+  def extractHtlcInfoFromHtlcReceived(script: Seq[ScriptElt]): Option[(RipemdOfPaymentHash, CltvExpiry)] = script match {
+    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(_, _) :: OP_EQUAL ::
+      OP_IF ::
+        OP_CHECKSIG ::
+      OP_ELSE ::
+        OP_PUSHDATA(_, _) :: OP_SWAP :: OP_SIZE :: OP_PUSHDATA(_, _) :: OP_EQUAL ::
+        OP_IF ::
+          // To me via HTLC-success transaction.
+          OP_HASH160 :: OP_PUSHDATA(ripemdHash, _) :: OP_EQUALVERIFY ::
+          OP_2 :: OP_SWAP :: OP_PUSHDATA(_, _) :: OP_2 :: OP_CHECKMULTISIG ::
+        OP_ELSE ::
+          // To you after timeout.
+          OP_DROP :: OP_PUSHDATA(rawExpiry, _) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
+          OP_CHECKSIG ::
+        OP_ENDIF ::
+        OP_1 :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
+      OP_ENDIF :: Nil if ripemdHash.size == 20 => Some(RipemdOfPaymentHash(ripemdHash), CltvExpiry(Script.decodeNumber(rawExpiry, false)))
+    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(_, _) :: OP_EQUAL ::
+      OP_IF ::
+        OP_CHECKSIG ::
+      OP_ELSE ::
+        OP_PUSHDATA(_, _) :: OP_SWAP :: OP_SIZE :: OP_PUSHDATA(_, _) :: OP_EQUAL ::
+        OP_IF ::
+          // To me via HTLC-success transaction.
+          OP_HASH160 :: OP_PUSHDATA(ripemdHash, _) :: OP_EQUALVERIFY ::
+          OP_2 :: OP_SWAP :: OP_PUSHDATA(_, _) :: OP_2 :: OP_CHECKMULTISIG ::
+        OP_ELSE ::
+          // To you after timeout.
+          OP_DROP :: OP_PUSHDATA(rawExpiry, _) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
+          OP_CHECKSIG ::
+        OP_ENDIF ::
+      OP_ENDIF :: Nil if ripemdHash.size == 20 => Some(RipemdOfPaymentHash(ripemdHash), CltvExpiry(Script.decodeNumber(rawExpiry, false)))
+    case _ => None
+  }
+  // @formatter:on
+
+  def extractHtlcInfoFromHtlcReceived(script: ByteVector): Option[(RipemdOfPaymentHash, CltvExpiry)] = extractHtlcInfoFromHtlcReceived(Script.parse(script))
+
+  def htlcReceived(keys: CommitmentPublicKeys, paymentHash: ByteVector32, lockTime: CltvExpiry, commitmentFormat: CommitmentFormat): Seq[ScriptElt] =
+    htlcReceived(keys, RipemdOfPaymentHash(paymentHash), lockTime, commitmentFormat)
 
   /**
    * This is the witness script of the 2nd-stage HTLC Timeout transaction (consumes htlcOffered script from commit tx)
@@ -445,10 +538,10 @@ object Scripts {
      *
      * @return a script used to create a "spend offered HTLC" leaf in a script tree
      */
-    private def offeredHtlcSuccess(keys: CommitmentPublicKeys, paymentHash: ByteVector32): Seq[ScriptElt] = {
+    private def offeredHtlcSuccess(keys: CommitmentPublicKeys, paymentHash: RipemdOfPaymentHash): Seq[ScriptElt] = {
       // @formatter:off
       OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
-      OP_HASH160 :: OP_PUSHDATA(Crypto.ripemd160(paymentHash)) :: OP_EQUALVERIFY ::
+      OP_HASH160 :: OP_PUSHDATA(paymentHash.ripemdHash) :: OP_EQUALVERIFY ::
       OP_PUSHDATA(keys.remoteHtlcPublicKey.xOnly) :: OP_CHECKSIGVERIFY ::
       OP_1 :: OP_CHECKSEQUENCEVERIFY :: Nil
       // @formatter:on
@@ -457,12 +550,14 @@ object Scripts {
     /**
      * Script tree used for offered HTLCs.
      */
-    def offeredHtlcScriptTree(keys: CommitmentPublicKeys, paymentHash: ByteVector32): ScriptTree.Branch = {
+    def offeredHtlcScriptTree(keys: CommitmentPublicKeys, paymentHash: RipemdOfPaymentHash): ScriptTree.Branch = {
       new ScriptTree.Branch(
         new ScriptTree.Leaf(offeredHtlcTimeout(keys)),
         new ScriptTree.Leaf(offeredHtlcSuccess(keys, paymentHash)),
       )
     }
+
+    def offeredHtlcScriptTree(keys: CommitmentPublicKeys, paymentHash: ByteVector32): ScriptTree.Branch = offeredHtlcScriptTree(keys, RipemdOfPaymentHash(paymentHash))
 
     /**
      * Script used for offered HTLCs.
@@ -491,10 +586,10 @@ object Scripts {
      *
      * miniscript: and_v(v:hash160(H),and_v(v:pk(local_key),pk(remote_key)))
      */
-    private def receivedHtlcSuccess(keys: CommitmentPublicKeys, paymentHash: ByteVector32): Seq[ScriptElt] = {
+    private def receivedHtlcSuccess(keys: CommitmentPublicKeys, paymentHash: RipemdOfPaymentHash): Seq[ScriptElt] = {
       // @formatter:off
       OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
-      OP_HASH160 :: OP_PUSHDATA(Crypto.ripemd160(paymentHash)) :: OP_EQUALVERIFY ::
+      OP_HASH160 :: OP_PUSHDATA(paymentHash.ripemdHash) :: OP_EQUALVERIFY ::
       OP_PUSHDATA(keys.localHtlcPublicKey.xOnly) :: OP_CHECKSIGVERIFY ::
       OP_PUSHDATA(keys.remoteHtlcPublicKey.xOnly) :: OP_CHECKSIG :: Nil
       // @formatter:on
@@ -503,12 +598,15 @@ object Scripts {
     /**
      * Script tree used for received HTLCs.
      */
-    def receivedHtlcScriptTree(keys: CommitmentPublicKeys, paymentHash: ByteVector32, expiry: CltvExpiry): ScriptTree.Branch = {
+    def receivedHtlcScriptTree(keys: CommitmentPublicKeys, paymentHash: RipemdOfPaymentHash, expiry: CltvExpiry): ScriptTree.Branch = {
       new ScriptTree.Branch(
         new ScriptTree.Leaf(receivedHtlcTimeout(keys, expiry)),
         new ScriptTree.Leaf(receivedHtlcSuccess(keys, paymentHash)),
       )
     }
+
+    def receivedHtlcScriptTree(keys: CommitmentPublicKeys, paymentHash: ByteVector32, expiry: CltvExpiry): ScriptTree.Branch =
+      receivedHtlcScriptTree(keys, RipemdOfPaymentHash(paymentHash), expiry)
 
     /**
      * Script used for received HTLCs.

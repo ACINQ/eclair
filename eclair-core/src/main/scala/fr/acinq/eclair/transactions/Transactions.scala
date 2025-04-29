@@ -131,16 +131,6 @@ object Transactions {
 
   case class InputInfo(outPoint: OutPoint, txOut: TxOut)
 
-  case class InputInfoWithRedeemInfo(outPoint: OutPoint, txOut: TxOut, redeemInfo: RedeemInfo) {
-    val inputInfo: InputInfo = InputInfo(outPoint, txOut)
-  }
-
-  object InputInfoWithRedeemInfo {
-    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: ByteVector): InputInfoWithRedeemInfo = InputInfoWithRedeemInfo(outPoint, txOut, SegwitV0(Script.parse(redeemScript)))
-    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]): InputInfoWithRedeemInfo = InputInfoWithRedeemInfo(outPoint, txOut, SegwitV0(redeemScript))
-    def apply(outPoint: OutPoint, txOut: TxOut, internalKey: XonlyPublicKey, scriptTree: ScriptTree, leafHash: ByteVector32): InputInfoWithRedeemInfo = InputInfoWithRedeemInfo(outPoint, txOut, RedeemInfo.TaprootScriptPath(internalKey, scriptTree, leafHash))
-  }
-
   /** Owner of a given transaction (local/remote). */
   sealed trait TxOwner
   object TxOwner {
@@ -292,15 +282,8 @@ object Transactions {
     override val desc: String = "htlc-success"
   }
 
-  case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long, confirmationTarget: ConfirmationTarget.Absolute, paymentHash: ByteVector32) extends HtlcTx {
+  case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long, confirmationTarget: ConfirmationTarget.Absolute, paymentHash: RipemdOfPaymentHash) extends HtlcTx {
     override val desc: String = "htlc-timeout"
-  }
-
-  case class LegacyHtlcTimeoutTx(input: InputInfoWithRedeemScript, tx: Transaction, htlcId: Long, confirmationTarget: ConfirmationTarget.Absolute) {
-    def this(htlcTimeOutTx: HtlcTimeoutTx) = this(new InputInfoWithRedeemScript(htlcTimeOutTx.input), htlcTimeOutTx.tx, htlcTimeOutTx.htlcId, htlcTimeOutTx.confirmationTarget)
-
-    val ripemdOfPaymentHash: RipemdOfPaymentHash = Scripts.extractHtlcInfoFromHtlcOfferedScript(input.redeemScript).getOrElse(RipemdOfPaymentHash.empty)
-    val htlcTimeOutTx: HtlcTimeoutTx = HtlcTimeoutTx(input.inputInfo, tx, htlcId, confirmationTarget, ripemdOfPaymentHash)
   }
 
   case class HtlcDelayedTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo {
@@ -317,7 +300,7 @@ object Transactions {
     override val desc: String = "claim-htlc-success"
   }
 
-  case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, confirmationTarget: ConfirmationTarget.Absolute) extends ClaimHtlcTx {
+  case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long, paymentHash: RipemdOfPaymentHash, cltvExpiry: CltvExpiry, confirmationTarget: ConfirmationTarget.Absolute) extends ClaimHtlcTx {
     override val desc: String = "claim-htlc-timeout"
   }
 
@@ -641,7 +624,7 @@ object Transactions {
       txOut = output.htlcTimeoutOutput.txOut :: Nil,
       lockTime = htlc.cltvExpiry.toLong
     )
-    Right(HtlcTimeoutTx(input, tx, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong)), htlc.paymentHash))
+    Right(HtlcTimeoutTx(input, tx, htlc.id, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong)), RipemdOfPaymentHash(htlc.paymentHash)))
   }
 
   private def makeHtlcSuccessTx(commitTx: Transaction,
@@ -716,12 +699,12 @@ object Transactions {
           txOut = TxOut(0 sat, localFinalScriptPubKey) :: Nil,
           lockTime = htlc.cltvExpiry.toLong
         )
-        val unsignedClaimTx = ClaimHtlcTimeoutTx(input, unsignedTx, htlc.id, htlc.paymentHash, htlc.cltvExpiry, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong)))
+        val unsignedClaimTx = ClaimHtlcTimeoutTx(input, unsignedTx, htlc.id, RipemdOfPaymentHash(htlc.paymentHash), htlc.cltvExpiry, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong)))
         val solver = Solver.ClaimHtlcTimeout(RemoteCommitmentKeys(Left(PlaceHolderPubKey), PlaceHolderPubKey, PlaceHolderPubKey, PrivateKey(ByteVector32.One), PlaceHolderPubKey, PlaceHolderPubKey), unsignedClaimTx, commitmentFormat)
         val dummySignedTx = solver.addSig(unsignedClaimTx, SolverData.SingleSig(PlaceHolderSig))
         skipTxIfBelowDust(dummySignedTx, feeratePerKw, dustLimit).map { amount =>
           val tx = unsignedTx.copy(txOut = TxOut(amount, localFinalScriptPubKey) :: Nil)
-          ClaimHtlcTimeoutTx(input, tx, htlc.id, htlc.paymentHash, htlc.cltvExpiry, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong)))
+          ClaimHtlcTimeoutTx(input, tx, htlc.id, RipemdOfPaymentHash(htlc.paymentHash), htlc.cltvExpiry, ConfirmationTarget.Absolute(BlockHeight(htlc.cltvExpiry.toLong)))
         }
     }.getOrElse(Left(OutputNotFound))
   }

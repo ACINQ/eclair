@@ -16,22 +16,22 @@
 
 package fr.acinq.eclair.wire.internal.channel.version3
 
-import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Transaction, TxOut}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Script, ScriptElt, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.LocalFundingStatus._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.transactions.Scripts.RipemdOfPaymentHash
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc, RedeemInfo}
+import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0
+import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{InputInfoWithRedeemScript, ClaimHtlcTimeoutWithRedeemScriptTx, HtlcSuccessWithRedeemScriptTx, HtlcTimeoutWithRedeemScriptTx}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.UpdateMessage
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, FeatureSupport, Features, MilliSatoshiLong, PermanentChannelFeature}
+import fr.acinq.eclair.{Alias, BlockHeight, FeatureSupport, Features, MilliSatoshiLong, PermanentChannelFeature}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
@@ -114,9 +114,11 @@ private[channel] object ChannelCodecs3 {
 
     val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
-    val redeemInfoCodec: Codec[RedeemInfo.SegwitV0] = lengthDelimited(bytes).xmap(b => RedeemInfo.SegwitV0(Script.parse(b)), s => Script.write(s.redeemScript))
+    val redeemScriptCodec: Codec[Seq[ScriptElt]] = lengthDelimited(bytes).xmap(Script.parse, Script.write)
 
-    val inputInfoCodec: Codec[InputInfo] = (("outPoint" | outPointCodec) :: ("txOut" | txOutCodec)).as[InputInfo].decodeOnly
+    val inputInfoWithRedeemScriptCodec: Codec[InputInfoWithRedeemScript] = (("outPoint" | outPointCodec) :: ("txOut" | txOutCodec) :: ("redeemScript" | redeemScriptCodec)).as[InputInfoWithRedeemScript]
+
+    val inputInfoCodec: Codec[InputInfo] = inputInfoWithRedeemScriptCodec.xmap[InputInfo](_.inputInfo, x => InputInfoWithRedeemScript(x.outPoint, x.txOut, Nil))
 
     val outputInfoCodec: Codec[OutputInfo] = (
       ("index" | uint32) ::
@@ -125,18 +127,41 @@ private[channel] object ChannelCodecs3 {
 
     private val defaultConfirmationTarget: Codec[ConfirmationTarget.Absolute] = provide(ConfirmationTarget.Absolute(BlockHeight(0)))
     private val blockHeightConfirmationTarget: Codec[ConfirmationTarget.Absolute] = blockHeight.map(ConfirmationTarget.Absolute).decodeOnly
+    private val missingPaymentHashCodec: Codec[RipemdOfPaymentHash] = provide(RipemdOfPaymentHash.empty)
 
     val commitTxCodec: Codec[CommitTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx]
-    val htlcSuccessTxCodec: Codec[HtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: provide(CltvExpiry(0)) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | blockHeightConfirmationTarget)).as[HtlcSuccessTx]
-    val htlcTimeoutTxCodec: Codec[HtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | blockHeightConfirmationTarget) :: provide(ByteVector32.Zeroes)).as[HtlcTimeoutTx]
-    private val htlcSuccessTxNoConfirmCodec: Codec[HtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: provide(CltvExpiry(0)) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | defaultConfirmationTarget)).as[HtlcSuccessTx]
-    private val htlcTimeoutTxNoConfirmCodec: Codec[HtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | defaultConfirmationTarget) :: provide(ByteVector32.Zeroes)).as[HtlcTimeoutTx]
+
+    val htlcSuccessTxCodec: Codec[HtlcSuccessTx] = (
+      ("inputInfo" | inputInfoWithRedeemScriptCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | blockHeightConfirmationTarget)
+      ).as[HtlcSuccessWithRedeemScriptTx].xmap[HtlcSuccessTx](_.htlcSuccessTx, h => new HtlcSuccessWithRedeemScriptTx(h))
+
+    val htlcTimeoutTxCodec: Codec[HtlcTimeoutTx] = (
+      ("inputInfo" | inputInfoWithRedeemScriptCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | blockHeightConfirmationTarget)
+      ).as[HtlcTimeoutWithRedeemScriptTx].xmap(_.htlcTimeOutTx, h => new HtlcTimeoutWithRedeemScriptTx(h))
+
+    private val htlcSuccessTxNoConfirmCodec: Codec[HtlcSuccessTx] = (
+      ("inputInfo" | inputInfoWithRedeemScriptCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | defaultConfirmationTarget)
+      ).as[HtlcSuccessWithRedeemScriptTx].xmap[HtlcSuccessTx](_.htlcSuccessTx, h => new HtlcSuccessWithRedeemScriptTx(h))
+
+    private val htlcTimeoutTxNoConfirmCodec: Codec[HtlcTimeoutTx] = (
+      ("inputInfo" | inputInfoWithRedeemScriptCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | defaultConfirmationTarget)
+      ).as[HtlcTimeoutWithRedeemScriptTx].xmap(_.htlcTimeOutTx, h => new HtlcTimeoutWithRedeemScriptTx(h))
+
     val htlcDelayedTxCodec: Codec[HtlcDelayedTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcDelayedTx]
+
     private val legacyClaimHtlcSuccessTxCodec: Codec[ClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | provide(ByteVector32.Zeroes)) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | defaultConfirmationTarget)).as[ClaimHtlcSuccessTx]
     val claimHtlcSuccessTxCodec: Codec[ClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | blockHeightConfirmationTarget)).as[ClaimHtlcSuccessTx]
-    val claimHtlcTimeoutTxCodec: Codec[ClaimHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: provide(ByteVector32.Zeroes) :: provide(CltvExpiry(0)) :: ("confirmationTarget" | blockHeightConfirmationTarget)).as[ClaimHtlcTimeoutTx] // FIXME
+
+    val claimHtlcTimeoutTxCodec: Codec[ClaimHtlcTimeoutTx] = (
+      ("inputInfo" | inputInfoWithRedeemScriptCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | blockHeightConfirmationTarget)
+      ).as[ClaimHtlcTimeoutWithRedeemScriptTx].xmap[ClaimHtlcTimeoutTx](_.claimHtlcTimeOutTx, h => new ClaimHtlcTimeoutWithRedeemScriptTx(h))
+
     private val claimHtlcSuccessTxNoConfirmCodec: Codec[ClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | defaultConfirmationTarget)).as[ClaimHtlcSuccessTx]
-    private val claimHtlcTimeoutTxNoConfirmCodec: Codec[ClaimHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: provide(ByteVector32.Zeroes) :: provide(CltvExpiry(0)) :: ("confirmationTarget" | defaultConfirmationTarget)).as[ClaimHtlcTimeoutTx] // FIXME
+
+    private val claimHtlcTimeoutTxNoConfirmCodec: Codec[ClaimHtlcTimeoutTx] = (
+      ("inputInfo" | inputInfoWithRedeemScriptCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: ("confirmationTarget" | defaultConfirmationTarget)
+      ).as[ClaimHtlcTimeoutWithRedeemScriptTx].xmap[ClaimHtlcTimeoutTx](_.claimHtlcTimeOutTx, h => new ClaimHtlcTimeoutWithRedeemScriptTx(h))
+
     val claimLocalDelayedOutputTxCodec: Codec[ClaimLocalDelayedOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx]
     val claimP2WPKHOutputTxCodec: Codec[ClaimP2WPKHOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx]
     val claimRemoteDelayedOutputTxCodec: Codec[ClaimRemoteDelayedOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimRemoteDelayedOutputTx]

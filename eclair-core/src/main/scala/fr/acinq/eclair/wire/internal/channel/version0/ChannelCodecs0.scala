@@ -17,14 +17,15 @@
 package fr.acinq.eclair.wire.internal.channel.version0
 
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Script, Transaction, TxId, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Script, ScriptElt, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.transactions.Scripts.RipemdOfPaymentHash
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSigs, PublishableTxs}
+import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSigs, InputInfoWithRedeemScript, HtlcSuccessWithRedeemScriptTx, PublishableTxs}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, combinedFeaturesCodec}
 import fr.acinq.eclair.wire.protocol._
@@ -124,35 +125,27 @@ private[channel] object ChannelCodecs0 {
       closingTx => closingTx.tx
     )
 
-    val redeemInfoCodec: Codec[RedeemInfo.SegwitV0] = varsizebinarydata.xmap(b => RedeemInfo.SegwitV0(Script.parse(b)), s => Script.write(s.redeemScript))
+    val redeemScriptCodec: Codec[Seq[ScriptElt]] = varsizebinarydata.xmap(Script.parse, Script.write)
 
-    val inputInfoCodec: Codec[InputInfo] = (("outPoint" | outPointCodec) :: ("txOut" | txOutCodec)).as[InputInfo].decodeOnly
+    val inputInfoWithRedeemScriptCodec: Codec[InputInfoWithRedeemScript] = (("outPoint" | outPointCodec) :: ("txOut" | txOutCodec) :: ("redeemScript" | redeemScriptCodec)).as[InputInfoWithRedeemScript]
 
-    val inputInfoWithRedeemInfoCodec: Codec[InputInfoWithRedeemInfo] = (
-      ("outPoint" | outPointCodec) ::
-        ("txOut" | txOutCodec) ::
-        ("redeemScript" | redeemInfoCodec.upcast[RedeemInfo])).as[InputInfoWithRedeemInfo].decodeOnly
+    val inputInfoCodec: Codec[InputInfo] = inputInfoWithRedeemScriptCodec.xmap[InputInfo](_.inputInfo, x => InputInfoWithRedeemScript(x.outPoint, x.txOut, Nil))
 
     private val defaultConfirmationTarget: Codec[ConfirmationTarget.Absolute] = provide(ConfirmationTarget.Absolute(BlockHeight(0)))
 
-    private case class LegacyCommitTx(input: InputInfoWithRedeemInfo, tx: Transaction) {
-      val commitTx: CommitTx = CommitTx(input.inputInfo, tx)
-    }
-    private object LegacyCommitTx {
-      def apply(commitTx: CommitTx): LegacyCommitTx = LegacyCommitTx(InputInfoWithRedeemInfo(commitTx.input.outPoint, commitTx.input.txOut, Nil), commitTx.tx)
-    }
     // We can safely set htlcId = 0 for htlc txs. This information is only used to find upstream htlcs to fail when a
     // downstream htlc times out, and `Helpers.Closing.timedOutHtlcs` explicitly handles the case where htlcId is missing.
     // We can also safely set confirmBefore = 0: we will simply use a high feerate to make these transactions confirm
     // as quickly as possible. It's very unlikely that nodes will run into this, so it's a good trade-off between code
     // complexity and real world impact.
+
+    val missingPaymentHashCodec: Codec[RipemdOfPaymentHash] = provide(RipemdOfPaymentHash.empty)
     val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
-      //.typecase(0x01, (("inputInfo" | inputInfoWithRedeemInfoCodec) :: ("tx" | txCodec)).as[LegacyCommitTx].xmap[CommitTx](_.commitTx, LegacyCommitTx.apply))
       .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx])
-      .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: provide(CltvExpiry(0)) :: ("htlcId" | provide(0L)) :: ("confirmationTarget" | defaultConfirmationTarget)).as[HtlcSuccessTx])
-      .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget) :: provide(ByteVector32.Zeroes)).as[HtlcTimeoutTx])
+      .typecase(0x02, (("inputInfo" | inputInfoWithRedeemScriptCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | provide(0L)) :: ("confirmationTarget" | defaultConfirmationTarget)).as[HtlcSuccessWithRedeemScriptTx].xmap[HtlcSuccessTx](_.htlcSuccessTx, h => new HtlcSuccessWithRedeemScriptTx(h)))
+      .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget) :: missingPaymentHashCodec).as[HtlcTimeoutTx])
       .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | provide(ByteVector32.Zeroes)) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | defaultConfirmationTarget)).as[ClaimHtlcSuccessTx])
-      .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: provide(ByteVector32.Zeroes) :: provide(CltvExpiry(0)) :: ("confirmBefore" | defaultConfirmationTarget)).as[ClaimHtlcTimeoutTx])
+      .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L)) :: missingPaymentHashCodec :: provide(CltvExpiry(0)) :: ("confirmBefore" | defaultConfirmationTarget)).as[ClaimHtlcTimeoutTx])
       .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
       .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx])
       .typecase(0x08, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[MainPenaltyTx])

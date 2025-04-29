@@ -26,6 +26,7 @@ import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.AdjustPreviousTxOutpu
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder._
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, RemoteCommitmentKeys}
+import fr.acinq.eclair.transactions.Scripts.RipemdOfPaymentHash
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{Scripts, Solver, SolverData}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, TestKitBaseClass, randomBytes32}
@@ -81,7 +82,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(4000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       12,
       ConfirmationTarget.Absolute(BlockHeight(0)),
-      paymentHash
+      RipemdOfPaymentHash(paymentHash)
     ), PlaceHolderSig)
     (commitTx, htlcSuccess, htlcTimeout)
   }
@@ -109,7 +110,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
       7,
-      ByteVector32.Zeroes, CltvExpiry(0),
+      RipemdOfPaymentHash.empty, CltvExpiry(0),
       ConfirmationTarget.Absolute(BlockHeight(0))
     ))
     (commitTx, claimHtlcSuccess, claimHtlcTimeout)
