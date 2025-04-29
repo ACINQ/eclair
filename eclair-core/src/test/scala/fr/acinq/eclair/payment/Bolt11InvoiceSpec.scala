@@ -327,7 +327,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       assert(features2bits(invoice.features) == bin"1000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
       assert(!invoice.features.hasFeature(BasicMultiPartPayment))
       assert(invoice.features.hasFeature(PaymentSecret, Some(Mandatory)))
-      assert(!invoice.features.hasFeature(TrampolinePaymentPrototype))
+      assert(!invoice.features.hasFeature(TrampolinePayment))
       assert(TestConstants.Alice.nodeParams.features.invoiceFeatures().areSupported(invoice.features))
       assert(invoice.sign(priv).toString == ref.toLowerCase)
     }
@@ -347,7 +347,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(features2bits(invoice.features) == bin"000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
     assert(!invoice.features.hasFeature(BasicMultiPartPayment))
     assert(invoice.features.hasFeature(PaymentSecret, Some(Mandatory)))
-    assert(!invoice.features.hasFeature(TrampolinePaymentPrototype))
+    assert(!invoice.features.hasFeature(TrampolinePayment))
     assert(!TestConstants.Alice.nodeParams.features.invoiceFeatures().areSupported(invoice.features))
     assert(invoice.sign(priv).toString == ref)
   }
@@ -581,19 +581,15 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
   }
 
   test("trampoline") {
-    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18))
-    assert(!invoice.features.hasFeature(TrampolinePaymentPrototype))
+    val invoice1 = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18))
+    assert(!invoice1.features.hasFeature(TrampolinePayment))
+    
+    val invoice2 = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, TrampolinePayment -> Optional))
+    assert(invoice2.features.hasFeature(BasicMultiPartPayment))
+    assert(invoice2.features.hasFeature(TrampolinePayment))
 
-    val pr1 = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, TrampolinePaymentPrototype -> Optional))
-    assert(!pr1.features.hasFeature(BasicMultiPartPayment))
-    assert(pr1.features.hasFeature(TrampolinePaymentPrototype))
-
-    val pr2 = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, TrampolinePaymentPrototype -> Optional))
-    assert(pr2.features.hasFeature(BasicMultiPartPayment))
-    assert(pr2.features.hasFeature(TrampolinePaymentPrototype))
-
-    val Success(pr3) = Bolt11Invoice.fromString("lnbc40n1pw9qjvwsp5q56txjvpzwz5lkd4atjpc894l8ppc0eeylfnelaytcgfaxjy76tspp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsqakczwg")
-    assert(!pr3.features.hasFeature(TrampolinePaymentPrototype))
+    val Success(invoice3) = Bolt11Invoice.fromString("lnbc40n1pw9qjvwsp5q56txjvpzwz5lkd4atjpc894l8ppc0eeylfnelaytcgfaxjy76tspp5qq3w2ln6krepcslqszkrsfzwy49y0407hvks30ec6pu9s07jur3sdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdencqzysxqrrss7ju0s4dwx6w8a95a9p2xc5vudl09gjl0w2n02sjrvffde632nxwh2l4w35nqepj4j5njhh4z65wyfc724yj6dn9wajvajfn5j7em6wsqakczwg")
+    assert(!invoice3.features.hasFeature(TrampolinePayment))
   }
 
   test("nonreg") {
@@ -674,7 +670,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     val invoiceFeatures = TestConstants.Alice.nodeParams.features.bolt11Features()
     assert(invoiceFeatures.unknown.nonEmpty)
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = invoiceFeatures)
-    assert(invoice.features == Features(PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, VariableLengthOnion -> Mandatory))
+    assert(invoice.features == Features(PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, VariableLengthOnion -> Mandatory, TrampolinePayment -> Optional))
     assert(Bolt11Invoice.fromString(invoice.toString).get == invoice)
   }
 
