@@ -707,9 +707,10 @@ object Helpers {
         val (closingTx, closingSigned) = makeClosingTx(channelKeys, commitment, localScriptPubkey, remoteScriptPubkey, ClosingFees(remoteClosingFee, remoteClosingFee, remoteClosingFee))
         if (checkClosingDustAmounts(closingTx)) {
           val signedClosingTx = closingTx.addSigs(channelKeys.fundingKey(commitment.fundingTxIndex).publicKey, commitment.remoteFundingPubKey, closingSigned.signature, remoteClosingSig)
-          Transactions.checkSpendable(signedClosingTx) match {
-            case Success(_) => Right(signedClosingTx, closingSigned)
-            case _ => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
+          if (signedClosingTx.validate(extraUtxos = Map.empty)) {
+            Right(signedClosingTx, closingSigned)
+          } else {
+            Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
           }
         } else {
           Left(InvalidCloseAmountBelowDust(commitment.channelId, closingTx.tx.txid))
@@ -771,9 +772,10 @@ object Helpers {
             val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
             val localSig = closingTx.sign(localFundingKey, commitment.remoteFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat)
             val signedClosingTx = closingTx.addSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig)
-            Transactions.checkSpendable(signedClosingTx) match {
-              case Failure(_) => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
-              case Success(_) => Right(signedClosingTx, ClosingSig(commitment.channelId, remoteScriptPubkey, localScriptPubkey, closingComplete.fees, closingComplete.lockTime, TlvStream(sigToTlv(localSig))))
+            if (signedClosingTx.validate(extraUtxos = Map.empty)) {
+              Right(signedClosingTx, ClosingSig(commitment.channelId, remoteScriptPubkey, localScriptPubkey, closingComplete.fees, closingComplete.lockTime, TlvStream(sigToTlv(localSig))))
+            } else {
+              Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
             }
           case None => Left(MissingCloseSignature(commitment.channelId))
         }
@@ -797,9 +799,10 @@ object Helpers {
             val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
             val localSig = closingTx.sign(localFundingKey, commitment.remoteFundingPubKey, TxOwner.Local, commitment.params.commitmentFormat)
             val signedClosingTx = closingTx.addSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig)
-            Transactions.checkSpendable(signedClosingTx) match {
-              case Failure(_) => Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
-              case Success(_) => Right(signedClosingTx)
+            if (signedClosingTx.validate(extraUtxos = Map.empty)) {
+              Right(signedClosingTx)
+            } else {
+              Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
             }
           case None => Left(MissingCloseSignature(commitment.channelId))
         }

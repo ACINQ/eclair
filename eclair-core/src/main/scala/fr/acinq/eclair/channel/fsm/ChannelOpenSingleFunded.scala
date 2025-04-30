@@ -275,9 +275,9 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               val localSig = localCommitTx.sign(fundingKey, remoteFundingPubKey, TxOwner.Local, commitmentFormat)
               localCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSig, remoteSig)
           }
-          Transactions.checkSpendable(signedLocalCommitTx) match {
-            case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxId, commitmentNumber = 0, localCommitTx.tx), d, None)
-            case Success(_) =>
+          signedLocalCommitTx.validate(extraUtxos = Map.empty) match {
+            case false => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxId, commitmentNumber = 0, localCommitTx.tx), d, None)
+            case true =>
               val localSigOfRemoteTx = params.commitmentFormat match {
                 case commitmentFormat: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey, TxOwner.Remote, commitmentFormat)
               }
@@ -329,13 +329,13 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val localSig = localCommitTx.sign(fundingKey, remoteFundingPubKey, TxOwner.Local, commitmentFormat)
           localCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSig, remoteSig)
       }
-      Transactions.checkSpendable(signedLocalCommitTx) match {
-        case Failure(cause) =>
+      signedLocalCommitTx.validate(extraUtxos = Map.empty) match {
+        case false =>
           // we rollback the funding tx, it will never be published
           wallet.rollback(fundingTx)
-          d.replyTo ! OpenChannelResponse.Rejected(cause.getMessage)
+          d.replyTo ! OpenChannelResponse.Rejected("invalid commit signatures")
           handleLocalError(InvalidCommitmentSignature(d.channelId, fundingTx.txid, commitmentNumber = 0, localCommitTx.tx), d, Some(msg))
-        case Success(_) =>
+        case true =>
           val commitment = Commitment(
             fundingTxIndex = 0,
             firstRemoteCommitIndex = 0,

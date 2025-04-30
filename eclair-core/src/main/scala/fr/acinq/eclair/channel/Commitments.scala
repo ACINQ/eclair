@@ -677,7 +677,7 @@ case class Commitment(fundingTxIndex: Long,
       case RemoteSignature.PartialSignatureWithNonce(_, _) => ???
     }
     // We verify the remote signature when receiving their commit_sig, so this check should always pass.
-    require(checkSpendable(commitTx).isSuccess, "commit signatures are invalid")
+    require(commitTx.validate(extraUtxos = Map.empty), "commit signatures are invalid")
     commitTx
   }
 

@@ -198,6 +198,14 @@ object Transactions {
         false
       }
     }
+
+    /** Check that this transaction is correctly signed. */
+    def validate(extraUtxos: Map[OutPoint, TxOut]): Boolean = {
+      val inputsMap = extraUtxos + (input.outPoint -> input.txOut)
+      val allInputsProvided = tx.txIn.forall(txIn => inputsMap.contains(txIn.outPoint))
+      val witnessesOk = Try(Transaction.correctlySpends(tx, inputsMap, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
+      allInputsProvided && witnessesOk
+    }
   }
 
   sealed trait ReplaceableTransactionWithInputInfo extends TransactionWithInputInfo
@@ -1290,8 +1298,4 @@ object Transactions {
   val PlaceHolderSig: ByteVector64 = ByteVector64(ByteVector.fill(64)(0xaa))
   assert(der(PlaceHolderSig).size == 72)
 
-  def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] = {
-    // NB: we don't verify the other inputs as they should only be wallet inputs used to RBF the transaction
-    Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.input.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-  }
 }
