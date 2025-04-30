@@ -126,7 +126,9 @@ private[channel] object ChannelCodecs0 {
     val inputInfoCodec: Codec[InputInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | varsizebinarydata)).as[InputInfo.SegwitInput].upcast[InputInfo].decodeOnly
+        ("redeemScript" | varsizebinarydata)).map {
+      case outpoint :: txOut :: _ :: HNil => InputInfo(outpoint, txOut, ByteVector.empty)
+    }.decodeOnly
 
     private val missingHtlcExpiry: Codec[CltvExpiry] = provide(CltvExpiry(0))
     private val missingPaymentHash: Codec[ByteVector32] = provide(ByteVector32.Zeroes)

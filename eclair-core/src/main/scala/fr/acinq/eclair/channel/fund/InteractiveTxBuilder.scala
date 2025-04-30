@@ -113,7 +113,7 @@ object InteractiveTxBuilder {
 
     def sign(channelKeys: ChannelKeys, params: ChannelParams, tx: Transaction, spentUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
       val localFundingKey = channelKeys.fundingKey(fundingTxIndex)
-      Transactions.SpliceTx(info, tx).sign(localFundingKey, TxOwner.Local, params.commitmentFormat, spentUtxos)
+      Transactions.SpliceTx(info, tx).sign(localFundingKey, remoteFundingPubkey, params.commitmentFormat, spentUtxos)
     }
   }
 
@@ -851,8 +851,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         unlockAndStop(completeTx)
       case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)) =>
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
-        val localSigOfRemoteTx = remoteCommitTx.sign(localFundingKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat, Map.empty)
-        val htlcSignatures = sortedHtlcTxs.map(_.sign(remoteCommitmentKeys.ourHtlcKey, TxOwner.Remote, channelParams.commitmentFormat, Map.empty)).toList
+        val localSigOfRemoteTx = remoteCommitTx.sign(localFundingKey, fundingParams.remoteFundingPubKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat)
+        val htlcSignatures = sortedHtlcTxs.map(_.sign(remoteCommitmentKeys, channelParams.commitmentFormat)).toList
         val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures)
         val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx, htlcTxs = Nil)
         val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)

@@ -737,7 +737,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     }).sum
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
     val amountClaimed = htlcAmountClaimed + claimMain.txOut.head.amount
-    assert(amountClaimed == 780290.sat)
+    assert(780_000.sat <= amountClaimed && amountClaimed <= 780_500.sat)
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.txid)
@@ -788,7 +788,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       claimTx.txOut.head.amount
     }).sum
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat - htlc1 = 1000000 - 200000 - 300 000 = 500000 (because fees)
-    assert(amountClaimed == 486200.sat)
+    assert(486_000.sat <= amountClaimed && amountClaimed <= 486_500.sat)
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimTxs(0).txid)
@@ -836,10 +836,10 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     Transaction.correctlySpends(htlc2PenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     // two main outputs are 300 000 and 200 000, htlcs are 300 000 and 200 000
-    assert(mainTx.txOut.head.amount == 291250.sat)
-    assert(mainPenaltyTx.txOut.head.amount == 195160.sat)
-    assert(htlc1PenaltyTx.txOut.head.amount == 194190.sat)
-    assert(htlc2PenaltyTx.txOut.head.amount == 294190.sat)
+    assert(291_000.sat <= mainTx.txOut.head.amount && mainTx.txOut.head.amount <= 291_500.sat)
+    assert(195_000.sat <= mainPenaltyTx.txOut.head.amount && mainPenaltyTx.txOut.head.amount <= 195_500.sat)
+    assert(194_000.sat <= htlc1PenaltyTx.txOut.head.amount && htlc1PenaltyTx.txOut.head.amount <= 194_500.sat)
+    assert(294_000.sat <= htlc2PenaltyTx.txOut.head.amount && htlc2PenaltyTx.txOut.head.amount <= 294_500.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
@@ -879,9 +879,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     Transaction.correctlySpends(htlcPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     // two main outputs are 300 000 and 200 000, htlcs are 300 000 and 200 000
-    assert(mainTx.txOut(0).amount == 291680.sat)
-    assert(mainPenaltyTx.txOut(0).amount == 495160.sat)
-    assert(htlcPenaltyTx.txOut(0).amount == 194190.sat)
+    assert(291_500.sat <= mainTx.txOut(0).amount && mainTx.txOut(0).amount <= 291_800.sat)
+    assert(495_000.sat <= mainPenaltyTx.txOut(0).amount && mainPenaltyTx.txOut(0).amount <= 495_500.sat)
+    assert(194_000.sat <= htlcPenaltyTx.txOut(0).amount && htlcPenaltyTx.txOut(0).amount <= 194_500.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)

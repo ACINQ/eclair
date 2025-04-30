@@ -115,7 +115,9 @@ private[channel] object ChannelCodecs3 {
     val inputInfoCodec: Codec[InputInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
-        ("redeemScript" | lengthDelimited(bytes))).as[InputInfo.SegwitInput].upcast[InputInfo].decodeOnly
+        ("redeemScript" | lengthDelimited(bytes))).map {
+      case outpoint :: txOut :: _ :: HNil => InputInfo(outpoint, txOut, ByteVector.empty)
+    }.decodeOnly
 
     val outputInfoCodec: Codec[Long] = (
       ("index" | uint32) ::

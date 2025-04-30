@@ -46,7 +46,7 @@ private[channel] object ChannelTypes0 {
     // modified: we don't use the InputInfo in closing business logic, so we don't need to fill everything (this part
     // assumes that we only have standard channels, no anchor output channels - which was the case before version2).
     val input = childTx.txIn.head.outPoint
-    InputInfo(input, parentTx.txOut(input.index.toInt), Nil)
+    InputInfo(input, parentTx.txOut(input.index.toInt), ByteVector.empty)
   }
 
   case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, TxId]) {
@@ -95,7 +95,7 @@ private[channel] object ChannelTypes0 {
       val htlcPenaltyTxsNew = htlcPenaltyTxs.map(tx => HtlcPenaltyTx(getPartialInputInfo(commitTx, tx), tx, ByteVector32.Zeroes, CltvExpiry(0)))
       val claimHtlcDelayedPenaltyTxsNew = claimHtlcDelayedPenaltyTxs.map(tx => {
         // We don't have all the `InputInfo` data, but it's ok: we only use the tx that is fully signed.
-        ClaimHtlcDelayedOutputPenaltyTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx, CltvExpiryDelta(0))
+        ClaimHtlcDelayedOutputPenaltyTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), ByteVector.empty), tx, CltvExpiryDelta(0))
       })
       channel.RevokedCommitPublished(commitTx, claimMainOutputTxNew, mainPenaltyTxNew, htlcPenaltyTxsNew, claimHtlcDelayedPenaltyTxsNew, irrevocablySpentNew)
     }
@@ -112,7 +112,7 @@ private[channel] object ChannelTypes0 {
    * the raw transaction. It provides more information for auditing but is not used for business logic, so we can safely
    * put dummy values in the migration.
    */
-  def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx, None)
+  def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), ByteVector.empty), tx, None)
 
   case class HtlcTxAndSigs(txinfo: HtlcTx, localSig: ByteVector64, remoteSig: ByteVector64)
 

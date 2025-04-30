@@ -30,7 +30,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.transactions.Transactions.TxOwner
+import fr.acinq.eclair.transactions.Transactions.{SegwitV0CommitmentFormat, TxOwner}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
 import fr.acinq.eclair.{MilliSatoshiLong, UInt64, randomKey, toLongId}
@@ -218,7 +218,9 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Left(ex) => handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
-          val localSigOfRemoteTx = remoteCommitTx.sign(fundingKey, TxOwner.Remote, params.commitmentFormat, Map.empty)
+          val localSigOfRemoteTx = params.commitmentFormat match {
+            case commitmentFormat: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey, TxOwner.Remote, commitmentFormat)
+          }
           // signature of their initial commitment tx that pays remote pushMsat
           val fundingCreated = FundingCreated(
             temporaryChannelId = temporaryChannelId,
@@ -268,12 +270,17 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Left(ex) => handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           // check remote signature validity
-          val localSigOfLocalTx = localCommitTx.sign(fundingKey, TxOwner.Local, params.commitmentFormat, Map.empty)
-          val signedLocalCommitTx = localCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
+          val signedLocalCommitTx = params.commitmentFormat match {
+            case commitmentFormat: SegwitV0CommitmentFormat =>
+              val localSig = localCommitTx.sign(fundingKey, remoteFundingPubKey, TxOwner.Local, commitmentFormat)
+              localCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSig, remoteSig)
+          }
           Transactions.checkSpendable(signedLocalCommitTx) match {
             case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxId, commitmentNumber = 0, localCommitTx.tx), d, None)
             case Success(_) =>
-              val localSigOfRemoteTx = remoteCommitTx.sign(fundingKey, TxOwner.Remote, params.commitmentFormat, Map.empty)
+              val localSigOfRemoteTx = params.commitmentFormat match {
+                case commitmentFormat: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey, TxOwner.Remote, commitmentFormat)
+              }
               val channelId = toLongId(fundingTxId, fundingTxOutputIndex)
               val fundingSigned = FundingSigned(
                 channelId = channelId,
@@ -317,8 +324,11 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
     case Event(msg@FundingSigned(_, remoteSig, _), d@DATA_WAIT_FOR_FUNDING_SIGNED(params, remoteFundingPubKey, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, fundingCreated, _)) =>
       // we make sure that their sig checks out and that our first commit tx is spendable
       val fundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
-      val localSigOfLocalTx = localCommitTx.sign(fundingKey, TxOwner.Local, params.commitmentFormat, Map.empty)
-      val signedLocalCommitTx = localCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
+      val signedLocalCommitTx = params.commitmentFormat match {
+        case commitmentFormat: SegwitV0CommitmentFormat =>
+          val localSig = localCommitTx.sign(fundingKey, remoteFundingPubKey, TxOwner.Local, commitmentFormat)
+          localCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSig, remoteSig)
+      }
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           // we rollback the funding tx, it will never be published

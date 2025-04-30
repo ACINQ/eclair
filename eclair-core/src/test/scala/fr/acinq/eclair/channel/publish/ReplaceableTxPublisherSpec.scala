@@ -40,7 +40,7 @@ import fr.acinq.eclair.crypto.keymanager.LocalOnChainKeyManager
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UpdateFee}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, NotificationsLogger, TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -194,12 +194,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     // Forward the commit tx to the publisher.
     val publishCommitTx = alice2blockchain.expectMsg(PublishFinalTx(commitTx, commitTx.fee, None))
     // Forward the anchor tx to the publisher.
-    val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideCommitTarget))
     assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.tx.txid)
     assert(publishAnchor.txInfo.isInstanceOf[ClaimAnchorOutputTx])
-    val anchorTx = publishAnchor.txInfo.asInstanceOf[ClaimAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideCommitTarget))
 
-    (publishCommitTx, publishAnchor.copy(txInfo = anchorTx))
+    (publishCommitTx, publishAnchor)
   }
 
   def remoteCloseChannelWithoutHtlcs(f: Fixture, overrideCommitTarget: BlockHeight): (Transaction, PublishReplaceableTx) = {
@@ -211,12 +210,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     probe.send(alice, WatchFundingSpentTriggered(commitTx))
 
     // Forward the anchor tx to the publisher.
-    val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideCommitTarget))
     assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.txid)
     assert(publishAnchor.txInfo.isInstanceOf[ClaimAnchorOutputTx])
-    val anchorTx = publishAnchor.txInfo.asInstanceOf[ClaimAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideCommitTarget))
 
-    (commitTx, publishAnchor.copy(txInfo = anchorTx))
+    (commitTx, publishAnchor)
   }
 
   test("commit tx feerate high enough, not spending anchor output (local commit)") {
@@ -597,7 +595,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       val targetFeerate = FeeratePerKw(3000 sat)
       setFeerate(targetFeerate)
-      val anchorTx = publishAnchor.copy(txInfo = publishAnchor.txInfo.asInstanceOf[ClaimAnchorOutputTx].copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 6)))
+      val anchorTx = publishAnchor.copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 6))
       publisher ! Publish(probe.ref, anchorTx)
       // wait for the commit tx and anchor tx to be published
       val mempoolTxs = getMempoolTxs(2)
@@ -1060,12 +1058,10 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimAnchorOutputTx])
     alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
-    val htlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    val htlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(htlcSuccess.txInfo.isInstanceOf[HtlcSuccessTx])
-    val htlcSuccessTx = htlcSuccess.txInfo.asInstanceOf[HtlcSuccessTx].copy(htlcExpiry = CltvExpiry(overrideHtlcTarget))
-    val htlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    val htlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(htlcTimeout.txInfo.isInstanceOf[HtlcTimeoutTx])
-    val htlcTimeoutTx = htlcTimeout.txInfo.asInstanceOf[HtlcTimeoutTx].copy(htlcExpiry = CltvExpiry(overrideHtlcTarget))
 
     alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
     alice2blockchain.expectMsgType[WatchTxConfirmed] // claim main output
@@ -1074,7 +1070,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc-timeout tx
     alice2blockchain.expectNoMessage(100 millis)
 
-    (commitTx.tx, htlcSuccess.copy(txInfo = htlcSuccessTx), htlcTimeout.copy(txInfo = htlcTimeoutTx))
+    (commitTx.tx, htlcSuccess, htlcTimeout)
   }
 
   test("not enough funds to increase htlc tx feerate") {
@@ -1599,12 +1595,10 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       case _: AnchorOutputsCommitmentFormat => alice2blockchain.expectMsgType[PublishReplaceableTx] // claim anchor
     }
     if (!bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.paysDirectlyToWallet) alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
-    val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(claimHtlcSuccess.txInfo.isInstanceOf[ClaimHtlcSuccessTx])
-    val claimHtlcSuccessTx = claimHtlcSuccess.txInfo.asInstanceOf[ClaimHtlcSuccessTx].copy(htlcExpiry = CltvExpiry(overrideHtlcTarget))
-    val claimHtlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    val claimHtlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(claimHtlcTimeout.txInfo.isInstanceOf[ClaimHtlcTimeoutTx])
-    val claimHtlcTimeoutTx = claimHtlcTimeout.txInfo.asInstanceOf[ClaimHtlcTimeoutTx].copy(htlcExpiry = CltvExpiry(overrideHtlcTarget))
 
     alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
     if (!bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.paysDirectlyToWallet) alice2blockchain.expectMsgType[WatchTxConfirmed] // claim main output
@@ -1612,7 +1606,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     alice2blockchain.expectMsgType[WatchOutputSpent] // claim-htlc-timeout tx
     alice2blockchain.expectNoMessage(100 millis)
 
-    (remoteCommitTx.tx, claimHtlcSuccess.copy(txInfo = claimHtlcSuccessTx), claimHtlcTimeout.copy(txInfo = claimHtlcTimeoutTx))
+    (remoteCommitTx.tx, claimHtlcSuccess, claimHtlcTimeout)
   }
 
   private def testPublishClaimHtlcSuccess(f: Fixture, remoteCommitTx: Transaction, claimHtlcSuccess: PublishReplaceableTx, targetFeerate: FeeratePerKw): Transaction = {

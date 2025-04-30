@@ -289,14 +289,6 @@ object TransactionWithInputInfoSerializer extends MinimalSerializer({
         JObject(txFields :+ toLocalField)
       case None => JObject(txFields)
     }
-  case x: ReplaceableTransactionWithInputInfo => JObject(List(
-    JField("txid", JString(x.tx.txid.value.toHex)),
-    JField("tx", JString(x.tx.toString())),
-    x.confirmationTarget match {
-      case ConfirmationTarget.Absolute(confirmBefore) => JField("confirmBeforeBlock", JLong(confirmBefore.toLong))
-      case ConfirmationTarget.Priority(priority) => JField("confirmPriority", JString(priority.toString))
-    }
-  ))
   case x: TransactionWithInputInfo => JObject(List(
     JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString()))

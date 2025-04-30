@@ -1040,7 +1040,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           } else {
             val parentCommitment = d.commitments.latest.commitment
             val localFundingPubKey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey
-            val fundingScript = Funding.makeFundingPubKeyScript(localFundingPubKey, msg.fundingPubKey)
+            val fundingScript = Funding.makeFundingScript(localFundingPubKey, msg.fundingPubKey, d.commitments.params.commitmentFormat).pubkeyScript
             LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = false, msg.requestFunding_opt, nodeParams.liquidityAdsConfig.rates_opt, msg.useFeeCredit_opt) match {
               case Left(t) =>
                 log.warning("rejecting splice request with invalid liquidity ads: {}", t.getMessage)
@@ -1112,7 +1112,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             targetFeerate = spliceInit.feerate,
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceInit.requireConfirmedInputs)
           )
-          val fundingScript = Funding.makeFundingPubKeyScript(spliceInit.fundingPubKey, msg.fundingPubKey)
+          val fundingScript = Funding.makeFundingScript(spliceInit.fundingPubKey, msg.fundingPubKey, d.commitments.params.commitmentFormat).pubkeyScript
           LiquidityAds.validateRemoteFunding(spliceInit.requestFunding_opt, remoteNodeId, d.channelId, fundingScript, msg.fundingContribution, spliceInit.feerate, isChannelCreation = false, msg.willFund_opt) match {
             case Left(t) =>
               log.info("rejecting splice attempt: invalid liquidity ads response ({})", t.getMessage)
@@ -2180,22 +2180,23 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(c: CMD_BUMP_FORCE_CLOSE_FEE, d: DATA_CLOSING) =>
       d.commitments.params.commitmentFormat match {
-        case _: Transactions.AnchorOutputsCommitmentFormat =>
-          val fundingKey = channelKeys.fundingKey(d.commitments.latest.fundingTxIndex)
-          val lcp1 = d.localCommitPublished.map(lcp => Closing.LocalClose.claimAnchors(fundingKey, lcp, c.confirmationTarget))
-          val rcp1 = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.claimAnchors(fundingKey, rcp, c.confirmationTarget))
-          val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.claimAnchors(fundingKey, nrcp, c.confirmationTarget))
+        case commitmentFormat: Transactions.AnchorOutputsCommitmentFormat =>
+          val commitment = d.commitments.latest
+          val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
+          val lcp1 = d.localCommitPublished.map(lcp => Closing.LocalClose.claimAnchors(fundingKey, commitment.localKeys(channelKeys), lcp, c.confirmationTarget, commitmentFormat))
+          val rcp1 = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.claimAnchors(fundingKey, commitment.remoteKeys(channelKeys, commitment.remoteCommit.remotePerCommitmentPoint), rcp, c.confirmationTarget, commitmentFormat))
+          val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.claimAnchors(fundingKey, commitment.remoteKeys(channelKeys, commitment.nextRemoteCommit_opt.get.commit.remotePerCommitmentPoint), nrcp, c.confirmationTarget, commitmentFormat))
           // We favor the remote commitment(s) because they're more interesting than the local commitment (no CSV delays).
           if (rcp1.nonEmpty) {
-            rcp1.foreach(rcp => rcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, channelKeys, d.commitments.latest, rcp.commitTx) })
+            rcp1.foreach(rcp => rcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, channelKeys, d.commitments.latest, rcp.commitTx, tx.confirmationTarget) })
             c.replyTo ! RES_SUCCESS(c, d.channelId)
             stay() using d.copy(remoteCommitPublished = rcp1) storing()
           } else if (nrcp1.nonEmpty) {
-            nrcp1.foreach(rcp => rcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, channelKeys, d.commitments.latest, rcp.commitTx) })
+            nrcp1.foreach(rcp => rcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, channelKeys, d.commitments.latest, rcp.commitTx, tx.confirmationTarget) })
             c.replyTo ! RES_SUCCESS(c, d.channelId)
             stay() using d.copy(nextRemoteCommitPublished = nrcp1) storing()
           } else if (lcp1.nonEmpty) {
-            lcp1.foreach(lcp => lcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, channelKeys, d.commitments.latest, lcp.commitTx) })
+            lcp1.foreach(lcp => lcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, channelKeys, d.commitments.latest, lcp.commitTx, tx.confirmationTarget) })
             c.replyTo ! RES_SUCCESS(c, d.channelId)
             stay() using d.copy(localCommitPublished = lcp1) storing()
           } else {
