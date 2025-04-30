@@ -137,15 +137,15 @@ private[channel] object ChannelTypes0 {
       channel.LocalCommit(index, spec, commitTxAndRemoteSig, htlcTxsAndRemoteSigs)
     }
 
-    private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): ByteVector64 = {
+    private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): ChannelSpendSignature.IndividualSignature = {
       require(commitTx.tx.txIn.size == 1, s"commit tx must have exactly one input, found ${commitTx.tx.txIn.size}")
       val ScriptWitness(Seq(_, sig1, sig2, redeemScript)) = commitTx.tx.txIn.head.witness
       val _ :: OP_PUSHDATA(pub1, _) :: OP_PUSHDATA(pub2, _) :: _ :: OP_CHECKMULTISIG :: Nil = Script.parse(redeemScript)
       require(pub1 == remoteFundingPubKey.value || pub2 == remoteFundingPubKey.value, "unrecognized funding pubkey")
       if (pub1 == remoteFundingPubKey.value) {
-        Crypto.der2compact(sig1)
+        ChannelSpendSignature.IndividualSignature(Crypto.der2compact(sig1))
       } else {
-        Crypto.der2compact(sig2)
+        ChannelSpendSignature.IndividualSignature(Crypto.der2compact(sig2))
       }
     }
   }

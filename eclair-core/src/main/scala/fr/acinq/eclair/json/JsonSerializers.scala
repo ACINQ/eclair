@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.balance.CheckBalance.{DetailedOnChainBalance, GlobalBalance, OffChainBalance}
-import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
@@ -318,11 +318,11 @@ object ColorSerializer extends MinimalSerializer({
 
 // @formatter:off
 private case class CommitTxAndRemoteSigJson(commitTx: CommitTx, remoteSig: ByteVector64)
-private case class CommitTxAndRemotePartialSigJson(commitTx: CommitTx, remoteSig: RemoteSignature.PartialSignatureWithNonce)
+private case class CommitTxAndRemotePartialSigJson(commitTx: CommitTx, remoteSig: ChannelSpendSignature.PartialSignatureWithNonce)
 object CommitTxAndRemoteSigSerializer extends ConvertClassSerializer[CommitTxAndRemoteSig](
   i => i.remoteSig match {
-    case f: RemoteSignature.FullSignature => CommitTxAndRemoteSigJson(i.commitTx, f.sig)
-    case p: RemoteSignature.PartialSignatureWithNonce => CommitTxAndRemotePartialSigJson(i.commitTx, p)
+    case f: ChannelSpendSignature.IndividualSignature => CommitTxAndRemoteSigJson(i.commitTx, f.sig)
+    case p: ChannelSpendSignature.PartialSignatureWithNonce => CommitTxAndRemotePartialSigJson(i.commitTx, p)
     }
 )
 // @formatter:on

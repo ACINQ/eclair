@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
 import fr.acinq.eclair.transactions.{OutgoingHtlc, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, randomBytes32}
@@ -441,9 +441,9 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val commitmentKeysF = commitmentsF.latest.localKeys(channelKeysF)
     val revokedCommitTx = {
       val commitTx = localCommitF.commitTxAndRemoteSig.commitTx
-      val localSig = commitTx.sign(fundingKeyF, commitmentsF.latest.remoteFundingPubKey, TxOwner.Local, commitmentFormat)
-      val RemoteSignature.FullSignature(remoteSig) = localCommitF.commitTxAndRemoteSig.remoteSig
-      commitTx.addSigs(fundingKeyF.publicKey, commitmentsF.latest.remoteFundingPubKey, localSig, remoteSig).tx
+      val localSig = commitTx.sign(fundingKeyF, commitmentsF.latest.remoteFundingPubKey)
+      val remoteSig = localCommitF.commitTxAndRemoteSig.remoteSig.asInstanceOf[ChannelSpendSignature.IndividualSignature]
+      commitTx.aggregateSigs(fundingKeyF.publicKey, commitmentsF.latest.remoteFundingPubKey, localSig, remoteSig)
     }
     val htlcSuccess = htlcSuccessTxs.zip(Seq(preimage1, preimage2)).map {
       case (htlcTxAndSigs, preimage) =>

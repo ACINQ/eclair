@@ -202,7 +202,7 @@ private[channel] object ChannelCodecs4 {
     
     val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = (
       ("commitTx" | commitTxCodec) ::
-        ("remoteSig" | bytes64.as[RemoteSignature.FullSignature].upcast[RemoteSignature])).as[CommitTxAndRemoteSig]
+        ("remoteSig" | bytes64.as[ChannelSpendSignature.IndividualSignature].upcast[ChannelSpendSignature])).as[CommitTxAndRemoteSig]
 
     val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage](f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g))
 

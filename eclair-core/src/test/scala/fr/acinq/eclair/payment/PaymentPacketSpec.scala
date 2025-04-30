@@ -18,9 +18,10 @@ package fr.acinq.eclair.payment
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
+import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
@@ -715,7 +716,7 @@ object PaymentPacketSpec {
     val remoteParams = RemoteParams(randomKey().publicKey, null, UInt64.MaxValue, Some(channelReserve), null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, None)
     val fundingTx = Transaction(2, Nil, Seq(TxOut(testCapacity, Nil)), 0)
     val commitInput = InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, ByteVector.empty)
-    val localCommit = LocalCommit(0, null, CommitTxAndRemoteSig(Transactions.CommitTx(commitInput, null), RemoteSignature.FullSignature(null)), Nil)
+    val localCommit = LocalCommit(0, null, CommitTxAndRemoteSig(Transactions.CommitTx(commitInput, null), IndividualSignature(ByteVector64.Zeroes)), Nil)
     val remoteCommit = RemoteCommit(0, null, null, randomKey().publicKey)
     val localChanges = LocalChanges(Nil, Nil, Nil)
     val remoteChanges = RemoteChanges(Nil, Nil, Nil)

@@ -424,7 +424,7 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
     }
   }
 
-  private def getWalletUtxos(txInfo: TransactionWithInputInfo): Future[Map[OutPoint, TxOut]] = {
+  private def getWalletUtxos(txInfo: ForceCloseTransaction): Future[Map[OutPoint, TxOut]] = {
     Future.sequence(txInfo.tx.txIn.filter(_.outPoint != txInfo.input.outPoint).map(txIn => {
       bitcoinClient.getTransaction(txIn.outPoint.txid).flatMap {
         case inputTx if inputTx.txOut.size <= txIn.outPoint.index => Future.failed(new IllegalArgumentException(s"input ${inputTx.txid}:${txIn.outPoint.index} doesn't exist"))

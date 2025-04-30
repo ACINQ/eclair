@@ -211,7 +211,7 @@ private[channel] object ChannelCodecs3 {
 
     val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = (
       ("commitTx" | commitTxCodec) ::
-        ("remoteSig" | bytes64.as[RemoteSignature.FullSignature].upcast[RemoteSignature])).as[CommitTxAndRemoteSig]
+        ("remoteSig" | bytes64.as[ChannelSpendSignature.IndividualSignature].upcast[ChannelSpendSignature])).as[CommitTxAndRemoteSig]
 
     val localCommitCodec: Codec[LocalCommit] = (
       ("index" | uint64overflow) ::

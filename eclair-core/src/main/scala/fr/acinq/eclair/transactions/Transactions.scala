@@ -24,6 +24,8 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.bitcoin.{ScriptFlags, ScriptTree}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.channel.ChannelSpendSignature
+import fr.acinq.eclair.channel.ChannelSpendSignature._
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts._
@@ -95,11 +97,11 @@ object Transactions {
    */
   case object ZeroFeeHtlcTxAnchorOutputsCommitmentFormat extends AnchorOutputsCommitmentFormat
 
-  // @formatter:off
   // TODO: we're currently keeping the now unused redeemScript to avoid a painful codec update. When creating v5 codecs
   //  (for taproot channels), don't forget to remove this field from the InputInfo class!
   case class InputInfo(outPoint: OutPoint, txOut: TxOut, unusedRedeemScript: ByteVector)
 
+  // @formatter:off
   /** This trait contains redeem information necessary to spend different types of segwit inputs. */
   sealed trait RedeemInfo {
     def pubkeyScript: ByteVector
@@ -135,7 +137,9 @@ object Transactions {
       override val pubkeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, Some(scriptTree)))
     }
   }
+  // @formatter:on
 
+  // @formatter:off
   /** Owner of a given transaction (local/remote). */
   sealed trait TxOwner
   object TxOwner {
@@ -151,17 +155,7 @@ object Transactions {
     def tx: Transaction
     def amountIn: Satoshi = input.txOut.amount
     def fee: Satoshi = amountIn - tx.txOut.map(_.amount).sum
-    /** Sighash flags to use when signing the transaction. */
-    def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
-      case _: SegwitV0CommitmentFormat => SIGHASH_ALL
-    }
     // @formatter:on
-
-    /** Sign a transaction spending a channel's segwit v0 2-of-2 funding output. */
-    protected def signChannelSpendingTx(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
-      val redeemScript = Script.write(Scripts.multiSig2of2(localFundingKey.publicKey, remoteFundingPubkey))
-      sign(localFundingKey, sighash(txOwner, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos)
-    }
 
     protected def sign(key: PrivateKey, sighash: Int, redeemInfo: RedeemInfo, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
       val inputsMap = extraUtxos + (input.outPoint -> input.txOut)
@@ -208,17 +202,96 @@ object Transactions {
     }
   }
 
-  sealed trait ReplaceableTransactionWithInputInfo extends TransactionWithInputInfo
+  /**
+   * Transactions spending the channel funding output: [[CommitTx]], [[SpliceTx]] and [[ClosingTx]].
+   * Those transactions always require two signatures, one from each channel participant.
+   */
+  sealed trait ChannelSpendTransaction extends TransactionWithInputInfo {
+    /** Sign the channel's 2-of-2 funding output when using a [[SegwitV0CommitmentFormat]]. */
+    def sign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, extraUtxos: Map[OutPoint, TxOut]): ChannelSpendSignature.IndividualSignature = {
+      val redeemScript = Script.write(Scripts.multiSig2of2(localFundingKey.publicKey, remoteFundingPubkey))
+      val sig = sign(localFundingKey, SIGHASH_ALL, RedeemInfo.P2wsh(redeemScript), extraUtxos)
+      ChannelSpendSignature.IndividualSignature(sig)
+    }
 
-  case class SpliceTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo {
+    /** Create a partial transaction for the channel's musig2 funding output when using a [[TaprootCommitmentFormat]]. */
+    def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, extraUtxos: Map[OutPoint, TxOut]): ChannelSpendSignature.PartialSignatureWithNonce = {
+      ???
+    }
+
+    /** Verify a signature received from the remote channel participant. */
+    def checkRemoteSig(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, remoteSig: ChannelSpendSignature): Boolean = {
+      remoteSig match {
+        case IndividualSignature(remoteSig) =>
+          val redeemScript = Script.write(Scripts.multiSig2of2(localFundingPubkey, remoteFundingPubkey))
+          checkSig(remoteSig, remoteFundingPubkey, SIGHASH_ALL, RedeemInfo.P2wsh(redeemScript))
+        case PartialSignatureWithNonce(_, _) => ???
+      }
+    }
+
+    /** Aggregate local and remote channel spending signatures for a [[SegwitV0CommitmentFormat]]. */
+    def aggregateSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: IndividualSignature, remoteSig: IndividualSignature): Transaction = {
+      val witness = Scripts.witness2of2(localSig.sig, remoteSig.sig, localFundingPubkey, remoteFundingPubkey)
+      tx.updateWitness(0, witness)
+    }
+
+    /** Aggregate local and remote channel spending partial signatures for a [[TaprootCommitmentFormat]]. */
+    def aggregateSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: PartialSignatureWithNonce, remoteSig: PartialSignatureWithNonce): Transaction = {
+      ???
+    }
+  }
+
+  /** This transaction collaboratively spends the channel funding output to change its capacity. */
+  case class SpliceTx(input: InputInfo, tx: Transaction) extends ChannelSpendTransaction {
     override val desc: String = "splice-tx"
+  }
 
-    def sign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, parentCommitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
-      signChannelSpendingTx(localFundingKey, remoteFundingPubkey, TxOwner.Local, parentCommitmentFormat, extraUtxos)
+  /** This transaction unilaterally spends the channel funding output (force-close). */
+  case class CommitTx(input: InputInfo, tx: Transaction) extends ChannelSpendTransaction {
+    override val desc: String = "commit-tx"
+
+    def sign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey): ChannelSpendSignature.IndividualSignature = sign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
+
+    def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey): ChannelSpendSignature.PartialSignatureWithNonce = partialSign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
+  }
+
+  /** This transaction collaboratively spends the channel funding output (mutual-close). */
+  case class ClosingTx(input: InputInfo, tx: Transaction, toLocalOutputIndex_opt: Option[Long]) extends ChannelSpendTransaction {
+    override val desc: String = "closing-tx"
+    val toLocalOutput_opt: Option[TxOut] = toLocalOutputIndex_opt.map(i => tx.txOut(i.toInt))
+
+    def sign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey): ChannelSpendSignature.IndividualSignature = sign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
+
+    def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey): ChannelSpendSignature.PartialSignatureWithNonce = partialSign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
+  }
+
+  object ClosingTx {
+    def createUnsignedTx(input: InputInfo, localScriptPubKey: ByteVector, remoteScriptPubKey: ByteVector, localPaysClosingFees: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec): ClosingTx = {
+      require(spec.htlcs.isEmpty, "there shouldn't be any pending htlcs")
+
+      val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localPaysClosingFees) {
+        (spec.toLocal.truncateToSatoshi - closingFee, spec.toRemote.truncateToSatoshi)
+      } else {
+        (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - closingFee)
+      } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
+
+      val toLocalOutput_opt = if (toLocalAmount >= dustLimit) Some(TxOut(toLocalAmount, localScriptPubKey)) else None
+      val toRemoteOutput_opt = if (toRemoteAmount >= dustLimit) Some(TxOut(toRemoteAmount, remoteScriptPubKey)) else None
+
+      val tx = LexicographicalOrdering.sort(Transaction(
+        version = 2,
+        txIn = TxIn(input.outPoint, ByteVector.empty, sequence = 0xffffffffL) :: Nil,
+        txOut = toLocalOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ Nil,
+        lockTime = 0
+      ))
+      val toLocalOutput = findPubKeyScriptIndex(tx, localScriptPubKey).map(_.toLong).toOption
+      ClosingTx(input, tx, toLocalOutput)
     }
   }
 
   /**
+   * Transactions spending a [[CommitTx]] or one of its descendants.
+   *
    * When *local* *current* [[CommitTx]] is published:
    *   - [[ClaimLocalDelayedOutputTx]] spends to-local output of [[CommitTx]] after a delay
    *   - When using anchor outputs, [[ClaimAnchorOutputTx]] spends to-local anchor of [[CommitTx]]
@@ -245,23 +318,14 @@ object Transactions {
    *     - [[ClaimHtlcDelayedOutputPenaltyTx]] spends [[HtlcTimeoutTx]] using the revocation secret (published by local)
    *   - [[HtlcPenaltyTx]] spends competes with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] for the same outputs (published by local)
    */
-  case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo {
-    override val desc: String = "commit-tx"
-
-    def sign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
-      signChannelSpendingTx(localFundingKey, remoteFundingPubkey, txOwner, commitmentFormat, extraUtxos = Map.empty)
-    }
-
-    def checkRemoteSig(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, remoteSig: ByteVector64, commitmentFormat: CommitmentFormat): Boolean = {
-      val redeemScript = Script.write(Scripts.multiSig2of2(localFundingPubkey, remoteFundingPubkey))
-      checkSig(remoteSig, remoteFundingPubkey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript))
-    }
-
-    def addSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): CommitTx = {
-      val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
-      copy(tx = tx.updateWitness(0, witness))
+  sealed trait ForceCloseTransaction extends TransactionWithInputInfo {
+    /** Sighash flags to use when signing the transaction. */
+    def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => SIGHASH_ALL
     }
   }
+
+  sealed trait ReplaceableTransactionWithInputInfo extends ForceCloseTransaction
 
   /**
    * It's important to note that htlc transactions with the default commitment format are not actually replaceable: only
@@ -281,6 +345,14 @@ object Transactions {
     def paymentHash: ByteVector32
     def htlcExpiry: CltvExpiry
     // @formatter:on
+
+    override def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
+      case DefaultCommitmentFormat => SIGHASH_ALL
+      case _: AnchorOutputsCommitmentFormat => txOwner match {
+        case TxOwner.Local => SIGHASH_ALL
+        case TxOwner.Remote => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
+      }
+    }
 
     /** Create redeem information for this HTLC transaction, based on the commitment format used. */
     def redeemInfo(commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat): RedeemInfo
@@ -304,14 +376,6 @@ object Transactions {
       // The transaction was signed by our remote for us: from their point of view, we're a remote owner.
       val remoteSighash = sighash(TxOwner.Remote, commitmentFormat)
       checkSig(remoteSig, commitKeys.theirHtlcPublicKey, remoteSighash, redeemInfo(commitKeys.publicKeys, commitmentFormat))
-    }
-
-    override def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
-      case DefaultCommitmentFormat => SIGHASH_ALL
-      case _: AnchorOutputsCommitmentFormat => txOwner match {
-        case TxOwner.Local => SIGHASH_ALL
-        case TxOwner.Remote => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
-      }
     }
   }
 
@@ -410,7 +474,7 @@ object Transactions {
   }
 
   /** This transaction spends the output of a local [[HtlcTx]] after a to_self_delay relative delay. */
-  case class HtlcDelayedTx(input: InputInfo, tx: Transaction, toLocalDelay: CltvExpiryDelta) extends TransactionWithInputInfo {
+  case class HtlcDelayedTx(input: InputInfo, tx: Transaction, toLocalDelay: CltvExpiryDelta) extends ForceCloseTransaction {
     override val desc: String = "htlc-delayed"
 
     def sign(commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): HtlcDelayedTx = {
@@ -599,7 +663,7 @@ object Transactions {
     }
   }
 
-  sealed trait ClaimRemoteCommitMainOutputTx extends TransactionWithInputInfo
+  sealed trait ClaimRemoteCommitMainOutputTx extends ForceCloseTransaction
 
   /** This transaction claims our main balance from the remote commitment without any delay, when using the [[DefaultCommitmentFormat]]. */
   case class ClaimP2WPKHOutputTx(input: InputInfo, tx: Transaction) extends ClaimRemoteCommitMainOutputTx {
@@ -685,7 +749,7 @@ object Transactions {
   }
 
   /** This transaction spends our main balance from our commitment after a to_self_delay relative delay. */
-  case class ClaimLocalDelayedOutputTx(input: InputInfo, tx: Transaction, toLocalDelay: CltvExpiryDelta) extends TransactionWithInputInfo {
+  case class ClaimLocalDelayedOutputTx(input: InputInfo, tx: Transaction, toLocalDelay: CltvExpiryDelta) extends ForceCloseTransaction {
     override val desc: String = "local-main-delayed"
 
     def sign(commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): ClaimLocalDelayedOutputTx = {
@@ -726,7 +790,7 @@ object Transactions {
   }
 
   /** This transaction spends the remote main balance from one of their revoked commitments. */
-  case class MainPenaltyTx(input: InputInfo, tx: Transaction, toRemoteDelay: CltvExpiryDelta) extends TransactionWithInputInfo {
+  case class MainPenaltyTx(input: InputInfo, tx: Transaction, toRemoteDelay: CltvExpiryDelta) extends ForceCloseTransaction {
     override val desc: String = "main-penalty"
 
     def sign(commitKeys: RemoteCommitmentKeys, revocationKey: PrivateKey, commitmentFormat: CommitmentFormat): MainPenaltyTx = {
@@ -767,7 +831,7 @@ object Transactions {
   }
 
   /** This transaction spends an HTLC output from one of the remote revoked commitments. */
-  case class HtlcPenaltyTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcExpiry: CltvExpiry) extends TransactionWithInputInfo {
+  case class HtlcPenaltyTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcExpiry: CltvExpiry) extends ForceCloseTransaction {
     override val desc: String = "htlc-penalty"
 
     def sign(commitKeys: RemoteCommitmentKeys, revocationKey: PrivateKey, redeemInfo: RedeemInfo, commitmentFormat: CommitmentFormat): HtlcPenaltyTx = {
@@ -840,7 +904,7 @@ object Transactions {
   }
 
   /** This transaction spends a remote [[HtlcTx]] from one of their revoked commitments. */
-  case class ClaimHtlcDelayedOutputPenaltyTx(input: InputInfo, tx: Transaction, toRemoteDelay: CltvExpiryDelta) extends TransactionWithInputInfo {
+  case class ClaimHtlcDelayedOutputPenaltyTx(input: InputInfo, tx: Transaction, toRemoteDelay: CltvExpiryDelta) extends ForceCloseTransaction {
     override val desc: String = "htlc-delayed-penalty"
 
     def sign(commitKeys: RemoteCommitmentKeys, revocationKey: PrivateKey, commitmentFormat: CommitmentFormat): ClaimHtlcDelayedOutputPenaltyTx = {
@@ -884,46 +948,6 @@ object Transactions {
             ClaimHtlcDelayedOutputPenaltyTx(input, tx, toRemoteDelay).sign(commitKeys, revocationKey, commitmentFormat)
           }
       }
-    }
-  }
-
-  /** This transaction collaboratively spends the channel funding output. */
-  case class ClosingTx(input: InputInfo, tx: Transaction, toLocalOutputIndex_opt: Option[Long]) extends TransactionWithInputInfo {
-    override val desc: String = "closing"
-
-    val toLocalOutput_opt: Option[TxOut] = toLocalOutputIndex_opt.map(i => tx.txOut(i.toInt))
-
-    def sign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
-      signChannelSpendingTx(localFundingKey, remoteFundingPubkey, txOwner, commitmentFormat, extraUtxos = Map.empty)
-    }
-
-    def addSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: ByteVector64, remoteSig: ByteVector64): ClosingTx = {
-      val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
-      copy(tx = tx.updateWitness(0, witness))
-    }
-  }
-
-  object ClosingTx {
-    def createUnsignedTx(input: InputInfo, localScriptPubKey: ByteVector, remoteScriptPubKey: ByteVector, localPaysClosingFees: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec): ClosingTx = {
-      require(spec.htlcs.isEmpty, "there shouldn't be any pending htlcs")
-
-      val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localPaysClosingFees) {
-        (spec.toLocal.truncateToSatoshi - closingFee, spec.toRemote.truncateToSatoshi)
-      } else {
-        (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - closingFee)
-      } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
-
-      val toLocalOutput_opt = if (toLocalAmount >= dustLimit) Some(TxOut(toLocalAmount, localScriptPubKey)) else None
-      val toRemoteOutput_opt = if (toRemoteAmount >= dustLimit) Some(TxOut(toRemoteAmount, remoteScriptPubKey)) else None
-
-      val tx = LexicographicalOrdering.sort(Transaction(
-        version = 2,
-        txIn = TxIn(input.outPoint, ByteVector.empty, sequence = 0xffffffffL) :: Nil,
-        txOut = toLocalOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ Nil,
-        lockTime = 0
-      ))
-      val toLocalOutput = findPubKeyScriptIndex(tx, localScriptPubKey).map(_.toLong).toOption
-      ClosingTx(input, tx, toLocalOutput)
     }
   }
 

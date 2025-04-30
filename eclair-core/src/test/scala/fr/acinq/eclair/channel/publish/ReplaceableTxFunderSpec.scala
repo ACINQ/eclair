@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel.publish
 import fr.acinq.bitcoin.scalacompat.{Crypto, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.AdjustPreviousTxOutputResult.{AddWalletInputs, TxOutputAdjusted}
@@ -164,7 +165,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
     localParams.dustLimit.returns(1000 sat)
     commitment.localParams.returns(localParams)
     val localCommit = mock[LocalCommit]
-    localCommit.commitTxAndRemoteSig.returns(CommitTxAndRemoteSig(commitTx, PlaceHolderSig))
+    localCommit.commitTxAndRemoteSig.returns(CommitTxAndRemoteSig(commitTx, IndividualSignature(PlaceHolderSig)))
     commitment.localCommit.returns(localCommit)
 
     // We can handle a small feerate update by lowering the change output.

@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, Satoshi, SatoshiLong, Transaction, TxId, TxIn}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
@@ -244,9 +245,9 @@ class ChannelCodecsSpec extends AnyFunSuite {
       assert(newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.forall(_.witness.stack.isEmpty))
       assert(newnormal.commitments.latest.localCommit.htlcTxsAndRemoteSigs.forall(_.htlcTx.tx.txIn.forall(_.witness.stack.isEmpty)))
       // make sure that we have extracted the remote sig of the local tx
-      val RemoteSignature.FullSignature(remoteSig) = newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.remoteSig
+      val remoteSig = newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.remoteSig
       val commitTx = newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx
-      assert(commitTx.checkRemoteSig(testCase.localFundingPublicKey, testCase.remoteFundingPublicKey, remoteSig, newnormal.channelParams.commitmentFormat))
+      assert(commitTx.checkRemoteSig(testCase.localFundingPublicKey, testCase.remoteFundingPublicKey, remoteSig))
     }
   }
 
@@ -329,7 +330,7 @@ object ChannelCodecsSpec {
       txOut = Nil,
       lockTime = 0
     )
-    val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, FeeratePerKw(1500 sat), 50000000 msat, 70000000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, commitTx), remoteSig), Nil)
+    val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, FeeratePerKw(1500 sat), 50000000 msat, 70000000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, commitTx), IndividualSignature(remoteSig)), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(_.opposite).toSet, FeeratePerKw(1500 sat), 50000 msat, 700000 msat), TxId.fromValidHex("0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
     val channelId = htlcs.headOption.map(_.add.channelId).getOrElse(ByteVector32.Zeroes)
     val channelFlags = ChannelFlags(announceChannel = true)

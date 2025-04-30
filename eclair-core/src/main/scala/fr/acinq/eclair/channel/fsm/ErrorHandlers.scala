@@ -214,7 +214,7 @@ trait ErrorHandlers extends CommonHandlers {
       val commitment = d.commitments.latest
       log.error(s"force-closing with fundingIndex=${commitment.fundingTxIndex}")
       context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"force-closing channel ${d.channelId} with fundingIndex=${commitment.fundingTxIndex}"))
-      val commitTx = commitment.fullySignedLocalCommitTx(channelKeys).tx
+      val commitTx = commitment.fullySignedLocalCommitTx(channelKeys)
       val localCommitPublished = Closing.LocalClose.claimCommitTxOutputs(channelKeys, commitment, commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
       val nextData = d match {
         case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))

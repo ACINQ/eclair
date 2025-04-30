@@ -24,7 +24,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, LexicographicalOrdering, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, LexicographicalOrdering, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
@@ -34,7 +34,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Output.Local
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Purpose
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, SegwitV0CommitmentFormat}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ToMilliSatoshiConversion, UInt64}
@@ -111,9 +111,9 @@ object InteractiveTxBuilder {
   case class Multisig2of2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
     override val weight: Int = 388
 
-    def sign(channelKeys: ChannelKeys, params: ChannelParams, tx: Transaction, spentUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
+    def sign(channelKeys: ChannelKeys, tx: Transaction, spentUtxos: Map[OutPoint, TxOut]): ChannelSpendSignature.IndividualSignature = {
       val localFundingKey = channelKeys.fundingKey(fundingTxIndex)
-      Transactions.SpliceTx(info, tx).sign(localFundingKey, remoteFundingPubkey, params.commitmentFormat, spentUtxos)
+      Transactions.SpliceTx(info, tx).sign(localFundingKey, remoteFundingPubkey, spentUtxos)
     }
   }
 
@@ -851,12 +851,15 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         unlockAndStop(completeTx)
       case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)) =>
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
-        val localSigOfRemoteTx = remoteCommitTx.sign(localFundingKey, fundingParams.remoteFundingPubKey, TxOwner.Remote, channelParams.channelFeatures.commitmentFormat)
-        val htlcSignatures = sortedHtlcTxs.map(_.sign(remoteCommitmentKeys, channelParams.commitmentFormat)).toList
-        val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures)
-        val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx, htlcTxs = Nil)
-        val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)
-        signFundingTx(completeTx, localCommitSig, localCommit, remoteCommit)
+        channelParams.commitmentFormat match {
+          case _: SegwitV0CommitmentFormat =>
+            val localSigOfRemoteTx = remoteCommitTx.sign(localFundingKey, fundingParams.remoteFundingPubKey).sig
+            val htlcSignatures = sortedHtlcTxs.map(_.sign(remoteCommitmentKeys, channelParams.commitmentFormat)).toList
+            val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures)
+            val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx, htlcTxs = Nil)
+            val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)
+            signFundingTx(completeTx, localCommitSig, localCommit, remoteCommit)
+        }
     }
   }
 
@@ -916,7 +919,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
     val tx = unsignedTx.buildUnsignedTx()
     val sharedSig_opt = fundingParams.sharedInput_opt.collect {
-      case i: Multisig2of2Input => i.sign(channelKeys, channelParams, tx, unsignedTx.inputDetails)
+      case i: Multisig2of2Input => i.sign(channelKeys, tx, unsignedTx.inputDetails).sig
     }
     if (unsignedTx.localInputs.isEmpty) {
       context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, Nil, sharedSig_opt)))
