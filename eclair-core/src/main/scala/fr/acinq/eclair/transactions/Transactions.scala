@@ -155,6 +155,7 @@ object Transactions {
     def tx: Transaction
     def amountIn: Satoshi = input.txOut.amount
     def fee: Satoshi = amountIn - tx.txOut.map(_.amount).sum
+    def inputIndex: Int = tx.txIn.indexWhere(_.outPoint == input.outPoint)
     // @formatter:on
 
     protected def sign(key: PrivateKey, sighash: Int, redeemInfo: RedeemInfo, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
@@ -168,7 +169,6 @@ object Transactions {
       })
       // NB: the tx may have multiple inputs, we will only sign the one provided in our input. Bear in mind that the
       // signature will be invalidated if other inputs are added *afterwards* and sighash was SIGHASH_ALL.
-      val inputIndex = tx.txIn.indexWhere(_.outPoint == input.outPoint)
       redeemInfo match {
         case redeemInfo: RedeemInfo.SegwitV0 =>
           val sigDER = Transaction.signInput(tx, inputIndex, redeemInfo.redeemScript, sighash, input.txOut.amount, SIGVERSION_WITNESS_V0, key)
@@ -179,7 +179,6 @@ object Transactions {
     }
 
     protected def checkSig(sig: ByteVector64, publicKey: PublicKey, sighash: Int, redeemInfo: RedeemInfo): Boolean = {
-      val inputIndex = tx.txIn.indexWhere(_.outPoint == input.outPoint)
       if (inputIndex >= 0) {
         redeemInfo match {
           case redeemInfo: RedeemInfo.SegwitV0 =>
@@ -232,7 +231,7 @@ object Transactions {
     /** Aggregate local and remote channel spending signatures for a [[SegwitV0CommitmentFormat]]. */
     def aggregateSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: IndividualSignature, remoteSig: IndividualSignature): Transaction = {
       val witness = Scripts.witness2of2(localSig.sig, remoteSig.sig, localFundingPubkey, remoteFundingPubkey)
-      tx.updateWitness(0, witness)
+      tx.updateWitness(inputIndex, witness)
     }
 
     /** Aggregate local and remote channel spending partial signatures for a [[TaprootCommitmentFormat]]. */
@@ -395,7 +394,7 @@ object Transactions {
           val redeemScript = Script.write(htlcReceived(commitKeys.publicKeys, paymentHash, htlcExpiry, commitmentFormat))
           witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, redeemScript, commitmentFormat)
       }
-      copy(tx = tx.updateWitness(0, witness))
+      copy(tx = tx.updateWitness(inputIndex, witness))
     }
   }
 
@@ -442,7 +441,7 @@ object Transactions {
           val redeemScript = Script.write(htlcOffered(commitKeys.publicKeys, paymentHash, commitmentFormat))
           witnessHtlcTimeout(localSig, remoteSig, redeemScript, commitmentFormat)
       }
-      copy(tx = tx.updateWitness(0, witness))
+      copy(tx = tx.updateWitness(inputIndex, witness))
     }
   }
 
@@ -484,7 +483,7 @@ object Transactions {
           val sig = sign(commitKeys.ourDelayedPaymentKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           witnessToLocalDelayedAfterDelay(sig, redeemScript)
       }
-      copy(tx = tx.updateWitness(0, witness))
+      copy(tx = tx.updateWitness(inputIndex, witness))
     }
   }
 
@@ -534,7 +533,7 @@ object Transactions {
           val sig = sign(commitKeys.ourHtlcKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           witnessClaimHtlcSuccessFromCommitTx(sig, paymentPreimage, redeemScript)
       }
-      copy(tx = tx.updateWitness(0, witness))
+      copy(tx = tx.updateWitness(inputIndex, witness))
     }
   }
 
@@ -590,7 +589,7 @@ object Transactions {
           val sig = sign(commitKeys.ourHtlcKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           witnessClaimHtlcTimeoutFromCommitTx(sig, redeemScript)
       }
-      copy(tx = tx.updateWitness(0, witness))
+      copy(tx = tx.updateWitness(inputIndex, witness))
     }
   }
 
@@ -635,7 +634,7 @@ object Transactions {
           val sig = sign(fundingKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos)
           witnessAnchor(sig, redeemScript)
       }
-      copy(tx = tx.updateWitness(0, witness))
+      copy(tx = tx.updateWitness(inputIndex, witness))
     }
   }
 
@@ -673,7 +672,7 @@ object Transactions {
       val redeemInfo = RedeemInfo.P2wpkh(paymentKey.publicKey)
       val sig = sign(paymentKey, sighash(TxOwner.Local, commitmentFormat), redeemInfo, extraUtxos = Map.empty)
       val witness = Script.witnessPay2wpkh(paymentKey.publicKey, der(sig))
-      copy(tx = tx.updateWitness(0, witness))
+      copy(tx = tx.updateWitness(inputIndex, witness))
     }
   }
 
@@ -717,7 +716,7 @@ object Transactions {
               val sig = sign(priv, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
               witnessClaimToRemoteDelayedFromCommitTx(sig, redeemScript)
           }
-          copy(tx = tx.updateWitness(0, witness))
+          copy(tx = tx.updateWitness(inputIndex, witness))
       }
     }
   }
@@ -759,7 +758,7 @@ object Transactions {
           val sig = sign(commitKeys.ourDelayedPaymentKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           witnessToLocalDelayedAfterDelay(sig, redeemScript)
       }
-      copy(tx = tx.updateWitness(0, witness))
+      copy(tx = tx.updateWitness(inputIndex, witness))
     }
   }
 
@@ -800,7 +799,7 @@ object Transactions {
           val sig = sign(revocationKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           Scripts.witnessToLocalDelayedWithRevocationSig(sig, redeemScript)
       }
-      copy(tx = tx.updateWitness(0, witness))
+      copy(tx = tx.updateWitness(inputIndex, witness))
     }
   }
 
@@ -842,7 +841,7 @@ object Transactions {
         case _: RedeemInfo.TaprootKeyPath => ???
         case _: RedeemInfo.TaprootScriptPath => ???
       }
-      copy(tx = tx.updateWitness(0, witness))
+      copy(tx = tx.updateWitness(inputIndex, witness))
     }
   }
 
@@ -914,7 +913,7 @@ object Transactions {
           val sig = sign(revocationKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           Scripts.witnessToLocalDelayedWithRevocationSig(sig, redeemScript)
       }
-      copy(tx = tx.updateWitness(0, witness))
+      copy(tx = tx.updateWitness(inputIndex, witness))
     }
   }
 
