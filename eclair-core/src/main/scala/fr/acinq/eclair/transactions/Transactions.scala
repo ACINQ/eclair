@@ -627,11 +627,23 @@ object Transactions {
   case class ClaimAnchorOutputTx(input: InputInfo, tx: Transaction, confirmationTarget: ConfirmationTarget) extends ReplaceableTransactionWithInputInfo {
     override val desc: String = "local-anchor"
 
-    def sign(fundingKey: PrivateKey, commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ClaimAnchorOutputTx = {
+    def sign(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ClaimAnchorOutputTx = {
+      commitmentFormat match {
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => sign(fundingKey, commitmentFormat, extraUtxos)
+      }
+    }
+
+    def sign(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ClaimAnchorOutputTx = {
+      commitmentFormat match {
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => sign(fundingKey, commitmentFormat, extraUtxos)
+      }
+    }
+
+    private def sign(anchorKey: PrivateKey, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ClaimAnchorOutputTx = {
       val witness = commitmentFormat match {
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
-          val redeemScript = Script.write(anchor(fundingKey.publicKey))
-          val sig = sign(fundingKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos)
+          val redeemScript = Script.write(anchor(anchorKey.publicKey))
+          val sig = sign(anchorKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos)
           witnessAnchor(sig, redeemScript)
       }
       copy(tx = tx.updateWitness(inputIndex, witness))

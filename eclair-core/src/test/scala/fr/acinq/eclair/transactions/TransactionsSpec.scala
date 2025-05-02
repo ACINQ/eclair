@@ -193,7 +193,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         txIn = claimAnchorOutputTx.tx.txIn :+ TxIn(walletInput, ByteVector.empty, 0, walletWitness),
         txOut = Seq(TxOut(1500 sat, Script.pay2wpkh(randomKey().publicKey)))
       ))
-      val signedTx = claimAnchorOutputTxWithFees.sign(localFundingPriv, localKeys.publicKeys, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, Map(walletInput -> walletTxOut)).tx
+      val signedTx = claimAnchorOutputTxWithFees.sign(localFundingPriv, localKeys, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, Map(walletInput -> walletTxOut)).tx
       assert(signedTx.weight() >= claimAnchorOutputMinWeight)
       val inputWeight = signedTx.weight() - signedTx.copy(txIn = signedTx.txIn.tail).weight()
       // Signature size may vary because of DER encoding.
@@ -546,16 +546,16 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val allInputs = walletInputs + (claimAnchorOutputTx.input.outPoint -> claimAnchorOutputTx.input.txOut)
       assert(Try(Transaction.correctlySpends(claimAnchorOutputTx.tx, allInputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isFailure)
       // All wallet inputs must be provided when signing.
-      assert(Try(claimAnchorOutputTx.sign(localFundingPriv, localKeys.publicKeys, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)).isFailure)
-      assert(Try(claimAnchorOutputTx.sign(localFundingPriv, localKeys.publicKeys, UnsafeLegacyAnchorOutputsCommitmentFormat, walletInputs.take(1))).isFailure)
-      val signedTx = claimAnchorOutputTx.sign(localFundingPriv, localKeys.publicKeys, UnsafeLegacyAnchorOutputsCommitmentFormat, walletInputs)
+      assert(Try(claimAnchorOutputTx.sign(localFundingPriv, localKeys, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)).isFailure)
+      assert(Try(claimAnchorOutputTx.sign(localFundingPriv, localKeys, UnsafeLegacyAnchorOutputsCommitmentFormat, walletInputs.take(1))).isFailure)
+      val signedTx = claimAnchorOutputTx.sign(localFundingPriv, localKeys, UnsafeLegacyAnchorOutputsCommitmentFormat, walletInputs)
       Transaction.correctlySpends(signedTx.tx, allInputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     {
       // remote spends remote anchor
       val Right(claimAnchorOutputTx) = ClaimAnchorOutputTx.createUnsignedTx(remoteFundingPriv, remoteKeys.publicKeys, commitTx, ConfirmationTarget.Absolute(BlockHeight(0)), UnsafeLegacyAnchorOutputsCommitmentFormat)
       assert(!claimAnchorOutputTx.validate(Map.empty))
-      val signedTx = claimAnchorOutputTx.sign(remoteFundingPriv, remoteKeys.publicKeys, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
+      val signedTx = claimAnchorOutputTx.sign(remoteFundingPriv, remoteKeys, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
       assert(signedTx.validate(Map.empty))
     }
     {

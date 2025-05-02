@@ -302,11 +302,11 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
   private def sign(fundedTx: ReplaceableTxWithWitnessData, txFeerate: FeeratePerKw, amountIn: Satoshi, walletUtxos: Map[OutPoint, TxOut]): Behavior[Command] = {
     fundedTx match {
       case claimAnchorTx: ClaimAnchorWithWitnessData if cmd.isLocalCommitAnchor =>
-        val commitKeys = cmd.commitment.localKeys(cmd.channelKeys).publicKeys
+        val commitKeys = cmd.commitment.localKeys(cmd.channelKeys)
         val signedTx = claimAnchorTx.copy(txInfo = claimAnchorTx.txInfo.sign(cmd.fundingKey, commitKeys, cmd.commitment.params.commitmentFormat, walletUtxos))
         signWalletInputs(signedTx, txFeerate, amountIn, walletUtxos)
       case claimAnchorTx: ClaimAnchorWithWitnessData =>
-        val commitKeys = cmd.commitment.remoteKeys(cmd.channelKeys, cmd.remotePerCommitmentPoint).publicKeys
+        val commitKeys = cmd.commitment.remoteKeys(cmd.channelKeys, cmd.remotePerCommitmentPoint)
         val signedTx = claimAnchorTx.copy(txInfo = claimAnchorTx.txInfo.sign(cmd.fundingKey, commitKeys, cmd.commitment.params.commitmentFormat, walletUtxos))
         signWalletInputs(signedTx, txFeerate, amountIn, walletUtxos)
       case htlcTx: HtlcWithWitnessData =>
