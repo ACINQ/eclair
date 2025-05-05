@@ -521,7 +521,7 @@ class NodeRelay private(nodeParams: NodeParams,
     context.system.eventStream ! EventStream.Publish(TrampolinePaymentRelayed(paymentHash, incoming, outgoing, paymentSent.recipientNodeId, paymentSent.recipientAmount))
   }
 
-  private def recordRelayDuration(receivedAt: TimestampMilli, isSuccess: Boolean): Unit = // TODO: always record reputation and duration before stopping, everything in one function
+  private def recordRelayDuration(receivedAt: TimestampMilli, isSuccess: Boolean): Unit =
     Metrics.RelayedPaymentDuration
       .withTag(Tags.Relay, Tags.RelayType.Trampoline)
       .withTag(Tags.Success, isSuccess)

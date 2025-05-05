@@ -689,9 +689,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
       fwd.message.replyTo ! RES_SUCCESS(fwd.message, channelId1)
       fwd.message.origin.replyTo ! RES_ADD_SETTLED(fwd.message.origin, downstream_htlc, testCase.result)
-      val fwdFail = register.expectMessageType[Register.Forward[channel.Command]]
-      assert(fwdFail.message == testCase.cmd)
-      assert(fwdFail.channelId == r.add.channelId)
+      expectFwdFail(register, r.add.channelId, testCase.cmd, reputationRecorder)
     }
   }
 
