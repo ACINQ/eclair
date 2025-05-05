@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.scalacompat.SatoshiLong
+import fr.acinq.bitcoin.scalacompat.{LexicographicalOrdering, SatoshiLong, TxOut}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
@@ -26,17 +26,26 @@ import fr.acinq.eclair.wire.protocol._
  * Created by PM on 07/12/2016.
  */
 
-sealed trait CommitmentOutput
+sealed trait CommitmentOutput {
+  val txOut: TxOut
+}
 
 object CommitmentOutput {
   // @formatter:off
-  case object ToLocal extends CommitmentOutput
-  case object ToRemote extends CommitmentOutput
-  case object ToLocalAnchor extends CommitmentOutput
-  case object ToRemoteAnchor extends CommitmentOutput
-  case class InHtlc(incomingHtlc: IncomingHtlc) extends CommitmentOutput
-  case class OutHtlc(outgoingHtlc: OutgoingHtlc) extends CommitmentOutput
+  case class ToLocal(txOut: TxOut) extends CommitmentOutput
+  case class ToRemote(txOut: TxOut) extends CommitmentOutput
+  case class ToLocalAnchor(txOut: TxOut) extends CommitmentOutput
+  case class ToRemoteAnchor(txOut: TxOut) extends CommitmentOutput
+  // if there is an output for an HTLC in the commit tx, there is also a 2nd-level HTLC tx
+  case class InHtlc(incomingHtlc: IncomingHtlc, txOut: TxOut, htlcSuccessOutput: TxOut) extends CommitmentOutput
+  case class OutHtlc(outgoingHtlc: OutgoingHtlc, txOut: TxOut, htlcTimeoutOutput: TxOut) extends CommitmentOutput
   // @formatter:on
+
+  def isLessThan(a: CommitmentOutput, b: CommitmentOutput): Boolean = (a, b) match {
+    case (a: OutHtlc, b: OutHtlc) if a.outgoingHtlc.add.paymentHash == b.outgoingHtlc.add.paymentHash && a.outgoingHtlc.add.amountMsat.truncateToSatoshi == b.outgoingHtlc.add.amountMsat.truncateToSatoshi =>
+      a.outgoingHtlc.add.cltvExpiry <= b.outgoingHtlc.add.cltvExpiry
+    case _ => LexicographicalOrdering.isLessThan(a.txOut, b.txOut)
+  }
 }
 
 sealed trait DirectedHtlc {

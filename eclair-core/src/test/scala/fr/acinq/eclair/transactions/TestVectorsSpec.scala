@@ -251,11 +251,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"output commit_tx: $commitTx")
 
     val unsignedHtlcTxs = Transactions.makeHtlcTxs(
-      localCommitmentKeys.publicKeys,
       commitTx,
-      dustLimit,
-      Local.toSelfDelay,
-      spec.htlcTxFeerate(commitmentFormat),
       outputs,
       commitmentFormat
     )

@@ -159,26 +159,26 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       val toRemoteFundeeBelowDust = spec.copy(toRemote = belowDust)
       val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, toRemoteFundeeBelowDust, DefaultCommitmentFormat)
-      assert(outputs.map(_.commitmentOutput) == Seq(CommitmentOutput.ToLocal))
-      assert(outputs.head.output.amount.toMilliSatoshi == toRemoteFundeeBelowDust.toLocal - commitFee)
+      assert(outputs.forall(_.isInstanceOf[CommitmentOutput.ToLocal]))
+      assert(outputs.head.txOut.amount.toMilliSatoshi == toRemoteFundeeBelowDust.toLocal - commitFee)
     }
     {
       val toLocalFunderBelowDust = spec.copy(toLocal = belowDustWithFee)
       val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, toLocalFunderBelowDust, DefaultCommitmentFormat)
-      assert(outputs.map(_.commitmentOutput) == Seq(CommitmentOutput.ToRemote))
-      assert(outputs.head.output.amount.toMilliSatoshi == toLocalFunderBelowDust.toRemote)
+      assert(outputs.forall(_.isInstanceOf[CommitmentOutput.ToRemote]))
+      assert(outputs.head.txOut.amount.toMilliSatoshi == toLocalFunderBelowDust.toRemote)
     }
     {
       val toRemoteFunderBelowDust = spec.copy(toRemote = belowDustWithFee)
       val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = false, localDustLimit, toLocalDelay, toRemoteFunderBelowDust, DefaultCommitmentFormat)
-      assert(outputs.map(_.commitmentOutput) == Seq(CommitmentOutput.ToLocal))
-      assert(outputs.head.output.amount.toMilliSatoshi == toRemoteFunderBelowDust.toLocal)
+      assert(outputs.forall(_.isInstanceOf[CommitmentOutput.ToLocal]))
+      assert(outputs.head.txOut.amount.toMilliSatoshi == toRemoteFunderBelowDust.toLocal)
     }
     {
       val toLocalFundeeBelowDust = spec.copy(toLocal = belowDust)
       val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = false, localDustLimit, toLocalDelay, toLocalFundeeBelowDust, DefaultCommitmentFormat)
-      assert(outputs.map(_.commitmentOutput) == Seq(CommitmentOutput.ToRemote))
-      assert(outputs.head.output.amount.toMilliSatoshi == toLocalFundeeBelowDust.toRemote - commitFee)
+      assert(outputs.forall(_.isInstanceOf[CommitmentOutput.ToRemote]))
+      assert(outputs.head.txOut.amount.toMilliSatoshi == toLocalFundeeBelowDust.toRemote - commitFee)
     }
     {
       val allBelowDust = spec.copy(toLocal = belowDust, toRemote = belowDust)
@@ -235,7 +235,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert((check ^ num) == commitTxNumber)
     }
 
-    val htlcTxs = makeHtlcTxs(localKeys.publicKeys, commitTx, localDustLimit, toLocalDelay, spec.htlcTxFeerate(DefaultCommitmentFormat), outputs, DefaultCommitmentFormat)
+    val htlcTxs = makeHtlcTxs(commitTx, outputs, DefaultCommitmentFormat)
     assert(htlcTxs.length == 4)
     val expiries = htlcTxs.map(tx => tx.htlcId -> tx.htlcExpiry.toLong).toMap
     assert(expiries == Map(0 -> 300, 1 -> 310, 2 -> 295, 3 -> 300))
@@ -360,39 +360,39 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
     {
       val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, spec, UnsafeLegacyAnchorOutputsCommitmentFormat)
-      assert(outputs.map(_.commitmentOutput).toSet == Set(CommitmentOutput.ToLocal, CommitmentOutput.ToRemote, CommitmentOutput.ToLocalAnchor, CommitmentOutput.ToRemoteAnchor))
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToLocalAnchor).get.output.amount == anchorAmount)
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToRemoteAnchor).get.output.amount == anchorAmount)
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToLocal).get.output.amount.toMilliSatoshi == spec.toLocal - commitFeeAndAnchorCost)
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToRemote).get.output.amount.toMilliSatoshi == spec.toRemote)
+      assert(outputs.size == 4)
+      assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToLocalAnchor]).get.txOut.amount == anchorAmount)
+      assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToRemoteAnchor]).get.txOut.amount == anchorAmount)
+      assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToLocal]).get.txOut.amount.toMilliSatoshi == spec.toLocal - commitFeeAndAnchorCost)
+      assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToRemote]).get.txOut.amount.toMilliSatoshi == spec.toRemote)
     }
     {
       val toRemoteFundeeBelowDust = spec.copy(toRemote = belowDust)
       val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, toRemoteFundeeBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
-      assert(outputs.map(_.commitmentOutput).toSet == Set(CommitmentOutput.ToLocal, CommitmentOutput.ToLocalAnchor))
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToLocalAnchor).get.output.amount == anchorAmount)
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToLocal).get.output.amount.toMilliSatoshi == spec.toLocal - commitFeeAndAnchorCost)
+      assert(outputs.size == 2)
+      assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToLocalAnchor]).get.txOut.amount == anchorAmount)
+      assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToLocal]).get.txOut.amount.toMilliSatoshi == spec.toLocal - commitFeeAndAnchorCost)
     }
     {
       val toLocalFunderBelowDust = spec.copy(toLocal = belowDustWithFeeAndAnchors)
       val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, toLocalFunderBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
-      assert(outputs.map(_.commitmentOutput).toSet == Set(CommitmentOutput.ToRemote, CommitmentOutput.ToRemoteAnchor))
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToRemoteAnchor).get.output.amount == anchorAmount)
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToRemote).get.output.amount.toMilliSatoshi == spec.toRemote)
+      assert(outputs.size == 2)
+      assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToRemoteAnchor]).get.txOut.amount == anchorAmount)
+      assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToRemote]).get.txOut.amount.toMilliSatoshi == spec.toRemote)
     }
     {
       val toRemoteFunderBelowDust = spec.copy(toRemote = belowDustWithFeeAndAnchors)
       val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = false, localDustLimit, toLocalDelay, toRemoteFunderBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
-      assert(outputs.map(_.commitmentOutput).toSet == Set(CommitmentOutput.ToLocal, CommitmentOutput.ToLocalAnchor))
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToLocalAnchor).get.output.amount == anchorAmount)
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToLocal).get.output.amount.toMilliSatoshi == spec.toLocal)
+      assert(outputs.size == 2)
+      assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToLocalAnchor]).get.txOut.amount == anchorAmount)
+      assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToLocal]).get.txOut.amount.toMilliSatoshi == spec.toLocal)
     }
     {
       val toLocalFundeeBelowDust = spec.copy(toLocal = belowDust)
       val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = false, localDustLimit, toLocalDelay, toLocalFundeeBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
-      assert(outputs.map(_.commitmentOutput).toSet == Set(CommitmentOutput.ToRemote, CommitmentOutput.ToRemoteAnchor))
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToRemoteAnchor).get.output.amount == anchorAmount)
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToRemote).get.output.amount.toMilliSatoshi == spec.toRemote - commitFeeAndAnchorCost)
+      assert(outputs.size == 2)
+      assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToRemoteAnchor]).get.txOut.amount == anchorAmount)
+      assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToRemote]).get.txOut.amount.toMilliSatoshi == spec.toRemote - commitFeeAndAnchorCost)
     }
     {
       val allBelowDust = spec.copy(toLocal = belowDust, toRemote = belowDust)
@@ -448,7 +448,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val remoteSig = txInfo.sign(remotePaymentPriv, localFundingPriv.publicKey)
       val commitTx = txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
 
-      val htlcTxs = makeHtlcTxs(localKeys.publicKeys, commitTx, localDustLimit, toLocalDelay, spec.htlcTxFeerate(UnsafeLegacyAnchorOutputsCommitmentFormat), outputs, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val htlcTxs = makeHtlcTxs(commitTx, outputs, UnsafeLegacyAnchorOutputsCommitmentFormat)
       assert(htlcTxs.length == 5)
       val expiries = htlcTxs.map(tx => tx.htlcId -> tx.htlcExpiry.toLong).toMap
       assert(expiries == Map(0 -> 300, 1 -> 310, 2 -> 310, 3 -> 295, 4 -> 300))
@@ -461,7 +461,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
       val zeroFeeOutputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, spec, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
       val zeroFeeCommitTx = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localIsChannelOpener = true, zeroFeeOutputs)
-      val zeroFeeHtlcTxs = makeHtlcTxs(localKeys.publicKeys, zeroFeeCommitTx.tx, localDustLimit, toLocalDelay, spec.htlcTxFeerate(ZeroFeeHtlcTxAnchorOutputsCommitmentFormat), zeroFeeOutputs, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+      val zeroFeeHtlcTxs = makeHtlcTxs(zeroFeeCommitTx.tx, zeroFeeOutputs, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
       assert(zeroFeeHtlcTxs.length == 7)
       val zeroFeeExpiries = zeroFeeHtlcTxs.map(tx => tx.htlcId -> tx.htlcExpiry.toLong).toMap
       assert(zeroFeeExpiries == Map(0 -> 300, 1 -> 310, 2 -> 310, 3 -> 295, 4 -> 300, 7 -> 300, 8 -> 302))
@@ -967,7 +967,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val localSig = txInfo.sign(localFundingPriv, remoteFundingPriv.publicKey)
       val remoteSig = txInfo.sign(remotePaymentPriv, localFundingPriv.publicKey)
       val commitTx = txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
-      val htlcTxs = makeHtlcTxs(localKeys.publicKeys, commitTx, localDustLimit, toLocalDelay, feeratePerKw, outputs, DefaultCommitmentFormat)
+      val htlcTxs = makeHtlcTxs(commitTx, outputs, DefaultCommitmentFormat)
       (commitTx, outputs, htlcTxs)
     }
 
@@ -987,10 +987,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     assert(htlcIds == Seq(1, 2, 3, 4, 5) || htlcIds == Seq(1, 2, 4, 3, 5))
 
     assert(htlcOut2.publicKeyScript.toHex < htlcOut3.publicKeyScript.toHex)
-    assert(outputs.find(_.commitmentOutput == OutHtlc(OutgoingHtlc(htlc2))).map(_.output.publicKeyScript).contains(htlcOut2.publicKeyScript))
-    assert(outputs.find(_.commitmentOutput == OutHtlc(OutgoingHtlc(htlc3))).map(_.output.publicKeyScript).contains(htlcOut3.publicKeyScript))
-    assert(outputs.find(_.commitmentOutput == OutHtlc(OutgoingHtlc(htlc4))).map(_.output.publicKeyScript).contains(htlcOut4.publicKeyScript))
-    assert(outputs.find(_.commitmentOutput == OutHtlc(OutgoingHtlc(htlc5))).map(_.output.publicKeyScript).contains(htlcOut5.publicKeyScript))
+    assert(outputs.collectFirst { case o: OutHtlc if o.outgoingHtlc.add == htlc2 => o.txOut.publicKeyScript }.contains(htlcOut2.publicKeyScript))
+    assert(outputs.collectFirst { case o: OutHtlc if o.outgoingHtlc.add == htlc3 => o.txOut.publicKeyScript }.contains(htlcOut3.publicKeyScript))
+    assert(outputs.collectFirst { case o: OutHtlc if o.outgoingHtlc.add == htlc4 => o.txOut.publicKeyScript }.contains(htlcOut4.publicKeyScript))
+    assert(outputs.collectFirst { case o: OutHtlc if o.outgoingHtlc.add == htlc5 => o.txOut.publicKeyScript }.contains(htlcOut5.publicKeyScript))
   }
 
   test("find our output in closing tx") {
