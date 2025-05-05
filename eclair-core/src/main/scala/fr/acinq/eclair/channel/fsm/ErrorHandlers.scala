@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.ClosingTx
+import fr.acinq.eclair.transactions.Transactions.{ClosingTx, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReestablish, Error, OpenChannel, Warning}
 
 import java.sql.SQLException
@@ -238,6 +238,7 @@ trait ErrorHandlers extends CommonHandlers {
         val redeemableHtlcTxs = htlcTxs.values.flatten.map(tx => PublishReplaceableTx(tx, channelKeys, commitment, commitTx, ConfirmationTarget.Absolute(tx.htlcExpiry.blockHeight)))
         val claimLocalAnchor = claimAnchorTxs.collect { case tx: Transactions.ClaimAnchorOutputTx if !localCommitPublished.isConfirmed => PublishReplaceableTx(tx, channelKeys, commitment, commitTx, tx.confirmationTarget) }
         List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
+      case SimpleTaprootChannelCommitmentFormat => ???
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
 
