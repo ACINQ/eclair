@@ -61,7 +61,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val commitFeerate = channelType.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => TestConstants.feeratePerKw
-      case _: Transactions.AnchorOutputsCommitmentFormat => TestConstants.anchorOutputsFeeratePerKw
+      case _: Transactions.AnchorOutputsCommitmentFormat | Transactions.SimpleTaprootChannelCommitmentFormat => TestConstants.anchorOutputsFeeratePerKw
     }
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)

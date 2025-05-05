@@ -32,6 +32,8 @@ import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentK
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReestablish, Error, OpenChannel, UpdateFulfillHtlc, Warning}
+import fr.acinq.eclair.transactions.Transactions.{ClosingTx, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReestablish, Error, OpenChannel, Warning}
 
 import java.sql.SQLException
 
@@ -245,6 +247,8 @@ trait ErrorHandlers extends CommonHandlers {
         } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, commitTx, commitment), confirmationTarget)
         val htlcTxs = redeemableHtlcTxs(localCommitPublished, commitKeys, commitment)
         List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ claimAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
+      case SimpleTaprootChannelCommitmentFormat => ???
+
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
 

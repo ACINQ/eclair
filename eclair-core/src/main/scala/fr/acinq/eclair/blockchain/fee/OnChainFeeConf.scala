@@ -76,7 +76,7 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
 
   def isProposedFeerateTooHigh(commitmentFormat: CommitmentFormat, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
     commitmentFormat match {
-      case Transactions.DefaultCommitmentFormat => networkFeerate * ratioHigh < proposedFeerate
+      case Transactions.DefaultCommitmentFormat | Transactions.SimpleTaprootChannelCommitmentFormat => networkFeerate * ratioHigh < proposedFeerate
       case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat => networkFeerate * ratioHigh < proposedFeerate
     }
   }
@@ -85,7 +85,7 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
     commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => proposedFeerate < networkFeerate * ratioLow
       // When using anchor outputs, we allow low feerates: fees will be set with CPFP and RBF at broadcast time.
-      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat => false
+      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat | Transactions.SimpleTaprootChannelCommitmentFormat => false
     }
   }
 }
@@ -121,7 +121,7 @@ case class OnChainFeeConf(feeTargets: FeeTargets,
 
     commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => networkFeerate
-      case _: Transactions.AnchorOutputsCommitmentFormat =>
+      case _: Transactions.AnchorOutputsCommitmentFormat | Transactions.SimpleTaprootChannelCommitmentFormat=>
         val targetFeerate = networkFeerate.min(feerateToleranceFor(remoteNodeId).anchorOutputMaxCommitFeerate)
         // We make sure the feerate is always greater than the propagation threshold.
         targetFeerate.max(networkMinFee * 1.25)
