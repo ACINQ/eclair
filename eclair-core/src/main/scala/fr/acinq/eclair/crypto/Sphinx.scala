@@ -385,7 +385,7 @@ object Sphinx extends Logging {
         val previousAttribution = previousAttribution_opt.getOrElse(ByteVector.low(920))
         val previousHmacs = getHmacs(previousAttribution).dropRight(1).map(_.drop(1))
         val mac = Hmac256(generateKey("um", sharedSecret))
-        val holdTimes = uint32.encode(holdTime.toMillis).require.bytes ++ previousAttribution.take(19 * 4)
+        val holdTimes = uint32.encode(holdTime.toMillis).map(_.bytes).getOrElse(ByteVector.high(4)) ++ previousAttribution.take(19 * 4)
         val hmacs = computeHmacs(mac, reason, holdTimes, previousHmacs, 0) +: previousHmacs
         cipher(holdTimes ++ ByteVector.concat(hmacs.map(ByteVector.concat(_))), sharedSecret)
       }
