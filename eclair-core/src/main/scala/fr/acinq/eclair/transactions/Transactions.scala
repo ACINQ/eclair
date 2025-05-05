@@ -440,10 +440,9 @@ object Transactions {
     }
 
     def addSigs(commitKeys: LocalCommitmentKeys, localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, commitmentFormat: CommitmentFormat): HtlcSuccessTx = {
-      val witness = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
-          val redeemScript = Script.write(htlcReceived(commitKeys.publicKeys, paymentHash, htlcExpiry, commitmentFormat))
-          witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, redeemScript, commitmentFormat)
+      val witness = redeemInfo(commitKeys.publicKeys, commitmentFormat) match {
+        case redeemInfo: RedeemInfo.SegwitV0 => witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, redeemInfo.redeemScript, commitmentFormat)
+        case _: RedeemInfo.Taproot => ???
       }
       copy(tx = tx.updateWitness(inputIndex, witness))
     }
@@ -487,10 +486,9 @@ object Transactions {
     }
 
     def addSigs(commitKeys: LocalCommitmentKeys, localSig: ByteVector64, remoteSig: ByteVector64, commitmentFormat: CommitmentFormat): HtlcTimeoutTx = {
-      val witness = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
-          val redeemScript = Script.write(htlcOffered(commitKeys.publicKeys, paymentHash, commitmentFormat))
-          witnessHtlcTimeout(localSig, remoteSig, redeemScript, commitmentFormat)
+      val witness = redeemInfo(commitKeys.publicKeys, commitmentFormat) match {
+        case redeemInfo: RedeemInfo.SegwitV0 => witnessHtlcTimeout(localSig, remoteSig, redeemInfo.redeemScript, commitmentFormat)
+        case _: RedeemInfo.Taproot => ???
       }
       copy(tx = tx.updateWitness(inputIndex, witness))
     }
