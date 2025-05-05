@@ -3120,7 +3120,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }).sum
     // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
     val amountClaimed = claimMain.txOut.head.amount + htlcAmountClaimed
-    assert(823_500.sat <= amountClaimed && amountClaimed <= 824_000.sat)
+    assert(amountClaimed == 823_700.sat)
 
     // alice sets the confirmation targets to the HTLC expiry
     assert(claimHtlcTxs.map(_.commitTx.txid).toSet == Set(bobCommitTx.txid))
@@ -3213,7 +3213,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }).sum
     // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
     val amountClaimed = claimMain.txOut.head.amount + htlcAmountClaimed
-    assert(829_500.sat <= amountClaimed && amountClaimed <= 830_000.sat)
+    assert(amountClaimed == 829_870.sat)
 
     // alice sets the confirmation targets to the HTLC expiry
     assert(claimHtlcTxs.map(_.commitTx.txid).toSet == Set(bobCommitTx.txid))
@@ -3302,8 +3302,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     htlcPenaltyTxs.foreach(htlcPenaltyTx => Transaction.correctlySpends(htlcPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
     // two main outputs are 760 000 and 200 000
-    assert(750_000.sat <= mainTx.txOut.head.amount && mainTx.txOut.head.amount <= 750_500.sat)
-    assert(195_000.sat <= mainPenaltyTx.txOut.head.amount && mainPenaltyTx.txOut.head.amount <= 195_500.sat)
+    assert(mainTx.txOut.head.amount == 750390.sat)
+    assert(mainPenaltyTx.txOut.head.amount == 195160.sat)
+    assert(htlcPenaltyTxs(0).txOut.head.amount == 4200.sat)
+    assert(htlcPenaltyTxs(1).txOut.head.amount == 4200.sat)
+    assert(htlcPenaltyTxs(2).txOut.head.amount == 4200.sat)
+    assert(htlcPenaltyTxs(3).txOut.head.amount == 4200.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)

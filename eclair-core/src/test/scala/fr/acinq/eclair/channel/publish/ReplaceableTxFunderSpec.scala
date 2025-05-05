@@ -129,7 +129,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       var previousAmount = claimHtlc.txInfo.tx.txOut.head.amount
       for (i <- 1 to 100) {
         val targetFeerate = FeeratePerKw(250 * i sat)
-        adjustClaimHtlcTxOutput(claimHtlc, commitKeys, targetFeerate, dustLimit, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) match {
+        adjustClaimHtlcTxOutput(claimHtlc, targetFeerate, dustLimit, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) match {
           case Left(_) => assert(targetFeerate >= FeeratePerKw(7000 sat))
           case Right(updatedClaimHtlc) =>
             assert(updatedClaimHtlc.txInfo.tx.txIn.length == 1)
