@@ -501,7 +501,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           log.debug("delaying CMD_FAIL_HTLC with id={} for {}", c.id, delay)
           context.system.scheduler.scheduleOnce(delay, self, c.copy(delay_opt = None))
           stay()
-        case None => d.commitments.sendFail(c, nodeParams.privateKey) match {
+        case None => d.commitments.sendFail(c, nodeParams.privateKey, nodeParams.features.hasFeature(Features.AttributableFailures)) match {
           case Right((commitments1, fail)) =>
             if (c.commit) self ! CMD_SIGN()
             context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
@@ -668,7 +668,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             case PostRevocationAction.RejectHtlc(add) =>
               log.debug("rejecting incoming htlc {}", add)
               // NB: we don't set commit = true, we will sign all updates at once afterwards.
-              self ! CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(d.channelUpdate))), commit = true)
+              self ! CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(d.channelUpdate))), TimestampMilli.now(), commit = true)
             case PostRevocationAction.RelayFailure(result) =>
               log.debug("forwarding {} to relayer", result)
               relayer ! result
@@ -1498,7 +1498,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(c: CMD_FAIL_HTLC, d: DATA_SHUTDOWN) =>
-      d.commitments.sendFail(c, nodeParams.privateKey) match {
+      d.commitments.sendFail(c, nodeParams.privateKey, nodeParams.features.hasFeature(Features.AttributableFailures)) match {
         case Right((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN()
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
@@ -1617,11 +1617,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             case PostRevocationAction.RelayHtlc(add) =>
               // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
               log.debug("closing in progress: failing {}", add)
-              self ! CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(PermanentChannelFailure()), commit = true)
+              self ! CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(PermanentChannelFailure()), TimestampMilli.now(), commit = true)
             case PostRevocationAction.RejectHtlc(add) =>
               // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
               log.debug("closing in progress: rejecting {}", add)
-              self ! CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(PermanentChannelFailure()), commit = true)
+              self ! CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(PermanentChannelFailure()), TimestampMilli.now(), commit = true)
             case PostRevocationAction.RelayFailure(result) =>
               log.debug("forwarding {} to relayer", result)
               relayer ! result
@@ -1861,7 +1861,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     case Event(c: HtlcSettlementCommand, d: DATA_CLOSING) =>
       (c match {
         case c: CMD_FULFILL_HTLC => d.commitments.sendFulfill(c)
-        case c: CMD_FAIL_HTLC => d.commitments.sendFail(c, nodeParams.privateKey)
+        case c: CMD_FAIL_HTLC => d.commitments.sendFail(c, nodeParams.privateKey, nodeParams.features.hasFeature(Features.AttributableFailures))
         case c: CMD_FAIL_MALFORMED_HTLC => d.commitments.sendFailMalformed(c)
       }) match {
         case Right((commitments1, _)) =>
