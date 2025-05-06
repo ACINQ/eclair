@@ -36,14 +36,16 @@ object CommitmentOutput {
   case class ToRemote(txOut: TxOut) extends CommitmentOutput
   case class ToLocalAnchor(txOut: TxOut) extends CommitmentOutput
   case class ToRemoteAnchor(txOut: TxOut) extends CommitmentOutput
-  // if there is an output for an HTLC in the commit tx, there is also a 2nd-level HTLC tx
-  case class InHtlc(incomingHtlc: IncomingHtlc, txOut: TxOut, htlcSuccessOutput: TxOut) extends CommitmentOutput
-  case class OutHtlc(outgoingHtlc: OutgoingHtlc, txOut: TxOut, htlcTimeoutOutput: TxOut) extends CommitmentOutput
+  // If there is an output for an HTLC in the commit tx, there is also a 2nd-level HTLC tx.
+  case class InHtlc(htlc: IncomingHtlc, txOut: TxOut, htlcDelayedOutput: TxOut) extends CommitmentOutput
+  case class OutHtlc(htlc: OutgoingHtlc, txOut: TxOut, htlcDelayedOutput: TxOut) extends CommitmentOutput
   // @formatter:on
 
   def isLessThan(a: CommitmentOutput, b: CommitmentOutput): Boolean = (a, b) match {
-    case (a: OutHtlc, b: OutHtlc) if a.outgoingHtlc.add.paymentHash == b.outgoingHtlc.add.paymentHash && a.outgoingHtlc.add.amountMsat.truncateToSatoshi == b.outgoingHtlc.add.amountMsat.truncateToSatoshi =>
-      a.outgoingHtlc.add.cltvExpiry <= b.outgoingHtlc.add.cltvExpiry
+    case (a: OutHtlc, b: OutHtlc) if a.txOut == b.txOut && a.htlc.add.cltvExpiry == b.htlc.add.cltvExpiry => a.htlc.add.id <= b.htlc.add.id
+    case (a: OutHtlc, b: OutHtlc) if a.txOut == b.txOut => a.htlc.add.cltvExpiry <= b.htlc.add.cltvExpiry
+    case (a: InHtlc, b: InHtlc) if a.txOut == b.txOut && a.htlc.add.cltvExpiry == b.htlc.add.cltvExpiry => a.htlc.add.id <= b.htlc.add.id
+    case (a: InHtlc, b: InHtlc) if a.txOut == b.txOut => a.htlc.add.cltvExpiry <= b.htlc.add.cltvExpiry
     case _ => LexicographicalOrdering.isLessThan(a.txOut, b.txOut)
   }
 }

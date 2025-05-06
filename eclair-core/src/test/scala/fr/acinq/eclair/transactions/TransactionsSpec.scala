@@ -987,10 +987,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     assert(htlcIds == Seq(1, 2, 3, 4, 5) || htlcIds == Seq(1, 2, 4, 3, 5))
 
     assert(htlcOut2.publicKeyScript.toHex < htlcOut3.publicKeyScript.toHex)
-    assert(outputs.collectFirst { case o: OutHtlc if o.outgoingHtlc.add == htlc2 => o.txOut.publicKeyScript }.contains(htlcOut2.publicKeyScript))
-    assert(outputs.collectFirst { case o: OutHtlc if o.outgoingHtlc.add == htlc3 => o.txOut.publicKeyScript }.contains(htlcOut3.publicKeyScript))
-    assert(outputs.collectFirst { case o: OutHtlc if o.outgoingHtlc.add == htlc4 => o.txOut.publicKeyScript }.contains(htlcOut4.publicKeyScript))
-    assert(outputs.collectFirst { case o: OutHtlc if o.outgoingHtlc.add == htlc5 => o.txOut.publicKeyScript }.contains(htlcOut5.publicKeyScript))
+    assert(outputs.collectFirst { case o: OutHtlc if o.htlc.add == htlc2 => o.txOut.publicKeyScript }.contains(htlcOut2.publicKeyScript))
+    assert(outputs.collectFirst { case o: OutHtlc if o.htlc.add == htlc3 => o.txOut.publicKeyScript }.contains(htlcOut3.publicKeyScript))
+    assert(outputs.collectFirst { case o: OutHtlc if o.htlc.add == htlc4 => o.txOut.publicKeyScript }.contains(htlcOut4.publicKeyScript))
+    assert(outputs.collectFirst { case o: OutHtlc if o.htlc.add == htlc5 => o.txOut.publicKeyScript }.contains(htlcOut5.publicKeyScript))
   }
 
   test("find our output in closing tx") {

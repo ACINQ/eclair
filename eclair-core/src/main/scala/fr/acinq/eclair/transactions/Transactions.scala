@@ -453,12 +453,12 @@ object Transactions {
                          output: InHtlc,
                          outputIndex: Int,
                          commitmentFormat: CommitmentFormat): HtlcSuccessTx = {
-      val htlc = output.incomingHtlc.add
+      val htlc = output.htlc.add
       val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
       val tx = Transaction(
         version = 2,
         txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
-        txOut = output.htlcSuccessOutput :: Nil,
+        txOut = output.htlcDelayedOutput :: Nil,
         lockTime = 0
       )
       HtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id, htlc.cltvExpiry)
@@ -489,12 +489,12 @@ object Transactions {
                          output: OutHtlc,
                          outputIndex: Int,
                          commitmentFormat: CommitmentFormat): HtlcTimeoutTx = {
-      val htlc = output.outgoingHtlc.add
+      val htlc = output.htlc.add
       val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
       val tx = Transaction(
         version = 2,
         txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
-        txOut = output.htlcTimeoutOutput :: Nil,
+        txOut = output.htlcDelayedOutput :: Nil,
         lockTime = htlc.cltvExpiry.toLong
       )
       HtlcTimeoutTx(input, tx, htlc.paymentHash, htlc.id, htlc.cltvExpiry)
@@ -572,7 +572,7 @@ object Transactions {
      */
     def findInput(commitTx: Transaction, outputs: Seq[CommitmentOutput], htlc: UpdateAddHtlc): Option[InputInfo] = {
       outputs.zipWithIndex.collectFirst {
-        case (OutHtlc(OutgoingHtlc(outgoingHtlc), _, _), outputIndex) if outgoingHtlc.id == htlc.id =>
+        case (OutHtlc(outgoingHtlc, _, _), outputIndex) if outgoingHtlc.add.id == htlc.id =>
           InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
       }
     }
@@ -1130,18 +1130,18 @@ object Transactions {
 
     trimOfferedHtlcs(dustLimit, spec, commitmentFormat).foreach { htlc =>
       val fee = weight2fee(spec.htlcTxFeerate(commitmentFormat), commitmentFormat.htlcTimeoutWeight)
-      val amount = htlc.add.amountMsat.truncateToSatoshi - fee
+      val amountAfterFees = htlc.add.amountMsat.truncateToSatoshi - fee
       val redeemScript = htlcOffered(commitmentKeys, htlc.add.paymentHash, commitmentFormat)
-      val htlcRedeemScript = toLocalDelayed(commitmentKeys, toSelfDelay)
-      outputs.append(OutHtlc(htlc, TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(redeemScript)), TxOut(amount, pay2wsh(htlcRedeemScript))))
+      val htlcDelayedScript = toLocalDelayed(commitmentKeys, toSelfDelay)
+      outputs.append(OutHtlc(htlc, TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(redeemScript)), TxOut(amountAfterFees, pay2wsh(htlcDelayedScript))))
     }
 
     trimReceivedHtlcs(dustLimit, spec, commitmentFormat).foreach { htlc =>
       val fee = weight2fee(spec.htlcTxFeerate(commitmentFormat), commitmentFormat.htlcSuccessWeight)
-      val amount = htlc.add.amountMsat.truncateToSatoshi - fee
+      val amountAfterFees = htlc.add.amountMsat.truncateToSatoshi - fee
       val redeemScript = htlcReceived(commitmentKeys, htlc.add.paymentHash, htlc.add.cltvExpiry, commitmentFormat)
-      val htlcRedeemScript = toLocalDelayed(commitmentKeys, toSelfDelay)
-      outputs.append(InHtlc(htlc, TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(redeemScript)), TxOut(amount, pay2wsh(htlcRedeemScript))))
+      val htlcDelayedScript = toLocalDelayed(commitmentKeys, toSelfDelay)
+      outputs.append(InHtlc(htlc, TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(redeemScript)), TxOut(amountAfterFees, pay2wsh(htlcDelayedScript))))
     }
 
     val hasHtlcs = outputs.nonEmpty
@@ -1205,15 +1205,10 @@ object Transactions {
   def makeHtlcTxs(commitTx: Transaction,
                   outputs: Seq[CommitmentOutput],
                   commitmentFormat: CommitmentFormat): Seq[HtlcTx] = {
-    val htlcTimeoutTxs = outputs.zipWithIndex.collect {
-      case (o: OutHtlc, outputIndex) =>
-        HtlcTimeoutTx.createUnsignedTx(commitTx, o, outputIndex, commitmentFormat)
+    outputs.zipWithIndex.collect {
+      case (o: OutHtlc, outputIndex) => HtlcTimeoutTx.createUnsignedTx(commitTx, o, outputIndex, commitmentFormat)
+      case (i: InHtlc, outputIndex) => HtlcSuccessTx.createUnsignedTx(commitTx, i, outputIndex, commitmentFormat)
     }
-    val htlcSuccessTxs = outputs.zipWithIndex.collect {
-      case (i: InHtlc, outputIndex) =>
-        HtlcSuccessTx.createUnsignedTx(commitTx, i, outputIndex, commitmentFormat)
-    }
-    htlcTimeoutTxs ++ htlcSuccessTxs
   }
 
   // @formatter:off
