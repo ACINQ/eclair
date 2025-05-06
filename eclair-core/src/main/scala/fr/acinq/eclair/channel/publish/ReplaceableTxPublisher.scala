@@ -116,7 +116,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   private val log = context.log
 
   /** The confirmation target may be updated in some corner cases (e.g. for a htlc if we learn a payment preimage). */
-  private var confirmationTarget: ConfirmationTarget = cmd.txInfo.confirmationTarget
+  private var confirmationTarget: ConfirmationTarget = cmd.confirmationTarget
 
   private def checkPreconditions(): Behavior[Command] = {
     val prePublisher = context.spawn(ReplaceableTxPrePublisher(nodeParams, bitcoinClient, txPublishContext), "pre-publisher")

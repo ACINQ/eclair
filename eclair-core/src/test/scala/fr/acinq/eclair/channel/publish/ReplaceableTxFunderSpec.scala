@@ -19,15 +19,16 @@ package fr.acinq.eclair.channel.publish
 import fr.acinq.bitcoin.scalacompat.{Crypto, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.AdjustPreviousTxOutputResult.{AddWalletInputs, TxOutputAdjusted}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder._
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
-import fr.acinq.eclair.crypto.keymanager.CommitmentPublicKeys
-import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, TestKitBaseClass, randomBytes32, randomKey}
 import org.mockito.IdiomaticMockito.StubbingOps
 import org.mockito.MockitoSugar.mock
 import org.scalatest.Tag
@@ -39,16 +40,18 @@ import scala.util.Random
 class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   private def createAnchorTx(): (CommitTx, ClaimAnchorOutputTx) = {
-    val anchorScript = Scripts.anchor(PlaceHolderPubKey)
-    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 1, 500 sat, PlaceHolderPubKey, PlaceHolderPubKey)
+    val anchorKey = randomKey()
+    val anchorScript = Scripts.anchor(anchorKey.publicKey)
+    val fundingScript = Script.write(Scripts.multiSig2of2(randomKey().publicKey, randomKey().publicKey))
+    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 1, 500 sat, randomKey().publicKey, randomKey().publicKey, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val commitTx = Transaction(
       2,
-      Seq(TxIn(commitInput.outPoint, commitInput.redeemScript, 0, Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey))),
+      Seq(TxIn(commitInput.outPoint, fundingScript, 0, Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, randomKey().publicKey, randomKey().publicKey))),
       Seq(TxOut(330 sat, Script.pay2wsh(anchorScript))),
       0
     )
     val anchorTx = ClaimAnchorOutputTx(
-      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, anchorScript),
+      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, ByteVector.empty),
       Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Nil, 0),
       ConfirmationTarget.Absolute(BlockHeight(0))
     )
@@ -58,67 +61,75 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
   private def createHtlcTxs(): (Transaction, HtlcSuccessWithWitnessData, HtlcTimeoutWithWitnessData) = {
     val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
-    val commitmentKeys = CommitmentPublicKeys(PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey)
-    val htlcSuccessScript = Scripts.htlcReceived(commitmentKeys, paymentHash, CltvExpiry(0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val expiry = CltvExpiry(850_000)
+    val commitmentKeys = CommitmentPublicKeys(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey)
+    val htlcSuccessScript = Scripts.htlcReceived(commitmentKeys, paymentHash, expiry, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val htlcTimeoutScript = Scripts.htlcOffered(commitmentKeys, randomBytes32(), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val commitTx = Transaction(
       2,
-      Seq(TxIn(OutPoint(randomTxId(), 1), Script.write(Script.pay2wpkh(PlaceHolderPubKey)), 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig))),
+      Seq(TxIn(OutPoint(randomTxId(), 1), Script.write(Script.pay2wpkh(randomKey().publicKey)), 0, Script.witnessPay2wpkh(randomKey().publicKey, PlaceHolderSig))),
       Seq(TxOut(5000 sat, Script.pay2wsh(htlcSuccessScript)), TxOut(4000 sat, Script.pay2wsh(htlcTimeoutScript))),
       0
     )
     val htlcSuccess = HtlcSuccessWithWitnessData(HtlcSuccessTx(
-      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, htlcSuccessScript),
-      Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
+      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, ByteVector.empty),
+      Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(randomKey().publicKey))), 0),
       paymentHash,
       17,
-      ConfirmationTarget.Absolute(BlockHeight(0))
+      expiry,
     ), PlaceHolderSig, preimage)
     val htlcTimeout = HtlcTimeoutWithWitnessData(HtlcTimeoutTx(
-      InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last, htlcTimeoutScript),
-      Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(4000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
+      InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last, ByteVector.empty),
+      Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(4000 sat, Script.pay2wpkh(randomKey().publicKey))), 0),
+      paymentHash,
       12,
-      ConfirmationTarget.Absolute(BlockHeight(0))
+      expiry
     ), PlaceHolderSig)
     (commitTx, htlcSuccess, htlcTimeout)
   }
 
-  private def createClaimHtlcTx(): (Transaction, ClaimHtlcSuccessWithWitnessData, ClaimHtlcTimeoutWithWitnessData) = {
+  private def createClaimHtlcTx(commitKeys_opt: Option[RemoteCommitmentKeys] = None): (Transaction, ClaimHtlcSuccessWithWitnessData, ClaimHtlcTimeoutWithWitnessData) = {
     val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
-    val commitmentKeys = CommitmentPublicKeys(PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey, PlaceHolderPubKey)
-    val htlcSuccessScript = Scripts.htlcReceived(commitmentKeys, paymentHash, CltvExpiry(0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
-    val htlcTimeoutScript = Scripts.htlcOffered(commitmentKeys, randomBytes32(), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val expiry = CltvExpiry(850_000)
+    val commitKeys = commitKeys_opt match {
+      case Some(commitKeys) => commitKeys.publicKeys
+      case None => CommitmentPublicKeys(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey)
+    }
+    val htlcSuccessScript = Scripts.htlcReceived(commitKeys, paymentHash, expiry, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val htlcTimeoutScript = Scripts.htlcOffered(commitKeys, randomBytes32(), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val commitTx = Transaction(
       2,
-      Seq(TxIn(OutPoint(randomTxId(), 1), Script.write(Script.pay2wpkh(PlaceHolderPubKey)), 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig))),
+      Seq(TxIn(OutPoint(randomTxId(), 1), Script.write(Script.pay2wpkh(randomKey().publicKey)), 0, Script.witnessPay2wpkh(randomKey().publicKey, PlaceHolderSig))),
       Seq(TxOut(5000 sat, Script.pay2wsh(htlcSuccessScript)), TxOut(5000 sat, Script.pay2wsh(htlcTimeoutScript))),
       0
     )
     val claimHtlcSuccess = ClaimHtlcSuccessWithWitnessData(ClaimHtlcSuccessTx(
-      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, htlcSuccessScript),
-      Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
+      InputInfo(OutPoint(commitTx, 0), commitTx.txOut.head, ByteVector.empty),
+      Transaction(2, Seq(TxIn(OutPoint(commitTx, 0), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(randomKey().publicKey))), 0),
       paymentHash,
       5,
-      ConfirmationTarget.Absolute(BlockHeight(0))
+      expiry
     ), preimage)
     val claimHtlcTimeout = ClaimHtlcTimeoutWithWitnessData(ClaimHtlcTimeoutTx(
-      InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last, htlcTimeoutScript),
-      Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))), 0),
+      InputInfo(OutPoint(commitTx, 1), commitTx.txOut.last, ByteVector.empty),
+      Transaction(2, Seq(TxIn(OutPoint(commitTx, 1), ByteVector.empty, 0)), Seq(TxOut(5000 sat, Script.pay2wpkh(randomKey().publicKey))), 0),
+      paymentHash,
       7,
-      ConfirmationTarget.Absolute(BlockHeight(0))
+      expiry,
     ))
     (commitTx, claimHtlcSuccess, claimHtlcTimeout)
   }
 
   test("adjust claim htlc tx change amount") {
     val dustLimit = 750 sat
-    val (_, claimHtlcSuccess, claimHtlcTimeout) = createClaimHtlcTx()
+    val commitKeys = RemoteCommitmentKeys(Right(randomKey()), randomKey().publicKey, randomKey().publicKey, randomKey(), randomKey().publicKey, randomKey().publicKey)
+    val (_, claimHtlcSuccess, claimHtlcTimeout) = createClaimHtlcTx(Some(commitKeys))
     for (claimHtlc <- Seq(claimHtlcSuccess, claimHtlcTimeout)) {
       var previousAmount = claimHtlc.txInfo.tx.txOut.head.amount
       for (i <- 1 to 100) {
         val targetFeerate = FeeratePerKw(250 * i sat)
-        adjustClaimHtlcTxOutput(claimHtlc, targetFeerate, dustLimit) match {
+        adjustClaimHtlcTxOutput(claimHtlc, targetFeerate, dustLimit, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) match {
           case Left(_) => assert(targetFeerate >= FeeratePerKw(7000 sat))
           case Right(updatedClaimHtlc) =>
             assert(updatedClaimHtlc.txInfo.tx.txIn.length == 1)
@@ -126,8 +137,8 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
             assert(updatedClaimHtlc.txInfo.tx.txOut.head.amount < previousAmount)
             previousAmount = updatedClaimHtlc.txInfo.tx.txOut.head.amount
             val signedTx = updatedClaimHtlc match {
-              case ClaimHtlcSuccessWithWitnessData(txInfo, preimage) => txInfo.addSigs(PlaceHolderSig, preimage)
-              case ClaimHtlcTimeoutWithWitnessData(txInfo) => txInfo.addSigs(PlaceHolderSig)
+              case ClaimHtlcSuccessWithWitnessData(txInfo, preimage) => txInfo.sign(commitKeys, preimage, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+              case ClaimHtlcTimeoutWithWitnessData(txInfo) => txInfo.sign(commitKeys, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
             }
             val txFeerate = fee2rate(signedTx.fee, signedTx.tx.weight())
             assert(targetFeerate * 0.9 <= txFeerate && txFeerate <= targetFeerate * 1.1, s"actualFeerate=$txFeerate targetFeerate=$targetFeerate")
@@ -142,11 +153,11 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
       txIn = Seq(
         initialAnchorTx.tx.txIn.head,
         // The previous funding attempt added two wallet inputs:
-        TxIn(OutPoint(randomTxId(), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig)),
-        TxIn(OutPoint(randomTxId(), 1), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig))
+        TxIn(OutPoint(randomTxId(), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(randomKey().publicKey, PlaceHolderSig)),
+        TxIn(OutPoint(randomTxId(), 1), ByteVector.empty, 0, Script.witnessPay2wpkh(randomKey().publicKey, PlaceHolderSig))
       ),
       // And a change output:
-      txOut = Seq(TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey)))
+      txOut = Seq(TxOut(5000 sat, Script.pay2wpkh(randomKey().publicKey)))
     ))
 
     val commitment = mock[FullCommitment]
@@ -154,7 +165,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
     localParams.dustLimit.returns(1000 sat)
     commitment.localParams.returns(localParams)
     val localCommit = mock[LocalCommit]
-    localCommit.commitTxAndRemoteSig.returns(CommitTxAndRemoteSig(commitTx, PlaceHolderSig))
+    localCommit.commitTxAndRemoteSig.returns(CommitTxAndRemoteSig(commitTx, IndividualSignature(PlaceHolderSig)))
     commitment.localCommit.returns(localCommit)
 
     // We can handle a small feerate update by lowering the change output.
@@ -182,14 +193,14 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
         txIn = Seq(
           initialHtlcTx.txInfo.tx.txIn.head,
           // The previous funding attempt added three wallet inputs:
-          TxIn(OutPoint(randomTxId(), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig)),
-          TxIn(OutPoint(randomTxId(), 1), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig)),
-          TxIn(OutPoint(randomTxId(), 5), ByteVector.empty, 0, Script.witnessPay2wpkh(PlaceHolderPubKey, PlaceHolderSig))
+          TxIn(OutPoint(randomTxId(), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(randomKey().publicKey, PlaceHolderSig)),
+          TxIn(OutPoint(randomTxId(), 1), ByteVector.empty, 0, Script.witnessPay2wpkh(randomKey().publicKey, PlaceHolderSig)),
+          TxIn(OutPoint(randomTxId(), 5), ByteVector.empty, 0, Script.witnessPay2wpkh(randomKey().publicKey, PlaceHolderSig))
         ),
         txOut = Seq(
           initialHtlcTx.txInfo.tx.txOut.head,
           // And one change output:
-          TxOut(5000 sat, Script.pay2wpkh(PlaceHolderPubKey))
+          TxOut(5000 sat, Script.pay2wpkh(randomKey().publicKey))
         )
       ))
 
@@ -214,7 +225,7 @@ class ReplaceableTxFunderSpec extends TestKitBaseClass with AnyFunSuiteLike {
         val changeAmount = Random.nextInt(amountIn.toLong.toInt).sat
         val fuzzyPreviousTx = previousTx.updateTx(previousTx.txInfo.tx.copy(txOut = Seq(
           initialHtlcTx.txInfo.tx.txOut.head,
-          TxOut(changeAmount, Script.pay2wpkh(PlaceHolderPubKey))
+          TxOut(changeAmount, Script.pay2wpkh(randomKey().publicKey))
         )))
         val targetFeerate = FeeratePerKw(2500 sat) + FeeratePerKw(Random.nextInt(20000).sat)
         adjustPreviousTxOutput(FundedTx(fuzzyPreviousTx, amountIn, FeeratePerKw(2500 sat), Map.empty), targetFeerate, commitment, commitTx) match {
