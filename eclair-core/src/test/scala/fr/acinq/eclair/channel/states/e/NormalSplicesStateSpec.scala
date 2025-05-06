@@ -32,6 +32,7 @@ import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
+import fr.acinq.eclair.channel.publish.ReplaceableRemoteCommitAnchor
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx, SetChannelId}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
@@ -2676,7 +2677,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(desc == p.desc)
     p match {
       case p: PublishFinalTx => p.tx
-      case p: PublishReplaceableTx => p.txInfo.tx
+      case p: PublishReplaceableTx => p.tx.txInfo.tx
     }
   }
 
@@ -2789,7 +2790,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // Bob publishes his commit tx for the first splice transaction (which double-spends the second splice transaction).
     val bobCommitment1 = bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.find(_.fundingTxIndex == 1).get
-    val bobCommitTx1 = bobCommitment1.fullySignedLocalCommitTx(bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params, bob.underlyingActor.channelKeys).tx
+    val bobCommitTx1 = bobCommitment1.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
     Transaction.correctlySpends(bobCommitTx1, Seq(fundingTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
     val watchAlternativeConfirmed = alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed]
@@ -2986,9 +2987,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // bob's remote tx wins
     alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobCommitTx1)
     // we're back to the normal handling of remote commit
-    inside(alice2blockchain.expectMsgType[PublishReplaceableTx]) { tx =>
-      assert(tx.txInfo.isInstanceOf[Transactions.ClaimAnchorOutputTx])
-      assert(tx.commitTx == bobCommitTx1)
+    inside(alice2blockchain.expectMsgType[PublishReplaceableTx]) { publish =>
+      assert(publish.tx.isInstanceOf[ReplaceableRemoteCommitAnchor])
+      assert(publish.tx.commitTx == bobCommitTx1)
     }
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
     val claimHtlcsTxsOut = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "claim-htlc-timeout"))
@@ -3244,12 +3245,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     crossSign(bob, alice, bob2alice, alice2bob)
     val aliceCommitments1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     aliceCommitments1.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments1.params, alice.underlyingActor.channelKeys).tx
+      val commitTx = c.fullySignedLocalCommitTx(alice.underlyingActor.channelKeys)
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     val bobCommitments1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     bobCommitments1.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(bobCommitments1.params, bob.underlyingActor.channelKeys).tx
+      val commitTx = c.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
@@ -3258,12 +3259,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     crossSign(alice, bob, alice2bob, bob2alice)
     val aliceCommitments2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     aliceCommitments2.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments2.params, alice.underlyingActor.channelKeys).tx
+      val commitTx = c.fullySignedLocalCommitTx(alice.underlyingActor.channelKeys)
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     val bobCommitments2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     bobCommitments2.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(bobCommitments2.params, bob.underlyingActor.channelKeys).tx
+      val commitTx = c.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 

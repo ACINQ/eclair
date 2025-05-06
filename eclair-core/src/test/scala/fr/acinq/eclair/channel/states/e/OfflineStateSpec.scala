@@ -29,9 +29,10 @@ import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
+import fr.acinq.eclair.channel.publish.{ReplaceableClaimHtlcTimeout, ReplaceableRemoteCommitAnchor}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTimeoutTx, HtlcSuccessTx}
+import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -252,8 +253,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     {
       val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
-      val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 2, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint,TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
-      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint,TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+      val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 2, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
       alice2bob.forward(bob, reestablishA)
       bob2alice.forward(alice, reestablishB)
     }
@@ -444,12 +445,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // alice is able to claim her main output and the htlc (once it times out)
-    alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].tx.isInstanceOf[ReplaceableRemoteCommitAnchor])
     val claimMainOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     val claimHtlc = alice2blockchain.expectMsgType[PublishReplaceableTx]
-    assert(claimHtlc.txInfo.isInstanceOf[ClaimHtlcTimeoutTx])
-    Transaction.correctlySpends(claimHtlc.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    assert(claimHtlc.tx.isInstanceOf[ReplaceableClaimHtlcTimeout])
+    Transaction.correctlySpends(claimHtlc.tx.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
   test("counterparty lies about having a more recent commitment and publishes revoked commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>

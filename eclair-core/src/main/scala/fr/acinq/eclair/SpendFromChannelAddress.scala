@@ -3,8 +3,7 @@ package fr.acinq.eclair
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, addressToPublicKeyScript}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelConfig
-import fr.acinq.eclair.transactions.Scripts.multiSig2of2
+import fr.acinq.eclair.channel.{ChannelConfig, ChannelSpendSignature}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import scodec.bits.ByteVector
@@ -14,9 +13,6 @@ import scala.concurrent.Future
 trait SpendFromChannelAddress {
 
   this: EclairImpl =>
-
-  /** these dummy witnesses are used as a placeholder to accurately compute the weight */
-  private val dummy2of2Witness = Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, PlaceHolderPubKey, PlaceHolderPubKey)
 
   private def buildTx(outPoint: OutPoint, outputAmount: Satoshi, pubKeyScript: ByteVector, witness: ScriptWitness) = Transaction(2,
     txIn = Seq(TxIn(outPoint, ByteVector.empty, 0, witness)),
@@ -28,13 +24,13 @@ trait SpendFromChannelAddress {
       inputTx <- appKit.wallet.getTransaction(outPoint.txid)
       inputAmount = inputTx.txOut(outPoint.index.toInt).amount
       Right(pubKeyScript) = addressToPublicKeyScript(appKit.nodeParams.chainHash, address).map(Script.write)
-      // build the tx a first time with a zero amount to compute the weight
-      fee = Transactions.weight2fee(feerate, buildTx(outPoint, 0.sat, pubKeyScript, dummy2of2Witness).weight())
-      _ = assert(inputAmount - fee > Scripts.dustLimit(pubKeyScript), s"amount insufficient (fee=$fee)")
-      unsignedTx = buildTx(outPoint, inputAmount - fee, pubKeyScript, dummy2of2Witness)
-      // the following are not used, but need to be sent to the counterparty
       channelKeys = appKit.nodeParams.channelKeyManager.channelKeys(ChannelConfig.standard, fundingKeyPath)
       localFundingPubkey = channelKeys.fundingKey(fundingTxIndex).publicKey
+      // build the tx a first time with a zero amount to compute the weight
+      dummyWitness = Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, localFundingPubkey, localFundingPubkey)
+      fee = Transactions.weight2fee(feerate, buildTx(outPoint, 0.sat, pubKeyScript, dummyWitness).weight())
+      _ = assert(inputAmount - fee > Scripts.dustLimit(pubKeyScript), s"amount insufficient (fee=$fee)")
+      unsignedTx = buildTx(outPoint, inputAmount - fee, pubKeyScript, dummyWitness)
     } yield SpendFromChannelPrep(fundingTxIndex, localFundingPubkey, inputAmount, unsignedTx)
   }
 
@@ -45,12 +41,11 @@ trait SpendFromChannelAddress {
       inputTx <- appKit.wallet.getTransaction(outPoint.txid)
       channelKeys = appKit.nodeParams.channelKeyManager.channelKeys(ChannelConfig.standard, fundingKeyPath)
       localFundingKey = channelKeys.fundingKey(fundingTxIndex)
-      fundingRedeemScript = multiSig2of2(localFundingKey.publicKey, remoteFundingPubkey)
-      inputInfo = InputInfo(outPoint, inputTx.txOut(outPoint.index.toInt), fundingRedeemScript)
+      inputInfo = InputInfo(outPoint, inputTx.txOut(outPoint.index.toInt), ByteVector.empty)
       // classify as splice, doesn't really matter
-      localSig = Transactions.SpliceTx(inputInfo, unsignedTx).sign(localFundingKey, TxOwner.Local, DefaultCommitmentFormat, Map.empty)
-      witness = Scripts.witness2of2(localSig, remoteSig, localFundingKey.publicKey, remoteFundingPubkey)
-      signedTx = unsignedTx.updateWitness(0, witness)
+      tx = Transactions.SpliceTx(inputInfo, unsignedTx)
+      localSig = tx.sign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
+      signedTx = tx.aggregateSigs(localFundingKey.publicKey, remoteFundingPubkey, localSig, ChannelSpendSignature.IndividualSignature(remoteSig))
     } yield SpendFromChannelResult(signedTx)
   }
 

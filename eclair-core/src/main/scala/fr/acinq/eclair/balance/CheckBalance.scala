@@ -210,19 +210,16 @@ object CheckBalance {
           // be pruned and we will count twice the amount in the global (onChain + offChain) balance, until the
           // mutual close tx gets deeply confirmed and the channel is removed.
           val mutualClose = d.mutualClosePublished.last
-          val outputInfo_opt = mutualClose.toLocalOutput match {
-            case Some(outputInfo) => Some(outputInfo)
+          val outputIndex_opt = mutualClose.toLocalOutputIndex_opt match {
+            case Some(outputIndex) => Some(outputIndex)
             case None =>
               // Normally this would mean that we don't actually have an output, but due to a migration
               // the data might not be accurate, see [[ChannelTypes0.migrateClosingTx]]
               // As a (hackish) workaround, we use the pubkeyscript to retrieve our output
-              Transactions.findPubKeyScriptIndex(mutualClose.tx, d.finalScriptPubKey) match {
-                case Right(outputIndex) => Some(OutputInfo(outputIndex, mutualClose.tx.txOut(outputIndex).amount, d.finalScriptPubKey))
-                case _ => None // either we don't have an output (below dust), or we have used a non-default pubkey script
-              }
+              Transactions.findPubKeyScriptIndex(mutualClose.tx, d.finalScriptPubKey).map(_.toLong).toOption
           }
-          outputInfo_opt match {
-            case Some(outputInfo) => r.copy(closing = r.closing.copy(mutualCloseBalance = r.closing.mutualCloseBalance.copy(toLocal = r.closing.mutualCloseBalance.toLocal + (OutPoint(mutualClose.tx.txid, outputInfo.index) -> outputInfo.amount))))
+          outputIndex_opt match {
+            case Some(index) => r.copy(closing = r.closing.copy(mutualCloseBalance = r.closing.mutualCloseBalance.copy(toLocal = r.closing.mutualCloseBalance.toLocal + (OutPoint(mutualClose.tx.txid, index) -> mutualClose.tx.txOut(index.toInt).amount))))
             case None => r
           }
         case Some(localClose: LocalClose) => r.copy(closing = r.closing.copy(localCloseBalance = updatePossiblyPublishedBalance(r.closing.localCloseBalance, computeLocalCloseBalance(d.commitments.changes, localClose, d.commitments.originChannels, knownPreimages))))

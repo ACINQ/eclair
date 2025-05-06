@@ -109,7 +109,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val fundingPubkeyScript: ByteVector = Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey)))
 
     def dummySharedInputB(amount: Satoshi): SharedFundingInput = {
-      val inputInfo = InputInfo(OutPoint(randomTxId(), 3), TxOut(amount, fundingPubkeyScript), Nil)
+      val inputInfo = InputInfo(OutPoint(randomTxId(), 3), TxOut(amount, fundingPubkeyScript), ByteVector.empty)
       val fundingTxIndex = fundingParamsA.sharedInput_opt match {
         case Some(input: Multisig2of2Input) => input.fundingTxIndex + 1
         case _ => 0
@@ -1802,7 +1802,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val spliceFeeA = {
         val dummySpliceTx = Transaction(
           version = 2,
-          txIn = Seq(TxIn(commitmentA1.commitInput.outPoint, ByteVector.empty, 0, Scripts.witness2of2(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, Transactions.PlaceHolderPubKey, Transactions.PlaceHolderPubKey))),
+          txIn = Seq(TxIn(commitmentA1.commitInput.outPoint, ByteVector.empty, 0, Scripts.witness2of2(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, randomKey().publicKey, randomKey().publicKey))),
           txOut = Seq(commitmentA1.commitInput.txOut),
           lockTime = 0
         )
@@ -2618,7 +2618,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val params = createFixtureParams(100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
     val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).active.head
     val fundingTx = Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)), TxOut(20_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
-    val sharedInput = Multisig2of2Input(InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, Nil), 0, randomKey().publicKey)
+    val sharedInput = Multisig2of2Input(InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, ByteVector.empty), 0, randomKey().publicKey)
     val bob = params.spawnTxBuilderSpliceBob(params.fundingParamsB.copy(sharedInput_opt = Some(sharedInput)), previousCommitment, wallet)
     bob ! Start(probe.ref)
     // Alice --- tx_add_input --> Bob

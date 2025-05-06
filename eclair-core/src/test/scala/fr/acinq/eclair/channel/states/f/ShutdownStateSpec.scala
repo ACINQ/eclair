@@ -25,13 +25,13 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.publish.ReplaceableRemoteCommitAnchor
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
-import fr.acinq.eclair.transactions.Transactions.ClaimAnchorOutputTx
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -112,7 +112,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       systemA.eventStream.subscribe(aliceListener.ref, classOf[LocalChannelUpdate])
       val bobListener = TestProbe()
       systemB.eventStream.subscribe(bobListener.ref, classOf[LocalChannelUpdate])
-      
+
       alice2bob.expectMsgType[AnnouncementSignatures]
       alice2bob.forward(bob)
       alice2bob.expectMsgType[ChannelUpdate]
@@ -725,10 +725,10 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
     // in response to that, alice publishes her claim txs
     val anchorTx = alice2blockchain.expectMsgType[PublishReplaceableTx]
-    assert(anchorTx.txInfo.isInstanceOf[ClaimAnchorOutputTx])
+    assert(anchorTx.tx.isInstanceOf[ReplaceableRemoteCommitAnchor])
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
     // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
+    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].tx.txInfo.tx)
     val htlcAmountClaimed = (for (claimHtlcTx <- claimHtlcTxs) yield {
       assert(claimHtlcTx.txIn.size == 1)
       assert(claimHtlcTx.txOut.size == 1)
@@ -737,7 +737,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     }).sum
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
     val amountClaimed = htlcAmountClaimed + claimMain.txOut.head.amount
-    assert(amountClaimed == 780290.sat)
+    assert(amountClaimed == 780_310.sat)
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.txid)
@@ -775,11 +775,11 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // in response to that, alice publishes her claim txs
-    alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx // claim local anchor output
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].tx.isInstanceOf[ReplaceableRemoteCommitAnchor])
     val claimTxs = Seq(
       alice2blockchain.expectMsgType[PublishFinalTx].tx,
       // there is only one htlc to claim in the commitment bob published
-      alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx
+      alice2blockchain.expectMsgType[PublishReplaceableTx].tx.txInfo.tx
     )
     val amountClaimed = (for (claimTx <- claimTxs) yield {
       assert(claimTx.txIn.size == 1)
@@ -788,7 +788,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       claimTx.txOut.head.amount
     }).sum
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat - htlc1 = 1000000 - 200000 - 300 000 = 500000 (because fees)
-    assert(amountClaimed == 486200.sat)
+    assert(amountClaimed == 486_210.sat)
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimTxs(0).txid)
@@ -836,10 +836,10 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     Transaction.correctlySpends(htlc2PenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     // two main outputs are 300 000 and 200 000, htlcs are 300 000 and 200 000
-    assert(mainTx.txOut.head.amount == 291250.sat)
-    assert(mainPenaltyTx.txOut.head.amount == 195160.sat)
-    assert(htlc1PenaltyTx.txOut.head.amount == 194190.sat)
-    assert(htlc2PenaltyTx.txOut.head.amount == 294190.sat)
+    assert(mainTx.txOut.head.amount == 291_250.sat)
+    assert(mainPenaltyTx.txOut.head.amount == 195_160.sat)
+    assert(htlc1PenaltyTx.txOut.head.amount == 194_200.sat)
+    assert(htlc2PenaltyTx.txOut.head.amount == 294_200.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
@@ -879,9 +879,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     Transaction.correctlySpends(htlcPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     // two main outputs are 300 000 and 200 000, htlcs are 300 000 and 200 000
-    assert(mainTx.txOut(0).amount == 291680.sat)
-    assert(mainPenaltyTx.txOut(0).amount == 495160.sat)
-    assert(htlcPenaltyTx.txOut(0).amount == 194190.sat)
+    assert(mainTx.txOut(0).amount == 291_680.sat)
+    assert(mainPenaltyTx.txOut(0).amount == 495_160.sat)
+    assert(htlcPenaltyTx.txOut(0).amount == 194_200.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)

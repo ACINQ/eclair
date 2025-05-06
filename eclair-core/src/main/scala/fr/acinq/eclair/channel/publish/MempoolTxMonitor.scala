@@ -134,7 +134,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
     }
   }
 
-  def waitForConfirmation(): Behavior[Command] = {
+  private def waitForConfirmation(): Behavior[Command] = {
     context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockHeight](cbc => WrappedCurrentBlockHeight(cbc.blockHeight)))
     context.system.eventStream ! EventStream.Publish(TransactionPublished(txPublishContext.channelId_opt.getOrElse(ByteVector32.Zeroes), txPublishContext.remoteNodeId, cmd.tx, cmd.fee, cmd.desc))
     Behaviors.receiveMessagePartial {
@@ -192,7 +192,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
     }
   }
 
-  def sendFinalResult(result: FinalTxResult): Behavior[Command] = {
+  private def sendFinalResult(result: FinalTxResult): Behavior[Command] = {
     cmd.replyTo ! result
     Behaviors.stopped
   }

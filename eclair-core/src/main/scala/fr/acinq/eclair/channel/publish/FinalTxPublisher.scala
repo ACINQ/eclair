@@ -85,7 +85,7 @@ private class FinalTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def checkParentPublished(): Behavior[Command] = {
+  private def checkParentPublished(): Behavior[Command] = {
     cmd.parentTx_opt match {
       case Some(parentTxId) =>
         context.self ! CheckParentTx

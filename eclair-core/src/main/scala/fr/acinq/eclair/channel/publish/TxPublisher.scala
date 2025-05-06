@@ -24,9 +24,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transactio
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
-import fr.acinq.eclair.channel.FullCommitment
-import fr.acinq.eclair.crypto.keymanager.ChannelKeys
-import fr.acinq.eclair.transactions.Transactions.{ClaimAnchorOutputTx, ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
+import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 import fr.acinq.eclair.{BlockHeight, Logs, NodeParams}
 
 import java.util.UUID
@@ -92,18 +90,10 @@ object TxPublisher {
 
   /**
    * Publish an unsigned transaction that can be RBF-ed.
-   *
-   * @param commitTx commitment transaction that this transaction is spending.
    */
-  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, channelKeys: ChannelKeys, commitment: FullCommitment, commitTx: Transaction) extends PublishTx {
-    override def input: OutPoint = txInfo.input.outPoint
-    override def desc: String = txInfo.desc
-
-    /** True if we're trying to bump our local commit with an anchor transaction. */
-    lazy val isLocalCommitAnchor: Boolean = txInfo match {
-      case txInfo: ClaimAnchorOutputTx => txInfo.input.outPoint.txid == commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid
-      case _ => false
-    }
+  case class PublishReplaceableTx(tx: ReplaceableTx, confirmationTarget: ConfirmationTarget) extends PublishTx {
+    override def input: OutPoint = tx.txInfo.input.outPoint
+    override def desc: String = tx.txInfo.desc
   }
 
   sealed trait PublishTxResult extends Command { def cmd: PublishTx }
@@ -233,13 +223,10 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         }
 
       case cmd: PublishReplaceableTx =>
-        val proposedConfirmationTarget = cmd.txInfo.confirmationTarget
+        val proposedConfirmationTarget = cmd.confirmationTarget
         val attempts = pending.getOrElse(cmd.input, PublishAttempts.empty)
         attempts.replaceableAttempt_opt match {
           case Some(currentAttempt) =>
-            if (currentAttempt.cmd.txInfo.tx.txOut.headOption.map(_.publicKeyScript) != cmd.txInfo.tx.txOut.headOption.map(_.publicKeyScript)) {
-              log.error("replaceable {} sends to a different address than the previous attempt, this should not happen: proposed={}, previous={}", currentAttempt.cmd.desc, cmd.txInfo, currentAttempt.cmd.txInfo)
-            }
             val currentConfirmationTarget = currentAttempt.confirmationTarget
 
             def updateConfirmationTarget() = {

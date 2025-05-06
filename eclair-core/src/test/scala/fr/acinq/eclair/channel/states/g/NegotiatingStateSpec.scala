@@ -503,7 +503,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(bobClosingSig.lockTime == aliceClosingComplete.lockTime)
     bob2alice.forward(alice, bobClosingSig)
     val aliceTx = alice2blockchain.expectMsgType[PublishFinalTx]
-    assert(aliceTx.desc == "closing")
+    assert(aliceTx.desc == "closing-tx")
     assert(aliceTx.fee > 0.sat)
     alice2blockchain.expectWatchTxConfirmed(aliceTx.tx.txid)
     inside(bob2blockchain.expectMsgType[PublishFinalTx]) { p =>
@@ -519,7 +519,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(aliceClosingSig.lockTime == bobClosingComplete.lockTime)
     alice2bob.forward(bob, aliceClosingSig)
     val bobTx = bob2blockchain.expectMsgType[PublishFinalTx]
-    assert(bobTx.desc == "closing")
+    assert(bobTx.desc == "closing-tx")
     assert(bobTx.fee > 0.sat)
     bob2blockchain.expectWatchTxConfirmed(bobTx.tx.txid)
     inside(alice2blockchain.expectMsgType[PublishFinalTx]) { p =>
