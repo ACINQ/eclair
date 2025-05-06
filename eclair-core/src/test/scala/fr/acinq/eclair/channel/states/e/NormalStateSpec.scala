@@ -30,6 +30,7 @@ import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
+import fr.acinq.eclair.channel.publish.{ReplaceableClaimHtlcSuccess, ReplaceableClaimHtlcTimeout}
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
@@ -3113,19 +3114,19 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // in addition to her main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
     val htlcAmountClaimed = (for (claimHtlcTx <- claimHtlcTxs) yield {
-      assert(claimHtlcTx.txInfo.tx.txIn.size == 1)
-      assert(claimHtlcTx.txInfo.tx.txOut.size == 1)
-      Transaction.correctlySpends(claimHtlcTx.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      claimHtlcTx.txInfo.tx.txOut.head.amount
+      assert(claimHtlcTx.tx.txInfo.tx.txIn.size == 1)
+      assert(claimHtlcTx.tx.txInfo.tx.txOut.size == 1)
+      Transaction.correctlySpends(claimHtlcTx.tx.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      claimHtlcTx.tx.txInfo.tx.txOut.head.amount
     }).sum
     // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
     val amountClaimed = claimMain.txOut.head.amount + htlcAmountClaimed
     assert(amountClaimed == 823_700.sat)
 
     // alice sets the confirmation targets to the HTLC expiry
-    assert(claimHtlcTxs.map(_.commitTx.txid).toSet == Set(bobCommitTx.txid))
-    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcSuccessTx, _, _, _, confirmationTarget) => (tx.htlcId, confirmationTarget) }.toMap == Map(htlcb1.id -> ConfirmationTarget.Absolute(htlcb1.cltvExpiry.blockHeight)))
-    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _, _, _, confirmationTarget) => (tx.htlcId, confirmationTarget) }.toMap == Map(htlca1.id -> ConfirmationTarget.Absolute(htlca1.cltvExpiry.blockHeight), htlca2.id -> ConfirmationTarget.Absolute(htlca2.cltvExpiry.blockHeight)))
+    assert(claimHtlcTxs.map(_.tx.commitTx.txid).toSet == Set(bobCommitTx.txid))
+    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ReplaceableClaimHtlcSuccess, confirmationTarget) => (tx.txInfo.htlcId, confirmationTarget) }.toMap == Map(htlcb1.id -> ConfirmationTarget.Absolute(htlcb1.cltvExpiry.blockHeight)))
+    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ReplaceableClaimHtlcTimeout, confirmationTarget) => (tx.txInfo.htlcId, confirmationTarget) }.toMap == Map(htlca1.id -> ConfirmationTarget.Absolute(htlca1.cltvExpiry.blockHeight), htlca2.id -> ConfirmationTarget.Absolute(htlca2.cltvExpiry.blockHeight)))
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.txid)
@@ -3201,23 +3202,23 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // in response to that, alice publishes her claim txs
-    val claimAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx
+    val claimAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx].tx.txInfo.tx
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
     // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
     val htlcAmountClaimed = (for (claimHtlcTx <- claimHtlcTxs) yield {
-      assert(claimHtlcTx.txInfo.tx.txIn.size == 1)
-      assert(claimHtlcTx.txInfo.tx.txOut.size == 1)
-      Transaction.correctlySpends(claimHtlcTx.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      claimHtlcTx.txInfo.tx.txOut.head.amount
+      assert(claimHtlcTx.tx.txInfo.tx.txIn.size == 1)
+      assert(claimHtlcTx.tx.txInfo.tx.txOut.size == 1)
+      Transaction.correctlySpends(claimHtlcTx.tx.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      claimHtlcTx.tx.txInfo.tx.txOut.head.amount
     }).sum
     // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
     val amountClaimed = claimMain.txOut.head.amount + htlcAmountClaimed
     assert(amountClaimed == 829_870.sat)
 
     // alice sets the confirmation targets to the HTLC expiry
-    assert(claimHtlcTxs.map(_.commitTx.txid).toSet == Set(bobCommitTx.txid))
-    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _, _, _, confirmationTarget) => (tx.htlcId, confirmationTarget) }.toMap == Map(htlca1.id -> ConfirmationTarget.Absolute(htlca1.cltvExpiry.blockHeight), htlca2.id -> ConfirmationTarget.Absolute(htlca2.cltvExpiry.blockHeight)))
+    assert(claimHtlcTxs.map(_.tx.commitTx.txid).toSet == Set(bobCommitTx.txid))
+    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ReplaceableClaimHtlcTimeout, confirmationTarget) => (tx.txInfo.htlcId, confirmationTarget) }.toMap == Map(htlca1.id -> ConfirmationTarget.Absolute(htlca1.cltvExpiry.blockHeight), htlca2.id -> ConfirmationTarget.Absolute(htlca2.cltvExpiry.blockHeight)))
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimMain.txid) // claim-main
@@ -3501,7 +3502,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       alice2blockchain.expectMsgType[PublishReplaceableTx], // htlc 1
       alice2blockchain.expectMsgType[PublishReplaceableTx], // htlc 2
       alice2blockchain.expectMsgType[PublishReplaceableTx], // htlc 3
-    ).map(p => p.txInfo.asInstanceOf[HtlcTx].htlcId -> p.confirmationTarget).toMap
+    ).map(p => p.tx.txInfo.asInstanceOf[HtlcTx].htlcId -> p.confirmationTarget).toMap
     assert(htlcConfirmationTargets == Map(
       htlcb1.id -> ConfirmationTarget.Absolute(htlcb1.cltvExpiry.blockHeight),
       htlca1.id -> ConfirmationTarget.Absolute(htlca1.cltvExpiry.blockHeight),
@@ -3518,7 +3519,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       alice2blockchain.expectMsgType[WatchOutputSpent], // local anchor
     ).map(w => OutPoint(w.txId, w.outputIndex)).toSet
     val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
-    assert(watchedOutputs == localCommitPublished.htlcTxs.keySet + localAnchor.txInfo.input.outPoint)
+    assert(watchedOutputs == localCommitPublished.htlcTxs.keySet + localAnchor.tx.txInfo.input.outPoint)
     alice2blockchain.expectNoMessage(1 second)
   }
 

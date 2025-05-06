@@ -25,13 +25,13 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.publish.ReplaceableRemoteCommitAnchor
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
-import fr.acinq.eclair.transactions.Transactions.ClaimAnchorOutputTx
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -112,7 +112,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       systemA.eventStream.subscribe(aliceListener.ref, classOf[LocalChannelUpdate])
       val bobListener = TestProbe()
       systemB.eventStream.subscribe(bobListener.ref, classOf[LocalChannelUpdate])
-      
+
       alice2bob.expectMsgType[AnnouncementSignatures]
       alice2bob.forward(bob)
       alice2bob.expectMsgType[ChannelUpdate]
@@ -725,10 +725,10 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
     // in response to that, alice publishes her claim txs
     val anchorTx = alice2blockchain.expectMsgType[PublishReplaceableTx]
-    assert(anchorTx.txInfo.isInstanceOf[ClaimAnchorOutputTx])
+    assert(anchorTx.tx.isInstanceOf[ReplaceableRemoteCommitAnchor])
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
     // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
+    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].tx.txInfo.tx)
     val htlcAmountClaimed = (for (claimHtlcTx <- claimHtlcTxs) yield {
       assert(claimHtlcTx.txIn.size == 1)
       assert(claimHtlcTx.txOut.size == 1)
@@ -775,11 +775,11 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // in response to that, alice publishes her claim txs
-    alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx // claim local anchor output
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].tx.isInstanceOf[ReplaceableRemoteCommitAnchor])
     val claimTxs = Seq(
       alice2blockchain.expectMsgType[PublishFinalTx].tx,
       // there is only one htlc to claim in the commitment bob published
-      alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx
+      alice2blockchain.expectMsgType[PublishReplaceableTx].tx.txInfo.tx
     )
     val amountClaimed = (for (claimTx <- claimTxs) yield {
       assert(claimTx.txIn.size == 1)
