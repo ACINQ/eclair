@@ -988,36 +988,6 @@ object Helpers {
         }
       }
 
-      /**
-       * We made some changes to [[TransactionWithInputInfo]] between v0.12.0 and v0.13.0 which require recreating the
-       * transactions after updating eclair, otherwise we will be missing data and won't be able to correctly sign.
-       */
-      def recreateTxsIfNeeded(lcp: LocalCommitPublished, channelKeys: ChannelKeys, commitment: FullCommitment, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): LocalCommitPublished = {
-        val hasLegacyMainDelayedTx = lcp.claimMainDelayedOutputTx.exists(_.toLocalDelay.toInt == 0)
-        val hasLegacyHtlcTxs = lcp.htlcTxs.values.flatten.exists(tx => tx.paymentHash == ByteVector32.Zeroes || tx.htlcExpiry.toLong == 0)
-        val hasLegacyClaimHtlcDelayedTxs = lcp.claimHtlcDelayedTxs.exists(_.toLocalDelay.toInt == 0)
-        // It is *our* commitment transaction: it uses the to_self_delay that *they* set.
-        val toLocalDelay = commitment.params.remoteParams.toSelfDelay
-        if (hasLegacyHtlcTxs) {
-          log.warning("recreating local HTLC transactions that were missing payment_hash and expiry")
-          val lcp1 = claimCommitTxOutputs(channelKeys, commitment, lcp.commitTx, feerates, onChainFeeConf, finalScriptPubKey)
-          lcp.copy(
-            claimMainDelayedOutputTx = lcp1.claimMainDelayedOutputTx,
-            htlcTxs = lcp1.htlcTxs,
-            claimHtlcDelayedTxs = lcp.claimHtlcDelayedTxs.map(_.copy(toLocalDelay = toLocalDelay)),
-          )
-        } else if (hasLegacyMainDelayedTx || hasLegacyClaimHtlcDelayedTxs) {
-          log.warning("recreating local transactions that were missing to_self_delay")
-          lcp.copy(
-            claimMainDelayedOutputTx = lcp.claimMainDelayedOutputTx.map(_.copy(toLocalDelay = toLocalDelay)),
-            claimHtlcDelayedTxs = lcp.claimHtlcDelayedTxs.map(_.copy(toLocalDelay = toLocalDelay)),
-          )
-        } else {
-          log.debug("no need to recreate local commit transactions")
-          lcp
-        }
-      }
-
     }
 
     object RemoteClose {
@@ -1133,26 +1103,6 @@ object Helpers {
               ClaimHtlcTimeoutTx.createSignedTx(commitKeys, remoteCommitTx.tx, commitment.localParams.dustLimit, outputs, finalScriptPubKey, add, feeratePerKwHtlc, commitment.params.commitmentFormat)
             }.map(claimHtlcTx => claimHtlcTx.input.outPoint -> Some(claimHtlcTx))
         }.flatten.toMap
-      }
-
-      /**
-       * We made some changes to [[TransactionWithInputInfo]] between v0.12.0 and v0.13.0 which require recreating the
-       * transactions after updating eclair, otherwise we will be missing data and won't be able to correctly sign.
-       */
-      def recreateTxsIfNeeded(rcp: RemoteCommitPublished, channelKeys: ChannelKeys, commitment: FullCommitment, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): RemoteCommitPublished = {
-        val hasLegacyClaimHtlcTxs = rcp.claimHtlcTxs.values.flatten.exists(tx => tx.paymentHash == ByteVector32.Zeroes || tx.htlcExpiry.toLong == 0)
-        if (hasLegacyClaimHtlcTxs) {
-          log.warning("recreating claim-HTLC transactions that were missing payment_hash and expiry")
-          val remoteCommit = commitment.nextRemoteCommit_opt match {
-            case Some(nextRemoteCommit) if nextRemoteCommit.commit.txid == rcp.commitTx.txid => nextRemoteCommit.commit
-            case _ => commitment.remoteCommit
-          }
-          val rcp1 = claimCommitTxOutputs(channelKeys, commitment, remoteCommit, rcp.commitTx, feerates, onChainFeeConf, finalScriptPubKey)
-          rcp.copy(claimHtlcTxs = rcp1.claimHtlcTxs)
-        } else {
-          log.debug("no need to recreate remote commit transactions")
-          rcp
-        }
       }
 
     }
@@ -1276,45 +1226,6 @@ object Helpers {
           }.getOrElse((revokedCommitPublished, Nil))
         } else {
           (revokedCommitPublished, Nil)
-        }
-      }
-
-      /**
-       * We made some changes to [[TransactionWithInputInfo]] between v0.12.0 and v0.13.0 which require recreating the
-       * transactions after updating eclair, otherwise we will be missing data and won't be able to correctly sign.
-       */
-      def recreateTxsIfNeeded(rvk: RevokedCommitPublished, channelKeys: ChannelKeys, commitments: Commitments, db: ChannelsDb, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): RevokedCommitPublished = {
-        val hasLegacyMainPenaltyTx = rvk.mainPenaltyTx.exists(_.toRemoteDelay.toInt == 0)
-        val hasLegacyHtlcPenaltyTxs = rvk.htlcPenaltyTxs.exists(tx => tx.paymentHash == ByteVector32.Zeroes || tx.htlcExpiry.toLong == 0)
-        val hasLegacyClaimHtlcDelayedPenaltyTxs = rvk.claimHtlcDelayedPenaltyTxs.exists(_.toRemoteDelay.toInt == 0)
-        // It is *their* commitment transaction: it uses the to_self_delay that *we* set.
-        val toRemoteDelay = commitments.params.localParams.toSelfDelay
-        if (hasLegacyHtlcPenaltyTxs) {
-          log.warning("recreating HTLC-penalty transactions that were missing payment_hash and expiry")
-          val rvk1_opt = for {
-            (commitmentNumber, remotePerCommitmentSecret) <- getRemotePerCommitmentSecret(commitments.params, channelKeys, commitments.remotePerCommitmentSecrets, rvk.commitTx)
-            rvk1 = claimCommitTxOutputs(commitments.params, channelKeys, rvk.commitTx, commitmentNumber, remotePerCommitmentSecret, db, feerates, onChainFeeConf, finalScriptPubKey)
-          } yield rvk1
-          rvk1_opt match {
-            case Some(rvk1) =>
-              rvk.copy(
-                mainPenaltyTx = rvk1.mainPenaltyTx,
-                htlcPenaltyTxs = rvk1.htlcPenaltyTxs,
-                claimHtlcDelayedPenaltyTxs = rvk.claimHtlcDelayedPenaltyTxs.map(_.copy(toRemoteDelay = toRemoteDelay)),
-              )
-            case None =>
-              log.error("could not recreate HTLC-penalty transactions: this shouldn't happen!")
-              rvk
-          }
-        } else if (hasLegacyMainPenaltyTx || hasLegacyClaimHtlcDelayedPenaltyTxs) {
-          log.warning("recreating penalty transactions that were missing to_self_delay")
-          rvk.copy(
-            mainPenaltyTx = rvk.mainPenaltyTx.map(_.copy(toRemoteDelay = toRemoteDelay)),
-            claimHtlcDelayedPenaltyTxs = rvk.claimHtlcDelayedPenaltyTxs.map(_.copy(toRemoteDelay = toRemoteDelay)),
-          )
-        } else {
-          log.debug("no need to recreate penalty transactions")
-          rvk
         }
       }
 
