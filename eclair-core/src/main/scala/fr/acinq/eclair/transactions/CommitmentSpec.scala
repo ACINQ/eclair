@@ -42,10 +42,18 @@ object CommitmentOutput {
   // @formatter:on
 
   def isLessThan(a: CommitmentOutput, b: CommitmentOutput): Boolean = (a, b) match {
+    // Outgoing HTLCs that have the same payment_hash will have the same script. If they also have the same amount, they
+    // will produce exactly the same output: in that case, we must sort them using their expiry (see Bolt 3).
+    // If they also have the same expiry, it doesn't really matter how we sort them, but in order to provide a fully
+    // deterministic ordering (which is useful for tests), we sort them by htlc_id, which cannot be equal.
     case (a: OutHtlc, b: OutHtlc) if a.txOut == b.txOut && a.htlc.add.cltvExpiry == b.htlc.add.cltvExpiry => a.htlc.add.id <= b.htlc.add.id
     case (a: OutHtlc, b: OutHtlc) if a.txOut == b.txOut => a.htlc.add.cltvExpiry <= b.htlc.add.cltvExpiry
-    case (a: InHtlc, b: InHtlc) if a.txOut == b.txOut && a.htlc.add.cltvExpiry == b.htlc.add.cltvExpiry => a.htlc.add.id <= b.htlc.add.id
-    case (a: InHtlc, b: InHtlc) if a.txOut == b.txOut => a.htlc.add.cltvExpiry <= b.htlc.add.cltvExpiry
+    // Incoming HTLCs that have the same payment_hash *and* expiry will have the same script. If they also have the same
+    // amount, they will produce exactly the same output: just like offered HTLCs, it doesn't really matter how we sort
+    // them, but we use the htlc_id to provide a fully deterministic ordering. Note that the expiry is included in the
+    // script, so HTLCs with different expiries will have different scripts, and will thus be sorted by script as required
+    // by Bolt 3.
+    case (a: InHtlc, b: InHtlc) if a.txOut == b.txOut => a.htlc.add.id <= b.htlc.add.id
     case _ => LexicographicalOrdering.isLessThan(a.txOut, b.txOut)
   }
 }
