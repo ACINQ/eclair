@@ -32,6 +32,7 @@ import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
+import fr.acinq.eclair.channel.publish.ReplaceableRemoteCommitAnchor
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx, SetChannelId}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
@@ -2676,7 +2677,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(desc == p.desc)
     p match {
       case p: PublishFinalTx => p.tx
-      case p: PublishReplaceableTx => p.txInfo.tx
+      case p: PublishReplaceableTx => p.tx.txInfo.tx
     }
   }
 
@@ -2986,9 +2987,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // bob's remote tx wins
     alice ! WatchAlternativeCommitTxConfirmedTriggered(BlockHeight(400000), 42, bobCommitTx1)
     // we're back to the normal handling of remote commit
-    inside(alice2blockchain.expectMsgType[PublishReplaceableTx]) { tx =>
-      assert(tx.txInfo.isInstanceOf[Transactions.ClaimAnchorOutputTx])
-      assert(tx.commitTx == bobCommitTx1)
+    inside(alice2blockchain.expectMsgType[PublishReplaceableTx]) { publish =>
+      assert(publish.tx.isInstanceOf[ReplaceableRemoteCommitAnchor])
+      assert(publish.tx.commitTx == bobCommitTx1)
     }
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx].tx
     val claimHtlcsTxsOut = htlcs.aliceToBob.map(_ => assertPublished(alice2blockchain, "claim-htlc-timeout"))

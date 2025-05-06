@@ -501,7 +501,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         OutPoint(randomTxId(), 3) -> TxOut(walletAmount, Script.pay2wpkh(walletPub)),
         OutPoint(randomTxId(), 0) -> TxOut(walletAmount, Script.pay2wpkh(walletPub)),
       )
-      val Right(claimAnchorOutputTx) = ClaimAnchorOutputTx.createUnsignedTx(localFundingPriv, localKeys.publicKeys, commitTx, ConfirmationTarget.Absolute(BlockHeight(0)), UnsafeLegacyAnchorOutputsCommitmentFormat).map(anchorTx => {
+      val Right(claimAnchorOutputTx) = ClaimAnchorOutputTx.createUnsignedTx(localFundingPriv, localKeys.publicKeys, commitTx, UnsafeLegacyAnchorOutputsCommitmentFormat).map(anchorTx => {
         val walletTxIn = walletInputs.map { case (outpoint, _) => TxIn(outpoint, ByteVector.empty, 0) }
         val unsignedTx = anchorTx.tx.copy(txIn = anchorTx.tx.txIn ++ walletTxIn)
         val sig1 = unsignedTx.signInput(1, Script.pay2pkh(walletPub), SIGHASH_ALL, walletAmount, SigVersion.SIGVERSION_WITNESS_V0, walletPriv)
@@ -523,7 +523,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends remote anchor
-      val Right(claimAnchorOutputTx) = ClaimAnchorOutputTx.createUnsignedTx(remoteFundingPriv, remoteKeys.publicKeys, commitTx, ConfirmationTarget.Absolute(BlockHeight(0)), UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val Right(claimAnchorOutputTx) = ClaimAnchorOutputTx.createUnsignedTx(remoteFundingPriv, remoteKeys.publicKeys, commitTx, UnsafeLegacyAnchorOutputsCommitmentFormat)
       assert(!claimAnchorOutputTx.validate(Map.empty))
       val signedTx = claimAnchorOutputTx.sign(remoteFundingPriv, remoteKeys, UnsafeLegacyAnchorOutputsCommitmentFormat, Map.empty)
       assert(signedTx.validate(Map.empty))
