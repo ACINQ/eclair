@@ -264,11 +264,6 @@ object Transactions {
       ChannelSpendSignature.IndividualSignature(sig)
     }
 
-    /** Create a partial transaction for the channel's musig2 funding output when using a [[TaprootCommitmentFormat]]. */
-    def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, extraUtxos: Map[OutPoint, TxOut]): ChannelSpendSignature.PartialSignatureWithNonce = {
-      ???
-    }
-
     /** Verify a signature received from the remote channel participant. */
     def checkRemoteSig(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, remoteSig: ChannelSpendSignature): Boolean = {
       remoteSig match {
@@ -284,11 +279,6 @@ object Transactions {
       val witness = Scripts.witness2of2(localSig.sig, remoteSig.sig, localFundingPubkey, remoteFundingPubkey)
       tx.updateWitness(inputIndex, witness)
     }
-
-    /** Aggregate local and remote channel spending partial signatures for a [[TaprootCommitmentFormat]]. */
-    def aggregateSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: PartialSignatureWithNonce, remoteSig: PartialSignatureWithNonce): Transaction = {
-      ???
-    }
   }
 
   /** This transaction collaboratively spends the channel funding output to change its capacity. */
@@ -301,8 +291,6 @@ object Transactions {
     override val desc: String = "commit-tx"
 
     def sign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey): ChannelSpendSignature.IndividualSignature = sign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
-
-    def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey): ChannelSpendSignature.PartialSignatureWithNonce = partialSign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
   }
 
   /** This transaction collaboratively spends the channel funding output (mutual-close). */
@@ -311,8 +299,6 @@ object Transactions {
     val toLocalOutput_opt: Option[TxOut] = toLocalOutputIndex_opt.map(i => tx.txOut(i.toInt))
 
     def sign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey): ChannelSpendSignature.IndividualSignature = sign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
-
-    def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey): ChannelSpendSignature.PartialSignatureWithNonce = partialSign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
   }
 
   object ClosingTx {
