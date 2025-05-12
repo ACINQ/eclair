@@ -34,6 +34,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPass
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.LocalOnChainKeyManager
+import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.{BlockHeight, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
 import grizzled.slf4j.Logging
@@ -708,7 +709,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     }
     val commitOutpoint = OutPoint(commitTx, commitTx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey))))
     val Seq(anchorTx1, anchorTx2) = Seq(FeeratePerKw(1000 sat), FeeratePerKw(2000 sat)).map { feerate =>
-      val externalInput = Map(commitOutpoint -> Transactions.claimP2WPKHOutputWeight.toLong)
+      val externalInput = Map(commitOutpoint -> (Transactions.p2wpkhInputWeight + Transactions.p2wpkhOutputWeight).toLong)
       val txNotFunded = Transaction(2, Seq(TxIn(commitOutpoint, Nil, 0)), Seq(TxOut(200_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
       wallet.fundTransaction(txNotFunded, feerate, externalInputsWeight = externalInput).pipeTo(sender.ref)
       signTransaction(wallet, sender.expectMsgType[FundTransactionResponse].tx).pipeTo(sender.ref)
@@ -779,7 +780,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     }
     val commitOutpoint = OutPoint(commitTx, commitTx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey))))
     val Seq(htlcSuccessTx, htlcTimeoutTx) = Seq((wallet1, FeeratePerKw(1000 sat)), (wallet2, FeeratePerKw(2000 sat))).map { case (wallet, feerate) =>
-      val externalInput = Map(commitOutpoint -> Transactions.claimP2WPKHOutputWeight.toLong)
+      val externalInput = Map(commitOutpoint -> (Transactions.p2wpkhInputWeight + Transactions.p2wpkhOutputWeight).toLong)
       val txNotFunded = Transaction(2, Seq(TxIn(commitOutpoint, Nil, 0)), Seq(TxOut(200_000 sat, Script.pay2wpkh(priv.publicKey))), 0)
       wallet.fundTransaction(txNotFunded, feerate, externalInputsWeight = externalInput).pipeTo(sender.ref)
       signTransaction(wallet, sender.expectMsgType[FundTransactionResponse].tx).pipeTo(sender.ref)
@@ -1817,7 +1818,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       }
       val localAnchorTx = {
         val txNotFunded = Transaction(2, Seq(TxIn(OutPoint(localCommitTx, 1), Nil, 0)), Seq(TxOut(300_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
-        val externalWeight = Map(txNotFunded.txIn.head.outPoint -> Transactions.anchorInputWeight.toLong)
+        val externalWeight = Map(txNotFunded.txIn.head.outPoint -> ZeroFeeHtlcTxAnchorOutputsCommitmentFormat.anchorInputWeight.toLong)
         wallet.fundTransaction(txNotFunded, FeeratePerKw(2500 sat), externalInputsWeight = externalWeight).pipeTo(sender.ref)
         signTransaction(wallet, sender.expectMsgType[FundTransactionResponse].tx).pipeTo(sender.ref)
         val partiallySignedTx = sender.expectMsgType[SignTransactionResponse].tx
@@ -2043,7 +2044,7 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     wallet.getReceiveAddress(Some(P2tr)).pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
 
-    val tx  = Transaction(version = 2,
+    val tx = Transaction(version = 2,
       txIn = TxIn(utxo1, Nil, TxIn.SEQUENCE_FINAL) :: TxIn(utxo2, Nil, TxIn.SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(199_000.sat, addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get) :: Nil,
       lockTime = 0)

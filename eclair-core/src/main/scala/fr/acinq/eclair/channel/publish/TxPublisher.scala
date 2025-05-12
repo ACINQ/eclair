@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.publish
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
@@ -95,9 +95,16 @@ object TxPublisher {
    *
    * @param commitTx commitment transaction that this transaction is spending.
    */
-  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, channelKeys: ChannelKeys, commitment: FullCommitment, commitTx: Transaction) extends PublishTx {
+  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, channelKeys: ChannelKeys, commitment: FullCommitment, commitTx: Transaction, confirmationTarget: ConfirmationTarget) extends PublishTx {
     override def input: OutPoint = txInfo.input.outPoint
     override def desc: String = txInfo.desc
+
+    lazy val fundingKey: PrivateKey = channelKeys.fundingKey(commitment.fundingTxIndex)
+
+    lazy val remotePerCommitmentPoint: PublicKey = commitment.nextRemoteCommit_opt match {
+      case Some(c) if input.txid == c.commit.txid => c.commit.remotePerCommitmentPoint
+      case _ => commitment.remoteCommit.remotePerCommitmentPoint
+    }
 
     /** True if we're trying to bump our local commit with an anchor transaction. */
     lazy val isLocalCommitAnchor: Boolean = txInfo match {
@@ -233,7 +240,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         }
 
       case cmd: PublishReplaceableTx =>
-        val proposedConfirmationTarget = cmd.txInfo.confirmationTarget
+        val proposedConfirmationTarget = cmd.confirmationTarget
         val attempts = pending.getOrElse(cmd.input, PublishAttempts.empty)
         attempts.replaceableAttempt_opt match {
           case Some(currentAttempt) =>

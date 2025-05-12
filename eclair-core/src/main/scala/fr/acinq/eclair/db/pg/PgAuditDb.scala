@@ -25,7 +25,6 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, Paginated, TimestampMilli}
 import grizzled.slf4j.Logging
 
@@ -466,9 +465,10 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             case Some(RelayedPart(_, _, _, "channel", _)) => incoming.zip(outgoing).map {
               case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, in.receivedAt, out.settledAt)
             }
-            case Some(RelayedPart(_, _, _, "trampoline", _)) =>
-              val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PlaceHolderPubKey))
-              TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) :: Nil
+            case Some(RelayedPart(_, _, _, "trampoline", _)) => trampolineByHash.get(paymentHash) match {
+              case Some((nextTrampolineAmount, nextTrampolineNodeId)) => TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) :: Nil
+              case None => Nil
+            }
             case Some(RelayedPart(_, _, _, "on-the-fly-funding", _)) =>
               Seq(OnTheFlyFundingPaymentRelayed(paymentHash, incoming, outgoing))
             case _ => Nil

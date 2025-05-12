@@ -30,13 +30,11 @@ import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.transactions.Transactions.TxOwner
-import fr.acinq.eclair.transactions.{Scripts, Transactions}
+import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.transactions.Transactions.SegwitV0CommitmentFormat
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
 import fr.acinq.eclair.{MilliSatoshiLong, UInt64, randomKey, toLongId}
 import scodec.bits.ByteVector
-
-import scala.util.{Failure, Success}
 
 /**
  * Created by t-bast on 28/03/2022.
@@ -218,7 +216,9 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Left(ex) => handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
-          val localSigOfRemoteTx = remoteCommitTx.sign(fundingKey, TxOwner.Remote, params.commitmentFormat, Map.empty)
+          val localSigOfRemoteTx = params.commitmentFormat match {
+            case _: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey).sig
+          }
           // signature of their initial commitment tx that pays remote pushMsat
           val fundingCreated = FundingCreated(
             temporaryChannelId = temporaryChannelId,
@@ -268,12 +268,12 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Left(ex) => handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           // check remote signature validity
-          val localSigOfLocalTx = localCommitTx.sign(fundingKey, TxOwner.Local, params.commitmentFormat, Map.empty)
-          val signedLocalCommitTx = localCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
-          Transactions.checkSpendable(signedLocalCommitTx) match {
-            case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxId, commitmentNumber = 0, localCommitTx.tx), d, None)
-            case Success(_) =>
-              val localSigOfRemoteTx = remoteCommitTx.sign(fundingKey, TxOwner.Remote, params.commitmentFormat, Map.empty)
+          localCommitTx.checkRemoteSig(fundingKey.publicKey, remoteFundingPubKey, ChannelSpendSignature.IndividualSignature(remoteSig)) match {
+            case false => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxId, commitmentNumber = 0, localCommitTx.tx), d, None)
+            case true =>
+              val localSigOfRemoteTx = params.commitmentFormat match {
+                case _: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey).sig
+              }
               val channelId = toLongId(fundingTxId, fundingTxOutputIndex)
               val fundingSigned = FundingSigned(
                 channelId = channelId,
@@ -285,7 +285,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                 remoteFundingPubKey = remoteFundingPubKey,
                 localFundingStatus = SingleFundedUnconfirmedFundingTx(None),
                 remoteFundingStatus = RemoteFundingStatus.NotLocked,
-                localCommit = LocalCommit(0, localSpec, CommitTxAndRemoteSig(localCommitTx, remoteSig), htlcTxsAndRemoteSigs = Nil),
+                localCommit = LocalCommit(0, localSpec, CommitTxAndRemoteSig(localCommitTx, ChannelSpendSignature.IndividualSignature(remoteSig)), htlcTxsAndRemoteSigs = Nil),
                 remoteCommit = RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
                 nextRemoteCommit_opt = None)
               val commitments = Commitments(
@@ -316,23 +316,21 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
   when(WAIT_FOR_FUNDING_SIGNED)(handleExceptions {
     case Event(msg@FundingSigned(_, remoteSig, _), d@DATA_WAIT_FOR_FUNDING_SIGNED(params, remoteFundingPubKey, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, fundingCreated, _)) =>
       // we make sure that their sig checks out and that our first commit tx is spendable
-      val fundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
-      val localSigOfLocalTx = localCommitTx.sign(fundingKey, TxOwner.Local, params.commitmentFormat, Map.empty)
-      val signedLocalCommitTx = localCommitTx.addSigs(fundingKey.publicKey, remoteFundingPubKey, localSigOfLocalTx, remoteSig)
-      Transactions.checkSpendable(signedLocalCommitTx) match {
-        case Failure(cause) =>
+      val fundingPubkey = channelKeys.fundingKey(fundingTxIndex = 0).publicKey
+      localCommitTx.checkRemoteSig(fundingPubkey, remoteFundingPubKey, ChannelSpendSignature.IndividualSignature(remoteSig)) match {
+        case false =>
           // we rollback the funding tx, it will never be published
           wallet.rollback(fundingTx)
-          d.replyTo ! OpenChannelResponse.Rejected(cause.getMessage)
+          d.replyTo ! OpenChannelResponse.Rejected("invalid commit signatures")
           handleLocalError(InvalidCommitmentSignature(d.channelId, fundingTx.txid, commitmentNumber = 0, localCommitTx.tx), d, Some(msg))
-        case Success(_) =>
+        case true =>
           val commitment = Commitment(
             fundingTxIndex = 0,
             firstRemoteCommitIndex = 0,
             remoteFundingPubKey = remoteFundingPubKey,
             localFundingStatus = SingleFundedUnconfirmedFundingTx(Some(fundingTx)),
             remoteFundingStatus = RemoteFundingStatus.NotLocked,
-            localCommit = LocalCommit(0, localSpec, CommitTxAndRemoteSig(localCommitTx, remoteSig), htlcTxsAndRemoteSigs = Nil),
+            localCommit = LocalCommit(0, localSpec, CommitTxAndRemoteSig(localCommitTx, ChannelSpendSignature.IndividualSignature(remoteSig)), htlcTxsAndRemoteSigs = Nil),
             remoteCommit = remoteCommit,
             nextRemoteCommit_opt = None
           )

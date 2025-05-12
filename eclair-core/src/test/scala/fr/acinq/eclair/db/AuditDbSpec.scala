@@ -31,7 +31,6 @@ import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
 import fr.acinq.eclair.wire.protocol.Error
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuite
@@ -435,9 +434,9 @@ class AuditDbSpec extends AnyFunSuite {
   }
 
   test("migrate audit database v4 -> current") {
-
     val relayed1 = ChannelPaymentRelayed(600 msat, 500 msat, randomBytes32(), randomBytes32(), randomBytes32(), 105 unixms, 105 unixms)
-    val relayed2 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.IncomingPart(300 msat, randomBytes32(), 110 unixms), PaymentRelayed.IncomingPart(350 msat, randomBytes32(), 110 unixms)), Seq(PaymentRelayed.OutgoingPart(600 msat, randomBytes32(), 110 unixms)), PlaceHolderPubKey, 0 msat)
+    // We weren't properly storing the outgoing trampoline node, which makes this useless, so we'll skip it when migrating.
+    val relayed2 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.IncomingPart(300 msat, randomBytes32(), 110 unixms), PaymentRelayed.IncomingPart(350 msat, randomBytes32(), 110 unixms)), Seq(PaymentRelayed.OutgoingPart(600 msat, randomBytes32(), 110 unixms)), randomKey().publicKey, 0 msat)
 
     forAllDbs {
       case dbs: TestPgDatabases =>
@@ -510,7 +509,7 @@ class AuditDbSpec extends AnyFunSuite {
           postCheck = connection => {
             val migratedDb = dbs.audit
 
-            assert(migratedDb.listRelayed(100 unixms, 120 unixms) == Seq(relayed1, relayed2))
+            assert(migratedDb.listRelayed(100 unixms, 120 unixms) == Seq(relayed1))
 
             val postMigrationDb = new PgAuditDb()(dbs.datasource)
             using(connection.createStatement()) { statement =>
@@ -518,7 +517,7 @@ class AuditDbSpec extends AnyFunSuite {
             }
             val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.IncomingPart(450 msat, randomBytes32(), 150 unixms), PaymentRelayed.IncomingPart(500 msat, randomBytes32(), 150 unixms)), Seq(PaymentRelayed.OutgoingPart(800 msat, randomBytes32(), 150 unixms)), randomKey().publicKey, 700 msat)
             postMigrationDb.add(relayed3)
-            assert(postMigrationDb.listRelayed(100 unixms, 160 unixms) == Seq(relayed1, relayed2, relayed3))
+            assert(postMigrationDb.listRelayed(100 unixms, 160 unixms) == Seq(relayed1, relayed3))
           }
         )
       case dbs: TestSqliteDatabases =>
@@ -593,7 +592,7 @@ class AuditDbSpec extends AnyFunSuite {
             using(connection.createStatement()) { statement =>
               assert(getVersion(statement, "audit").contains(SqliteAuditDb.CURRENT_VERSION))
             }
-            assert(migratedDb.listRelayed(100 unixms, 120 unixms) == Seq(relayed1, relayed2))
+            assert(migratedDb.listRelayed(100 unixms, 120 unixms) == Seq(relayed1))
 
             val postMigrationDb = new SqliteAuditDb(connection)
             using(connection.createStatement()) { statement =>
@@ -601,7 +600,7 @@ class AuditDbSpec extends AnyFunSuite {
             }
             val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.IncomingPart(450 msat, randomBytes32(), 150 unixms), PaymentRelayed.IncomingPart(500 msat, randomBytes32(), 150 unixms)), Seq(PaymentRelayed.OutgoingPart(800 msat, randomBytes32(), 150 unixms)), randomKey().publicKey, 700 msat)
             postMigrationDb.add(relayed3)
-            assert(postMigrationDb.listRelayed(100 unixms, 160 unixms) == Seq(relayed1, relayed2, relayed3))
+            assert(postMigrationDb.listRelayed(100 unixms, 160 unixms) == Seq(relayed1, relayed3))
           }
         )
     }

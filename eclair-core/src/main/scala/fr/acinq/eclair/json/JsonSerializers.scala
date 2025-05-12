@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.balance.CheckBalance.{DetailedOnChainBalance, GlobalBalance, OffChainBalance}
-import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
@@ -255,56 +255,40 @@ object KeyPathSerializer extends MinimalSerializer({
 })
 
 object TransactionWithInputInfoSerializer extends MinimalSerializer({
-  case x: HtlcSuccessTx => JObject(List(
+  case x: HtlcTx => JObject(List(
     JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString())),
     JField("paymentHash", JString(x.paymentHash.toString())),
     JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
-  ))
-  case x: HtlcTimeoutTx => JObject(List(
-    JField("txid", JString(x.tx.txid.value.toHex)),
-    JField("tx", JString(x.tx.toString())),
-    JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
-  ))
-  case x: ClaimHtlcSuccessTx => JObject(List(
-    JField("txid", JString(x.tx.txid.value.toHex)),
-    JField("tx", JString(x.tx.toString())),
-    JField("paymentHash", JString(x.paymentHash.toString())),
-    JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
+    JField("htlcExpiry", JLong(x.htlcExpiry.toLong))
   ))
   case x: ClaimHtlcTx => JObject(List(
     JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString())),
+    JField("paymentHash", JString(x.paymentHash.toString())),
     JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
+    JField("htlcExpiry", JLong(x.htlcExpiry.toLong))
+  ))
+  case x: HtlcPenaltyTx => JObject(List(
+    JField("txid", JString(x.tx.txid.value.toHex)),
+    JField("tx", JString(x.tx.toString())),
+    JField("paymentHash", JString(x.paymentHash.toString())),
+    JField("htlcExpiry", JLong(x.htlcExpiry.toLong))
   ))
   case x: ClosingTx =>
     val txFields = List(
       JField("txid", JString(x.tx.txid.value.toHex)),
       JField("tx", JString(x.tx.toString()))
     )
-    x.toLocalOutput match {
+    x.toLocalOutput_opt match {
       case Some(toLocal) =>
         val toLocalField = JField("toLocalOutput", JObject(List(
-          JField("index", JLong(toLocal.index)),
           JField("amount", JLong(toLocal.amount.toLong)),
           JField("publicKeyScript", JString(toLocal.publicKeyScript.toHex))
         )))
         JObject(txFields :+ toLocalField)
       case None => JObject(txFields)
     }
-  case x: ReplaceableTransactionWithInputInfo => JObject(List(
-    JField("txid", JString(x.tx.txid.value.toHex)),
-    JField("tx", JString(x.tx.toString())),
-    x.confirmationTarget match {
-      case ConfirmationTarget.Absolute(confirmBefore) => JField("confirmBeforeBlock", JLong(confirmBefore.toLong))
-      case ConfirmationTarget.Priority(priority) => JField("confirmPriority", JString(priority.toString))
-    }
-
-  ))
   case x: TransactionWithInputInfo => JObject(List(
     JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString()))
@@ -334,11 +318,11 @@ object ColorSerializer extends MinimalSerializer({
 
 // @formatter:off
 private case class CommitTxAndRemoteSigJson(commitTx: CommitTx, remoteSig: ByteVector64)
-private case class CommitTxAndRemotePartialSigJson(commitTx: CommitTx, remoteSig: RemoteSignature.PartialSignatureWithNonce)
+private case class CommitTxAndRemotePartialSigJson(commitTx: CommitTx, remoteSig: ChannelSpendSignature.PartialSignatureWithNonce)
 object CommitTxAndRemoteSigSerializer extends ConvertClassSerializer[CommitTxAndRemoteSig](
   i => i.remoteSig match {
-    case f: RemoteSignature.FullSignature => CommitTxAndRemoteSigJson(i.commitTx, f.sig)
-    case p: RemoteSignature.PartialSignatureWithNonce => CommitTxAndRemotePartialSigJson(i.commitTx, p)
+    case f: ChannelSpendSignature.IndividualSignature => CommitTxAndRemoteSigJson(i.commitTx, f.sig)
+    case p: ChannelSpendSignature.PartialSignatureWithNonce => CommitTxAndRemotePartialSigJson(i.commitTx, p)
     }
 )
 // @formatter:on
@@ -565,7 +549,7 @@ object OriginSerializer extends MinimalSerializer({
         JField("expiry", JLong(htlc.add.cltvExpiry.toLong)),
         JField("receivedAt", JLong(htlc.receivedAt.toLong)),
       )
-    }.toList)
+    })
     case o: Upstream.Cold.Channel => JObject(
       JField("channelId", JString(o.originChannelId.toHex)),
       JField("htlcId", JLong(o.originHtlcId)),
@@ -577,7 +561,7 @@ object OriginSerializer extends MinimalSerializer({
         JField("htlcId", JLong(htlc.originHtlcId)),
         JField("amount", JLong(htlc.amountIn.toLong)),
       )
-    }.toList)
+    })
   }
 })
 
