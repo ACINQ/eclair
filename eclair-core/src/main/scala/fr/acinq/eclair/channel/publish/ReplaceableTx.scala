@@ -172,7 +172,11 @@ case class ReplaceableHtlcTimeout(txInfo: HtlcTimeoutTx, commitKeys: LocalCommit
   }
 }
 
-/** A transaction spending an HTLC output from a remote commitment. */
+/**
+ * A transaction spending an HTLC output from a remote commitment.
+ * We're not using a pre-signed transaction (whereas we do for [[ReplaceableHtlc]]), so we don't need to add wallet
+ * inputs to set fees: we simply lower the amount of our output.
+ */
 sealed trait ReplaceableClaimHtlc extends ReplaceableTx {
   def sign(): ReplaceableClaimHtlc
 

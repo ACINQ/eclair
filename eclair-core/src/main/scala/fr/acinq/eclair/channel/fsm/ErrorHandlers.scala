@@ -241,7 +241,7 @@ trait ErrorHandlers extends CommonHandlers {
         val commitKeys = commitment.localKeys(channelKeys)
         val claimAnchor = for {
           confirmationTarget <- localCommitPublished.confirmationTarget(nodeParams.onChainFeeConf)
-          anchorTx <- claimAnchorTxs.headOption
+          anchorTx <- claimAnchorTx_opt
         } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, commitTx, commitment), confirmationTarget)
         val htlcTxs = redeemableHtlcTxs(localCommitPublished, commitKeys, commitment)
         List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ claimAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
@@ -259,7 +259,7 @@ trait ErrorHandlers extends CommonHandlers {
     // We watch outputs of the commitment tx that both parties may spend.
     // We also watch our local anchor: this ensures that we will correctly detect when it's confirmed and count its fees
     // in the audit DB, even if we restart before confirmation.
-    val watchSpentQueue = htlcTxs.keys ++ claimAnchorTxs.collect { case tx: Transactions.ClaimAnchorOutputTx if !localCommitPublished.isConfirmed => tx.input.outPoint }
+    val watchSpentQueue = htlcTxs.keys ++ claimAnchorTx_opt.collect { case tx if !localCommitPublished.isConfirmed => tx.input.outPoint }
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
@@ -330,7 +330,7 @@ trait ErrorHandlers extends CommonHandlers {
     val commitKeys = commitment.remoteKeys(channelKeys, remotePerCommitmentPoint)
     val claimAnchor = for {
       confirmationTarget <- remoteCommitPublished.confirmationTarget(nodeParams.onChainFeeConf)
-      anchorTx <- claimAnchorTxs.headOption
+      anchorTx <- claimAnchorTx_opt
     } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, commitTx, commitment), confirmationTarget)
     val htlcTxs = redeemableClaimHtlcTxs(remoteCommitPublished, commitKeys, commitment)
     val publishQueue = claimAnchor ++ claimMainOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)).toSeq ++ htlcTxs

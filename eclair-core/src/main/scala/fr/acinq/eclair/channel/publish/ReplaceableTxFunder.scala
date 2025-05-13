@@ -123,7 +123,7 @@ object ReplaceableTxFunder {
    * Adjust the main output of a claim-htlc tx to match our target feerate.
    * If the resulting output is too small, we skip the transaction.
    */
-  def adjustClaimHtlcTxOutput(claimHtlcTx: ReplaceableClaimHtlc, targetFeerate: FeeratePerKw): Either[TxGenerationSkipped, ReplaceableClaimHtlc] = {
+  private def adjustClaimHtlcTxOutput(claimHtlcTx: ReplaceableClaimHtlc, targetFeerate: FeeratePerKw): Either[TxGenerationSkipped, ReplaceableClaimHtlc] = {
     require(claimHtlcTx.txInfo.tx.txIn.size == 1, "claim-htlc transaction should have a single input")
     require(claimHtlcTx.txInfo.tx.txOut.size == 1, "claim-htlc transaction should have a single output")
     val expectedWeight = claimHtlcTx match {
@@ -150,7 +150,7 @@ object ReplaceableTxFunder {
 
   /**
    * Adjust the outputs of a transaction that was previously published at a lower feerate.
-   * If the current set of inputs doesn't let us to reach the target feerate, we will request new wallet inputs from bitcoind.
+   * If the current set of inputs doesn't let us reach the target feerate, we will request new wallet inputs from bitcoind.
    */
   def adjustPreviousTxOutput(previousTx: FundedTx, targetFeerate: FeeratePerKw): AdjustPreviousTxOutputResult = {
     val targetFee = previousTx.tx match {
