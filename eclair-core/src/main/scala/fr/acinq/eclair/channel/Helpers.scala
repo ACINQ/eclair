@@ -478,14 +478,14 @@ object Helpers {
             // we just sent a new commit_sig but they didn't receive it
             // we resend the same updates and the same sig, and preserve the same ordering
             val signedUpdates = commitments.changes.localChanges.signed
-            val commitSigs = commitments.active.flatMap(_.nextRemoteCommit_opt).map(_.sig)
+            val commitSigs = CommitSigs(commitments.active.flatMap(_.nextRemoteCommit_opt).map(_.sig))
             retransmitRevocation_opt match {
               case None =>
-                SyncResult.Success(retransmit = signedUpdates ++ commitSigs)
+                SyncResult.Success(retransmit = signedUpdates :+ commitSigs)
               case Some(revocation) if commitments.localCommitIndex > waitingForRevocation.sentAfterLocalCommitIndex =>
-                SyncResult.Success(retransmit = signedUpdates ++ commitSigs ++ Seq(revocation))
+                SyncResult.Success(retransmit = signedUpdates :+ commitSigs :+ revocation)
               case Some(revocation) =>
-                SyncResult.Success(retransmit = Seq(revocation) ++ signedUpdates ++ commitSigs)
+                SyncResult.Success(retransmit = revocation +: signedUpdates :+ commitSigs)
             }
           case Left(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (commitments.nextRemoteCommitIndex + 1) =>
             // we just sent a new commit_sig, they have received it but we haven't received their revocation

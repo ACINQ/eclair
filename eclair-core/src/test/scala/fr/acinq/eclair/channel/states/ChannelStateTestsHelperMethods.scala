@@ -27,7 +27,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, OnChainPubkeyCache, SingleKeyOnChainWallet}
+import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainPubkeyCache, OnChainWallet, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
@@ -463,31 +463,23 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val rHasChanges = r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.changes.localHasChanges
     s ! CMD_SIGN(Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
-    var sigs2r = 0
-    var batchSize = 0
-    do {
-      val sig = s2r.expectMsgType[CommitSig]
-      s2r.forward(r)
-      sigs2r += 1
-      batchSize = sig.batchSize
-    } while (sigs2r < batchSize)
+    s2r.expectMsgType[CommitSigs] match {
+      case sig: CommitSig => s2r.forward(r, sig)
+      case batch: CommitSigBatch => batch.messages.foreach(sig => s2r.forward(r, sig))
+    }
     r2s.expectMsgType[RevokeAndAck]
     r2s.forward(s)
-    var sigr2s = 0
-    do {
-      r2s.expectMsgType[CommitSig]
-      r2s.forward(s)
-      sigr2s += 1
-    } while (sigr2s < batchSize)
+    r2s.expectMsgType[CommitSigs] match {
+      case sig: CommitSig => r2s.forward(s, sig)
+      case batch: CommitSigBatch => batch.messages.foreach(sig => r2s.forward(s, sig))
+    }
     s2r.expectMsgType[RevokeAndAck]
     s2r.forward(r)
     if (rHasChanges) {
-      sigs2r = 0
-      do {
-        s2r.expectMsgType[CommitSig]
-        s2r.forward(r)
-        sigs2r += 1
-      } while (sigs2r < batchSize)
+      s2r.expectMsgType[CommitSigs] match {
+        case sig: CommitSig => s2r.forward(r, sig)
+        case batch: CommitSigBatch => batch.messages.foreach(sig => s2r.forward(r, sig))
+      }
       r2s.expectMsgType[RevokeAndAck]
       r2s.forward(s)
       eventually {

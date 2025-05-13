@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Stash, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32}
+import fr.acinq.bitcoin.scalacompat.BlockHash
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, FeatureCompatibilityResult, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -206,11 +206,13 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         stay()
 
       case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.transport => // if the message doesn't originate from the transport, it is an outgoing message
-        d.transport forward msg
+        msg match {
+          case batch: CommitSigBatch => batch.messages.foreach(msg => d.transport forward msg)
+          case msg => d.transport forward msg
+        }
         msg match {
           // If we send any channel management message to this peer, the connection should be persistent.
-          case _: ChannelMessage if !d.isPersistent =>
-            stay() using d.copy(isPersistent = true)
+          case _: ChannelMessage if !d.isPersistent => stay() using d.copy(isPersistent = true)
           case _ => stay()
         }
 

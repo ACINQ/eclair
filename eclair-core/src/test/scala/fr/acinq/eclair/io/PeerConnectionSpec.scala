@@ -21,7 +21,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, ChannelType, PaymentSecret, StaticRemoteKey, VariableLengthOnion}
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.ConnectionDown
@@ -331,6 +331,21 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsg(updates(10))
     transport.expectMsg(nodes(4))
     transport.expectNoMessage(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
+  }
+
+  test("send batch of commit_sig messages") { f =>
+    import f._
+    val probe = TestProbe()
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    val channelId = randomBytes32()
+    val commitSigs = Seq(
+      CommitSig(channelId, randomBytes64(), Nil),
+      CommitSig(channelId, randomBytes64(), Nil),
+      CommitSig(channelId, randomBytes64(), Nil),
+    )
+    probe.send(peerConnection, CommitSigBatch(commitSigs))
+    commitSigs.foreach(commitSig => transport.expectMsg(commitSig))
+    transport.expectNoMessage(100 millis)
   }
 
   test("react to peer's bad behavior") { f =>

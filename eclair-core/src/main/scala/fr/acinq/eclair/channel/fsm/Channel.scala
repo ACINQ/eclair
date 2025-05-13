@@ -3038,11 +3038,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
    */
 
   /** For splices we will send one commit_sig per active commitments. */
-  private def aggregateSigs(commit: CommitSig): Option[Seq[CommitSig]] = {
+  private def aggregateSigs(commit: CommitSig): Option[CommitSigs] = {
     sigStash = sigStash :+ commit
     log.debug("received sig for batch of size={}", commit.batchSize)
     if (sigStash.size == commit.batchSize) {
-      val sigs = sigStash
+      val sigs = CommitSigs(sigStash)
       sigStash = Nil
       Some(sigs)
     } else {

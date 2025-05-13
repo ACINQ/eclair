@@ -993,7 +993,7 @@ case class Commitments(params: ChannelParams,
     }
   }
 
-  def sendCommit(channelKeys: ChannelKeys)(implicit log: LoggingAdapter): Either[ChannelException, (Commitments, Seq[CommitSig])] = {
+  def sendCommit(channelKeys: ChannelKeys)(implicit log: LoggingAdapter): Either[ChannelException, (Commitments, CommitSigs)] = {
     remoteNextCommitInfo match {
       case Right(_) if !changes.localHasChanges => Left(CannotSignWithoutChanges(channelId))
       case Right(remoteNextPerCommitmentPoint) =>
@@ -1007,21 +1007,24 @@ case class Commitments(params: ChannelParams,
           active = active1,
           remoteNextCommitInfo = Left(WaitForRev(localCommitIndex))
         )
-        Right(commitments1, sigs)
+        Right(commitments1, CommitSigs(sigs))
       case Left(_) => Left(CannotSignBeforeRevocation(channelId))
     }
   }
 
-  def receiveCommit(commits: Seq[CommitSig], channelKeys: ChannelKeys)(implicit log: LoggingAdapter): Either[ChannelException, (Commitments, RevokeAndAck)] = {
+  def receiveCommit(commitSigs: CommitSigs, channelKeys: ChannelKeys)(implicit log: LoggingAdapter): Either[ChannelException, (Commitments, RevokeAndAck)] = {
     // We may receive more commit_sig than the number of active commitments, because there can be a race where we send
     // splice_locked while our peer is sending us a batch of commit_sig. When that happens, we simply need to discard
     // the commit_sig that belong to commitments we deactivated.
-    if (commits.size < active.size) {
-      return Left(CommitSigCountMismatch(channelId, active.size, commits.size))
+    val sigs = commitSigs match {
+      case batch: CommitSigBatch if batch.batchSize < active.size => return Left(CommitSigCountMismatch(channelId, active.size, batch.batchSize))
+      case batch: CommitSigBatch => batch.messages
+      case _: CommitSig if active.size > 1 => return Left(CommitSigCountMismatch(channelId, active.size, 1))
+      case commitSig: CommitSig => Seq(commitSig)
     }
     val commitKeys = LocalCommitmentKeys(params, channelKeys, localCommitIndex + 1)
     // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
-    val active1 = active.zip(commits).map { case (commitment, commit) =>
+    val active1 = active.zip(sigs).map { case (commitment, commit) =>
       commitment.receiveCommit(params, channelKeys, commitKeys, changes, commit) match {
         case Left(f) => return Left(f)
         case Right(commitment1) => commitment1
