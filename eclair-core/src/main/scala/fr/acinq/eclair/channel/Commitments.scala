@@ -196,12 +196,14 @@ object LocalCommit {
     val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(params, commitKeys, localCommitIndex, fundingKey, remoteFundingPubKey, commitInput, spec)
     val remoteCommitSigOk = params.commitmentFormat match {
       case _: SegwitV0CommitmentFormat => localCommitTx.checkRemoteSig(fundingKey.publicKey, remoteFundingPubKey, ChannelSpendSignature.IndividualSignature(commit.signature))
+      case SimpleTaprootChannelCommitmentFormat => ???
     }
     if (!remoteCommitSigOk) {
       return Left(InvalidCommitmentSignature(params.channelId, fundingTxId, localCommitIndex, localCommitTx.tx))
     }
     val commitxTxAndRemoteSig = params.commitmentFormat match {
       case _: SegwitV0CommitmentFormat => CommitTxAndRemoteSig(localCommitTx, ChannelSpendSignature.IndividualSignature(commit.signature))
+      case SimpleTaprootChannelCommitmentFormat => ???
     }
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
     if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
@@ -230,6 +232,7 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: TxId, remotePer
       case _: SegwitV0CommitmentFormat =>
         val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey).sig
         CommitSig(params.channelId, sig, htlcSigs.toList)
+      case SimpleTaprootChannelCommitmentFormat => ???
     }
   }
 }
@@ -661,6 +664,7 @@ case class Commitment(fundingTxIndex: Long,
       case _: SegwitV0CommitmentFormat =>
         val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey).sig
         CommitSig(params.channelId, sig, htlcSigs.toList, TlvStream(tlvs))
+      case SimpleTaprootChannelCommitmentFormat => ???
     }
     val nextRemoteCommit = NextRemoteCommit(commitSig, RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint))
     (copy(nextRemoteCommit_opt = Some(nextRemoteCommit)), commitSig)
@@ -1160,6 +1164,7 @@ case class Commitments(params: ChannelParams,
         case _: SegwitV0CommitmentFormat =>
           val fundingScript = Script.write(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
           RedeemInfo.P2wsh(fundingScript)
+        case SimpleTaprootChannelCommitmentFormat => ???
       }
       commitment.commitInput.txOut.publicKeyScript == redeemInfo.pubkeyScript
     }

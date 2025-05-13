@@ -245,6 +245,8 @@ trait ErrorHandlers extends CommonHandlers {
         } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, commitTx, commitment), confirmationTarget)
         val htlcTxs = redeemableHtlcTxs(commitTx, commitKeys, commitment)
         List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ claimAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
+      case SimpleTaprootChannelCommitmentFormat => ???
+
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
 
@@ -279,7 +281,7 @@ trait ErrorHandlers extends CommonHandlers {
               case _ => None
             }
             signedTx_opt.map(tx => PublishFinalTx(tx, tx.fee, Some(commitTx.txid)))
-          case _: Transactions.AnchorOutputsCommitmentFormat =>
+          case _: Transactions.AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat =>
             val confirmationTarget = ConfirmationTarget.Absolute(htlcTx.htlcExpiry.blockHeight)
             val replaceableTx_opt = (htlcTx, preimage_opt) match {
               case (htlcTx: HtlcSuccessTx, Some(preimage)) => Some(ReplaceableHtlcSuccess(htlcTx, commitKeys, preimage, remoteSig, commitTx, commitment))
