@@ -237,6 +237,7 @@ object PaymentFailure {
     case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
       ignoreNodeOutgoingEdge(nodeId, hops, ignore)
     case UnreadableRemoteFailure(_, hops, _, holdTimes) =>
+      // TODO: Once everyone supports attributable errors, we should only exclude two nodes: the last for which we have attribution data and the next one.
       // We don't know which node is sending garbage, let's blacklist all nodes except:
       //  - the nodes that returned attribution data (except the last one)
       //  - the one we are directly connected to: it would be too restrictive for retries

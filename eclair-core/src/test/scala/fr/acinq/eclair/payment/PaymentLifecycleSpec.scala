@@ -28,6 +28,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateReque
 import fr.acinq.eclair.channel.Register.{ForwardShortId, ForwardShortIdFailure}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.crypto.Sphinx.HoldTime
 import fr.acinq.eclair.crypto.{Sphinx, SphinxSpec}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -904,6 +905,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
       (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: Nil, ByteVector.empty, Nil), Set.empty, Set.empty),
       (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: Nil, ByteVector.empty, Nil), Set(c), Set.empty),
       (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: channelHopFromUpdate(d, e, update_de) :: Nil, ByteVector.empty, Nil), Set(c, d), Set.empty),
+      (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: channelHopFromUpdate(d, e, update_de) :: Nil, ByteVector.empty, Seq(HoldTime(100 millis, b), HoldTime(90 millis, c), HoldTime(80 millis, d))), Set(d), Set.empty),
       (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: NodeHop(d, e, CltvExpiryDelta(24), 0 msat) :: Nil, ByteVector.empty, Nil), Set(c), Set.empty),
       (UnreadableRemoteFailure(defaultAmountMsat, channelHopFromUpdate(a, b, update_ab) :: channelHopFromUpdate(b, c, update_bc) :: channelHopFromUpdate(c, d, update_cd) :: blindedHop_de :: Nil, ByteVector.empty, Nil), Set(c), Set.empty),
     )
