@@ -373,7 +373,7 @@ object Helpers {
     def makeFundingScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat): RedeemInfo = {
       commitmentFormat match {
         case _: SegwitV0CommitmentFormat => RedeemInfo.P2wsh(Script.write(multiSig2of2(localFundingKey, remoteFundingKey)))
-        case SimpleTaprootChannelCommitmentFormat => ???
+        case SimpleTaprootChannelCommitmentFormat => RedeemInfo.TaprootKeyPath(Taproot.musig2Aggregate(localFundingKey, remoteFundingKey), None)
       }
     }
 
@@ -902,7 +902,7 @@ object Helpers {
 
       def claimAnchor(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): Option[ClaimAnchorOutputTx] = {
         withTxGenerationLog("local-anchor") {
-          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys.publicKeys, commitTx, commitmentFormat)
+          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys, commitTx, commitmentFormat)
         }
       }
 
@@ -1004,7 +1004,7 @@ object Helpers {
 
       def claimAnchor(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): Option[ClaimAnchorOutputTx] = {
         withTxGenerationLog("remote-anchor") {
-          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys.publicKeys, commitTx, commitmentFormat)
+          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys, commitTx, commitmentFormat)
         }
       }
 
