@@ -421,7 +421,7 @@ case class UpdateFailHtlc(channelId: ByteVector32,
                           id: Long,
                           reason: ByteVector,
                           tlvStream: TlvStream[UpdateFailHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcFailureMessage {
-  val attribution_opt: Option[ByteVector] = tlvStream.get[UpdateFailHtlcTlv.AttributionData].flatMap(attribution => if (attribution.data.length == 920) Some(attribution.data) else None)
+  val attribution_opt: Option[ByteVector] = tlvStream.get[UpdateFailHtlcTlv.AttributionData].map(_.data)
 }
 
 case class UpdateFailMalformedHtlc(channelId: ByteVector32,
@@ -689,7 +689,7 @@ object WillAddHtlc {
 
 /** This message is similar to [[UpdateFailHtlc]], but for [[WillAddHtlc]]. */
 case class WillFailHtlc(id: ByteVector32, paymentHash: ByteVector32, reason: ByteVector, tlvStream: TlvStream[UpdateFailHtlcTlv] = TlvStream.empty) extends OnTheFlyFundingFailureMessage {
-  val attribution_opt: Option[ByteVector] = tlvStream.get[UpdateFailHtlcTlv.AttributionData].flatMap(attribution => if (attribution.data.length == 920) Some(attribution.data) else None)
+  val attribution_opt: Option[ByteVector] = tlvStream.get[UpdateFailHtlcTlv.AttributionData].map(_.data)
 }
 
 /** This message is similar to [[UpdateFailMalformedHtlc]], but for [[WillAddHtlc]]. */

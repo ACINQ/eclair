@@ -63,8 +63,10 @@ sealed trait UpdateFailHtlcTlv extends Tlv
 object UpdateFailHtlcTlv {
   case class AttributionData(data: ByteVector) extends UpdateFailHtlcTlv
 
+  private val attributionData: Codec[AttributionData] = (("length" | constant(hex"fd0398")) :: ("data" | bytesStrict(920))).as[AttributionData]
+
   val updateFailHtlcTlvCodec: Codec[TlvStream[UpdateFailHtlcTlv]] = tlvStream(discriminated[UpdateFailHtlcTlv].by(varint)
-    .typecase(UInt64(1), bytes.as[AttributionData])
+    .typecase(UInt64(1), attributionData)
   )
 }
 

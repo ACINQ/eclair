@@ -122,7 +122,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // channel 1 goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     channel.expectMsgAllOf(
-      CMD_FAIL_HTLC(1, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true),
+      CMD_FAIL_HTLC(1, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true),
       CMD_FAIL_MALFORMED_HTLC(4, ByteVector32.Zeroes, FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 24, commit = true)
     )
     channel.expectNoMessage(100 millis)
@@ -130,15 +130,15 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // channel 2 goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels(1).commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(1).commitments)))
     channel.expectMsgAllOf(
-      CMD_FAIL_HTLC(0, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true),
-      CMD_FAIL_HTLC(4, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true)
+      CMD_FAIL_HTLC(0, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true),
+      CMD_FAIL_HTLC(4, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true)
     )
     channel.expectNoMessage(100 millis)
 
     // let's assume that channel 1 was disconnected before having signed the fails, and gets connected again:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     channel.expectMsgAllOf(
-      CMD_FAIL_HTLC(1, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true),
+      CMD_FAIL_HTLC(1, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true),
       CMD_FAIL_MALFORMED_HTLC(4, ByteVector32.Zeroes, FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 24, commit = true)
     )
     channel.expectNoMessage(100 millis)
@@ -225,10 +225,10 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // channel 1 goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     val expected1 = Set(
-      CMD_FAIL_HTLC(0, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true),
+      CMD_FAIL_HTLC(0, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true),
       CMD_FULFILL_HTLC(3, preimage, commit = true),
       CMD_FULFILL_HTLC(5, preimage, commit = true),
-      CMD_FAIL_HTLC(7, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true)
+      CMD_FAIL_HTLC(7, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true)
     )
     val received1 = expected1.map(_ => channel.expectMsgType[Command])
     assert(received1 == expected1)
@@ -237,10 +237,10 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // channel 2 goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels(1).channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(1).commitments)))
     val expected2 = Set(
-      CMD_FAIL_HTLC(1, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true),
-      CMD_FAIL_HTLC(3, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true),
+      CMD_FAIL_HTLC(1, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true),
+      CMD_FAIL_HTLC(3, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true),
       CMD_FULFILL_HTLC(4, preimage, commit = true),
-      CMD_FAIL_HTLC(9, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true)
+      CMD_FAIL_HTLC(9, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true)
     )
     val received2 = expected2.map(_ => channel.expectMsgType[Command])
     assert(received2 == expected2)
@@ -447,8 +447,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     system.eventStream.publish(ChannelStateChanged(channel_upstream_3.ref, data_upstream_3.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data_upstream_3.commitments)))
 
     // Payment 1 should fail instantly.
-    channel_upstream_1.expectMsg(CMD_FAIL_HTLC(0, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true))
-    channel_upstream_2.expectMsg(CMD_FAIL_HTLC(7, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true))
+    channel_upstream_1.expectMsg(CMD_FAIL_HTLC(0, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true))
+    channel_upstream_2.expectMsg(CMD_FAIL_HTLC(7, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true))
     channel_upstream_1.expectNoMessage(100 millis)
     channel_upstream_2.expectNoMessage(100 millis)
 
@@ -475,7 +475,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     )
     val channelData = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab, Map.empty)
     nodeParams.db.pendingCommands.addSettlementCommand(channelId_ab_1, CMD_FULFILL_HTLC(1, randomBytes32()))
-    nodeParams.db.pendingCommands.addSettlementCommand(channelId_ab_1, CMD_FAIL_HTLC(4, FailureReason.LocalFailure(PermanentChannelFailure()), TimestampMilli.min))
+    nodeParams.db.pendingCommands.addSettlementCommand(channelId_ab_1, CMD_FAIL_HTLC(4, FailureReason.LocalFailure(PermanentChannelFailure()), None))
 
     val (_, postRestart) = f.createRelayer(nodeParams)
     postRestart ! PostRestartHtlcCleaner.Init(List(channelData))
@@ -593,7 +593,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.upstream_1))
     val fails = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: Nil
     assert(fails.toSet == testCase.upstream_1.originHtlcs.map {
-      case Upstream.Cold.Channel(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true))
+      case Upstream.Cold.Channel(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true))
     }.toSet)
 
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.upstream_1))
@@ -605,7 +605,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.upstream_2))
     register.expectMsg(testCase.upstream_2.originHtlcs.map {
-      case Upstream.Cold.Channel(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true))
+      case Upstream.Cold.Channel(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true))
     }.head)
 
     register.expectNoMessage(100 millis)
@@ -736,7 +736,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     // Standard channel goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, c.commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(c.commitments)))
-    channel.expectMsg(CMD_FAIL_HTLC(1L, FailureReason.LocalFailure(TemporaryNodeFailure()), TimestampMilli.min, commit = true))
+    channel.expectMsg(CMD_FAIL_HTLC(1L, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true))
     channel.expectNoMessage(100 millis)
   }
 
@@ -754,8 +754,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     }
     // @formatter:on
 
-    val cmd1 = CMD_FAIL_HTLC(id = 0L, reason = FailureReason.EncryptedDownstreamFailure(ByteVector.empty, None), TimestampMilli.min, replyTo_opt = None)
-    val cmd2 = CMD_FAIL_HTLC(id = 1L, reason = FailureReason.EncryptedDownstreamFailure(ByteVector.empty, None), TimestampMilli.min, replyTo_opt = None)
+    val cmd1 = CMD_FAIL_HTLC(id = 0L, reason = FailureReason.EncryptedDownstreamFailure(ByteVector.empty, None), None, replyTo_opt = None)
+    val cmd2 = CMD_FAIL_HTLC(id = 1L, reason = FailureReason.EncryptedDownstreamFailure(ByteVector.empty, None), None, replyTo_opt = None)
     val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
     nodeParams1.db.pendingCommands.addSettlementCommand(channelId_ab_1, cmd1)
     nodeParams1.db.pendingCommands.addSettlementCommand(channelId_ab_1, cmd2)

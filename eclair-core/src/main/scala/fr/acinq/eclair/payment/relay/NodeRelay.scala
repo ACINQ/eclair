@@ -228,7 +228,7 @@ class NodeRelay private(nodeParams: NodeParams,
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
-        parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, p.startTime, Some(failure)) }
+        parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, p.receivedAt, Some(failure)) }
         stopping()
       case WrappedMultiPartPaymentSucceeded(MultiPartPaymentFSM.MultiPartPaymentSucceeded(_, parts)) =>
         context.log.info("completed incoming multi-part payment with parts={} paidAmount={}", parts.size, parts.map(_.amount).sum)
@@ -471,18 +471,18 @@ class NodeRelay private(nodeParams: NodeParams,
     // By failing them fast (before the payment has reached the final recipient) there's a good chance the sender won't lose any money.
     // We don't expect to relay pay-to-open payments.
     case WrappedMultiPartExtraPaymentReceived(extraPaymentReceived) =>
-      rejectExtraHtlc(extraPaymentReceived.payment.htlc, extraPaymentReceived.payment.startTime)
+      rejectExtraHtlc(extraPaymentReceived.payment.htlc, extraPaymentReceived.payment.receivedAt)
       Behaviors.same
   }
 
-  private def rejectExtraHtlc(add: UpdateAddHtlc, startHoldTime: TimestampMilli): Unit = {
+  private def rejectExtraHtlc(add: UpdateAddHtlc, htlcReceivedAt: TimestampMilli): Unit = {
     context.log.warn("rejecting extra htlc #{} from channel {}", add.id, add.channelId)
-    rejectHtlc(add.id, add.channelId, add.amountMsat, startHoldTime)
+    rejectHtlc(add.id, add.channelId, add.amountMsat, htlcReceivedAt)
   }
 
-  private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, startHoldTime: TimestampMilli, failure: Option[FailureMessage] = None): Unit = {
+  private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, htlcReceivedAt: TimestampMilli, failure: Option[FailureMessage] = None): Unit = {
     val failureMessage = failure.getOrElse(IncorrectOrUnknownPaymentDetails(amount, nodeParams.currentBlockHeight))
-    val cmd = CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(failureMessage), startHoldTime, commit = true)
+    val cmd = CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(failureMessage), Some(htlcReceivedAt), commit = true)
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
   }
 
@@ -506,9 +506,9 @@ class NodeRelay private(nodeParams: NodeParams,
     context.system.eventStream ! EventStream.Publish(TrampolinePaymentRelayed(paymentHash, incoming, outgoing, paymentSent.recipientNodeId, paymentSent.recipientAmount))
   }
 
-  private def recordRelayDuration(startedAt: TimestampMilli, isSuccess: Boolean): Unit =
+  private def recordRelayDuration(receivedAt: TimestampMilli, isSuccess: Boolean): Unit =
     Metrics.RelayedPaymentDuration
       .withTag(Tags.Relay, Tags.RelayType.Trampoline)
       .withTag(Tags.Success, isSuccess)
-      .record((TimestampMilli.now() - startedAt).toMillis, TimeUnit.MILLISECONDS)
+      .record((TimestampMilli.now() - receivedAt).toMillis, TimeUnit.MILLISECONDS)
 }

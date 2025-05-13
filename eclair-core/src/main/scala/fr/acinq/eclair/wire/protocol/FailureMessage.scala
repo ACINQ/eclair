@@ -170,7 +170,7 @@ object FailureMessageCodecs {
 
   private val encryptedDownstreamFailure: Codec[FailureReason.EncryptedDownstreamFailure] =
     (("packet" | varsizebinarydata) ::
-      ("attribution" | varsizebinarydata.xmap[Option[ByteVector]](b => if (b.length == 920) Some(b) else None, _.getOrElse(ByteVector.empty)))).as[FailureReason.EncryptedDownstreamFailure]
+      ("attribution_opt" | optional(bool(8), bytesStrict(920)))).as[FailureReason.EncryptedDownstreamFailure]
 
   val failureReasonCodec: Codec[FailureReason] = discriminated[FailureReason].by(uint8)
     // Order matters: latest codec comes first, then old codecs for backward compatibility

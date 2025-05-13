@@ -18,6 +18,7 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.eclair.crypto.Sphinx.FailurePacket
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedRoute, BlindedRouteDetails}
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
@@ -227,7 +228,7 @@ class SphinxSpec extends AnyFunSuite {
 
     val expected = DecryptedFailurePacket(publicKeys.head, InvalidOnionKey(ByteVector32.One))
 
-    val packet1 = FailurePacket.createAndWrap(sharedSecrets.head, expected.failureMessage)
+    val packet1 = createAndWrap(sharedSecrets.head, expected.failureMessage)
     assert(packet1.length == 292)
 
     val Right(decrypted1) = FailurePacket.decrypt(packet1, None, Seq(0).map(i => SharedSecret(sharedSecrets(i), publicKeys(i)))).failure
@@ -255,7 +256,7 @@ class SphinxSpec extends AnyFunSuite {
 
     val packet = FailurePacket.wrap(
       FailurePacket.wrap(
-        FailurePacket.createAndWrap(sharedSecrets.head, InvalidOnionPayload(UInt64(0), 0)),
+        createAndWrap(sharedSecrets.head, InvalidOnionPayload(UInt64(0), 0)),
         sharedSecrets(1)),
       sharedSecrets(2))
 
@@ -275,7 +276,7 @@ class SphinxSpec extends AnyFunSuite {
       assert(lastPacket.isLastPacket)
 
       // node #4 want to reply with an error message
-      val error = FailurePacket.createAndWrap(sharedSecret4, TemporaryNodeFailure())
+      val error = createAndWrap(sharedSecret4, TemporaryNodeFailure())
       assert(error == hex"a5e6bd0c74cb347f10cce367f949098f2457d14c046fd8a22cb96efb30b0fdcda8cb9168b50f2fd45edd73c1b0c8b33002df376801ff58aaa94000bf8a86f92620f343baef38a580102395ae3abf9128d1047a0736ff9b83d456740ebbb4aeb3aa9737f18fb4afb4aa074fb26c4d702f42968888550a3bded8c05247e045b866baef0499f079fdaeef6538f31d44deafffdfd3afa2fb4ca9082b8f1c465371a9894dd8c243fb4847e004f5256b3e90e2edde4c9fb3082ddfe4d1e734cacd96ef0706bf63c9984e22dc98851bcccd1c3494351feb458c9c6af41c0044bea3c47552b1d992ae542b17a2d0bba1a096c78d169034ecb55b6e3a7263c26017f033031228833c1daefc0dedb8cf7c3e37c9c37ebfe42f3225c326e8bcfd338804c145b16e34e4")
       val error1 = FailurePacket.wrap(error, sharedSecret3)
       assert(error1 == hex"c49a1ce81680f78f5f2000cda36268de34a3f0a0662f55b4e837c83a8773c22aa081bab1616a0011585323930fa5b9fae0c85770a2279ff59ec427ad1bbff9001c0cd1497004bd2a0f68b50704cf6d6a4bf3c8b6a0833399a24b3456961ba00736785112594f65b6b2d44d9f5ea4e49b5e1ec2af978cbe31c67114440ac51a62081df0ed46d4a3df295da0b0fe25c0115019f03f15ec86fabb4c852f83449e812f141a9395b3f70b766ebbd4ec2fae2b6955bd8f32684c15abfe8fd3a6261e52650e8807a92158d9f1463261a925e4bfba44bd20b166d532f0017185c3a6ac7957adefe45559e3072c8dc35abeba835a8cb01a71a15c736911126f27d46a36168ca5ef7dccd4e2886212602b181463e0dd30185c96348f9743a02aca8ec27c0b90dca270")
@@ -374,7 +375,7 @@ class SphinxSpec extends AnyFunSuite {
       val Right(DecryptedPacket(_, _, sharedSecret2)) = peel(privKeys(2), associatedData, packet2)
 
       // node #2 want to reply with an error message
-      val error = FailurePacket.createAndWrap(sharedSecret2, InvalidRealm())
+      val error = createAndWrap(sharedSecret2, InvalidRealm())
       val error1 = FailurePacket.wrap(error, sharedSecret1)
       val error2 = FailurePacket.wrap(error1, sharedSecret0)
 
@@ -614,6 +615,10 @@ object SphinxSpec {
     val um = Sphinx.generateKey("um", sharedSecret)
     val packet = FailureMessageCodecs.failureOnionCodec(Hmac256(um), length).encode(failure).require.toByteVector
     packet
+  }
+
+  def createAndWrap(sharedSecret: ByteVector32, failure: FailureMessage): ByteVector = {
+    FailurePacket.wrap(FailurePacket.create(sharedSecret, failure), sharedSecret)
   }
 
   val privKeys = Seq(

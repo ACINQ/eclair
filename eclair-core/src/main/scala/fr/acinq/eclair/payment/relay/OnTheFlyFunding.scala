@@ -100,7 +100,7 @@ object OnTheFlyFunding {
         // That's because we are directly connected to the wallet: the blinded path doesn't contain any other public nodes,
         // so we don't need to protect against probing. This allows us to return a more meaningful failure to the payer.
         val failure = failure_opt.getOrElse(FailureReason.LocalFailure(UnknownNextPeer()))
-        Seq(u.add.channelId -> CMD_FAIL_HTLC(u.add.id, failure, u.receivedAt, commit = true))
+        Seq(u.add.channelId -> CMD_FAIL_HTLC(u.add.id, failure, Some(u.receivedAt), commit = true))
       case u: Upstream.Hot.Trampoline =>
         val failure = failure_opt match {
           case Some(f) => f match {
@@ -118,7 +118,7 @@ object OnTheFlyFunding {
           }
           case None => FailureReason.LocalFailure(UnknownNextPeer())
         }
-        u.received.map(_.add).map(add => add.channelId -> CMD_FAIL_HTLC(add.id, failure, u.receivedAt, commit = true))
+        u.received.map(_.add).map(add => add.channelId -> CMD_FAIL_HTLC(add.id, failure, Some(u.receivedAt), commit = true))
     }
 
     /** Create commands to fulfill all upstream HTLCs. */

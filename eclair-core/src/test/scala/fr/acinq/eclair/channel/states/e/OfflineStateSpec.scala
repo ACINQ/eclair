@@ -650,7 +650,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // We simulate a pending failure on that HTLC.
     // Even if we get close to expiring upstream we shouldn't close the channel, because we have nothing to lose.
-    bob ! CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(0 msat, BlockHeight(0))), TimestampMilli.min)
+    bob ! CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(0 msat, BlockHeight(0))), None)
     bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - bob.underlyingActor.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
 
     bob2blockchain.expectNoMessage(250 millis)

@@ -244,7 +244,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_FAIL_HTLC") { f =>
     import f._
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    bob ! CMD_FAIL_HTLC(1, FailureReason.LocalFailure(PermanentChannelFailure()), TimestampMilli.min)
+    bob ! CMD_FAIL_HTLC(1, FailureReason.LocalFailure(PermanentChannelFailure()), None)
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     awaitCond(bob.stateData == initialState
       .modify(_.commitments.changes.localChanges.proposed).using(_ :+ fail)
@@ -255,7 +255,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val c = CMD_FAIL_HTLC(42, FailureReason.LocalFailure(PermanentChannelFailure()), TimestampMilli.min, replyTo_opt = Some(sender.ref))
+    val c = CMD_FAIL_HTLC(42, FailureReason.LocalFailure(PermanentChannelFailure()), None, replyTo_opt = Some(sender.ref))
     bob ! c
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
@@ -265,7 +265,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val c = CMD_FAIL_HTLC(42, FailureReason.LocalFailure(PermanentChannelFailure()), TimestampMilli.min, replyTo_opt = Some(sender.ref))
+    val c = CMD_FAIL_HTLC(42, FailureReason.LocalFailure(PermanentChannelFailure()), None, replyTo_opt = Some(sender.ref))
     sender.send(bob, c) // this will fail
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     awaitCond(bob.underlyingActor.nodeParams.db.pendingCommands.listSettlementCommands(initialState.channelId).isEmpty)
@@ -504,7 +504,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv RevokeAndAck (forward UpdateFailHtlc)") { f =>
     import f._
-    bob ! CMD_FAIL_HTLC(1, FailureReason.LocalFailure(PermanentChannelFailure()), TimestampMilli.min)
+    bob ! CMD_FAIL_HTLC(1, FailureReason.LocalFailure(PermanentChannelFailure()), None)
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     bob2alice.forward(alice)
     bob ! CMD_SIGN()

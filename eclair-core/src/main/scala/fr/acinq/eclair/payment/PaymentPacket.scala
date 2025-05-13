@@ -29,7 +29,7 @@ import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSat
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.{Failure, Success}
 
 /**
@@ -381,7 +381,8 @@ object OutgoingPaymentPacket {
         val failure = InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket))
         Right(UpdateFailMalformedHtlc(add.channelId, add.id, failure.onionHash, failure.code))
       case None =>
-        val holdTime = now - cmd.startHoldTime
+        // If the htlcReceivedAt was lost (because the node restarted), we use a hold time of 0 which should be ignored by the payer.
+        val holdTime = cmd.htlcReceivedAt_opt.map(now - _).getOrElse(0 millisecond)
         buildHtlcFailure(nodeSecret, useAttributableFailures, cmd.reason, add, holdTime).map {
           case (encryptedReason, tlvs) => UpdateFailHtlc(add.channelId, cmd.id, encryptedReason, tlvs)
         }

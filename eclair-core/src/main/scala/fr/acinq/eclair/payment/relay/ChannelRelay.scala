@@ -97,13 +97,13 @@ object ChannelRelay {
     }
   }
 
-  def translateRelayFailure(originHtlcId: Long, fail: HtlcResult.Fail, startHoldTime: TimestampMilli): CMD_FAIL_HTLC = {
+  def translateRelayFailure(originHtlcId: Long, fail: HtlcResult.Fail, htlcReceivedAt_opt: Option[TimestampMilli]): CMD_FAIL_HTLC = {
     fail match {
-      case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(originHtlcId, FailureReason.EncryptedDownstreamFailure(f.fail.reason, f.fail.attribution_opt), startHoldTime, commit = true)
-      case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(createBadOnionFailure(f.fail.onionHash, f.fail.failureCode)), startHoldTime, commit = true)
-      case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(PermanentChannelFailure()), startHoldTime, commit = true)
-      case HtlcResult.ChannelFailureBeforeSigned => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(PermanentChannelFailure()), startHoldTime, commit = true)
-      case f: HtlcResult.DisconnectedBeforeSigned => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(TemporaryChannelFailure(Some(f.channelUpdate))), startHoldTime, commit = true)
+      case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(originHtlcId, FailureReason.EncryptedDownstreamFailure(f.fail.reason, f.fail.attribution_opt), htlcReceivedAt_opt, commit = true)
+      case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(createBadOnionFailure(f.fail.onionHash, f.fail.failureCode)), htlcReceivedAt_opt, commit = true)
+      case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(PermanentChannelFailure()), htlcReceivedAt_opt, commit = true)
+      case HtlcResult.ChannelFailureBeforeSigned => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(PermanentChannelFailure()), htlcReceivedAt_opt, commit = true)
+      case f: HtlcResult.DisconnectedBeforeSigned => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(TemporaryChannelFailure(Some(f.channelUpdate))), htlcReceivedAt_opt, commit = true)
     }
   }
 
@@ -231,7 +231,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         context.log.info("relaying fail to upstream, startedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, TimestampMilli.now(), confidence, upstream.receivedFrom, htlc.channelId)
         Metrics.relayFail(confidence)
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
-        val cmd = translateRelayFailure(upstream.add.id, fail, upstream.receivedAt)
+        val cmd = translateRelayFailure(upstream.add.id, fail, Some(upstream.receivedAt))
         recordRelayDuration(isSuccess = false)
         safeSendAndStop(upstream.add.channelId, cmd)
     }
@@ -430,7 +430,7 @@ class ChannelRelay private(nodeParams: NodeParams,
   }
 
   private def makeCmdFailHtlc(originHtlcId: Long, failure: FailureMessage, delay_opt: Option[FiniteDuration] = None): CMD_FAIL_HTLC =
-    CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(failure), upstream.receivedAt, delay_opt, commit = true)
+    CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(failure), Some(upstream.receivedAt), delay_opt, commit = true)
 
   private def recordRelayDuration(isSuccess: Boolean): Unit =
     Metrics.RelayedPaymentDuration

@@ -43,7 +43,7 @@ object CommandCodecs {
           case FailureReason.LocalFailure(f) => Right(f)
         }
       )) ::
-      ("start_hold_time" | provide(TimestampMilli.min)) ::
+      ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
@@ -67,7 +67,7 @@ object CommandCodecs {
           case FailureReason.LocalFailure(f) => Right(f)
         }
       )) ::
-      ("start_hold_time" | provide(TimestampMilli.min)) ::
+      ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
@@ -76,7 +76,7 @@ object CommandCodecs {
   private val cmdFailWithoutHoldTimeCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
       ("reason" | failureReasonCodec) ::
-      ("start_hold_time" | provide(TimestampMilli.min)) ::
+      ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
@@ -85,7 +85,7 @@ object CommandCodecs {
   private val cmdFailCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
       ("reason" | failureReasonCodec) ::
-      ("start_hold_time" | uint64overflow.as[TimestampMilli]) ::
+      ("htlcReceivedAt_opt" | uint64overflow.as[TimestampMilli].xmap[Option[TimestampMilli]](t => if (t == TimestampMilli.min) None else Some(t), _.getOrElse(TimestampMilli.min))) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
