@@ -632,10 +632,11 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val remoteCommitPublished = remoteCommitPublished_opt.get
 
     // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
-    closingData.commitments.params.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat => assert(s2blockchain.expectMsgType[PublishReplaceableTx].tx.isInstanceOf[ReplaceableRemoteCommitAnchor])
-      case Transactions.DefaultCommitmentFormat => ()
+    val anchorTx_opt = closingData.commitments.params.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => Some(s2blockchain.expectMsgType[PublishReplaceableTx])
+      case Transactions.DefaultCommitmentFormat => None
     }
+    anchorTx_opt.foreach(anchor => assert(anchor.tx.isInstanceOf[ReplaceableRemoteCommitAnchor]))
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     remoteCommitPublished.claimMainOutputTx.foreach(claimMain => {
       Transaction.correctlySpends(claimMain.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -653,9 +654,10 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     // we watch outputs of the commitment tx that both parties may spend
     val htlcOutputIndexes = remoteCommitPublished.claimHtlcTxs.keySet.map(_.index)
-    val spentWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchOutputSpent])
-    spentWatches.foreach(ws => assert(ws.txId == rCommitTx.txid))
-    assert(spentWatches.map(_.outputIndex) == htlcOutputIndexes)
+    val spentHtlcWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchOutputSpent])
+    spentHtlcWatches.foreach(ws => assert(ws.txId == rCommitTx.txid))
+    assert(spentHtlcWatches.map(_.outputIndex) == htlcOutputIndexes)
+    anchorTx_opt.foreach(anchor => assert(s2blockchain.expectMsgType[WatchOutputSpent].outputIndex == anchor.input.index))
     s2blockchain.expectNoMessage(100 millis)
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state

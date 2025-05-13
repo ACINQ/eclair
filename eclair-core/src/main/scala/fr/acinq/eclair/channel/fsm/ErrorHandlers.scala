@@ -259,7 +259,7 @@ trait ErrorHandlers extends CommonHandlers {
     // We watch outputs of the commitment tx that both parties may spend.
     // We also watch our local anchor: this ensures that we will correctly detect when it's confirmed and count its fees
     // in the audit DB, even if we restart before confirmation.
-    val watchSpentQueue = htlcTxs.keys ++ claimAnchorTx_opt.collect { case tx if !localCommitPublished.isConfirmed => tx.input.outPoint }
+    val watchSpentQueue = htlcTxs.keys.toSeq ++ claimAnchorTx_opt.collect { case tx if !localCommitPublished.isConfirmed => tx.input.outPoint }
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
@@ -343,7 +343,9 @@ trait ErrorHandlers extends CommonHandlers {
     watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent, relativeDelays = Map.empty)
 
     // We watch outputs of the commitment tx that both parties may spend.
-    val watchSpentQueue = claimHtlcTxs.keys
+    // We also watch our local anchor: this ensures that we will correctly detect when it's confirmed and count its fees
+    // in the audit DB, even if we restart before confirmation.
+    val watchSpentQueue = claimHtlcTxs.keys.toSeq ++ claimAnchorTx_opt.collect { case tx if !remoteCommitPublished.isConfirmed => tx.input.outPoint }
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 

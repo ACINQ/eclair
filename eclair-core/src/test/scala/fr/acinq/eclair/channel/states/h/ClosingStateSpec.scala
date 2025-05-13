@@ -529,6 +529,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex,
       alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex,
     ) == claimHtlcTimeoutTxs.map(_.input.outPoint.index).toSet)
+    if (alice.stateData.asInstanceOf[DATA_CLOSING].commitments.params.channelFeatures.hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
+      val anchorOutput = alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.claimAnchorTx_opt.get.input.outPoint
+      inside(alice2blockchain.expectMsgType[WatchOutputSpent]) { w => assert(OutPoint(w.txId, w.outputIndex.toLong) == anchorOutput) }
+    }
     alice2blockchain.expectNoMessage(100 millis)
 
     // Bob's commitment confirms.
@@ -619,6 +623,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex,
       alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex,
     ) == claimHtlcTimeoutTxs.map(_.input.outPoint.index).toSet)
+    if (alice.stateData.asInstanceOf[DATA_CLOSING].commitments.params.channelFeatures.hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
+      val anchorOutput = alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get.claimAnchorTx_opt.get.input.outPoint
+      inside(alice2blockchain.expectMsgType[WatchOutputSpent]) { w => assert(OutPoint(w.txId, w.outputIndex.toLong) == anchorOutput) }
+    }
     alice2blockchain.expectNoMessage(100 millis)
 
     // Bob's commitment confirms.

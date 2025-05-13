@@ -1613,9 +1613,9 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     probe.expectMsg(remoteCommitTx.txid)
     generateBlocks(1)
 
-    bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.commitmentFormat match {
-      case Transactions.DefaultCommitmentFormat => ()
-      case _: AnchorOutputsCommitmentFormat => alice2blockchain.expectMsgType[PublishReplaceableTx] // claim anchor
+    val anchorTx_opt = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.commitmentFormat match {
+      case Transactions.DefaultCommitmentFormat => None
+      case _: AnchorOutputsCommitmentFormat => Some(alice2blockchain.expectMsgType[PublishReplaceableTx])
     }
     if (!bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.paysDirectlyToWallet) alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
     val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
@@ -1627,6 +1627,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     if (!bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.paysDirectlyToWallet) alice2blockchain.expectMsgType[WatchTxConfirmed] // claim main output
     alice2blockchain.expectMsgType[WatchOutputSpent] // claim-htlc-success tx
     alice2blockchain.expectMsgType[WatchOutputSpent] // claim-htlc-timeout tx
+    anchorTx_opt.foreach(anchor => alice2blockchain.expectMsgType[WatchOutputSpent])
     alice2blockchain.expectNoMessage(100 millis)
 
     (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout)
