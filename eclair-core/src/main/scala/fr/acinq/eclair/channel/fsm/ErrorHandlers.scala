@@ -231,19 +231,19 @@ trait ErrorHandlers extends CommonHandlers {
   def doPublish(localCommitPublished: LocalCommitPublished, commitment: FullCommitment): Unit = {
     import localCommitPublished._
 
+    val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
+    val commitKeys = commitment.localKeys(channelKeys)
     val localPaysCommitTxFees = commitment.localParams.paysCommitTxFees
     val publishQueue = commitment.params.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
-        val redeemableHtlcTxs = htlcTxs.values.flatten.map(tx => PublishFinalTx(tx, tx.fee, Some(commitTx.txid)))
-        List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ (claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None)))
+        val htlcTxs = redeemableHtlcTxs(commitTx, commitKeys, commitment)
+        List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ (claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None)))
       case _: Transactions.AnchorOutputsCommitmentFormat =>
-        val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
-        val commitKeys = commitment.localKeys(channelKeys)
         val claimAnchor = for {
           confirmationTarget <- localCommitPublished.confirmationTarget(nodeParams.onChainFeeConf)
           anchorTx <- claimAnchorTx_opt
         } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, commitTx, commitment), confirmationTarget)
-        val htlcTxs = redeemableHtlcTxs(localCommitPublished, commitKeys, commitment)
+        val htlcTxs = redeemableHtlcTxs(commitTx, commitKeys, commitment)
         List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ claimAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
@@ -263,23 +263,31 @@ trait ErrorHandlers extends CommonHandlers {
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
-  private def redeemableHtlcTxs(localCommitPublished: LocalCommitPublished, commitKeys: LocalCommitmentKeys, commitment: FullCommitment): Iterable[PublishReplaceableTx] = {
+  private def redeemableHtlcTxs(commitTx: Transaction, commitKeys: LocalCommitmentKeys, commitment: FullCommitment): Iterable[PublishTx] = {
     val preimages = (commitment.changes.localChanges.all ++ commitment.changes.remoteChanges.all).collect {
       case fulfill: UpdateFulfillHtlc => Crypto.sha256(fulfill.paymentPreimage) -> fulfill.paymentPreimage
     }.toMap
-    val remoteHtlcSigs = commitment.localCommit.htlcTxsAndRemoteSigs.map {
-      htlcTx => htlcTx.htlcTx.input.outPoint -> htlcTx.remoteSig
-    }.toMap
-    localCommitPublished.htlcTxs.values.flatten.flatMap { htlcTx =>
-      val confirmationTarget = ConfirmationTarget.Absolute(htlcTx.htlcExpiry.blockHeight)
-      val remoteSig_opt = remoteHtlcSigs.get(htlcTx.input.outPoint)
-      val preimage_opt = preimages.get(htlcTx.paymentHash)
-      val replaceableTx_opt = (htlcTx, remoteSig_opt, preimage_opt) match {
-        case (htlcTx: HtlcSuccessTx, Some(remoteSig), Some(preimage)) => Some(ReplaceableHtlcSuccess(htlcTx, commitKeys, preimage, remoteSig, localCommitPublished.commitTx, commitment))
-        case (htlcTx: HtlcTimeoutTx, Some(remoteSig), _) => Some(ReplaceableHtlcTimeout(htlcTx, commitKeys, remoteSig, localCommitPublished.commitTx, commitment))
-        case _ => None
-      }
-      replaceableTx_opt.map(tx => PublishReplaceableTx(tx, confirmationTarget))
+    commitment.localCommit.htlcTxsAndRemoteSigs.flatMap {
+      case HtlcTxAndRemoteSig(htlcTx, remoteSig) =>
+        val preimage_opt = preimages.get(htlcTx.paymentHash)
+        commitment.params.commitmentFormat match {
+          case Transactions.DefaultCommitmentFormat =>
+            val localSig = htlcTx.sign(commitKeys, commitment.params.commitmentFormat, extraUtxos = Map.empty)
+            val signedTx_opt = (htlcTx, preimage_opt) match {
+              case (htlcTx: HtlcSuccessTx, Some(preimage)) => Some(htlcTx.addSigs(commitKeys, localSig, remoteSig, preimage, commitment.params.commitmentFormat))
+              case (htlcTx: HtlcTimeoutTx, _) => Some(htlcTx.addSigs(commitKeys, localSig, remoteSig, commitment.params.commitmentFormat))
+              case _ => None
+            }
+            signedTx_opt.map(tx => PublishFinalTx(tx, tx.fee, Some(commitTx.txid)))
+          case _: Transactions.AnchorOutputsCommitmentFormat =>
+            val confirmationTarget = ConfirmationTarget.Absolute(htlcTx.htlcExpiry.blockHeight)
+            val replaceableTx_opt = (htlcTx, preimage_opt) match {
+              case (htlcTx: HtlcSuccessTx, Some(preimage)) => Some(ReplaceableHtlcSuccess(htlcTx, commitKeys, preimage, remoteSig, commitTx, commitment))
+              case (htlcTx: HtlcTimeoutTx, _) => Some(ReplaceableHtlcTimeout(htlcTx, commitKeys, remoteSig, commitTx, commitment))
+              case _ => None
+            }
+            replaceableTx_opt.map(tx => PublishReplaceableTx(tx, confirmationTarget))
+        }
     }
   }
 
