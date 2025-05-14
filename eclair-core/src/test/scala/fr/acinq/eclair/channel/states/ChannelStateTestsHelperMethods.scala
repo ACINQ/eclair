@@ -22,7 +22,7 @@ import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, SatoshiLong, Script, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -589,14 +589,15 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(TxPublisher.PublishFinalTx(tx, tx.fee, None)))
+    val htlcTxs = getHtlcSuccessTxs(s, localCommitPublished) ++ getHtlcTimeoutTxs(s, localCommitPublished)
     closingState.commitments.params.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         // all htlcs success/timeout should be published as-is, without claiming their outputs
-        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => TxPublisher.PublishFinalTx(tx, tx.fee, Some(commitTx.txid)) }: _*)
+        s2blockchain.expectMsgAllOf(htlcTxs.map { tx => TxPublisher.PublishFinalTx(tx, tx.fee, Some(commitTx.txid)) }: _*)
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
       case _: Transactions.AnchorOutputsCommitmentFormat =>
         // all htlcs success/timeout should be published as replaceable txs, without claiming their outputs
-        val htlcTxs = localCommitPublished.htlcTxs.values.collect { case Some(tx: HtlcTx) => tx }
+        //val htlcTxs = localCommitPublished.htlcTxs.values.collect { case Some(tx: HtlcTx) => tx }
         val publishedTxs = htlcTxs.map(_ => s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx])
         assert(publishedTxs.map(_.input).toSet == htlcTxs.map(_.input.outPoint).toSet)
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
@@ -611,7 +612,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     })
 
     // we watch outputs of the commitment tx that both parties may spend and anchor outputs
-    val watchedOutputIndexes = localCommitPublished.htlcTxs.keySet.map(_.index) ++ localCommitPublished.claimAnchorTxs.collect { case tx: ClaimAnchorOutputTx => tx.input.outPoint.index }
+    val watchedOutputIndexes = localCommitPublished.htlcTxOutpoints.map(_.index) ++ localCommitPublished.claimAnchorTxs.collect { case tx: ClaimAnchorOutputTx => tx.input.outPoint.index }
     val spentWatches = watchedOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchOutputSpent])
     spentWatches.foreach(ws => assert(ws.txId == commitTx.txid))
     assert(spentWatches.map(_.outputIndex) == watchedOutputIndexes)
@@ -666,9 +667,20 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
   def channelId(a: TestFSMRef[ChannelState, ChannelData, Channel]): ByteVector32 = a.stateData.channelId
 
-  def getHtlcSuccessTxs(lcp: LocalCommitPublished): Seq[HtlcSuccessTx] = lcp.htlcTxs.values.collect { case Some(tx: HtlcSuccessTx) => tx }.toSeq
+  def getHtlcTxsMap(a:  TestFSMRef[ChannelState, ChannelData, Channel]): Map[OutPoint, Option[HtlcTx]] = {
+    implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
+    Helpers.Closing.LocalClose.claimHtlcOutputs(a.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.localKeys(a.underlyingActor.channelKeys), a.stateData.asInstanceOf[DATA_CLOSING].commitments.latest)
+  }
 
-  def getHtlcTimeoutTxs(lcp: LocalCommitPublished): Seq[HtlcTimeoutTx] = lcp.htlcTxs.values.collect { case Some(tx: HtlcTimeoutTx) => tx }.toSeq
+  def getHtlcSuccessTxs(a: TestFSMRef[ChannelState, ChannelData, Channel], lcp: LocalCommitPublished): Seq[HtlcSuccessTx] = {
+    val htlcTxsMap = getHtlcTxsMap(a)
+    htlcTxsMap.values.flatten.collect { case h: HtlcSuccessTx if lcp.htlcTxOutpoints.contains(h.input.outPoint) => h }.toSeq
+  }
+
+  def getHtlcTimeoutTxs(a: TestFSMRef[ChannelState, ChannelData, Channel], lcp: LocalCommitPublished): Seq[HtlcTimeoutTx] = {
+    val htlcTxsMap = getHtlcTxsMap(a)
+    htlcTxsMap.values.flatten.collect { case h: HtlcTimeoutTx if lcp.htlcTxOutpoints.contains(h.input.outPoint) => h }.toSeq
+  }
 
   def getClaimHtlcSuccessTxs(rcp: RemoteCommitPublished): Seq[ClaimHtlcSuccessTx] = rcp.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcSuccessTx) => tx }.toSeq
 

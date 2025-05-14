@@ -3438,9 +3438,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
     val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
     assert(localCommitPublished.commitTx.txid == aliceCommitTx.txid)
-    assert(localCommitPublished.htlcTxs.size == 4)
-    assert(getHtlcSuccessTxs(localCommitPublished).length == 1)
-    assert(getHtlcTimeoutTxs(localCommitPublished).length == 2)
+    assert(localCommitPublished.htlcTxOutpoints.size == 4)
+    assert(getHtlcSuccessTxs(alice, localCommitPublished).length == 1)
+    assert(getHtlcTimeoutTxs(alice, localCommitPublished).length == 2)
     assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
 
     // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
@@ -3527,7 +3527,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       alice2blockchain.expectMsgType[WatchOutputSpent], // local anchor
     ).map(w => OutPoint(w.txId, w.outputIndex)).toSet
     val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
-    assert(watchedOutputs == localCommitPublished.htlcTxs.keySet + localAnchor.tx.txInfo.input.outPoint)
+    assert(watchedOutputs == localCommitPublished.htlcTxOutpoints + localAnchor.tx.txInfo.input.outPoint)
     alice2blockchain.expectNoMessage(100 millis)
   }
 

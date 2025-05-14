@@ -2740,7 +2740,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // Bob's htlc-timeout txs confirm.
     bob ! WatchFundingSpentTriggered(commitTx2)
     val bobHtlcsTxsOut = htlcs.bobToAlice.map(_ => assertPublished(bob2blockchain, "claim-htlc-timeout"))
-    val remoteOutpoints = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.map(rcp => rcp.htlcTxs.filter(_._2.isEmpty).keys).toSeq.flatten
+    val remoteOutpoints = {
+      val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+      val htlcTxsOutpoints = (getHtlcSuccessTxs(alice, lcp) ++ getHtlcTimeoutTxs(alice, lcp)).map(_.input.outPoint).toSet
+      (lcp.htlcTxOutpoints -- htlcTxsOutpoints)
+    }
     assert(remoteOutpoints.size == htlcs.bobToAlice.size)
     assert(remoteOutpoints.toSet == bobHtlcsTxsOut.flatMap(_.txIn.map(_.outPoint)).toSet)
     bobHtlcsTxsOut.foreach { tx => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, tx) }

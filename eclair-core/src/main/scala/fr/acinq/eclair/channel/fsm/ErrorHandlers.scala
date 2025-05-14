@@ -19,11 +19,12 @@ package fr.acinq.eclair.channel.fsm
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorRef, FSM}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, SatoshiLong, Transaction, TxId}
-import fr.acinq.eclair.NotificationsLogger
+import fr.acinq.eclair.{CltvExpiry, NotificationsLogger}
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{RelativeDelay, WatchOutputSpent, WatchTxConfirmed}
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.channel.Helpers.Closing.LocalClose.claimHtlcOutputs
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
@@ -31,7 +32,7 @@ import fr.acinq.eclair.channel.publish._
 import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReestablish, Error, OpenChannel, UpdateFulfillHtlc, Warning}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReestablish, Error, OpenChannel, UpdateAddHtlc, UpdateFulfillHtlc, Warning}
 
 import java.sql.SQLException
 
@@ -234,16 +235,15 @@ trait ErrorHandlers extends CommonHandlers {
     val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
     val commitKeys = commitment.localKeys(channelKeys)
     val localPaysCommitTxFees = commitment.localParams.paysCommitTxFees
+    val htlcTxs = redeemableHtlcTxs(commitTx, commitKeys, commitment)
     val publishQueue = commitment.params.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
-        val htlcTxs = redeemableHtlcTxs(commitTx, commitKeys, commitment)
         List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ (claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None)))
       case _: Transactions.AnchorOutputsCommitmentFormat =>
         val claimAnchor = for {
-          confirmationTarget <- localCommitPublished.confirmationTarget(nodeParams.onChainFeeConf)
+          confirmationTarget <- localCommitPublished.confirmationTarget(nodeParams.onChainFeeConf, commitment)
           anchorTx <- claimAnchorTx_opt
         } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, commitTx, commitment), confirmationTarget)
-        val htlcTxs = redeemableHtlcTxs(commitTx, commitKeys, commitment)
         List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ claimAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
@@ -259,7 +259,8 @@ trait ErrorHandlers extends CommonHandlers {
     // We watch outputs of the commitment tx that both parties may spend.
     // We also watch our local anchor: this ensures that we will correctly detect when it's confirmed and count its fees
     // in the audit DB, even if we restart before confirmation.
-    val watchSpentQueue = htlcTxs.keys.toSeq ++ claimAnchorTx_opt.collect { case tx if !localCommitPublished.isConfirmed => tx.input.outPoint }
+    val htlcTxsMap = Closing.LocalClose.claimHtlcOutputs(commitKeys, commitment)
+    val watchSpentQueue = htlcTxsMap.keys ++ claimAnchorTx_opt.collect { case tx if !localCommitPublished.isConfirmed => tx.input.outPoint }
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 

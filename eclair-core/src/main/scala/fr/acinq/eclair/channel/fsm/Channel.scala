@@ -2108,8 +2108,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         }
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
+      val htlcTxsMap = Closing.LocalClose.claimHtlcOutputs(d.commitments.latest.localKeys(channelKeys), d.commitments.latest)
       val timedOutHtlcs = Closing.isClosingTypeAlreadyKnown(d1) match {
-        case Some(c: Closing.LocalClose) => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.params.localParams.dustLimit, tx)
+        case Some(c: Closing.LocalClose) => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.localCommit, htlcTxsMap, d.commitments.params.localParams.dustLimit, tx)
         case Some(c: Closing.RemoteClose) => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.params.remoteParams.dustLimit, tx)
         case Some(_: Closing.RevokedClose) => Set.empty[UpdateAddHtlc] // revoked commitments are handled using [[overriddenOutgoingHtlcs]] below
         case Some(_: Closing.RecoveryClose) => Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarios (future remote commit)

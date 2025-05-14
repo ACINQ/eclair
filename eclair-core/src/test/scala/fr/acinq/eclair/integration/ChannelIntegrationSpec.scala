@@ -261,8 +261,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(8, Some(minerAddress))
     // we wait until the htlc-timeout has been broadcast
-    assert(localCommit.htlcTxs.size == 1)
-    waitForOutputSpent(localCommit.htlcTxs.keys.head, bitcoinClient, sender)
+    assert(localCommit.htlcTxOutpoints.size == 1)
+    waitForOutputSpent(localCommit.htlcTxOutpoints.head, bitcoinClient, sender)
     // we generate more blocks for the htlc-timeout to reach enough confirmations
     generateBlocks(8, Some(minerAddress))
     // this will fail the htlc

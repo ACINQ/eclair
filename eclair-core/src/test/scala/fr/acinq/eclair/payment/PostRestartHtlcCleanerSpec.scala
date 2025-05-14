@@ -426,9 +426,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       val closingState = localClose(alice, alice2blockchain)
       alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, closingState.commitTx)
       // All committed htlcs timed out except the last two; one will be fulfilled later and the other will timeout later.
-      assert(closingState.htlcTxs.size == 4)
-      assert(getHtlcTimeoutTxs(closingState).length == 4)
-      val htlcTxs = getHtlcTimeoutTxs(closingState).sortBy(_.tx.txOut.map(_.amount).sum)
+      assert(closingState.htlcTxOutpoints.size == 4)
+      assert(getHtlcTimeoutTxs(alice, closingState).length == 4)
+      val htlcTxs = getHtlcTimeoutTxs(alice, closingState).sortBy(_.tx.txOut.map(_.amount).sum)
       htlcTxs.reverse.drop(2).zipWithIndex.foreach {
         case (htlcTx, i) => alice ! WatchTxConfirmedTriggered(BlockHeight(201), i, htlcTx.tx)
       }

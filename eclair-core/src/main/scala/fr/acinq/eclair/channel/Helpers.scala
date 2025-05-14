@@ -948,7 +948,8 @@ object Helpers {
        * doing that because it introduces a lot of subtle edge cases.
        */
       def claimHtlcDelayedOutput(localCommitPublished: LocalCommitPublished, channelKeys: ChannelKeys, commitment: FullCommitment, tx: Transaction, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (LocalCommitPublished, Option[HtlcDelayedTx]) = {
-        if (tx.txIn.exists(txIn => localCommitPublished.htlcTxs.contains(txIn.outPoint))) {
+        val htlcTxsMap = claimHtlcOutputs(commitment.localKeys(channelKeys), commitment)
+        if (tx.txIn.exists(txIn => htlcTxsMap.contains(txIn.outPoint))) {
           val feeratePerKwDelayed = onChainFeeConf.getClosingFeerate(feerates)
           val commitKeys = commitment.localKeys(channelKeys)
           // Note that this will return None if the transaction wasn't one of our HTLC transactions, which may happen
@@ -1243,14 +1244,14 @@ object Helpers {
      * @param tx a tx that has reached mindepth
      * @return a set of htlcs that need to be failed upstream
      */
-    def trimmedOrTimedOutHtlcs(commitmentFormat: CommitmentFormat, localCommit: LocalCommit, localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
+    def trimmedOrTimedOutHtlcs(commitmentFormat: CommitmentFormat, localCommit: LocalCommit, htlcTxs: Map[OutPoint, Option[HtlcTx]], localDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
       val untrimmedHtlcs = Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec, commitmentFormat).map(_.add)
       if (tx.txid == localCommit.commitTxAndRemoteSig.commitTx.tx.txid) {
         // The commitment tx is confirmed: we can immediately fail all dust htlcs (they don't have an output in the tx).
         localCommit.spec.htlcs.collect(outgoing) -- untrimmedHtlcs
       } else {
         // Maybe this is a timeout tx: in that case we can resolve and fail the corresponding htlc.
-        tx.txIn.flatMap(txIn => localCommitPublished.htlcTxs.get(txIn.outPoint) match {
+        tx.txIn.flatMap(txIn => htlcTxs.get(txIn.outPoint) match {
           // This may also be our peer claiming the HTLC by revealing the preimage: in that case we have already
           // extracted the preimage with [[extractPreimages]] and relayed it upstream.
           case Some(Some(htlcTimeoutTx: HtlcTimeoutTx)) if Scripts.extractPreimagesFromClaimHtlcSuccess(tx).isEmpty =>

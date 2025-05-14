@@ -332,15 +332,20 @@ sealed trait CommitPublished {
  * @param claimAnchorTxs           txs spending our anchor output to bump the feerate of the commitment tx (if applicable).
  */
 case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[HtlcTx]], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+  val htlcTxOutpoints: Set[OutPoint] = htlcTxs.keySet
+
   // We previously used a list of anchor transactions because we included the confirmation target, but that's obsolete and should be overridden on updates.
   val claimAnchorTx_opt: Option[ClaimAnchorOutputTx] = claimAnchorTxs.headOption
 
   /** Compute the confirmation target that should be used to get the [[commitTx]] confirmed. */
-  def confirmationTarget(onChainFeeConf: OnChainFeeConf): Option[ConfirmationTarget] = {
+  def confirmationTarget(onChainFeeConf: OnChainFeeConf, commitment: FullCommitment): Option[ConfirmationTarget] = {
     if (isConfirmed) {
       None
     } else {
-      htlcTxs.values.flatten.map(_.htlcExpiry.blockHeight).minOption match {
+      val expiries = commitment.localCommit.htlcTxsAndRemoteSigs.collect {
+        case htlcTxsAndRemoteSig if htlcTxOutpoints.contains(htlcTxsAndRemoteSig.htlcTx.input.outPoint) => htlcTxsAndRemoteSig.htlcTx.htlcExpiry.blockHeight
+      }
+      expiries.minOption match {
         // If there are pending HTLCs, we must get the commit tx confirmed before they timeout.
         case Some(htlcExpiry) => Some(ConfirmationTarget.Absolute(htlcExpiry))
         // Otherwise, we don't have funds at risk, so we can aim for a slower confirmation.
@@ -361,7 +366,7 @@ case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx:
     // is our main output confirmed (if we have one)?
     val isMainOutputConfirmed = claimMainDelayedOutputTx.forall(tx => irrevocablySpent.contains(tx.input.outPoint))
     // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
-    val allHtlcsSpent = (htlcTxs.keySet -- irrevocablySpent.keys).isEmpty
+    val allHtlcsSpent = (htlcTxOutpoints -- irrevocablySpent.keys).isEmpty
     // are all outputs from htlc txs spent?
     val unconfirmedHtlcDelayedTxs = claimHtlcDelayedTxs.map(_.input.outPoint)
       // only the txs which parents are already confirmed may get confirmed (note that this eliminates outputs that have been double-spent by a competing tx)
