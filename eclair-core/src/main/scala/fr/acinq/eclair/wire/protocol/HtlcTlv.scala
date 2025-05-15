@@ -97,6 +97,7 @@ object CommitSigTlv {
   }
 
   val commitSigTlvCodec: Codec[TlvStream[CommitSigTlv]] = tlvStream(discriminated[CommitSigTlv].by(varint)
+    .typecase(UInt64(2), PartialSignatureWithNonceTlv.codec)
     .typecase(UInt64(0x47010005), BatchTlv.codec)
   )
 
