@@ -1519,12 +1519,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! CMD_SIGN()
     val sigsA = alice2bob.expectMsgType[CommitSigBatch]
     assert(sigsA.batchSize == 2)
-    sigsA.messages.foreach(sig => alice2bob.forward(bob, sig))
+    alice2bob.forward(bob, sigsA)
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     val sigsB = bob2alice.expectMsgType[CommitSigBatch]
     assert(sigsB.batchSize == 2)
-    sigsB.messages.foreach(sig => bob2alice.forward(alice, sig))
+    bob2alice.forward(alice, sigsB)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.forall(_.localCommit.spec.htlcs.size == 1))
@@ -1548,12 +1548,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.forward(bob)
     val sigsA = alice2bob.expectMsgType[CommitSigBatch]
     assert(sigsA.batchSize == 2)
-    sigsA.messages.foreach(sig => alice2bob.forward(bob, sig))
+    alice2bob.forward(bob, sigsA)
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     val sigsB = bob2alice.expectMsgType[CommitSigBatch]
     assert(sigsB.batchSize == 2)
-    sigsB.messages.foreach(sig => bob2alice.forward(alice, sig))
+    bob2alice.forward(alice, sigsB)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.forall(_.localCommit.spec.htlcs.size == 1))
@@ -1672,16 +1672,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! CMD_SIGN()
     val commitSigsAlice = alice2bob.expectMsgType[CommitSigBatch]
     assert(commitSigsAlice.batchSize == 3)
-    alice2bob.forward(bob, commitSigsAlice.messages(0))
     bob ! WatchPublishedTriggered(spliceTx2)
     val spliceLockedBob = bob2alice.expectMsgType[SpliceLocked]
     assert(spliceLockedBob.fundingTxId == spliceTx2.txid)
     bob2alice.forward(alice, spliceLockedBob)
-    alice2bob.forward(bob, commitSigsAlice.messages(1))
-    alice2bob.forward(bob, commitSigsAlice.messages(2))
+    alice2bob.forward(bob, commitSigsAlice)
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
-    assert(bob2alice.expectMsgType[CommitSig].batchSize == 1)
+    bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
@@ -3335,13 +3333,13 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
       bob ! CMD_SIGN()
       inside(bob2alice.expectMsgType[CommitSigBatch]) { batch =>
         assert(batch.batchSize == 3)
-        batch.messages.foreach(sig => bob2alice.forward(alice, sig))
+        bob2alice.forward(alice, batch)
       }
       alice2bob.expectMsgType[RevokeAndAck]
       alice2bob.forward(bob)
       inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>
         assert(batch.batchSize == 3)
-        batch.messages.foreach(sig => alice2bob.forward(bob, sig))
+        alice2bob.forward(bob, batch)
       }
       bob2alice.expectMsgType[RevokeAndAck]
       bob2alice.forward(alice)

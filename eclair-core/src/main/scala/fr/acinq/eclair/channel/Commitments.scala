@@ -1159,7 +1159,7 @@ case class Commitments(params: ChannelParams,
       case ChannelSpendSignature.IndividualSignature(latestRemoteSig) => latestRemoteSig == commitSig.signature
       case ChannelSpendSignature.PartialSignatureWithNonce(_, _) => ???
     }
-    params.channelFeatures.hasFeature(Features.DualFunding) && commitSig.batchSize == 1 && isLatestSig
+    params.channelFeatures.hasFeature(Features.DualFunding) && isLatestSig
   }
 
   def localFundingSigs(fundingTxId: TxId): Option[TxSignatures] = {

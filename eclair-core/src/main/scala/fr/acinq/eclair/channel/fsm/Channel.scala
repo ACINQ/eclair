@@ -211,8 +211,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   // choose to not make this an Option (that would be None before the first connection), and instead embrace the fact
   // that the active connection may point to dead letters at all time
   var activeConnection = context.system.deadLetters
-  // we aggregate sigs for splices before processing
-  var sigStash = Seq.empty[CommitSig]
   // we stash announcement_signatures if we receive them earlier than expected
   var announcementSigsStash = Map.empty[RealShortChannelId, AnnouncementSignatures]
   // we record the announcement_signatures messages we already sent to avoid unnecessary retransmission
@@ -581,77 +579,75 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           stay()
       }
 
-    case Event(commit: CommitSig, d: DATA_NORMAL) =>
-      aggregateSigs(commit) match {
-        case Some(sigs) =>
-          d.spliceStatus match {
-            case s: SpliceStatus.SpliceInProgress =>
-              log.debug("received their commit_sig, deferring message")
-              stay() using d.copy(spliceStatus = s.copy(remoteCommitSig = Some(commit)))
-            case SpliceStatus.SpliceAborted =>
-              log.warning("received commit_sig after sending tx_abort, they probably sent it before receiving our tx_abort, ignoring...")
-              stay()
-            case SpliceStatus.SpliceWaitingForSigs(signingSession) =>
-              signingSession.receiveCommitSig(d.commitments.params, channelKeys, commit, nodeParams.currentBlockHeight) match {
-                case Left(f) =>
-                  rollbackFundingAttempt(signingSession.fundingTx.tx, Nil)
-                  stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, f.getMessage)
-                case Right(signingSession1) => signingSession1 match {
-                  case signingSession1: InteractiveTxSigningSession.WaitingForSigs =>
-                    // In theory we don't have to store their commit_sig here, as they would re-send it if we disconnect, but
-                    // it is more consistent with the case where we send our tx_signatures first.
-                    val d1 = d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(signingSession1))
-                    stay() using d1 storing()
-                  case signingSession1: InteractiveTxSigningSession.SendingSigs =>
-                    // We don't have their tx_sigs, but they have ours, and could publish the funding tx without telling us.
-                    // That's why we move on immediately to the next step, and will update our unsigned funding tx when we
-                    // receive their tx_sigs.
-                    val minDepth_opt = d.commitments.params.minDepth(nodeParams.channelConf.minDepth)
-                    watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
-                    val commitments1 = d.commitments.add(signingSession1.commitment)
-                    val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
-                    stay() using d1 storing() sending signingSession1.localSigs calling endQuiescence(d1)
-                }
-              }
-            case _ if d.commitments.ignoreRetransmittedCommitSig(commit) =>
-              // We haven't received our peer's tx_signatures for the latest funding transaction and asked them to resend it on reconnection.
-              // They also resend their corresponding commit_sig, but we have already received it so we should ignore it.
-              // Note that the funding transaction may have confirmed while we were reconnecting.
-              log.info("ignoring commit_sig, we're still waiting for tx_signatures")
-              stay()
-            case _ =>
-              // NB: in all other cases we process the commit_sig normally. We could do a full pattern matching on all
-              // splice statuses, but it would force us to handle corner cases like race condition between splice_init
-              // and a non-splice commit_sig
-              d.commitments.receiveCommit(sigs, channelKeys) match {
-                case Right((commitments1, revocation)) =>
-                  log.debug("received a new sig, spec:\n{}", commitments1.latest.specs2String)
-                  if (commitments1.changes.localHasChanges) {
-                    // if we have newly acknowledged changes let's sign them
-                    self ! CMD_SIGN()
-                  }
-                  if (d.commitments.availableBalanceForSend != commitments1.availableBalanceForSend) {
-                    // we send this event only when our balance changes
-                    context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
-                  }
-                  context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
-                  // If we're now quiescent, we may send our stfu message.
-                  val (d1, toSend) = d.spliceStatus match {
-                    case SpliceStatus.NegotiatingQuiescence(cmd_opt, QuiescenceNegotiation.Initiator.QuiescenceRequested) if commitments1.localIsQuiescent =>
-                      val stfu = Stfu(d.channelId, initiator = true)
-                      val spliceStatus1 = SpliceStatus.NegotiatingQuiescence(cmd_opt, QuiescenceNegotiation.Initiator.SentStfu(stfu))
-                      (d.copy(commitments = commitments1, spliceStatus = spliceStatus1), Seq(revocation, stfu))
-                    case SpliceStatus.NegotiatingQuiescence(_, _: QuiescenceNegotiation.NonInitiator.ReceivedStfu) if commitments1.localIsQuiescent =>
-                      val stfu = Stfu(d.channelId, initiator = false)
-                      (d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NonInitiatorQuiescent), Seq(revocation, stfu))
-                    case _ =>
-                      (d.copy(commitments = commitments1), Seq(revocation))
-                  }
-                  stay() using d1 storing() sending toSend
-                case Left(cause) => handleLocalError(cause, d, Some(commit))
-              }
+    case Event(commit: CommitSigs, d: DATA_NORMAL) =>
+      (d.spliceStatus, commit) match {
+        case (s: SpliceStatus.SpliceInProgress, sig: CommitSig) =>
+          log.debug("received their commit_sig, deferring message")
+          stay() using d.copy(spliceStatus = s.copy(remoteCommitSig = Some(sig)))
+        case (SpliceStatus.SpliceAborted, sig: CommitSig) =>
+          log.warning("received commit_sig after sending tx_abort, they probably sent it before receiving our tx_abort, ignoring...")
+          stay()
+        case (SpliceStatus.SpliceWaitingForSigs(signingSession), sig: CommitSig) =>
+          signingSession.receiveCommitSig(d.commitments.params, channelKeys, sig, nodeParams.currentBlockHeight) match {
+            case Left(f) =>
+              rollbackFundingAttempt(signingSession.fundingTx.tx, Nil)
+              stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, f.getMessage)
+            case Right(signingSession1) => signingSession1 match {
+              case signingSession1: InteractiveTxSigningSession.WaitingForSigs =>
+                // In theory we don't have to store their commit_sig here, as they would re-send it if we disconnect, but
+                // it is more consistent with the case where we send our tx_signatures first.
+                val d1 = d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(signingSession1))
+                stay() using d1 storing()
+              case signingSession1: InteractiveTxSigningSession.SendingSigs =>
+                // We don't have their tx_sigs, but they have ours, and could publish the funding tx without telling us.
+                // That's why we move on immediately to the next step, and will update our unsigned funding tx when we
+                // receive their tx_sigs.
+                val minDepth_opt = d.commitments.params.minDepth(nodeParams.channelConf.minDepth)
+                watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
+                val commitments1 = d.commitments.add(signingSession1.commitment)
+                val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
+                stay() using d1 storing() sending signingSession1.localSigs calling endQuiescence(d1)
+            }
           }
-        case None => stay()
+        case (_, sig: CommitSig) if d.commitments.ignoreRetransmittedCommitSig(sig) =>
+          // If our peer hasn't implemented https://github.com/lightning/bolts/pull/1214, they may retransmit commit_sig
+          // even though we've already received it and haven't requested a retransmission. It is safe to simply ignore
+          // this commit_sig while we wait for peers to correctly implemented commit_sig retransmission, at which point
+          // we should be able to get rid of this edge case.
+          // Note that the funding transaction may have confirmed while we were reconnecting.
+          log.info("ignoring commit_sig, we're still waiting for tx_signatures")
+          stay()
+        case _ =>
+          // NB: in all other cases we process the commit_sigs normally. We could do a full pattern matching on all
+          // splice statuses, but it would force us to handle every corner case where our peer doesn't behave correctly
+          // whereas they will all simply lead to a force-close.
+          d.commitments.receiveCommit(commit, channelKeys) match {
+            case Right((commitments1, revocation)) =>
+              log.debug("received a new sig, spec:\n{}", commitments1.latest.specs2String)
+              if (commitments1.changes.localHasChanges) {
+                // if we have newly acknowledged changes let's sign them
+                self ! CMD_SIGN()
+              }
+              if (d.commitments.availableBalanceForSend != commitments1.availableBalanceForSend) {
+                // we send this event only when our balance changes
+                context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
+              }
+              context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
+              // If we're now quiescent, we may send our stfu message.
+              val (d1, toSend) = d.spliceStatus match {
+                case SpliceStatus.NegotiatingQuiescence(cmd_opt, QuiescenceNegotiation.Initiator.QuiescenceRequested) if commitments1.localIsQuiescent =>
+                  val stfu = Stfu(d.channelId, initiator = true)
+                  val spliceStatus1 = SpliceStatus.NegotiatingQuiescence(cmd_opt, QuiescenceNegotiation.Initiator.SentStfu(stfu))
+                  (d.copy(commitments = commitments1, spliceStatus = spliceStatus1), Seq(revocation, stfu))
+                case SpliceStatus.NegotiatingQuiescence(_, _: QuiescenceNegotiation.NonInitiator.ReceivedStfu) if commitments1.localIsQuiescent =>
+                  val stfu = Stfu(d.channelId, initiator = false)
+                  (d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NonInitiatorQuiescent), Seq(revocation, stfu))
+                case _ =>
+                  (d.copy(commitments = commitments1), Seq(revocation))
+              }
+              stay() using d1 storing() sending toSend
+            case Left(cause) => handleLocalError(cause, d, Some(commit))
+          }
       }
 
     case Event(revocation: RevokeAndAck, d: DATA_NORMAL) =>
@@ -1574,36 +1570,32 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           stay()
       }
 
-    case Event(commit: CommitSig, d@DATA_SHUTDOWN(_, localShutdown, remoteShutdown, closeStatus)) =>
-      aggregateSigs(commit) match {
-        case Some(sigs) =>
-          d.commitments.receiveCommit(sigs, channelKeys) match {
-            case Right((commitments1, revocation)) =>
-              // we always reply with a revocation
-              log.debug("received a new sig:\n{}", commitments1.latest.specs2String)
-              context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
-              if (commitments1.hasNoPendingHtlcsOrFeeUpdate) {
-                if (Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)) {
-                  val (d1, closingComplete_opt) = startSimpleClose(d.commitments, localShutdown, remoteShutdown, closeStatus)
-                  goto(NEGOTIATING_SIMPLE) using d1 storing() sending revocation +: closingComplete_opt.toSeq
-                } else if (d.commitments.params.localParams.paysClosingFees) {
-                  // we pay the closing fees, so we initiate the negotiation by sending the first closing_signed
-                  val (closingTx, closingSigned) = MutualClose.makeFirstClosingTx(channelKeys, commitments1.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.currentFeeratesForFundingClosing, nodeParams.onChainFeeConf, d.closeStatus.feerates_opt)
-                  goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx, closingSigned))), bestUnpublishedClosingTx_opt = None) storing() sending revocation :: closingSigned :: Nil
-                } else {
-                  // we are not the channel initiator, will wait for their closing_signed
-                  goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing() sending revocation
-                }
-              } else {
-                if (commitments1.changes.localHasChanges) {
-                  // if we have newly acknowledged changes let's sign them
-                  self ! CMD_SIGN()
-                }
-                stay() using d.copy(commitments = commitments1) storing() sending revocation
-              }
-            case Left(cause) => handleLocalError(cause, d, Some(commit))
+    case Event(commit: CommitSigs, d@DATA_SHUTDOWN(_, localShutdown, remoteShutdown, closeStatus)) =>
+      d.commitments.receiveCommit(commit, channelKeys) match {
+        case Right((commitments1, revocation)) =>
+          // we always reply with a revocation
+          log.debug("received a new sig:\n{}", commitments1.latest.specs2String)
+          context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
+          if (commitments1.hasNoPendingHtlcsOrFeeUpdate) {
+            if (Features.canUseFeature(d.commitments.params.localParams.initFeatures, d.commitments.params.remoteParams.initFeatures, Features.SimpleClose)) {
+              val (d1, closingComplete_opt) = startSimpleClose(d.commitments, localShutdown, remoteShutdown, closeStatus)
+              goto(NEGOTIATING_SIMPLE) using d1 storing() sending revocation +: closingComplete_opt.toSeq
+            } else if (d.commitments.params.localParams.paysClosingFees) {
+              // we pay the closing fees, so we initiate the negotiation by sending the first closing_signed
+              val (closingTx, closingSigned) = MutualClose.makeFirstClosingTx(channelKeys, commitments1.latest, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.currentFeeratesForFundingClosing, nodeParams.onChainFeeConf, d.closeStatus.feerates_opt)
+              goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx, closingSigned))), bestUnpublishedClosingTx_opt = None) storing() sending revocation :: closingSigned :: Nil
+            } else {
+              // we are not the channel initiator, will wait for their closing_signed
+              goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing() sending revocation
+            }
+          } else {
+            if (commitments1.changes.localHasChanges) {
+              // if we have newly acknowledged changes let's sign them
+              self ! CMD_SIGN()
+            }
+            stay() using d.copy(commitments = commitments1) storing() sending revocation
           }
-        case None => stay()
+        case Left(cause) => handleLocalError(cause, d, Some(commit))
       }
 
     case Event(revocation: RevokeAndAck, d@DATA_SHUTDOWN(_, localShutdown, remoteShutdown, closeStatus)) =>
@@ -3020,7 +3012,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   /** On disconnection we clear up stashes. */
   onTransition {
     case _ -> OFFLINE =>
-      sigStash = Nil
       announcementSigsStash = Map.empty
       announcementSigsSent = Set.empty
       spliceLockedSent = Map.empty[TxId, Long]
@@ -3036,19 +3027,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           888    888  d8888888888 888   Y8888 888  .d88P 888      888        888  T88b  Y88b  d88P
           888    888 d88P     888 888    Y888 8888888P"  88888888 8888888888 888   T88b  "Y8888P"
    */
-
-  /** For splices we will send one commit_sig per active commitments. */
-  private def aggregateSigs(commit: CommitSig): Option[CommitSigs] = {
-    sigStash = sigStash :+ commit
-    log.debug("received sig for batch of size={}", commit.batchSize)
-    if (sigStash.size == commit.batchSize) {
-      val sigs = CommitSigs(sigStash)
-      sigStash = Nil
-      Some(sigs)
-    } else {
-      None
-    }
-  }
 
   private def handleCurrentFeerate(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
     val commitments = d.commitments.latest

@@ -463,23 +463,17 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val rHasChanges = r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.changes.localHasChanges
     s ! CMD_SIGN(Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
-    s2r.expectMsgType[CommitSigs] match {
-      case sig: CommitSig => s2r.forward(r, sig)
-      case batch: CommitSigBatch => batch.messages.foreach(sig => s2r.forward(r, sig))
-    }
+    s2r.expectMsgType[CommitSigs]
+    s2r.forward(r)
     r2s.expectMsgType[RevokeAndAck]
     r2s.forward(s)
-    r2s.expectMsgType[CommitSigs] match {
-      case sig: CommitSig => r2s.forward(s, sig)
-      case batch: CommitSigBatch => batch.messages.foreach(sig => r2s.forward(s, sig))
-    }
+    r2s.expectMsgType[CommitSigs]
+    r2s.forward(s)
     s2r.expectMsgType[RevokeAndAck]
     s2r.forward(r)
     if (rHasChanges) {
-      s2r.expectMsgType[CommitSigs] match {
-        case sig: CommitSig => s2r.forward(r, sig)
-        case batch: CommitSigBatch => batch.messages.foreach(sig => s2r.forward(r, sig))
-      }
+      s2r.expectMsgType[CommitSigs]
+      s2r.forward(r)
       r2s.expectMsgType[RevokeAndAck]
       r2s.forward(s)
       eventually {

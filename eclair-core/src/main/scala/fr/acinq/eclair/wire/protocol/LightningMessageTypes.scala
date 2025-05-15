@@ -440,9 +440,7 @@ object CommitSigs {
 case class CommitSig(channelId: ByteVector32,
                      signature: ByteVector64,
                      htlcSignatures: List[ByteVector64],
-                     tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends CommitSigs {
-  val batchSize: Int = tlvStream.get[CommitSigTlv.BatchTlv].map(_.size).getOrElse(1)
-}
+                     tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends CommitSigs
 
 case class CommitSigBatch(messages: Seq[CommitSig]) extends CommitSigs {
   require(messages.map(_.channelId).toSet.size == 1, "commit_sig messages in a batch must be for the same channel")
