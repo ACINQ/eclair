@@ -924,7 +924,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case i: Multisig2of2Input => i.sign(channelKeys, tx, unsignedTx.inputDetails).sig
     }
     if (unsignedTx.localInputs.isEmpty) {
-      context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, Nil, sharedSig_opt)))
+      context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, Nil, sharedSig_opt, None)))
     } else {
       // We track our wallet inputs and outputs, so we can verify them when we sign the transaction: if Eclair is managing bitcoin core wallet keys, it will
       // only sign our wallet inputs, and check that it can re-compute private keys for our wallet outputs.
@@ -957,7 +957,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           }.sum
           require(actualLocalAmountOut == expectedLocalAmountOut, s"local output amount $actualLocalAmountOut does not match what we expect ($expectedLocalAmountOut): bitcoin core may be malicious")
           val sigs = partiallySignedTx.txIn.filter(txIn => localOutpoints.contains(txIn.outPoint)).map(_.witness)
-          PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, partiallySignedTx, sigs, sharedSig_opt))
+          PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, partiallySignedTx, sigs, sharedSig_opt, None))
       }) {
         case Failure(t) => WalletFailure(t)
         case Success(signedTx) => SignTransactionResult(signedTx)
