@@ -238,6 +238,19 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: TxId, remotePer
 case class NextRemoteCommit(sig: CommitSig, commit: RemoteCommit)
 
 /**
+ * If we ignore revoked commitments, there can be at most three concurrent commitment transactions during a force-close:
+ *  - the local commitment
+ *  - the remote commitment
+ *  - the next remote commitment, if we sent commit_sig but haven't yet received revoke_and_ack
+ */
+case class CommitTxIds(localCommitTxId: TxId, remoteCommitTxId: TxId, nextRemoteCommitTxId_opt: Option[TxId]) {
+  val txIds: Set[TxId] = nextRemoteCommitTxId_opt match {
+    case Some(nextRemoteCommitTxId) => Set(localCommitTxId, remoteCommitTxId, nextRemoteCommitTxId)
+    case None => Set(localCommitTxId, remoteCommitTxId)
+  }
+}
+
+/**
  * A minimal commitment for a given funding tx.
  *
  * @param fundingTxIndex         index of the funding tx in the life of the channel:
@@ -255,6 +268,7 @@ case class Commitment(fundingTxIndex: Long,
                       localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
   val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
   val fundingTxId: TxId = commitInput.outPoint.txid
+  val commitTxIds: CommitTxIds = CommitTxIds(localCommit.commitTxAndRemoteSig.commitTx.tx.txid, remoteCommit.txid, nextRemoteCommit_opt.map(_.commit.txid))
   val capacity: Satoshi = commitInput.txOut.amount
   /** Once the funding transaction is confirmed, short_channel_id matching this transaction. */
   val shortChannelId_opt: Option[RealShortChannelId] = localFundingStatus match {
@@ -735,6 +749,7 @@ case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
   val remoteParams: RemoteParams = params.remoteParams
   val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
   val fundingTxId: TxId = commitInput.outPoint.txid
+  val commitTxIds: CommitTxIds = CommitTxIds(localCommit.commitTxAndRemoteSig.commitTx.tx.txid, remoteCommit.txid, nextRemoteCommit_opt.map(_.commit.txid))
   val capacity: Satoshi = commitInput.txOut.amount
   val commitment: Commitment = Commitment(fundingTxIndex, firstRemoteCommitIndex, remoteFundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, nextRemoteCommit_opt)
 

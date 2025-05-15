@@ -22,9 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.FundedTx
-import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher.{ClaimAnchorWithWitnessData, ReplaceableTxWithWitnessData}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.{BlockHeight, NodeParams}
 
 import scala.concurrent.duration.{DurationInt, DurationLong}
@@ -115,16 +113,16 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
 
   private val log = context.log
 
-  /** The confirmation target may be updated in some corner cases (e.g. for a htlc if we learn a payment preimage). */
+  /** The confirmation target may be updated in some corner cases (e.g. if we learn a payment preimage after initiating a force-close). */
   private var confirmationTarget: ConfirmationTarget = cmd.confirmationTarget
 
   private def checkPreconditions(): Behavior[Command] = {
     val prePublisher = context.spawn(ReplaceableTxPrePublisher(nodeParams, bitcoinClient, txPublishContext), "pre-publisher")
-    prePublisher ! ReplaceableTxPrePublisher.CheckPreconditions(context.messageAdapter[ReplaceableTxPrePublisher.PreconditionsResult](WrappedPreconditionsResult), cmd)
+    prePublisher ! ReplaceableTxPrePublisher.CheckPreconditions(context.messageAdapter[ReplaceableTxPrePublisher.PreconditionsResult](WrappedPreconditionsResult), cmd.tx)
     Behaviors.receiveMessagePartial {
       case WrappedPreconditionsResult(result) =>
         result match {
-          case ReplaceableTxPrePublisher.PreconditionsOk(txWithWitnessData) => checkTimeLocks(txWithWitnessData)
+          case ReplaceableTxPrePublisher.PreconditionsOk => checkTimeLocks()
           case ReplaceableTxPrePublisher.PreconditionsFailed(reason) => sendResult(TxPublisher.TxRejected(txPublishContext.id, cmd, reason), None)
         }
       case UpdateConfirmationTarget(target) =>
@@ -134,15 +132,15 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def checkTimeLocks(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
-    txWithWitnessData match {
+  def checkTimeLocks(): Behavior[Command] = {
+    cmd.tx match {
       // There are no time locks on anchor transactions, we can claim them right away.
-      case _: ClaimAnchorWithWitnessData => chooseFeerate(txWithWitnessData)
-      case _ =>
+      case _: ReplaceableAnchor => chooseFeerate()
+      case _: ReplaceableHtlc | _: ReplaceableClaimHtlc =>
         val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, bitcoinClient, txPublishContext), "time-locks-monitor")
-        timeLocksChecker ! TxTimeLocksMonitor.CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.txInfo.tx, cmd.desc)
+        timeLocksChecker ! TxTimeLocksMonitor.CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.tx.txInfo.tx, cmd.desc)
         Behaviors.receiveMessagePartial {
-          case TimeLocksOk => chooseFeerate(txWithWitnessData)
+          case TimeLocksOk => chooseFeerate()
           case UpdateConfirmationTarget(target) =>
             confirmationTarget = target
             Behaviors.same
@@ -151,7 +149,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  private def chooseFeerate(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
+  private def chooseFeerate(): Behavior[Command] = {
     context.pipeToSelf(hasEnoughSafeUtxos(nodeParams.onChainFeeConf.safeUtxosThreshold)) {
       case Success(isSafe) => CheckUtxosResult(isSafe, nodeParams.currentBlockHeight)
       case Failure(_) => CheckUtxosResult(isSafe = false, nodeParams.currentBlockHeight) // if we can't check our utxos, we assume the worst
@@ -159,7 +157,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case CheckUtxosResult(isSafe, currentBlockHeight) =>
         val targetFeerate = getFeerate(nodeParams.currentBitcoinCoreFeerates, confirmationTarget, currentBlockHeight, isSafe)
-        fund(txWithWitnessData, targetFeerate)
+        fund(targetFeerate)
       case UpdateConfirmationTarget(target) =>
         confirmationTarget = target
         Behaviors.same
@@ -167,9 +165,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def fund(txWithWitnessData: ReplaceableTxWithWitnessData, targetFeerate: FeeratePerKw): Behavior[Command] = {
+  def fund(targetFeerate: FeeratePerKw): Behavior[Command] = {
     val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, txPublishContext), "tx-funder")
-    txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Right(txWithWitnessData), targetFeerate)
+    txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), Right(cmd.tx), targetFeerate)
     Behaviors.receiveMessagePartial {
       case WrappedFundingResult(result) =>
         result match {
@@ -179,10 +177,11 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
               case ConfirmationTarget.Priority(priority) => log.debug("publishing {} with priority {}", cmd.desc, priority)
             }
             val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), s"mempool-tx-monitor-${tx.signedTx.txid}")
-            val parentTx_opt = cmd.txInfo match {
+            val parentTx_opt = cmd.tx match {
               // Anchor output transactions are packaged with the corresponding commitment transaction.
-              case _: Transactions.ClaimAnchorOutputTx => Some(cmd.commitTx)
-              case _ => None
+              case _: ReplaceableAnchor => Some(cmd.tx.commitTx)
+              case _: ReplaceableHtlc => None
+              case _: ReplaceableClaimHtlc => None
             }
             txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, parentTx_opt, cmd.input, nodeParams.channelConf.minDepth, cmd.desc, tx.fee)
             wait(tx)
@@ -206,9 +205,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case WrappedTxResult(txResult) =>
         txResult match {
           case MempoolTxMonitor.TxInMempool(_, currentBlockHeight, parentConfirmed) =>
-            val shouldRbf = cmd.txInfo match {
+            val shouldRbf = cmd.tx match {
               // Our commit tx was confirmed on its own, so there's no need to increase fees on the anchor tx.
-              case _: Transactions.ClaimAnchorOutputTx if parentConfirmed => false
+              case _: ReplaceableAnchor if parentConfirmed => false
               case _ => true
             }
             if (shouldRbf) {
@@ -262,7 +261,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   private def fundReplacement(targetFeerate: FeeratePerKw, previousTx: FundedTx): Behavior[Command] = {
     log.info("bumping {} fees: previous feerate={}, next feerate={}", cmd.desc, previousTx.feerate, targetFeerate)
     val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, txPublishContext), "tx-funder-rbf")
-    txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Left(previousTx), targetFeerate)
+    txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), Left(previousTx), targetFeerate)
     Behaviors.receiveMessagePartial {
       case WrappedFundingResult(result) =>
         result match {
@@ -292,10 +291,11 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   // situation where we have one transaction in the mempool and wait for it to confirm.
   private def publishReplacement(previousTx: FundedTx, bumpedTx: FundedTx): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), s"mempool-tx-monitor-${bumpedTx.signedTx.txid}")
-    val parentTx_opt = cmd.txInfo match {
+    val parentTx_opt = cmd.tx match {
       // Anchor output transactions are packaged with the corresponding commitment transaction.
-      case _: Transactions.ClaimAnchorOutputTx => Some(cmd.commitTx)
-      case _ => None
+      case _: ReplaceableAnchor => Some(cmd.tx.commitTx)
+      case _: ReplaceableHtlc => None
+      case _: ReplaceableClaimHtlc => None
     }
     txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), bumpedTx.signedTx, parentTx_opt, cmd.input, nodeParams.channelConf.minDepth, cmd.desc, bumpedTx.fee)
     Behaviors.receiveMessagePartial {

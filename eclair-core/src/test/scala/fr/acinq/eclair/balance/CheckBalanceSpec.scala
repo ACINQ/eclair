@@ -94,7 +94,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // in response to that, alice publishes her claim txs
     alice2blockchain.expectMsgType[PublishReplaceableTx] // claim-anchor
     alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
-    val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
+    val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].tx.txInfo.tx)
 
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
     val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
@@ -143,7 +143,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // in response to that, alice publishes her claim txs
     alice2blockchain.expectMsgType[PublishReplaceableTx] // claim-anchor
     alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
-    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
+    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].tx.txInfo.tx)
 
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
     val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get

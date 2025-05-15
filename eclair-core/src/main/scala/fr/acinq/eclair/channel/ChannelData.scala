@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, PossiblyHarmful, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxId, TxOut}
-import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
@@ -313,7 +313,7 @@ sealed trait CommitPublished {
   def commitTx: Transaction
   /** Map of relevant outpoints that have been spent and the confirmed transaction that spends them. */
   def irrevocablySpent: Map[OutPoint, Transaction]
-
+  /** Returns true if the commitment transaction is confirmed. */
   def isConfirmed: Boolean = {
     // NB: if multiple transactions end up in the same block, the first confirmation we receive may not be the commit tx.
     // However if the confirmed tx spends from the commit tx, we know that the commit tx is already confirmed and we know
@@ -329,11 +329,26 @@ sealed trait CommitPublished {
  * @param htlcTxs                  txs claiming HTLCs. There will be one entry for each pending HTLC. The value will be
  *                                 None only for incoming HTLCs for which we don't have the preimage (we can't claim them yet).
  * @param claimHtlcDelayedTxs      3rd-stage txs (spending the output of HTLC txs).
- * @param claimAnchorTxs           txs spending anchor outputs to bump the feerate of the commitment tx (if applicable).
- *                                 We currently only claim our local anchor, but it would be nice to claim both when it
- *                                 is economical to do so to avoid polluting the utxo set.
+ * @param claimAnchorTxs           txs spending our anchor output to bump the feerate of the commitment tx (if applicable).
  */
 case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[HtlcTx]], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+  // We previously used a list of anchor transactions because we included the confirmation target, but that's obsolete and should be overridden on updates.
+  val claimAnchorTx_opt: Option[ClaimAnchorOutputTx] = claimAnchorTxs.headOption
+
+  /** Compute the confirmation target that should be used to get the [[commitTx]] confirmed. */
+  def confirmationTarget(onChainFeeConf: OnChainFeeConf): Option[ConfirmationTarget] = {
+    if (isConfirmed) {
+      None
+    } else {
+      htlcTxs.values.flatten.map(_.htlcExpiry.blockHeight).minOption match {
+        // If there are pending HTLCs, we must get the commit tx confirmed before they timeout.
+        case Some(htlcExpiry) => Some(ConfirmationTarget.Absolute(htlcExpiry))
+        // Otherwise, we don't have funds at risk, so we can aim for a slower confirmation.
+        case None => Some(ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing))
+      }
+    }
+  }
+
   /**
    * A local commit is considered done when:
    * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
@@ -363,11 +378,26 @@ case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx:
  * @param claimMainOutputTx tx claiming our main output (if we have one).
  * @param claimHtlcTxs      txs claiming HTLCs. There will be one entry for each pending HTLC. The value will be None
  *                          only for incoming HTLCs for which we don't have the preimage (we can't claim them yet).
- * @param claimAnchorTxs    txs spending anchor outputs to bump the feerate of the commitment tx (if applicable).
- *                          We currently only claim our local anchor, but it would be nice to claim both when it is
- *                          economical to do so to avoid polluting the utxo set.
+ * @param claimAnchorTxs    txs spending our anchor output to bump the feerate of the commitment tx (if applicable).
  */
 case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], claimHtlcTxs: Map[OutPoint, Option[ClaimHtlcTx]], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+  // We previously used a list of anchor transactions because we included the confirmation target, but that's obsolete and should be overridden on updates.
+  val claimAnchorTx_opt: Option[ClaimAnchorOutputTx] = claimAnchorTxs.headOption
+
+  /** Compute the confirmation target that should be used to get the [[commitTx]] confirmed. */
+  def confirmationTarget(onChainFeeConf: OnChainFeeConf): Option[ConfirmationTarget] = {
+    if (isConfirmed) {
+      None
+    } else {
+      claimHtlcTxs.values.flatten.map(_.htlcExpiry.blockHeight).minOption match {
+        // If there are pending HTLCs, we must get the commit tx confirmed before they timeout.
+        case Some(htlcExpiry) => Some(ConfirmationTarget.Absolute(htlcExpiry))
+        // Otherwise, we don't have funds at risk, so we can aim for a slower confirmation.
+        case None => Some(ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing))
+      }
+    }
+  }
+
   /**
    * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
    * (even if the spending tx was not ours).

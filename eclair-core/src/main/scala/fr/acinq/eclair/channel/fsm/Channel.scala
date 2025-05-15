@@ -38,8 +38,8 @@ import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxFunder, InteractiveTxSigningSession}
-import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, SetChannelId}
+import fr.acinq.eclair.channel.publish.{ReplaceableLocalCommitAnchor, ReplaceableRemoteCommitAnchor, TxPublisher}
 import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent.EventType
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -2168,27 +2168,36 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case commitmentFormat: Transactions.AnchorOutputsCommitmentFormat =>
           val commitment = d.commitments.latest
           val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
-          val lcp1 = d.localCommitPublished.map(lcp => Closing.LocalClose.claimAnchors(fundingKey, commitment.localKeys(channelKeys), lcp, c.confirmationTarget, commitmentFormat))
-          val rcp1 = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.claimAnchors(fundingKey, commitment.remoteKeys(channelKeys, commitment.remoteCommit.remotePerCommitmentPoint), rcp, c.confirmationTarget, commitmentFormat))
-          val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.claimAnchors(fundingKey, commitment.remoteKeys(channelKeys, commitment.nextRemoteCommit_opt.get.commit.remotePerCommitmentPoint), nrcp, c.confirmationTarget, commitmentFormat))
+          val localAnchor_opt = for {
+            lcp <- d.localCommitPublished
+            commitKeys = commitment.localKeys(channelKeys)
+            anchorTx <- Closing.LocalClose.claimAnchors(fundingKey, commitKeys, lcp, commitmentFormat).claimAnchorTx_opt
+          } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, lcp.commitTx, commitment), c.confirmationTarget)
+          val remoteAnchor_opt = for {
+            rcp <- d.remoteCommitPublished
+            commitKeys = commitment.remoteKeys(channelKeys, commitment.remoteCommit.remotePerCommitmentPoint)
+            anchorTx <- Closing.RemoteClose.claimAnchors(fundingKey, commitKeys, rcp, commitmentFormat).claimAnchorTx_opt
+          } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, rcp.commitTx, commitment), c.confirmationTarget)
+          val nextRemoteAnchor_opt = for {
+            nrcp <- d.nextRemoteCommitPublished
+            commitKeys = commitment.remoteKeys(channelKeys, commitment.nextRemoteCommit_opt.get.commit.remotePerCommitmentPoint)
+            anchorTx <- Closing.RemoteClose.claimAnchors(fundingKey, commitKeys, nrcp, commitmentFormat).claimAnchorTx_opt
+          } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, nrcp.commitTx, commitment), c.confirmationTarget)
           // We favor the remote commitment(s) because they're more interesting than the local commitment (no CSV delays).
-          if (rcp1.nonEmpty) {
-            rcp1.foreach(rcp => rcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, channelKeys, d.commitments.latest, rcp.commitTx, tx.confirmationTarget) })
+          if (remoteAnchor_opt.nonEmpty) {
+            remoteAnchor_opt.foreach { publishTx => txPublisher ! publishTx }
             c.replyTo ! RES_SUCCESS(c, d.channelId)
-            stay() using d.copy(remoteCommitPublished = rcp1) storing()
-          } else if (nrcp1.nonEmpty) {
-            nrcp1.foreach(rcp => rcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, channelKeys, d.commitments.latest, rcp.commitTx, tx.confirmationTarget) })
+          } else if (nextRemoteAnchor_opt.nonEmpty) {
+            nextRemoteAnchor_opt.foreach { publishTx => txPublisher ! publishTx }
             c.replyTo ! RES_SUCCESS(c, d.channelId)
-            stay() using d.copy(nextRemoteCommitPublished = nrcp1) storing()
-          } else if (lcp1.nonEmpty) {
-            lcp1.foreach(lcp => lcp.claimAnchorTxs.foreach { tx => txPublisher ! PublishReplaceableTx(tx, channelKeys, d.commitments.latest, lcp.commitTx, tx.confirmationTarget) })
+          } else if (localAnchor_opt.nonEmpty) {
+            localAnchor_opt.foreach { publishTx => txPublisher ! publishTx }
             c.replyTo ! RES_SUCCESS(c, d.channelId)
-            stay() using d.copy(localCommitPublished = lcp1) storing()
           } else {
             log.warning("cannot bump force-close fees, local or remote commit not published")
             c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf-force-close", stateName))
-            stay()
           }
+          stay()
         case _ =>
           log.warning("cannot bump force-close fees, channel is not using anchor outputs")
           c.replyTo ! RES_FAILURE(c, CommandUnavailableInThisState(d.channelId, "rbf-force-close", stateName))

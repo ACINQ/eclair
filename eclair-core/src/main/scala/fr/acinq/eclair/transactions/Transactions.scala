@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.bitcoin.{ScriptFlags, ScriptTree}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature
 import fr.acinq.eclair.channel.ChannelSpendSignature._
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
@@ -361,8 +361,6 @@ object Transactions {
     }
   }
 
-  sealed trait ReplaceableTransactionWithInputInfo extends ForceCloseTransaction
-
   /**
    * It's important to note that htlc transactions with the default commitment format are not actually replaceable: only
    * anchor outputs htlc transactions are replaceable. We should have used different types for these different kinds of
@@ -375,7 +373,7 @@ object Transactions {
    * The next time we introduce a new type of commitment, we should avoid repeating that mistake and define separate
    * types right from the start.
    */
-  sealed trait HtlcTx extends ReplaceableTransactionWithInputInfo {
+  sealed trait HtlcTx extends ForceCloseTransaction {
     // @formatter:off
     def htlcId: Long
     def paymentHash: ByteVector32
@@ -526,7 +524,7 @@ object Transactions {
     }
   }
 
-  sealed trait ClaimHtlcTx extends ReplaceableTransactionWithInputInfo {
+  sealed trait ClaimHtlcTx extends ForceCloseTransaction {
     // @formatter:off
     def htlcId: Long
     def paymentHash: ByteVector32
@@ -642,7 +640,7 @@ object Transactions {
   }
 
   /** This transaction claims our anchor output in either the local or remote commitment, to CPFP and get it confirmed. */
-  case class ClaimAnchorOutputTx(input: InputInfo, tx: Transaction, confirmationTarget: ConfirmationTarget) extends ReplaceableTransactionWithInputInfo {
+  case class ClaimAnchorOutputTx(input: InputInfo, tx: Transaction) extends ForceCloseTransaction {
     override val desc: String = "local-anchor"
 
     def sign(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ClaimAnchorOutputTx = {
@@ -677,7 +675,7 @@ object Transactions {
       }
     }
 
-    def createUnsignedTx(fundingKey: PrivateKey, commitKeys: CommitmentPublicKeys, commitTx: Transaction, confirmationTarget: ConfirmationTarget, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimAnchorOutputTx] = {
+    def createUnsignedTx(fundingKey: PrivateKey, commitKeys: CommitmentPublicKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimAnchorOutputTx] = {
       val pubkeyScript = redeemInfo(fundingKey, commitKeys, commitmentFormat).pubkeyScript
       findPubKeyScriptIndex(commitTx, pubkeyScript).map { outputIndex =>
         val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
@@ -687,7 +685,7 @@ object Transactions {
           txOut = Nil, // anchor is only used to bump fees, the output will be added later depending on available inputs
           lockTime = 0
         )
-        ClaimAnchorOutputTx(input, unsignedTx, confirmationTarget)
+        ClaimAnchorOutputTx(input, unsignedTx)
       }
     }
   }

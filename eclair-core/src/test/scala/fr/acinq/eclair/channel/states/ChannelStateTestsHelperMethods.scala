@@ -27,10 +27,10 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet, OnChainPubkeyCache, SingleKeyOnChainWallet}
+import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainPubkeyCache, OnChainWallet, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.publish.TxPublisher
+import fr.acinq.eclair.channel.publish.{ReplaceableLocalCommitAnchor, ReplaceableRemoteCommitAnchor, TxPublisher}
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
@@ -585,7 +585,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val commitInput = closingState.commitments.latest.commitInput
     Transaction.correctlySpends(publishedLocalCommitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     if (closingState.commitments.params.commitmentFormat.isInstanceOf[Transactions.AnchorOutputsCommitmentFormat]) {
-      assert(s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimAnchorOutputTx])
+      assert(s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].tx.isInstanceOf[ReplaceableLocalCommitAnchor])
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(TxPublisher.PublishFinalTx(tx, tx.fee, None)))
@@ -632,12 +632,11 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val remoteCommitPublished = remoteCommitPublished_opt.get
 
     // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
-    closingData.commitments.params.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat =>
-        val anchorTx = s2blockchain.expectMsgType[PublishReplaceableTx]
-        assert(anchorTx.txInfo.isInstanceOf[ClaimAnchorOutputTx])
-      case Transactions.DefaultCommitmentFormat => ()
+    val anchorTx_opt = closingData.commitments.params.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => Some(s2blockchain.expectMsgType[PublishReplaceableTx])
+      case Transactions.DefaultCommitmentFormat => None
     }
+    anchorTx_opt.foreach(anchor => assert(anchor.tx.isInstanceOf[ReplaceableRemoteCommitAnchor]))
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     remoteCommitPublished.claimMainOutputTx.foreach(claimMain => {
       Transaction.correctlySpends(claimMain.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -655,9 +654,10 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     // we watch outputs of the commitment tx that both parties may spend
     val htlcOutputIndexes = remoteCommitPublished.claimHtlcTxs.keySet.map(_.index)
-    val spentWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchOutputSpent])
-    spentWatches.foreach(ws => assert(ws.txId == rCommitTx.txid))
-    assert(spentWatches.map(_.outputIndex) == htlcOutputIndexes)
+    val spentHtlcWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchOutputSpent])
+    spentHtlcWatches.foreach(ws => assert(ws.txId == rCommitTx.txid))
+    assert(spentHtlcWatches.map(_.outputIndex) == htlcOutputIndexes)
+    anchorTx_opt.foreach(anchor => assert(s2blockchain.expectMsgType[WatchOutputSpent].outputIndex == anchor.input.index))
     s2blockchain.expectNoMessage(100 millis)
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
