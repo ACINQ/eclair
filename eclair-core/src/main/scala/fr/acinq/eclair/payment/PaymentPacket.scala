@@ -43,7 +43,7 @@ object IncomingPaymentPacket {
 
   // @formatter:off
   /** We are the final recipient. */
-  case class FinalPacket(add: UpdateAddHtlc, payload: FinalPayload) extends IncomingPaymentPacket
+  case class FinalPacket(add: UpdateAddHtlc, payload: FinalPayload, receivedAt: TimestampMilli) extends IncomingPaymentPacket
   /** We are an intermediate node. */
   sealed trait RelayPacket extends IncomingPaymentPacket
   /** We must relay the payment to a direct peer. */
@@ -224,7 +224,7 @@ object IncomingPaymentPacket {
     FinalPayload.Standard.validate(payload).left.map(_.failureMessage).flatMap {
       case payload if add.amountMsat < payload.amount => Left(FinalIncorrectHtlcAmount(add.amountMsat))
       case payload if add.cltvExpiry < payload.expiry => Left(FinalIncorrectCltvExpiry(add.cltvExpiry))
-      case payload => Right(FinalPacket(add, payload))
+      case payload => Right(FinalPacket(add, payload, TimestampMilli.now()))
     }
   }
 
@@ -234,7 +234,7 @@ object IncomingPaymentPacket {
       case payload if payload.paymentConstraints_opt.exists(c => c.maxCltvExpiry < add.cltvExpiry) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if !Features.areCompatible(Features.empty, payload.allowedFeatures) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if add.cltvExpiry < payload.expiry => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
-      case payload => Right(FinalPacket(add, payload))
+      case payload => Right(FinalPacket(add, payload, TimestampMilli.now()))
     }
   }
 
@@ -250,7 +250,7 @@ object IncomingPaymentPacket {
           // We merge contents from the outer and inner payloads.
           // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
           val trampolinePacket = outerPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].map(_.packet)
-          Right(FinalPacket(add, FinalPayload.Standard.createPayload(outerPayload.amount, innerPayload.totalAmount, innerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata, trampolinePacket)))
+          Right(FinalPacket(add, FinalPayload.Standard.createPayload(outerPayload.amount, innerPayload.totalAmount, innerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata, trampolinePacket), TimestampMilli.now()))
       }
     }
   }

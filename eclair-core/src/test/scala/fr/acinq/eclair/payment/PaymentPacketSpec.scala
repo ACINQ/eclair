@@ -110,7 +110,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(relay_d.expiryDelta == channelUpdate_de.cltvExpiryDelta)
 
     val add_e = UpdateAddHtlc(randomBytes32(), 2, amount_de, paymentHash, expiry_de, packet_e, None, 1.0, None)
-    val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    val Right(FinalPacket(add_e2, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features.empty)
     assert(add_e2 == add_e)
     assert(payload_e.isInstanceOf[FinalPayload.Standard])
     assert(payload_e.amount == finalAmount)
@@ -134,7 +134,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // let's peel the onion
     val add_b = UpdateAddHtlc(randomBytes32(), 0, finalAmount, paymentHash, finalExpiry, payment.cmd.onion, None, 1.0, None)
-    val Right(FinalPacket(add_b2, payload_b)) = decrypt(add_b, priv_b.privateKey, Features.empty)
+    val Right(FinalPacket(add_b2, payload_b, _)) = decrypt(add_b, priv_b.privateKey, Features.empty)
     assert(add_b2 == add_b)
     assert(payload_b.isInstanceOf[FinalPayload.Standard])
     assert(payload_b.amount == finalAmount)
@@ -151,7 +151,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // let's peel the onion
     val add_b = UpdateAddHtlc(randomBytes32(), 0, finalAmount + 100.msat, paymentHash, finalExpiry + CltvExpiryDelta(6), payment.cmd.onion, None, 1.0, None)
-    val Right(FinalPacket(_, payload_b)) = decrypt(add_b, priv_b.privateKey, Features.empty)
+    val Right(FinalPacket(_, payload_b, _)) = decrypt(add_b, priv_b.privateKey, Features.empty)
     assert(payload_b.isInstanceOf[FinalPayload.Standard])
     assert(payload_b.amount == finalAmount)
     assert(payload_b.totalAmount == finalAmount)
@@ -203,7 +203,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val pathKey_e = payload_d.asInstanceOf[IntermediatePayload.ChannelRelay.Blinded].nextPathKey
 
     val add_e = UpdateAddHtlc(randomBytes32(), 2, relay_d.amountToForward, relay_d.add.paymentHash, relay_d.outgoingCltv, packet_e, Some(pathKey_e), 1.0, None)
-    val Right(FinalPacket(_, payload_e)) = decrypt(add_e, priv_e.privateKey, Features(RouteBlinding -> Optional))
+    val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features(RouteBlinding -> Optional))
     assert(payload_e.amount == finalAmount)
     assert(payload_e.totalAmount == finalAmount)
     assert(add_e.cltvExpiry == finalExpiry)
@@ -244,7 +244,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_b.isInstanceOf[IntermediatePayload.ChannelRelay.Standard])
 
     val add_c = UpdateAddHtlc(randomBytes32(), 1, amount_bc, paymentHash, expiry_bc, packet_c, None, 1.0, None)
-    val Right(FinalPacket(_, payload_c)) = decrypt(add_c, priv_c.privateKey, Features(RouteBlinding -> Optional))
+    val Right(FinalPacket(_, payload_c, _)) = decrypt(add_c, priv_c.privateKey, Features(RouteBlinding -> Optional))
     assert(payload_c.amount == amount_bc)
     assert(payload_c.totalAmount == amount_bc)
     assert(payload_c.expiry == expiry_bc)
@@ -260,7 +260,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payment.cmd.nextPathKey_opt.nonEmpty)
 
     val add_b = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, payment.cmd.nextPathKey_opt, 1.0, payment.cmd.fundingFee_opt)
-    val Right(FinalPacket(_, payload_b)) = decrypt(add_b, priv_b.privateKey, Features(RouteBlinding -> Optional))
+    val Right(FinalPacket(_, payload_b, _)) = decrypt(add_b, priv_b.privateKey, Features(RouteBlinding -> Optional))
     assert(payload_b.amount == finalAmount)
     assert(payload_b.totalAmount == finalAmount)
     assert(add_b.cltvExpiry == finalExpiry)
@@ -273,7 +273,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payment.outgoingChannel == channelUpdate_ab.shortChannelId)
 
     val add_b = UpdateAddHtlc(randomBytes32(), 0, payment.cmd.amount + 100.msat, payment.cmd.paymentHash, payment.cmd.cltvExpiry + CltvExpiryDelta(6), payment.cmd.onion, payment.cmd.nextPathKey_opt, 1.0, payment.cmd.fundingFee_opt)
-    val Right(FinalPacket(_, payload_b)) = decrypt(add_b, priv_b.privateKey, Features(RouteBlinding -> Optional))
+    val Right(FinalPacket(_, payload_b, _)) = decrypt(add_b, priv_b.privateKey, Features(RouteBlinding -> Optional))
     assert(payload_b.amount == finalAmount)
     assert(payload_b.totalAmount == finalAmount)
   }
@@ -302,7 +302,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_d == IntermediatePayload.ChannelRelay.Standard(channelUpdate_de.shortChannelId, amount_de, expiry_de))
 
     val add_e = UpdateAddHtlc(randomBytes32(), 4, amount_de, paymentHash, expiry_de, packet_e, None, 1.0, None)
-    val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    val Right(FinalPacket(add_e2, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features.empty)
     assert(add_e2 == add_e)
     assert(payload_e.isInstanceOf[FinalPayload.Standard])
     assert(payload_e.amount == finalAmount)
@@ -373,7 +373,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_d == IntermediatePayload.ChannelRelay.Standard(channelUpdate_de.shortChannelId, amount_de, expiry_de))
 
     val add_e = UpdateAddHtlc(randomBytes32(), 4, amount_de, paymentHash, expiry_de, packet_e, None, 1.0, None)
-    val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    val Right(FinalPacket(add_e2, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features.empty)
     assert(add_e2 == add_e)
     assert(payload_e.isInstanceOf[FinalPayload.Standard])
     assert(payload_e.amount == finalAmount)
@@ -435,7 +435,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(payload_d == IntermediatePayload.ChannelRelay.Standard(channelUpdate_de.shortChannelId, amount_de, expiry_de))
 
     val add_e = UpdateAddHtlc(randomBytes32(), 4, amount_de, paymentHash, expiry_de, packet_e, None, 1.0, None)
-    val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    val Right(FinalPacket(add_e2, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features.empty)
     assert(add_e2 == add_e)
     assert(payload_e.isInstanceOf[FinalPayload.Standard])
     assert(payload_e.amount == finalAmount)
@@ -654,7 +654,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val add_d = UpdateAddHtlc(randomBytes32(), 2, amount_cd, paymentHash, expiry_cd, packet_d, None, 1.0, None)
     val Right(ChannelRelayPacket(_, _, packet_e)) = decrypt(add_d, priv_d.privateKey, Features.empty)
     val add_e = UpdateAddHtlc(randomBytes32(), 3, amount_de, paymentHash, expiry_de, packet_e, None, 1.0, None)
-    val Right(FinalPacket(_, payload_e)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features.empty)
     assert(payload_e.isInstanceOf[FinalPayload.Standard])
 
     // e returns a failure
@@ -683,7 +683,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val add_d = UpdateAddHtlc(randomBytes32(), 2, amount_cd, paymentHash, expiry_cd, packet_d, None, 1.0, None)
     val Right(ChannelRelayPacket(_, _, packet_e)) = decrypt(add_d, priv_d.privateKey, Features.empty)
     val add_e = UpdateAddHtlc(randomBytes32(), 3, amount_de, paymentHash, expiry_de, packet_e, None, 1.0, None)
-    val Right(FinalPacket(_, payload_e)) = decrypt(add_e, priv_e.privateKey, Features.empty)
+    val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features.empty)
     assert(payload_e.isInstanceOf[FinalPayload.Standard])
 
     // e returns a failure
@@ -716,7 +716,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val Right(ChannelRelayPacket(_, payload_d, packet_e)) = decrypt(add_d, priv_d.privateKey, Features(RouteBlinding -> Optional))
     val pathKey_e = payload_d.asInstanceOf[IntermediatePayload.ChannelRelay.Blinded].nextPathKey
     val add_e = UpdateAddHtlc(randomBytes32(), 3, amount_de, paymentHash, expiry_de, packet_e, Some(pathKey_e), 1.0, None)
-    val Right(FinalPacket(_, payload_e)) = decrypt(add_e, priv_e.privateKey, Features(RouteBlinding -> Optional))
+    val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e.privateKey, Features(RouteBlinding -> Optional))
     assert(payload_e.isInstanceOf[FinalPayload.Blinded])
 
     // nodes after the introduction node cannot send `update_fail_htlc` messages

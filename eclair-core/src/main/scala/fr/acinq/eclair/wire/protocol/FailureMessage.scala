@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.crypto.Mac32
+import fr.acinq.eclair.crypto.{Mac32, Sphinx}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.failureMessageCodec
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelFlagsCodec, channelUpdateCodec, messageFlagsCodec, meteredLightningMessageCodec}
@@ -170,7 +170,7 @@ object FailureMessageCodecs {
 
   private val encryptedDownstreamFailure: Codec[FailureReason.EncryptedDownstreamFailure] =
     (("packet" | varsizebinarydata) ::
-      ("attribution_opt" | optional(bool(8), bytesStrict(920)))).as[FailureReason.EncryptedDownstreamFailure]
+      ("attribution_opt" | optional(bool8, bytes(Sphinx.FailurePacket.Attribution.totalLength)))).as[FailureReason.EncryptedDownstreamFailure]
 
   val failureReasonCodec: Codec[FailureReason] = discriminated[FailureReason].by(uint8)
     // Order matters: latest codec comes first, then old codecs for backward compatibility

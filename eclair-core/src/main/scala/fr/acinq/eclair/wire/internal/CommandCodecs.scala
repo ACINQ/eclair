@@ -85,7 +85,7 @@ object CommandCodecs {
   private val cmdFailCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
       ("reason" | failureReasonCodec) ::
-      ("htlcReceivedAt_opt" | uint64overflow.as[TimestampMilli].xmap[Option[TimestampMilli]](t => if (t == TimestampMilli.min) None else Some(t), _.getOrElse(TimestampMilli.min))) ::
+      ("htlcReceivedAt_opt" | optional(bool8, uint64overflow.as[TimestampMilli])) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::

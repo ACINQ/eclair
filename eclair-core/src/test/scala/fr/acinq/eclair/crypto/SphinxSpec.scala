@@ -22,7 +22,7 @@ import fr.acinq.eclair.crypto.Sphinx.FailurePacket
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedRoute, BlindedRouteDetails}
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, EncodedNodeId, MilliSatoshiLong, ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, EncodedNodeId, MilliSatoshiLong, ShortChannelId, UInt64, randomBytes, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -335,6 +335,70 @@ class SphinxSpec extends AnyFunSuite {
       assert(holdTimes == Seq(HoldTime(5 millisecond, publicKeys(0)), HoldTime(4 milliseconds, publicKeys(1)), HoldTime(3 milliseconds, publicKeys(2)), HoldTime(2 milliseconds, publicKeys(3)), HoldTime(1 milliseconds, publicKeys(4))))
       assert(pubkey == publicKeys(4))
       assert(parsedFailure == failure)
+    }
+  }
+
+  test("only some nodes in the route support attributable failures") {
+    for ((payloads, packetPayloadLength) <- Seq((referencePaymentPayloads, 1300), (paymentPayloadsFull, 1300))) {
+      // origin build the onion packet
+      val Success(PacketAndSecrets(packet, sharedSecrets)) = create(sessionKey, packetPayloadLength, publicKeys, payloads, associatedData)
+      // each node parses and forwards the packet
+      val Right(DecryptedPacket(_, packet1, sharedSecret0)) = peel(privKeys(0), associatedData, packet)
+      val Right(DecryptedPacket(_, packet2, sharedSecret1)) = peel(privKeys(1), associatedData, packet1)
+      val Right(DecryptedPacket(_, packet3, sharedSecret2)) = peel(privKeys(2), associatedData, packet2)
+      val Right(DecryptedPacket(_, packet4, sharedSecret3)) = peel(privKeys(3), associatedData, packet3)
+      val Right(lastPacket@DecryptedPacket(_, _, sharedSecret4)) = peel(privKeys(4), associatedData, packet4)
+      assert(lastPacket.isLastPacket)
+
+      // node #4 want to reply with an error message
+      val failure = IncorrectOrUnknownPaymentDetails(100 msat, BlockHeight(800000), TlvStream(Set.empty[FailureMessageTlv]))
+      val failurePacket = createCustomLengthFailurePacket(failure, sharedSecret4, 1024)
+      val error = Sphinx.FailurePacket.wrap(failurePacket, sharedSecret4)
+      val error1 = FailurePacket.wrap(error, sharedSecret3)
+      // node #4 does not support attributable failures, nodes #0 to #3 support attributable failures
+      val attribution1 = FailurePacket.Attribution.create(None, error, 2 milliseconds, sharedSecret3)
+      val error2 = FailurePacket.wrap(error1, sharedSecret2)
+      val attribution2 = FailurePacket.Attribution.create(Some(attribution1), error1, 3 milliseconds, sharedSecret2)
+      val error3 = FailurePacket.wrap(error2, sharedSecret1)
+      val attribution3 = FailurePacket.Attribution.create(Some(attribution2), error2, 4 milliseconds, sharedSecret1)
+      val error4 = FailurePacket.wrap(error3, sharedSecret0)
+      val attribution4 = FailurePacket.Attribution.create(Some(attribution3), error3, 5 milliseconds, sharedSecret0)
+
+      // origin parses error packet and can see that it comes from node #4
+      val HtlcFailure(holdTimes, Right(DecryptedFailurePacket(pubkey, parsedFailure))) = FailurePacket.decrypt(error4, Some(attribution4), sharedSecrets)
+      // We're missing attribution data from node #4 but we get hold times until node #3
+      assert(holdTimes == Seq(HoldTime(5 millisecond, publicKeys(0)), HoldTime(4 milliseconds, publicKeys(1)), HoldTime(3 milliseconds, publicKeys(2)), HoldTime(2 milliseconds, publicKeys(3))))
+      assert(pubkey == publicKeys(4))
+      assert(parsedFailure == failure)
+    }
+  }
+
+  test("failing node tries to hide its identity") {
+    for ((payloads, packetPayloadLength) <- Seq((referencePaymentPayloads, 1300), (paymentPayloadsFull, 1300))) {
+      // origin build the onion packet
+      val Success(PacketAndSecrets(packet, sharedSecrets)) = create(sessionKey, packetPayloadLength, publicKeys, payloads, associatedData)
+      // each node parses and forwards the packet
+      val Right(DecryptedPacket(_, packet1, sharedSecret0)) = peel(privKeys(0), associatedData, packet)
+      val Right(DecryptedPacket(_, packet2, sharedSecret1)) = peel(privKeys(1), associatedData, packet1)
+      val Right(DecryptedPacket(_, packet3, sharedSecret2)) = peel(privKeys(2), associatedData, packet2)
+      val Right(DecryptedPacket(_, packet4, sharedSecret3)) = peel(privKeys(3), associatedData, packet3)
+      val Right(lastPacket@DecryptedPacket(_, _, sharedSecret4)) = peel(privKeys(4), associatedData, packet4)
+      assert(lastPacket.isLastPacket)
+
+      // node #4 fails but instead of returning a failure message it returns random data
+      val error = Sphinx.FailurePacket.wrap(randomBytes(1024), sharedSecret4)
+      val error1 = FailurePacket.wrap(error, sharedSecret3)
+      val attribution1 = FailurePacket.Attribution.create(None, error, 2 milliseconds, sharedSecret3)
+      val error2 = FailurePacket.wrap(error1, sharedSecret2)
+      val attribution2 = FailurePacket.Attribution.create(Some(attribution1), error1, 3 milliseconds, sharedSecret2)
+      val error3 = FailurePacket.wrap(error2, sharedSecret1)
+      val attribution3 = FailurePacket.Attribution.create(Some(attribution2), error2, 4 milliseconds, sharedSecret1)
+      val error4 = FailurePacket.wrap(error3, sharedSecret0)
+      val attribution4 = FailurePacket.Attribution.create(Some(attribution3), error3, 5 milliseconds, sharedSecret0)
+
+      // origin can't parse the failure packet but the hold times tell us that nodes #0 to #2 are honest
+      val HtlcFailure(holdTimes, Left(CannotDecryptFailurePacket(_))) = FailurePacket.decrypt(error4, Some(attribution4), sharedSecrets)
+      assert(holdTimes == Seq(HoldTime(5 millisecond, publicKeys(0)), HoldTime(4 milliseconds, publicKeys(1)), HoldTime(3 milliseconds, publicKeys(2)), HoldTime(2 milliseconds, publicKeys(3))))
     }
   }
 
