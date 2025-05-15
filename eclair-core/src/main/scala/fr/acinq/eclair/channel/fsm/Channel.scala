@@ -20,6 +20,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.Logs.LogCategory
@@ -40,6 +41,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxFunder, InteractiveTxSigningSession}
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishReplaceableTx, SetChannelId}
 import fr.acinq.eclair.channel.publish._
+import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent.EventType
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -48,7 +50,7 @@ import fr.acinq.eclair.io.Peer.LiquidityPurchaseSigned
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSettlingOnChain}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.ClosingTx
+import fr.acinq.eclair.transactions.Transactions.{ClosingTx, LocalNonce, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 
@@ -218,6 +220,31 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     with ErrorHandlers {
 
   import Channel._
+
+  // remote nonces, one for each active commitment, with the same ordering
+  var remoteNextLocalNonces: List[IndividualNonce] = List.empty
+
+  // will be added to remoteNextLocalNonces once a splice has been completed
+  var pendingRemoteNextLocalNonce: Option[IndividualNonce] = None
+
+  // used in the closing workflow
+  var localClosingNonce: Option[LocalNonce] = None // used to sign closing txs
+  var remoteClosingNonce: Option[IndividualNonce] = None
+
+  def updateLocalClosingNonce(commitments: Commitments): TlvStream[ShutdownTlv] = commitments.channelParams.commitmentFormat match {
+    case _: SimpleTaprootChannelCommitmentFormat =>
+      val localFundingPubKey = channelKeys.fundingKey(commitments.latest.fundingTxIndex).publicKey
+      log.info("generating closing nonce {} with fundingPubKey = {} fundingTxIndex = {}", localClosingNonce, localFundingPubKey, commitments.latest.fundingTxIndex)
+      localClosingNonce = Some(NonceGenerator.signingNonce(localFundingPubKey))
+      TlvStream(ShutdownTlv.ShutdownNonce(localClosingNonce.get.publicNonce))
+    case _ =>
+      TlvStream.empty
+  }
+
+  def setRemoteNextLocalNonces(info: String, n: List[IndividualNonce]): Unit = {
+    this.remoteNextLocalNonces = n
+    log.debug("{} set remoteNextLocalNonces to {}", info, this.remoteNextLocalNonces)
+  }
 
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: akka.event.DiagnosticLoggingAdapter = diagLog
@@ -605,7 +632,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay()
         case Right(_) =>
-          d.commitments.sendCommit(channelKeys) match {
+          d.commitments.sendCommit(channelKeys, this.remoteNextLocalNonces) match {
             case Right((commitments1, commit)) =>
               log.debug("sending a new sig, spec:\n{}", commitments1.latest.specs2String)
               val nextRemoteCommit = commitments1.latest.nextRemoteCommit_opt.get.commit
@@ -660,7 +687,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 stay() using d1 storing() sending signingSession1.localSigs calling endQuiescence(d1)
             }
           }
-        case (_, sig: CommitSig) if d.commitments.ignoreRetransmittedCommitSig(sig) =>
+        case (_, sig: CommitSig) if d.commitments.ignoreRetransmittedCommitSig(channelKeys, sig) =>
           // If our peer hasn't implemented https://github.com/lightning/bolts/pull/1214, they may retransmit commit_sig
           // even though we've already received it and haven't requested a retransmission. It is safe to simply ignore
           // this commit_sig while we wait for peers to correctly implemented commit_sig retransmission, at which point
@@ -707,6 +734,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       d.commitments.receiveRevocation(revocation, nodeParams.onChainFeeConf.feerateToleranceFor(remoteNodeId).dustTolerance.maxExposure) match {
         case Right((commitments1, actions)) =>
           cancelTimer(RevocationTimeout.toString)
+          setRemoteNextLocalNonces("received RevokeAndAck", revocation.nexLocalNonces)
           log.debug("received a new rev, spec:\n{}", commitments1.latest.specs2String)
           actions.foreach {
             case PostRevocationAction.RelayHtlc(add) =>
@@ -726,7 +754,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           if (d.remoteShutdown.isDefined && !commitments1.changes.localHasUnsignedOutgoingHtlcs) {
             // we were waiting for our pending htlcs to be signed before replying with our local shutdown
             val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
-            val localShutdown = Shutdown(d.channelId, finalScriptPubKey)
+            val tlvStream: TlvStream[ShutdownTlv] = updateLocalClosingNonce(d.commitments)
+            val localShutdown = Shutdown(d.channelId, finalScriptPubKey, tlvStream)
             // this should always be defined, we provide a fallback for backward compat with older channels
             val closeStatus = d.closeStatus_opt.getOrElse(CloseStatus.NonInitiator(None))
             // note: it means that we had pending htlcs to sign, therefore we go to SHUTDOWN, not to NEGOTIATING
@@ -753,7 +782,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         d.commitments.channelParams.validateLocalShutdownScript(localScriptPubKey) match {
           case Left(e) => handleCommandError(e, c)
           case Right(localShutdownScript) =>
-            val shutdown = Shutdown(d.channelId, localShutdownScript)
+            val tlvStream: TlvStream[ShutdownTlv] = updateLocalClosingNonce(d.commitments)
+            val shutdown = Shutdown(d.channelId, localShutdownScript, tlvStream)
             handleCommandSuccess(c, d.copy(localShutdown = Some(shutdown), closeStatus_opt = Some(CloseStatus.Initiator(c.feerates)))) storing() sending shutdown
         }
       }
@@ -797,12 +827,18 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             // in the meantime we won't send new changes
             stay() using d.copy(remoteShutdown = Some(remoteShutdown), closeStatus_opt = Some(CloseStatus.NonInitiator(None)))
           } else {
+            if (d.commitments.latest.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat]) {
+              require(remoteShutdown.shutdownNonce_opt.isDefined, "missing shutdown nonce")
+            }
+            remoteClosingNonce = remoteShutdown.shutdownNonce_opt
+
             // so we don't have any unsigned outgoing changes
             val (localShutdown, sendList) = d.localShutdown match {
               case Some(localShutdown) =>
                 (localShutdown, Nil)
               case None =>
-                val localShutdown = Shutdown(d.channelId, getOrGenerateFinalScriptPubKey(d))
+                val tlvStream: TlvStream[ShutdownTlv] = updateLocalClosingNonce(d.commitments)
+                val localShutdown = Shutdown(d.channelId, getOrGenerateFinalScriptPubKey(d), tlvStream)
                 // we need to send our shutdown if we didn't previously
                 (localShutdown, localShutdown :: Nil)
             }
@@ -1073,6 +1109,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             val parentCommitment = d.commitments.latest.commitment
             val localFundingPubKey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey
             val fundingScript = Funding.makeFundingScript(localFundingPubKey, msg.fundingPubKey, d.commitments.channelParams.commitmentFormat).pubkeyScript
+            val sharedInput = d.commitments.latest.commitmentFormat match {
+              case _: SimpleTaprootChannelCommitmentFormat => Musig2Input(parentCommitment)
+              case _ => Multisig2of2Input(parentCommitment)
+            }
+
             LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = false, msg.requestFunding_opt, nodeParams.liquidityAdsConfig.rates_opt, msg.useFeeCredit_opt) match {
               case Left(t) =>
                 log.warning("rejecting splice request with invalid liquidity ads: {}", t.getMessage)
@@ -1092,7 +1133,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   isInitiator = false,
                   localContribution = spliceAck.fundingContribution,
                   remoteContribution = msg.fundingContribution,
-                  sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
+                  sharedInput_opt = Some(sharedInput),
                   remoteFundingPubKey = msg.fundingPubKey,
                   localOutputs = Nil,
                   lockTime = msg.lockTime,
@@ -1101,6 +1142,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceAck.requireConfirmedInputs)
                 )
                 val sessionId = randomBytes32()
+                log.debug("spawning InteractiveTxBuilder with remoteNextLocalNonces {}", remoteNextLocalNonces)
                 val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
                   sessionId,
                   nodeParams, fundingParams,
@@ -1131,12 +1173,16 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
           val parentCommitment = d.commitments.latest.commitment
+          val sharedInput = d.commitments.latest.commitmentFormat match {
+            case _: SimpleTaprootChannelCommitmentFormat => Musig2Input(parentCommitment)
+            case _ => Multisig2of2Input(parentCommitment)
+          }
           val fundingParams = InteractiveTxParams(
             channelId = d.channelId,
             isInitiator = true,
             localContribution = spliceInit.fundingContribution,
             remoteContribution = msg.fundingContribution,
-            sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
+            sharedInput_opt = Some(sharedInput),
             remoteFundingPubKey = msg.fundingPubKey,
             localOutputs = cmd.spliceOutputs,
             lockTime = spliceInit.lockTime,
@@ -1207,12 +1253,16 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   val fundingContribution = willFund_opt.map(_.purchase.amount).getOrElse(rbf.latestFundingTx.fundingParams.localContribution)
                   log.info("accepting rbf with remote.in.amount={} local.in.amount={}", msg.fundingContribution, fundingContribution)
                   val txAckRbf = TxAckRbf(d.channelId, fundingContribution, rbf.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, willFund_opt.map(_.willFund))
+                  val sharedInput = d.commitments.latest.commitmentFormat match {
+                    case _: SimpleTaprootChannelCommitmentFormat => Musig2Input(rbf.parentCommitment)
+                    case _ => Multisig2of2Input(rbf.parentCommitment)
+                  }
                   val fundingParams = InteractiveTxParams(
                     channelId = d.channelId,
                     isInitiator = false,
                     localContribution = fundingContribution,
                     remoteContribution = msg.fundingContribution,
-                    sharedInput_opt = Some(Multisig2of2Input(rbf.parentCommitment)),
+                    sharedInput_opt = Some(sharedInput),
                     remoteFundingPubKey = rbf.latestFundingTx.fundingParams.remoteFundingPubKey,
                     localOutputs = rbf.latestFundingTx.fundingParams.localOutputs,
                     lockTime = msg.lockTime,
@@ -1261,12 +1311,16 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, t.getMessage)
                 case Right(liquidityPurchase_opt) =>
                   log.info("our peer accepted our rbf request and will contribute {} to the funding transaction", msg.fundingContribution)
+                  val sharedInput = d.commitments.latest.commitmentFormat match {
+                    case _: SimpleTaprootChannelCommitmentFormat => Musig2Input(rbf.parentCommitment)
+                    case _ => Multisig2of2Input(rbf.parentCommitment)
+                  }
                   val fundingParams = InteractiveTxParams(
                     channelId = d.channelId,
                     isInitiator = true,
                     localContribution = txInitRbf.fundingContribution,
                     remoteContribution = msg.fundingContribution,
-                    sharedInput_opt = Some(Multisig2of2Input(rbf.parentCommitment)),
+                    sharedInput_opt = Some(sharedInput),
                     remoteFundingPubKey = rbf.latestFundingTx.fundingParams.remoteFundingPubKey,
                     localOutputs = rbf.latestFundingTx.fundingParams.localOutputs,
                     lockTime = txInitRbf.lockTime,
@@ -1344,8 +1398,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 log.info("ignoring outgoing interactive-tx message {} from previous session", msg.getClass.getSimpleName)
                 stay()
               }
-            case InteractiveTxBuilder.Succeeded(signingSession, commitSig, liquidityPurchase_opt) =>
+            case InteractiveTxBuilder.Succeeded(signingSession, commitSig, liquidityPurchase_opt, nextRemoteNonce_opt) =>
               log.info(s"splice tx created with fundingTxIndex=${signingSession.fundingTxIndex} fundingTxId=${signingSession.fundingTx.txId}")
+              this.pendingRemoteNextLocalNonce = nextRemoteNonce_opt
               cmd_opt.foreach(cmd => cmd.replyTo ! RES_SPLICE(fundingTxIndex = signingSession.fundingTxIndex, signingSession.fundingTx.txId, signingSession.fundingParams.fundingAmount, signingSession.localCommit.fold(_.spec, _.spec).toLocal))
               remoteCommitSig_opt.foreach(self ! _)
               liquidityPurchase_opt.collect {
@@ -1867,7 +1922,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         // No need to persist their latest script, they will re-sent it on reconnection.
         stay() using d.copy(remoteScriptPubKey = closingComplete.closerScriptPubKey) sending Warning(d.channelId, InvalidCloseeScript(d.channelId, closingComplete.closeeScriptPubKey, d.localScriptPubKey).getMessage)
       } else {
-        MutualClose.signSimpleClosingTx(channelKeys, d.commitments.latest, closingComplete.closeeScriptPubKey, closingComplete.closerScriptPubKey, closingComplete) match {
+        MutualClose.signSimpleClosingTx(channelKeys, d.commitments.latest, closingComplete.closeeScriptPubKey, closingComplete.closerScriptPubKey, closingComplete, localClosingNonce, remoteClosingNonce) match {
           case Left(f) =>
             log.warning("invalid closing_complete: {}", f.getMessage)
             stay() sending Warning(d.channelId, f.getMessage)
@@ -1882,7 +1937,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // Note that if we sent two closing_complete in a row, without waiting for their closing_sig for the first one,
       // this will fail because we only care about our latest closing_complete. This is fine, we should receive their
       // closing_sig for the last closing_complete afterwards.
-      MutualClose.receiveSimpleClosingSig(channelKeys, d.commitments.latest, d.proposedClosingTxs.last, closingSig) match {
+      MutualClose.receiveSimpleClosingSig(channelKeys, d.commitments.latest, d.proposedClosingTxs.last, closingSig, localClosingNonce, remoteClosingNonce) match {
         case Left(f) =>
           log.warning("invalid closing_sig: {}", f.getMessage)
           stay() sending Warning(d.channelId, f.getMessage)
@@ -2469,12 +2524,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
       log.debug("re-sending channel_ready")
-      val channelReady = createChannelReady(d.aliases, d.commitments.channelParams)
+      val channelReady = createChannelReady(d.aliases, d.commitments)
       goto(WAIT_FOR_CHANNEL_READY) sending channelReady
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
       log.debug("re-sending channel_ready")
-      val channelReady = createChannelReady(d.aliases, d.commitments.channelParams)
+      val channelReady = createChannelReady(d.aliases, d.commitments)
       // We've already received their commit_sig and sent our tx_signatures. We retransmit our tx_signatures
       // and our commit_sig if they haven't received it already.
       channelReestablish.nextFundingTxId_opt match {
