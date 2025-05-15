@@ -17,10 +17,14 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
+import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, KeyAggCache, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.{ExtendedPrivateKey, hardened}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Protocol, TxId}
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.randomBytes32
+
+import java.nio.ByteOrder
 
 /**
  * Keys used for a specific channel instance:
@@ -73,7 +77,6 @@ case class ChannelKeys(private val fundingMasterKey: ExtendedPrivateKey, private
 
   /** With the remote per-commitment secret, we can derive the private key to spend revoked commitments. */
   def revocationKey(remoteCommitmentSecret: PrivateKey): PrivateKey = ChannelKeys.revocationKey(revocationBaseSecret, remoteCommitmentSecret)
-
 }
 
 object ChannelKeys {
@@ -110,5 +113,4 @@ object ChannelKeys {
     val b = PrivateKey(Crypto.sha256(commitmentPoint.value ++ revocationBasePoint.value))
     (revocationBasePoint * a) + (commitmentPoint * b)
   }
-
 }

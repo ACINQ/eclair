@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, LegacySimpleTaprootChannelCommitmentFormat, SimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeature, PermanentChannelFeature}
 
 /**
@@ -31,9 +31,13 @@ import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeatur
 case class ChannelFeatures(features: Set[PermanentChannelFeature]) {
 
   /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
-  val paysDirectlyToWallet: Boolean = hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs) && !hasFeature(Features.AnchorOutputsZeroFeeHtlcTx) && !hasFeature((Features.SimpleTaprootStaging))
+  val paysDirectlyToWallet: Boolean = hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs) && !hasFeature(Features.AnchorOutputsZeroFeeHtlcTx) && !hasFeature(Features.SimpleTaprootStagingLegacy) && !hasFeature(Features.SimpleTaprootStagingZeroFeeHtlc)
   /** Legacy option_anchor_outputs is used for Phoenix, because Phoenix doesn't have an on-chain wallet to pay for fees. */
-  val commitmentFormat: CommitmentFormat = if (hasFeature(Features.AnchorOutputs)) {
+  val commitmentFormat: CommitmentFormat = if (hasFeature(Features.SimpleTaprootStagingLegacy)) {
+    LegacySimpleTaprootChannelCommitmentFormat
+  } else if (hasFeature(Features.SimpleTaprootStagingZeroFeeHtlc)) {
+    ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
+  } else if (hasFeature(Features.AnchorOutputs)) {
     UnsafeLegacyAnchorOutputsCommitmentFormat
   } else if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
     ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
@@ -129,16 +133,27 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
-  case class SimpleTaprootChannelsStaging(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+  case class SimpleTaprootChannelsStagingLegacy(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     /** Known channel-type features */
     override def features: Set[ChannelTypeFeature] = Set(
       if (scidAlias) Some(Features.ScidAlias) else None,
       if (zeroConf) Some(Features.ZeroConf) else None,
-      Some(Features.SimpleTaprootStaging),
+      Some(Features.SimpleTaprootStagingLegacy),
     ).flatten
     override def paysDirectlyToWallet: Boolean = false
-    override def commitmentFormat: CommitmentFormat = SimpleTaprootChannelCommitmentFormat
-    override def toString: String = s"simple_taproot_channel_staging${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+    override def commitmentFormat: CommitmentFormat = LegacySimpleTaprootChannelCommitmentFormat
+    override def toString: String = s"simple_taproot_channel_staging_legacy${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+  }
+  case class SimpleTaprootChannelsStagingZeroFee(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+    /** Known channel-type features */
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.SimpleTaprootStagingZeroFeeHtlc),
+    ).flatten
+    override def paysDirectlyToWallet: Boolean = false
+    override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
+    override def toString: String = s"simple_taproot_channel_staging_serofee${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
 
   case class UnsupportedChannelType(featureBits: Features[InitFeature]) extends ChannelType {
@@ -164,10 +179,14 @@ object ChannelTypes {
     AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
-    SimpleTaprootChannelsStaging(),
-    SimpleTaprootChannelsStaging(zeroConf = true),
-    SimpleTaprootChannelsStaging(scidAlias = true),
-    SimpleTaprootChannelsStaging(scidAlias = true, zeroConf = true),
+    SimpleTaprootChannelsStagingLegacy(),
+    SimpleTaprootChannelsStagingLegacy(zeroConf = true),
+    SimpleTaprootChannelsStagingLegacy(scidAlias = true),
+    SimpleTaprootChannelsStagingLegacy(scidAlias = true, zeroConf = true),
+    SimpleTaprootChannelsStagingZeroFee(),
+    SimpleTaprootChannelsStagingZeroFee(zeroConf = true),
+    SimpleTaprootChannelsStagingZeroFee(scidAlias = true),
+    SimpleTaprootChannelsStagingZeroFee(scidAlias = true, zeroConf = true),
   )
     .map(channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType)
     .toMap
@@ -181,8 +200,10 @@ object ChannelTypes {
 
     val scidAlias = canUse(Features.ScidAlias) && !announceChannel // alias feature is incompatible with public channel
     val zeroConf = canUse(Features.ZeroConf)
-    if (canUse(Features.SimpleTaprootStaging)) {
-      SimpleTaprootChannelsStaging(scidAlias, zeroConf)
+    if (canUse(Features.SimpleTaprootStagingZeroFeeHtlc)) {
+      SimpleTaprootChannelsStagingZeroFee(scidAlias, zeroConf)
+    } else if (canUse(Features.SimpleTaprootStagingLegacy)) {
+      SimpleTaprootChannelsStagingLegacy(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
       AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputs)) {
