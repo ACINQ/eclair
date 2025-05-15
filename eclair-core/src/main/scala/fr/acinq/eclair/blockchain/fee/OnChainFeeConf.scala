@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, SimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 
 // @formatter:off
 sealed trait ConfirmationPriority extends Ordered[ConfirmationPriority] {
@@ -76,8 +76,8 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
 
   def isProposedFeerateTooHigh(commitmentFormat: CommitmentFormat, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
     commitmentFormat match {
-      case Transactions.DefaultCommitmentFormat | Transactions.SimpleTaprootChannelCommitmentFormat => networkFeerate * ratioHigh < proposedFeerate
-      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat => networkFeerate * ratioHigh < proposedFeerate
+      case Transactions.DefaultCommitmentFormat => networkFeerate * ratioHigh < proposedFeerate
+      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => networkFeerate * ratioHigh < proposedFeerate
     }
   }
 

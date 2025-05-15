@@ -33,7 +33,9 @@ case class ChannelFeatures(features: Set[PermanentChannelFeature]) {
   /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
   val paysDirectlyToWallet: Boolean = hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs) && !hasFeature(Features.AnchorOutputsZeroFeeHtlcTx) && !hasFeature((Features.SimpleTaprootStaging))
   /** Legacy option_anchor_outputs is used for Phoenix, because Phoenix doesn't have an on-chain wallet to pay for fees. */
-  val commitmentFormat: CommitmentFormat = if (hasFeature(Features.AnchorOutputs)) {
+  val commitmentFormat: CommitmentFormat = if (hasFeature(Features.SimpleTaprootStaging)) {
+    SimpleTaprootChannelCommitmentFormat
+  } else if (hasFeature(Features.AnchorOutputs)) {
     UnsafeLegacyAnchorOutputsCommitmentFormat
   } else if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
     ZeroFeeHtlcTxAnchorOutputsCommitmentFormat

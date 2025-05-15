@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, OutPoint, Satoshi, SatoshiLong, ScriptWitness, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
-import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelSpendSignature, ChannelType}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.wire.protocol.ChannelReadyTlv.ShortChannelIdTlv
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, isAsciiPrintable}
@@ -311,13 +311,13 @@ case class FundingCreated(temporaryChannelId: ByteVector32,
                           fundingOutputIndex: Int,
                           signature: ByteVector64,
                           tlvStream: TlvStream[FundingCreatedTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId {
-  val sigOrPartialSig: Either[ByteVector64, PartialSignatureWithNonce] = tlvStream.get[PartialSignatureWithNonceTlv].map(_.partialSigWithNonce).toRight(signature)
+  val sigOrPartialSig: ChannelSpendSignature = tlvStream.get[PartialSignatureWithNonceTlv].map(_.partialSigWithNonce).getOrElse(ChannelSpendSignature.IndividualSignature(signature))
 }
 
 case class FundingSigned(channelId: ByteVector32,
                          signature: ByteVector64,
                          tlvStream: TlvStream[FundingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
-  val sigOrPartialSig: Either[ByteVector64, PartialSignatureWithNonce] = tlvStream.get[PartialSignatureWithNonceTlv].map(_.partialSigWithNonce).toRight(signature)
+  val sigOrPartialSig: ChannelSpendSignature = tlvStream.get[PartialSignatureWithNonceTlv].map(_.partialSigWithNonce).getOrElse(ChannelSpendSignature.IndividualSignature(signature))
 }
 
 case class ChannelReady(channelId: ByteVector32,
@@ -482,7 +482,7 @@ case class CommitSig(channelId: ByteVector32,
                      tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends HtlcMessage with HasChannelId {
   val batchSize: Int = tlvStream.get[CommitSigTlv.BatchTlv].map(_.size).getOrElse(1)
   val partialSignature_opt: Option[PartialSignatureWithNonce] = tlvStream.get[CommitSigTlv.PartialSignatureWithNonceTlv].map(_.partialSigWithNonce)
-  val sigOrPartialSig: Either[ByteVector64, PartialSignatureWithNonce] = partialSignature_opt.toRight(signature)
+  val sigOrPartialSig: ChannelSpendSignature = partialSignature_opt.getOrElse(ChannelSpendSignature.IndividualSignature(signature))
 }
 
 case class RevokeAndAck(channelId: ByteVector32,
