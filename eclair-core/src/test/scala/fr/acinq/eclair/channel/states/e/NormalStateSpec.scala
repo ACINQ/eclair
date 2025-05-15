@@ -1046,7 +1046,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteChanges.signed.size == 1)
   }
 
-  test("recv CommitSig (one htlc sent)") { f =>
+  test("recv CommitSig (one htlc sent)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
 
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1095,6 +1095,33 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("recv CommitSig (multiple htlcs in both directions) (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+    import f._
+
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
+    addHtlc(1100000 msat, alice, bob, alice2bob, bob2alice) // a->b (trimmed to dust)
+    addHtlc(999999 msat, bob, alice, bob2alice, alice2bob) // b->a (dust)
+    addHtlc(10000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
+    addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob) // b->a (regular)
+    addHtlc(999999 msat, alice, bob, alice2bob, bob2alice) // a->b (dust)
+    addHtlc(1100000 msat, bob, alice, bob2alice, alice2bob) // b->a (trimmed to dust)
+
+    alice ! CMD_SIGN()
+    val aliceCommitSig = alice2bob.expectMsgType[CommitSig]
+    assert(aliceCommitSig.htlcSignatures.length == 2)
+    alice2bob.forward(bob, aliceCommitSig)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+
+    // actual test begins
+    val bobCommitSig = bob2alice.expectMsgType[CommitSig]
+    assert(bobCommitSig.htlcSignatures.length == 3)
+    bob2alice.forward(alice, bobCommitSig)
+
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.index == 1)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.htlcRemoteSigs.size == 3)
+  }
+
+  test("recv CommitSig (multiple htlcs in both directions) (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
 
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
