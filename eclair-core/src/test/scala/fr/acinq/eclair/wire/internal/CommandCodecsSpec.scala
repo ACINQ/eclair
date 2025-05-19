@@ -41,8 +41,6 @@ class CommandCodecsSpec extends AnyFunSuite {
 
     testCases.foreach { case (command, bin) =>
       val encoded = CommandCodecs.cmdCodec.encode(command).require.bytes
-      println(encoded.toHex)
-      println(bin.toHex)
       assert(encoded == bin)
       val decoded = CommandCodecs.cmdCodec.decode(bin.bits).require.value
       assert(command == decoded)
