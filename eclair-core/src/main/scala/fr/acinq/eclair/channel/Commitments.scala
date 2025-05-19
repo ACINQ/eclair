@@ -1160,12 +1160,7 @@ case class Commitments(params: ChannelParams,
     active.forall { commitment =>
       val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex).publicKey
       val remoteFundingKey = commitment.remoteFundingPubKey
-      val redeemInfo = params.commitmentFormat match {
-        case _: SegwitV0CommitmentFormat =>
-          val fundingScript = Script.write(Scripts.multiSig2of2(localFundingKey, remoteFundingKey))
-          RedeemInfo.P2wsh(fundingScript)
-        case SimpleTaprootChannelCommitmentFormat => ???
-      }
+      val redeemInfo = Helpers.Funding.makeFundingScript(localFundingKey, remoteFundingKey, params.commitmentFormat)
       commitment.commitInput.txOut.publicKeyScript == redeemInfo.pubkeyScript
     }
   }

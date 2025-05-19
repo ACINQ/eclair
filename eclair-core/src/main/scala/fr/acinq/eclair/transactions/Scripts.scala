@@ -461,7 +461,7 @@ object Scripts {
       val scriptTree: ScriptTree.Branch = new ScriptTree.Branch(timeout, success)
 
       def witnessTimeout(commitKeys: LocalCommitmentKeys, localSig: ByteVector64, remoteSig: ByteVector64): ScriptWitness = {
-        Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, timeout, ScriptWitness(Seq(Taproot.encodeSig(remoteSig, SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY), Taproot.encodeSig(localSig, SIGHASH_DEFAULT))), scriptTree)
+        Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, timeout, ScriptWitness(Seq(Taproot.encodeSig(remoteSig, htlcRemoteSighash(SimpleTaprootChannelCommitmentFormat)), localSig)), scriptTree)
       }
 
       def witnessSuccess(commitKeys: RemoteCommitmentKeys, localSig: ByteVector64, paymentPreimage: ByteVector32): ScriptWitness = {
@@ -477,13 +477,6 @@ object Scripts {
         new ScriptTree.Leaf(offeredHtlcTimeout(keys)),
         new ScriptTree.Leaf(offeredHtlcSuccess(keys, paymentHash)),
       )
-    }
-
-    /**
-     * Script used for offered HTLCs.
-     */
-    def offeredHtlc(keys: CommitmentPublicKeys, paymentHash: ByteVector32): Seq[ScriptElt] = {
-      Script.pay2tr(keys.revocationPublicKey.xOnly, Some(offeredHtlcScriptTree(keys, paymentHash).scriptTree))
     }
 
     /**
@@ -519,7 +512,7 @@ object Scripts {
       val scriptTree = new ScriptTree.Branch(timeout, success)
 
       def witnessSuccess(commitKeys: LocalCommitmentKeys, localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32): ScriptWitness = {
-        Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, success, ScriptWitness(Seq(Taproot.encodeSig(remoteSig, SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY), Taproot.encodeSig(localSig, SIGHASH_DEFAULT), paymentPreimage)), scriptTree)
+        Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, success, ScriptWitness(Seq(Taproot.encodeSig(remoteSig, htlcRemoteSighash(SimpleTaprootChannelCommitmentFormat)), localSig, paymentPreimage)), scriptTree)
       }
 
       def witnessTimeout(commitKeys: RemoteCommitmentKeys, localSig: ByteVector64): ScriptWitness = {
@@ -535,13 +528,6 @@ object Scripts {
         new ScriptTree.Leaf(receivedHtlcTimeout(keys, expiry)),
         new ScriptTree.Leaf(receivedHtlcSuccess(keys, paymentHash)),
       )
-    }
-
-    /**
-     * Script used for received HTLCs.
-     */
-    def receivedHtlc(keys: CommitmentPublicKeys, paymentHash: ByteVector32, expiry: CltvExpiry): Seq[ScriptElt] = {
-      Script.pay2tr(keys.revocationPublicKey.xOnly, Some(receivedHtlcScriptTree(keys, paymentHash, expiry).scriptTree))
     }
 
     /**
