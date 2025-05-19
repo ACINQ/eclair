@@ -238,15 +238,13 @@ trait ErrorHandlers extends CommonHandlers {
       case Transactions.DefaultCommitmentFormat =>
         val htlcTxs = redeemableHtlcTxs(commitTx, commitKeys, commitment)
         List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ (claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None)))
-      case _: Transactions.AnchorOutputsCommitmentFormat =>
+      case _: Transactions.AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat =>
         val claimAnchor = for {
           confirmationTarget <- localCommitPublished.confirmationTarget(nodeParams.onChainFeeConf)
           anchorTx <- claimAnchorTx_opt
         } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, commitTx, commitment), confirmationTarget)
         val htlcTxs = redeemableHtlcTxs(commitTx, commitKeys, commitment)
         List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ claimAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
-      case SimpleTaprootChannelCommitmentFormat => ???
-
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
 

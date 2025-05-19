@@ -155,20 +155,11 @@ object Transactions {
   case object SimpleTaprootChannelCommitmentFormat extends TaprootCommitmentFormat {
     // weights for taproot transactions are deterministic since signatures are encoded as 64 bytes and
     // not in variable length DER format (around 72 bytes)
-
-    // commit tx witness is just a single 64 bytes signature
     override val commitWeight = 960
-    // HTLC output weight remains the same
     override val htlcOutputWeight = 172
-    // witness is remote sig (64 + 1 bytes + local sig (64 bytes) + script (68 bytes) + control block (65 bytes)
     override val htlcTimeoutWeight = 645
-    // witness is remote sig (64 + 1 bytes + local sig (64 bytes) + preimage (32 bytes) +  script (95 bytes) + control block (65 bytes)
     override val htlcSuccessWeight = 705
-    // witness is remote sig (64 + 1 bytes + local sig (64 bytes) + script (68 bytes) + control block (65 bytes)
-    // input weight = 4 * 41 (input without witness) + 174 (witness)
     override val htlcTimeoutInputWeight = 431
-    // witness is remote sig (64 + 1 bytes + local sig (64 bytes) + preimage (32 bytes) +  script (95 bytes) + control block (65 bytes)
-    // input weight = 4 * 41 (input without witness) + 229 (witness)
     override val htlcSuccessInputWeight = 491
     override val claimHtlcSuccessWeight = 559
     override val claimHtlcTimeoutWeight = 504
@@ -238,6 +229,8 @@ object Transactions {
   }
   // @formatter:on
 
+  case class LocalNonce(secretNonce: SecretNonce, publicNonce: IndividualNonce)
+
   sealed trait TransactionWithInputInfo {
     // @formatter:off
     def input: InputInfo
@@ -248,20 +241,18 @@ object Transactions {
     def inputIndex: Int = tx.txIn.indexWhere(_.outPoint == input.outPoint)
     // @formatter:on
 
-    protected def buildSpentOutputs(extraUtxos: Map[OutPoint, TxOut]): Either[Throwable, Seq[TxOut]] = {
-      val inputsMap = extraUtxos + (input.outPoint -> input.txOut)
-      tx.txIn.foreach(txIn => {
-        if (!inputsMap.contains(txIn.outPoint)) return Left(new IllegalArgumentException(s"cannot sign $desc with txId=${tx.txid}: missing input details for ${txIn.outPoint}"))
-      })
-      Right(tx.txIn.map(txIn => inputsMap(txIn.outPoint)))
-    }
-
-    protected def sign(key: PrivateKey, sighash: Int, redeemInfo: RedeemInfo, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
+    protected def buildSpentOutputs(extraUtxos: Map[OutPoint, TxOut]): Seq[TxOut] = {
       // Callers don't except this function to throw.
       // But we want to ensure that we're correctly providing input details, otherwise our signature will silently be
       // invalid when using taproot. We verify this in all cases, even when using segwit v0, to ensure that we have as
       // many tests as possible that exercise this codepath.
-      val spentOutputs = buildSpentOutputs(extraUtxos).fold(error => throw error, o => o)
+      val inputsMap = extraUtxos + (input.outPoint -> input.txOut)
+      tx.txIn.foreach(txIn => require(inputsMap.contains(txIn.outPoint), s"cannot sign $desc with txId=${tx.txid}: missing input details for ${txIn.outPoint}"))
+      tx.txIn.map(txIn => inputsMap(txIn.outPoint))
+    }
+
+    protected def sign(key: PrivateKey, sighash: Int, redeemInfo: RedeemInfo, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
+      val spentOutputs = buildSpentOutputs(extraUtxos)
       // NB: the tx may have multiple inputs, we will only sign the one provided in our input. Bear in mind that the
       // signature will be invalidated if other inputs are added *afterwards* and sighash was SIGHASH_ALL.
       redeemInfo match {
@@ -269,9 +260,9 @@ object Transactions {
           val sigDER = Transaction.signInput(tx, inputIndex, redeemInfo.redeemScript, sighash, input.txOut.amount, SIGVERSION_WITNESS_V0, key)
           Crypto.der2compact(sigDER)
         case t: RedeemInfo.TaprootKeyPath =>
-          Transaction.signInputTaprootKeyPath(key, tx, tx.txIn.indexWhere(_.outPoint == input.outPoint), spentOutputs, sighash, t.scriptTree_opt)
+          Transaction.signInputTaprootKeyPath(key, tx, inputIndex, spentOutputs, sighash, t.scriptTree_opt)
         case s: RedeemInfo.TaprootScriptPath =>
-          Transaction.signInputTaprootScriptPath(key, tx, tx.txIn.indexWhere(_.outPoint == input.outPoint), spentOutputs, sighash, s.leafHash)
+          Transaction.signInputTaprootScriptPath(key, tx, inputIndex, spentOutputs, sighash, s.leafHash)
       }
     }
 
@@ -282,10 +273,10 @@ object Transactions {
             val data = Transaction.hashForSigning(tx, inputIndex, redeemInfo.redeemScript, sighash, input.txOut.amount, SIGVERSION_WITNESS_V0)
             Crypto.verifySignature(data, sig, publicKey)
           case _: RedeemInfo.TaprootKeyPath =>
-            val data = Transaction.hashForSigningTaprootKeyPath(tx, inputIndex = 0, Seq(input.txOut), sighash)
+            val data = Transaction.hashForSigningTaprootKeyPath(tx, inputIndex, Seq(input.txOut), sighash)
             Crypto.verifySignatureSchnorr(data, sig, publicKey.xOnly)
           case s: RedeemInfo.TaprootScriptPath =>
-            val data = Transaction.hashForSigningTaprootScriptPath(tx, inputIndex = 0, Seq(input.txOut), sighash, s.leafHash)
+            val data = Transaction.hashForSigningTaprootScriptPath(tx, inputIndex, Seq(input.txOut), sighash, s.leafHash)
             Crypto.verifySignatureSchnorr(data, sig, publicKey.xOnly)
         }
       } else {
@@ -315,22 +306,17 @@ object Transactions {
     }
 
     /** Create a partial transaction for the channel's musig2 funding output when using a [[TaprootCommitmentFormat]]. */
-    def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, extraUtxos: Map[OutPoint, TxOut], localNonce: (SecretNonce, IndividualNonce), publicNonces: Seq[IndividualNonce]): Either[Throwable, ChannelSpendSignature.PartialSignatureWithNonce] = {
-      val (localSecretNonce, localPublicNonce) = localNonce
+    def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, extraUtxos: Map[OutPoint, TxOut], localNonce: LocalNonce, publicNonces: Seq[IndividualNonce]): Either[Throwable, ChannelSpendSignature.PartialSignatureWithNonce] = {
       for {
-        spentOutputs <- buildSpentOutputs(extraUtxos)
-        partialSig <- Musig2.signTaprootInput(localFundingKey, tx, inputIndex, spentOutputs, Scripts.sort(Seq(localFundingKey.publicKey, remoteFundingPubkey)), localSecretNonce, publicNonces, None)
-      } yield ChannelSpendSignature.PartialSignatureWithNonce(partialSig, localPublicNonce)
+        spentOutputs <- Try(buildSpentOutputs(extraUtxos)).toEither
+        partialSig <- Musig2.signTaprootInput(localFundingKey, tx, inputIndex, spentOutputs, Scripts.sort(Seq(localFundingKey.publicKey, remoteFundingPubkey)), localNonce.secretNonce, publicNonces, None)
+      } yield ChannelSpendSignature.PartialSignatureWithNonce(partialSig, localNonce.publicNonce)
     }
 
     /** Verify a signature received from the remote channel participant. */
-    def checkRemoteSig(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, remoteSig: ChannelSpendSignature): Boolean = {
-      remoteSig match {
-        case IndividualSignature(remoteSig) =>
-          val redeemScript = Script.write(Scripts.multiSig2of2(localFundingPubkey, remoteFundingPubkey))
-          checkSig(remoteSig, remoteFundingPubkey, SIGHASH_ALL, RedeemInfo.P2wsh(redeemScript))
-        case PartialSignatureWithNonce(_, _) => ??? // use checkRemotePartialSignature instead, which requires additional parameters
-      }
+    def checkRemoteSig(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, remoteSig: ChannelSpendSignature.IndividualSignature): Boolean = {
+      val redeemScript = Script.write(Scripts.multiSig2of2(localFundingPubkey, remoteFundingPubkey))
+      checkSig(remoteSig.sig, remoteFundingPubkey, SIGHASH_ALL, RedeemInfo.P2wsh(redeemScript))
     }
 
     def checkRemotePartialSignature(localFundingPubKey: PublicKey, remoteFundingPubKey: PublicKey, remoteSig: PartialSignatureWithNonce, localNonce: IndividualNonce): Boolean = {
@@ -355,8 +341,8 @@ object Transactions {
     /** Aggregate local and remote channel spending partial signatures for a [[TaprootCommitmentFormat]]. */
     def aggregateSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: PartialSignatureWithNonce, remoteSig: PartialSignatureWithNonce, extraUtxos: Map[OutPoint, TxOut]): Either[Throwable, Transaction] = {
       for {
-        spentOutputs <- buildSpentOutputs(extraUtxos)
-        aggregatedSignature <- Musig2.aggregateTaprootSignatures(Seq(localSig.partialSig, remoteSig.partialSig), tx, inputIndex, spentOutputs, Seq(localFundingPubkey, remoteFundingPubkey), Seq(localSig.nonce, remoteSig.nonce), None)
+        spentOutputs <- Try(buildSpentOutputs(extraUtxos)).toEither
+        aggregatedSignature <- Musig2.aggregateTaprootSignatures(Seq(localSig.partialSig, remoteSig.partialSig), tx, inputIndex, spentOutputs, sort(Seq(localFundingPubkey, remoteFundingPubkey)), Seq(localSig.nonce, remoteSig.nonce), None)
         witness = Script.witnessKeyPathPay2tr(aggregatedSignature)
       } yield tx.updateWitness(inputIndex, witness)
     }
