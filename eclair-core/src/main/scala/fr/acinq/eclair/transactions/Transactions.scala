@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.bitcoin.{ScriptFlags, ScriptTree, SigHash}
+import fr.acinq.bitcoin.{ScriptFlags, ScriptTree}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature
