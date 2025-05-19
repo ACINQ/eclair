@@ -727,7 +727,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       assert(fwd2.message.r == paymentPreimage)
 
       val paymentRelayed = eventListener.expectMessageType[ChannelPaymentRelayed]
-      assert(paymentRelayed.copy(startedAt = 0 unixms, settledAt = 0 unixms) == ChannelPaymentRelayed(r.add.amountMsat, r.amountToForward, r.add.paymentHash, r.add.channelId, channelId1, startedAt = 0 unixms, settledAt = 0 unixms))
+      assert(paymentRelayed.copy(receivedAt = 0 unixms, settledAt = 0 unixms) == ChannelPaymentRelayed(r.add.amountMsat, r.amountToForward, r.add.paymentHash, r.add.channelId, channelId1, receivedAt = 0 unixms, settledAt = 0 unixms))
     }
   }
 
@@ -859,7 +859,7 @@ object ChannelRelayerSpec {
     }
     val tlvs = TlvStream(Set[Option[UpdateAddHtlcTlv]](nextPathKey_opt, Some(UpdateAddHtlcTlv.Endorsement(endorsementIn))).flatten)
     val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket, tlvs)
-    ChannelRelayPacket(add_ab, payload, emptyOnionPacket)
+    ChannelRelayPacket(add_ab, payload, emptyOnionPacket, TimestampMilli.now())
   }
 
   def createAliases(channelId: ByteVector32): ShortIdAliases = {

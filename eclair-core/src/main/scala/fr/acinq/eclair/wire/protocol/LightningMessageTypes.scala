@@ -29,7 +29,6 @@ import scodec.bits.ByteVector
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 import java.nio.charset.StandardCharsets
-import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
 
 /**

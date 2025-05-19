@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, FailureReason, RevokeAndAck, UnknownNextPeer, UpdateAddHtlc}
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, NodeParams, TestKitBaseClass, TimestampMilli}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, NodeParams, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
