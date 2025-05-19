@@ -307,8 +307,8 @@ object Transactions {
 
     /** Create a partial transaction for the channel's musig2 funding output when using a [[TaprootCommitmentFormat]]. */
     def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, extraUtxos: Map[OutPoint, TxOut], localNonce: LocalNonce, publicNonces: Seq[IndividualNonce]): Either[Throwable, ChannelSpendSignature.PartialSignatureWithNonce] = {
+      val spentOutputs = buildSpentOutputs(extraUtxos)
       for {
-        spentOutputs <- Try(buildSpentOutputs(extraUtxos)).toEither
         partialSig <- Musig2.signTaprootInput(localFundingKey, tx, inputIndex, spentOutputs, Scripts.sort(Seq(localFundingKey.publicKey, remoteFundingPubkey)), localNonce.secretNonce, publicNonces, None)
       } yield ChannelSpendSignature.PartialSignatureWithNonce(partialSig, localNonce.publicNonce)
     }
@@ -340,8 +340,8 @@ object Transactions {
 
     /** Aggregate local and remote channel spending partial signatures for a [[TaprootCommitmentFormat]]. */
     def aggregateSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: PartialSignatureWithNonce, remoteSig: PartialSignatureWithNonce, extraUtxos: Map[OutPoint, TxOut]): Either[Throwable, Transaction] = {
+      val spentOutputs = buildSpentOutputs(extraUtxos)
       for {
-        spentOutputs <- Try(buildSpentOutputs(extraUtxos)).toEither
         aggregatedSignature <- Musig2.aggregateTaprootSignatures(Seq(localSig.partialSig, remoteSig.partialSig), tx, inputIndex, spentOutputs, sort(Seq(localFundingPubkey, remoteFundingPubkey)), Seq(localSig.nonce, remoteSig.nonce), None)
         witness = Script.witnessKeyPathPay2tr(aggregatedSignature)
       } yield tx.updateWitness(inputIndex, witness)
