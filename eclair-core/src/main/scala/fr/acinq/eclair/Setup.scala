@@ -98,7 +98,7 @@ class Setup(val datadir: File,
   val config = system.settings.config.getConfig("eclair")
   val Seeds(nodeSeed, channelSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
   val chain = config.getString("chain")
-  val chain_check_tx = chain match {
+  val chainCheckTx = chain match {
     case "mainnet" => Some("2157b554dcfda405233906e461ee593875ae4b1b97615872db6a25130ecc1dd6") // coinbase of #500000
     case "testnet" => Some("8f38a0dd41dc0ae7509081e262d791f8d53ed6f884323796d5ec7b0966dd3825") // coinbase of #1500000
     case "testnet4" => Some("5c50d460b3b98ea0c70baa0f50d1f0cc6ffa553788b4a7e23918bcdd558828fa") // coinbase of #40000
@@ -164,9 +164,9 @@ class Setup(val datadir: File,
             .filter(value => (value \ "spendable").extract[Boolean])
             .map(value => (value \ "address").extract[String])
         }
-      _ <- chain_check_tx match {
+      _ <- chainCheckTx match {
         case Some(txid) => bitcoinClient.invoke("getrawtransaction", txid)
-        case None =>Future.successful(())
+        case None => Future.successful(())
       }
     } yield BitcoinStatus(bitcoinVersion, chainHash, ibd, progress, blocks, headers, unspentAddresses)
 
