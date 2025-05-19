@@ -284,11 +284,12 @@ eclair.chain = "regtest"
 eclair.bitcoind.rpcport=18443
 ```
 
-For signet, add `signet=1` in `bitcoin.conf` or start with `-signet`, and modify `eclair.conf`:
+For signet, add `signet=1` in `bitcoin.conf` or start with `-signet`, and modify `eclair.conf` as follows. The `signet-check-tx` config parameter should be the txid of a transaction that exists in your signet, "" to skip this check, or if not specified, the default signet txid value will be used.
 
 ```conf
 eclair.chain = "signet"
 eclair.bitcoind.rpcport=38332
+eclair.bitcoind.signet-check-tx=<txid of signet tx>
 ```
 
 You may also want to take advantage of the new configuration sections in `bitcoin.conf` to manage parameters that are network specific,
