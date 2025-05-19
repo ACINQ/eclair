@@ -304,8 +304,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val commitTx = commitmentFormat match {
         case SimpleTaprootChannelCommitmentFormat =>
           val Right(commitTx) = for {
-            localPartialSig <- txInfo.partialSign(localFundingPriv, remoteFundingPriv.publicKey, Map.empty, (secretLocalNonce, publicLocalNonce), publicNonces)
-            remotePartialSig <- txInfo.partialSign(remoteFundingPriv, localFundingPriv.publicKey, Map.empty, (secretRemoteNonce, publicRemoteNonce), publicNonces)
+            localPartialSig <- txInfo.partialSign(localFundingPriv, remoteFundingPriv.publicKey, Map.empty, LocalNonce(secretLocalNonce, publicLocalNonce), publicNonces)
+            remotePartialSig <- txInfo.partialSign(remoteFundingPriv, localFundingPriv.publicKey, Map.empty, LocalNonce(secretRemoteNonce, publicRemoteNonce), publicNonces)
             _ = assert(txInfo.checkRemotePartialSignature(localFundingPriv.publicKey, remoteFundingPriv.publicKey, remotePartialSig, publicLocalNonce))
             tx <- txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localPartialSig, remotePartialSig, Map.empty)
           } yield tx
