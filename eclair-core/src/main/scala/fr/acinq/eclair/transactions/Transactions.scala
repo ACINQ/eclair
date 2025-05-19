@@ -497,16 +497,17 @@ object Transactions {
         val redeemScript = Script.write(htlcReceived(commitKeys, paymentHash, htlcExpiry, commitmentFormat))
         RedeemInfo.P2wsh(redeemScript)
       case SimpleTaprootChannelCommitmentFormat =>
-        val receivedHtlcTree: ScriptTree.Branch = Taproot.receivedHtlcScriptTree(commitKeys, paymentHash, htlcExpiry)
-        RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, receivedHtlcTree, receivedHtlcTree.getRight.hash())
+        val receivedHtlcTree = Taproot.receivedHtlcScriptTree(commitKeys, paymentHash, htlcExpiry)
+        RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, receivedHtlcTree.scriptTree, receivedHtlcTree.success.hash())
     }
 
     def addSigs(commitKeys: LocalCommitmentKeys, localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, commitmentFormat: CommitmentFormat): HtlcSuccessTx = {
       val witness = redeemInfo(commitKeys.publicKeys, commitmentFormat) match {
-        case redeemInfo: RedeemInfo.SegwitV0 => witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, redeemInfo.redeemScript, commitmentFormat)
+        case redeemInfo: RedeemInfo.SegwitV0 =>
+          witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, redeemInfo.redeemScript, commitmentFormat)
         case _: RedeemInfo.Taproot =>
-          val receivedHtlcTree: ScriptTree.Branch = Taproot.receivedHtlcScriptTree(commitKeys.publicKeys, paymentHash, htlcExpiry)
-          Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, receivedHtlcTree.getRight.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(Taproot.encodeSig(remoteSig, SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY), Taproot.encodeSig(localSig, SIGHASH_DEFAULT), paymentPreimage)), receivedHtlcTree)
+          val receivedHtlcTree = Taproot.receivedHtlcScriptTree(commitKeys.publicKeys, paymentHash, htlcExpiry)
+          receivedHtlcTree.witnessSuccess(commitKeys, localSig, remoteSig, paymentPreimage)
       }
       copy(tx = tx.updateWitness(inputIndex, witness))
     }
@@ -541,16 +542,17 @@ object Transactions {
         val redeemScript = Script.write(htlcOffered(commitKeys, paymentHash, commitmentFormat))
         RedeemInfo.P2wsh(redeemScript)
       case SimpleTaprootChannelCommitmentFormat =>
-        val offeredHtlcTree: ScriptTree.Branch = Taproot.offeredHtlcScriptTree(commitKeys, paymentHash)
-        RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, offeredHtlcTree, offeredHtlcTree.getLeft.hash())
+        val offeredHtlcTree = Taproot.offeredHtlcScriptTree(commitKeys, paymentHash)
+        RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, offeredHtlcTree.scriptTree, offeredHtlcTree.timeout.hash())
     }
 
     def addSigs(commitKeys: LocalCommitmentKeys, localSig: ByteVector64, remoteSig: ByteVector64, commitmentFormat: CommitmentFormat): HtlcTimeoutTx = {
       val witness = redeemInfo(commitKeys.publicKeys, commitmentFormat) match {
-        case redeemInfo: RedeemInfo.SegwitV0 => witnessHtlcTimeout(localSig, remoteSig, redeemInfo.redeemScript, commitmentFormat)
+        case redeemInfo: RedeemInfo.SegwitV0 =>
+          witnessHtlcTimeout(localSig, remoteSig, redeemInfo.redeemScript, commitmentFormat)
         case _: RedeemInfo.Taproot =>
-          val offeredHtlcTree: ScriptTree.Branch = Taproot.offeredHtlcScriptTree(commitKeys.publicKeys, paymentHash)
-          Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, offeredHtlcTree.getLeft.asInstanceOf[ScriptTree.Leaf], ScriptWitness(Seq(Taproot.encodeSig(remoteSig, SigHash.SIGHASH_SINGLE | SigHash.SIGHASH_ANYONECANPAY), Taproot.encodeSig(localSig, SIGHASH_DEFAULT))), offeredHtlcTree)
+          val offeredHtlcTree = Taproot.offeredHtlcScriptTree(commitKeys.publicKeys, paymentHash)
+          offeredHtlcTree.witnessTimeout(commitKeys, localSig, remoteSig)
       }
       copy(tx = tx.updateWitness(inputIndex, witness))
     }
@@ -648,10 +650,10 @@ object Transactions {
           val sig = sign(commitKeys.ourHtlcKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           witnessClaimHtlcSuccessFromCommitTx(sig, paymentPreimage, redeemScript)
         case SimpleTaprootChannelCommitmentFormat =>
-          val offeredHtlcTree: ScriptTree.Branch = Taproot.offeredHtlcScriptTree(commitKeys.publicKeys, paymentHash)
-          val redeemInfo = RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, offeredHtlcTree, offeredHtlcTree.getRight.hash())
+          val offeredTree = Taproot.offeredHtlcScriptTree(commitKeys.publicKeys, paymentHash)
+          val redeemInfo = RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, offeredTree.scriptTree, offeredTree.success.hash())
           val sig = sign(commitKeys.ourHtlcKey, sighash(TxOwner.Local, commitmentFormat), redeemInfo, extraUtxos = Map.empty)
-          Script.witnessScriptPathPay2tr(redeemInfo.internalKey, redeemInfo.leaf, ScriptWitness(Seq(sig, paymentPreimage)), redeemInfo.scriptTree)
+          offeredTree.witnessSuccess(commitKeys, sig, paymentPreimage)
       }
       copy(tx = tx.updateWitness(inputIndex, witness))
     }
@@ -710,10 +712,10 @@ object Transactions {
           val sig = sign(commitKeys.ourHtlcKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           witnessClaimHtlcTimeoutFromCommitTx(sig, redeemScript)
         case SimpleTaprootChannelCommitmentFormat =>
-          val offeredHtlcTree: ScriptTree.Branch = Taproot.receivedHtlcScriptTree(commitKeys.publicKeys, paymentHash, htlcExpiry)
-          val redeemInfo = RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, offeredHtlcTree, offeredHtlcTree.getLeft.hash())
+          val offeredTree = Taproot.receivedHtlcScriptTree(commitKeys.publicKeys, paymentHash, htlcExpiry)
+          val redeemInfo = RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, offeredTree.scriptTree, offeredTree.timeout.hash())
           val sig = sign(commitKeys.ourHtlcKey, sighash(TxOwner.Local, commitmentFormat), redeemInfo, extraUtxos = Map.empty)
-          Script.witnessScriptPathPay2tr(redeemInfo.internalKey, redeemInfo.leaf, ScriptWitness(Seq(sig)), redeemInfo.scriptTree)
+          offeredTree.witnessTimeout(commitKeys, sig)
       }
       copy(tx = tx.updateWitness(inputIndex, witness))
     }
@@ -951,10 +953,10 @@ object Transactions {
           val sig = sign(commitKeys.ourDelayedPaymentKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           witnessToLocalDelayedAfterDelay(sig, redeemScript)
         case SimpleTaprootChannelCommitmentFormat =>
-          val scriptTree: ScriptTree.Branch = Taproot.toLocalScriptTree(commitKeys.publicKeys, toLocalDelay)
-          val redeemInfo = RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, scriptTree, scriptTree.getLeft.hash())
+          val toLocalTree = Taproot.toLocalScriptTree(commitKeys.publicKeys, toLocalDelay)
+          val redeemInfo = RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, toLocalTree.scriptTree, toLocalTree.localDelayed.hash())
           val sig = sign(commitKeys.ourDelayedPaymentKey, sighash(TxOwner.Local, commitmentFormat), redeemInfo, extraUtxos = Map.empty)
-          Script.witnessScriptPathPay2tr(redeemInfo.internalKey, redeemInfo.leaf, ScriptWitness(Seq(sig)), scriptTree)
+          Script.witnessScriptPathPay2tr(redeemInfo.internalKey, redeemInfo.leaf, ScriptWitness(Seq(sig)), toLocalTree.scriptTree)
       }
       copy(tx = tx.updateWitness(inputIndex, witness))
     }
@@ -970,8 +972,8 @@ object Transactions {
           val redeemScript = Script.write(toLocalDelayed(commitKeys.publicKeys, toLocalDelay))
           RedeemInfo.P2wsh(redeemScript)
         case SimpleTaprootChannelCommitmentFormat =>
-          val scriptTree: ScriptTree.Branch = Taproot.toLocalScriptTree(commitKeys.publicKeys, toLocalDelay)
-          RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, scriptTree, scriptTree.getLeft.hash())
+          val toLocalTree = Taproot.toLocalScriptTree(commitKeys.publicKeys, toLocalDelay)
+          RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, toLocalTree.scriptTree, toLocalTree.localDelayed.hash())
       }
       findPubKeyScriptIndex(commitTx, redeemInfo.pubkeyScript) match {
         case Left(skip) => Left(skip)
@@ -1004,10 +1006,10 @@ object Transactions {
           val sig = sign(revocationKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           Scripts.witnessToLocalDelayedWithRevocationSig(sig, redeemScript)
         case SimpleTaprootChannelCommitmentFormat =>
-          val scriptTree: ScriptTree.Branch = Taproot.toLocalScriptTree(commitKeys.publicKeys, toRemoteDelay)
-          val redeemInfo = RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, scriptTree, scriptTree.getRight.hash())
+          val toLocalTree = Taproot.toLocalScriptTree(commitKeys.publicKeys, toRemoteDelay)
+          val redeemInfo = RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, toLocalTree.scriptTree, toLocalTree.revocation.hash())
           val sig = sign(revocationKey, sighash(TxOwner.Local, commitmentFormat), redeemInfo, extraUtxos = Map.empty)
-          Script.witnessScriptPathPay2tr(redeemInfo.internalKey, redeemInfo.leaf, ScriptWitness(Seq(sig)), scriptTree)
+          Script.witnessScriptPathPay2tr(redeemInfo.internalKey, redeemInfo.leaf, ScriptWitness(Seq(sig)), toLocalTree.scriptTree)
       }
       copy(tx = tx.updateWitness(inputIndex, witness))
     }
@@ -1023,8 +1025,8 @@ object Transactions {
           val redeemScript = Script.write(toLocalDelayed(commitKeys.publicKeys, toRemoteDelay))
           RedeemInfo.P2wsh(redeemScript)
         case SimpleTaprootChannelCommitmentFormat =>
-          val scriptTree: ScriptTree.Branch = Taproot.toLocalScriptTree(commitKeys.publicKeys, toRemoteDelay)
-          RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, scriptTree, scriptTree.getRight.hash())
+          val toLocalTree = Taproot.toLocalScriptTree(commitKeys.publicKeys, toRemoteDelay)
+          RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, toLocalTree.scriptTree, toLocalTree.revocation.hash())
       }
       findPubKeyScriptIndex(commitTx, redeemInfo.pubkeyScript) match {
         case Left(skip) => Left(skip)
@@ -1083,8 +1085,8 @@ object Transactions {
                 received.pubkeyScript -> HtlcPenaltyRedeemDetails(received, paymentHash, htlcExpiry, commitmentFormat.htlcReceivedPenaltyWeight),
               )
             case SimpleTaprootChannelCommitmentFormat =>
-              val offered = RedeemInfo.TaprootKeyPath(commitKeys.revocationPublicKey.xOnly, Some(Taproot.offeredHtlcScriptTree(commitKeys.publicKeys, paymentHash)))
-              val received = RedeemInfo.TaprootKeyPath(commitKeys.revocationPublicKey.xOnly, Some(Taproot.receivedHtlcScriptTree(commitKeys.publicKeys, paymentHash, htlcExpiry)))
+              val offered = RedeemInfo.TaprootKeyPath(commitKeys.revocationPublicKey.xOnly, Some(Taproot.offeredHtlcScriptTree(commitKeys.publicKeys, paymentHash).scriptTree))
+              val received = RedeemInfo.TaprootKeyPath(commitKeys.revocationPublicKey.xOnly, Some(Taproot.receivedHtlcScriptTree(commitKeys.publicKeys, paymentHash, htlcExpiry).scriptTree))
               Seq(
                 offered.pubkeyScript -> HtlcPenaltyRedeemDetails(offered, paymentHash, htlcExpiry, commitmentFormat.htlcOfferedPenaltyWeight),
                 received.pubkeyScript -> HtlcPenaltyRedeemDetails(received, paymentHash, htlcExpiry, commitmentFormat.htlcReceivedPenaltyWeight),
@@ -1330,7 +1332,7 @@ object Transactions {
         case SimpleTaprootChannelCommitmentFormat =>
           val offeredHtlcTree = Taproot.offeredHtlcScriptTree(commitmentKeys, htlc.add.paymentHash)
           val htlcDelayedTree = Taproot.htlcDelayedScriptTree(commitmentKeys, toSelfDelay)
-          RedeemInfo.TaprootScriptPath(commitmentKeys.revocationPublicKey.xOnly, offeredHtlcTree, offeredHtlcTree.getLeft.hash()) ->
+          RedeemInfo.TaprootScriptPath(commitmentKeys.revocationPublicKey.xOnly, offeredHtlcTree.scriptTree, offeredHtlcTree.timeout.hash()) ->
             RedeemInfo.TaprootScriptPath(commitmentKeys.revocationPublicKey.xOnly, htlcDelayedTree, htlcDelayedTree.hash())
       }
       outputs.append(OutHtlc(htlc, TxOut(htlc.add.amountMsat.truncateToSatoshi, redeemInfo.pubkeyScript), TxOut(amountAfterFees, htlcDelayedRedeemInfo.pubkeyScript)))
@@ -1345,7 +1347,7 @@ object Transactions {
         case SimpleTaprootChannelCommitmentFormat =>
           val receivedHtlcTree = Taproot.receivedHtlcScriptTree(commitmentKeys, htlc.add.paymentHash, htlc.add.cltvExpiry)
           val htlcDelayedTree = Taproot.htlcDelayedScriptTree(commitmentKeys, toSelfDelay)
-          RedeemInfo.TaprootScriptPath(commitmentKeys.revocationPublicKey.xOnly, receivedHtlcTree, receivedHtlcTree.getRight.hash()) ->
+          RedeemInfo.TaprootScriptPath(commitmentKeys.revocationPublicKey.xOnly, receivedHtlcTree.scriptTree, receivedHtlcTree.success.hash()) ->
             RedeemInfo.TaprootScriptPath(commitmentKeys.revocationPublicKey.xOnly, htlcDelayedTree, htlcDelayedTree.hash())
 
       }
@@ -1365,8 +1367,8 @@ object Transactions {
         case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
           RedeemInfo.P2wsh(toLocalDelayed(commitmentKeys, toSelfDelay))
         case SimpleTaprootChannelCommitmentFormat =>
-          val scriptTree = Taproot.toLocalScriptTree(commitmentKeys, toSelfDelay)
-          RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, scriptTree, scriptTree.getLeft.hash())
+          val toLocalTree = Taproot.toLocalScriptTree(commitmentKeys, toSelfDelay)
+          RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, toLocalTree.scriptTree, toLocalTree.localDelayed.hash())
       }
       outputs.append(ToLocal(TxOut(toLocalAmount, redeemInfo.pubkeyScript)))
     }
