@@ -850,6 +850,27 @@ object Helpers {
       if (localPaysCommitTxFees) commitInput.txOut.amount - commitTx.txOut.map(_.amount).sum else 0 sat
     }
 
+    /** Return the confirmation target that should be used for our local commitment. */
+    def confirmationTarget(localCommit: LocalCommit, localDustLimit: Satoshi, commitmentFormat: CommitmentFormat, onChainFeeConf: OnChainFeeConf): ConfirmationTarget = {
+      confirmationTarget(localCommit.spec, localDustLimit, commitmentFormat, onChainFeeConf)
+    }
+
+    /** Return the confirmation target that should be used for the given remote commitment. */
+    def confirmationTarget(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, commitmentFormat: CommitmentFormat, onChainFeeConf: OnChainFeeConf): ConfirmationTarget = {
+      confirmationTarget(remoteCommit.spec, remoteDustLimit, commitmentFormat, onChainFeeConf)
+    }
+
+    private def confirmationTarget(spec: CommitmentSpec, dustLimit: Satoshi, commitmentFormat: CommitmentFormat, onChainFeeConf: OnChainFeeConf): ConfirmationTarget = {
+      val offeredHtlcs = Transactions.trimOfferedHtlcs(dustLimit, spec, commitmentFormat).map(_.add)
+      val receivedHtlcs = Transactions.trimReceivedHtlcs(dustLimit, spec, commitmentFormat).map(_.add)
+      (offeredHtlcs ++ receivedHtlcs).map(_.cltvExpiry).minOption match {
+        // If there are pending HTLCs, we must get the commit tx confirmed before they timeout.
+        case Some(htlcExpiry) => ConfirmationTarget.Absolute(htlcExpiry.blockHeight)
+        // Otherwise, we don't have funds at risk, so we can aim for a slower confirmation.
+        case None => ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing)
+      }
+    }
+
     object LocalClose {
 
       /**
