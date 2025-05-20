@@ -2171,17 +2171,17 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           val localAnchor_opt = for {
             lcp <- d.localCommitPublished
             commitKeys = commitment.localKeys(channelKeys)
-            anchorTx <- Closing.LocalClose.claimAnchors(fundingKey, commitKeys, lcp, commitmentFormat).claimAnchorTx_opt
+            anchorTx <- Closing.LocalClose.claimAnchor(fundingKey, commitKeys, lcp.commitTx, commitmentFormat)
           } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, lcp.commitTx, commitment), c.confirmationTarget)
           val remoteAnchor_opt = for {
             rcp <- d.remoteCommitPublished
             commitKeys = commitment.remoteKeys(channelKeys, commitment.remoteCommit.remotePerCommitmentPoint)
-            anchorTx <- Closing.RemoteClose.claimAnchors(fundingKey, commitKeys, rcp, commitmentFormat).claimAnchorTx_opt
+            anchorTx <- Closing.RemoteClose.claimAnchor(fundingKey, commitKeys, rcp.commitTx, commitmentFormat)
           } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, rcp.commitTx, commitment), c.confirmationTarget)
           val nextRemoteAnchor_opt = for {
             nrcp <- d.nextRemoteCommitPublished
             commitKeys = commitment.remoteKeys(channelKeys, commitment.nextRemoteCommit_opt.get.commit.remotePerCommitmentPoint)
-            anchorTx <- Closing.RemoteClose.claimAnchors(fundingKey, commitKeys, nrcp, commitmentFormat).claimAnchorTx_opt
+            anchorTx <- Closing.RemoteClose.claimAnchor(fundingKey, commitKeys, nrcp.commitTx, commitmentFormat)
           } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, nrcp.commitTx, commitment), c.confirmationTarget)
           // We favor the remote commitment(s) because they're more interesting than the local commitment (no CSV delays).
           if (remoteAnchor_opt.nonEmpty) {

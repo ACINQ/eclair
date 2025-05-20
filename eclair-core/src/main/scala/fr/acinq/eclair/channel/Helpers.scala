@@ -873,46 +873,36 @@ object Helpers {
 
     object LocalClose {
 
-      /**
-       * Claim all the HTLCs that we've received from our current commit tx. This will be done using 2nd stage HTLC transactions.
-       *
-       * @param commitment our commitment data, which includes payment preimages
-       * @return a list of transactions (one per output of the commit tx that we can claim)
-       */
+      /** Claim all the outputs that belong to us in our local commitment transaction. */
       def claimCommitTxOutputs(channelKeys: ChannelKeys, commitment: FullCommitment, commitTx: Transaction, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): LocalCommitPublished = {
         require(commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid == commitTx.txid, "txid mismatch, provided tx is not the current local commit tx")
         val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
         val commitmentKeys = commitment.localKeys(channelKeys)
-        val feeratePerKwDelayed = onChainFeeConf.getClosingFeerate(feerates)
-
-        // first we will claim our main output as soon as the delay is over
-        val mainDelayedTx = withTxGenerationLog("local-main-delayed") {
-          ClaimLocalDelayedOutputTx.createSignedTx(commitmentKeys, commitTx, commitment.localParams.dustLimit, commitment.remoteParams.toSelfDelay, finalScriptPubKey, feeratePerKwDelayed, commitment.params.commitmentFormat)
+        val feerateDelayed = onChainFeeConf.getClosingFeerate(feerates)
+        val mainDelayedTx_opt = withTxGenerationLog("local-main-delayed") {
+          ClaimLocalDelayedOutputTx.createSignedTx(commitmentKeys, commitTx, commitment.localParams.dustLimit, commitment.remoteParams.toSelfDelay, finalScriptPubKey, feerateDelayed, commitment.params.commitmentFormat)
         }
-
-        val htlcTxs: Map[OutPoint, Option[HtlcTx]] = claimHtlcOutputs(commitmentKeys, commitment)
-
-        val lcp = LocalCommitPublished(
+        val htlcTxs = claimHtlcOutputs(commitmentKeys, commitment)
+        val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
+        val anchorTx_opt = if (spendAnchors) {
+          claimAnchor(fundingKey, commitmentKeys, commitTx, commitment.params.commitmentFormat)
+        } else {
+          None
+        }
+        LocalCommitPublished(
           commitTx = commitTx,
-          claimMainDelayedOutputTx = mainDelayedTx,
+          claimMainDelayedOutputTx = mainDelayedTx_opt,
           htlcTxs = htlcTxs,
           claimHtlcDelayedTxs = Nil, // we will claim these once the htlc txs are confirmed
-          claimAnchorTxs = Nil,
+          claimAnchorTxs = anchorTx_opt.toList,
           irrevocablySpent = Map.empty
         )
-        val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
-        if (spendAnchors) {
-          claimAnchors(fundingKey, commitmentKeys, lcp, commitment.params.commitmentFormat)
-        } else {
-          lcp
-        }
       }
 
-      def claimAnchors(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, lcp: LocalCommitPublished, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): LocalCommitPublished = {
-        val claimAnchorTx = withTxGenerationLog("local-anchor") {
-          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys.publicKeys, lcp.commitTx, commitmentFormat)
+      def claimAnchor(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): Option[ClaimAnchorOutputTx] = {
+        withTxGenerationLog("local-anchor") {
+          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys.publicKeys, commitTx, commitmentFormat)
         }
-        lcp.copy(claimAnchorTxs = claimAnchorTx.toList)
       }
 
       /**
@@ -988,56 +978,43 @@ object Helpers {
 
     object RemoteClose {
 
-      /**
-       * Claim all the HTLCs that we've received from their current commit tx, if the channel used option_static_remotekey
-       * we don't need to claim our main output because it directly pays to one of our wallet's p2wpkh addresses.
-       *
-       * @param commitment   our commitment data, which includes payment preimages
-       * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment)
-       * @param commitTx     the remote commitment transaction that has just been published
-       * @return a list of transactions (one per output of the commit tx that we can claim)
-       */
+      /** Claim all the outputs that belong to us in the remote commitment transaction (which can be either their current or next commitment). */
       def claimCommitTxOutputs(channelKeys: ChannelKeys, commitment: FullCommitment, remoteCommit: RemoteCommit, commitTx: Transaction, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): RemoteCommitPublished = {
         require(remoteCommit.txid == commitTx.txid, "txid mismatch, provided tx is not the current remote commit tx")
         val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
         val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)
-        val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = claimHtlcOutputs(channelKeys, commitKeys, commitment, remoteCommit, feerates, finalScriptPubKey)
-        val rcp = RemoteCommitPublished(
+        val mainTx_opt = claimMainOutput(commitment.params, commitKeys, commitTx, feerates, onChainFeeConf, finalScriptPubKey)
+        val htlcTxs = claimHtlcOutputs(channelKeys, commitKeys, commitment, remoteCommit, feerates, finalScriptPubKey)
+        val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
+        val anchorTx_opt = if (spendAnchors) {
+          claimAnchor(fundingKey, commitKeys, commitTx, commitment.params.commitmentFormat)
+        } else {
+          None
+        }
+        RemoteCommitPublished(
           commitTx = commitTx,
-          claimMainOutputTx = claimMainOutput(commitment.params, commitKeys, commitTx, feerates, onChainFeeConf, finalScriptPubKey),
+          claimMainOutputTx = mainTx_opt,
           claimHtlcTxs = htlcTxs,
-          claimAnchorTxs = Nil,
+          claimAnchorTxs = anchorTx_opt.toList,
           irrevocablySpent = Map.empty
         )
-        val spendAnchors = htlcTxs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
-        if (spendAnchors) {
-          claimAnchors(fundingKey, commitKeys, rcp, commitment.params.commitmentFormat)
-        } else {
-          rcp
+      }
+
+      def claimAnchor(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): Option[ClaimAnchorOutputTx] = {
+        withTxGenerationLog("remote-anchor") {
+          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys.publicKeys, commitTx, commitmentFormat)
         }
       }
 
-      def claimAnchors(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, rcp: RemoteCommitPublished, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): RemoteCommitPublished = {
-        val claimAnchorTx = withTxGenerationLog("remote-anchor") {
-          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys.publicKeys, rcp.commitTx, commitmentFormat)
-        }
-        rcp.copy(claimAnchorTxs = claimAnchorTx.toList)
-      }
-
-      /**
-       * Claim our main output only
-       *
-       * @param commitTx the remote commitment transaction that has just been published
-       * @return an optional [[ClaimRemoteCommitMainOutputTx]] transaction claiming our main output
-       */
+      /** Claim our main output from the remote commitment transaction, if available. */
       def claimMainOutput(params: ChannelParams, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Option[ClaimRemoteCommitMainOutputTx] = {
-        val feeratePerKwMain = onChainFeeConf.getClosingFeerate(feerates)
+        val feerate = onChainFeeConf.getClosingFeerate(feerates)
         params.commitmentFormat match {
           case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
-            ClaimP2WPKHOutputTx.createSignedTx(commitKeys, commitTx, params.localParams.dustLimit, finalScriptPubKey, feeratePerKwMain, params.commitmentFormat)
+            ClaimP2WPKHOutputTx.createSignedTx(commitKeys, commitTx, params.localParams.dustLimit, finalScriptPubKey, feerate, params.commitmentFormat)
           }
           case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
-            ClaimRemoteDelayedOutputTx.createSignedTx(commitKeys, commitTx, params.localParams.dustLimit, finalScriptPubKey, feeratePerKwMain, params.commitmentFormat)
+            ClaimRemoteDelayedOutputTx.createSignedTx(commitKeys, commitTx, params.localParams.dustLimit, finalScriptPubKey, feerate, params.commitmentFormat)
           }
         }
       }
