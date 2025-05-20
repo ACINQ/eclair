@@ -247,7 +247,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       nodeParams.socksProxy_opt returns Some(socksParams)
       assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)).contains(clearnet))
       assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)).contains(tor))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)).contains(clearnet))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)).exists(Set(clearnet, tor)(_)))
     }
     {
       // tor supported and enabled for clearnet addresses: return tor addresses when available
@@ -258,7 +258,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       nodeParams.socksProxy_opt returns Some(socksParams)
       assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)).contains(clearnet))
       assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)).contains(tor))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)).contains(tor))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)).exists(Set(clearnet, tor)(_)))
     }
   }
 
