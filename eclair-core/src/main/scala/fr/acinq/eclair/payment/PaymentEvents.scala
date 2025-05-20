@@ -19,6 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.HoldTime
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
@@ -84,18 +85,18 @@ case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[Paym
 sealed trait PaymentRelayed extends PaymentEvent {
   val amountIn: MilliSatoshi
   val amountOut: MilliSatoshi
-  val startedAt: TimestampMilli
+  val receivedAt: TimestampMilli
   val settledAt: TimestampMilli
 }
 
-case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, startedAt: TimestampMilli, settledAt: TimestampMilli) extends PaymentRelayed {
+case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, receivedAt: TimestampMilli, settledAt: TimestampMilli) extends PaymentRelayed {
   override val timestamp: TimestampMilli = settledAt
 }
 
 case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, nextTrampolineNodeId: PublicKey, nextTrampolineAmount: MilliSatoshi) extends PaymentRelayed {
   override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
   override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
-  override val startedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
+  override val receivedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
   override val settledAt: TimestampMilli = outgoing.map(_.settledAt).maxOption.getOrElse(TimestampMilli.now())
   override val timestamp: TimestampMilli = settledAt
 }
@@ -103,7 +104,7 @@ case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: Payment
 case class OnTheFlyFundingPaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing) extends PaymentRelayed {
   override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
   override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
-  override val startedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
+  override val receivedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
   override val settledAt: TimestampMilli = outgoing.map(_.settledAt).maxOption.getOrElse(TimestampMilli.now())
   override val timestamp: TimestampMilli = settledAt
 }
@@ -150,7 +151,7 @@ case class LocalFailure(amount: MilliSatoshi, route: Seq[Hop], t: Throwable) ext
 case class RemoteFailure(amount: MilliSatoshi, route: Seq[Hop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
 
 /** A remote node failed the payment but we couldn't decrypt the failure (e.g. a malicious node tampered with the message). */
-case class UnreadableRemoteFailure(amount: MilliSatoshi, route: Seq[Hop], failurePacket: ByteVector) extends PaymentFailure
+case class UnreadableRemoteFailure(amount: MilliSatoshi, route: Seq[Hop], failurePacket: ByteVector, holdTimes: Seq[HoldTime]) extends PaymentFailure
 
 object PaymentFailure {
 
@@ -235,13 +236,15 @@ object PaymentFailure {
       }
     case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
       ignoreNodeOutgoingEdge(nodeId, hops, ignore)
-    case UnreadableRemoteFailure(_, hops, _) =>
+    case UnreadableRemoteFailure(_, hops, _, holdTimes) =>
+      // TODO: Once everyone supports attributable errors, we should only exclude two nodes: the last for which we have attribution data and the next one.
       // We don't know which node is sending garbage, let's blacklist all nodes except:
+      //  - the nodes that returned attribution data (except the last one)
       //  - the one we are directly connected to: it would be too restrictive for retries
       //  - the final recipient: they have no incentive to send garbage since they want that payment
       //  - the introduction point of a blinded route: we don't want a node before the blinded path to force us to ignore that blinded path
       //  - the trampoline node: we don't want a node before the trampoline node to force us to ignore that trampoline node
-      val blacklist = hops.collect { case hop: ChannelHop => hop }.map(_.nextNodeId).drop(1).dropRight(1).toSet
+      val blacklist = hops.collect { case hop: ChannelHop => hop }.map(_.nextNodeId).drop(1 max (holdTimes.length - 1)).dropRight(1).toSet
       ignore ++ blacklist
     case LocalFailure(_, hops, _) => hops.headOption match {
       case Some(hop: ChannelHop) =>

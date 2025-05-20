@@ -239,7 +239,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fwd1 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd1.channelId == upstream1.add.channelId)
     assert(fwd1.message.id == upstream1.add.id)
-    assert(fwd1.message.reason == FailureReason.EncryptedDownstreamFailure(fail1.reason))
+    assert(fwd1.message.reason == FailureReason.EncryptedDownstreamFailure(fail1.reason, None))
     register.expectNoMessage(100 millis)
 
     val fail2 = WillFailHtlc(willAdd2.id, paymentHash, randomBytes(50))
@@ -247,7 +247,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val fwd2 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd2.channelId == upstream2.add.channelId)
     assert(fwd2.message.id == upstream2.add.id)
-    assert(fwd2.message.reason == FailureReason.EncryptedDownstreamFailure(fail2.reason))
+    assert(fwd2.message.reason == FailureReason.EncryptedDownstreamFailure(fail2.reason, None))
 
     val fail3 = WillFailMalformedHtlc(willAdd3.id, paymentHash, randomBytes32(), InvalidOnionHmac(randomBytes32()).code)
     peerConnection.send(peer, fail3)

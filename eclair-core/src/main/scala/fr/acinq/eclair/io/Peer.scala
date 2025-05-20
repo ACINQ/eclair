@@ -339,7 +339,7 @@ class Peer(val nodeParams: NodeParams,
                 pending.proposed.find(_.htlc.id == msg.id) match {
                   case Some(htlc) =>
                     val failure = msg match {
-                      case msg: WillFailHtlc => FailureReason.EncryptedDownstreamFailure(msg.reason)
+                      case msg: WillFailHtlc => FailureReason.EncryptedDownstreamFailure(msg.reason, msg.attribution_opt)
                       case msg: WillFailMalformedHtlc => FailureReason.LocalFailure(createBadOnionFailure(msg.onionHash, msg.failureCode))
                     }
                     htlc.createFailureCommands(Some(failure))(log).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }

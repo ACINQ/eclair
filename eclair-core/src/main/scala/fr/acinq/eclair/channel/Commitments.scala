@@ -921,14 +921,14 @@ case class Commitments(params: ChannelParams,
       case None => Left(UnknownHtlcId(channelId, fulfill.id))
     }
 
-  def sendFail(cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): Either[ChannelException, (Commitments, HtlcFailureMessage)] =
+  def sendFail(cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey, useAttributableFailures: Boolean): Either[ChannelException, (Commitments, HtlcFailureMessage)] =
     getIncomingHtlcCrossSigned(cmd.id) match {
       case Some(htlc) if CommitmentChanges.alreadyProposed(changes.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         Left(UnknownHtlcId(channelId, cmd.id))
       case Some(htlc) =>
         // we need the shared secret to build the error packet
-        OutgoingPaymentPacket.buildHtlcFailure(nodeSecret, cmd, htlc).map(fail => (copy(changes = changes.addLocalProposal(fail)), fail))
+        OutgoingPaymentPacket.buildHtlcFailure(nodeSecret, useAttributableFailures, cmd, htlc).map(fail => (copy(changes = changes.addLocalProposal(fail)), fail))
       case None => Left(UnknownHtlcId(channelId, cmd.id))
     }
 

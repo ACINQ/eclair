@@ -23,8 +23,10 @@ import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.ByteVector
+import scodec.codecs.uint32
 
 import scala.annotation.tailrec
+import scala.concurrent.duration.{DurationLong, FiniteDuration}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -282,24 +284,28 @@ object Sphinx extends Logging {
    */
   case class CannotDecryptFailurePacket(unwrapped: ByteVector)
 
+  case class HoldTime(duration: FiniteDuration, remoteNodeId: PublicKey)
+
+  case class HtlcFailure(holdTimes: Seq[HoldTime], failure: Either[CannotDecryptFailurePacket, DecryptedFailurePacket])
+
   object FailurePacket {
 
     /**
-     * Create a failure packet that will be returned to the sender.
+     * Create a failure packet that needs to be wrapped before being returned to the sender.
      * Each intermediate hop will add a layer of encryption and forward to the previous hop.
      * Note that malicious intermediate hops may drop the packet or alter it (which breaks the mac).
      *
      * @param sharedSecret destination node's shared secret that was computed when the original onion for the HTLC
      *                     was created or forwarded: see OnionPacket.create() and OnionPacket.wrap().
      * @param failure      failure message.
-     * @return a failure packet that can be sent to the destination node.
+     * @return a failure packet that still needs to be wrapped before being sent to the destination node.
      */
     def create(sharedSecret: ByteVector32, failure: FailureMessage): ByteVector = {
       val um = generateKey("um", sharedSecret)
       val packet = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).encode(failure).require.toByteVector
       logger.debug(s"um key: $um")
       logger.debug(s"raw error packet: ${packet.toHex}")
-      wrap(packet, sharedSecret)
+      packet
     }
 
     /**
@@ -322,25 +328,108 @@ object Sphinx extends Logging {
      * it was sent by the corresponding node.
      * Note that malicious nodes in the route may have altered the packet, triggering a decryption failure.
      *
-     * @param packet        failure packet.
-     * @param sharedSecrets nodes shared secrets.
+     * @param packet          failure packet.
+     * @param attribution_opt attribution data for this failure packet.
+     * @param sharedSecrets   nodes shared secrets.
      * @return failure message if the origin of the packet could be identified and the packet decrypted, the unwrapped
      *         failure packet otherwise.
      */
-    @tailrec
-    def decrypt(packet: ByteVector, sharedSecrets: Seq[SharedSecret]): Either[CannotDecryptFailurePacket, DecryptedFailurePacket] = {
+    def decrypt(packet: ByteVector, attribution_opt: Option[ByteVector], sharedSecrets: Seq[SharedSecret], hopIndex: Int = 0): HtlcFailure = {
       sharedSecrets match {
-        case Nil => Left(CannotDecryptFailurePacket(packet))
+        case Nil => HtlcFailure(Nil, Left(CannotDecryptFailurePacket(packet)))
         case ss :: tail =>
           val packet1 = wrap(packet, ss.secret)
+          val attribution1_opt = attribution_opt.flatMap(Attribution.unwrap(_, packet1, ss.secret, hopIndex))
           val um = generateKey("um", ss.secret)
-          FailureMessageCodecs.failureOnionCodec(Hmac256(um)).decode(packet1.toBitVector) match {
-            case Attempt.Successful(value) => Right(DecryptedFailurePacket(ss.remoteNodeId, value.value))
-            case _ => decrypt(packet1, tail)
+          val HtlcFailure(downstreamHoldTimes, failure) = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).decode(packet1.toBitVector) match {
+            case Attempt.Successful(value) => HtlcFailure(Nil, Right(DecryptedFailurePacket(ss.remoteNodeId, value.value)))
+            case _ => decrypt(packet1, attribution1_opt.map(_._2), tail, hopIndex + 1)
           }
+          HtlcFailure(attribution1_opt.map(n => HoldTime(n._1, ss.remoteNodeId) +: downstreamHoldTimes).getOrElse(Nil), failure)
       }
     }
 
+    /**
+     * Attribution data is added to the failure packet and prevents a node from evading responsibility for its failures.
+     * Nodes that relay attribution data can prove that they are not the erring node and in case the erring node tries
+     * to hide, there will only be at most two nodes that can be the erring node (the last one to send attribution data
+     * and the one after it).
+     * It also adds timing data for each node on the path.
+     * https://github.com/lightning/bolts/pull/1044
+     */
+    object Attribution {
+      val maxNumHops = 20
+      val holdTimeLength = 4
+      val hmacLength = 4 // HMACs are truncated to 4 bytes to save space
+      val totalLength = maxNumHops * holdTimeLength + maxNumHops * (maxNumHops + 1) / 2 * hmacLength // = 920
+
+      private def cipher(bytes: ByteVector, sharedSecret: ByteVector32): ByteVector = {
+        val key = generateKey("ammagext", sharedSecret)
+        val stream = generateStream(key, totalLength)
+        bytes xor stream
+      }
+
+      /**
+       * Get the HMACs from the attribution data.
+       * The layout of the attribution data is as follows (using maxNumHops = 3 for conciseness):
+       * holdTime(0) ++ holdTime(1) ++ holdTime(2) ++
+       * hmacs(0)(0) ++ hmacs(0)(1) ++ hmacs(0)(2) ++
+       * hmacs(1)(0) ++ hmacs(1)(1) ++
+       * hmacs(2)(0)
+       *
+       * Where `hmac(i)(j)` is the hmac added by node `i` (counted from the node that built the attribution data),
+       * assuming it is `maxNumHops - 1 - i - j` hops away from the erring node.
+       */
+      private def getHmacs(bytes: ByteVector): Seq[Seq[ByteVector]] =
+        (0 until maxNumHops).map(i => (0 until (maxNumHops - i)).map(j => {
+          val start = maxNumHops * holdTimeLength + (maxNumHops * i - (i * (i - 1)) / 2 + j) * hmacLength
+          bytes.slice(start, start + hmacLength)
+        }))
+
+      /**
+       * Computes the HMACs for the node that is `minNumHop` hops away from us. Hence we only compute `maxNumHops - minNumHop` HMACs.
+       * HMACs are truncated to 4 bytes to save space. An attacker has only one try to guess the HMAC so 4 bytes should be enough.
+       */
+      private def computeHmacs(mac: Mac32, failurePacket: ByteVector, holdTimes: ByteVector, hmacs: Seq[Seq[ByteVector]], minNumHop: Int): Seq[ByteVector] = {
+        (minNumHop until maxNumHops).map(i => {
+          val y = maxNumHops - i
+          mac.mac(failurePacket ++
+            holdTimes.take(y * holdTimeLength) ++
+            ByteVector.concat((0 until y - 1).map(j => hmacs(j)(i)))).bytes.take(hmacLength)
+        })
+      }
+
+      /**
+       * Create attribution data to send with the failure packet
+       *
+       * @param failurePacket the failure packet before being wrapped
+       */
+      def create(previousAttribution_opt: Option[ByteVector], failurePacket: ByteVector, holdTime: FiniteDuration, sharedSecret: ByteVector32): ByteVector = {
+        val previousAttribution = previousAttribution_opt.getOrElse(ByteVector.low(totalLength))
+        val previousHmacs = getHmacs(previousAttribution).dropRight(1).map(_.drop(1))
+        val mac = Hmac256(generateKey("um", sharedSecret))
+        val holdTimes = uint32.encode(holdTime.toMillis).require.bytes ++ previousAttribution.take((maxNumHops - 1) * holdTimeLength)
+        val hmacs = computeHmacs(mac, failurePacket, holdTimes, previousHmacs, 0) +: previousHmacs
+        cipher(holdTimes ++ ByteVector.concat(hmacs.map(ByteVector.concat(_))), sharedSecret)
+      }
+
+      /**
+       * Unwrap one hop of attribution data
+       * @return a pair with the hold time for this hop and the attribution data for the next hop, or None if the attribution data was invalid
+       */
+      def unwrap(encrypted: ByteVector, failurePacket: ByteVector, sharedSecret: ByteVector32, minNumHop: Int): Option[(FiniteDuration, ByteVector)] = {
+        val bytes = cipher(encrypted, sharedSecret)
+        val holdTime = uint32.decode(bytes.take(holdTimeLength).bits).require.value.milliseconds
+        val hmacs = getHmacs(bytes)
+        val mac = Hmac256(generateKey("um", sharedSecret))
+        if (computeHmacs(mac, failurePacket, bytes.take(maxNumHops * holdTimeLength), hmacs.drop(1), minNumHop) == hmacs.head.drop(minNumHop)) {
+          val unwrapped = bytes.slice(holdTimeLength, maxNumHops * holdTimeLength) ++ ByteVector.low(holdTimeLength) ++ ByteVector.concat((hmacs.drop(1) :+ Seq()).map(s => ByteVector.low(hmacLength) ++ ByteVector.concat(s)))
+          Some(holdTime, unwrapped)
+        } else {
+          None
+        }
+      }
+    }
   }
 
   /**
