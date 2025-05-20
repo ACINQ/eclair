@@ -1899,7 +1899,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     testInputRestoredRevokedTx(f, ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx))
   }
 
-  def testOutputSpentRevokedTx(f: FixtureParam, channelFeatures: ChannelFeatures): Unit = {
+  def testRevokedHtlcTxConfirmed(f: FixtureParam, channelFeatures: ChannelFeatures): Unit = {
     import f._
     val revokedCloseFixture = prepareRevokedClose(f, channelFeatures)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures == channelFeatures)
@@ -1931,91 +1931,83 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     (1 to 5).foreach(_ => alice2blockchain.expectMsgType[WatchOutputSpent]) // main output penalty and 4 htlc penalties
     alice2blockchain.expectNoMessage(100 millis)
 
-    // bob manages to claim 2 htlc outputs before alice can penalize him: 1 htlc-success and 1 htlc-timeout.
-    val (fulfilledHtlc, _) = revokedCloseFixture.htlcsAlice.head
-    val (failedHtlc, _) = revokedCloseFixture.htlcsBob.last
-    val bobHtlcSuccessTx1 = bobRevokedCommit.htlcTxsAndRemoteSigs.collectFirst {
-      case HtlcTxAndRemoteSig(txInfo: HtlcSuccessTx, _) if txInfo.htlcId == fulfilledHtlc.id =>
-        assert(fulfilledHtlc.paymentHash == txInfo.paymentHash)
-        txInfo
-    }.get
-    val bobHtlcTimeoutTx = bobRevokedCommit.htlcTxsAndRemoteSigs.collectFirst {
-      case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, _) if txInfo.htlcId == failedHtlc.id =>
-        txInfo
-    }.get
-    val bobOutpoints = Seq(bobHtlcSuccessTx1, bobHtlcTimeoutTx).map(_.input.outPoint).toSet
-    assert(bobOutpoints.size == 2)
-
-    // alice reacts by publishing penalty txs that spend bob's htlc transactions
-    alice ! WatchOutputSpentTriggered(bobHtlcSuccessTx1.amountIn, bobHtlcSuccessTx1.tx)
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.size == 1)
-    val claimHtlcSuccessPenalty1 = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.last
-    Transaction.correctlySpends(claimHtlcSuccessPenalty1.tx, bobHtlcSuccessTx1.tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobHtlcSuccessTx1.tx.txid)
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx == claimHtlcSuccessPenalty1.tx)
-    val watchSpent1 = alice2blockchain.expectMsgType[WatchOutputSpent]
-    assert(watchSpent1.txId == bobHtlcSuccessTx1.tx.txid)
-    assert(watchSpent1.outputIndex == claimHtlcSuccessPenalty1.input.outPoint.index)
-    alice2blockchain.expectNoMessage(100 millis)
-
-    alice ! WatchOutputSpentTriggered(bobHtlcTimeoutTx.amountIn, bobHtlcTimeoutTx.tx)
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.size == 2)
-    val claimHtlcTimeoutPenalty = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.last
-    Transaction.correctlySpends(claimHtlcTimeoutPenalty.tx, bobHtlcTimeoutTx.tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobHtlcTimeoutTx.tx.txid)
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx == claimHtlcTimeoutPenalty.tx)
-    val watchSpent2 = alice2blockchain.expectMsgType[WatchOutputSpent]
-    assert(watchSpent2.txId == bobHtlcTimeoutTx.tx.txid)
-    assert(watchSpent2.outputIndex == claimHtlcTimeoutPenalty.input.outPoint.index)
-    alice2blockchain.expectNoMessage(100 millis)
-
-    // bob RBFs his htlc-success with a different transaction
-    val bobHtlcSuccessTx2 = bobHtlcSuccessTx1.tx.copy(txIn = TxIn(OutPoint(randomTxId(), 0), Nil, 0) +: bobHtlcSuccessTx1.tx.txIn)
-    assert(bobHtlcSuccessTx2.txid !== bobHtlcSuccessTx1.tx.txid)
-    alice ! WatchOutputSpentTriggered(bobHtlcSuccessTx1.amountIn, bobHtlcSuccessTx2)
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.size == 3)
-    val claimHtlcSuccessPenalty2 = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.last
-    assert(claimHtlcSuccessPenalty1.tx.txid != claimHtlcSuccessPenalty2.tx.txid)
-    Transaction.correctlySpends(claimHtlcSuccessPenalty2.tx, bobHtlcSuccessTx2 :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobHtlcSuccessTx2.txid)
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx == claimHtlcSuccessPenalty2.tx)
-    val watchSpent3 = alice2blockchain.expectMsgType[WatchOutputSpent]
-    assert(watchSpent3.txId == bobHtlcSuccessTx2.txid)
-    assert(watchSpent3.outputIndex == claimHtlcSuccessPenalty2.input.outPoint.index)
-    alice2blockchain.expectNoMessage(100 millis)
-
-    // transactions confirm: alice can move to the closed state
-    val remainingHtlcPenaltyTxs = rvk.htlcPenaltyTxs.filterNot(htlcPenalty => bobOutpoints.contains(htlcPenalty.input.outPoint))
-    assert(remainingHtlcPenaltyTxs.size == 2)
+    // the revoked commit and main penalty transactions confirm
     alice ! WatchTxConfirmedTriggered(BlockHeight(100), 3, rvk.commitTx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(110), 0, rvk.mainPenaltyTx.get.tx)
     if (!channelFeatures.paysDirectlyToWallet) {
       alice ! WatchTxConfirmedTriggered(BlockHeight(110), 1, rvk.claimMainOutputTx.get.tx)
     }
+
+    // bob publishes one of his HTLC-success transactions
+    val (fulfilledHtlc, _) = revokedCloseFixture.htlcsAlice.head
+    val bobHtlcSuccessTx1 = bobRevokedCommit.htlcTxsAndRemoteSigs.collectFirst { case HtlcTxAndRemoteSig(txInfo: HtlcSuccessTx, _) if txInfo.htlcId == fulfilledHtlc.id => txInfo }.get
+    assert(bobHtlcSuccessTx1.paymentHash == fulfilledHtlc.paymentHash)
+    alice ! WatchOutputSpentTriggered(bobHtlcSuccessTx1.amountIn, bobHtlcSuccessTx1.tx)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobHtlcSuccessTx1.tx.txid)
+
+    // bob publishes one of his HTLC-timeout transactions
+    val (failedHtlc, _) = revokedCloseFixture.htlcsBob.last
+    val bobHtlcTimeoutTx = bobRevokedCommit.htlcTxsAndRemoteSigs.collectFirst { case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, _) if txInfo.htlcId == failedHtlc.id => txInfo }.get
+    assert(bobHtlcTimeoutTx.paymentHash == failedHtlc.paymentHash)
+    alice ! WatchOutputSpentTriggered(bobHtlcTimeoutTx.amountIn, bobHtlcTimeoutTx.tx)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobHtlcTimeoutTx.tx.txid)
+
+    // bob RBFs his htlc-success with a different transaction
+    val bobHtlcSuccessTx2 = bobHtlcSuccessTx1.tx.copy(txIn = TxIn(OutPoint(randomTxId(), 0), Nil, 0) +: bobHtlcSuccessTx1.tx.txIn)
+    assert(bobHtlcSuccessTx2.txid !== bobHtlcSuccessTx1.tx.txid)
+    alice ! WatchOutputSpentTriggered(bobHtlcSuccessTx1.amountIn, bobHtlcSuccessTx2)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobHtlcSuccessTx2.txid)
+
+    // bob's HTLC-timeout confirms: alice reacts by publishing a penalty tx
+    alice ! WatchTxConfirmedTriggered(BlockHeight(115), 0, bobHtlcTimeoutTx.tx)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.size == 1)
+    val claimHtlcTimeoutPenalty = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.head
+    Transaction.correctlySpends(claimHtlcTimeoutPenalty.tx, bobHtlcTimeoutTx.tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx == claimHtlcTimeoutPenalty.tx)
+    inside(alice2blockchain.expectMsgType[WatchOutputSpent]) { w =>
+      assert(w.txId == bobHtlcTimeoutTx.tx.txid)
+      assert(w.outputIndex == claimHtlcTimeoutPenalty.input.outPoint.index)
+    }
+    alice2blockchain.expectNoMessage(100 millis)
+
+    // bob's htlc-success RBF confirms: alice reacts by publishing a penalty tx
+    alice ! WatchTxConfirmedTriggered(BlockHeight(115), 1, bobHtlcSuccessTx2)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.size == 2)
+    val claimHtlcSuccessPenalty = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.last
+    Transaction.correctlySpends(claimHtlcSuccessPenalty.tx, bobHtlcSuccessTx2 :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx == claimHtlcSuccessPenalty.tx)
+    inside(alice2blockchain.expectMsgType[WatchOutputSpent]) { w =>
+      assert(w.txId == bobHtlcSuccessTx2.txid)
+      assert(w.outputIndex == claimHtlcSuccessPenalty.input.outPoint.index)
+    }
+    alice2blockchain.expectNoMessage(100 millis)
+
+    // transactions confirm: alice can move to the closed state
+    val bobHtlcOutpoints = Set(bobHtlcTimeoutTx.input.outPoint, bobHtlcSuccessTx1.input.outPoint)
+    val remainingHtlcPenaltyTxs = rvk.htlcPenaltyTxs.filterNot(htlcPenalty => bobHtlcOutpoints.contains(htlcPenalty.input.outPoint))
+    assert(remainingHtlcPenaltyTxs.size == 2)
     alice ! WatchTxConfirmedTriggered(BlockHeight(110), 2, remainingHtlcPenaltyTxs.head.tx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(115), 2, remainingHtlcPenaltyTxs.last.tx)
-    alice ! WatchTxConfirmedTriggered(BlockHeight(115), 0, bobHtlcTimeoutTx.tx)
-    alice ! WatchTxConfirmedTriggered(BlockHeight(115), 1, bobHtlcSuccessTx2)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(120), 0, claimHtlcTimeoutPenalty.tx)
     assert(alice.stateName == CLOSING)
 
-    alice ! WatchTxConfirmedTriggered(BlockHeight(120), 0, claimHtlcTimeoutPenalty.tx)
-    alice ! WatchTxConfirmedTriggered(BlockHeight(121), 0, claimHtlcSuccessPenalty2.tx)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(121), 0, claimHtlcSuccessPenalty.tx)
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published htlc-success tx, option_static_remotekey)", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
-    testOutputSpentRevokedTx(f, ChannelFeatures(Features.StaticRemoteKey))
+  test("recv WatchTxConfirmedTriggered (revoked htlc-success tx, option_static_remotekey)", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
+    testRevokedHtlcTxConfirmed(f, ChannelFeatures(Features.StaticRemoteKey))
   }
 
-  test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published htlc-success tx, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
-    testOutputSpentRevokedTx(f, ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs))
+  test("recv WatchTxConfirmedTriggered (revoked htlc-success tx, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+    testRevokedHtlcTxConfirmed(f, ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs))
   }
 
-  test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published htlc-success tx, anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    testOutputSpentRevokedTx(f, ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx))
+  test("recv WatchTxConfirmedTriggered (revoked htlc-success tx, anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testRevokedHtlcTxConfirmed(f, ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx))
   }
 
-  test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published aggregated htlc tx)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv WatchTxConfirmedTriggered (revoked aggregated htlc tx)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     // bob publishes one of his revoked txs
@@ -2069,12 +2061,13 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // alice reacts by publishing penalty txs that spend bob's htlc transaction
     alice ! WatchOutputSpentTriggered(bobHtlcTxs(0).amountIn, bobHtlcTx)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobHtlcTx.txid)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(129), 7, bobHtlcTx)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.size == 4)
     val claimHtlcDelayedPenaltyTxs = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs
     val spentOutpoints = Set(OutPoint(bobHtlcTx, 1), OutPoint(bobHtlcTx, 2), OutPoint(bobHtlcTx, 3), OutPoint(bobHtlcTx, 4))
     assert(claimHtlcDelayedPenaltyTxs.map(_.input.outPoint).toSet == spentOutpoints)
     claimHtlcDelayedPenaltyTxs.foreach(claimHtlcPenalty => Transaction.correctlySpends(claimHtlcPenalty.tx, bobHtlcTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobHtlcTx.txid)
     val publishedPenaltyTxs = Set(
       alice2blockchain.expectMsgType[PublishFinalTx],
       alice2blockchain.expectMsgType[PublishFinalTx],
@@ -2141,15 +2134,15 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2relayer.expectNoMessage(100 millis)
   }
 
-  test("recv WatchTxConfirmedTriggered (one revoked tx, pending htlcs)") { f =>
+  test("recv WatchTxConfirmedTriggered (revoked commit tx, pending htlcs)") { f =>
     testRevokedTxConfirmed(f, ChannelFeatures(Features.StaticRemoteKey))
   }
 
-  test("recv WatchTxConfirmedTriggered (one revoked tx, pending htlcs, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+  test("recv WatchTxConfirmedTriggered (revoked commit tx, pending htlcs, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
     testRevokedTxConfirmed(f, ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs))
   }
 
-  test("recv WatchTxConfirmedTriggered (one revoked tx, pending htlcs, anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv WatchTxConfirmedTriggered (revoked commit tx, pending htlcs, anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     testRevokedTxConfirmed(f, ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx))
   }
 

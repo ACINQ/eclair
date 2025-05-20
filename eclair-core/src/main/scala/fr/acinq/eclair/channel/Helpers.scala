@@ -1185,8 +1185,8 @@ object Helpers {
               val commitmentKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentSecret.publicKey)
               val revocationKey = channelKeys.revocationKey(remotePerCommitmentSecret)
               // We need to use a high fee when spending HTLC txs because after a delay they can also be spent by the counterparty.
-              val feeratePerKwPenalty = feerates.fastest
-              val penaltyTxs = ClaimHtlcDelayedOutputPenaltyTx.createSignedTxs(commitmentKeys, revocationKey, htlcTx, params.localParams.dustLimit, params.localParams.toSelfDelay, finalScriptPubKey, feeratePerKwPenalty, params.commitmentFormat).flatMap(claimHtlcDelayedOutputPenaltyTx => {
+              val feeratePenalty = feerates.fastest
+              val penaltyTxs = ClaimHtlcDelayedOutputPenaltyTx.createSignedTxs(commitmentKeys, revocationKey, htlcTx, params.localParams.dustLimit, params.localParams.toSelfDelay, finalScriptPubKey, feeratePenalty, params.commitmentFormat).flatMap(claimHtlcDelayedOutputPenaltyTx => {
                 withTxGenerationLog("htlc-delayed-penalty") {
                   claimHtlcDelayedOutputPenaltyTx.map(signedTx => {
                     // We need to make sure that the tx is indeed valid.
