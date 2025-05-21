@@ -34,7 +34,6 @@ import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import scodec.bits.ByteVector
 
 import java.nio.ByteOrder
-import scala.jdk.CollectionConverters.SeqHasAsJava
 import scala.util.Try
 
 /**
@@ -320,16 +319,7 @@ object Transactions {
     }
 
     def checkRemotePartialSignature(localFundingPubKey: PublicKey, remoteFundingPubKey: PublicKey, remoteSig: PartialSignatureWithNonce, localNonce: IndividualNonce): Boolean = {
-      import KotlinUtils._
-      val session = fr.acinq.bitcoin.crypto.musig2.Musig2.taprootSession(
-        this.tx,
-        inputIndex,
-        java.util.List.of(this.input.txOut),
-        Scripts.sort(Seq(localFundingPubKey, remoteFundingPubKey)).map(scala2kmp).asJava,
-        java.util.List.of(localNonce, remoteSig.nonce),
-        null
-      )
-      session.isRight && session.getRight.verify(remoteSig.partialSig, remoteSig.nonce, remoteFundingPubKey)
+      Musig2.verifyTaprootSignature(remoteSig.partialSig, remoteSig.nonce, remoteFundingPubKey, tx, inputIndex, Seq(input.txOut), Scripts.sort(Seq(localFundingPubKey, remoteFundingPubKey)), Seq(localNonce, remoteSig.nonce), scriptTree_opt = None)
     }
 
     /** Aggregate local and remote channel spending signatures for a [[SegwitV0CommitmentFormat]]. */
