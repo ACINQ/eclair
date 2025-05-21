@@ -525,6 +525,8 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       // 3rd stage txs (txs spending htlc txs) are not tested if C publishes the htlc-penalty transaction before F publishes its htlc-timeout
       case Failure(e: JsonRPCError) => assert(e.error.message == "txn-mempool-conflict")
     }
+    // we generate enough blocks for HTLC txs to be confirmed, in case they were successfully published
+    generateBlocks(8)
     // at this point C should have 5 recv transactions: F's main output and all htlc outputs (taken as punishment)
     // C's main output uses static_remotekey, so C doesn't need to claim it
     awaitCond({

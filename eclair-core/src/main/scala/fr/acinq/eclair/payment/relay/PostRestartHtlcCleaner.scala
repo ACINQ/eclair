@@ -72,7 +72,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
         val nonStandardIncomingHtlcs: Seq[IncomingHtlc] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getIncomingHtlcs(nodeParams, log) }.flatten
         val htlcsIn: Seq[IncomingHtlc] = getIncomingHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.features) ++ nonStandardIncomingHtlcs
         val nonStandardRelayedOutHtlcs: Map[Origin.Cold, Set[(ByteVector32, Long)]] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn, nodeParams, log) }.flatten.toMap
-        val relayedOut: Map[Origin.Cold, Set[(ByteVector32, Long)]] = getHtlcsRelayedOut(channels, htlcsIn) ++ nonStandardRelayedOutHtlcs
+        val relayedOut: Map[Origin.Cold, Set[(ByteVector32, Long)]] = getHtlcsRelayedOut(nodeParams, channels, htlcsIn) ++ nonStandardRelayedOutHtlcs
 
         val settledHtlcs: Set[(ByteVector32, Long)] = nodeParams.db.pendingCommands.listSettlementCommands().map { case (channelId, cmd) => (channelId, cmd.id) }.toSet
         val notRelayed = htlcsIn.filterNot(htlcIn => {
@@ -403,7 +403,7 @@ object PostRestartHtlcCleaner {
       .toMap
 
   /** @return pending outgoing HTLCs, grouped by their upstream origin. */
-  private def getHtlcsRelayedOut(channels: Seq[PersistentChannelData], htlcsIn: Seq[IncomingHtlc])(implicit log: LoggingAdapter): Map[Origin.Cold, Set[(ByteVector32, Long)]] = {
+  private def getHtlcsRelayedOut(nodeParams: NodeParams, channels: Seq[PersistentChannelData], htlcsIn: Seq[IncomingHtlc])(implicit log: LoggingAdapter): Map[Origin.Cold, Set[(ByteVector32, Long)]] = {
     val htlcsOut = channels
       .collect { case c: ChannelDataWithCommitments => c }
       .flatMap { c =>
@@ -428,9 +428,10 @@ object PostRestartHtlcCleaner {
               case None => Set.empty
             }
             val params = d.commitments.params
+            val channelKeys = nodeParams.channelKeyManager.channelKeys(params.channelConfig, params.localParams.fundingKeyPath)
             val timedOutHtlcs: Set[Long] = (closingType_opt match {
-              case Some(c: Closing.LocalClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(params.commitmentFormat, c.localCommit, c.localCommitPublished, params.localParams.dustLimit, tx))
-              case Some(c: Closing.RemoteClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(params.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, params.remoteParams.dustLimit, tx))
+              case Some(c: Closing.LocalClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(params.commitmentFormat, c.localCommit, params.localParams.dustLimit, tx))
+              case Some(c: Closing.RemoteClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.remoteCommit, tx))
               case Some(_: Closing.RevokedClose) => Set.empty // revoked commitments are handled using [[overriddenOutgoingHtlcs]] above
               case Some(_: Closing.RecoveryClose) => Set.empty // we lose htlc outputs in dataloss protection scenarios (future remote commit)
               case Some(_: Closing.MutualClose) => Set.empty

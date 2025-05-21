@@ -233,19 +233,17 @@ trait ErrorHandlers extends CommonHandlers {
 
     val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
     val commitKeys = commitment.localKeys(channelKeys)
-    val localPaysCommitTxFees = commitment.localParams.paysCommitTxFees
-    val publishQueue = commitment.params.commitmentFormat match {
-      case Transactions.DefaultCommitmentFormat =>
-        val htlcTxs = redeemableHtlcTxs(commitTx, commitKeys, commitment)
-        List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ (claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None)))
-      case _: Transactions.AnchorOutputsCommitmentFormat =>
-        val claimAnchor = for {
-          confirmationTarget <- localCommitPublished.confirmationTarget(nodeParams.onChainFeeConf)
-          anchorTx <- claimAnchorTx_opt
-        } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, commitTx, commitment), confirmationTarget)
-        val htlcTxs = redeemableHtlcTxs(commitTx, commitKeys, commitment)
-        List(PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, localPaysCommitTxFees), None)) ++ claimAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
+    val publishCommitTx = PublishFinalTx(commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, commitTx, commitment.localParams.paysCommitTxFees), None)
+    val publishAnchorTx_opt = claimAnchorTx_opt match {
+      case Some(anchorTx) if !localCommitPublished.isConfirmed =>
+        val confirmationTarget = Closing.confirmationTarget(commitment.localCommit, commitment.localParams.dustLimit, commitment.params.commitmentFormat, nodeParams.onChainFeeConf)
+        Some(PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, commitTx, commitment), confirmationTarget))
+      case _ => None
     }
+    val publishMainDelayedTx_opt = claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None))
+    val publishHtlcTxs = redeemableHtlcTxs(commitTx, commitKeys, commitment)
+    val publishHtlcDelayedTxs = claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
+    val publishQueue = Seq(publishCommitTx) ++ publishAnchorTx_opt ++ publishMainDelayedTx_opt ++ publishHtlcTxs ++ publishHtlcDelayedTxs
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // We watch:
@@ -259,7 +257,7 @@ trait ErrorHandlers extends CommonHandlers {
     // We watch outputs of the commitment tx that both parties may spend.
     // We also watch our local anchor: this ensures that we will correctly detect when it's confirmed and count its fees
     // in the audit DB, even if we restart before confirmation.
-    val watchSpentQueue = htlcTxs.keys.toSeq ++ claimAnchorTx_opt.collect { case tx if !localCommitPublished.isConfirmed => tx.input.outPoint }
+    val watchSpentQueue = htlcTxs.keys.toSeq ++ publishAnchorTx_opt.map(_.input)
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
@@ -331,17 +329,20 @@ trait ErrorHandlers extends CommonHandlers {
     import remoteCommitPublished._
 
     val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
-    val remotePerCommitmentPoint = commitment.nextRemoteCommit_opt match {
-      case Some(c) if remoteCommitPublished.commitTx.txid == c.commit.txid => c.commit.remotePerCommitmentPoint
-      case _ => commitment.remoteCommit.remotePerCommitmentPoint
+    val remoteCommit = commitment.nextRemoteCommit_opt match {
+      case Some(c) if remoteCommitPublished.commitTx.txid == c.commit.txid => c.commit
+      case _ => commitment.remoteCommit
     }
-    val commitKeys = commitment.remoteKeys(channelKeys, remotePerCommitmentPoint)
-    val claimAnchor = for {
-      confirmationTarget <- remoteCommitPublished.confirmationTarget(nodeParams.onChainFeeConf)
-      anchorTx <- claimAnchorTx_opt
-    } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, commitTx, commitment), confirmationTarget)
-    val htlcTxs = redeemableClaimHtlcTxs(remoteCommitPublished, commitKeys, commitment)
-    val publishQueue = claimAnchor ++ claimMainOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)).toSeq ++ htlcTxs
+    val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)
+    val publishAnchorTx_opt = claimAnchorTx_opt match {
+      case Some(anchorTx) if !remoteCommitPublished.isConfirmed =>
+        val confirmationTarget = Closing.confirmationTarget(remoteCommit, commitment.remoteParams.dustLimit, commitment.params.commitmentFormat, nodeParams.onChainFeeConf)
+        Some(PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, commitTx, commitment), confirmationTarget))
+      case _ => None
+    }
+    val publishMainTx_opt = claimMainOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None))
+    val publishHtlcTxs = redeemableClaimHtlcTxs(remoteCommitPublished, commitKeys, commitment)
+    val publishQueue = publishAnchorTx_opt ++ publishMainTx_opt ++ publishHtlcTxs
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // We watch:
@@ -353,7 +354,7 @@ trait ErrorHandlers extends CommonHandlers {
     // We watch outputs of the commitment tx that both parties may spend.
     // We also watch our local anchor: this ensures that we will correctly detect when it's confirmed and count its fees
     // in the audit DB, even if we restart before confirmation.
-    val watchSpentQueue = claimHtlcTxs.keys.toSeq ++ claimAnchorTx_opt.collect { case tx if !remoteCommitPublished.isConfirmed => tx.input.outPoint }
+    val watchSpentQueue = claimHtlcTxs.keys.toSeq ++ publishAnchorTx_opt.map(_.input)
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 

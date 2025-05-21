@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, PossiblyHarmful, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxId, TxOut}
-import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
@@ -335,20 +335,6 @@ case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx:
   // We previously used a list of anchor transactions because we included the confirmation target, but that's obsolete and should be overridden on updates.
   val claimAnchorTx_opt: Option[ClaimAnchorOutputTx] = claimAnchorTxs.headOption
 
-  /** Compute the confirmation target that should be used to get the [[commitTx]] confirmed. */
-  def confirmationTarget(onChainFeeConf: OnChainFeeConf): Option[ConfirmationTarget] = {
-    if (isConfirmed) {
-      None
-    } else {
-      htlcTxs.values.flatten.map(_.htlcExpiry.blockHeight).minOption match {
-        // If there are pending HTLCs, we must get the commit tx confirmed before they timeout.
-        case Some(htlcExpiry) => Some(ConfirmationTarget.Absolute(htlcExpiry))
-        // Otherwise, we don't have funds at risk, so we can aim for a slower confirmation.
-        case None => Some(ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing))
-      }
-    }
-  }
-
   /**
    * A local commit is considered done when:
    * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
@@ -383,20 +369,6 @@ case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx:
 case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], claimHtlcTxs: Map[OutPoint, Option[ClaimHtlcTx]], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
   // We previously used a list of anchor transactions because we included the confirmation target, but that's obsolete and should be overridden on updates.
   val claimAnchorTx_opt: Option[ClaimAnchorOutputTx] = claimAnchorTxs.headOption
-
-  /** Compute the confirmation target that should be used to get the [[commitTx]] confirmed. */
-  def confirmationTarget(onChainFeeConf: OnChainFeeConf): Option[ConfirmationTarget] = {
-    if (isConfirmed) {
-      None
-    } else {
-      claimHtlcTxs.values.flatten.map(_.htlcExpiry.blockHeight).minOption match {
-        // If there are pending HTLCs, we must get the commit tx confirmed before they timeout.
-        case Some(htlcExpiry) => Some(ConfirmationTarget.Absolute(htlcExpiry))
-        // Otherwise, we don't have funds at risk, so we can aim for a slower confirmation.
-        case None => Some(ConfirmationTarget.Priority(onChainFeeConf.feeTargets.closing))
-      }
-    }
-  }
 
   /**
    * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed

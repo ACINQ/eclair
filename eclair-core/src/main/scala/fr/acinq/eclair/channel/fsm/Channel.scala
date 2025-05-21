@@ -2030,13 +2030,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(WatchOutputSpentTriggered(_, tx), d: DATA_CLOSING) =>
-      // one of the outputs of the local/remote/revoked commit was spent
-      // we just put a watch to be notified when it is confirmed
+      // One of the outputs of the local/remote/revoked commit transaction or of an HTLC transaction was spent.
+      // We put a watch to be notified when the transaction confirms: it may double-spend one of our transactions.
       blockchain ! WatchTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth)
-      // when a remote or local commitment tx containing outgoing htlcs is published on the network,
-      // we watch it in order to extract payment preimage if funds are pulled by the counterparty
-      // we can then use these preimages to fulfill origin htlcs
-      log.debug(s"processing bitcoin output spent by txid={} tx={}", tx.txid, tx)
+      // If this is an HTLC transaction, it may reveal preimages that we haven't received yet.
+      // If we successfully extract those preimages, we can forward them upstream.
+      log.debug("processing bitcoin output spent by txid={} tx={}", tx.txid, tx)
       val extracted = Closing.extractPreimages(d.commitments.latest, tx)
       extracted.foreach { case (htlc, preimage) =>
         d.commitments.originChannels.get(htlc.id) match {
@@ -2044,20 +2043,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             log.info("fulfilling htlc #{} paymentHash={} origin={}", htlc.id, htlc.paymentHash, origin)
             relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFulfill(preimage))
           case None =>
-            // if we don't have the origin, it means that we already have forwarded the fulfill so that's not a big deal.
-            // this can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it
+            // If we don't have the origin, it means that we already have forwarded the fulfill so that's not a big deal.
+            // This can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it.
             log.warning("cannot fulfill htlc #{} paymentHash={} (origin not found)", htlc.id, htlc.paymentHash)
         }
       }
-      val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
-        // this transaction may be an HTLC transaction spending a revoked commitment
-        // in that case, we immediately publish an HTLC-penalty transaction spending its output(s)
-        val (rev1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(d.commitments.params, channelKeys, d.commitments.remotePerCommitmentSecrets, rev, tx, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)
-        penaltyTxs.foreach(claimTx => txPublisher ! PublishFinalTx(claimTx, claimTx.fee, None))
-        penaltyTxs.foreach(claimTx => blockchain ! WatchOutputSpent(self, tx.txid, claimTx.input.outPoint.index.toInt, claimTx.amountIn, hints = Set(claimTx.tx.txid)))
-        rev1
-      }
-      stay() using d.copy(revokedCommitPublished = revokedCommitPublished1) storing()
+      stay()
 
     case Event(WatchTxConfirmedTriggered(blockHeight, _, tx), d: DATA_CLOSING) =>
       log.info("txid={} has reached mindepth, updating closing state", tx.txid)
@@ -2076,7 +2067,14 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         remoteCommitPublished = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
         nextRemoteCommitPublished = d.nextRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
         futureRemoteCommitPublished = d.futureRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
-        revokedCommitPublished = d.revokedCommitPublished.map(Closing.updateRevokedCommitPublished(_, tx))
+        revokedCommitPublished = d.revokedCommitPublished.map(rvk => {
+          // If the tx is one of our peer's HTLC txs, they were able to claim the output before us.
+          // In that case, we immediately publish a penalty transaction spending their HTLC tx to steal their funds.
+          val (rvk1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(d.commitments.params, channelKeys, d.commitments.remotePerCommitmentSecrets, rvk, tx, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)
+          penaltyTxs.foreach(claimTx => txPublisher ! PublishFinalTx(claimTx, claimTx.fee, None))
+          penaltyTxs.foreach(claimTx => blockchain ! WatchOutputSpent(self, tx.txid, claimTx.input.outPoint.index.toInt, claimTx.amountIn, hints = Set(claimTx.tx.txid)))
+          Closing.updateRevokedCommitPublished(rvk1, tx)
+        })
       )
       // if the local commitment tx just got confirmed, let's send an event telling when we will get the main output refund
       if (d1.localCommitPublished.exists(_.commitTx.txid == tx.txid)) {
@@ -2109,8 +2107,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
       val timedOutHtlcs = Closing.isClosingTypeAlreadyKnown(d1) match {
-        case Some(c: Closing.LocalClose) => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.params.localParams.dustLimit, tx)
-        case Some(c: Closing.RemoteClose) => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.params.remoteParams.dustLimit, tx)
+        case Some(c: Closing.LocalClose) => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.localCommit, d.commitments.params.localParams.dustLimit, tx)
+        case Some(c: Closing.RemoteClose) => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.remoteCommit, tx)
         case Some(_: Closing.RevokedClose) => Set.empty[UpdateAddHtlc] // revoked commitments are handled using [[overriddenOutgoingHtlcs]] below
         case Some(_: Closing.RecoveryClose) => Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarios (future remote commit)
         case Some(_: Closing.MutualClose) => Set.empty[UpdateAddHtlc]
@@ -2171,17 +2169,17 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           val localAnchor_opt = for {
             lcp <- d.localCommitPublished
             commitKeys = commitment.localKeys(channelKeys)
-            anchorTx <- Closing.LocalClose.claimAnchors(fundingKey, commitKeys, lcp, commitmentFormat).claimAnchorTx_opt
+            anchorTx <- Closing.LocalClose.claimAnchor(fundingKey, commitKeys, lcp.commitTx, commitmentFormat)
           } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, lcp.commitTx, commitment), c.confirmationTarget)
           val remoteAnchor_opt = for {
             rcp <- d.remoteCommitPublished
             commitKeys = commitment.remoteKeys(channelKeys, commitment.remoteCommit.remotePerCommitmentPoint)
-            anchorTx <- Closing.RemoteClose.claimAnchors(fundingKey, commitKeys, rcp, commitmentFormat).claimAnchorTx_opt
+            anchorTx <- Closing.RemoteClose.claimAnchor(fundingKey, commitKeys, rcp.commitTx, commitmentFormat)
           } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, rcp.commitTx, commitment), c.confirmationTarget)
           val nextRemoteAnchor_opt = for {
             nrcp <- d.nextRemoteCommitPublished
             commitKeys = commitment.remoteKeys(channelKeys, commitment.nextRemoteCommit_opt.get.commit.remotePerCommitmentPoint)
-            anchorTx <- Closing.RemoteClose.claimAnchors(fundingKey, commitKeys, nrcp, commitmentFormat).claimAnchorTx_opt
+            anchorTx <- Closing.RemoteClose.claimAnchor(fundingKey, commitKeys, nrcp.commitTx, commitmentFormat)
           } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, nrcp.commitTx, commitment), c.confirmationTarget)
           // We favor the remote commitment(s) because they're more interesting than the local commitment (no CSV delays).
           if (remoteAnchor_opt.nonEmpty) {
