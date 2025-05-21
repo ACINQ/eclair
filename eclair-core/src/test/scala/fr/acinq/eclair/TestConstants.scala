@@ -30,6 +30,7 @@ import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.{MessageWeightRatios, PaymentWeightRatios}
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{PathFindingExperimentConf, Router}
 import fr.acinq.eclair.wire.protocol._
@@ -177,7 +178,9 @@ object TestConstants {
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
         enforcementDelay = 10 minutes,
-        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144))),
+        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
+        peerReputationConfig = Reputation.Config(enabled = false, 1 day, 10 seconds, 100),
+      ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
@@ -365,7 +368,9 @@ object TestConstants {
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
         enforcementDelay = 10 minutes,
-        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144))),
+        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
+        peerReputationConfig = Reputation.Config(enabled = false, 2 day, 20 seconds, 200),
+      ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
