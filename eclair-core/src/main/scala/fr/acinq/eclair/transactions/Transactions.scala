@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
+import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.bitcoin.{ScriptFlags, ScriptTree}
 import fr.acinq.eclair._
@@ -210,8 +211,6 @@ object Transactions {
      * @param leafHash    hash of the leaf script we're spending (must belong to the tree).
      */
     case class TaprootScriptPath(internalKey: XonlyPublicKey, scriptTree: ScriptTree, leafHash: ByteVector32) extends Taproot {
-      import KotlinUtils._
-
       val leaf: ScriptTree.Leaf = Option(scriptTree.findScript(leafHash)).getOrElse(throw new IllegalArgumentException("script tree must contain the provided leaf"))
       val redeemScript: ByteVector = leaf.getScript
       override val pubkeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, Some(scriptTree)))
@@ -517,7 +516,7 @@ object Transactions {
         RedeemInfo.P2wsh(redeemScript)
       case SimpleTaprootChannelCommitmentFormat =>
         val receivedHtlcTree = Taproot.receivedHtlcScriptTree(commitKeys, paymentHash, htlcExpiry)
-        RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, receivedHtlcTree.scriptTree, KotlinUtils.kmp2scala(receivedHtlcTree.success.hash()))
+        RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, receivedHtlcTree.scriptTree, receivedHtlcTree.success.hash())
     }
 
   }
@@ -564,15 +563,12 @@ object Transactions {
         RedeemInfo.P2wsh(redeemScript)
       case SimpleTaprootChannelCommitmentFormat =>
         val offeredHtlcTree = Taproot.offeredHtlcScriptTree(commitKeys, paymentHash)
-        RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, offeredHtlcTree.scriptTree, KotlinUtils.kmp2scala(offeredHtlcTree.timeout.hash()))
+        RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, offeredHtlcTree.scriptTree, offeredHtlcTree.timeout.hash())
     }
   }
 
   /** This transaction spends the output of a local [[HtlcTx]] after a to_self_delay relative delay. */
   case class HtlcDelayedTx(input: InputInfo, tx: Transaction, toLocalDelay: CltvExpiryDelta) extends ForceCloseTransaction {
-
-    import KotlinUtils._
-
     override val desc: String = "htlc-delayed"
 
     def sign(commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): HtlcDelayedTx = {
@@ -616,7 +612,7 @@ object Transactions {
         RedeemInfo.P2wsh(redeemScript)
       case SimpleTaprootChannelCommitmentFormat =>
         val scriptTree: ScriptTree.Leaf = Taproot.htlcDelayedScriptTree(commitKeys, toLocalDelay)
-        RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, scriptTree, KotlinUtils.kmp2scala(scriptTree.hash()))
+        RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, scriptTree, scriptTree.hash())
     }
   }
 
@@ -630,9 +626,6 @@ object Transactions {
 
   /** This transaction spends an HTLC we received by revealing the payment preimage, from the remote commitment. */
   case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, htlcExpiry: CltvExpiry) extends ClaimHtlcTx {
-
-    import KotlinUtils._
-
     override val desc: String = "claim-htlc-success"
 
     def sign(commitKeys: RemoteCommitmentKeys, paymentPreimage: ByteVector32, commitmentFormat: CommitmentFormat): ClaimHtlcSuccessTx = {
@@ -692,9 +685,6 @@ object Transactions {
 
   /** This transaction spends an HTLC we sent after its expiry, from the remote commitment. */
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, htlcExpiry: CltvExpiry) extends ClaimHtlcTx {
-
-    import KotlinUtils._
-
     override val desc: String = "claim-htlc-timeout"
 
     def sign(commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): ClaimHtlcTimeoutTx = {
@@ -787,24 +777,28 @@ object Transactions {
   }
 
   object ClaimAnchorOutputTx {
-    def redeemInfo(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): RedeemInfo = {
-      commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
-          val redeemScript = Script.write(anchor(fundingKey.publicKey))
-          RedeemInfo.P2wsh(redeemScript)
-        case SimpleTaprootChannelCommitmentFormat =>
-          RedeemInfo.TaprootKeyPath(commitKeys.ourDelayedPaymentKey.xOnlyPublicKey(), Some(Taproot.anchorScriptTree))
-      }
-    }
+    def redeemInfo(fundingKey: PublicKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): RedeemInfo =
+      redeemInfo(fundingKey, commitKeys.publicKeys, toLocal = true, commitmentFormat)
 
-    def redeemInfo(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): RedeemInfo = {
+    def redeemInfo(fundingKey: PublicKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): RedeemInfo =
+      redeemInfo(fundingKey, commitKeys.publicKeys, toLocal = false, commitmentFormat)
+
+    /**
+     *
+     * @param fundingKey       funding public keys
+     * @param commitKeys       commitment keys
+     * @param toLocal          true if this is the redeem info for the `toLocal` commit tx output
+     * @param commitmentFormat commitment format
+     * @return the redeem information for a local or remote commit tx anchor output
+     */
+    def redeemInfo(fundingKey: PublicKey, commitKeys: CommitmentPublicKeys, toLocal: Boolean, commitmentFormat: CommitmentFormat): RedeemInfo = {
       commitmentFormat match {
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
-          val redeemScript = Script.write(anchor(fundingKey.publicKey))
+          val redeemScript = Script.write(anchor(fundingKey))
           RedeemInfo.P2wsh(redeemScript)
         case SimpleTaprootChannelCommitmentFormat =>
-          val Right(ourPaymentKey) = commitKeys.ourPaymentKey
-          RedeemInfo.TaprootKeyPath(ourPaymentKey.xOnlyPublicKey(), Some(Taproot.anchorScriptTree))
+          val anchorKey = if (toLocal) commitKeys.localDelayedPaymentPublicKey.xOnly else commitKeys.remotePaymentPublicKey.xOnly
+          RedeemInfo.TaprootKeyPath(anchorKey, Some(Taproot.anchorScriptTree))
       }
     }
 
@@ -823,11 +817,11 @@ object Transactions {
     }
 
     def createUnsignedTx(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimAnchorOutputTx] = {
-      createUnsignedTx(redeemInfo(fundingKey, commitKeys, commitmentFormat), commitTx)
+      createUnsignedTx(redeemInfo(fundingKey.publicKey, commitKeys, commitmentFormat), commitTx)
     }
 
     def createUnsignedTx(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimAnchorOutputTx] = {
-      createUnsignedTx(redeemInfo(fundingKey, commitKeys, commitmentFormat), commitTx)
+      createUnsignedTx(redeemInfo(fundingKey.publicKey, commitKeys, commitmentFormat), commitTx)
     }
   }
 
@@ -871,9 +865,6 @@ object Transactions {
 
   /** This transaction spends our main balance from the remote commitment with a 1-block relative delay. */
   case class ClaimRemoteDelayedOutputTx(input: InputInfo, tx: Transaction) extends ClaimRemoteCommitMainOutputTx {
-
-    import KotlinUtils._
-
     override val desc: String = "remote-main-delayed"
 
     def sign(commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): ClaimRemoteDelayedOutputTx = {
@@ -897,9 +888,6 @@ object Transactions {
   }
 
   object ClaimRemoteDelayedOutputTx {
-
-    import KotlinUtils._
-
     def createSignedTx(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimRemoteDelayedOutputTx] = {
       val redeemInfo = commitmentFormat match {
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
@@ -928,9 +916,6 @@ object Transactions {
 
   /** This transaction spends our main balance from our commitment after a to_self_delay relative delay. */
   case class ClaimLocalDelayedOutputTx(input: InputInfo, tx: Transaction, toLocalDelay: CltvExpiryDelta) extends ForceCloseTransaction {
-
-    import KotlinUtils._
-
     override val desc: String = "local-main-delayed"
 
     def sign(commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): ClaimLocalDelayedOutputTx = {
@@ -950,9 +935,6 @@ object Transactions {
   }
 
   object ClaimLocalDelayedOutputTx {
-
-    import KotlinUtils._
-
     def createSignedTx(commitKeys: LocalCommitmentKeys, commitTx: Transaction, localDustLimit: Satoshi, toLocalDelay: CltvExpiryDelta, localFinalScriptPubKey: ByteVector, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimLocalDelayedOutputTx] = {
       val redeemInfo = commitmentFormat match {
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
@@ -981,9 +963,6 @@ object Transactions {
 
   /** This transaction spends the remote main balance from one of their revoked commitments. */
   case class MainPenaltyTx(input: InputInfo, tx: Transaction, toRemoteDelay: CltvExpiryDelta) extends ForceCloseTransaction {
-
-    import KotlinUtils._
-
     override val desc: String = "main-penalty"
 
     def sign(commitKeys: RemoteCommitmentKeys, revocationKey: PrivateKey, commitmentFormat: CommitmentFormat): MainPenaltyTx = {
@@ -1003,9 +982,6 @@ object Transactions {
   }
 
   object MainPenaltyTx {
-
-    import KotlinUtils._
-
     def createSignedTx(commitKeys: RemoteCommitmentKeys, revocationKey: PrivateKey, commitTx: Transaction, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, toRemoteDelay: CltvExpiryDelta, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, MainPenaltyTx] = {
       val redeemInfo = commitmentFormat match {
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
@@ -1302,8 +1278,6 @@ object Transactions {
                           toSelfDelay: CltvExpiryDelta,
                           spec: CommitmentSpec,
                           commitmentFormat: CommitmentFormat): Seq[CommitmentOutput] = {
-    import KotlinUtils._
-
     val outputs = collection.mutable.ArrayBuffer.empty[CommitmentOutput]
 
     trimOfferedHtlcs(dustLimit, spec, commitmentFormat).foreach { htlc =>
@@ -1356,23 +1330,13 @@ object Transactions {
 
     commitmentFormat match {
       case DefaultCommitmentFormat => ()
-      case _: AnchorOutputsCommitmentFormat =>
+      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat =>
         if (toLocalAmount >= dustLimit || hasHtlcs) {
-          val redeemInfo = RedeemInfo.P2wsh(anchor(localFundingPublicKey))
+          val redeemInfo = ClaimAnchorOutputTx.redeemInfo(localFundingPublicKey, commitmentKeys, toLocal = true, commitmentFormat)
           outputs.append(ToLocalAnchor(TxOut(AnchorOutputsCommitmentFormat.anchorAmount, redeemInfo.pubkeyScript)))
         }
         if (toRemoteAmount >= dustLimit || hasHtlcs) {
-          val redeemInfo = RedeemInfo.P2wsh(anchor(remoteFundingPublicKey))
-          outputs.append(ToRemoteAnchor(TxOut(AnchorOutputsCommitmentFormat.anchorAmount, redeemInfo.pubkeyScript)))
-        }
-      case SimpleTaprootChannelCommitmentFormat =>
-        if (toLocalAmount >= dustLimit || hasHtlcs) {
-          val redeemInfo = RedeemInfo.TaprootKeyPath(commitmentKeys.localDelayedPaymentPublicKey.xOnly, Some(Taproot.anchorScriptTree))
-          outputs.append(ToLocalAnchor(TxOut(AnchorOutputsCommitmentFormat.anchorAmount, redeemInfo.pubkeyScript)))
-        }
-        if (toRemoteAmount >= dustLimit || hasHtlcs) {
-          val redeemInfo = RedeemInfo.TaprootKeyPath(commitmentKeys.remotePaymentPublicKey.xOnly, Some(Taproot.anchorScriptTree))
-
+          val redeemInfo = ClaimAnchorOutputTx.redeemInfo(remoteFundingPublicKey, commitmentKeys, toLocal = false, commitmentFormat)
           outputs.append(ToRemoteAnchor(TxOut(AnchorOutputsCommitmentFormat.anchorAmount, redeemInfo.pubkeyScript)))
         }
     }

@@ -240,16 +240,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
   }
 
-  def assertWeightMatches(actualWeight: Int, expectedWeight: Int, commitmentFormat: CommitmentFormat): Unit = commitmentFormat match {
-    case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => assert(Math.abs(actualWeight - expectedWeight) < 20)
-    case SimpleTaprootChannelCommitmentFormat => assert(actualWeight == expectedWeight)
-  }
-
   def `generate valid commitment and htlc transactions`(commitmentFormat: CommitmentFormat): Unit = {
     val walletPriv = randomKey()
     val walletPub = walletPriv.publicKey
     val finalPubKeyScript = Script.write(Script.pay2wpkh(walletPub))
-    // funding tx sends to musig2 aggregate of local and remote funding keys
     val fundingInfo = Funding.makeFundingScript(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitmentFormat)
     val fundingTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fundingInfo.pubkeyScript) :: Nil, lockTime = 0)
     val fundingTxOutpoint = OutPoint(fundingTx.txid, 0)
@@ -300,7 +294,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
             localPartialSig <- txInfo.partialSign(localFundingPriv, remoteFundingPriv.publicKey, Map.empty, LocalNonce(secretLocalNonce, publicLocalNonce), publicNonces)
             remotePartialSig <- txInfo.partialSign(remoteFundingPriv, localFundingPriv.publicKey, Map.empty, LocalNonce(secretRemoteNonce, publicRemoteNonce), publicNonces)
             _ = assert(txInfo.checkRemotePartialSignature(localFundingPriv.publicKey, remoteFundingPriv.publicKey, remotePartialSig, publicLocalNonce))
-            invalidRemotePartialSig = remotePartialSig.copy(remotePartialSig.partialSig.reverse, remotePartialSig.nonce)
+            invalidRemotePartialSig = ChannelSpendSignature.PartialSignatureWithNonce(randomBytes32(), remotePartialSig.nonce)
             _ = assert(!txInfo.checkRemotePartialSignature(localFundingPriv.publicKey, remoteFundingPriv.publicKey, invalidRemotePartialSig, publicLocalNonce))
             tx <- txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localPartialSig, remotePartialSig, Map.empty)
           } yield tx
