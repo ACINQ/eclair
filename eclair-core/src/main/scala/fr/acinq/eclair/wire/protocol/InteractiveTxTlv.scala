@@ -20,10 +20,10 @@ import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector64, TxId}
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes64, partialSignatureWithNonce, publicNonce, txIdAsHash, varint}
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
-import scodec.codecs.{discriminated, list}
+import scodec.codecs.{bitsRemaining, discriminated, optional}
 
 /**
  * Created by t-bast on 08/04/2022.
@@ -62,18 +62,14 @@ object TxRemoveOutputTlv {
 sealed trait TxCompleteTlv extends Tlv
 
 object TxCompleteTlv {
-  case class FundingNonces(nonces: List[IndividualNonce]) extends TxCompleteTlv
-  object FundingNonces {
-    val codec: Codec[FundingNonces] = list(publicNonce).xmap(l => FundingNonces(l), _.nonces.toList)
+  case class Nonces(remoteNonce: IndividualNonce, nextRemoteNonce: IndividualNonce, fundingNonce_opt: Option[IndividualNonce]) extends TxCompleteTlv
+
+  object Nonces {
+    val codec: Codec[Nonces] = (publicNonce :: publicNonce :: optional(bitsRemaining, publicNonce)).as[Nonces]
   }
 
-  case class CommitNonces(nonces: List[IndividualNonce]) extends TxCompleteTlv
-  object CommitNonces {
-    val codec: Codec[CommitNonces] = list(publicNonce).xmap(l => CommitNonces(l), _.nonces.toList)
-  }
   val txCompleteTlvCodec: Codec[TlvStream[TxCompleteTlv]] = tlvStream(discriminated[TxCompleteTlv].by(varint)
-    .typecase(UInt64(4), tlvField(FundingNonces.codec))
-    .typecase(UInt64(6), tlvField(CommitNonces.codec))
+    .typecase(UInt64(4), tlvField[Nonces, Nonces](Nonces.codec))
   )
 }
 
