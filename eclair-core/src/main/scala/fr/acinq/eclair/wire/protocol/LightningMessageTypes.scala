@@ -394,11 +394,6 @@ case class ClosingSigned(channelId: ByteVector32,
 }
 
 case class ClosingComplete(channelId: ByteVector32, closerScriptPubKey: ByteVector, closeeScriptPubKey: ByteVector, fees: Satoshi, lockTime: Long, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
-
-  val closerOutputOnlyPartialSig_opt: Option[ByteVector32] = tlvStream.get[ClosingTlv.CloserOutputOnlyPartialSignature].map(_.partialSignature)
-  val closeeOutputOnlyPartialSig_opt: Option[ByteVector32] = tlvStream.get[ClosingTlv.CloseeOutputOnlyPartialSignature].map(_.partialSignature)
-  val closerAndCloseeOutputsPartialSig_opt: Option[ByteVector32] = tlvStream.get[ClosingTlv.CloserAndCloseeOutputsPartialSignature].map(_.partialSignature)
-
   val closerOutputOnlySigOrPartialSig_opt: Option[Either[ByteVector64, ByteVector32]] = tlvStream.get[ClosingTlv.CloserOutputOnly]
     .map(tlv => Some(Left(tlv.sig)))
     .getOrElse(tlvStream.get[ClosingTlv.CloserOutputOnlyPartialSignature].map(tlv => Right(tlv.partialSignature)))
@@ -414,6 +409,9 @@ case class ClosingComplete(channelId: ByteVector32, closerScriptPubKey: ByteVect
   val closerOutputOnlySig_opt: Option[ByteVector64] = closerOutputOnlySigOrPartialSig_opt.flatMap(_.swap.toOption)
   val closeeOutputOnlySig_opt: Option[ByteVector64] = closeeOutputOnlySigOrPartialSig_opt.flatMap(_.swap.toOption)
   val closerAndCloseeOutputsSig_opt: Option[ByteVector64] = closerAndCloseeOutputsSigOrPartialSig_opt.flatMap(_.swap.toOption)
+  val closerOutputOnlyPartialSig_opt: Option[ByteVector32] = closerOutputOnlySigOrPartialSig_opt.flatMap(_.toOption)
+  val closeeOutputOnlyPartialSig_opt: Option[ByteVector32] = closeeOutputOnlySigOrPartialSig_opt.flatMap(_.toOption)
+  val closerAndCloseeOutputsPartialSig_opt: Option[ByteVector32] = closerAndCloseeOutputsSigOrPartialSig_opt.flatMap(_.toOption)
 }
 
 case class ClosingSig(channelId: ByteVector32, closerScriptPubKey: ByteVector, closeeScriptPubKey: ByteVector, fees: Satoshi, lockTime: Long, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
