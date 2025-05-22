@@ -96,9 +96,9 @@ object ChannelTlv {
 
   val nextLocalNonceTlvCodec: Codec[NextLocalNonceTlv] = tlvField(publicNonce)
 
-  case class NextLocalNoncesTlv(nonces: List[IndividualNonce]) extends OpenChannelTlv with AcceptChannelTlv with ChannelReadyTlv with ChannelReestablishTlv
+  case class NextLocalNoncesTlv(nonces: Seq[(TxId, IndividualNonce)]) extends OpenChannelTlv with AcceptChannelTlv with ChannelReadyTlv with ChannelReestablishTlv
 
-  val nextLocalNoncesTlvCodec: Codec[NextLocalNoncesTlv] = tlvField(list(publicNonce))
+  val nextLocalNoncesTlvCodec: Codec[NextLocalNoncesTlv] = tlvField(list(txId ~ publicNonce).xmap[Seq[(TxId, IndividualNonce)]](_.toSeq, _.toList))
 }
 
 object OpenChannelTlv {
@@ -261,6 +261,8 @@ object ChannelReestablishTlv {
   case class YourLastFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
   case class MyCurrentFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
 
+  case class CurrentCommitNonceTlv(nonce: IndividualNonce) extends ChannelReestablishTlv
+
   object NextFundingTlv {
     val codec: Codec[NextFundingTlv] = tlvField(txIdAsHash)
   }
@@ -268,8 +270,13 @@ object ChannelReestablishTlv {
   object YourLastFundingLockedTlv {
     val codec: Codec[YourLastFundingLockedTlv] = tlvField("your_last_funding_locked_txid" | txIdAsHash)
   }
+
   object MyCurrentFundingLockedTlv {
     val codec: Codec[MyCurrentFundingLockedTlv] = tlvField("my_current_funding_locked_txid" | txIdAsHash)
+  }
+
+  object CurrentCommitNonceTlv {
+    val codec: Codec[CurrentCommitNonceTlv] = tlvField("current_commit_nonce" | publicNonce)
   }
 
   val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
@@ -277,6 +284,7 @@ object ChannelReestablishTlv {
     .typecase(UInt64(1), YourLastFundingLockedTlv.codec)
     .typecase(UInt64(3), MyCurrentFundingLockedTlv.codec)
     .typecase(UInt64(4), nextLocalNoncesTlvCodec)
+    .typecase(UInt64(6), CurrentCommitNonceTlv.codec)
   )
 }
 

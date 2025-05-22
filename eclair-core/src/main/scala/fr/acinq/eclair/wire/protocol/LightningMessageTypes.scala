@@ -119,8 +119,7 @@ case class TxRemoveOutput(channelId: ByteVector32,
 
 case class TxComplete(channelId: ByteVector32,
                       tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId {
-  val fundingNonces: List[IndividualNonce] = tlvStream.get[TxCompleteTlv.FundingNonces].map(_.nonces).getOrElse(List.empty[IndividualNonce])
-  val commitNonces: List[IndividualNonce] = tlvStream.get[TxCompleteTlv.CommitNonces].map(_.nonces).getOrElse(List.empty[IndividualNonce])
+  val nonces: Option[TxCompleteTlv.Nonces] = tlvStream.get[TxCompleteTlv.Nonces]
 }
 
 object TxComplete {
@@ -128,7 +127,8 @@ object TxComplete {
 
   def apply(channelId: ByteVector32, tlvStream: TlvStream[TxCompleteTlv]) = new TxComplete(channelId, tlvStream)
 
-  def apply(channelId: ByteVector32, fundingNonces: List[IndividualNonce], commitNonces: List[IndividualNonce]) = new TxComplete(channelId, TlvStream(TxCompleteTlv.FundingNonces(fundingNonces), TxCompleteTlv.CommitNonces(commitNonces)))
+  def apply(channelId: ByteVector32, remoteNonce: IndividualNonce, nextRemoteNonce: IndividualNonce, fundingNonce_opt: Option[IndividualNonce]) =
+    new TxComplete(channelId, TlvStream(TxCompleteTlv.Nonces(remoteNonce, nextRemoteNonce, fundingNonce_opt)))
 }
 
 case class TxSignatures(channelId: ByteVector32,
@@ -205,7 +205,8 @@ case class ChannelReestablish(channelId: ByteVector32,
   val nextFundingTxId_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].map(_.txId)
   val myCurrentFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.MyCurrentFundingLockedTlv].map(_.txId)
   val yourLastFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.YourLastFundingLockedTlv].map(_.txId)
-  val nextLocalNonces: List[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
+  val nextLocalNonces: Map[TxId, IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNoncesTlv].map(_.nonces.toMap).getOrElse(Map.empty)
+  val currentCommitNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelReestablishTlv.CurrentCommitNonceTlv].map(_.nonce)
 }
 
 case class OpenChannel(chainHash: BlockHash,
@@ -394,11 +395,6 @@ case class ClosingSigned(channelId: ByteVector32,
 }
 
 case class ClosingComplete(channelId: ByteVector32, closerScriptPubKey: ByteVector, closeeScriptPubKey: ByteVector, fees: Satoshi, lockTime: Long, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
-
-  val closerOutputOnlyPartialSig_opt: Option[ByteVector32] = tlvStream.get[ClosingTlv.CloserOutputOnlyPartialSignature].map(_.partialSignature)
-  val closeeOutputOnlyPartialSig_opt: Option[ByteVector32] = tlvStream.get[ClosingTlv.CloseeOutputOnlyPartialSignature].map(_.partialSignature)
-  val closerAndCloseeOutputsPartialSig_opt: Option[ByteVector32] = tlvStream.get[ClosingTlv.CloserAndCloseeOutputsPartialSignature].map(_.partialSignature)
-
   val closerOutputOnlySigOrPartialSig_opt: Option[Either[ByteVector64, ByteVector32]] = tlvStream.get[ClosingTlv.CloserOutputOnly]
     .map(tlv => Some(Left(tlv.sig)))
     .getOrElse(tlvStream.get[ClosingTlv.CloserOutputOnlyPartialSignature].map(tlv => Right(tlv.partialSignature)))
@@ -414,6 +410,9 @@ case class ClosingComplete(channelId: ByteVector32, closerScriptPubKey: ByteVect
   val closerOutputOnlySig_opt: Option[ByteVector64] = closerOutputOnlySigOrPartialSig_opt.flatMap(_.swap.toOption)
   val closeeOutputOnlySig_opt: Option[ByteVector64] = closeeOutputOnlySigOrPartialSig_opt.flatMap(_.swap.toOption)
   val closerAndCloseeOutputsSig_opt: Option[ByteVector64] = closerAndCloseeOutputsSigOrPartialSig_opt.flatMap(_.swap.toOption)
+  val closerOutputOnlyPartialSig_opt: Option[ByteVector32] = closerOutputOnlySigOrPartialSig_opt.flatMap(_.toOption)
+  val closeeOutputOnlyPartialSig_opt: Option[ByteVector32] = closeeOutputOnlySigOrPartialSig_opt.flatMap(_.toOption)
+  val closerAndCloseeOutputsPartialSig_opt: Option[ByteVector32] = closerAndCloseeOutputsSigOrPartialSig_opt.flatMap(_.toOption)
 }
 
 case class ClosingSig(channelId: ByteVector32, closerScriptPubKey: ByteVector, closeeScriptPubKey: ByteVector, fees: Satoshi, lockTime: Long, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
@@ -508,7 +507,7 @@ case class RevokeAndAck(channelId: ByteVector32,
                         perCommitmentSecret: PrivateKey,
                         nextPerCommitmentPoint: PublicKey,
                         tlvStream: TlvStream[RevokeAndAckTlv] = TlvStream.empty) extends HtlcMessage with HasChannelId {
-  val nexLocalNonces: List[IndividualNonce] = tlvStream.get[RevokeAndAckTlv.NextLocalNoncesTlv].map(_.nonces).getOrElse(List.empty)
+  val nexLocalNonces: Map[TxId, IndividualNonce] = tlvStream.get[RevokeAndAckTlv.NextLocalNoncesTlv].map(_.nonces.toMap).getOrElse(Map.empty)
 }
 
 case class UpdateFee(channelId: ByteVector32,
