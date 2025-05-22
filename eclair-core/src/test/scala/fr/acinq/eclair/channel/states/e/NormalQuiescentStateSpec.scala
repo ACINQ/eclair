@@ -19,22 +19,21 @@ package fr.acinq.eclair.channel.states.e
 import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishTx}
+import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.relay.Relayer.RelayForward
+import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{channel, _}
-import org.scalatest.Inside.inside
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.time.SpanSugar.convertIntToGrainOfTime
@@ -449,16 +448,17 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     val aliceCommit = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit
     val commitTx = aliceCommit.commitTxAndRemoteSig.commitTx.tx
     assert(aliceCommit.htlcTxsAndRemoteSigs.size == 1)
-    val htlcTimeoutTx = aliceCommit.htlcTxsAndRemoteSigs.head.htlcTx.tx
+    val htlcTimeoutTx = aliceCommit.htlcTxsAndRemoteSigs.head.htlcTx
 
     // the HTLC times out, alice needs to close the channel
     alice ! CurrentBlockHeight(add.cltvExpiry.blockHeight)
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == commitTx.txid)
-    alice2blockchain.expectMsgType[PublishTx] // main delayed
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == htlcTimeoutTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
-    alice2blockchain.expectMsgType[WatchTxConfirmed] // main delayed
-    alice2blockchain.expectMsgType[WatchOutputSpent] // htlc output
+    val mainDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx]
+    assert(mainDelayedTx.desc == "local-main-delayed")
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == htlcTimeoutTx.tx.txid)
+    alice2blockchain.expectWatchTxConfirmed(commitTx.txid)
+    alice2blockchain.expectWatchTxConfirmed(mainDelayedTx.tx.txid)
+    alice2blockchain.expectWatchOutputSpent(htlcTimeoutTx.input.outPoint)
     alice2blockchain.expectNoMessage(100 millis)
 
     channelUpdateListener.expectMsgType[LocalChannelDown]
@@ -490,9 +490,9 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == commitTx.txid)
     val mainDelayedTx = bob2blockchain.expectMsgType[PublishFinalTx]
     assert(mainDelayedTx.desc == "local-main-delayed")
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == mainDelayedTx.tx.txid)
-    inside(bob2blockchain.expectMsgType[WatchOutputSpent]) { w => assert(OutPoint(w.txId, w.outputIndex.toLong) == htlcSuccessTx.input.outPoint) }
+    bob2blockchain.expectWatchTxConfirmed(commitTx.txid)
+    bob2blockchain.expectWatchTxConfirmed(mainDelayedTx.tx.txid)
+    bob2blockchain.expectWatchOutputSpent(htlcSuccessTx.input.outPoint)
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == htlcSuccessTx.tx.txid)
     bob2blockchain.expectNoMessage(100 millis)
 

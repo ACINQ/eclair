@@ -21,7 +21,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
@@ -32,10 +32,10 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishRepla
 import fr.acinq.eclair.channel.publish.{ReplaceableClaimHtlcTimeout, ReplaceableRemoteCommitAnchor}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
-import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -631,9 +631,9 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == initialCommitTx.txid)
     val mainDelayedTx = bob2blockchain.expectMsgType[PublishFinalTx]
     assert(mainDelayedTx.desc == "local-main-delayed")
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == initialCommitTx.txid)
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == mainDelayedTx.tx.txid)
-    inside(bob2blockchain.expectMsgType[WatchOutputSpent]) { w => assert(OutPoint(w.txId, w.outputIndex.toLong) == htlcSuccessTx.input.outPoint) }
+    bob2blockchain.expectWatchTxConfirmed(initialCommitTx.txid)
+    bob2blockchain.expectWatchTxConfirmed(mainDelayedTx.tx.txid)
+    bob2blockchain.expectWatchOutputSpent(htlcSuccessTx.input.outPoint)
     val publishHtlcTx = bob2blockchain.expectMsgType[PublishFinalTx]
     assert(publishHtlcTx.input == htlcSuccessTx.input.outPoint)
     bob2blockchain.expectNoMessage(100 millis)
