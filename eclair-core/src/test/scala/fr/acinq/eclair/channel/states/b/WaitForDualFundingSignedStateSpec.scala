@@ -155,7 +155,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
   }
 
-  test("complete interactive-tx protocol (with push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag("both_push_amount")) { f =>
+  def `complete interactive-tx protocol (with push amount)`(f: FixtureParam): Unit = {
     import f._
 
     val listener = TestProbe()
@@ -185,6 +185,18 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(aliceData.commitments.latest.localCommit.spec.toLocal == expectedBalanceAlice)
     assert(aliceData.commitments.latest.localCommit.spec.toRemote == expectedBalanceBob)
+  }
+
+  test("complete interactive-tx protocol (with push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag("both_push_amount")) { f =>
+    `complete interactive-tx protocol (with push amount)`(f)
+  }
+
+  test("complete interactive-tx protocol (with push amount, simple taproot channels legacy)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy), Tag("both_push_amount")) { f =>
+    `complete interactive-tx protocol (with push amount)`(f)
+  }
+
+  test("complete interactive-tx protocol (with push amount, simple taproot channels zero fee)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee), Tag("both_push_amount")) { f =>
+    `complete interactive-tx protocol (with push amount)`(f)
   }
 
   test("complete interactive-tx protocol (with liquidity ads)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.LiquidityAds)) { f =>
