@@ -859,7 +859,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx, htlcTxs = Nil)
             val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)
             signFundingTx(completeTx, localCommitSig, localCommit, remoteCommit)
-          case SimpleTaprootChannelCommitmentFormat => ???
+          case _: SimpleTaprootChannelCommitmentFormat => ???
 
         }
     }

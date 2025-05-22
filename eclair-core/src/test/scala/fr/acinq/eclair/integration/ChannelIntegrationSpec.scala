@@ -181,7 +181,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     generateBlocks(25, Some(minerAddress))
     val expectedTxCountC = 1 // C should have 1 recv transaction: its main output
     val expectedTxCountF = commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => 2 // F should have 2 recv transactions: the redeemed htlc and its main output
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => 2 // F should have 2 recv transactions: the redeemed htlc and its main output
       case Transactions.DefaultCommitmentFormat => 1 // F's main output uses static_remotekey
     }
     awaitCond({
@@ -221,7 +221,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we then generate enough blocks so that F gets its htlc-success delayed output
     generateBlocks(25, Some(minerAddress))
     val expectedTxCountC = commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => 1 // C should have 1 recv transaction: its main output
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => 1 // C should have 1 recv transaction: its main output
       case Transactions.DefaultCommitmentFormat => 0 // C's main output uses static_remotekey
     }
     val expectedTxCountF = 2 // F should have 2 recv transactions: the redeemed htlc and its main output
@@ -275,7 +275,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     generateBlocks(25, Some(minerAddress))
     val expectedTxCountC = 2 // C should have 2 recv transactions: its main output and the htlc timeout
     val expectedTxCountF = commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => 1 // F should have 1 recv transaction: its main output
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => 1 // F should have 1 recv transaction: its main output
       case Transactions.DefaultCommitmentFormat => 0 // F's main output uses static_remotekey
     }
     awaitCond({
@@ -330,7 +330,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we then generate enough blocks to confirm all delayed transactions
     generateBlocks(25, Some(minerAddress))
     val expectedTxCountC = commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => 2 // C should have 2 recv transactions: its main output and the htlc timeout
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => 2 // C should have 2 recv transactions: its main output and the htlc timeout
       case Transactions.DefaultCommitmentFormat => 1 // C's main output uses static_remotekey
     }
     val expectedTxCountF = 1 // F should have 1 recv transaction: its main output
@@ -405,7 +405,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val localCommitF = commitmentsF.latest.localCommit
     commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size == 6)
-      case _: Transactions.AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size == 8)
+      case _: Transactions.AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size == 8)
     }
     val outgoingHtlcExpiry = localCommitF.spec.htlcs.collect { case OutgoingHtlc(add) => add.cltvExpiry }.max
     val htlcTimeoutTxs = localCommitF.htlcTxsAndRemoteSigs.collect { case h@HtlcTxAndRemoteSig(_: Transactions.HtlcTimeoutTx, _) => h }

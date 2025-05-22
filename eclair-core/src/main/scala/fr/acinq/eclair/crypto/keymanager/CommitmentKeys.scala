@@ -74,7 +74,7 @@ object LocalCommitmentKeys {
       theirPaymentPublicKey = params.commitmentFormat match {
         case DefaultCommitmentFormat if params.channelFeatures.hasFeature(Features.StaticRemoteKey) => params.remoteParams.paymentBasepoint
         case DefaultCommitmentFormat => ChannelKeys.remotePerCommitmentPublicKey(params.remoteParams.paymentBasepoint, localPerCommitmentPoint)
-        case _: AnchorOutputsCommitmentFormat  | SimpleTaprootChannelCommitmentFormat => params.remoteParams.paymentBasepoint
+        case _: AnchorOutputsCommitmentFormat  | _: SimpleTaprootChannelCommitmentFormat => params.remoteParams.paymentBasepoint
       },
       ourPaymentBasePoint = params.localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
       ourHtlcKey = channelKeys.htlcKey(localPerCommitmentPoint),
@@ -123,7 +123,7 @@ object RemoteCommitmentKeys {
         case None => params.commitmentFormat match {
           // Note that if we're using option_static_remotekey, a walletStaticPaymentBasepoint will be provided.
           case DefaultCommitmentFormat => Right(channelKeys.paymentKey(remotePerCommitmentPoint))
-          case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => Right(channelKeys.paymentBaseSecret)
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Right(channelKeys.paymentBaseSecret)
         }
       },
       theirDelayedPaymentPublicKey = ChannelKeys.remotePerCommitmentPublicKey(params.remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint),

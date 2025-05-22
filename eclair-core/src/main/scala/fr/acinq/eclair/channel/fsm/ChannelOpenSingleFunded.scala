@@ -218,7 +218,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
           val localSigOfRemoteTx = params.commitmentFormat match {
             case _: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey).sig
-            case SimpleTaprootChannelCommitmentFormat => ???
+            case _: SimpleTaprootChannelCommitmentFormat => ???
           }
           // signature of their initial commitment tx that pays remote pushMsat
           val fundingCreated = FundingCreated(
@@ -274,7 +274,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             case true =>
               val localSigOfRemoteTx = params.commitmentFormat match {
                 case _: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey).sig
-                case SimpleTaprootChannelCommitmentFormat => ???
+                case _: SimpleTaprootChannelCommitmentFormat => ???
               }
               val channelId = toLongId(fundingTxId, fundingTxOutputIndex)
               val fundingSigned = FundingSigned(

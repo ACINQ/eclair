@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
 import scodec.bits.ByteVector
 
@@ -47,7 +47,7 @@ object Scripts {
 
   private def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
     case DefaultCommitmentFormat => SIGHASH_ALL
-    case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
+    case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
   }
 
   /** Sort public keys using lexicographic ordering. */
@@ -208,7 +208,7 @@ object Scripts {
   def htlcOffered(keys: CommitmentPublicKeys, paymentHash: ByteVector32, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case DefaultCommitmentFormat => false
-      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => true
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => true
     }
     // @formatter:off
     // To you with revocation key
@@ -265,7 +265,7 @@ object Scripts {
   def htlcReceived(keys: CommitmentPublicKeys, paymentHash: ByteVector32, lockTime: CltvExpiry, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case DefaultCommitmentFormat => false
-      case _: AnchorOutputsCommitmentFormat | SimpleTaprootChannelCommitmentFormat => true
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => true
     }
     // @formatter:off
     // To you with revocation key
@@ -461,7 +461,7 @@ object Scripts {
       val scriptTree: ScriptTree.Branch = new ScriptTree.Branch(timeout, success)
 
       def witnessTimeout(commitKeys: LocalCommitmentKeys, localSig: ByteVector64, remoteSig: ByteVector64): ScriptWitness = {
-        Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, timeout, ScriptWitness(Seq(Taproot.encodeSig(remoteSig, htlcRemoteSighash(SimpleTaprootChannelCommitmentFormat)), localSig)), scriptTree)
+        Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, timeout, ScriptWitness(Seq(Taproot.encodeSig(remoteSig, htlcRemoteSighash(ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)), localSig)), scriptTree)
       }
 
       def witnessSuccess(commitKeys: RemoteCommitmentKeys, localSig: ByteVector64, paymentPreimage: ByteVector32): ScriptWitness = {
@@ -512,7 +512,7 @@ object Scripts {
       val scriptTree = new ScriptTree.Branch(timeout, success)
 
       def witnessSuccess(commitKeys: LocalCommitmentKeys, localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32): ScriptWitness = {
-        Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, success, ScriptWitness(Seq(Taproot.encodeSig(remoteSig, htlcRemoteSighash(SimpleTaprootChannelCommitmentFormat)), localSig, paymentPreimage)), scriptTree)
+        Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, success, ScriptWitness(Seq(Taproot.encodeSig(remoteSig, htlcRemoteSighash(ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)), localSig, paymentPreimage)), scriptTree)
       }
 
       def witnessTimeout(commitKeys: RemoteCommitmentKeys, localSig: ByteVector64): ScriptWitness = {

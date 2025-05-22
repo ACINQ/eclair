@@ -146,7 +146,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   private def checkExpectedWeight(actual: Int, expected: Int, commitmentFormat: CommitmentFormat): Unit = {
     commitmentFormat match {
-      case SimpleTaprootChannelCommitmentFormat => assert(actual == expected)
+      case _: SimpleTaprootChannelCommitmentFormat => assert(actual == expected)
       case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
         // ECDSA signatures are der-encoded, which creates some variability in signature size compared to the baseline.
         assert(actual <= expected + 2)
@@ -289,7 +289,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, spec, commitmentFormat)
       val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localIsChannelOpener = true, outputs)
       val commitTx = commitmentFormat match {
-        case SimpleTaprootChannelCommitmentFormat =>
+        case _: SimpleTaprootChannelCommitmentFormat =>
           val Right(commitTx) = for {
             localPartialSig <- txInfo.partialSign(localFundingPriv, remoteFundingPriv.publicKey, Map.empty, LocalNonce(secretLocalNonce, publicLocalNonce), publicNonces)
             remotePartialSig <- txInfo.partialSign(remoteFundingPriv, localFundingPriv.publicKey, Map.empty, LocalNonce(secretRemoteNonce, publicRemoteNonce), publicNonces)
@@ -314,7 +314,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val htlcSuccessTxs = htlcTxs.collect { case tx: HtlcSuccessTx => tx }
       val htlcTimeoutTxs = htlcTxs.collect { case tx: HtlcTimeoutTx => tx }
       commitmentFormat match {
-        case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat =>
+        case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat =>
           assert(htlcTxs.length == 7)
           assert(expiries == Map(0 -> 300, 1 -> 310, 2 -> 310, 3 -> 295, 4 -> 300, 7 -> 300, 8 -> 302))
           assert(htlcTimeoutTxs.size == 3) // htlc1 and htlc3 and htlc7
@@ -495,7 +495,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val skipped = claimHtlcDelayedPenaltyTxs.collect { case Left(reason) => reason }
       val claimed = claimHtlcDelayedPenaltyTxs.collect { case Right(tx) => tx }
       commitmentFormat match {
-        case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat =>
+        case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat =>
           assert(claimHtlcDelayedPenaltyTxs.size == 7)
           assert(skipped.size == 2)
           assert(skipped.toSet == Set(AmountBelowDustLimit))
@@ -543,7 +543,11 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("generate valid commitment and htlc transactions (simple taproot channels)") {
-    `generate valid commitment and htlc transactions`(SimpleTaprootChannelCommitmentFormat)
+    `generate valid commitment and htlc transactions`(LegacySimpleTaprootChannelCommitmentFormat)
+  }
+
+  test("generate valid commitment and htlc transactions (zero fee simple taproot channels)") {
+    `generate valid commitment and htlc transactions`(ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
   test("generate taproot NUMS point") {
