@@ -429,11 +429,25 @@ case class UpdateFailMalformedHtlc(channelId: ByteVector32,
                                    failureCode: Int,
                                    tlvStream: TlvStream[UpdateFailMalformedHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcFailureMessage
 
+/**
+ * [[CommitSig]] can either be sent individually or as part of a batch. When sent in a batch (which happens when there
+ * are pending splice transactions), we treat the whole batch as a single lightning message and group them on the wire.
+ */
+sealed trait CommitSigs extends HtlcMessage with HasChannelId
+
+object CommitSigs {
+  def apply(sigs: Seq[CommitSig]): CommitSigs = if (sigs.size == 1) sigs.head else CommitSigBatch(sigs)
+}
+
 case class CommitSig(channelId: ByteVector32,
                      signature: ByteVector64,
                      htlcSignatures: List[ByteVector64],
-                     tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends HtlcMessage with HasChannelId {
-  val batchSize: Int = tlvStream.get[CommitSigTlv.BatchTlv].map(_.size).getOrElse(1)
+                     tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends CommitSigs
+
+case class CommitSigBatch(messages: Seq[CommitSig]) extends CommitSigs {
+  require(messages.map(_.channelId).toSet.size == 1, "commit_sig messages in a batch must be for the same channel")
+  val channelId: ByteVector32 = messages.head.channelId
+  val batchSize: Int = messages.size
 }
 
 case class RevokeAndAck(channelId: ByteVector32,
