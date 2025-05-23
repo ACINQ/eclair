@@ -31,7 +31,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.transactions.Transactions.SegwitV0CommitmentFormat
+import fr.acinq.eclair.transactions.Transactions.{SegwitV0CommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
 import fr.acinq.eclair.{MilliSatoshiLong, UInt64, randomKey, toLongId}
 import scodec.bits.ByteVector
@@ -218,6 +218,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
           val localSigOfRemoteTx = params.commitmentFormat match {
             case _: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey).sig
+            case _: SimpleTaprootChannelCommitmentFormat => ???
           }
           // signature of their initial commitment tx that pays remote pushMsat
           val fundingCreated = FundingCreated(
@@ -273,6 +274,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             case true =>
               val localSigOfRemoteTx = params.commitmentFormat match {
                 case _: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey).sig
+                case _: SimpleTaprootChannelCommitmentFormat => ???
               }
               val channelId = toLongId(fundingTxId, fundingTxOutputIndex)
               val fundingSigned = FundingSigned(

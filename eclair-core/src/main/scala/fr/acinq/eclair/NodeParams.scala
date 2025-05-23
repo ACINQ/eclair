@@ -134,7 +134,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
       min = (commitmentFeerate * feerateTolerance.ratioLow).max(minimumFeerate),
       max = (commitmentFormat match {
         case Transactions.DefaultCommitmentFormat => commitmentFeerate * feerateTolerance.ratioHigh
-        case _: Transactions.AnchorOutputsCommitmentFormat => (commitmentFeerate * feerateTolerance.ratioHigh).max(feerateTolerance.anchorOutputMaxCommitFeerate)
+        case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat => (commitmentFeerate * feerateTolerance.ratioHigh).max(feerateTolerance.anchorOutputMaxCommitFeerate)
       }).max(minimumFeerate),
     )
     RecommendedFeerates(chainHash, fundingFeerate, commitmentFeerate, TlvStream(fundingRange, commitmentRange))

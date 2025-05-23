@@ -277,7 +277,7 @@ trait ErrorHandlers extends CommonHandlers {
               case _ => None
             }
             signedTx_opt.map(tx => PublishFinalTx(tx, tx.fee, Some(commitTx.txid)))
-          case _: Transactions.AnchorOutputsCommitmentFormat =>
+          case _: Transactions.AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
             val confirmationTarget = ConfirmationTarget.Absolute(htlcTx.htlcExpiry.blockHeight)
             val replaceableTx_opt = (htlcTx, preimage_opt) match {
               case (htlcTx: HtlcSuccessTx, Some(preimage)) => Some(ReplaceableHtlcSuccess(htlcTx, commitKeys, preimage, remoteSig, commitTx, commitment))

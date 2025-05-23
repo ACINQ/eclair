@@ -17,14 +17,15 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Script.LOCKTIME_THRESHOLD
-import fr.acinq.bitcoin.ScriptTree
+import fr.acinq.bitcoin.{ScriptTree, SigHash}
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.TxIn.{SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_MASK, SEQUENCE_LOCKTIME_TYPE_FLAG}
+import fr.acinq.bitcoin.io.Output
 import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, RemoteCommitmentKeys}
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
+import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
 import scodec.bits.ByteVector
 
@@ -46,7 +47,7 @@ object Scripts {
 
   private def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
     case DefaultCommitmentFormat => SIGHASH_ALL
-    case _: AnchorOutputsCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
+    case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
   }
 
   /** Sort public keys using lexicographic ordering. */
@@ -207,7 +208,7 @@ object Scripts {
   def htlcOffered(keys: CommitmentPublicKeys, paymentHash: ByteVector32, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case DefaultCommitmentFormat => false
-      case _: AnchorOutputsCommitmentFormat => true
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => true
     }
     // @formatter:off
     // To you with revocation key
@@ -264,7 +265,7 @@ object Scripts {
   def htlcReceived(keys: CommitmentPublicKeys, paymentHash: ByteVector32, lockTime: CltvExpiry, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case DefaultCommitmentFormat => false
-      case _: AnchorOutputsCommitmentFormat => true
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => true
     }
     // @formatter:off
     // To you with revocation key
@@ -378,11 +379,15 @@ object Scripts {
       OP_PUSHDATA(keys.localDelayedPaymentPublicKey.xOnly) :: OP_CHECKSIGVERIFY :: Scripts.encodeNumber(toSelfDelay.toInt) :: OP_CHECKSEQUENCEVERIFY :: Nil
     }
 
+    case class ToLocalScriptTree(localDelayed: ScriptTree.Leaf, revocation: ScriptTree.Leaf) {
+      val scriptTree: ScriptTree.Branch = new ScriptTree.Branch(localDelayed, revocation)
+    }
+
     /**
      * @return a script tree with two leaves (to self with delay, and to revocation key)
      */
-    def toLocalScriptTree(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): ScriptTree.Branch = {
-      new ScriptTree.Branch(
+    def toLocalScriptTree(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): ToLocalScriptTree = {
+      ToLocalScriptTree(
         new ScriptTree.Leaf(toLocalDelayed(keys, toSelfDelay)),
         new ScriptTree.Leaf(toRevocationKey(keys)),
       )
@@ -392,7 +397,7 @@ object Scripts {
      * Script used for the main balance of the owner of the commitment transaction.
      */
     def toLocal(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): Seq[ScriptElt] = {
-      Script.pay2tr(NUMS_POINT.xOnly, Some(toLocalScriptTree(keys, toSelfDelay)))
+      Script.pay2tr(NUMS_POINT.xOnly, Some(toLocalScriptTree(keys, toSelfDelay).scriptTree))
     }
 
     /**
@@ -452,21 +457,26 @@ object Scripts {
       // @formatter:on
     }
 
-    /**
-     * Script tree used for offered HTLCs.
-     */
-    def offeredHtlcScriptTree(keys: CommitmentPublicKeys, paymentHash: ByteVector32): ScriptTree.Branch = {
-      new ScriptTree.Branch(
-        new ScriptTree.Leaf(offeredHtlcTimeout(keys)),
-        new ScriptTree.Leaf(offeredHtlcSuccess(keys, paymentHash)),
-      )
+    case class OfferedHtlcScriptTree(timeout: ScriptTree.Leaf, success: ScriptTree.Leaf) {
+      val scriptTree: ScriptTree.Branch = new ScriptTree.Branch(timeout, success)
+
+      def witnessTimeout(commitKeys: LocalCommitmentKeys, localSig: ByteVector64, remoteSig: ByteVector64): ScriptWitness = {
+        Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, timeout, ScriptWitness(Seq(Taproot.encodeSig(remoteSig, htlcRemoteSighash(ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)), localSig)), scriptTree)
+      }
+
+      def witnessSuccess(commitKeys: RemoteCommitmentKeys, localSig: ByteVector64, paymentPreimage: ByteVector32): ScriptWitness = {
+        Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, success, ScriptWitness(Seq(localSig, paymentPreimage)), scriptTree)
+      }
     }
 
     /**
-     * Script used for offered HTLCs.
+     * Script tree used for offered HTLCs.
      */
-    def offeredHtlc(keys: CommitmentPublicKeys, paymentHash: ByteVector32): Seq[ScriptElt] = {
-      Script.pay2tr(keys.revocationPublicKey.xOnly, Some(offeredHtlcScriptTree(keys, paymentHash)))
+    def offeredHtlcScriptTree(keys: CommitmentPublicKeys, paymentHash: ByteVector32): OfferedHtlcScriptTree = {
+      OfferedHtlcScriptTree(
+        new ScriptTree.Leaf(offeredHtlcTimeout(keys)),
+        new ScriptTree.Leaf(offeredHtlcSuccess(keys, paymentHash)),
+      )
     }
 
     /**
@@ -498,21 +508,26 @@ object Scripts {
       // @formatter:on
     }
 
-    /**
-     * Script tree used for received HTLCs.
-     */
-    def receivedHtlcScriptTree(keys: CommitmentPublicKeys, paymentHash: ByteVector32, expiry: CltvExpiry): ScriptTree.Branch = {
-      new ScriptTree.Branch(
-        new ScriptTree.Leaf(receivedHtlcTimeout(keys, expiry)),
-        new ScriptTree.Leaf(receivedHtlcSuccess(keys, paymentHash)),
-      )
+    case class ReceivedHtlcScriptTree(timeout: ScriptTree.Leaf, success: ScriptTree.Leaf) {
+      val scriptTree = new ScriptTree.Branch(timeout, success)
+
+      def witnessSuccess(commitKeys: LocalCommitmentKeys, localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32): ScriptWitness = {
+        Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, success, ScriptWitness(Seq(Taproot.encodeSig(remoteSig, htlcRemoteSighash(ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)), localSig, paymentPreimage)), scriptTree)
+      }
+
+      def witnessTimeout(commitKeys: RemoteCommitmentKeys, localSig: ByteVector64): ScriptWitness = {
+        Script.witnessScriptPathPay2tr(commitKeys.revocationPublicKey.xOnly, timeout, ScriptWitness(Seq(localSig)), scriptTree)
+      }
     }
 
     /**
-     * Script used for received HTLCs.
+     * Script tree used for received HTLCs.
      */
-    def receivedHtlc(keys: CommitmentPublicKeys, paymentHash: ByteVector32, expiry: CltvExpiry): Seq[ScriptElt] = {
-      Script.pay2tr(keys.revocationPublicKey.xOnly, Some(receivedHtlcScriptTree(keys, paymentHash, expiry)))
+    def receivedHtlcScriptTree(keys: CommitmentPublicKeys, paymentHash: ByteVector32, expiry: CltvExpiry): ReceivedHtlcScriptTree = {
+      ReceivedHtlcScriptTree(
+        new ScriptTree.Leaf(receivedHtlcTimeout(keys, expiry)),
+        new ScriptTree.Leaf(receivedHtlcSuccess(keys, paymentHash)),
+      )
     }
 
     /**

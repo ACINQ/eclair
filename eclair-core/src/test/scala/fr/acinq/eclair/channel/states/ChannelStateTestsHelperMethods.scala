@@ -594,7 +594,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
         // all htlcs success/timeout should be published as-is, without claiming their outputs
         s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => TxPublisher.PublishFinalTx(tx, tx.fee, Some(commitTx.txid)) }: _*)
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
-      case _: Transactions.AnchorOutputsCommitmentFormat =>
+      case _: Transactions.AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
         // all htlcs success/timeout should be published as replaceable txs, without claiming their outputs
         val htlcTxs = localCommitPublished.htlcTxs.values.collect { case Some(tx: HtlcTx) => tx }
         val publishedTxs = htlcTxs.map(_ => s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx])
@@ -633,7 +633,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
     val anchorTx_opt = closingData.commitments.params.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat => Some(s2blockchain.expectMsgType[PublishReplaceableTx])
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(s2blockchain.expectMsgType[PublishReplaceableTx])
       case Transactions.DefaultCommitmentFormat => None
     }
     anchorTx_opt.foreach(anchor => assert(anchor.tx.isInstanceOf[ReplaceableRemoteCommitAnchor]))

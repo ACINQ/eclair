@@ -247,7 +247,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       // make sure that we have extracted the remote sig of the local tx
       val remoteSig = newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.remoteSig
       val commitTx = newnormal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx
-      assert(commitTx.checkRemoteSig(testCase.localFundingPublicKey, testCase.remoteFundingPublicKey, remoteSig))
+      assert(commitTx.checkRemoteSig(testCase.localFundingPublicKey, testCase.remoteFundingPublicKey, remoteSig.asInstanceOf[ChannelSpendSignature.IndividualSignature]))
     }
   }
 

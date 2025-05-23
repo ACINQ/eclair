@@ -373,6 +373,7 @@ object Helpers {
     def makeFundingScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat): RedeemInfo = {
       commitmentFormat match {
         case _: SegwitV0CommitmentFormat => RedeemInfo.P2wsh(Script.write(multiSig2of2(localFundingKey, remoteFundingKey)))
+        case _: SimpleTaprootChannelCommitmentFormat => RedeemInfo.TaprootKeyPath(Taproot.musig2Aggregate(localFundingKey, remoteFundingKey), None)
       }
     }
 
@@ -676,7 +677,7 @@ object Helpers {
           case DefaultCommitmentFormat =>
             // we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
             requestedFeerate.min(commitment.localCommit.spec.commitTxFeerate)
-          case _: AnchorOutputsCommitmentFormat => requestedFeerate
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => requestedFeerate
         }
         // NB: we choose a minimum fee that ensures the tx will easily propagate while allowing low fees since we can
         // always use CPFP to speed up confirmation if necessary.
@@ -901,7 +902,7 @@ object Helpers {
 
       def claimAnchor(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): Option[ClaimAnchorOutputTx] = {
         withTxGenerationLog("local-anchor") {
-          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys.publicKeys, commitTx, commitmentFormat)
+          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys, commitTx, commitmentFormat)
         }
       }
 
@@ -1003,7 +1004,7 @@ object Helpers {
 
       def claimAnchor(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): Option[ClaimAnchorOutputTx] = {
         withTxGenerationLog("remote-anchor") {
-          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys.publicKeys, commitTx, commitmentFormat)
+          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys, commitTx, commitmentFormat)
         }
       }
 
@@ -1014,7 +1015,7 @@ object Helpers {
           case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
             ClaimP2WPKHOutputTx.createSignedTx(commitKeys, commitTx, params.localParams.dustLimit, finalScriptPubKey, feerate, params.commitmentFormat)
           }
-          case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
             ClaimRemoteDelayedOutputTx.createSignedTx(commitKeys, commitTx, params.localParams.dustLimit, finalScriptPubKey, feerate, params.commitmentFormat)
           }
         }
@@ -1132,7 +1133,7 @@ object Helpers {
           case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
             ClaimP2WPKHOutputTx.createSignedTx(commitKeys, commitTx, localParams.dustLimit, finalScriptPubKey, feerateMain, commitmentFormat)
           }
-          case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
             ClaimRemoteDelayedOutputTx.createSignedTx(commitKeys, commitTx, localParams.dustLimit, finalScriptPubKey, feerateMain, commitmentFormat)
           }
         }
