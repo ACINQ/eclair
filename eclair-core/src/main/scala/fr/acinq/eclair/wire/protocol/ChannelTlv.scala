@@ -301,3 +301,9 @@ object ClosingTlv {
   )
 
 }
+
+sealed trait StartBatchTlv extends Tlv
+
+object StartBatchTlv {
+  val startBatchTlvCodec: Codec[TlvStream[StartBatchTlv]] = tlvStream(discriminated[StartBatchTlv].by(varint))
+}
