@@ -1857,19 +1857,36 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case c: CMD_FAIL_MALFORMED_HTLC => d.commitments.sendFailMalformed(c)
       }) match {
         case Right((commitments1, _)) =>
-          log.info("got valid settlement for htlc={}, recalculating htlc transactions", c.id)
           val commitment = commitments1.latest
-          val localCommitPublished1 = d.localCommitPublished.map(localCommitPublished => localCommitPublished.copy(htlcTxs = Closing.LocalClose.claimHtlcOutputs(commitment.localKeys(channelKeys), commitment)))
-          val remoteCommitPublished1 = d.remoteCommitPublished.map(remoteCommitPublished => remoteCommitPublished.copy(claimHtlcTxs = Closing.RemoteClose.claimHtlcOutputs(channelKeys, commitment.remoteKeys(channelKeys, commitment.remoteCommit.remotePerCommitmentPoint), commitment, commitment.remoteCommit, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)))
-          val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map(remoteCommitPublished => remoteCommitPublished.copy(claimHtlcTxs = Closing.RemoteClose.claimHtlcOutputs(channelKeys, commitment.remoteKeys(channelKeys, commitment.nextRemoteCommit_opt.get.commit.remotePerCommitmentPoint), commitment, commitment.nextRemoteCommit_opt.get.commit, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)))
-
-          def republish(): Unit = {
-            localCommitPublished1.foreach(lcp => doPublish(lcp, commitment))
-            remoteCommitPublished1.foreach(rcp => doPublish(rcp, commitment))
-            nextRemoteCommitPublished1.foreach(rcp => doPublish(rcp, commitment))
+          val d1 = c match {
+            case c: CMD_FULFILL_HTLC =>
+              log.info("htlc #{} with payment_hash={} was fulfilled downstream, recalculating htlc-success transactions", c.id, c.r)
+              // We may be able to publish HTLC-success transactions for which we didn't have the preimage.
+              // We are already watching the corresponding outputs: no need to set additional watches.
+              val lcp1 = d.localCommitPublished.map(lcp => {
+                val (lcp1, toPublish) = Closing.LocalClose.claimHtlcsWithPreimage(commitment.localKeys(channelKeys), lcp, commitment, c.r)
+                toPublish.foreach(publishTx => txPublisher ! publishTx)
+                lcp1
+              })
+              val rcp1 = d.remoteCommitPublished.map(rcp => {
+                val (rcp1, toPublish) = Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, rcp, commitment, commitment.remoteCommit, c.r, d.finalScriptPubKey)
+                toPublish.foreach(publishTx => txPublisher ! publishTx)
+                rcp1
+              })
+              val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => {
+                val (nrcp1, toPublish) = Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, nrcp, commitment, commitment.nextRemoteCommit_opt.get.commit, c.r, d.finalScriptPubKey)
+                toPublish.foreach(publishTx => txPublisher ! publishTx)
+                nrcp1
+              })
+              d.copy(commitments = commitments1, localCommitPublished = lcp1, remoteCommitPublished = rcp1, nextRemoteCommitPublished = nrcp1)
+            case _: CMD_FAIL_HTLC | _: CMD_FAIL_MALFORMED_HTLC =>
+              log.info("htlc #{} was failed downstream, recalculating watched htlc outputs", c.id)
+              val lcp1 = d.localCommitPublished.map(lcp => Closing.LocalClose.ignoreFailedIncomingHtlc(c.id, lcp, commitment))
+              val rcp1 = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.ignoreFailedIncomingHtlc(channelKeys, c.id, rcp, commitment, commitment.remoteCommit))
+              val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.ignoreFailedIncomingHtlc(channelKeys, c.id, nrcp, commitment, commitment.nextRemoteCommit_opt.get.commit))
+              d.copy(commitments = commitments1, localCommitPublished = lcp1, remoteCommitPublished = rcp1, nextRemoteCommitPublished = nrcp1)
           }
-
-          handleCommandSuccess(c, d.copy(commitments = commitments1, localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1)) storing() calling republish()
+          handleCommandSuccess(c, d1) storing()
         case Left(cause) => handleCommandError(cause, c)
       }
 
