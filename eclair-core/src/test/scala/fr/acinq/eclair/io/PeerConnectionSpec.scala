@@ -19,11 +19,12 @@ package fr.acinq.eclair.io
 import akka.actor.PoisonPill
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, OutPoint, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.TestUtils.randomTxId
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.ConnectionDown
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
@@ -345,6 +346,8 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       CommitSig(channelId, randomBytes64(), Nil),
     )
     probe.send(peerConnection, CommitSigBatch(commitSigs))
+    // We insert a start_batch message.
+    transport.expectMsg(StartBatch(channelId, batchSize = 3))
     commitSigs.foreach(commitSig => transport.expectMsg(commitSig))
     transport.expectNoMessage(100 millis)
   }
@@ -356,8 +359,8 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     // We receive a batch of commit_sig messages from a first channel.
     val channelId1 = randomBytes32()
     val commitSigs1 = Seq(
-      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
-      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
+      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
+      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
     )
     transport.send(peerConnection, commitSigs1.head)
     transport.expectMsg(TransportHandler.ReadAck(commitSigs1.head))
@@ -369,9 +372,9 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     // We receive a batch of commit_sig messages from a second channel.
     val channelId2 = randomBytes32()
     val commitSigs2 = Seq(
-      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.BatchTlv(3))),
-      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.BatchTlv(3))),
-      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.BatchTlv(3))),
+      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(3))),
+      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(3))),
+      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(3))),
     )
     commitSigs2.dropRight(1).foreach(commitSig => {
       transport.send(peerConnection, commitSig)
@@ -384,8 +387,8 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
     // We receive another batch of commit_sig messages from the first channel, with unrelated messages in the batch.
     val commitSigs3 = Seq(
-      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
-      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
+      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
+      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
     )
     transport.send(peerConnection, commitSigs3.head)
     transport.expectMsg(TransportHandler.ReadAck(commitSigs3.head))
@@ -405,9 +408,9 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     // We start receiving a batch of commit_sig messages from the first channel, interleaved with a batch from the second
     // channel, which is not supported.
     val commitSigs4 = Seq(
-      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
-      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
-      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
+      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
+      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
+      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
     )
     transport.send(peerConnection, commitSigs4.head)
     transport.expectMsg(TransportHandler.ReadAck(commitSigs4.head))
@@ -420,12 +423,129 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     peer.expectMsg(CommitSigBatch(commitSigs4.tail))
 
     // We receive a batch that exceeds our threshold: we process them individually.
-    val invalidCommitSigs = (0 until 30).map(_ => CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.BatchTlv(30))))
+    val invalidCommitSigs = (0 until 30).map(_ => CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(30))))
     invalidCommitSigs.foreach(commitSig => {
       transport.send(peerConnection, commitSig)
       transport.expectMsg(TransportHandler.ReadAck(commitSig))
       peer.expectMsg(commitSig)
     })
+  }
+
+  test("receive batch of commit_sig messages") { f =>
+    import f._
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+
+    // A first channel has a pending splice.
+    val channelId1 = randomBytes32()
+    val startBatch1 = StartBatch(channelId1, batchSize = 2)
+    val commitSigs1 = Seq(
+      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId()))),
+      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId()))),
+    )
+    transport.send(peerConnection, startBatch1)
+    transport.expectMsg(TransportHandler.ReadAck(startBatch1))
+    transport.send(peerConnection, commitSigs1(0))
+    transport.expectMsg(TransportHandler.ReadAck(commitSigs1(0)))
+    peer.expectNoMessage(100 millis)
+    transport.send(peerConnection, commitSigs1(1))
+    transport.expectMsg(TransportHandler.ReadAck(commitSigs1(1)))
+    peer.expectMsg(CommitSigBatch(commitSigs1))
+
+    // Another channel has 2 pending splices.
+    val channelId2 = randomBytes32()
+    val startBatch2 = StartBatch(channelId2, batchSize = 3)
+    val commitSigs2 = Seq(
+      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId()))),
+      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId()))),
+      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId()))),
+    )
+    transport.send(peerConnection, startBatch2)
+    transport.expectMsg(TransportHandler.ReadAck(startBatch2))
+    transport.send(peerConnection, commitSigs2(0))
+    transport.expectMsg(TransportHandler.ReadAck(commitSigs2(0)))
+    transport.send(peerConnection, commitSigs2(1))
+    transport.expectMsg(TransportHandler.ReadAck(commitSigs2(1)))
+    peer.expectNoMessage(100 millis)
+    transport.send(peerConnection, commitSigs2(2))
+    transport.expectMsg(TransportHandler.ReadAck(commitSigs2(2)))
+    peer.expectMsg(CommitSigBatch(commitSigs2))
+
+    // We receive another batch of commit_sig messages for the first channel.
+    val startBatch3 = StartBatch(channelId1, batchSize = 3)
+    val commitSigs3 = Seq(
+      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId()))),
+      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId()))),
+      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId()))),
+    )
+    transport.send(peerConnection, startBatch3)
+    transport.expectMsg(TransportHandler.ReadAck(startBatch3))
+    transport.send(peerConnection, commitSigs3(0))
+    transport.expectMsg(TransportHandler.ReadAck(commitSigs3(0)))
+    transport.send(peerConnection, commitSigs3(1))
+    transport.expectMsg(TransportHandler.ReadAck(commitSigs3(1)))
+    peer.expectNoMessage(100 millis)
+    transport.send(peerConnection, commitSigs3(2))
+    transport.expectMsg(TransportHandler.ReadAck(commitSigs3(2)))
+    peer.expectMsg(CommitSigBatch(commitSigs3))
+
+    // We reject batches that mix unrelated channels.
+    val startBatch4 = StartBatch(channelId1, batchSize = 3)
+    val commitSigs4 = Seq(
+      CommitSig(channelId1, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId()))),
+      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId()))),
+      CommitSig(channelId2, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId()))),
+    )
+    transport.send(peerConnection, startBatch4)
+    transport.expectMsg(TransportHandler.ReadAck(startBatch4))
+    transport.send(peerConnection, commitSigs4(0))
+    transport.expectMsg(TransportHandler.ReadAck(commitSigs4(0)))
+    peer.expectNoMessage(100 millis)
+    transport.send(peerConnection, commitSigs4(1))
+    transport.expectMsg(TransportHandler.ReadAck(commitSigs4(1)))
+    peer.expectMsg(CommitSigBatch(commitSigs4.take(1)))
+    peer.expectMsg(commitSigs4(1))
+    peer.expectNoMessage(100 millis)
+    transport.send(peerConnection, commitSigs4(2))
+    transport.expectMsg(TransportHandler.ReadAck(commitSigs4(2)))
+    peer.expectMsg(commitSigs4(2))
+    peer.expectNoMessage(100 millis)
+  }
+
+  test("receive unsupported batch of channel messages") { f =>
+    import f._
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+
+    // We receive a batch of splice_locked messages: we forward them individually.
+    val channelId = randomBytes32()
+    val startBatch1 = StartBatch(channelId, batchSize = 2)
+    val spliceLocked1 = SpliceLocked(channelId, randomTxId())
+    val spliceLocked2 = SpliceLocked(channelId, randomTxId())
+    transport.send(peerConnection, startBatch1)
+    transport.expectMsg(TransportHandler.ReadAck(startBatch1))
+    transport.send(peerConnection, spliceLocked1)
+    transport.expectMsg(TransportHandler.ReadAck(spliceLocked1))
+    peer.expectMsg(spliceLocked1)
+    transport.send(peerConnection, spliceLocked2)
+    transport.expectMsg(TransportHandler.ReadAck(spliceLocked2))
+    peer.expectMsg(spliceLocked2)
+
+    // We receive a batch containing commit_sig and an unrelated message.
+    val startBatch2 = StartBatch(channelId, batchSize = 3)
+    val commitSig1 = CommitSig(channelId, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId())))
+    val commitSig2 = CommitSig(channelId, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(randomTxId())))
+    val spliceLocked3 = SpliceLocked(channelId, randomTxId())
+    transport.send(peerConnection, startBatch2)
+    transport.expectMsg(TransportHandler.ReadAck(startBatch2))
+    transport.send(peerConnection, commitSig1)
+    transport.expectMsg(TransportHandler.ReadAck(commitSig1))
+    transport.send(peerConnection, commitSig2)
+    transport.expectMsg(TransportHandler.ReadAck(commitSig2))
+    peer.expectNoMessage(100 millis)
+    transport.send(peerConnection, spliceLocked3)
+    transport.expectMsg(TransportHandler.ReadAck(spliceLocked3))
+    peer.expectMsg(CommitSigBatch(commitSig1 :: commitSig2 :: Nil))
+    peer.expectMsg(spliceLocked3)
+    peer.expectNoMessage(100 millis)
   }
 
   test("react to peer's bad behavior") { f =>
@@ -589,6 +709,54 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       val isPublicIP = NodeAddress.isPublicIPAddress(address)
       assert(isPublicIP == expected)
     }
+  }
+
+  test("convert experimental splice messages") { f =>
+    import f._
+    val remoteInit = protocol.Init(Bob.nodeParams.features.initFeatures().copy(unknown = Set(UnknownFeature(155))))
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit)
+
+    val spliceInit = SpliceInit(randomBytes32(), 100_000 sat, FeeratePerKw(5000 sat), 0, randomKey().publicKey)
+    val spliceAck = SpliceAck(randomBytes32(), 50_000 sat, randomKey().publicKey)
+    val spliceLocked = SpliceLocked(randomBytes32(), TxId(randomBytes32()))
+
+    // Outgoing messages use the experimental version of splicing.
+    peer.send(peerConnection, spliceInit)
+    transport.expectMsg(ExperimentalSpliceInit.from(spliceInit))
+    peer.send(peerConnection, spliceAck)
+    transport.expectMsg(ExperimentalSpliceAck.from(spliceAck))
+    peer.send(peerConnection, spliceLocked)
+    transport.expectMsg(ExperimentalSpliceLocked.from(spliceLocked))
+
+    // Incoming messages are converted from their experimental version.
+    transport.send(peerConnection, ExperimentalSpliceInit.from(spliceInit))
+    peer.expectMsg(spliceInit)
+    transport.expectMsgType[TransportHandler.ReadAck]
+    transport.send(peerConnection, ExperimentalSpliceAck.from(spliceAck))
+    peer.expectMsg(spliceAck)
+    transport.expectMsgType[TransportHandler.ReadAck]
+    transport.send(peerConnection, ExperimentalSpliceLocked.from(spliceLocked))
+    peer.expectMsg(spliceLocked)
+    transport.expectMsgType[TransportHandler.ReadAck]
+
+    // Incompatible TLVs are dropped when sending messages to peers using the experimental version.
+    val txAddInput = TxAddInput(randomBytes32(), UInt64(0), OutPoint(TxId(randomBytes32()), 3), 0)
+    assert(txAddInput.tlvStream.get[TxAddInputTlv.SharedInputTxId].nonEmpty)
+    peer.send(peerConnection, txAddInput)
+    assert(transport.expectMsgType[TxAddInput].tlvStream.get[TxAddInputTlv.SharedInputTxId].isEmpty)
+    val txSignatures = TxSignatures(randomBytes32(), Transaction(2, Nil, Nil, 0), Nil, Some(randomBytes64()))
+    assert(txSignatures.tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].nonEmpty)
+    peer.send(peerConnection, txSignatures)
+    assert(transport.expectMsgType[TxSignatures].tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].isEmpty)
+    val channelId = randomBytes32()
+    val commitSigBatch = CommitSigBatch(Seq(
+      CommitSig(channelId, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(TxId(randomBytes32())), CommitSigTlv.ExperimentalBatchTlv(2))),
+      CommitSig(channelId, randomBytes64(), Nil, TlvStream(CommitSigTlv.FundingTx(TxId(randomBytes32())), CommitSigTlv.ExperimentalBatchTlv(2))),
+    ))
+    peer.send(peerConnection, commitSigBatch)
+    assert(transport.expectMsgType[CommitSig].tlvStream.get[CommitSigTlv.FundingTx].isEmpty)
+    assert(transport.expectMsgType[CommitSig].tlvStream.get[CommitSigTlv.FundingTx].isEmpty)
+    transport.expectNoMessage(100 millis)
   }
 
 }
