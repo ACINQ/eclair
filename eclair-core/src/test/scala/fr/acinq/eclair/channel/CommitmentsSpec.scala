@@ -497,7 +497,7 @@ object CommitmentsSpec {
     val fundingTx = Transaction(2, Nil, Seq(TxOut((toLocal + toRemote).truncateToSatoshi, Funding.makeFundingScript(localFundingPubKey, remoteFundingPubKey, DefaultCommitmentFormat).pubkeyScript)), 0)
     val commitmentInput = Transactions.InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, ByteVector.empty)
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), IndividualSignature(ByteVector64.Zeroes)), Nil)
-    val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomTxId(), randomKey().publicKey)
+    val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomTxId(), randomKey().publicKey, None)
     val localFundingStatus = announcement_opt match {
       case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(fundingTx, ann.shortChannelId, None, None)
       case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
@@ -522,7 +522,7 @@ object CommitmentsSpec {
     val fundingTx = Transaction(2, Nil, Seq(TxOut((toLocal + toRemote).truncateToSatoshi, Funding.makeFundingScript(localFundingPubKey, remoteFundingPubKey, DefaultCommitmentFormat).pubkeyScript)), 0)
     val commitmentInput = Transactions.InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, ByteVector.empty)
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), IndividualSignature(ByteVector64.Zeroes)), Nil)
-    val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toRemote, toLocal), randomTxId(), randomKey().publicKey)
+    val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toRemote, toLocal), randomTxId(), randomKey().publicKey, None)
     val localFundingStatus = announcement_opt match {
       case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(fundingTx, ann.shortChannelId, None, None)
       case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
