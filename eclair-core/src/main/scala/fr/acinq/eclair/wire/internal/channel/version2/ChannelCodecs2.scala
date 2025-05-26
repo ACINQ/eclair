@@ -169,7 +169,7 @@ private[channel] object ChannelCodecs2 {
       ("index" | uint64overflow) ::
         ("spec" | commitmentSpecCodec) ::
         ("txid" | txId) ::
-        ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit]
+        ("remotePerCommitmentPoint" | publicKey) :: provide[Option[CommitSig]](None)).as[RemoteCommit]
 
     val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage](f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g))
 

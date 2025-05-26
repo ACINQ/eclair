@@ -750,7 +750,7 @@ object PaymentPacketSpec {
     val fundingTx = Transaction(2, Nil, Seq(TxOut(testCapacity, Nil)), 0)
     val commitInput = InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, ByteVector.empty)
     val localCommit = LocalCommit(0, null, CommitTxAndRemoteSig(Transactions.CommitTx(commitInput, Transaction(2, Seq(TxIn(commitInput.outPoint, Nil, 0)), Seq(TxOut(testCapacity, Nil)), 0)), IndividualSignature(ByteVector64.Zeroes)), Nil)
-    val remoteCommit = RemoteCommit(0, null, randomTxId(), randomKey().publicKey)
+    val remoteCommit = RemoteCommit(0, null, randomTxId(), randomKey().publicKey, None)
     val localChanges = LocalChanges(Nil, Nil, Nil)
     val remoteChanges = RemoteChanges(Nil, Nil, Nil)
     val localFundingStatus = announcement_opt match {

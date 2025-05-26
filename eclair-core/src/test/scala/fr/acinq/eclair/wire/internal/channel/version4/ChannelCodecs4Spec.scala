@@ -141,7 +141,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       fundingTxIndex = 0,
       PartiallySignedSharedTransaction(fundingTx, TxSignatures(channelId, randomTxId(), Nil)),
       Left(UnsignedLocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 100_000_000 msat, 75_000_000 msat), commitTx, Nil)),
-      RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 75_000_000 msat, 100_000_000 msat), randomTxId(), randomKey().publicKey),
+      RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 75_000_000 msat, 100_000_000 msat), randomTxId(), randomKey().publicKey, None),
       Some(LiquidityAds.PurchaseBasicInfo(isBuyer = true, 100_000 sat, LiquidityAds.Fees(1000 sat, 500 sat))),
     )
     val testCases = Map(

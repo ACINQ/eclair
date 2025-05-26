@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, LexicographicalOrdering, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, LexicographicalOrdering, Musig2, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
@@ -484,15 +484,16 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     case rbf: SpliceTxRbf => rbf.previousTransactions
     case _ => Nil
   }
+  // nonce used to sign the shared input if there is one
   private val localNonce = fundingParams.sharedInput_opt.collect {
-    case s: Musig2Input => {
-      val localFundingPubKey1 = channelKeys.fundingKey(s.fundingTxIndex).publicKey
-      NonceGenerator.signingNonce(localFundingPubKey1)
-    }
+    case s: Musig2Input =>
+      val localPubKeyForSharedInput = channelKeys.fundingKey(s.fundingTxIndex).publicKey
+      NonceGenerator.signingNonce(localPubKeyForSharedInput)
   }
   log.debug("creating local nonce {} for fundingTxIndex {}", localNonce, purpose.fundingTxIndex)
 
   def start(): Behavior[Command] = {
+    log.info(s"starting funder with $fundingPubkeyScript")
     val txFunder = context.spawnAnonymous(InteractiveTxFunder(remoteNodeId, fundingParams, fundingPubkeyScript, purpose, wallet))
     txFunder ! InteractiveTxFunder.FundTransaction(context.messageAdapter[InteractiveTxFunder.Response](r => FundTransactionResult(r)))
     Behaviors.receiveMessagePartial {
@@ -545,8 +546,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           case i: Input.Shared => TxAddInput(fundingParams.channelId, i.serialId, i.outPoint, i.sequence)
         }
         val nextSecretNonces = addInput match {
-          case i: Input.Shared if localNonce.isDefined =>
-            session.secretNonces + (i.serialId -> localNonce.get)
+          case i: Input.Shared if localNonce.isDefined => session.secretNonces + (i.serialId -> localNonce.get)
           case _ => session.secretNonces
         }
         replyTo ! SendMessage(sessionId, message)
@@ -560,9 +560,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case Nil =>
         val txComplete = channelParams.commitmentFormat match {
           case _: SimpleTaprootChannelCommitmentFormat =>
+            // funding nonces are used to sign shared inputs (funding transactions), are randomized and are local to this interactive session
             val fundingNonces = (session.remoteInputs ++ session.localInputs).sortBy(_.serialId).collect {
               case i: Input.Shared => session.secretNonces.get(i.serialId).map(_.publicNonce).getOrElse(throw new RuntimeException("missing secret nonce"))
             }
+            // commit nonces are used to sign commit transactions and are sent to our peer. Once this session complete the last one we've received becomes "their next remote nonce"
             val commitNonces = validateTx(session).map(_.buildUnsignedTx().txid).map { fundingTxId =>
               List(
                 NonceGenerator.verificationNonce(fundingTxId, localFundingKey, purpose.localCommitIndex).publicNonce,
@@ -620,8 +622,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       txCompleteReceived = None,
     )
     val session2 = input match {
-      case i: Input.Shared if this.localNonce.isDefined =>
-        session1.copy(secretNonces = session1.secretNonces + (i.serialId -> localNonce.get))
+      case i: Input.Shared if this.localNonce.isDefined => session1.copy(secretNonces = session1.secretNonces + (i.serialId -> localNonce.get))
       case _ => session1
     }
     Right(session2)
@@ -918,13 +919,13 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         val htlcSignatures = sortedHtlcTxs.map(_.sign(remoteCommitmentKeys, channelParams.commitmentFormat)).toList
         val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures, tlvs)
         val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx, htlcTxs = Nil)
-        val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)
-        signFundingTx(completeTx, localCommitSig, localCommit, remoteCommit)
+        val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint, Some(localCommitSig))
+        signFundingTx(session, completeTx, localCommitSig, localCommit, remoteCommit)
     }
   }
 
-  private def signFundingTx(completeTx: SharedTransaction, commitSig: CommitSig, localCommit: UnsignedLocalCommit, remoteCommit: RemoteCommit): Behavior[Command] = {
-    signTx(completeTx)
+  private def signFundingTx(session: InteractiveTxSession, completeTx: SharedTransaction, commitSig: CommitSig, localCommit: UnsignedLocalCommit, remoteCommit: RemoteCommit): Behavior[Command] = {
+    signTx(session, completeTx)
     Behaviors.receiveMessagePartial {
       case SignTransactionResult(signedTx) =>
         log.info(s"interactive-tx txid=${signedTx.txId} partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
@@ -959,7 +960,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           remoteCommit,
           liquidityPurchase_opt.map(_.basicInfo(isBuyer = fundingParams.isInitiator))
         )
-        replyTo ! Succeeded(signingSession, commitSig, liquidityPurchase_opt, None)
+        // the last nonce they've sent becomes their "next remote nonce"
+        val theirNextRemoteNonce = session.txCompleteReceived.flatMap(_.commitNonces.lastOption)
+        replyTo ! Succeeded(signingSession, commitSig, liquidityPurchase_opt, theirNextRemoteNonce)
         Behaviors.stopped
       case WalletFailure(t) =>
         log.error("could not sign funding transaction: ", t)
@@ -974,15 +977,33 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  private def signTx(unsignedTx: SharedTransaction): Unit = {
+  private def signTx(session: InteractiveTxSession, unsignedTx: SharedTransaction): Unit = {
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
     val tx = unsignedTx.buildUnsignedTx()
     val sharedSig_opt = fundingParams.sharedInput_opt.collect {
       case i: Multisig2of2Input => i.sign(channelKeys, tx, unsignedTx.inputDetails).sig
+      case i: Musig2Input => ByteVector64.Zeroes
+    }
+    val sharedPartialSig_opt = fundingParams.sharedInput_opt.collect {
+      case i: Musig2Input =>
+        val sharedInputs = (session.localInputs ++ session.remoteInputs).collect { case i: Input.Shared => i }
+        // there should be a single shared input
+        val serialId = sharedInputs.head.serialId
+        val localNonce = session.secretNonces(serialId)
+        val fundingKey = channelKeys.fundingKey(i.fundingTxIndex)
+        val inputIndex = tx.txIn.indexWhere(_.outPoint == i.info.outPoint)
+        // there should be one remote nonce for each shared input ordered by serial id
+        val remoteNonces = sharedInputs.sortBy(_.serialId).zip(session.txCompleteReceived.get.fundingNonces).map { case (i, n) => i.serialId -> n }.toMap
+        val remoteNonce = remoteNonces(serialId)
+        val Right(psig) = Musig2.signTaprootInput(fundingKey, tx, inputIndex, unsignedTx.spentOutputs, Scripts.sort(Seq(fundingKey.publicKey, i.remoteFundingPubkey)), localNonce.secretNonce, Seq(localNonce.publicNonce, remoteNonce), None)
+        val check = Musig2.verifyTaprootSignature(psig, localNonce.publicNonce, fundingKey.publicKey, tx, inputIndex, unsignedTx.spentOutputs, Scripts.sort(Seq(fundingKey.publicKey, i.remoteFundingPubkey)), Seq(localNonce.publicNonce, remoteNonce), None)
+        log.debug(s"signFundingTx: check = $check")
+        log.debug(s"signFundingTx: creating partial sig $psig for ${tx.txid} inputIndex=$inputIndex fundingKey = ${fundingKey.publicKey} fundingTxIndex = ${i.fundingTxIndex} remoteFundingPubkey = ${i.remoteFundingPubkey} local nonce = ${localNonce.publicNonce} fundingTxIndex = ${i.fundingTxIndex} commitIndex = ${i.commitIndex} remote nonce = ${remoteNonce} spentOutputs = ${unsignedTx.spentOutputs}")
+        ChannelSpendSignature.PartialSignatureWithNonce(psig, localNonce.publicNonce)
     }
     if (unsignedTx.localInputs.isEmpty) {
-      context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, Nil, sharedSig_opt, None)))
+      context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, Nil, sharedSig_opt, sharedPartialSig_opt)))
     } else {
       // We track our wallet inputs and outputs, so we can verify them when we sign the transaction: if Eclair is managing bitcoin core wallet keys, it will
       // only sign our wallet inputs, and check that it can re-compute private keys for our wallet outputs.
@@ -1015,7 +1036,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           }.sum
           require(actualLocalAmountOut == expectedLocalAmountOut, s"local output amount $actualLocalAmountOut does not match what we expect ($expectedLocalAmountOut): bitcoin core may be malicious")
           val sigs = partiallySignedTx.txIn.filter(txIn => localOutpoints.contains(txIn.outPoint)).map(_.witness)
-          PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, partiallySignedTx, sigs, sharedSig_opt, None))
+          PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, partiallySignedTx, sigs, sharedSig_opt, sharedPartialSig_opt))
       }) {
         case Failure(t) => WalletFailure(t)
         case Success(signedTx) => SignTransactionResult(signedTx)
@@ -1114,7 +1135,30 @@ object InteractiveTxSigningSession {
             log.info("invalid tx_signatures: missing shared input signatures")
             return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
         }
-      case Some(sharedInput: Musig2Input) => ???
+      case Some(sharedInput: Musig2Input) =>
+        (partiallySignedTx.localSigs.previousFundingTxPartialSig_opt, remoteSigs.previousFundingTxPartialSig_opt) match {
+          case (Some(localPartialSig), Some(remotePartialSig)) =>
+            val localFundingPubkey = channelKeys.fundingKey(sharedInput.fundingTxIndex).publicKey
+            val unsignedTx = partiallySignedTx.tx.buildUnsignedTx()
+            val inputIndex = unsignedTx.txIn.indexWhere(_.outPoint == sharedInput.info.outPoint)
+            val aggSig = Musig2.aggregateTaprootSignatures(
+              Seq(localPartialSig.partialSig, remotePartialSig.partialSig),
+              unsignedTx,
+              inputIndex,
+              partiallySignedTx.tx.spentOutputs,
+              Scripts.sort(Seq(localFundingPubkey, sharedInput.remoteFundingPubkey)),
+              Seq(localPartialSig.nonce, remotePartialSig.nonce),
+              None)
+            aggSig match {
+              case Right(sig) => Some(Script.witnessKeyPathPay2tr(sig))
+              case Left(error) =>
+                log.warning(s"adding remote sigs for ${unsignedTx.txid} local partial sig ${localPartialSig.partialSig} is using nonce ${localPartialSig.nonce} remote partial sig ${remotePartialSig.partialSig} is using nonce ${remotePartialSig.nonce} local funding key = ${localFundingPubkey} remote funding key = ${sharedInput.remoteFundingPubkey} spent outputs = ${partiallySignedTx.tx.spentOutputs} failed with $error")
+                return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
+            }
+          case _ =>
+            log.info("invalid tx_signatures: missing shared input partial signatures")
+            return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
+        }
       case None => None
     }
     val txWithSigs = FullySignedSharedTransaction(partiallySignedTx.tx, partiallySignedTx.localSigs, remoteSigs, sharedSigs_opt)
