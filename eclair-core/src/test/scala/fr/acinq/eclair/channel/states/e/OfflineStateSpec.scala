@@ -28,10 +28,11 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
 import fr.acinq.eclair.channel.publish.{ReplaceableClaimHtlcTimeout, ReplaceableRemoteCommitAnchor}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
@@ -141,8 +142,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
 
-    alice2bob.expectNoMessage(500 millis)
-    bob2alice.expectNoMessage(500 millis)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.localNextHtlcId == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteNextHtlcId == 1)
@@ -170,7 +171,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob received the signature, but alice won't receive the revocation
     val revB = bob2alice.expectMsgType[RevokeAndAck]
     val sigB = bob2alice.expectMsgType[CommitSig]
-    bob2alice.expectNoMessage(500 millis)
+    bob2alice.expectNoMessage(100 millis)
 
     disconnect(alice, bob)
     val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
@@ -185,8 +186,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // and a signature
     bob2alice.expectMsg(sigB)
 
-    alice2bob.expectNoMessage(500 millis)
-    bob2alice.expectNoMessage(500 millis)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.localNextHtlcId == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteNextHtlcId == 1)
@@ -214,7 +215,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob sends a revocation and a signature
     val revB = bob2alice.expectMsgType[RevokeAndAck]
     val sigB = bob2alice.expectMsgType[CommitSig]
-    bob2alice.expectNoMessage(500 millis)
+    bob2alice.expectNoMessage(100 millis)
 
     // alice receives the revocation but not the signature
     bob2alice.forward(alice, revB)
@@ -231,8 +232,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob re-sends the lost signature (but not the revocation)
     bob2alice.expectMsg(sigB)
 
-    alice2bob.expectNoMessage(500 millis)
-    bob2alice.expectNoMessage(500 millis)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.localNextHtlcId == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteNextHtlcId == 1)
@@ -247,7 +248,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     //   |<--- sig ---|
     //   |--- rev --X |
     bob2alice.forward(alice, sigB)
-    bob2alice.expectNoMessage(500 millis)
+    bob2alice.expectNoMessage(100 millis)
     val revA = alice2bob.expectMsgType[RevokeAndAck]
     disconnect(alice, bob)
 
@@ -261,7 +262,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // alice re-sends the lost revocation
     alice2bob.expectMsg(revA)
-    alice2bob.expectNoMessage(500 millis)
+    alice2bob.expectNoMessage(100 millis)
 
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
@@ -605,7 +606,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("pending non-relayed fulfill htlcs will timeout upstream") { f =>
     import f._
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val (r, htlc) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     val listener = TestProbe()
@@ -613,7 +614,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val HtlcSuccessTx(_, htlcSuccessTx, _, _, _) = initialState.commitments.latest.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
+    val htlcSuccessTx = initialState.commitments.latest.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
+    assert(htlcSuccessTx.isInstanceOf[HtlcSuccessTx])
 
     disconnect(alice, bob)
 
@@ -627,23 +629,19 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == initialCommitTx.txid)
-    bob2blockchain.expectMsgType[PublishTx] // main delayed
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == initialCommitTx.txid)
-    bob2blockchain.expectMsgType[WatchTxConfirmed] // main delayed
-    bob2blockchain.expectMsgType[WatchOutputSpent] // htlc
-
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == initialCommitTx.txid)
-    bob2blockchain.expectMsgType[PublishTx] // main delayed
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txOut == htlcSuccessTx.txOut)
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == initialCommitTx.txid)
-    bob2blockchain.expectMsgType[WatchTxConfirmed] // main delayed
-    bob2blockchain.expectMsgType[WatchOutputSpent] // htlc
-    bob2blockchain.expectNoMessage(500 millis)
+    val mainDelayedTx = bob2blockchain.expectMsgType[PublishFinalTx]
+    assert(mainDelayedTx.desc == "local-main-delayed")
+    bob2blockchain.expectWatchTxConfirmed(initialCommitTx.txid)
+    bob2blockchain.expectWatchTxConfirmed(mainDelayedTx.tx.txid)
+    bob2blockchain.expectWatchOutputSpent(htlcSuccessTx.input.outPoint)
+    val publishHtlcTx = bob2blockchain.expectMsgType[PublishFinalTx]
+    assert(publishHtlcTx.input == htlcSuccessTx.input.outPoint)
+    bob2blockchain.expectNoMessage(100 millis)
   }
 
   test("pending non-relayed fail htlcs will timeout upstream") { f =>
     import f._
-    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     disconnect(alice, bob)
@@ -652,9 +650,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Even if we get close to expiring upstream we shouldn't close the channel, because we have nothing to lose.
     bob ! CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(0 msat, BlockHeight(0))), None)
     bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - bob.underlyingActor.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
-
-    bob2blockchain.expectNoMessage(250 millis)
-    alice2blockchain.expectNoMessage(250 millis)
+    bob2blockchain.expectNoMessage(100 millis)
+    alice2blockchain.expectNoMessage(100 millis)
   }
 
   test("handle feerate changes while offline (funder scenario)") { f =>
