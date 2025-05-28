@@ -38,6 +38,7 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.payment.send.{ClearRecipient, PaymentLifecycle, Recipient}
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelAnnouncement, channelHopFromUpdate}
 import fr.acinq.eclair.router.Graph.PaymentWeightRatios
@@ -90,9 +91,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   def createPaymentLifecycle(invoice: Invoice, storeInDb: Boolean = true, publishEvent: Boolean = true, recordMetrics: Boolean = true): PaymentFixture = {
     val (id, parentId) = (UUID.randomUUID(), UUID.randomUUID())
     val nodeParams = TestConstants.Alice.nodeParams.copy(nodeKeyManager = testNodeKeyManager, channelKeyManager = testChannelKeyManager)
-    val cfg = SendPaymentConfig(id, parentId, Some(defaultExternalId), defaultPaymentHash, invoice.nodeId, Upstream.Local(id), Some(invoice), None, storeInDb, publishEvent, recordMetrics, confidence = 1.0)
+    val cfg = SendPaymentConfig(id, parentId, Some(defaultExternalId), defaultPaymentHash, invoice.nodeId, Upstream.Local(id), Some(invoice), None, storeInDb, publishEvent, recordMetrics)
     val (routerForwarder, register, sender, monitor, eventListener, metricsListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, cfg, routerForwarder.ref, register.ref))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, cfg, routerForwarder.ref, register.ref, None))
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
@@ -103,7 +104,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   def addCompleted(result: HtlcResult) = {
     RES_ADD_SETTLED(
       origin = defaultOrigin,
-      htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, defaultAmountMsat, defaultPaymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None, 1.0, None),
+      htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, defaultAmountMsat, defaultPaymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None),
       result)
   }
 
@@ -119,7 +120,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.expectNoMessage(100 millis) // we don't need the router, we have the pre-computed route
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
-    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_CONFIDENCE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_CONFIDENCE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
     val Some(outgoing) = nodeParams.db.payments.getOutgoingPayment(id)
     assert(outgoing.copy(createdAt = 0 unixms) == OutgoingPayment(id, parentId, Some(defaultExternalId), defaultPaymentHash, PaymentType.Standard, defaultAmountMsat, defaultAmountMsat, d, 0 unixms, Some(defaultInvoice), None, OutgoingPaymentStatus.Pending))
@@ -151,7 +153,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
     routerForwarder.forward(routerFixture.router)
-    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_CONFIDENCE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_CONFIDENCE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
     val Some(outgoing) = nodeParams.db.payments.getOutgoingPayment(id)
     assert(outgoing.copy(createdAt = 0 unixms) == OutgoingPayment(id, parentId, Some(defaultExternalId), defaultPaymentHash, PaymentType.Standard, defaultAmountMsat, defaultAmountMsat, d, 0 unixms, Some(defaultInvoice), None, OutgoingPaymentStatus.Pending))
@@ -219,7 +222,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
     routerForwarder.forward(routerFixture.router)
-    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_CONFIDENCE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_CONFIDENCE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
 
     // Payment accepted by the recipient.
     sender.send(paymentFSM, addCompleted(HtlcResult.OnChainFulfill(defaultPaymentPreimage)))
@@ -751,7 +755,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.expectMsgType[RouteRequest]
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     routerForwarder.forward(routerFixture.router)
-    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_CONFIDENCE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_CONFIDENCE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
     val Some(outgoing) = nodeParams.db.payments.getOutgoingPayment(id)
     assert(outgoing.copy(createdAt = 0 unixms) == OutgoingPayment(id, parentId, Some(defaultExternalId), defaultPaymentHash, PaymentType.Standard, defaultAmountMsat, defaultAmountMsat, d, 0 unixms, Some(defaultInvoice), None, OutgoingPaymentStatus.Pending))
@@ -809,7 +814,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // the route will be A -> B -> H where B -> H has a channel_update with fees=0
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     routerForwarder.forward(router)
-    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_CONFIDENCE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_CONFIDENCE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
 
     sender.send(paymentFSM, addCompleted(HtlcResult.OnChainFulfill(defaultPaymentPreimage)))
     val paymentOK = sender.expectMsgType[PaymentSent]
@@ -936,7 +942,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.expectMsgType[RouteRequest]
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     routerForwarder.forward(routerFixture.router)
-    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_CONFIDENCE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_CONFIDENCE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
     assert(nodeParams.db.payments.getOutgoingPayment(id).isEmpty)
 
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFulfill(UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentPreimage))))
@@ -959,7 +966,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.expectNoMessage(100 millis) // we don't need the router, we have the pre-computed route
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
-    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_CONFIDENCE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val Transition(_, WAITING_FOR_CONFIDENCE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
     val WaitingForComplete(_, _, Nil, sharedSecrets1, _, _) = paymentFSM.stateData
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status == OutgoingPaymentStatus.Pending))
     val Some(outgoing) = nodeParams.db.payments.getOutgoingPayment(id)

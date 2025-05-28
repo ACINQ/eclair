@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 ACINQ SAS
+ * Copyright 2025 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,8 +45,8 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
   def makeChannelUpstream(nodeId: PublicKey, endorsement: Int, amount: MilliSatoshi = 1000000 msat): Upstream.Hot.Channel =
     Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), randomLong(), amount, randomBytes32(), CltvExpiry(1234), null, TlvStream(UpdateAddHtlcTlv.Endorsement(endorsement))), TimestampMilli.now(), nodeId)
 
-  def makeOutgoingHtlcAdded(upstream: Upstream.Hot, fee: MilliSatoshi): OutgoingHtlcAdded =
-    OutgoingHtlcAdded(UpdateAddHtlc(randomBytes32(), randomLong(), 100000 msat, randomBytes32(), CltvExpiry(456), null, TlvStream.empty), upstream, fee)
+  def makeOutgoingHtlcAdded(upstream: Upstream.Hot, remoteNodeId: PublicKey, fee: MilliSatoshi): OutgoingHtlcAdded =
+    OutgoingHtlcAdded(UpdateAddHtlc(randomBytes32(), randomLong(), 100000 msat, randomBytes32(), CltvExpiry(456), null, TlvStream.empty), remoteNodeId, upstream, fee)
 
   def makeOutgoingHtlcFulfilled(add: UpdateAddHtlc): OutgoingHtlcFulfilled =
     OutgoingHtlcFulfilled(UpdateFulfillHtlc(add.channelId, add.id, randomBytes32(), TlvStream.empty))
@@ -57,31 +57,33 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
   test("channel relay") { f =>
     import f._
 
+    val remoteNodeId = randomKey().publicKey
+
     val listener = TestProbe[Any]()
     testKit.system.eventStream ! EventStream.Subscribe(listener.ref)
     testKit.system.eventStream ! EventStream.Subscribe(listener.ref)
     testKit.system.eventStream ! EventStream.Subscribe(listener.ref)
 
     val upstream1 = makeChannelUpstream(originNode, 7)
-    reputationRecorder ! GetConfidence(replyTo.ref, upstream1, 2000 msat)
-    assert(replyTo.expectMessageType[Confidence].value == 0)
-    val added1 = makeOutgoingHtlcAdded(upstream1, 2000 msat)
+    reputationRecorder ! GetConfidence(replyTo.ref, upstream1, remoteNodeId, 2000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence == 0)
+    val added1 = makeOutgoingHtlcAdded(upstream1, remoteNodeId, 2000 msat)
     testKit.system.eventStream ! EventStream.Publish(added1)
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added1.add))
     listener.expectMessageType[OutgoingHtlcAdded]
     listener.expectMessageType[OutgoingHtlcFulfilled]
     val upstream2 = makeChannelUpstream(originNode, 7)
-    reputationRecorder ! GetConfidence(replyTo.ref, upstream2, 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].value === (2.0 / 4) +- 0.001)
-    val added2 = makeOutgoingHtlcAdded(upstream2, 1000 msat)
+    reputationRecorder ! GetConfidence(replyTo.ref, upstream2, remoteNodeId, 1000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence === (2.0 / 4) +- 0.001)
+    val added2 = makeOutgoingHtlcAdded(upstream2, remoteNodeId, 1000 msat)
     testKit.system.eventStream ! EventStream.Publish(added2)
     listener.expectMessageType[OutgoingHtlcAdded]
-    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 7), 3000 msat)
-    assert(replyTo.expectMessageType[Confidence].value === (2.0 / 10) +- 0.001)
+    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 7), remoteNodeId, 3000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence === (2.0 / 10) +- 0.001)
     val upstream3 = makeChannelUpstream(originNode, 7)
-    reputationRecorder ! GetConfidence(replyTo.ref, upstream3, 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].value === (2.0 / 6) +- 0.001)
-    val added3 = makeOutgoingHtlcAdded(upstream3, 1000 msat)
+    reputationRecorder ! GetConfidence(replyTo.ref, upstream3, remoteNodeId, 1000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence === (2.0 / 6) +- 0.001)
+    val added3 = makeOutgoingHtlcAdded(upstream3, remoteNodeId, 1000 msat)
     testKit.system.eventStream ! EventStream.Publish(added3)
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added3.add))
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFailed(added2.add))
@@ -89,18 +91,20 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     listener.expectMessageType[OutgoingHtlcFulfilled]
     listener.expectMessageType[OutgoingHtlcFailed]
     // Not endorsed
-    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 0), 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].value == 0)
+    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 0), remoteNodeId, 1000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence == 0)
     // Different origin node
-    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(randomKey().publicKey, 7), 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].value == 0)
+    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(randomKey().publicKey, 7), remoteNodeId, 1000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence == 0)
     // Very large HTLC
-    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 7), 100000000 msat)
-    assert(replyTo.expectMessageType[Confidence].value === 0.0 +- 0.001)
+    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 7), remoteNodeId, 100000000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence === 0.0 +- 0.001)
   }
 
   test("trampoline relay") { f =>
     import f._
+
+    val remoteNodeId = randomKey().publicKey
 
     val listener = TestProbe[Any]()
     testKit.system.eventStream ! EventStream.Subscribe(listener.ref)
@@ -110,23 +114,23 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     val (a, b, c) = (randomKey().publicKey, randomKey().publicKey, randomKey().publicKey)
 
     val upstream1 = Upstream.Hot.Trampoline(makeChannelUpstream(a, 7, 20000 msat) :: makeChannelUpstream(b, 7, 40000 msat) :: makeChannelUpstream(c, 0, 60000 msat) :: Nil)
-    reputationRecorder ! GetTrampolineConfidence(replyTo.ref, upstream1, 12000 msat)
-    assert(replyTo.expectMessageType[Confidence].value == 0)
-    val added1 = makeOutgoingHtlcAdded(upstream1, 6000 msat)
+    reputationRecorder ! GetConfidence(replyTo.ref, upstream1, remoteNodeId, 12000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence == 0)
+    val added1 = makeOutgoingHtlcAdded(upstream1, remoteNodeId, 6000 msat)
     testKit.system.eventStream ! EventStream.Publish(added1)
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added1.add))
     listener.expectMessageType[OutgoingHtlcAdded]
     listener.expectMessageType[OutgoingHtlcFulfilled]
     val upstream2 = Upstream.Hot.Trampoline(makeChannelUpstream(a, 7, 10000 msat) :: makeChannelUpstream(c, 0, 10000 msat) :: Nil)
-    reputationRecorder ! GetTrampolineConfidence(replyTo.ref, upstream2, 2000 msat)
-    assert(replyTo.expectMessageType[Confidence].value === (1.0 / 3) +- 0.001)
-    val added2 = makeOutgoingHtlcAdded(upstream2, 2000 msat)
+    reputationRecorder ! GetConfidence(replyTo.ref, upstream2, remoteNodeId, 2000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence === (1.0 / 3) +- 0.001)
+    val added2 = makeOutgoingHtlcAdded(upstream2, remoteNodeId, 2000 msat)
     testKit.system.eventStream ! EventStream.Publish(added2)
     listener.expectMessageType[OutgoingHtlcAdded]
     val upstream3 = Upstream.Hot.Trampoline(makeChannelUpstream(a, 0, 10000 msat) :: makeChannelUpstream(b, 7, 20000 msat) :: Nil)
-    reputationRecorder ! GetTrampolineConfidence(replyTo.ref, upstream3, 3000 msat)
-    assert(replyTo.expectMessageType[Confidence].value == 0)
-    val added3 = makeOutgoingHtlcAdded(upstream3, 3000 msat)
+    reputationRecorder ! GetConfidence(replyTo.ref, upstream3, remoteNodeId, 3000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence == 0)
+    val added3 = makeOutgoingHtlcAdded(upstream3, remoteNodeId, 3000 msat)
     testKit.system.eventStream ! EventStream.Publish(added3)
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFailed(added2.add))
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added3.add))
@@ -134,15 +138,15 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     listener.expectMessageType[OutgoingHtlcFailed]
     listener.expectMessageType[OutgoingHtlcFulfilled]
 
-    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(a, 7), 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].value === (1.0 / 3) +- 0.001)
-    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(a, 0), 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].value === (1.0 / 3) +- 0.001)
-    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(b, 7), 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].value === (4.0 / 6) +- 0.001)
-    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(b, 0), 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].value == 0.0)
-    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(c, 0), 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].value === (3.0 / 5) +- 0.001)
+    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(a, 7), remoteNodeId, 1000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence === (2.0 / 4) +- 0.001)
+    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(a, 0), remoteNodeId, 1000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence === (1.0 / 3) +- 0.001)
+    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(b, 7), remoteNodeId, 1000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence === (4.0 / 6) +- 0.001)
+    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(b, 0), remoteNodeId, 1000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence == 0.0)
+    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(c, 0), remoteNodeId, 1000 msat)
+    assert(replyTo.expectMessageType[Confidence].confidence === (3.0 / 5) +- 0.001)
   }
 }

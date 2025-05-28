@@ -23,23 +23,22 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.Upstream.Hot
 import fr.acinq.eclair.channel.{OutgoingHtlcAdded, OutgoingHtlcFailed, OutgoingHtlcFulfilled, Upstream}
-import fr.acinq.eclair.wire.protocol.{UpdateFailHtlc, UpdateFailMalformedHtlc}
-import ReputationRecorder._
+import fr.acinq.eclair.reputation.ReputationRecorder._
+import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc}
 
 import scala.collection.mutable
 
 object ReputationRecorder {
   // @formatter:off
   sealed trait Command
-  case class GetConfidence(replyTo: ActorRef[Confidence], upstream: Upstream.Hot.Channel, fee: MilliSatoshi) extends Command
-  case class GetTrampolineConfidence(replyTo: ActorRef[Confidence], upstream: Upstream.Hot.Trampoline, fee: MilliSatoshi) extends Command
+  case class GetConfidence(replyTo: ActorRef[Confidence], upstream: Upstream.Hot, downstream: PublicKey, fee: MilliSatoshi) extends Command
   private case class WrappedOutgoingHtlcAdded(added: OutgoingHtlcAdded) extends Command
   private case class WrappedOutgoingHtlcFailed(failed: OutgoingHtlcFailed) extends Command
   private case class WrappedOutgoingHtlcFulfilled(fulfilled: OutgoingHtlcFulfilled) extends Command
   // @formatter:on
 
   /** Confidence that the outgoing HTLC will succeed. */
-  case class Confidence(value: Double)
+  case class Confidence(confidence: Double, endorsement: Int)
 
   def apply(config: Reputation.Config): Behavior[Command] =
     Behaviors.setup(context => {
@@ -48,58 +47,78 @@ object ReputationRecorder {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcFulfilled))
       new ReputationRecorder(config, context).run()
     })
+
+  case class PendingHtlc(add: UpdateAddHtlc, remoteNodeId: PublicKey, upstream: Upstream.Hot)
 }
 
 class ReputationRecorder(config: Reputation.Config, context: ActorContext[ReputationRecorder.Command]) {
-  private val reputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty.withDefault(_ => Reputation.init(config))
-  private val pending: mutable.Map[HtlcId, Upstream.Hot] = mutable.HashMap.empty
+  private val incomingReputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty
+  private val outgoingReputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty
+  private val pending: mutable.Map[HtlcId, PendingHtlc] = mutable.HashMap.empty
 
-  private def getReputation(nodeId: PublicKey): Reputation = {
-    reputations.get(nodeId) match {
+  private def incomingReputation(nodeId: PublicKey): Reputation = {
+    incomingReputations.get(nodeId) match {
       case Some(reputation) => reputation
-      case None => {
+      case None =>
         val reputation = Reputation.init(config)
-        reputations(nodeId) = reputation
+        incomingReputations(nodeId) = reputation
         reputation
-      }
+    }
+  }
+
+  private def outgoingReputation(nodeId: PublicKey): Reputation = {
+    outgoingReputations.get(nodeId) match {
+      case Some(reputation) => reputation
+      case None =>
+        val reputation = Reputation.init(config)
+        outgoingReputations(nodeId) = reputation
+        reputation
     }
   }
 
   def run(): Behavior[Command] =
     Behaviors.receiveMessage {
-      case GetConfidence(replyTo, upstream, fee) =>
-        val confidence = reputations(upstream.receivedFrom).getConfidence(fee, upstream.add.endorsement)
-        replyTo ! Confidence(confidence)
+      case GetConfidence(replyTo, _: Upstream.Local, _, _) =>
+        replyTo ! Confidence(1.0, Reputation.maxEndorsement)
         Behaviors.same
 
-      case GetTrampolineConfidence(replyTo, upstream, totalFee) =>
-        val confidence =
+      case GetConfidence(replyTo, upstream: Upstream.Hot.Channel, downstream, fee) =>
+        val incomingConfidence = incomingReputations.get(upstream.receivedFrom).map(_.getConfidence(fee, upstream.add.endorsement)).getOrElse(0.0)
+        val endorsement = incomingConfidence.toEndorsement
+        val outgoingConfidence = outgoingReputations.get(downstream).map(_.getConfidence(fee, endorsement)).getOrElse(0.0)
+        replyTo ! Confidence(incomingConfidence min outgoingConfidence, endorsement)
+        Behaviors.same
+
+      case GetConfidence(replyTo, upstream: Upstream.Hot.Trampoline, downstream, totalFee) =>
+        val incomingConfidence =
           upstream.received
-            .groupMapReduce(_.receivedFrom)(r => (r.add.amountMsat, r.add.endorsement)){
+            .groupMapReduce(_.receivedFrom)(r => (r.add.amountMsat, r.add.endorsement)) {
               case ((amount1, endorsement1), (amount2, endorsement2)) => (amount1 + amount2, endorsement1 min endorsement2)
             }
             .map {
               case (nodeId, (amount, endorsement)) =>
                 val fee = amount * totalFee.toLong / upstream.amountIn.toLong
-                reputations(nodeId).getConfidence(fee, endorsement)
+                incomingReputations.get(nodeId).map(_.getConfidence(fee, endorsement)).getOrElse(0.0)
             }
             .min
-        replyTo ! Confidence(confidence)
+        val endorsement = incomingConfidence.toEndorsement
+        val outgoingConfidence = outgoingReputations.get(downstream).map(_.getConfidence(totalFee, endorsement)).getOrElse(0.0)
+        replyTo ! Confidence(incomingConfidence min outgoingConfidence, endorsement)
         Behaviors.same
 
-      case WrappedOutgoingHtlcAdded(OutgoingHtlcAdded(add, upstream, fee)) =>
+      case WrappedOutgoingHtlcAdded(OutgoingHtlcAdded(add, remoteNodeId, upstream, fee)) =>
         val htlcId = HtlcId(add.channelId, add.id)
         upstream match {
           case channel: Hot.Channel =>
-            getReputation(channel.receivedFrom).attempt(htlcId, fee, channel.add.endorsement)
-            pending += (htlcId -> upstream)
+            incomingReputation(channel.receivedFrom).attempt(htlcId, fee, channel.add.endorsement)
           case trampoline: Hot.Trampoline =>
             trampoline.received.foreach(channel =>
-              getReputation(channel.receivedFrom).attempt(htlcId, fee * channel.amountIn.toLong / trampoline.amountIn.toLong, channel.add.endorsement)
+              incomingReputation(channel.receivedFrom).attempt(htlcId, fee * channel.amountIn.toLong / trampoline.amountIn.toLong, channel.add.endorsement)
             )
-            pending += (htlcId -> upstream)
           case _: Upstream.Local => ()
         }
+        outgoingReputation(remoteNodeId).attempt(htlcId, fee, add.endorsement)
+        pending(htlcId) = PendingHtlc(add, remoteNodeId, upstream)
         Behaviors.same
 
       case WrappedOutgoingHtlcFailed(OutgoingHtlcFailed(fail)) =>
@@ -107,30 +126,34 @@ class ReputationRecorder(config: Reputation.Config, context: ActorContext[Reputa
           case UpdateFailHtlc(channelId, id, _, _) => HtlcId(channelId, id)
           case UpdateFailMalformedHtlc(channelId, id, _, _, _) => HtlcId(channelId, id)
         }
-        pending.get(htlcId) match {
-          case Some(channel: Hot.Channel) =>
-            getReputation(channel.receivedFrom).record(htlcId, isSuccess = false)
-          case Some(trampoline: Hot.Trampoline) =>
-            trampoline.received.foreach(channel =>
-              getReputation(channel.receivedFrom).record(htlcId, isSuccess = false)
-            )
-          case _ => ()
-        }
-        pending -= htlcId
+        pending.remove(htlcId).foreach(p => {
+          p.upstream match {
+            case Hot.Channel(_, _, receivedFrom) =>
+              incomingReputation(receivedFrom).record(htlcId, isSuccess = false)
+            case Hot.Trampoline(received) =>
+              received.foreach(channel =>
+                incomingReputation(channel.receivedFrom).record(htlcId, isSuccess = false)
+              )
+            case _: Upstream.Local => ()
+          }
+          outgoingReputation(p.remoteNodeId).record(htlcId, isSuccess = false)
+        })
         Behaviors.same
 
       case WrappedOutgoingHtlcFulfilled(OutgoingHtlcFulfilled(fulfill)) =>
         val htlcId = HtlcId(fulfill.channelId, fulfill.id)
-        pending.get(htlcId) match {
-          case Some(channel: Hot.Channel) =>
-            getReputation(channel.receivedFrom).record(htlcId, isSuccess = true)
-          case Some(trampoline: Hot.Trampoline) =>
-            trampoline.received.foreach(channel =>
-              getReputation(channel.receivedFrom).record(htlcId, isSuccess = true)
-            )
-          case _ => ()
-        }
-        pending -= htlcId
+        pending.remove(htlcId).foreach(p => {
+          p.upstream match {
+            case channel: Hot.Channel =>
+              incomingReputation(channel.receivedFrom).record(htlcId, isSuccess = true)
+            case trampoline: Hot.Trampoline =>
+              trampoline.received.foreach(channel =>
+                incomingReputation(channel.receivedFrom).record(htlcId, isSuccess = true)
+              )
+            case _: Upstream.Local => ()
+          }
+          outgoingReputation(p.remoteNodeId).record(htlcId, isSuccess = true)
+        })
         Behaviors.same
     }
 }
