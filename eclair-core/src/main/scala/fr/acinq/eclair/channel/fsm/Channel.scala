@@ -38,7 +38,7 @@ import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxFunder, InteractiveTxSigningSession}
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, SetChannelId}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishReplaceableTx, SetChannelId}
 import fr.acinq.eclair.channel.publish.{ReplaceableLocalCommitAnchor, ReplaceableRemoteCommitAnchor, TxPublisher}
 import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent.EventType
@@ -287,7 +287,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       log.debug("restoring channel")
       context.system.eventStream.publish(ChannelRestored(self, data.channelId, peer, remoteNodeId, data))
       txPublisher ! SetChannelId(remoteNodeId, data.channelId)
-
       // We watch all unconfirmed funding txs, whatever our state is.
       // There can be multiple funding txs due to rbf, and they can be unconfirmed in any state due to zero-conf.
       // To avoid a herd effect on restart, we add a delay before watching funding txs.
@@ -342,7 +341,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           }
         }
       }
-
+      // We resume the channel and re-publish closing transactions if it was closing.
       data match {
         // NB: order matters!
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>
@@ -362,20 +361,28 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             case Some(c: Closing.MutualClose) =>
               doPublish(c.tx, localPaysClosingFees)
             case Some(c: Closing.LocalClose) =>
-              doPublish(c.localCommitPublished, closing.commitments.latest)
+              val secondStageTransactions = Closing.LocalClose.SecondStageTransactions(c.localCommitPublished.claimMainDelayedOutputTx, c.localCommitPublished.claimAnchorTx_opt, c.localCommitPublished.htlcTxs.values.flatten.toSeq)
+              doPublish(c.localCommitPublished, secondStageTransactions, closing.commitments.latest)
+              val thirdStageTransactions = Closing.LocalClose.ThirdStageTransactions(c.localCommitPublished.claimHtlcDelayedTxs)
+              doPublish(c.localCommitPublished, thirdStageTransactions)
             case Some(c: Closing.RemoteClose) =>
-              doPublish(c.remoteCommitPublished, closing.commitments.latest)
+              val secondStageTransactions = Closing.RemoteClose.SecondStageTransactions(c.remoteCommitPublished.claimMainOutputTx, c.remoteCommitPublished.claimAnchorTx_opt, c.remoteCommitPublished.claimHtlcTxs.values.flatten.toSeq)
+              doPublish(c.remoteCommitPublished, secondStageTransactions, closing.commitments.latest)
             case Some(c: Closing.RecoveryClose) =>
-              doPublish(c.remoteCommitPublished, closing.commitments.latest)
+              val secondStageTransactions = Closing.RemoteClose.SecondStageTransactions(c.remoteCommitPublished.claimMainOutputTx, c.remoteCommitPublished.claimAnchorTx_opt, c.remoteCommitPublished.claimHtlcTxs.values.flatten.toSeq)
+              doPublish(c.remoteCommitPublished, secondStageTransactions, closing.commitments.latest)
             case Some(c: Closing.RevokedClose) =>
-              doPublish(c.revokedCommitPublished)
+              val secondStageTransactions = Closing.RevokedClose.SecondStageTransactions(c.revokedCommitPublished.claimMainOutputTx, c.revokedCommitPublished.mainPenaltyTx, c.revokedCommitPublished.htlcPenaltyTxs)
+              doPublish(c.revokedCommitPublished, secondStageTransactions)
+              val thirdStageTransactions = Closing.RevokedClose.ThirdStageTransactions(c.revokedCommitPublished.claimHtlcDelayedPenaltyTxs)
+              doPublish(c.revokedCommitPublished, thirdStageTransactions)
             case None =>
               closing.mutualClosePublished.foreach(mcp => doPublish(mcp, localPaysClosingFees))
-              closing.localCommitPublished.foreach(lcp => doPublish(lcp, closing.commitments.latest))
-              closing.remoteCommitPublished.foreach(rcp => doPublish(rcp, closing.commitments.latest))
-              closing.nextRemoteCommitPublished.foreach(rcp => doPublish(rcp, closing.commitments.latest))
-              closing.revokedCommitPublished.foreach(doPublish)
-              closing.futureRemoteCommitPublished.foreach(rcp => doPublish(rcp, closing.commitments.latest))
+              closing.localCommitPublished.foreach(lcp => doPublish(lcp, Closing.LocalClose.SecondStageTransactions(lcp.claimMainDelayedOutputTx, lcp.claimAnchorTx_opt, lcp.htlcTxs.values.flatten.toSeq), closing.commitments.latest))
+              closing.remoteCommitPublished.foreach(rcp => doPublish(rcp, Closing.RemoteClose.SecondStageTransactions(rcp.claimMainOutputTx, rcp.claimAnchorTx_opt, rcp.claimHtlcTxs.values.flatten.toSeq), closing.commitments.latest))
+              closing.nextRemoteCommitPublished.foreach(rcp => doPublish(rcp, Closing.RemoteClose.SecondStageTransactions(rcp.claimMainOutputTx, rcp.claimAnchorTx_opt, rcp.claimHtlcTxs.values.flatten.toSeq), closing.commitments.latest))
+              closing.revokedCommitPublished.foreach(rvk => doPublish(rvk, Closing.RevokedClose.SecondStageTransactions(rvk.claimMainOutputTx, rvk.mainPenaltyTx, rvk.htlcPenaltyTxs)))
+              closing.futureRemoteCommitPublished.foreach(rcp => doPublish(rcp, Closing.RemoteClose.SecondStageTransactions(rcp.claimMainOutputTx, rcp.claimAnchorTx_opt, rcp.claimHtlcTxs.values.flatten.toSeq), closing.commitments.latest))
           }
           // no need to go OFFLINE, we can directly switch to CLOSING
           goto(CLOSING) using closing
@@ -1857,19 +1864,36 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case c: CMD_FAIL_MALFORMED_HTLC => d.commitments.sendFailMalformed(c)
       }) match {
         case Right((commitments1, _)) =>
-          log.info("got valid settlement for htlc={}, recalculating htlc transactions", c.id)
           val commitment = commitments1.latest
-          val localCommitPublished1 = d.localCommitPublished.map(localCommitPublished => localCommitPublished.copy(htlcTxs = Closing.LocalClose.claimHtlcOutputs(commitment.localKeys(channelKeys), commitment)))
-          val remoteCommitPublished1 = d.remoteCommitPublished.map(remoteCommitPublished => remoteCommitPublished.copy(claimHtlcTxs = Closing.RemoteClose.claimHtlcOutputs(channelKeys, commitment.remoteKeys(channelKeys, commitment.remoteCommit.remotePerCommitmentPoint), commitment, commitment.remoteCommit, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)))
-          val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map(remoteCommitPublished => remoteCommitPublished.copy(claimHtlcTxs = Closing.RemoteClose.claimHtlcOutputs(channelKeys, commitment.remoteKeys(channelKeys, commitment.nextRemoteCommit_opt.get.commit.remotePerCommitmentPoint), commitment, commitment.nextRemoteCommit_opt.get.commit, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)))
-
-          def republish(): Unit = {
-            localCommitPublished1.foreach(lcp => doPublish(lcp, commitment))
-            remoteCommitPublished1.foreach(rcp => doPublish(rcp, commitment))
-            nextRemoteCommitPublished1.foreach(rcp => doPublish(rcp, commitment))
+          val d1 = c match {
+            case c: CMD_FULFILL_HTLC =>
+              log.info("htlc #{} with payment_hash={} was fulfilled downstream, recalculating htlc-success transactions", c.id, c.r)
+              // We may be able to publish HTLC-success transactions for which we didn't have the preimage.
+              // We are already watching the corresponding outputs: no need to set additional watches.
+              val lcp1 = d.localCommitPublished.map(lcp => {
+                val (lcp1, toPublish) = Closing.LocalClose.claimHtlcsWithPreimage(commitment.localKeys(channelKeys), lcp, commitment, c.r)
+                toPublish.foreach(publishTx => txPublisher ! publishTx)
+                lcp1
+              })
+              val rcp1 = d.remoteCommitPublished.map(rcp => {
+                val (rcp1, toPublish) = Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, rcp, commitment, commitment.remoteCommit, c.r, d.finalScriptPubKey)
+                toPublish.foreach(publishTx => txPublisher ! publishTx)
+                rcp1
+              })
+              val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => {
+                val (nrcp1, toPublish) = Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, nrcp, commitment, commitment.nextRemoteCommit_opt.get.commit, c.r, d.finalScriptPubKey)
+                toPublish.foreach(publishTx => txPublisher ! publishTx)
+                nrcp1
+              })
+              d.copy(commitments = commitments1, localCommitPublished = lcp1, remoteCommitPublished = rcp1, nextRemoteCommitPublished = nrcp1)
+            case _: CMD_FAIL_HTLC | _: CMD_FAIL_MALFORMED_HTLC =>
+              log.info("htlc #{} was failed downstream, recalculating watched htlc outputs", c.id)
+              val lcp1 = d.localCommitPublished.map(lcp => Closing.LocalClose.ignoreFailedIncomingHtlc(c.id, lcp, commitment))
+              val rcp1 = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.ignoreFailedIncomingHtlc(channelKeys, c.id, rcp, commitment, commitment.remoteCommit))
+              val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.ignoreFailedIncomingHtlc(channelKeys, c.id, nrcp, commitment, commitment.nextRemoteCommit_opt.get.commit))
+              d.copy(commitments = commitments1, localCommitPublished = lcp1, remoteCommitPublished = rcp1, nextRemoteCommitPublished = nrcp1)
           }
-
-          handleCommandSuccess(c, d.copy(commitments = commitments1, localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1)) storing() calling republish()
+          handleCommandSuccess(c, d1) storing()
         case Left(cause) => handleCommandError(cause, c)
       }
 
@@ -2048,12 +2072,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // first we check if this tx belongs to one of the current local/remote commits, update it and update the channel data
       val d1 = d.copy(
         localCommitPublished = d.localCommitPublished.map(localCommitPublished => {
-          // If the tx is one of our HTLC txs, we now publish a 3rd-stage claim-htlc-tx that claims its output.
-          val (localCommitPublished1, claimHtlcTx_opt) = Closing.LocalClose.claimHtlcDelayedOutput(localCommitPublished, channelKeys, d.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, d.finalScriptPubKey)
-          claimHtlcTx_opt.foreach(claimHtlcTx => {
-            txPublisher ! PublishFinalTx(claimHtlcTx, claimHtlcTx.fee, None)
-            blockchain ! WatchTxConfirmed(self, claimHtlcTx.tx.txid, nodeParams.channelConf.minDepth, Some(RelativeDelay(tx.txid, d.commitments.params.remoteParams.toSelfDelay.toInt.toLong)))
-          })
+          // If the tx is one of our HTLC txs, we now publish a 3rd-stage transaction that claims its output.
+          val (localCommitPublished1, htlcDelayedTxs) = Closing.LocalClose.claimHtlcDelayedOutput(localCommitPublished, channelKeys, d.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, d.finalScriptPubKey)
+          doPublish(localCommitPublished1, htlcDelayedTxs)
           Closing.updateLocalCommitPublished(localCommitPublished1, tx)
         }),
         remoteCommitPublished = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
@@ -2063,8 +2084,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           // If the tx is one of our peer's HTLC txs, they were able to claim the output before us.
           // In that case, we immediately publish a penalty transaction spending their HTLC tx to steal their funds.
           val (rvk1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(d.commitments.params, channelKeys, d.commitments.remotePerCommitmentSecrets, rvk, tx, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)
-          penaltyTxs.foreach(claimTx => txPublisher ! PublishFinalTx(claimTx, claimTx.fee, None))
-          penaltyTxs.foreach(claimTx => blockchain ! WatchOutputSpent(self, tx.txid, claimTx.input.outPoint.index.toInt, claimTx.amountIn, hints = Set(claimTx.tx.txid)))
+          doPublish(rvk1, penaltyTxs)
           Closing.updateRevokedCommitPublished(rvk1, tx)
         })
       )
