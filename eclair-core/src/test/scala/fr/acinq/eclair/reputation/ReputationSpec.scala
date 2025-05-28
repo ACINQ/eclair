@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 ACINQ SAS
+ * Copyright 2025 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,18 +31,18 @@ class ReputationSpec extends AnyFunSuite {
     assert(r.getConfidence(10000 msat, 0) == 0)
     r.attempt(htlcId1, 10000 msat, 0)
     r.record(htlcId1, isSuccess = true)
-    r.attempt(htlcId2, 10000 msat, 0)
     assert(r.getConfidence(10000 msat, 0) === (1.0 / 3) +- 0.001)
-    r.attempt(htlcId3, 10000 msat, 0)
+    r.attempt(htlcId2, 10000 msat, 0)
     assert(r.getConfidence(10000 msat, 0) === (1.0 / 5) +- 0.001)
+    r.attempt(htlcId3, 10000 msat, 0)
     r.record(htlcId2, isSuccess = true)
     r.record(htlcId3, isSuccess = true)
-    r.attempt(htlcId4, 1 msat, 0)
     assert(r.getConfidence(1 msat, 0) === 1.0 +- 0.001)
-    r.attempt(htlcId5, 40000 msat, 0)
+    r.attempt(htlcId4, 1 msat, 0)
     assert(r.getConfidence(40000 msat, 0) === (3.0 / 11) +- 0.001)
-    r.attempt(htlcId6, 10000 msat, 0)
+    r.attempt(htlcId5, 40000 msat, 0)
     assert(r.getConfidence(10000 msat, 0) === (3.0 / 13) +- 0.001)
+    r.attempt(htlcId6, 10000 msat, 0)
     r.record(htlcId6, isSuccess = false)
     assert(r.getConfidence(10000 msat, 0) === (3.0 / 13) +- 0.001)
   }

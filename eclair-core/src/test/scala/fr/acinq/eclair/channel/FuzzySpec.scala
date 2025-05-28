@@ -33,6 +33,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.ClearRecipient
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -122,7 +123,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount.toLong.toInt).msat
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight = BlockHeight(400000))
-      val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(self), invoice.paymentHash, makeSingleHopRoute(amount, invoice.nodeId), ClearRecipient(invoice, amount, expiry, Set.empty), 1.0)
+      val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(self), invoice.paymentHash, makeSingleHopRoute(amount, invoice.nodeId), ClearRecipient(invoice, amount, expiry, Set.empty), 1.0, Reputation.maxEndorsement)
       payment.cmd
     }
 

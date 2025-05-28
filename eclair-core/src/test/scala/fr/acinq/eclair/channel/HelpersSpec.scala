@@ -25,6 +25,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
@@ -68,14 +69,14 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     awaitCond(bob.stateName == NORMAL)
     // We have two identical HTLCs (MPP):
     val (_, htlca1a) = addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
-    val aliceMppCmd = CMD_ADD_HTLC(TestProbe().ref, 15_000_000 msat, htlca1a.paymentHash, htlca1a.cltvExpiry, htlca1a.onionRoutingPacket, None, 1.0, None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
+    val aliceMppCmd = CMD_ADD_HTLC(TestProbe().ref, 15_000_000 msat, htlca1a.paymentHash, htlca1a.cltvExpiry, htlca1a.onionRoutingPacket, None, 1.0, Reputation.maxEndorsement, None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
     val htlca1b = addHtlc(aliceMppCmd, alice, bob, alice2bob, bob2alice)
     val (ra2, htlca2) = addHtlc(16_000_000 msat, alice, bob, alice2bob, bob2alice)
     addHtlc(500_000 msat, alice, bob, alice2bob, bob2alice) // below dust
     crossSign(alice, bob, alice2bob, bob2alice)
     // We have two identical HTLCs (MPP):
     val (_, htlcb1a) = addHtlc(17_000_000 msat, bob, alice, bob2alice, alice2bob)
-    val bobMppCmd = CMD_ADD_HTLC(TestProbe().ref, 17_000_000 msat, htlcb1a.paymentHash, htlcb1a.cltvExpiry, htlcb1a.onionRoutingPacket, None, 1.0, None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
+    val bobMppCmd = CMD_ADD_HTLC(TestProbe().ref, 17_000_000 msat, htlcb1a.paymentHash, htlcb1a.cltvExpiry, htlcb1a.onionRoutingPacket, None, 1.0, Reputation.maxEndorsement, None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
     val htlcb1b = addHtlc(bobMppCmd, bob, alice, bob2alice, alice2bob)
     val (rb2, htlcb2) = addHtlc(18_000_000 msat, bob, alice, bob2alice, alice2bob)
     addHtlc(400_000 msat, bob, alice, bob2alice, alice2bob) // below dust
