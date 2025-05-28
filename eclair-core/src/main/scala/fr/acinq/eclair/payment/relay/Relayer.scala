@@ -59,7 +59,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
   private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, register, initialized), "post-restart-htlc-cleaner")
   private val channelRelayer = context.spawn(Behaviors.supervise(ChannelRelayer(nodeParams, register, reputationRecorder_opt)).onFailure(SupervisorStrategy.resume), "channel-relayer")
-  private val nodeRelayer = context.spawn(Behaviors.supervise(NodeRelayer(nodeParams, register, reputationRecorder_opt, NodeRelay.SimpleOutgoingPaymentFactory(nodeParams, router, register), router)).onFailure(SupervisorStrategy.resume), name = "node-relayer")
+  private val nodeRelayer = context.spawn(Behaviors.supervise(NodeRelayer(nodeParams, register, NodeRelay.SimpleOutgoingPaymentFactory(nodeParams, router, register, reputationRecorder_opt), router)).onFailure(SupervisorStrategy.resume), name = "node-relayer")
 
   def receive: Receive = {
     case init: PostRestartHtlcCleaner.Init => postRestartCleaner forward init

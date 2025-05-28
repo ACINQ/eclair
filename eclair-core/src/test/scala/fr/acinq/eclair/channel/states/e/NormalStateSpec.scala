@@ -38,6 +38,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.payment.relay.Relayer._
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
@@ -78,7 +79,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val listener = TestProbe()
     alice.underlying.system.eventStream.subscribe(listener.ref, classOf[AvailableBalanceChanged])
     val h = randomBytes32()
-    val add = CMD_ADD_HTLC(sender.ref, 50000000 msat, h, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
+    val add = CMD_ADD_HTLC(sender.ref, 50000000 msat, h, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, Reputation.maxEndorsement, None, localOrigin(sender.ref))
     alice ! add
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val e = listener.expectMsgType[AvailableBalanceChanged]
@@ -104,7 +105,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val h = randomBytes32()
     for (i <- 0 until 10) {
-      alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, h, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
+      alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, h, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, Reputation.maxEndorsement, None, localOrigin(sender.ref))
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
       assert(htlc.id == i && htlc.paymentHash == h)
