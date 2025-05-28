@@ -27,6 +27,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.{NodePayload, buildOnion}
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.{PaymentOnion, PaymentOnionCodecs}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
@@ -133,7 +134,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
       context.log.info("sending trampoline payment parts: {}->{}, {}->{}", channel1.data.channelId, amount1, channel2.data.channelId, amount2)
       val parts = Seq((amount1, channel1), (amount2, channel2)).map { case (amount, channelInfo) =>
         val outgoing = buildOutgoingPayment(cmd.trampolineNodeId, cmd.invoice, amount, expiry, Some(trampolinePaymentSecret), attemptNumber)
-        val add = CMD_ADD_HTLC(addHtlcAdapter.toClassic, outgoing.trampolineAmount, paymentHash, outgoing.trampolineExpiry, outgoing.onion.packet, None, 1.0, None, origin, commit = true)
+        val add = CMD_ADD_HTLC(addHtlcAdapter.toClassic, outgoing.trampolineAmount, paymentHash, outgoing.trampolineExpiry, outgoing.onion.packet, None, 1.0, Reputation.maxEndorsement, None, origin, commit = true)
         channelInfo.channel ! add
         val channelId = channelInfo.data.asInstanceOf[DATA_NORMAL].channelId
         PartialPayment(cmd.paymentId, amount, computeFees(amount, attemptNumber), channelId, None)

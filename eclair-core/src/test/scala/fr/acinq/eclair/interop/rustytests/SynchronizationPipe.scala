@@ -19,10 +19,10 @@ package fr.acinq.eclair.interop.rustytests
 import java.io.{BufferedWriter, File, FileWriter}
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
-
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, TestConstants, TestUtils}
 
@@ -57,7 +57,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
 
     (script: @unchecked) match {
       case offer(x, amount, rhash) :: rest =>
-        resolve(x) ! CMD_ADD_HTLC(self, MilliSatoshi(amount.toInt), ByteVector32.fromValidHex(rhash), CltvExpiry(144), TestConstants.emptyOnionPacket, None, 1.0, None, Origin.Hot(self, Upstream.Local(UUID.randomUUID())))
+        resolve(x) ! CMD_ADD_HTLC(self, MilliSatoshi(amount.toInt), ByteVector32.fromValidHex(rhash), CltvExpiry(144), TestConstants.emptyOnionPacket, None, 1.0, Reputation.maxEndorsement, None, Origin.Hot(self, Upstream.Local(UUID.randomUUID())))
         exec(rest, a, b)
       case fulfill(x, id, r) :: rest =>
         resolve(x) ! CMD_FULFILL_HTLC(id.toInt, ByteVector32.fromValidHex(r), None, None)

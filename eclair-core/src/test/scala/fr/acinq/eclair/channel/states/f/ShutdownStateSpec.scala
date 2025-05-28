@@ -32,6 +32,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
@@ -62,7 +63,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       // alice sends an HTLC to bob
       val h1 = Crypto.sha256(r1)
       val recipient1 = SpontaneousRecipient(TestConstants.Bob.nodeParams.nodeId, 300_000_000 msat, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), r1)
-      val Right(cmd1) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(sender.ref), h1, makeSingleHopRoute(recipient1.totalAmount, recipient1.nodeId), recipient1, 1.0).map(_.cmd.copy(commit = false))
+      val Right(cmd1) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(sender.ref), h1, makeSingleHopRoute(recipient1.totalAmount, recipient1.nodeId), recipient1, 1.0, Reputation.maxEndorsement).map(_.cmd.copy(commit = false))
       alice ! cmd1
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -71,7 +72,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       // alice sends another HTLC to bob
       val h2 = Crypto.sha256(r2)
       val recipient2 = SpontaneousRecipient(TestConstants.Bob.nodeParams.nodeId, 200_000_000 msat, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), r2)
-      val Right(cmd2) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(sender.ref), h2, makeSingleHopRoute(recipient2.totalAmount, recipient2.nodeId), recipient2, 1.0).map(_.cmd.copy(commit = false))
+      val Right(cmd2) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(sender.ref), h2, makeSingleHopRoute(recipient2.totalAmount, recipient2.nodeId), recipient2, 1.0, Reputation.maxEndorsement).map(_.cmd.copy(commit = false))
       alice ! cmd2
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -143,7 +144,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_ADD_HTLC") { f =>
     import f._
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
+    val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, None, 1.0, Reputation.maxEndorsement, None, localOrigin(sender.ref))
     alice ! add
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(RES_ADD_FAILED(add, error, None))

@@ -27,6 +27,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Monitoring.Metrics
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.wire.protocol.LiquidityAds.PaymentDetails
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, ToMilliSatoshiConversion}
@@ -302,7 +303,7 @@ object OnTheFlyFunding {
           // This lets us detect that this HTLC is an on-the-fly funded HTLC.
           val htlcFees = LiquidityAds.FundingFee(remainingFees.min(p.maxFees(htlcMinimum)), cmd.status.txId)
           val origin = Origin.Hot(htlcSettledAdapter.toClassic, p.upstream)
-          val add = CMD_ADD_HTLC(cmdAdapter.toClassic, p.htlc.amount - htlcFees.amount, paymentHash, p.htlc.expiry, p.htlc.finalPacket, p.htlc.pathKey_opt, 1.0, Some(htlcFees), origin, commit = true)
+          val add = CMD_ADD_HTLC(cmdAdapter.toClassic, p.htlc.amount - htlcFees.amount, paymentHash, p.htlc.expiry, p.htlc.finalPacket, p.htlc.pathKey_opt, 1.0, Reputation.maxEndorsement, Some(htlcFees), origin, commit = true)
           cmd.channel ! add
           remainingFees - htlcFees.amount
       }

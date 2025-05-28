@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, OutP
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelType}
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.reputation.EndorsementDouble
 import fr.acinq.eclair.wire.protocol.ChannelReadyTlv.ShortChannelIdTlv
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, isAsciiPrintable}
 import scodec.bits.ByteVector
@@ -400,12 +401,12 @@ object UpdateAddHtlc {
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
             pathKey_opt: Option[PublicKey],
-            confidence: Double,
+            endorsement: Int,
             fundingFee_opt: Option[LiquidityAds.FundingFee]): UpdateAddHtlc = {
     val tlvs = Set(
       pathKey_opt.map(UpdateAddHtlcTlv.PathKey),
       fundingFee_opt.map(UpdateAddHtlcTlv.FundingFeeTlv),
-      Some(UpdateAddHtlcTlv.Endorsement((confidence * 7.999).toInt)),
+      Some(UpdateAddHtlcTlv.Endorsement(endorsement)),
     ).flatten[UpdateAddHtlcTlv]
     UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, TlvStream(tlvs))
   }
