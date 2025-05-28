@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 ACINQ SAS
+ * Copyright 2025 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,16 +23,10 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.Upstream.Hot
 import fr.acinq.eclair.channel.{OutgoingHtlcAdded, OutgoingHtlcFailed, OutgoingHtlcFulfilled, Upstream}
-import fr.acinq.eclair.reputation.Reputation.HtlcId
 import fr.acinq.eclair.wire.protocol.{UpdateFailHtlc, UpdateFailMalformedHtlc}
 import ReputationRecorder._
 
 import scala.collection.mutable
-
-
-/**
- * Created by thomash on 21/07/2023.
- */
 
 object ReputationRecorder {
   // @formatter:off
@@ -43,16 +37,6 @@ object ReputationRecorder {
   private case class WrappedOutgoingHtlcFailed(failed: OutgoingHtlcFailed) extends Command
   private case class WrappedOutgoingHtlcFulfilled(fulfilled: OutgoingHtlcFulfilled) extends Command
   // @formatter:on
-
-  /**
-   * @param nodeId      nodeId of the upstream peer.
-   * @param endorsement endorsement value set by the upstream peer in the HTLC we received.
-   */
-  case class PeerEndorsement(nodeId: PublicKey, endorsement: Int)
-
-  object PeerEndorsement {
-    def apply(channel: Upstream.Hot.Channel): PeerEndorsement = PeerEndorsement(channel.receivedFrom, channel.add.endorsement)
-  }
 
   /** Confidence that the outgoing HTLC will succeed. */
   case class Confidence(value: Double)
@@ -67,24 +51,37 @@ object ReputationRecorder {
 }
 
 class ReputationRecorder(config: Reputation.Config, context: ActorContext[ReputationRecorder.Command]) {
-  private val reputations: mutable.Map[PeerEndorsement, Reputation] = mutable.HashMap.empty.withDefaultValue(Reputation.init(config))
+  private val reputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty.withDefault(_ => Reputation.init(config))
   private val pending: mutable.Map[HtlcId, Upstream.Hot] = mutable.HashMap.empty
+
+  private def getReputation(nodeId: PublicKey): Reputation = {
+    reputations.get(nodeId) match {
+      case Some(reputation) => reputation
+      case None => {
+        val reputation = Reputation.init(config)
+        reputations(nodeId) = reputation
+        reputation
+      }
+    }
+  }
 
   def run(): Behavior[Command] =
     Behaviors.receiveMessage {
       case GetConfidence(replyTo, upstream, fee) =>
-        val confidence = reputations(PeerEndorsement(upstream)).getConfidence(fee)
+        val confidence = reputations(upstream.receivedFrom).getConfidence(fee, upstream.add.endorsement)
         replyTo ! Confidence(confidence)
         Behaviors.same
 
       case GetTrampolineConfidence(replyTo, upstream, totalFee) =>
         val confidence =
           upstream.received
-            .groupMapReduce(r => PeerEndorsement(r.receivedFrom, r.add.endorsement))(_.add.amountMsat)(_ + _)
+            .groupMapReduce(_.receivedFrom)(r => (r.add.amountMsat, r.add.endorsement)){
+              case ((amount1, endorsement1), (amount2, endorsement2)) => (amount1 + amount2, endorsement1 min endorsement2)
+            }
             .map {
-              case (peerEndorsement, amount) =>
+              case (nodeId, (amount, endorsement)) =>
                 val fee = amount * totalFee.toLong / upstream.amountIn.toLong
-                reputations(peerEndorsement).getConfidence(fee)
+                reputations(nodeId).getConfidence(fee, endorsement)
             }
             .min
         replyTo ! Confidence(confidence)
@@ -94,11 +91,11 @@ class ReputationRecorder(config: Reputation.Config, context: ActorContext[Reputa
         val htlcId = HtlcId(add.channelId, add.id)
         upstream match {
           case channel: Hot.Channel =>
-            reputations(PeerEndorsement(channel)) = reputations(PeerEndorsement(channel)).attempt(htlcId, fee)
+            getReputation(channel.receivedFrom).attempt(htlcId, fee, channel.add.endorsement)
             pending += (htlcId -> upstream)
           case trampoline: Hot.Trampoline =>
             trampoline.received.foreach(channel =>
-              reputations(PeerEndorsement(channel)) = reputations(PeerEndorsement(channel)).attempt(htlcId, fee * channel.amountIn.toLong / trampoline.amountIn.toLong)
+              getReputation(channel.receivedFrom).attempt(htlcId, fee * channel.amountIn.toLong / trampoline.amountIn.toLong, channel.add.endorsement)
             )
             pending += (htlcId -> upstream)
           case _: Upstream.Local => ()
@@ -112,10 +109,10 @@ class ReputationRecorder(config: Reputation.Config, context: ActorContext[Reputa
         }
         pending.get(htlcId) match {
           case Some(channel: Hot.Channel) =>
-            reputations(PeerEndorsement(channel)) = reputations(PeerEndorsement(channel)).record(htlcId, isSuccess = false)
+            getReputation(channel.receivedFrom).record(htlcId, isSuccess = false)
           case Some(trampoline: Hot.Trampoline) =>
             trampoline.received.foreach(channel =>
-              reputations(PeerEndorsement(channel)) = reputations(PeerEndorsement(channel)).record(htlcId, isSuccess = false)
+              getReputation(channel.receivedFrom).record(htlcId, isSuccess = false)
             )
           case _ => ()
         }
@@ -126,10 +123,10 @@ class ReputationRecorder(config: Reputation.Config, context: ActorContext[Reputa
         val htlcId = HtlcId(fulfill.channelId, fulfill.id)
         pending.get(htlcId) match {
           case Some(channel: Hot.Channel) =>
-            reputations(PeerEndorsement(channel)) = reputations(PeerEndorsement(channel)).record(htlcId, isSuccess = true)
+            getReputation(channel.receivedFrom).record(htlcId, isSuccess = true)
           case Some(trampoline: Hot.Trampoline) =>
             trampoline.received.foreach(channel =>
-              reputations(PeerEndorsement(channel)) = reputations(PeerEndorsement(channel)).record(htlcId, isSuccess = true)
+              getReputation(channel.receivedFrom).record(htlcId, isSuccess = true)
             )
           case _ => ()
         }
