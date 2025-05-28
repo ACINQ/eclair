@@ -37,6 +37,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.crypto.keymanager.LocalOnChainKeyManager
+import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UpdateFee}
@@ -1079,18 +1080,14 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     probe.expectMsg(signedCommitTx.txid)
     generateBlocks(1)
 
-    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].tx.isInstanceOf[ReplaceableLocalCommitAnchor])
-    alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
+    val anchor = alice2blockchain.expectReplaceableTxPublished[ReplaceableLocalCommitAnchor]
+    val main = alice2blockchain.expectFinalTxPublished("local-main-delayed")
     val htlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(htlcSuccess.tx.isInstanceOf[ReplaceableHtlcSuccess])
     val htlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(htlcTimeout.tx.isInstanceOf[ReplaceableHtlcTimeout])
-
-    alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
-    alice2blockchain.expectMsgType[WatchTxConfirmed] // claim main output
-    alice2blockchain.expectMsgType[WatchOutputSpent] // claim-anchor tx
-    alice2blockchain.expectMsgType[WatchOutputSpent] // htlc-success tx
-    alice2blockchain.expectMsgType[WatchOutputSpent] // htlc-timeout tx
+    alice2blockchain.expectWatchTxConfirmed(signedCommitTx.txid)
+    alice2blockchain.expectWatchOutputsSpent(Seq(main.input, anchor.txInfo.input.outPoint, htlcSuccess.input, htlcTimeout.input))
     alice2blockchain.expectNoMessage(100 millis)
 
     (signedCommitTx, htlcSuccess, htlcTimeout)
@@ -1615,19 +1612,15 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     val anchorTx_opt = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => None
-      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(alice2blockchain.expectMsgType[PublishReplaceableTx])
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(alice2blockchain.expectReplaceableTxPublished[ReplaceableRemoteCommitAnchor])
     }
-    if (!bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.paysDirectlyToWallet) alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
+    val mainTx_opt = if (!bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.paysDirectlyToWallet) Some(alice2blockchain.expectFinalTxPublished("remote-main-delayed")) else None
     val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(claimHtlcSuccess.tx.isInstanceOf[ReplaceableClaimHtlcSuccess])
     val claimHtlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(claimHtlcTimeout.tx.isInstanceOf[ReplaceableClaimHtlcTimeout])
-
-    alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
-    if (!bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.paysDirectlyToWallet) alice2blockchain.expectMsgType[WatchTxConfirmed] // claim main output
-    alice2blockchain.expectMsgType[WatchOutputSpent] // claim-htlc-success tx
-    alice2blockchain.expectMsgType[WatchOutputSpent] // claim-htlc-timeout tx
-    anchorTx_opt.foreach(anchor => alice2blockchain.expectMsgType[WatchOutputSpent])
+    alice2blockchain.expectWatchTxConfirmed(remoteCommitTx.txid)
+    alice2blockchain.expectWatchOutputsSpent(mainTx_opt.map(_.input).toSeq ++ anchorTx_opt.map(_.txInfo.input.outPoint).toSeq ++ Seq(claimHtlcSuccess.input, claimHtlcTimeout.input))
     alice2blockchain.expectNoMessage(100 millis)
 
     (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout)

@@ -4,7 +4,10 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, TxId}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
+import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.AvailableBalanceChanged
+import fr.acinq.eclair.channel.publish.ReplaceableTx
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
 import org.scalatest.Assertions
 
 import scala.reflect.ClassTag
@@ -17,9 +20,32 @@ case class PimpTestProbe(probe: TestProbe) extends Assertions {
    * @param asserts should contains asserts on the message
    */
   def expectMsgTypeHaving[T](asserts: T => Unit)(implicit t: ClassTag[T]): T = {
-    val msg = probe.expectMsgType[T]
+    val msg = probe.expectMsgType[T](t)
     asserts(msg)
     msg
+  }
+
+  def expectFinalTxPublished(desc: String): PublishFinalTx =
+    expectMsgTypeHaving[PublishFinalTx](p => assert(p.desc == desc))
+
+  def expectFinalTxPublished(txId: TxId): PublishFinalTx =
+    expectMsgTypeHaving[PublishFinalTx](p => assert(p.tx.txid == txId))
+
+  private def expectReplaceableTx[T <: ReplaceableTx](tx: ReplaceableTx)(implicit t: ClassTag[T]): T = {
+    val c = t.runtimeClass.asInstanceOf[Class[T]]
+    assert(c.isInstance(tx), s"expected published tx of type ${c.getSimpleName} but got ${tx.getClass.getSimpleName}")
+    tx.asInstanceOf[T]
+  }
+
+  def expectReplaceableTxPublished[T <: ReplaceableTx](implicit t: ClassTag[T]): T = {
+    val p = probe.expectMsgType[PublishReplaceableTx]
+    expectReplaceableTx(p.tx)(t)
+  }
+
+  def expectReplaceableTxPublished[T <: ReplaceableTx](confirmationTarget: ConfirmationTarget)(implicit t: ClassTag[T]): T = {
+    val p = probe.expectMsgType[PublishReplaceableTx]
+    assert(p.confirmationTarget == confirmationTarget)
+    expectReplaceableTx(p.tx)(t)
   }
 
   def expectWatchFundingSpent(txid: TxId, hints_opt: Option[Set[TxId]] = None): WatchFundingSpent =
@@ -43,12 +69,6 @@ case class PimpTestProbe(probe: TestProbe) extends Assertions {
 
   def expectWatchTxConfirmed(txid: TxId): WatchTxConfirmed =
     expectMsgTypeHaving[WatchTxConfirmed](w => assert(w.txId == txid, "txid"))
-
-  def expectWatchTxConfirmed(txid: TxId, parentTxId: TxId): WatchTxConfirmed =
-    expectMsgTypeHaving[WatchTxConfirmed](w => {
-      assert(w.txId == txid, "txid")
-      assert(w.delay_opt.map(_.parentTxId).contains(parentTxId))
-    })
 
   def expectWatchPublished(txid: TxId): WatchPublished =
     expectMsgTypeHaving[WatchPublished](w => assert(w.txId == txid, "txid"))

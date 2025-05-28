@@ -245,39 +245,6 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     })
   }
 
-  test("watch for confirmed transactions with relative delay") {
-    withWatcher(f => {
-      import f._
-
-      // We simulate a transaction with a 3-blocks CSV delay.
-      val (priv, address) = createExternalAddress()
-      val parentTx = sendToAddress(address, 50.millibtc, probe)
-      val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 3, 0)
-      val delay = RelativeDelay(parentTx.txid, 3)
-
-      watcher ! WatchTxConfirmed(probe.ref, tx.txid, 6, Some(delay))
-      probe.expectNoMessage(100 millis)
-
-      // We make the parent tx confirm to satisfy the CSV delay and publish the delayed transaction.
-      generateBlocks(3)
-      bitcoinClient.publishTransaction(tx).pipeTo(probe.ref)
-      probe.expectMsg(tx.txid)
-      probe.expectNoMessage(100 millis)
-
-      // The delayed transaction confirms, but hasn't reached its minimum depth.
-      generateBlocks(3)
-      probe.expectNoMessage(100 millis)
-
-      // The delayed transaction reaches its minimum depth.
-      generateBlocks(3)
-      assert(probe.expectMsgType[WatchTxConfirmedTriggered].tx.txid == tx.txid)
-
-      // If we watch the transaction when it's already confirmed, we immediately receive the WatchConfirmedTriggered event.
-      watcher ! WatchTxConfirmed(probe.ref, tx.txid, 3, Some(delay.copy(delay = 720)))
-      assert(probe.expectMsgType[WatchTxConfirmedTriggered].tx.txid == tx.txid)
-    })
-  }
-
   test("watch for spent transactions") {
     withWatcher(f => {
       import f._

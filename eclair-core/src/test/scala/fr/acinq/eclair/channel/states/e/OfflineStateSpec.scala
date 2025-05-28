@@ -628,13 +628,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(isFatal)
     assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == initialCommitTx.txid)
-    val mainDelayedTx = bob2blockchain.expectMsgType[PublishFinalTx]
-    assert(mainDelayedTx.desc == "local-main-delayed")
+    bob2blockchain.expectFinalTxPublished(initialCommitTx.txid)
+    val mainDelayedTx = bob2blockchain.expectFinalTxPublished("local-main-delayed")
     bob2blockchain.expectWatchTxConfirmed(initialCommitTx.txid)
-    bob2blockchain.expectWatchTxConfirmed(mainDelayedTx.tx.txid)
+    bob2blockchain.expectWatchOutputSpent(mainDelayedTx.input)
     bob2blockchain.expectWatchOutputSpent(htlcSuccessTx.input.outPoint)
-    val publishHtlcTx = bob2blockchain.expectMsgType[PublishFinalTx]
+    val publishHtlcTx = bob2blockchain.expectFinalTxPublished("htlc-success")
     assert(publishHtlcTx.input == htlcSuccessTx.input.outPoint)
     bob2blockchain.expectNoMessage(100 millis)
   }
