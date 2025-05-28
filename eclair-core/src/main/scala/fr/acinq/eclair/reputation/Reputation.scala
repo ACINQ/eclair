@@ -104,6 +104,7 @@ case class Reputation(pastScores: Array[PastScore], pending: mutable.Map[HtlcId,
 
 object Reputation {
   val endorsementLevels = 8
+  val maxEndorsement = endorsementLevels - 1
 
   case class Config(enabled: Boolean, halfLife: FiniteDuration, maxRelayDuration: FiniteDuration, pendingMultiplier: Double)
 

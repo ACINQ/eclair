@@ -209,6 +209,7 @@ final case class CMD_ADD_HTLC(replyTo: ActorRef,
                               onion: OnionRoutingPacket,
                               nextPathKey_opt: Option[PublicKey],
                               confidence: Double,
+                              endorsement: Int,
                               fundingFee_opt: Option[LiquidityAds.FundingFee],
                               origin: Origin.Hot,
                               commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
@@ -247,7 +248,7 @@ final case class CMD_GET_CHANNEL_STATE(replyTo: ActorRef) extends HasReplyToComm
 final case class CMD_GET_CHANNEL_DATA(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GET_CHANNEL_INFO(replyTo: akka.actor.typed.ActorRef[RES_GET_CHANNEL_INFO]) extends Command
 
-case class OutgoingHtlcAdded(add: UpdateAddHtlc, upstream: Upstream.Hot, fee: MilliSatoshi)
+case class OutgoingHtlcAdded(add: UpdateAddHtlc, remoteNodeId: PublicKey, upstream: Upstream.Hot, fee: MilliSatoshi)
 case class OutgoingHtlcFailed(fail: HtlcFailureMessage)
 case class OutgoingHtlcFulfilled(fulfill: UpdateFulfillHtlc)
 
