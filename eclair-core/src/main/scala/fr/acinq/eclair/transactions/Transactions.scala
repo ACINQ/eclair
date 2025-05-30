@@ -781,11 +781,19 @@ object Transactions {
   }
 
   object ClaimAnchorOutputTx {
-    def redeemInfo(fundingKey: PublicKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): RedeemInfo =
-      redeemInfo(fundingKey, commitKeys.publicKeys, toLocal = true, commitmentFormat)
+    def redeemInfo(fundingKey: PublicKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): RedeemInfo = redeemInfo(fundingKey, commitKeys.publicKeys, toLocal = true, commitmentFormat)
 
-    def redeemInfo(fundingKey: PublicKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): RedeemInfo =
-      redeemInfo(fundingKey, commitKeys.publicKeys, toLocal = false, commitmentFormat)
+    def findInput(commitTx: Transaction, fundingKey: PublicKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, InputInfo] = {
+      val pubKeyScript = redeemInfo(fundingKey, commitKeys, commitmentFormat).pubkeyScript
+      findPubKeyScriptIndex(commitTx, pubKeyScript).map(outputIndex => InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty))
+    }
+
+    def redeemInfo(fundingKey: PublicKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): RedeemInfo = redeemInfo(fundingKey, commitKeys.publicKeys, toLocal = false, commitmentFormat)
+
+    def findInput(commitTx: Transaction, fundingKey: PublicKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, InputInfo] = {
+      val pubKeyScript = redeemInfo(fundingKey, commitKeys, commitmentFormat).pubkeyScript
+      findPubKeyScriptIndex(commitTx, pubKeyScript).map(outputIndex => InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty))
+    }
 
     /**
      *
@@ -806,26 +814,22 @@ object Transactions {
       }
     }
 
-    private def createUnsignedTx(redeemInfo: RedeemInfo, commitTx: Transaction): Either[TxGenerationSkipped, ClaimAnchorOutputTx] = {
-      val pubkeyScript = redeemInfo.pubkeyScript
-      findPubKeyScriptIndex(commitTx, pubkeyScript).map { outputIndex =>
-        val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
-        val unsignedTx = Transaction(
-          version = 2,
-          txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
-          txOut = Nil, // anchor is only used to bump fees, the output will be added later depending on available inputs
-          lockTime = 0
-        )
-        ClaimAnchorOutputTx(input, unsignedTx)
-      }
+    private def createUnsignedTx(input: InputInfo): ClaimAnchorOutputTx = {
+      val unsignedTx = Transaction(
+        version = 2,
+        txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
+        txOut = Nil, // anchor is only used to bump fees, the output will be added later depending on available inputs
+        lockTime = 0
+      )
+      ClaimAnchorOutputTx(input, unsignedTx)
     }
 
     def createUnsignedTx(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimAnchorOutputTx] = {
-      createUnsignedTx(redeemInfo(fundingKey.publicKey, commitKeys, commitmentFormat), commitTx)
+      findInput(commitTx, fundingKey.publicKey, commitKeys, commitmentFormat).map(input => createUnsignedTx(input))
     }
 
     def createUnsignedTx(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimAnchorOutputTx] = {
-      createUnsignedTx(redeemInfo(fundingKey.publicKey, commitKeys, commitmentFormat), commitTx)
+      findInput(commitTx, fundingKey.publicKey, commitKeys, commitmentFormat).map(input => createUnsignedTx(input))
     }
   }
 

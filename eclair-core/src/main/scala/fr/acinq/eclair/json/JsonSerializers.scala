@@ -571,8 +571,8 @@ object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => Comm
 // @formatter:on
 
 // @formatter:off
-private case class DetailedOnChainBalanceJson(total: Btc, confirmed: Map[OutPoint, Btc], unconfirmed: Map[OutPoint, Btc])
-object DetailedOnChainBalanceSerializer extends ConvertClassSerializer[DetailedOnChainBalance](b => DetailedOnChainBalanceJson(b.total, confirmed = b.confirmed, unconfirmed = b.unconfirmed))
+private case class DetailedOnChainBalanceJson(total: Btc, deeplyConfirmed: Map[OutPoint, Btc], recentlyConfirmed: Map[OutPoint, Btc], unconfirmed: Map[OutPoint, Btc])
+object DetailedOnChainBalanceSerializer extends ConvertClassSerializer[DetailedOnChainBalance](b => DetailedOnChainBalanceJson(b.total, deeplyConfirmed = b.deeplyConfirmed, recentlyConfirmed = b.recentlyConfirmed, unconfirmed = b.unconfirmed))
 private case class GlobalBalanceJson(total: Btc, onChain: DetailedOnChainBalance, offChain: OffChainBalance)
 object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b => GlobalBalanceJson(b.total, b.onChain, b.offChain))
 

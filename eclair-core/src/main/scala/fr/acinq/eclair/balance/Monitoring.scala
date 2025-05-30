@@ -37,7 +37,8 @@ object Monitoring {
     val UtxoStatus = "status"
 
     object BalanceTypes {
-      val OnchainConfirmed = "onchain.confirmed"
+      val OnchainDeeplyConfirmed = "onchain.deeply-confirmed"
+      val OnchainRecentlyConfirmed = "onchain.recently-confirmed"
       val OnchainUnconfirmed = "onchain.unconfirmed"
       val Offchain = "offchain"
     }
@@ -48,9 +49,7 @@ object Monitoring {
       val normal = "normal"
       val shutdown = "shutdown"
       val negotiating = "negotiating"
-      val closingLocal = "closing-local"
-      val closingRemote = "closing-remote"
-      val closingUnknown = "closing-unknown"
+      val closing = "closing"
       val waitForPublishFutureCommitment = "waitForPublishFutureCommitment"
     }
 
