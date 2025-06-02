@@ -2685,71 +2685,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectNoMessage(100 millis)
   }
 
-  test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update") { f =>
-    import f._
-    // alice                    bob
-    //   |         ...           |
-    //   |    <interactive-tx>   |
-    //   |<----- tx_complete ----|
-    //   |------ tx_complete --->|
-    //   |------ commit_sig ---->|
-    //   |<------ commit_sig ----|
-    //   |<---- tx_signatures ---|
-    //   |----- tx_signatures -->|
-    //   |--- update_add_htlc -->|
-    //   |------ start_batch --->| batch_size = 2
-    //   |------ commit_sig ---->| funding_txid = FundingTx
-    //   |------ commit_sig ---->| funding_txid = SpliceFundingTx
-    //   |<--- revoke_and_ack ---|
-    //   |X----- start_batch ----| batch_size = 2
-    //   |X----- commit_sig -----| funding_txid = FundingTx
-    //   |X----- commit_sig -----| funding_txid = SpliceFundingTx
-    //   |      <disconnect>     |
-    //   |      <reconnect>      | next_revocation_number = 1 (alice) and 0 (bob)
-    //   | <channel_reestablish> |
-    //   |<----- start_batch ----| batch_size = 2
-    //   |<----- commit_sig -----| funding_txid = FundingTx
-    //   |<----- commit_sig -----| funding_txid = SpliceFundingTx
-    //   |---- revoke_and_ack -->|
-
-    val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
-    checkWatchConfirmed(f, fundingTx)
-
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
-    val (_, cmd) = makeCmdAdd(25_000_000 msat, bob.nodeParams.nodeId, bob.nodeParams.currentBlockHeight)
-    alice ! cmd.copy(commit = true)
-    alice2bob.expectMsgType[UpdateAddHtlc]
-    alice2bob.forward(bob)
-    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>
-      assert(batch.batchSize == 2)
-      alice2bob.forward(bob)
-    }
-    bob2alice.expectMsgType[RevokeAndAck]
-    bob2alice.forward(alice)
-    inside(bob2alice.expectMsgType[CommitSigBatch]) { batch => // Alice doesn't receive Bob's commit_sig
-      assert(batch.batchSize == 2)
-    }
-    alice2bob.expectNoMessage(100 millis)
-    bob2alice.expectNoMessage(100 millis)
-
-    // Alice will not receive Bob's commit_sigs before disconnecting.
-    disconnect(f)
-    val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
-    assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
-    assert(channelReestablishAlice.nextRemoteRevocationNumber == 1)
-    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
-    assert(channelReestablishBob.nextRemoteRevocationNumber == 0)
-
-    // Bob must retransmit his commit_sigs first.
-    alice2bob.expectNoMessage(100 millis)
-    bob2alice.expectMsgType[CommitSigBatch]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[RevokeAndAck]
-    alice2bob.forward(bob)
-    alice2bob.expectNoMessage(100 millis)
-    bob2alice.expectNoMessage(100 millis)
-  }
-
   test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update; revoke_and_ack not received") { f =>
     import f._
     // alice                    bob
@@ -2811,6 +2746,71 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
       assert(batch.batchSize == 2)
       bob2alice.forward(alice)
     }
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+  }
+
+  test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update") { f =>
+    import f._
+    // alice                    bob
+    //   |         ...           |
+    //   |    <interactive-tx>   |
+    //   |<----- tx_complete ----|
+    //   |------ tx_complete --->|
+    //   |------ commit_sig ---->|
+    //   |<------ commit_sig ----|
+    //   |<---- tx_signatures ---|
+    //   |----- tx_signatures -->|
+    //   |--- update_add_htlc -->|
+    //   |------ start_batch --->| batch_size = 2
+    //   |------ commit_sig ---->| funding_txid = FundingTx
+    //   |------ commit_sig ---->| funding_txid = SpliceFundingTx
+    //   |<--- revoke_and_ack ---|
+    //   |X----- start_batch ----| batch_size = 2
+    //   |X----- commit_sig -----| funding_txid = FundingTx
+    //   |X----- commit_sig -----| funding_txid = SpliceFundingTx
+    //   |      <disconnect>     |
+    //   |      <reconnect>      | next_revocation_number = 1 (alice) and 0 (bob)
+    //   | <channel_reestablish> |
+    //   |<----- start_batch ----| batch_size = 2
+    //   |<----- commit_sig -----| funding_txid = FundingTx
+    //   |<----- commit_sig -----| funding_txid = SpliceFundingTx
+    //   |---- revoke_and_ack -->|
+
+    val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    checkWatchConfirmed(f, fundingTx)
+
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    val (_, cmd) = makeCmdAdd(25_000_000 msat, bob.nodeParams.nodeId, bob.nodeParams.currentBlockHeight)
+    alice ! cmd.copy(commit = true)
+    alice2bob.expectMsgType[UpdateAddHtlc]
+    alice2bob.forward(bob)
+    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>
+      assert(batch.batchSize == 2)
+      alice2bob.forward(bob)
+    }
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    inside(bob2alice.expectMsgType[CommitSigBatch]) { batch => // Alice doesn't receive Bob's commit_sig
+      assert(batch.batchSize == 2)
+    }
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+
+    // Alice will not receive Bob's commit_sigs before disconnecting.
+    disconnect(f)
+    val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
+    assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
+    assert(channelReestablishAlice.nextRemoteRevocationNumber == 1)
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
+    assert(channelReestablishBob.nextRemoteRevocationNumber == 0)
+
+    // Bob must retransmit his commit_sigs first.
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectMsgType[CommitSigBatch]
+    bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
     alice2bob.expectNoMessage(100 millis)
