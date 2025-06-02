@@ -2004,7 +2004,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   test("disconnect (tx_signatures received by alice)") { f =>
     import f._
-    // Disconnection with one side sending tx_signatures
+    // Disconnection with both sides sending tx_signatures
     // alice                    bob
     //   |         ...           |
     //   |    <interactive-tx>   |
@@ -2017,7 +2017,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     //   |      <disconnect>     |
     //   |      <reconnect>      |
     //   | <channel_reestablish> |
-    //   |<---- tx_signatures ---|
     //   |----- tx_signatures -->|
 
     val htlcs = setupHtlcs(f)
