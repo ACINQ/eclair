@@ -2505,7 +2505,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     //   |<----- commit_sig -----|
     //   |---- revoke_and_ack -->|
 
-    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+    initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[CommitSig]
@@ -2651,10 +2651,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     checkWatchConfirmed(f, fundingTx)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
-    val (_, cmd) = makeCmdAdd(25_000_000 msat, bob.nodeParams.nodeId, bob.nodeParams.currentBlockHeight)
-    alice ! cmd.copy(commit = true)
-    alice2bob.expectMsgType[UpdateAddHtlc]
-    alice2bob.forward(bob)
+    addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
+    alice ! CMD_SIGN(None)
     inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>  // Bob doesn't receive Alice's commit_sig
       assert(batch.batchSize == 2)
     }
@@ -2715,10 +2713,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     checkWatchConfirmed(f, fundingTx)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
-    val (_, cmd) = makeCmdAdd(25_000_000 msat, bob.nodeParams.nodeId, bob.nodeParams.currentBlockHeight)
-    alice ! cmd.copy(commit = true)
-    alice2bob.expectMsgType[UpdateAddHtlc]
-    alice2bob.forward(bob)
+    addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
+    alice ! CMD_SIGN(None)
     alice2bob.expectMsgType[CommitSigBatch]
     alice2bob.forward(bob)
 
@@ -2782,10 +2778,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     checkWatchConfirmed(f, fundingTx)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
-    val (_, cmd) = makeCmdAdd(25_000_000 msat, bob.nodeParams.nodeId, bob.nodeParams.currentBlockHeight)
-    alice ! cmd.copy(commit = true)
-    alice2bob.expectMsgType[UpdateAddHtlc]
-    alice2bob.forward(bob)
+    addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
+    alice ! CMD_SIGN(None)
     inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>
       assert(batch.batchSize == 2)
       alice2bob.forward(bob)
