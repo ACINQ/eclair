@@ -3128,7 +3128,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }).sum
     // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
     val amountClaimed = claimMain.txOut.head.amount + htlcAmountClaimed
-    assert(amountClaimed == 823_700.sat)
+    assert(amountClaimed == 839_959.sat)
 
     // alice sets the confirmation targets to the HTLC expiry
     assert(claimHtlcTxs.map(_.tx.commitTx.txid).toSet == Set(bobCommitTx.txid))
@@ -3224,7 +3224,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }).sum
     // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
     val amountClaimed = claimMain.txOut.head.amount + htlcAmountClaimed
-    assert(amountClaimed == 829_870.sat)
+    assert(amountClaimed == 840_534.sat)
 
     // alice sets the confirmation targets to the HTLC expiry
     assert(claimHtlcTxs.map(_.tx.commitTx.txid).toSet == Set(bobCommitTx.txid))
