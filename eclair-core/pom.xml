@@ -104,6 +104,19 @@
             </properties>
         </profile>
         <profile>
+            <id>MacArm</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                    <arch>aarch64</arch>
+                </os>
+            </activation>
+            <properties>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-28.1/bitcoin-28.1-arm64-apple-darwin.tar.gz</bitcoind.url>
+                <bitcoind.sha256>abf4d2f7ebda6284e2246bce3591bcf161c114e370c0443ccc049b2728dc7e20</bitcoind.sha256>
+            </properties>
+        </profile>
+        <profile>
             <id>Windows</id>
             <activation>
                 <os>
