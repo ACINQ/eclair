@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxHash, TxId, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.balance.CheckBalance
-import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, GlobalBalance, MainAndHtlcBalance, PossiblyPublishedMainAndHtlcBalance, PossiblyPublishedMainBalance}
+import fr.acinq.eclair.balance.CheckBalance.{GlobalBalance, MainAndHtlcBalance}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -349,27 +349,24 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   test("GlobalBalance serializer") {
     val gb = GlobalBalance(
       onChain = CheckBalance.DetailedOnChainBalance(
-        confirmed = Map(OutPoint(TxId.fromValidHex("9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3) -> Btc(1.4)),
+        deeplyConfirmed = Map(OutPoint(TxId.fromValidHex("9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3) -> Btc(1.4)),
+        recentlyConfirmed = Map(OutPoint(TxId.fromValidHex("4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2"), 5) -> Btc(0.7)),
         unconfirmed = Map(OutPoint(TxId.fromValidHex("345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 1) -> Btc(0.05)),
         utxos = Seq.empty
       ),
-      offChain = CheckBalance.OffChainBalance(normal = MainAndHtlcBalance(
-        toLocal = Btc(0.2),
-        htlcs = Btc(0.05)
-      ), closing = ClosingBalance(
-        localCloseBalance = PossiblyPublishedMainAndHtlcBalance(
-          toLocal = Map(OutPoint(TxId.fromValidHex("4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2"), 0) -> Btc(0.1)),
-          htlcs = Map(OutPoint(TxId.fromValidHex("94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71"), 1) -> Btc(0.03), OutPoint(TxId.fromValidHex("a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13"), 3) -> Btc(0.06)),
-          htlcsUnpublished = Btc(0.01)),
-        mutualCloseBalance = PossiblyPublishedMainBalance(
-          toLocal = Map(OutPoint(TxId.fromValidHex("7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247"), 4) -> Btc(0.1)))
-      )
+      offChain = CheckBalance.OffChainBalance(
+        normal = MainAndHtlcBalance(
+          toLocal = Btc(0.2),
+          htlcs = Btc(0.05)
+        ),
+        closing = MainAndHtlcBalance(
+          toLocal = Btc(0.3),
+          htlcs = Btc(0.07)
+        )
       ),
       channels = Map.empty, // not used by json serializer
-      knownPreimages = Set.empty, // not used by json serializer
-
     )
-    JsonSerializers.serialization.write(gb)(JsonSerializers.formats) shouldBe """{"total":2.0,"onChain":{"total":1.45,"confirmed":{"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692:3":1.4},"unconfirmed":{"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f:1":0.05}},"offChain":{"waitForFundingConfirmed":0.0,"waitForChannelReady":0.0,"normal":{"toLocal":0.2,"htlcs":0.05},"shutdown":{"toLocal":0.0,"htlcs":0.0},"negotiating":0.0,"closing":{"localCloseBalance":{"toLocal":{"4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2:0":0.1},"htlcs":{"94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71:1":0.03,"a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13:3":0.06},"htlcsUnpublished":0.01},"remoteCloseBalance":{"toLocal":{},"htlcs":{},"htlcsUnpublished":0.0},"mutualCloseBalance":{"toLocal":{"7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247:4":0.1}},"unknownCloseBalance":{"toLocal":0.0,"htlcs":0.0}},"waitForPublishFutureCommitment":0.0}}"""
+    JsonSerializers.serialization.write(gb)(JsonSerializers.formats) shouldBe """{"total":2.77,"onChain":{"total":2.15,"deeplyConfirmed":{"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692:3":1.4},"recentlyConfirmed":{"4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2:5":0.7},"unconfirmed":{"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f:1":0.05}},"offChain":{"waitForFundingConfirmed":0.0,"waitForChannelReady":0.0,"normal":{"toLocal":0.2,"htlcs":0.05},"shutdown":{"toLocal":0.0,"htlcs":0.0},"negotiating":{"toLocal":0.0,"htlcs":0.0},"closing":{"toLocal":0.3,"htlcs":0.07},"waitForPublishFutureCommitment":0.0}}"""
   }
 
   test("type hints") {
