@@ -180,25 +180,21 @@ case class ReplaceableHtlcTimeout(txInfo: HtlcTimeoutTx, commitKeys: LocalCommit
 sealed trait ReplaceableClaimHtlc extends ReplaceableTx {
   def sign(): ReplaceableClaimHtlc
 
-  def updateOutputAmount(amount: Satoshi): ReplaceableClaimHtlc = {
-    val updatedTx = txInfo.tx.copy(txOut = Seq(txInfo.tx.txOut.head.copy(amount = amount)))
-    updateTx(updatedTx)
-  }
-
-  private def updateTx(tx: Transaction): ReplaceableClaimHtlc = this match {
-    case claimHtlcTx: ReplaceableClaimHtlcSuccess => claimHtlcTx.copy(txInfo = claimHtlcTx.txInfo.copy(tx = tx))
-    case claimHtlcTx: ReplaceableClaimHtlcTimeout => claimHtlcTx.copy(txInfo = claimHtlcTx.txInfo.copy(tx = tx))
-  }
+  def updateFee(fee: Satoshi): ReplaceableClaimHtlc
 }
 
 case class ReplaceableClaimHtlcSuccess(txInfo: ClaimHtlcSuccessTx, commitKeys: RemoteCommitmentKeys, preimage: ByteVector32, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableClaimHtlc {
   override def sign(): ReplaceableClaimHtlcSuccess = {
-    copy(txInfo = txInfo.sign(commitKeys, preimage, commitment.params.commitmentFormat))
+    copy(txInfo = txInfo.sign(commitKeys, commitment.params.commitmentFormat))
   }
+
+  override def updateFee(fee: Satoshi): ReplaceableClaimHtlcSuccess = copy(txInfo = txInfo.updateFee(fee))
 }
 
 case class ReplaceableClaimHtlcTimeout(txInfo: ClaimHtlcTimeoutTx, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableClaimHtlc {
   override def sign(): ReplaceableClaimHtlcTimeout = {
     copy(txInfo = txInfo.sign(commitKeys, commitment.params.commitmentFormat))
   }
+
+  override def updateFee(fee: Satoshi): ReplaceableClaimHtlcTimeout = copy(txInfo = txInfo.updateFee(fee))
 }
