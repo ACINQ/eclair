@@ -124,18 +124,15 @@ object ReplaceableTxFunder {
    * If the resulting output is too small, we skip the transaction.
    */
   private def adjustClaimHtlcTxOutput(claimHtlcTx: ReplaceableClaimHtlc, targetFeerate: FeeratePerKw): Either[TxGenerationSkipped, ReplaceableClaimHtlc] = {
-    require(claimHtlcTx.txInfo.tx.txIn.size == 1, "claim-htlc transaction should have a single input")
-    require(claimHtlcTx.txInfo.tx.txOut.size == 1, "claim-htlc transaction should have a single output")
     val expectedWeight = claimHtlcTx match {
       case _: ReplaceableClaimHtlcSuccess => claimHtlcTx.commitmentFormat.claimHtlcSuccessWeight
       case _: ReplaceableClaimHtlcTimeout => claimHtlcTx.commitmentFormat.claimHtlcTimeoutWeight
     }
     val targetFee = weight2fee(targetFeerate, expectedWeight)
-    val outputAmount = claimHtlcTx.txInfo.amountIn - targetFee
-    if (outputAmount < claimHtlcTx.dustLimit) {
+    if (claimHtlcTx.txInfo.amountIn < claimHtlcTx.dustLimit + targetFee) {
       Left(AmountBelowDustLimit)
     } else {
-      Right(claimHtlcTx.updateOutputAmount(outputAmount))
+      Right(claimHtlcTx.updateFee(targetFee))
     }
   }
 
@@ -196,11 +193,10 @@ object ReplaceableTxFunder {
           }
         }
       case claimHtlcTx: ReplaceableClaimHtlc =>
-        val updatedAmount = previousTx.totalAmountIn - targetFee
-        if (updatedAmount < claimHtlcTx.dustLimit) {
+        if (previousTx.totalAmountIn < claimHtlcTx.dustLimit + targetFee) {
           AdjustPreviousTxOutputResult.Skip("fee higher than htlc amount")
         } else {
-          AdjustPreviousTxOutputResult.TxOutputAdjusted(claimHtlcTx.updateOutputAmount(updatedAmount))
+          AdjustPreviousTxOutputResult.TxOutputAdjusted(claimHtlcTx.updateFee(targetFee))
         }
     }
   }

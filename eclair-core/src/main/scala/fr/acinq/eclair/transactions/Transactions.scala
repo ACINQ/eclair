@@ -625,25 +625,33 @@ object Transactions {
     def htlcId: Long
     def paymentHash: ByteVector32
     def htlcExpiry: CltvExpiry
+    /** Update the on-chain fee paid by this transaction, by lowering its output amount. */
+    def updateFee(fee: Satoshi): ClaimHtlcTx
     // @formatter:on
   }
 
   /** This transaction spends an HTLC we received by revealing the payment preimage, from the remote commitment. */
-  case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, htlcExpiry: CltvExpiry) extends ClaimHtlcTx {
+  case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, preimage: ByteVector32, htlcId: Long, htlcExpiry: CltvExpiry) extends ClaimHtlcTx {
     override val desc: String = "claim-htlc-success"
+    override val paymentHash: ByteVector32 = Crypto.sha256(preimage)
 
-    def sign(commitKeys: RemoteCommitmentKeys, paymentPreimage: ByteVector32, commitmentFormat: CommitmentFormat): ClaimHtlcSuccessTx = {
+    override def updateFee(fee: Satoshi): ClaimHtlcSuccessTx = {
+      val output = tx.txOut.head.copy(amount = amountIn - fee)
+      copy(tx = tx.copy(txOut = Seq(output)))
+    }
+
+    def sign(commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): ClaimHtlcSuccessTx = {
       // Note that in/out HTLCs are inverted in the remote commitment: from their point of view it's an offered (outgoing) HTLC.
       val witness = commitmentFormat match {
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
           val redeemScript = Script.write(htlcOffered(commitKeys.publicKeys, paymentHash, commitmentFormat))
           val sig = sign(commitKeys.ourHtlcKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
-          witnessClaimHtlcSuccessFromCommitTx(sig, paymentPreimage, redeemScript)
+          witnessClaimHtlcSuccessFromCommitTx(sig, preimage, redeemScript)
         case _: SimpleTaprootChannelCommitmentFormat =>
           val offeredTree = Taproot.offeredHtlcScriptTree(commitKeys.publicKeys, paymentHash)
           val redeemInfo = RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, offeredTree.scriptTree, offeredTree.success.hash())
           val sig = sign(commitKeys.ourHtlcKey, sighash(TxOwner.Local, commitmentFormat), redeemInfo, extraUtxos = Map.empty)
-          offeredTree.witnessSuccess(commitKeys, sig, paymentPreimage)
+          offeredTree.witnessSuccess(commitKeys, sig, preimage)
       }
       copy(tx = tx.updateWitness(inputIndex, witness))
     }
@@ -680,8 +688,8 @@ object Transactions {
             txOut = TxOut(amount, localFinalScriptPubKey) :: Nil,
             lockTime = 0
           )
-          val unsignedTx = ClaimHtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id, htlc.cltvExpiry)
-          skipTxIfBelowDust(unsignedTx, dustLimit, () => unsignedTx.sign(commitKeys, preimage, commitmentFormat))
+          val unsignedTx = ClaimHtlcSuccessTx(input, tx, preimage, htlc.id, htlc.cltvExpiry)
+          skipTxIfBelowDust(unsignedTx, dustLimit, () => unsignedTx.sign(commitKeys, commitmentFormat))
         case None => Left(OutputNotFound)
       }
     }
@@ -690,6 +698,11 @@ object Transactions {
   /** This transaction spends an HTLC we sent after its expiry, from the remote commitment. */
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, htlcExpiry: CltvExpiry) extends ClaimHtlcTx {
     override val desc: String = "claim-htlc-timeout"
+
+    override def updateFee(fee: Satoshi): ClaimHtlcTimeoutTx = {
+      val output = tx.txOut.head.copy(amount = amountIn - fee)
+      copy(tx = tx.copy(txOut = Seq(output)))
+    }
 
     def sign(commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): ClaimHtlcTimeoutTx = {
       // Note that in/out HTLCs are inverted in the remote commitment: from their point of view it's a received (incoming) HTLC.
