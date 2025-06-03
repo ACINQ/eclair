@@ -2670,12 +2670,16 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // Alice must retransmit update_add_htlc and commit_sigs first.
     alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
-    alice2bob.expectMsgType[CommitSigBatch]
-    alice2bob.forward(bob)
+    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>
+      assert(batch.batchSize == 2)
+      alice2bob.forward(bob)
+    }
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
-    bob2alice.expectMsgType[CommitSigBatch]
-    bob2alice.forward(alice)
+    inside(bob2alice.expectMsgType[CommitSigBatch]) { batch =>
+      assert(batch.batchSize == 2)
+      bob2alice.forward(alice)
+    }
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
     alice2bob.expectNoMessage(100 millis)
@@ -2802,8 +2806,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // Bob must retransmit his commit_sigs first.
     alice2bob.expectNoMessage(100 millis)
-    bob2alice.expectMsgType[CommitSigBatch]
-    bob2alice.forward(alice)
+    inside(bob2alice.expectMsgType[CommitSigBatch] ) { batch =>
+      assert(batch.batchSize == 2)
+      bob2alice.forward(alice)
+    }
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
     alice2bob.expectNoMessage(100 millis)
