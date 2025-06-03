@@ -10,14 +10,15 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose}
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
-import fr.acinq.eclair.channel.{CLOSING, CMD_SIGN, DATA_CLOSING, DATA_NORMAL, Upstream}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.using
+import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.protocol.{CommitSig, Error, RevokeAndAck, TlvStream, UpdateAddHtlc, UpdateAddHtlcTlv}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampMilli, ToMilliSatoshiConversion, randomBytes32}
-import org.scalatest.{Outcome, Tag}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, Tag}
 import org.sqlite.SQLiteConfig
 
 import java.io.File
@@ -168,13 +169,13 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
 
     // We add 4 htlcs Alice -> Bob (one of them below dust) and 2 htlcs Bob -> Alice
-    val (_, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
-    val (ra2, htlca2) = addHtlc(100000000 msat, alice, bob, alice2bob, bob2alice)
-    val (_, htlca3) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(250_000_000 msat, alice, bob, alice2bob, bob2alice)
+    val (ra2, htlca2) = addHtlc(100_000_000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(10_000 msat, alice, bob, alice2bob, bob2alice)
     // for this one we set a non-local upstream to simulate a relayed payment
-    val (_, htlca4) = addHtlc(30000000 msat, CltvExpiryDelta(144), alice, bob, alice2bob, bob2alice, upstream = Upstream.Hot.Trampoline(Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 42, 30003000 msat, randomBytes32(), CltvExpiry(144), TestConstants.emptyOnionPacket, TlvStream.empty[UpdateAddHtlcTlv]), TimestampMilli(1687345927000L), TestConstants.Alice.nodeParams.nodeId) :: Nil), replyTo = TestProbe().ref)
-    val (rb1, htlcb1) = addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob)
-    val (_, _) = addHtlc(55000000 msat, bob, alice, bob2alice, alice2bob)
+    val (_, htlca4) = addHtlc(30_000_000 msat, CltvExpiryDelta(144), alice, bob, alice2bob, bob2alice, upstream = Upstream.Hot.Trampoline(Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 42, 30_003_000 msat, randomBytes32(), CltvExpiry(144), TestConstants.emptyOnionPacket, TlvStream.empty[UpdateAddHtlcTlv]), TimestampMilli(1687345927000L), TestConstants.Alice.nodeParams.nodeId) :: Nil), replyTo = TestProbe().ref)
+    val (rb1, htlcb1) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
+    addHtlc(55_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(alice, bob, alice2bob, bob2alice)
     // And fulfill one htlc in each direction without signing a new commit tx
     fulfillHtlc(htlca2.id, ra2, bob, alice, bob2alice, alice2bob)
@@ -183,7 +184,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.last.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
+    alice2blockchain.expectFinalTxPublished(aliceCommitTx.txid)
     assert(aliceCommitTx.txOut.size == 7) // two main outputs and 5 pending htlcs (one is dust)
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
@@ -197,34 +198,29 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
         htlcsUnpublished = htlca4.amountMsat.truncateToSatoshi + htlcb1.amountMsat.truncateToSatoshi
       ))
 
-    alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
-    val htlcTx1 = alice2blockchain.expectMsgType[PublishFinalTx]
-    val htlcTx2 = alice2blockchain.expectMsgType[PublishFinalTx]
-    val htlcTx3 = alice2blockchain.expectMsgType[PublishFinalTx]
-    val htlcTx4 = alice2blockchain.expectMsgType[PublishFinalTx]
-    alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
-    alice2blockchain.expectMsgType[WatchTxConfirmed] // main-delayed
-    alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 1
-    alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 2
-    alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 3
-    alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 4
-    alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 5
+    val mainTx = alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    val htlcTx1 = alice2blockchain.expectFinalTxPublished("htlc-timeout")
+    val htlcTx2 = alice2blockchain.expectFinalTxPublished("htlc-success")
+    val htlcTx3 = alice2blockchain.expectFinalTxPublished("htlc-timeout")
+    val htlcTx4 = alice2blockchain.expectFinalTxPublished("htlc-timeout")
+    alice2blockchain.expectWatchTxConfirmed(aliceCommitTx.txid)
+    alice2blockchain.expectWatchOutputsSpent(mainTx.input +: localCommitPublished.htlcTxs.keys.toSeq)
 
-    // 3rd-stage txs are published when htlc-timeout txs confirm
-    val claimHtlcDelayedTxs = Seq(htlcTx1, htlcTx2, htlcTx3, htlcTx4).map { htlcTimeoutTx =>
-      alice ! WatchOutputSpentTriggered(htlcTimeoutTx.amount, htlcTimeoutTx.tx)
-      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == htlcTimeoutTx.tx.txid)
-      alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTimeoutTx.tx)
-      val claimHtlcDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx]
-      assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == claimHtlcDelayedTx.tx.txid)
-      claimHtlcDelayedTx
+    // 3rd-stage txs are published when htlc transactions confirm
+    val htlcDelayedTxs = Seq(htlcTx1, htlcTx2, htlcTx3, htlcTx4).map { htlcTx =>
+      alice ! WatchOutputSpentTriggered(htlcTx.amount, htlcTx.tx)
+      alice2blockchain.expectWatchTxConfirmed(htlcTx.tx.txid)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTx.tx)
+      val htlcDelayedTx = alice2blockchain.expectFinalTxPublished("htlc-delayed")
+      alice2blockchain.expectWatchOutputSpent(htlcDelayedTx.input)
+      htlcDelayedTx
     }
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 4)
 
     assert(CheckBalance.computeLocalCloseBalance(commitments.changes, LocalClose(commitments.active.last.localCommit, alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get), commitments.originChannels, knownPreimages) ==
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(OutPoint(localCommitPublished.claimMainDelayedOutputTx.get.tx.txid, 0) -> localCommitPublished.claimMainDelayedOutputTx.get.tx.txOut.head.amount),
-        htlcs = claimHtlcDelayedTxs.map(claimTx => OutPoint(claimTx.tx.txid, 0) -> claimTx.tx.txOut.head.amount.toBtc).toMap,
+        htlcs = htlcDelayedTxs.map(claimTx => OutPoint(claimTx.tx.txid, 0) -> claimTx.tx.txOut.head.amount.toBtc).toMap,
         htlcsUnpublished = 0.sat
       ))
   }
