@@ -69,29 +69,28 @@ object CheckBalance {
     def addLocalClose(lcp: LocalCommitPublished): MainAndHtlcBalance = {
       // If our main transaction isn't deeply confirmed yet, we count it in our off-chain balance.
       // Once it confirms, it will be included in our on-chain balance, so we ignore it in our off-chain balance.
-      val additionalToLocal = lcp.claimMainDelayedOutputTx.map(_.input.outPoint) match {
+      val additionalToLocal = lcp.localOutput_opt match {
         case Some(outpoint) if !lcp.irrevocablySpent.contains(outpoint) => lcp.commitTx.txOut(outpoint.index.toInt).amount
         case _ => 0 sat
       }
-      val additionalHtlcs = lcp.htlcTxs.map {
-        case (outpoint, htlcTx_opt) =>
+      val additionalHtlcs = lcp.htlcs.map {
+        case (outpoint, directedHtlcId) =>
           val htlcAmount = lcp.commitTx.txOut(outpoint.index.toInt).amount
           lcp.irrevocablySpent.get(outpoint) match {
             case Some(spendingTx) =>
               // If the HTLC was spent by us, there will be an entry in our 3rd-stage transactions.
               // Otherwise it was spent by the remote and we don't have anything to add to our balance.
               val delayedHtlcOutpoint = OutPoint(spendingTx.txid, 0)
-              val htlcSpentByUs = lcp.claimHtlcDelayedTxs.map(_.input.outPoint).contains(delayedHtlcOutpoint)
+              val htlcSpentByUs = lcp.htlcDelayedOutputs.contains(delayedHtlcOutpoint)
               // If our 3rd-stage transaction isn't confirmed yet, we should count it in our off-chain balance.
               // Once confirmed, we should ignore it since it will appear in our on-chain balance.
               val htlcDelayedPending = !lcp.irrevocablySpent.contains(delayedHtlcOutpoint)
               if (htlcSpentByUs && htlcDelayedPending) htlcAmount else 0 sat
             case None =>
               // We assume that HTLCs will be fulfilled, so we only count incoming HTLCs in our off-chain balance.
-              htlcTx_opt match {
-                case Some(_: HtlcSuccessTx) => htlcAmount
-                case Some(_: HtlcTimeoutTx) => 0 sat
-                case None => htlcAmount // incoming HTLC for which we don't have the preimage yet
+              directedHtlcId match {
+                case _: IncomingHtlcId => htlcAmount
+                case _: OutgoingHtlcId => 0 sat
               }
           }
       }.sum
@@ -102,16 +101,15 @@ object CheckBalance {
     def addRemoteClose(rcp: RemoteCommitPublished): MainAndHtlcBalance = {
       // If our main transaction isn't deeply confirmed yet, we count it in our off-chain balance.
       // Once it confirms, it will be included in our on-chain balance, so we ignore it in our off-chain balance.
-      val additionalToLocal = rcp.claimMainOutputTx.map(_.input.outPoint) match {
+      val additionalToLocal = rcp.localOutput_opt match {
         case Some(outpoint) if !rcp.irrevocablySpent.contains(outpoint) => rcp.commitTx.txOut(outpoint.index.toInt).amount
         case _ => 0 sat
       }
       // If HTLC transactions are confirmed, they will appear in our on-chain balance if we were the one to claim them.
       // We only need to include incoming HTLCs that haven't been claimed yet (since we assume that they will be fulfilled).
       // Note that it is their commitment, so incoming/outgoing are inverted.
-      val additionalHtlcs = rcp.claimHtlcTxs.map {
-        case (outpoint, Some(_: ClaimHtlcSuccessTx)) if !rcp.irrevocablySpent.contains(outpoint) => rcp.commitTx.txOut(outpoint.index.toInt).amount
-        case (outpoint, None) if !rcp.irrevocablySpent.contains(outpoint) => rcp.commitTx.txOut(outpoint.index.toInt).amount // incoming HTLC for which we don't have the preimage yet
+      val additionalHtlcs = rcp.htlcs.map {
+        case (outpoint, OutgoingHtlcId(_)) if !rcp.irrevocablySpent.contains(outpoint) => rcp.commitTx.txOut(outpoint.index.toInt).amount
         case _ => 0 sat
       }.sum
       MainAndHtlcBalance(toLocal = toLocal + additionalToLocal, htlcs = htlcs + additionalHtlcs)
@@ -122,15 +120,15 @@ object CheckBalance {
       // If our main transaction isn't deeply confirmed yet, we count it in our off-chain balance.
       // Once it confirms, it will be included in our on-chain balance, so we ignore it in our off-chain balance.
       // We do the same thing for our main penalty transaction claiming their main output.
-      val additionalToLocal = rvk.claimMainOutputTx.map(_.input.outPoint) match {
+      val additionalToLocal = rvk.localOutput_opt match {
         case Some(outpoint) if !rvk.irrevocablySpent.contains(outpoint) => rvk.commitTx.txOut(outpoint.index.toInt).amount
         case _ => 0 sat
       }
-      val additionalToRemote = rvk.mainPenaltyTx.map(_.input.outPoint) match {
+      val additionalToRemote = rvk.remoteOutput_opt match {
         case Some(outpoint) if !rvk.irrevocablySpent.contains(outpoint) => rvk.commitTx.txOut(outpoint.index.toInt).amount
         case _ => 0 sat
       }
-      val additionalHtlcs = rvk.htlcPenaltyTxs.map(_.input.outPoint).map(htlcOutpoint => {
+      val additionalHtlcs = rvk.htlcOutputs.map(htlcOutpoint => {
         val htlcAmount = rvk.commitTx.txOut(htlcOutpoint.index.toInt).amount
         rvk.irrevocablySpent.get(htlcOutpoint) match {
           case Some(spendingTx) =>
@@ -139,7 +137,7 @@ object CheckBalance {
               case Some(outputIndex) =>
                 // If they managed to get their HTLC transaction confirmed, we published an HTLC-delayed penalty transaction.
                 val delayedHtlcOutpoint = OutPoint(spendingTx.txid, outputIndex)
-                val htlcSpentByThem = rvk.claimHtlcDelayedPenaltyTxs.map(_.input.outPoint).contains(delayedHtlcOutpoint)
+                val htlcSpentByThem = rvk.htlcDelayedOutputs.contains(delayedHtlcOutpoint)
                 // If our 3rd-stage transaction isn't confirmed yet, we should count it in our off-chain balance.
                 // Once confirmed, we should ignore it since it will appear in our on-chain balance.
                 val htlcDelayedPending = !rvk.irrevocablySpent.contains(delayedHtlcOutpoint)
@@ -194,7 +192,7 @@ object CheckBalance {
           // In the recovery case, we can only claim our main output, HTLC outputs are lost.
           // Once our main transaction confirms, the channel will transition to the CLOSED state and our channel funds
           // will appear in our on-chain balance (minus on-chain fees).
-          case Some(c: RecoveryClose) => c.remoteCommitPublished.claimMainOutputTx.map(_.input.outPoint) match {
+          case Some(c: RecoveryClose) => c.remoteCommitPublished.localOutput_opt match {
             case Some(localOutput) =>
               val localBalance = c.remoteCommitPublished.commitTx.txOut(localOutput.index.toInt).amount
               this.copy(closing = this.closing.copy(toLocal = this.closing.toLocal + localBalance))

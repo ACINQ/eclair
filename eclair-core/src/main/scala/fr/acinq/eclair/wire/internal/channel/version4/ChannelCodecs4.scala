@@ -12,6 +12,7 @@ import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningS
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
+import fr.acinq.eclair.wire.internal.channel.version2.ChannelTypes2
 import fr.acinq.eclair.wire.internal.channel.version3.ChannelTypes3
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
@@ -609,44 +610,71 @@ private[channel] object ChannelCodecs4 {
       ("unsignedTx" | closingTxCodec) ::
         ("localClosingSigned" | lengthDelimited(closingSignedCodec))).as[ClosingTxProposed]
 
-    private val legacyLocalCommitPublishedCodec: Codec[LocalCommitPublished] = (
+    private val directedHtlcIdCodec: Codec[DirectedHtlcId] = discriminated[DirectedHtlcId].by(uint8)
+      .typecase(0x01, uint64overflow.as[IncomingHtlcId])
+      .typecase(0x02, uint64overflow.as[OutgoingHtlcId])
+
+    private val localCommitPublishedCodec_07: Codec[LocalCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainDelayedOutputTx" | optional(bool8, claimLocalDelayedOutputTxNoToSelfDelayCodec)) ::
         ("htlcTxs" | mapCodec(outPointCodec, optional(bool8, htlcTxCodec))) ::
         ("claimHtlcDelayedTx" | listOfN(uint16, htlcDelayedTxNoToSelfDelayCodec)) ::
         ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ::
-        ("spent" | spentMapCodec)).as[LocalCommitPublished]
+        ("spent" | spentMapCodec)).as[ChannelTypes2.LocalCommitPublished].decodeOnly.map[LocalCommitPublished](_.migrate()).decodeOnly
 
-    val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
+    private val localCommitPublishedCodec_1a: Codec[LocalCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainDelayedOutputTx" | optional(bool8, claimLocalDelayedOutputTxCodec)) ::
         ("htlcTxs" | mapCodec(outPointCodec, optional(bool8, htlcTxCodec))) ::
         ("claimHtlcDelayedTx" | listOfN(uint16, htlcDelayedTxCodec)) ::
         ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ::
-        ("spent" | spentMapCodec)).as[LocalCommitPublished]
+        ("spent" | spentMapCodec)).as[ChannelTypes2.LocalCommitPublished].decodeOnly.map[LocalCommitPublished](_.migrate()).decodeOnly
 
-    val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
+    val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
+      ("commitTx" | txCodec) ::
+        ("localOutput_opt" | optional(bool8, outPointCodec)) ::
+        ("anchorOutput_opt" | optional(bool8, outPointCodec)) ::
+        ("htlcOutputs" | mapCodec(outPointCodec, directedHtlcIdCodec)) ::
+        ("htlcDelayedOutputs" | setCodec(outPointCodec)) ::
+        ("irrevocablySpent" | spentMapCodec)).as[LocalCommitPublished]
+
+    private val remoteCommitPublishedCodec_07: Codec[RemoteCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainOutputTx" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ::
         ("claimHtlcTxs" | mapCodec(outPointCodec, optional(bool8, claimHtlcTxCodec))) ::
         ("claimAnchorTxs" | listOfN(uint16, claimAnchorOutputTxCodec)) ::
-        ("spent" | spentMapCodec)).as[RemoteCommitPublished]
+        ("spent" | spentMapCodec)).as[ChannelTypes2.RemoteCommitPublished].decodeOnly.map[RemoteCommitPublished](_.migrate()).decodeOnly
 
-    private val legacyRevokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
+    val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
+      ("commitTx" | txCodec) ::
+        ("localOutput_opt" | optional(bool8, outPointCodec)) ::
+        ("anchorOutput_opt" | optional(bool8, outPointCodec)) ::
+        ("htlcOutputs" | mapCodec(outPointCodec, directedHtlcIdCodec)) ::
+        ("irrevocablySpent" | spentMapCodec)).as[RemoteCommitPublished]
+
+    private val revokedCommitPublishedCodec_07: Codec[RevokedCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainOutputTx" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ::
         ("mainPenaltyTx" | optional(bool8, mainPenaltyTxNoToSelfDelayCodec)) ::
         ("htlcPenaltyTxs" | listOfN(uint16, htlcPenaltyTxNoPaymentHashCodec)) ::
         ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, claimHtlcDelayedOutputPenaltyTxNoToSelfDelayCodec)) ::
-        ("spent" | spentMapCodec)).as[RevokedCommitPublished]
+        ("spent" | spentMapCodec)).as[ChannelTypes2.RevokedCommitPublished].decodeOnly.map[RevokedCommitPublished](_.migrate()).decodeOnly
 
-    val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
+    private val revokedCommitPublishedCodec_1a: Codec[RevokedCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainOutputTx" | optional(bool8, claimRemoteCommitMainOutputTxCodec)) ::
         ("mainPenaltyTx" | optional(bool8, mainPenaltyTxCodec)) ::
         ("htlcPenaltyTxs" | listOfN(uint16, htlcPenaltyTxCodec)) ::
         ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, claimHtlcDelayedOutputPenaltyTxCodec)) ::
-        ("spent" | spentMapCodec)).as[RevokedCommitPublished]
+        ("spent" | spentMapCodec)).as[ChannelTypes2.RevokedCommitPublished].decodeOnly.map[RevokedCommitPublished](_.migrate()).decodeOnly
+
+    val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
+      ("commitTx" | txCodec) ::
+        ("localOutput_opt" | optional(bool8, outPointCodec)) ::
+        ("remoteOutput_opt" | optional(bool8, outPointCodec)) ::
+        ("htlcOutputs" | setCodec(outPointCodec)) ::
+        ("htlcDelayedOutputs" | setCodec(outPointCodec)) ::
+        ("irrevocablySpent" | spentMapCodec)).as[RevokedCommitPublished]
 
     // We don't bother removing the duplication across HTLCs: this is a short-lived state during which the channel
     // cannot be used for payments.
@@ -856,11 +884,11 @@ private[channel] object ChannelCodecs4 {
         ("finalScriptPubKey" | lengthDelimited(bytes)) ::
         ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
         ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
-        ("localCommitPublished" | optional(bool8, legacyLocalCommitPublishedCodec)) ::
-        ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
-        ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
-        ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
-        ("revokedCommitPublished" | listOfN(uint16, legacyRevokedCommitPublishedCodec))).as[DATA_CLOSING].map(closing => ChannelTypes3.fillForceCloseTxData(closing)).decodeOnly
+        ("localCommitPublished" | optional(bool8, localCommitPublishedCodec_07)) ::
+        ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec_07)) ::
+        ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec_07)) ::
+        ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec_07)) ::
+        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec_07))).as[DATA_CLOSING]
 
     val DATA_CLOSING_11_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | versionedCommitmentsCodec) ::
@@ -868,13 +896,25 @@ private[channel] object ChannelCodecs4 {
         ("finalScriptPubKey" | lengthDelimited(bytes)) ::
         ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
         ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
-        ("localCommitPublished" | optional(bool8, legacyLocalCommitPublishedCodec)) ::
-        ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
-        ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
-        ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
-        ("revokedCommitPublished" | listOfN(uint16, legacyRevokedCommitPublishedCodec))).as[DATA_CLOSING].map(closing => ChannelTypes3.fillForceCloseTxData(closing)).decodeOnly
+        ("localCommitPublished" | optional(bool8, localCommitPublishedCodec_07)) ::
+        ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec_07)) ::
+        ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec_07)) ::
+        ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec_07)) ::
+        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec_07))).as[DATA_CLOSING]
 
     val DATA_CLOSING_1a_Codec: Codec[DATA_CLOSING] = (
+      ("commitments" | versionedCommitmentsCodec) ::
+        ("waitingSince" | blockHeight) ::
+        ("finalScriptPubKey" | lengthDelimited(bytes)) ::
+        ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
+        ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
+        ("localCommitPublished" | optional(bool8, localCommitPublishedCodec_1a)) ::
+        ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec_07)) ::
+        ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec_07)) ::
+        ("futureRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec_07)) ::
+        ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec_1a))).as[DATA_CLOSING]
+
+    val DATA_CLOSING_1b_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | versionedCommitmentsCodec) ::
         ("waitingSince" | blockHeight) ::
         ("finalScriptPubKey" | lengthDelimited(bytes)) ::
@@ -897,6 +937,7 @@ private[channel] object ChannelCodecs4 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x1b, Codecs.DATA_CLOSING_1b_Codec)
     .typecase(0x1a, Codecs.DATA_CLOSING_1a_Codec)
     .typecase(0x19, Codecs.DATA_SHUTDOWN_19_Codec)
     .typecase(0x18, Codecs.DATA_NORMAL_18_Codec)

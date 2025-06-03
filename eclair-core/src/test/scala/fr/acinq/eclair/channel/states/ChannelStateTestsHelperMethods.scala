@@ -573,7 +573,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val localCommitPublished = closingState.localCommitPublished.get
     // It may be strictly greater if we're waiting for preimages for some of our HTLC-success txs, or if we're ignoring
     // HTLCs that where failed downstream or not relayed.
-    assert(localCommitPublished.htlcTxs.size >= htlcSuccessCount + htlcTimeoutCount)
+    assert(localCommitPublished.htlcs.values.collect { case i: IncomingHtlcId => i }.size >= htlcSuccessCount)
+    assert(localCommitPublished.htlcs.values.collect { case i: OutgoingHtlcId => i }.size == htlcTimeoutCount)
 
     val publishedLocalCommitTx = s2blockchain.expectFinalTxPublished("commit-tx").tx
     assert(publishedLocalCommitTx.txid == commitTx.txid)
@@ -585,14 +586,14 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(s2blockchain.expectReplaceableTxPublished[ReplaceableLocalCommitAnchor].txInfo.tx)
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    val publishedMainTx_opt = localCommitPublished.claimMainDelayedOutputTx.map(_ => s2blockchain.expectFinalTxPublished("local-main-delayed").tx)
+    val publishedMainTx_opt = localCommitPublished.localOutput_opt.map(_ => s2blockchain.expectFinalTxPublished("local-main-delayed").tx)
     val (publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs) = closingState.commitments.params.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         // all htlcs success/timeout should be published as-is, we cannot RBF
         val publishedHtlcTxs = (0 until htlcSuccessCount + htlcTimeoutCount).map { _ =>
           val htlcTx = s2blockchain.expectMsgType[PublishFinalTx]
           assert(htlcTx.parentTx_opt.contains(commitTx.txid))
-          assert(localCommitPublished.htlcTxs.contains(htlcTx.input))
+          assert(localCommitPublished.htlcOutputs.contains(htlcTx.input))
           assert(htlcTx.desc == "htlc-success" || htlcTx.desc == "htlc-timeout")
           htlcTx
         }
@@ -604,7 +605,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
         val publishedHtlcTxs = (0 until htlcSuccessCount + htlcTimeoutCount).map { _ =>
           val htlcTx = s2blockchain.expectReplaceableTxPublished[ReplaceableHtlc]
           assert(htlcTx.commitTx == publishedLocalCommitTx)
-          assert(localCommitPublished.htlcTxs.contains(htlcTx.txInfo.input.outPoint))
+          assert(localCommitPublished.htlcOutputs.contains(htlcTx.txInfo.input.outPoint))
           htlcTx
         }
         // the publisher actors will sign those transactions before broadcasting them
@@ -616,15 +617,15 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(publishedHtlcTimeoutTxs.size == htlcTimeoutCount)
     (publishedHtlcSuccessTxs ++ publishedHtlcTimeoutTxs).foreach(htlcTx => Transaction.correctlySpends(htlcTx, publishedLocalCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     // we're not claiming the outputs of htlc txs yet
-    assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
+    assert(localCommitPublished.htlcDelayedOutputs.isEmpty)
 
     // we watch the confirmation of the commitment transaction
     s2blockchain.expectWatchTxConfirmed(commitTx.txid)
 
     // we watch outputs of the commitment tx that we want to claim
-    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectWatchOutputSpent(tx.input.outPoint))
-    localCommitPublished.claimAnchorTx_opt.foreach(tx => s2blockchain.expectWatchOutputSpent(tx.input.outPoint))
-    s2blockchain.expectWatchOutputsSpent(localCommitPublished.htlcTxs.keys.toSeq)
+    localCommitPublished.localOutput_opt.foreach(outpoint => s2blockchain.expectWatchOutputSpent(outpoint))
+    localCommitPublished.anchorOutput_opt.foreach(outpoint => s2blockchain.expectWatchOutputSpent(outpoint))
+    s2blockchain.expectWatchOutputsSpent(localCommitPublished.htlcOutputs.toSeq)
     s2blockchain.expectNoMessage(100 millis)
 
     // once our closing transactions are published, we watch for their confirmation
@@ -648,8 +649,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(closingData.localCommitPublished.isEmpty)
     val remoteCommitPublished = remoteCommitPublished_opt.get
     // It may be strictly greater if we're waiting for preimages for some of our HTLC-success txs, or if we're ignoring
-    // HTLCs that where failed downstream or not relayed.
-    assert(remoteCommitPublished.claimHtlcTxs.size >= htlcSuccessCount + htlcTimeoutCount)
+    // HTLCs that where failed downstream or not relayed. Note that since this is the remote commit, IN/OUT are inverted.
+    assert(remoteCommitPublished.htlcs.values.collect { case i: OutgoingHtlcId => i }.size >= htlcSuccessCount)
+    assert(remoteCommitPublished.htlcs.values.collect { case i: IncomingHtlcId => i }.size == htlcTimeoutCount)
 
     // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
     val publishedAnchorTx_opt = closingData.commitments.params.commitmentFormat match {
@@ -657,13 +659,13 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       case Transactions.DefaultCommitmentFormat => None
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    val publishedMainTx_opt = remoteCommitPublished.claimMainOutputTx.map(_ => s2blockchain.expectFinalTxPublished("remote-main-delayed").tx)
+    val publishedMainTx_opt = remoteCommitPublished.localOutput_opt.map(_ => s2blockchain.expectFinalTxPublished("remote-main-delayed").tx)
     publishedMainTx_opt.foreach(tx => Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     // all htlcs success/timeout should be claimed
     val publishedClaimHtlcTxs = (0 until htlcSuccessCount + htlcTimeoutCount).map { _ =>
       val claimHtlcTx = s2blockchain.expectMsgType[PublishReplaceableTx]
       assert(claimHtlcTx.tx.commitTx == rCommitTx)
-      assert(remoteCommitPublished.claimHtlcTxs.contains(claimHtlcTx.input))
+      assert(remoteCommitPublished.htlcOutputs.contains(claimHtlcTx.input))
       Transaction.correctlySpends(claimHtlcTx.tx.txInfo.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       claimHtlcTx
     }
@@ -676,9 +678,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     s2blockchain.expectWatchTxConfirmed(rCommitTx.txid)
 
     // we watch outputs of the commitment tx that we want to claim
-    remoteCommitPublished.claimMainOutputTx.foreach(tx => s2blockchain.expectWatchOutputSpent(tx.input.outPoint))
-    remoteCommitPublished.claimAnchorTx_opt.foreach(tx => s2blockchain.expectWatchOutputSpent(tx.input.outPoint))
-    s2blockchain.expectWatchOutputsSpent(remoteCommitPublished.claimHtlcTxs.keys.toSeq)
+    remoteCommitPublished.localOutput_opt.foreach(outpoint => s2blockchain.expectWatchOutputSpent(outpoint))
+    remoteCommitPublished.anchorOutput_opt.foreach(outpoint => s2blockchain.expectWatchOutputSpent(outpoint))
+    s2blockchain.expectWatchOutputsSpent(remoteCommitPublished.htlcOutputs.toSeq)
     s2blockchain.expectNoMessage(100 millis)
 
     // once our closing transactions are published, we watch for their confirmation
