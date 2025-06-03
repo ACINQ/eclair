@@ -206,11 +206,11 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectWatchTxConfirmed(aliceCommitTx.txid)
     alice2blockchain.expectWatchOutputsSpent(mainTx.input +: localCommitPublished.htlcTxs.keys.toSeq)
 
-    // 3rd-stage txs are published when htlc-timeout txs confirm
-    val htlcDelayedTxs = Seq(htlcTx1, htlcTx2, htlcTx3, htlcTx4).map { htlcTimeoutTx =>
-      alice ! WatchOutputSpentTriggered(htlcTimeoutTx.amount, htlcTimeoutTx.tx)
-      alice2blockchain.expectWatchTxConfirmed(htlcTimeoutTx.tx.txid)
-      alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTimeoutTx.tx)
+    // 3rd-stage txs are published when htlc transactions confirm
+    val htlcDelayedTxs = Seq(htlcTx1, htlcTx2, htlcTx3, htlcTx4).map { htlcTx =>
+      alice ! WatchOutputSpentTriggered(htlcTx.amount, htlcTx.tx)
+      alice2blockchain.expectWatchTxConfirmed(htlcTx.tx.txid)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTx.tx)
       val htlcDelayedTx = alice2blockchain.expectFinalTxPublished("htlc-delayed")
       alice2blockchain.expectWatchOutputSpent(htlcDelayedTx.input)
       htlcDelayedTx
