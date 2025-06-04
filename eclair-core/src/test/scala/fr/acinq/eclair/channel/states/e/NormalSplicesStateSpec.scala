@@ -1755,7 +1755,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectMsgType[TxAbort]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[TxAbort]
-    bob2alice.forward(bob)
+    alice2bob.forward(bob)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
   }
@@ -2643,6 +2643,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     //   |------ commit_sig ---->| funding_txid = FundingTx
     //   |------ commit_sig ---->| funding_txid = SpliceFundingTx
     //   |<--- revoke_and_ack ---|
+    //   |<----- start_batch ----| batch_size = 2
     //   |<----- commit_sig -----|
     //   |<----- commit_sig -----|
     //   |---- revoke_and_ack -->|
@@ -2664,7 +2665,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
-    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
 
     // Alice must retransmit update_add_htlc and commit_sigs first.
@@ -2709,8 +2710,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     //   |      <reconnect>      |
     //   | <channel_reestablish> | next_revocation_number = 0 (for both alice and bob)
     //   |<--- revoke_and_ack ---|
-    //   |<----- commit_sig -----| batch_size = 2, funding_txid = FundingTx
-    //   |<----- commit_sig -----| batch_size = 2, funding_txid = SpliceFundingTx
+    //   |<----- start_batch ----| batch_size = 2
+    //   |<----- commit_sig -----| funding_txid = FundingTx
+    //   |<----- commit_sig -----| funding_txid = SpliceFundingTx
     //   |---- revoke_and_ack -->|
 
     val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
@@ -2721,7 +2723,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! CMD_SIGN(None)
     alice2bob.expectMsgType[CommitSigBatch]
     alice2bob.forward(bob)
-
     bob2alice.expectMsgType[RevokeAndAck] // Alice doesn't receive Bob's revoke_and_ack
     inside(bob2alice.expectMsgType[CommitSigBatch]) { batch => // Alice doesn't receive Bob's commit_sig
       assert(batch.batchSize == 2)
