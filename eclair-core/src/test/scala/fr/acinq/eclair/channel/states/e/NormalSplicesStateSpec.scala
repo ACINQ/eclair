@@ -73,7 +73,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   private val defaultSpliceOutScriptPubKey = hex"0020aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-  private def initiateSpliceWithoutSigs(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut]): TestProbe = {
+  private def initiateSpliceWithoutSigs(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut], sendTxComplete: Boolean): TestProbe = {
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt, spliceOut_opt, None)
     s ! cmd
@@ -105,14 +105,16 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
     s2r.expectMsgType[TxAddOutput]
     s2r.forward(r)
-    r2s.expectMsgType[TxComplete]
-    r2s.forward(s)
-    s2r.expectMsgType[TxComplete]
-    s2r.forward(r)
+    if (sendTxComplete) {
+      r2s.expectMsgType[TxComplete]
+      r2s.forward(s)
+      s2r.expectMsgType[TxComplete]
+      s2r.forward(r)
+    }
     sender
   }
 
-  private def initiateSpliceWithoutSigs(f: FixtureParam, spliceIn_opt: Option[SpliceIn] = None, spliceOut_opt: Option[SpliceOut] = None): TestProbe = initiateSpliceWithoutSigs(f.alice, f.bob, f.alice2bob, f.bob2alice, spliceIn_opt, spliceOut_opt)
+  private def initiateSpliceWithoutSigs(f: FixtureParam, spliceIn_opt: Option[SpliceIn] = None, spliceOut_opt: Option[SpliceOut] = None, sendTxComplete: Boolean = true): TestProbe = initiateSpliceWithoutSigs(f.alice, f.bob, f.alice2bob, f.bob2alice, spliceIn_opt, spliceOut_opt, sendTxComplete)
 
   private def initiateRbfWithoutSigs(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, feerate: FeeratePerKw, sInputsCount: Int, sOutputsCount: Int, rInputsCount: Int, rOutputsCount: Int): TestProbe = {
     val sender = TestProbe()
@@ -213,7 +215,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   private def exchangeSpliceSigs(f: FixtureParam, sender: TestProbe): Transaction = exchangeSpliceSigs(f.alice, f.bob, f.alice2bob, f.bob2alice, sender)
 
   private def initiateSplice(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut]): Transaction = {
-    val sender = initiateSpliceWithoutSigs(s, r, s2r, r2s, spliceIn_opt, spliceOut_opt)
+    val sender = initiateSpliceWithoutSigs(s, r, s2r, r2s, spliceIn_opt, spliceOut_opt, sendTxComplete = true)
     exchangeSpliceSigs(s, r, s2r, r2s, sender)
   }
 
@@ -1724,6 +1726,40 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     (channelReestablishAlice, channelReestablishBob)
   }
 
+  test("disconnect (tx_complete not received)") { f =>
+    import f._
+    // Disconnection with one side sending commit_sig
+    // alice                    bob
+    //   |         ...           |
+    //   |    <interactive-tx>   |
+    //   |<----- tx_complete ----|
+    //   |------ tx_complete --X |
+    //   |------ commit_sig ---X |
+    //   |      <disconnect>     |
+    //   |      <reconnect>      |
+    //   | <channel_reestablish> |
+    //   |<------ tx_abort ------|
+    //   |------- tx_abort ----->|
+
+    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)), sendTxComplete = false)
+    bob2alice.expectMsgType[TxComplete]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxComplete] // Bob doesn't receive Alice's tx_complete
+    alice2bob.expectMsgType[CommitSig] // Bob doesn't receive Alice's commit_sig
+    sender.expectMsgType[RES_SPLICE] // TODO: we should exchange tx_signatures before returning RES_SPLICE, see issue #3093
+
+    disconnect(f)
+    reconnect(f)
+
+    // Bob and Alice will exchange tx_abort because Bob did not receive Alice's tx_complete before the disconnect.
+    bob2alice.expectMsgType[TxAbort]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAbort]
+    alice2bob.forward(bob)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+  }
+
   test("disconnect (commit_sig not sent)") { f =>
     import f._
 
@@ -1786,7 +1822,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(channelReestablishBob2.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
     assert(channelReestablishBob2.nextLocalCommitmentNumber == bobCommitIndex)
 
-    // Alice and Bob retransmit commit_sig and tx_signatures.
+    // Alice retransmits commit_sig and both retransmit tx_signatures.
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[TxSignatures]
@@ -1812,6 +1848,20 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   test("disconnect (commit_sig received by alice)") { f =>
     import f._
+    // Disconnection with both sides sending commit_sig
+    // alice                    bob
+    //   |         ...           |
+    //   |    <interactive-tx>   |
+    //   |<----- tx_complete ----|
+    //   |------ tx_complete --->|
+    //   |------ commit_sig ---X |
+    //   |<------ commit_sig ----|
+    //   |      <disconnect>     |
+    //   |      <reconnect>      |
+    //   | <channel_reestablish> |
+    //   |------ commit_sig ---->|
+    //   |<---- tx_signatures ---|
+    //   |----- tx_signatures -->|
 
     val htlcs = setupHtlcs(f)
     val aliceCommitIndex = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex
@@ -1954,6 +2004,20 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   test("disconnect (tx_signatures received by alice)") { f =>
     import f._
+    // Disconnection with both sides sending tx_signatures
+    // alice                    bob
+    //   |         ...           |
+    //   |    <interactive-tx>   |
+    //   |<----- tx_complete ----|
+    //   |------ tx_complete --->|
+    //   |------ commit_sig ---->|
+    //   |<------ commit_sig ----|
+    //   |<---- tx_signatures ---|
+    //   |----- tx_signatures --X|
+    //   |      <disconnect>     |
+    //   |      <reconnect>      |
+    //   | <channel_reestablish> |
+    //   |----- tx_signatures -->|
 
     val htlcs = setupHtlcs(f)
     val aliceCommitIndex = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex
@@ -2412,6 +2476,78 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
+  test("disconnect before channel update and tx_signatures are received") { f=>
+    import f._
+    // Disconnection with both sides sending tx_signatures and channel updates
+    // alice                    bob
+    //   |         ...           |
+    //   |    <interactive-tx>   |
+    //   |<----- tx_complete ----|
+    //   |------ tx_complete --->|
+    //   |------ commit_sig ---->|
+    //   |<------ commit_sig ----|
+    //   |<---- tx_signatures ---|
+    //   |----- tx_signatures --X|
+    //   |--- update_add_htlc --X|
+    //   |------ start_batch ---X| batch_size = 2
+    //   |------ commit_sig ----X| funding_txid = FundingTx
+    //   |------ commit_sig ----X| funding_txid = SpliceFundingTx
+    //   |      <disconnect>     |
+    //   |      <reconnect>      |
+    //   | <channel_reestablish> |
+    //   |----- tx_signatures -->|
+    //   |--- update_add_htlc -->|
+    //   |------ start_batch --->| batch_size = 2
+    //   |------ commit_sig ---->| funding_txid = FundingTx
+    //   |------ commit_sig ---->| funding_txid = SpliceFundingTx
+    //   |<--- revoke_and_ack ---|
+    //   |<----- commit_sig -----|
+    //   |<----- commit_sig -----|
+    //   |---- revoke_and_ack -->|
+
+    initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[TxSignatures]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxSignatures] // Bob doesn't receive Alice's tx_signatures
+
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    val (_, cmd) = makeCmdAdd(25_000_000 msat, bob.nodeParams.nodeId, bob.nodeParams.currentBlockHeight)
+    alice ! cmd.copy(commit = true)
+    alice2bob.expectMsgType[UpdateAddHtlc] // Bob doesn't receive Alice's update_add_htlc
+    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch => // Bob doesn't receive Alice's commit_sigs
+      assert(batch.batchSize == 2)
+    }
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+
+    // Bob will not receive Alice's tx_signatures, update_add_htlc or commit_sigs before disconnecting.
+    disconnect(f)
+    reconnect(f)
+
+    // Alice must retransmit her tx_signatures, update_add_htlc and commit_sigs first.
+    alice2bob.expectMsgType[TxSignatures]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[UpdateAddHtlc]
+    alice2bob.forward(bob)
+    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>
+      assert(batch.batchSize == 2)
+      alice2bob.forward(bob)
+    }
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    inside(bob2alice.expectMsgType[CommitSigBatch]) { batch =>
+      assert(batch.batchSize == 2)
+      bob2alice.forward(alice)
+    }
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    bob2alice.expectNoMessage(100 millis)
+  }
+
   test("disconnect and update channel before receiving final splice_locked") { f =>
     import f._
 
@@ -2481,6 +2617,204 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
       case e: ChannelReadyForPayments => e.fundingTxIndex == 1
       case _ => false
     }
+  }
+
+  test("disconnection after exchanging tx_signatures and one side sends commit_sig for channel update") { f =>
+    import f._
+
+    // alice                    bob
+    //   |         ...           |
+    //   |    <interactive-tx>   |
+    //   |<----- tx_complete ----|
+    //   |------ tx_complete --->|
+    //   |------ commit_sig ---->|
+    //   |<------ commit_sig ----|
+    //   |<---- tx_signatures ---|
+    //   |----- tx_signatures -->|
+    //   |--- update_add_htlc -->|
+    //   |------ start_batch ---X| batch_size = 2
+    //   |------ commit_sig ----X| funding_txid = FundingTx
+    //   |------ commit_sig ----X| funding_txid = SpliceFundingTx
+    //   |      <disconnect>     |
+    //   |      <reconnect>      |
+    //   | <channel_reestablish> |
+    //   |--- update_add_htlc -->|
+    //   |------ start_batch --->| batch_size = 2
+    //   |------ commit_sig ---->| funding_txid = FundingTx
+    //   |------ commit_sig ---->| funding_txid = SpliceFundingTx
+    //   |<--- revoke_and_ack ---|
+    //   |<----- start_batch ----| batch_size = 2
+    //   |<----- commit_sig -----|
+    //   |<----- commit_sig -----|
+    //   |---- revoke_and_ack -->|
+
+    val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    checkWatchConfirmed(f, fundingTx)
+
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
+    alice ! CMD_SIGN(None)
+    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>  // Bob doesn't receive Alice's commit_sig
+      assert(batch.batchSize == 2)
+    }
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+
+    // Bob will not receive Alice's commit_sigs before disconnecting.
+    disconnect(f)
+    val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
+    assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
+    assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
+
+    // Alice must retransmit update_add_htlc and commit_sigs first.
+    alice2bob.expectMsgType[UpdateAddHtlc]
+    alice2bob.forward(bob)
+    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>
+      assert(batch.batchSize == 2)
+      alice2bob.forward(bob)
+    }
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    inside(bob2alice.expectMsgType[CommitSigBatch]) { batch =>
+      assert(batch.batchSize == 2)
+      bob2alice.forward(alice)
+    }
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+  }
+
+  test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update; revoke_and_ack not received") { f =>
+    import f._
+    // alice                    bob
+    //   |         ...           |
+    //   |    <interactive-tx>   |
+    //   |<----- tx_complete ----|
+    //   |------ tx_complete --->|
+    //   |------ commit_sig ---->|
+    //   |<------ commit_sig ----|
+    //   |<---- tx_signatures ---|
+    //   |----- tx_signatures -->|
+    //   |--- update_add_htlc -->|
+    //   |------ start_batch --->| batch_size = 2
+    //   |------ commit_sig ---->| funding_txid = FundingTx
+    //   |------ commit_sig ---->| funding_txid = SpliceFundingTx
+    //   |X--- revoke_and_ack ---|
+    //   |X----- start_batch ----| batch_size = 2
+    //   |X----- commit_sig -----| funding_txid = FundingTx
+    //   |X----- commit_sig -----| funding_txid = SpliceFundingTx
+    //   |      <disconnect>     |
+    //   |      <reconnect>      |
+    //   | <channel_reestablish> | next_revocation_number = 0 (for both alice and bob)
+    //   |<--- revoke_and_ack ---|
+    //   |<----- start_batch ----| batch_size = 2
+    //   |<----- commit_sig -----| funding_txid = FundingTx
+    //   |<----- commit_sig -----| funding_txid = SpliceFundingTx
+    //   |---- revoke_and_ack -->|
+
+    val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    checkWatchConfirmed(f, fundingTx)
+
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
+    alice ! CMD_SIGN(None)
+    alice2bob.expectMsgType[CommitSigBatch]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck] // Alice doesn't receive Bob's revoke_and_ack
+    inside(bob2alice.expectMsgType[CommitSigBatch]) { batch => // Alice doesn't receive Bob's commit_sig
+      assert(batch.batchSize == 2)
+    }
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+
+    // Alice will not receive Bob's commit_sigs before disconnecting.
+    disconnect(f)
+    val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
+    assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
+    assert(channelReestablishAlice.nextRemoteRevocationNumber == 0)
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
+    assert(channelReestablishBob.nextRemoteRevocationNumber == 0)
+
+    // Bob must retransmit his commit_sigs first.
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    inside(bob2alice.expectMsgType[CommitSigBatch]) { batch =>
+      assert(batch.batchSize == 2)
+      bob2alice.forward(alice)
+    }
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+  }
+
+  test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update") { f =>
+    import f._
+    // alice                    bob
+    //   |         ...           |
+    //   |    <interactive-tx>   |
+    //   |<----- tx_complete ----|
+    //   |------ tx_complete --->|
+    //   |------ commit_sig ---->|
+    //   |<------ commit_sig ----|
+    //   |<---- tx_signatures ---|
+    //   |----- tx_signatures -->|
+    //   |--- update_add_htlc -->|
+    //   |------ start_batch --->| batch_size = 2
+    //   |------ commit_sig ---->| funding_txid = FundingTx
+    //   |------ commit_sig ---->| funding_txid = SpliceFundingTx
+    //   |<--- revoke_and_ack ---|
+    //   |X----- start_batch ----| batch_size = 2
+    //   |X----- commit_sig -----| funding_txid = FundingTx
+    //   |X----- commit_sig -----| funding_txid = SpliceFundingTx
+    //   |      <disconnect>     |
+    //   |      <reconnect>      | next_revocation_number = 1 (alice) and 0 (bob)
+    //   | <channel_reestablish> |
+    //   |<----- start_batch ----| batch_size = 2
+    //   |<----- commit_sig -----| funding_txid = FundingTx
+    //   |<----- commit_sig -----| funding_txid = SpliceFundingTx
+    //   |---- revoke_and_ack -->|
+
+    val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    checkWatchConfirmed(f, fundingTx)
+
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
+    alice ! CMD_SIGN(None)
+    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>
+      assert(batch.batchSize == 2)
+      alice2bob.forward(bob)
+    }
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    inside(bob2alice.expectMsgType[CommitSigBatch]) { batch => // Alice doesn't receive Bob's commit_sig
+      assert(batch.batchSize == 2)
+    }
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
+
+    // Alice will not receive Bob's commit_sigs before disconnecting.
+    disconnect(f)
+    val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
+    assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
+    assert(channelReestablishAlice.nextRemoteRevocationNumber == 1)
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
+    assert(channelReestablishBob.nextRemoteRevocationNumber == 0)
+
+    // Bob must retransmit his commit_sigs first.
+    alice2bob.expectNoMessage(100 millis)
+    inside(bob2alice.expectMsgType[CommitSigBatch] ) { batch =>
+      assert(batch.batchSize == 2)
+      bob2alice.forward(alice)
+    }
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectNoMessage(100 millis)
   }
 
   test("disconnect before receiving announcement_signatures from one peer", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
