@@ -270,8 +270,8 @@ object Features {
     val mandatory = 34
   }
 
-  case object AttributableFailures extends Feature with InitFeature with NodeFeature with Bolt11Feature {
-    val rfcName = "option_attributable_failure"
+  case object AttributionData extends Feature with InitFeature with NodeFeature with Bolt11Feature {
+    val rfcName = "option_attribution_data"
     val mandatory = 36
   }
   case object OnionMessages extends Feature with InitFeature with NodeFeature {
@@ -377,7 +377,7 @@ object Features {
     ShutdownAnySegwit,
     DualFunding,
     Quiescence,
-    AttributableFailures,
+    AttributionData,
     OnionMessages,
     ProvideStorage,
     ChannelType,

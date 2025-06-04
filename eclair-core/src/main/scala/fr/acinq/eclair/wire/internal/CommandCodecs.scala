@@ -19,10 +19,12 @@ package fr.acinq.eclair.wire.internal
 import akka.actor.ActorRef
 import fr.acinq.eclair.TimestampMilli
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs._
 import fr.acinq.eclair.wire.protocol._
 import scodec.Codec
+import scodec.bits.ByteVector
 import scodec.codecs._
 
 import scala.concurrent.duration.FiniteDuration
@@ -51,6 +53,16 @@ object CommandCodecs {
   private val cmdFulfillCodec: Codec[CMD_FULFILL_HTLC] =
     (("id" | int64) ::
       ("r" | bytes32) ::
+      ("downstreamAttribution_opt" | optional(bool8, bytes(Sphinx.Attribution.totalLength))) ::
+      ("htlcReceivedAt_opt" | optional(bool8, uint64overflow.as[TimestampMilli])) ::
+      ("commit" | provide(false)) ::
+      ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
+
+  private val cmdFulfillCodecWithoutAttribution: Codec[CMD_FULFILL_HTLC] =
+    (("id" | int64) ::
+      ("r" | bytes32) ::
+      ("downstreamAttribution_opt" | provide(Option.empty[ByteVector])) ::
+      ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
 
@@ -105,6 +117,7 @@ object CommandCodecs {
     .typecase(3, cmdFailEitherCodec)
     .typecase(2, cmdFailMalformedCodec)
     .typecase(1, cmdFailWithoutLengthCodec)
-    .typecase(0, cmdFulfillCodec)
+    .typecase(6, cmdFulfillCodec)
+    .typecase(0, cmdFulfillCodecWithoutAttribution)
 
 }

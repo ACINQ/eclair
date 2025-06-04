@@ -492,7 +492,7 @@ class NodeRelay private(nodeParams: NodeParams,
   }
 
   private def fulfillPayment(upstream: Upstream.Hot.Trampoline, paymentPreimage: ByteVector32): Unit = upstream.received.foreach(r => {
-    val cmd = CMD_FULFILL_HTLC(r.add.id, paymentPreimage, commit = true)
+    val cmd = CMD_FULFILL_HTLC(r.add.id, paymentPreimage, None, Some(r.receivedAt), commit = true)
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, r.add.channelId, cmd)
   })
 
