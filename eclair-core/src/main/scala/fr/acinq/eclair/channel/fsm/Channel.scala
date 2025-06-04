@@ -1894,7 +1894,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               log.info("htlc #{} with payment_hash={} was fulfilled downstream, recalculating htlc-success transactions", c.id, c.r)
               // We may be able to publish HTLC-success transactions for which we didn't have the preimage.
               // We are already watching the corresponding outputs: no need to set additional watches.
-              val localTxs = d.localCommitPublished.map(lcp => Closing.LocalClose.claimHtlcsWithPreimage(commitment.localKeys(channelKeys), lcp, commitment, c.r)).getOrElse(Nil)
+              val localTxs = d.localCommitPublished.map(lcp => Closing.LocalClose.claimHtlcsWithPreimage(channelKeys, lcp, commitment, c.r)).getOrElse(Nil)
               val remoteTxs = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, rcp, commitment, commitment.remoteCommit, c.r, d.finalScriptPubKey)).getOrElse(Nil)
               val nextRemoteTxs = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, nrcp, commitment, commitment.nextRemoteCommit_opt.get.commit, c.r, d.finalScriptPubKey)).getOrElse(Nil)
               (localTxs ++ remoteTxs ++ nextRemoteTxs).foreach(publishTx => txPublisher ! publishTx)
@@ -1973,10 +1973,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       } else if (d.futureRemoteCommitPublished.exists(_.commitTx.txid == tx.txid)) {
         // this is because WatchSpent watches never expire and we are notified multiple times
         stay()
-      } else if (tx.txid == d.commitments.latest.remoteCommit.txid) {
+      } else if (tx.txid == d.commitments.latest.remoteCommit.txId) {
         // counterparty may attempt to spend its last commit tx at any time
         handleRemoteSpentCurrent(tx, d)
-      } else if (d.commitments.latest.nextRemoteCommit_opt.exists(_.commit.txid == tx.txid)) {
+      } else if (d.commitments.latest.nextRemoteCommit_opt.exists(_.commit.txId == tx.txid)) {
         // counterparty may attempt to spend its last commit tx at any time
         handleRemoteSpentNext(tx, d)
       } else if (tx.txIn.map(_.outPoint.txid).contains(d.commitments.latest.fundingTxId)) {
@@ -2023,12 +2023,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           // We reset the state to match the commitment that confirmed.
           val d1 = d.copy(commitments = commitments1)
           // This commitment may be revoked: we need to verify that its index matches our latest known index before overwriting our previous commitments.
-          if (commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid) {
+          if (commitment.localCommit.txId == tx.txid) {
             // Our local commit has been published from the outside, it's unexpected but let's deal with it anyway.
             spendLocalCurrent(d1)
-          } else if (commitment.remoteCommit.txid == tx.txid && commitment.remoteCommit.index == d.commitments.remoteCommitIndex) {
+          } else if (commitment.remoteCommit.txId == tx.txid && commitment.remoteCommit.index == d.commitments.remoteCommitIndex) {
             handleRemoteSpentCurrent(tx, d1)
-          } else if (commitment.nextRemoteCommit_opt.exists(_.commit.txid == tx.txid) && commitment.remoteCommit.index == d.commitments.remoteCommitIndex && d.commitments.remoteNextCommitInfo.isLeft) {
+          } else if (commitment.nextRemoteCommit_opt.exists(_.commit.txId == tx.txid) && commitment.remoteCommit.index == d.commitments.remoteCommitIndex && d.commitments.remoteNextCommitInfo.isLeft) {
             handleRemoteSpentNext(tx, d1)
           } else {
             // Our counterparty is trying to broadcast a revoked commit tx (cheating attempt).
@@ -2132,7 +2132,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
       val timedOutHtlcs = Closing.isClosingTypeAlreadyKnown(d1) match {
-        case Some(c: Closing.LocalClose) => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.localCommit, d.commitments.params.localParams.dustLimit, tx)
+        case Some(c: Closing.LocalClose) => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.localCommit, tx)
         case Some(c: Closing.RemoteClose) => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.remoteCommit, tx)
         case Some(_: Closing.RevokedClose) => Set.empty[UpdateAddHtlc] // revoked commitments are handled using [[overriddenOutgoingHtlcs]] below
         case Some(_: Closing.RecoveryClose) => Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarios (future remote commit)
@@ -2894,11 +2894,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       if (d.commitments.all.map(_.fundingTxId).contains(tx.txid)) {
         // if the spending tx is itself a funding tx, this is a splice and there is nothing to do
         stay()
-      } else if (tx.txid == d.commitments.latest.remoteCommit.txid) {
+      } else if (tx.txid == d.commitments.latest.remoteCommit.txId) {
         handleRemoteSpentCurrent(tx, d)
-      } else if (d.commitments.latest.nextRemoteCommit_opt.exists(_.commit.txid == tx.txid)) {
+      } else if (d.commitments.latest.nextRemoteCommit_opt.exists(_.commit.txId == tx.txid)) {
         handleRemoteSpentNext(tx, d)
-      } else if (tx.txid == d.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.txid) {
+      } else if (tx.txid == d.commitments.latest.localCommit.txId) {
         log.warning(s"processing local commit spent from the outside")
         spendLocalCurrent(d)
       } else if (tx.txIn.map(_.outPoint.txid).contains(d.commitments.latest.fundingTxId)) {

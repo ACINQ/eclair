@@ -1,9 +1,9 @@
 package fr.acinq.eclair.wire.internal.channel.version2
 
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, OutPoint, Transaction}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction}
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.TestUtils.randomTxId
-import fr.acinq.eclair.channel.{ChannelConfig, ChannelDataWithCommitments, ChannelFeatures, HtlcTxAndRemoteSig}
+import fr.acinq.eclair.channel.{ChannelConfig, ChannelDataWithCommitments, ChannelFeatures}
 import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2.Codecs._
 import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2.channelDataCodec
 import org.scalatest.funsuite.AnyFunSuite
@@ -22,17 +22,6 @@ class ChannelCodecs2Spec extends AnyFunSuite {
       OutPoint(randomTxId(), 454513) -> Transaction.read("02000000000101ab84ff284f162cfbfef241f853b47d4368d171f9e2a1445160cd591c4c7d882b00000000000000000001e8030000000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0500483045022100d9e29616b8f3959f1d3d7f7ce893ffedcdc407717d0de8e37d808c91d3a7c50d022078c3033f6d00095c8720a4bc943c1b45727818c082e4e3ddbc6d3116435b624b014730440220636de5682ef0c5b61f124ec74e8aa2461a69777521d6998295dcea36bc3338110220165285594b23c50b28b82df200234566628a27bcd17f7f14404bd865354eb3ce012000000000000000000000000000000000000000000000000000000000000000008a76a91414011f7254d96b819c76986c277d115efce6f7b58763ac67210394854aa6eab5b2a8122cc726e9dded053a2184d88256816826d6231c068d4a5b7c8201208763a914b8bcb07f6344b42ab04250c86a6e8b75d3fdbbc688527c21030d417a46946384f88d5f3337267c5e579765875dc4daca813e21734b140639e752ae677502f401b175ac686800000000")
     )
     assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require == map)
-  }
-
-  test("remove signatures from commitment txs") {
-    val commitments = channelDataCodec.decode(dataNormal.bits).require.value.asInstanceOf[ChannelDataWithCommitments].commitments.latest
-    commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull))
-    assert(commitments.localCommit.htlcTxsAndRemoteSigs.nonEmpty)
-    commitments.localCommit.htlcTxsAndRemoteSigs.foreach {
-      case HtlcTxAndRemoteSig(htlcTx, remoteSig) =>
-        assert(remoteSig !== ByteVector64.Zeroes)
-        htlcTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull))
-    }
   }
 
   test("split channel version into channel config and channel features") {

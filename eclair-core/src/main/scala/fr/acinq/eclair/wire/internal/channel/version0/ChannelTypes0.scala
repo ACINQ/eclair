@@ -41,14 +41,6 @@ private[channel] object ChannelTypes0 {
   //  - the `htlcId` in htlc txs is used to detect timed out htlcs and relay them upstream, but it can be safely set to
   //    0 because the `timedOutHtlcs` in `Helpers.scala` explicitly handle the case where this information is unavailable.
 
-  private def getPartialInputInfo(parentTx: Transaction, childTx: Transaction): InputInfo = {
-    // When using the default commitment format, spending txs have a single input. These txs are fully signed and never
-    // modified: we don't use the InputInfo in closing business logic, so we don't need to fill everything (this part
-    // assumes that we only have standard channels, no anchor output channels - which was the case before version2).
-    val input = childTx.txIn.head.outPoint
-    InputInfo(input, parentTx.txOut(input.index.toInt), ByteVector.empty)
-  }
-
   case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, TxId]) {
     def migrate(): channel.LocalCommitPublished = {
       val htlcTxs = htlcSuccessTxs ++ htlcTimeoutTxs
@@ -110,22 +102,13 @@ private[channel] object ChannelTypes0 {
   case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
 
   // Before version3, we stored fully signed local transactions (commit tx and htlc txs). It meant that someone gaining
-  // access to the database could publish revoked commit txs, so we changed that to only store unsigned txs and remote
-  // signatures.
+  // access to the database could publish revoked commit txs, so we changed that to only store remote signatures.
   case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs) {
     def migrate(remoteFundingPubKey: PublicKey): channel.LocalCommit = {
       val remoteSig = extractRemoteSig(publishableTxs.commitTx, remoteFundingPubKey)
       val unsignedCommitTx = publishableTxs.commitTx.copy(tx = removeWitnesses(publishableTxs.commitTx.tx))
-      val commitTxAndRemoteSig = CommitTxAndRemoteSig(unsignedCommitTx, remoteSig)
-      val htlcTxsAndRemoteSigs = publishableTxs.htlcTxsAndSigs map {
-        case HtlcTxAndSigs(htlcTx: HtlcSuccessTx, _, remoteSig) =>
-          val unsignedHtlcTx = htlcTx.copy(tx = removeWitnesses(htlcTx.tx))
-          HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
-        case HtlcTxAndSigs(htlcTx: HtlcTimeoutTx, _, remoteSig) =>
-          val unsignedHtlcTx = htlcTx.copy(tx = removeWitnesses(htlcTx.tx))
-          HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
-      }
-      channel.LocalCommit(index, spec, commitTxAndRemoteSig, htlcTxsAndRemoteSigs)
+      val htlcRemoteSigs = publishableTxs.htlcTxsAndSigs.map(_.remoteSig)
+      channel.LocalCommit(index, spec, unsignedCommitTx.tx.txid, unsignedCommitTx.input, remoteSig, htlcRemoteSigs)
     }
 
     private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): ChannelSpendSignature.IndividualSignature = {

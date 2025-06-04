@@ -474,7 +474,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     aliceClose(f)
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
-    val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.signCommitTx()
     bob ! aliceCloseSig.copy(signature = ByteVector64.Zeroes)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid close signature"))
@@ -951,7 +951,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     bobClose(f)
     alice2bob.expectMsgType[ClosingSigned]
-    val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = alice.signCommitTx()
     alice ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(alice.stateName == CLOSING)
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid)
