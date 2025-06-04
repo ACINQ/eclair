@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.TxAddInput
@@ -237,7 +238,12 @@ private class InteractiveTxFunder(replyTo: ActorRef[InteractiveTxFunder.Response
     val minConfirmations_opt = if (fundingParams.requireConfirmedInputs.forLocal) Some(1) else None
     context.pipeToSelf(wallet.fundTransaction(txNotFunded, fundingParams.targetFeerate, externalInputsWeight = sharedInputWeight, minInputConfirmations_opt = minConfirmations_opt, feeBudget_opt = feeBudget_opt)) {
       case Failure(t) => WalletFailure(t)
-      case Success(result) => FundTransactionResult(result.tx, result.changePosition)
+      case Success(result) =>
+        Metrics.recordInteractiveTxFunding(
+          targetAmount = fundingParams.localContribution,
+          inputsCount = result.tx.txIn.size - txNotFunded.txIn.size,
+          change = result.changePosition.map(i => result.tx.txOut(i).amount).sum)
+        FundTransactionResult(result.tx, result.changePosition)
     }
     Behaviors.receiveMessagePartial {
       case FundTransactionResult(fundedTx, changePosition) =>
