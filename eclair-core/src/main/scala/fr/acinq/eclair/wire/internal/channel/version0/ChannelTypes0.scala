@@ -102,22 +102,13 @@ private[channel] object ChannelTypes0 {
   case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
 
   // Before version3, we stored fully signed local transactions (commit tx and htlc txs). It meant that someone gaining
-  // access to the database could publish revoked commit txs, so we changed that to only store unsigned txs and remote
-  // signatures.
+  // access to the database could publish revoked commit txs, so we changed that to only store remote signatures.
   case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs) {
     def migrate(remoteFundingPubKey: PublicKey): channel.LocalCommit = {
       val remoteSig = extractRemoteSig(publishableTxs.commitTx, remoteFundingPubKey)
       val unsignedCommitTx = publishableTxs.commitTx.copy(tx = removeWitnesses(publishableTxs.commitTx.tx))
-      val commitTxAndRemoteSig = CommitTxAndRemoteSig(unsignedCommitTx, remoteSig)
-      val htlcTxsAndRemoteSigs = publishableTxs.htlcTxsAndSigs map {
-        case HtlcTxAndSigs(htlcTx: HtlcSuccessTx, _, remoteSig) =>
-          val unsignedHtlcTx = htlcTx.copy(tx = removeWitnesses(htlcTx.tx))
-          HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
-        case HtlcTxAndSigs(htlcTx: HtlcTimeoutTx, _, remoteSig) =>
-          val unsignedHtlcTx = htlcTx.copy(tx = removeWitnesses(htlcTx.tx))
-          HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
-      }
-      channel.LocalCommit(index, spec, commitTxAndRemoteSig, htlcTxsAndRemoteSigs)
+      val htlcRemoteSigs = publishableTxs.htlcTxsAndSigs.map(_.remoteSig)
+      channel.LocalCommit(index, spec, unsignedCommitTx.tx.txid, unsignedCommitTx.input, remoteSig, htlcRemoteSigs)
     }
 
     private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): ChannelSpendSignature.IndividualSignature = {
