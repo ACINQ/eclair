@@ -204,7 +204,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.SimpleClose))(_.updated(Features.SimpleClose, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableSplice))(_.removed(Features.SplicePrototype))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableSplice))(_.removed(Features.Splicing))
     )
     (nodeParamsA1, nodeParamsB1)
   }

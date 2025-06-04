@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond, UnknownFeature}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -206,9 +206,19 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         stay()
 
       case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.transport => // if the message doesn't originate from the transport, it is an outgoing message
+        val useExperimentalSplice = d.remoteInit.features.unknown.contains(UnknownFeature(154)) || d.remoteInit.features.unknown.contains(UnknownFeature(155))
         msg match {
-          case batch: CommitSigBatch => batch.messages.foreach(msg => d.transport forward msg)
-          case msg => d.transport forward msg
+          // If our peer is using the experimental splice version, we convert splice messages.
+          case msg: SpliceInit if useExperimentalSplice => d.transport forward ExperimentalSpliceInit.from(msg)
+          case msg: SpliceAck if useExperimentalSplice => d.transport forward ExperimentalSpliceAck.from(msg)
+          case msg: SpliceLocked if useExperimentalSplice => d.transport forward ExperimentalSpliceLocked.from(msg)
+          case msg: TxAddInput if useExperimentalSplice => d.transport forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records.filterNot(_.isInstanceOf[TxAddInputTlv.SharedInputTxId])))
+          case msg: TxSignatures if useExperimentalSplice => d.transport forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records.filterNot(_.isInstanceOf[TxSignaturesTlv.PreviousFundingTxSig])))
+          case batch: CommitSigBatch if useExperimentalSplice => batch.messages.foreach(msg => d.transport forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.FundingTx]))))
+          case batch: CommitSigBatch =>
+            d.transport forward StartBatch(batch.channelId, batch.batchSize)
+            batch.messages.foreach(msg => d.transport forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.ExperimentalBatchTlv]))))
+          case _ => d.transport forward msg
         }
         msg match {
           // If we send any channel management message to this peer, the connection should be persistent.
@@ -348,8 +358,41 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         // We immediately forward messages to the peer, unless they are part of a batch, in which case we wait to
         // receive the whole batch before forwarding.
         msg match {
+          case msg: StartBatch =>
+            log.debug("starting batch of size {} for channel_id={}", msg.batchSize, msg.channelId)
+            d.commitSigBatch_opt match {
+              case Some(pending) if pending.received.nonEmpty =>
+                log.warning("starting batch with incomplete previous batch ({}/{} received)", pending.received.size, pending.batchSize)
+                // This is a spec violation from our peer: this will likely lead to a force-close.
+                d.transport ! Warning(msg.channelId, "invalid start_batch message: the previous batch is not done yet")
+                d.peer ! CommitSigBatch(pending.received)
+              case _ => ()
+            }
+            stay() using d.copy(commitSigBatch_opt = Some(PendingCommitSigBatch(msg.channelId, msg.batchSize, Nil)))
+          case msg: HasChannelId if d.commitSigBatch_opt.nonEmpty =>
+            // We only support batches of commit_sig messages: other messages will simply be relayed individually.
+            val pending = d.commitSigBatch_opt.get
+            msg match {
+              case msg: CommitSig if msg.channelId == pending.channelId =>
+                val received1 = pending.received :+ msg
+                if (received1.size == pending.batchSize) {
+                  log.debug("received last commit_sig in batch for channel_id={}", msg.channelId)
+                  d.peer ! CommitSigBatch(received1)
+                  stay() using d.copy(commitSigBatch_opt = None)
+                } else {
+                  log.debug("received commit_sig {}/{} in batch for channel_id={}", received1.size, pending.batchSize, msg.channelId)
+                  stay() using d.copy(commitSigBatch_opt = Some(pending.copy(received = received1)))
+                }
+              case _ =>
+                log.warning("received {} as part of a batch: we don't support batching that kind of messages", msg.getClass.getSimpleName)
+                if (pending.received.nonEmpty) d.peer ! CommitSigBatch(pending.received)
+                d.peer ! msg
+                stay() using d.copy(commitSigBatch_opt = None)
+            }
           case msg: CommitSig =>
-            msg.tlvStream.get[CommitSigTlv.BatchTlv].map(_.size) match {
+            // We keep supporting the experimental version of splicing that older Phoenix wallets use.
+            // Once we're confident that enough Phoenix users have upgraded, we should remove this branch.
+            msg.tlvStream.get[CommitSigTlv.ExperimentalBatchTlv].map(_.size) match {
               case Some(batchSize) if batchSize > 25 =>
                 log.warning("received legacy batch of commit_sig exceeding our threshold ({} > 25), processing messages individually", batchSize)
                 // We don't want peers to be able to exhaust our memory by sending batches of dummy messages that we keep in RAM.
@@ -381,6 +424,16 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
                 d.peer ! msg
                 stay()
             }
+          // If our peer is using the experimental splice version, we convert splice messages.
+          case msg: ExperimentalSpliceInit =>
+            d.peer ! msg.toSpliceInit()
+            stay()
+          case msg: ExperimentalSpliceAck =>
+            d.peer ! msg.toSpliceAck()
+            stay()
+          case msg: ExperimentalSpliceLocked =>
+            d.peer ! msg.toSpliceLocked()
+            stay()
           case _ =>
             d.peer ! msg
             stay()
@@ -613,6 +666,7 @@ object PeerConnection {
                            gossipTimestampFilter: Option[GossipTimestampFilter] = None,
                            behavior: Behavior = Behavior(),
                            expectedPong_opt: Option[ExpectedPong] = None,
+                           commitSigBatch_opt: Option[PendingCommitSigBatch] = None,
                            legacyCommitSigBatch_opt: Option[PendingCommitSigBatch] = None,
                            isPersistent: Boolean) extends Data with HasTransport
 
