@@ -18,8 +18,8 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.scalacompat.Crypto._
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, Musig2, OP_2, OP_CHECKMULTISIG, OP_PUSHDATA, OP_RETURN, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, millibtc2satoshi}
-import fr.acinq.bitcoin.{ScriptFlags, SigHash, SigVersion}
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, Musig2, OP_2, OP_CHECKMULTISIG, OP_PUSHDATA, OP_RETURN, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.{ScriptFlags, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -190,7 +190,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(outputs.isEmpty)
     }
   }
-  
+
   test("generate valid commitment with some outputs that don't materialize (anchor outputs)") {
     val spec = CommitmentSpec(htlcs = Set.empty, commitTxFeerate = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
     val commitFeeAndAnchorCost = commitTxTotalCost(localDustLimit, spec, UnsafeLegacyAnchorOutputsCommitmentFormat)
@@ -311,8 +311,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       commitTx.correctlySpends(Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       val htlcTxs = makeHtlcTxs(commitTx, outputs, commitmentFormat)
       val expiries = htlcTxs.map(tx => tx.htlcId -> tx.htlcExpiry.toLong).toMap
-      val htlcSuccessTxs = htlcTxs.collect { case tx: HtlcSuccessTx => tx }
-      val htlcTimeoutTxs = htlcTxs.collect { case tx: HtlcTimeoutTx => tx }
+      val htlcSuccessTxs = htlcTxs.collect { case tx: UnsignedHtlcSuccessTx => tx }
+      val htlcTimeoutTxs = htlcTxs.collect { case tx: UnsignedHtlcTimeoutTx => tx }
       commitmentFormat match {
         case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat =>
           assert(htlcTxs.length == 7)
@@ -392,9 +392,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // local spends received htlc with HTLC-timeout tx
       for (htlcTimeoutTx <- htlcTimeoutTxs) {
-        val localSig = htlcTimeoutTx.sign(localKeys, commitmentFormat, Map.empty)
-        val remoteSig = htlcTimeoutTx.sign(remoteKeys, commitmentFormat)
-        val signedTx = htlcTimeoutTx.addSigs(localKeys, localSig, remoteSig, commitmentFormat)
+        val remoteSig = htlcTimeoutTx.localSig(remoteKeys, commitmentFormat)
+        val signedTx = htlcTimeoutTx.addRemoteSig(remoteSig).sign(localKeys, commitmentFormat, Map.empty)
         assert(signedTx.validate(Map.empty))
         // local detects when remote doesn't use the right sighash flags
         val invalidSighash = commitmentFormat match {
@@ -402,8 +401,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           case _ => Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         }
         for (sighash <- invalidSighash) {
-          val invalidRemoteSig = htlcTimeoutTx.signWithInvalidSighash(remoteKeys, commitmentFormat, sighash)
-          val invalidTx = htlcTimeoutTx.addSigs(localKeys, localSig, invalidRemoteSig, commitmentFormat)
+          val invalidRemoteSig = htlcTimeoutTx.localSigWithInvalidSighash(remoteKeys, commitmentFormat, sighash)
+          val invalidTx = htlcTimeoutTx.addRemoteSig(invalidRemoteSig).sign(localKeys, commitmentFormat, Map.empty)
           assert(!invalidTx.validate(Map.empty))
         }
       }
@@ -420,10 +419,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // local spends offered htlc with HTLC-success tx
       for (htlcSuccessTx <- htlcSuccessTxs(0) :: htlcSuccessTxs(1) :: htlcSuccessTxs(2) :: Nil) {
-        val paymentPreimage = paymentPreimageMap(htlcSuccessTx.paymentHash)
-        val localSig = htlcSuccessTx.sign(localKeys, commitmentFormat, Map.empty)
-        val remoteSig = htlcSuccessTx.sign(remoteKeys, commitmentFormat)
-        val signedTx = htlcSuccessTx.addSigs(localKeys, localSig, remoteSig, paymentPreimage, commitmentFormat)
+        val preimage = paymentPreimageMap(htlcSuccessTx.paymentHash)
+        val remoteSig = htlcSuccessTx.localSig(remoteKeys, commitmentFormat)
+        val signedTx = htlcSuccessTx.addRemoteSig(remoteSig, preimage).sign(localKeys, commitmentFormat, Map.empty)
         assert(signedTx.validate(Map.empty))
         // check remote sig
         assert(htlcSuccessTx.checkRemoteSig(localKeys, remoteSig, commitmentFormat))
@@ -433,10 +431,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           case _ => Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         }
         for (sighash <- invalidSighash) {
-          val invalidRemoteSig = htlcSuccessTx.signWithInvalidSighash(remoteKeys, commitmentFormat, sighash)
-          val invalidTx = htlcSuccessTx.addSigs(localKeys, localSig, invalidRemoteSig, paymentPreimage, commitmentFormat)
+          val invalidRemoteSig = htlcSuccessTx.localSigWithInvalidSighash(remoteKeys, commitmentFormat, sighash)
+          val invalidTx = htlcSuccessTx.addRemoteSig(invalidRemoteSig, preimage).sign(localKeys, commitmentFormat, Map.empty)
           assert(!invalidTx.validate(Map.empty))
-          assert(!invalidTx.checkRemoteSig(localKeys, invalidRemoteSig, commitmentFormat))
+          assert(!htlcSuccessTx.checkRemoteSig(localKeys, invalidRemoteSig, commitmentFormat))
         }
       }
     }
@@ -633,7 +631,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
     // htlc3 and htlc4 are completely identical, their relative order can't be enforced.
     assert(htlcTxs.length == 5)
-    htlcTxs.foreach(tx => assert(tx.isInstanceOf[HtlcTimeoutTx]))
+    htlcTxs.foreach(tx => assert(tx.isInstanceOf[UnsignedHtlcTimeoutTx]))
     val htlcIds = htlcTxs.sortBy(_.input.outPoint.index).map(_.htlcId)
     assert(htlcIds == Seq(1, 2, 3, 4, 5) || htlcIds == Seq(1, 2, 4, 3, 5))
 

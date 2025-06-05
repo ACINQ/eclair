@@ -423,16 +423,15 @@ object Transactions {
   }
 
   /**
-   * It's important to note that htlc transactions with the default commitment format are not actually replaceable: only
-   * anchor outputs htlc transactions are replaceable. We should have used different types for these different kinds of
-   * htlc transactions, but we introduced that before implementing the replacement strategy.
-   * Unfortunately, if we wanted to change that, we would have to update the codecs and implement a migration of channel
-   * data, which isn't trivial, so we chose to temporarily live with that inconsistency (and have the transaction
-   * replacement logic abort when non-anchor outputs htlc transactions are provided).
-   * Ideally, we'd like to implement a dynamic commitment format upgrade mechanism and depreciate the pre-anchor outputs
-   * format soon, which will get rid of this inconsistency.
-   * The next time we introduce a new type of commitment, we should avoid repeating that mistake and define separate
-   * types right from the start.
+   * HTLC transactions require local and remote signatures and can be spent using two distinct script paths:
+   *  - the success path by revealing the payment preimage
+   *  - the timeout path after a predefined block height
+   *
+   * The success path must be used before the timeout is reached, otherwise there is a race where both channel
+   * participants may claim the output.
+   *
+   * Once confirmed, HTLC transactions need to be spent by an [[HtlcDelayedTx]] after a relative delay to get the funds
+   * back into our bitcoin wallet.
    */
   sealed trait HtlcTx extends ForceCloseTransaction {
     // @formatter:off
@@ -455,19 +454,20 @@ object Transactions {
 
     /** Create redeem information for this HTLC transaction, based on the commitment format used. */
     def redeemInfo(commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat): RedeemInfo
+  }
 
-    /** Sign an HTLC transaction spending our local commitment. */
-    def sign(commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
-      sign(commitKeys.ourHtlcKey, sighash(TxOwner.Local, commitmentFormat), redeemInfo(commitKeys.publicKeys, commitmentFormat), extraUtxos)
-    }
-
+  /**
+   * We first create unsigned HTLC transactions based on the [[CommitTx]]: this lets us produce our local signature,
+   * which we need to send to our peer for their commitment.
+   */
+  sealed trait UnsignedHtlcTx extends HtlcTx {
     /** Sign an HTLC transaction for the remote commitment. */
-    def sign(commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): ByteVector64 = {
+    def localSig(commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): ByteVector64 = {
       sign(commitKeys.ourHtlcKey, sighash(TxOwner.Remote, commitmentFormat), redeemInfo(commitKeys.publicKeys, commitmentFormat), extraUtxos = Map.empty)
     }
 
     /** This is a function only used in tests to produce signatures with a different sighash. */
-    def signWithInvalidSighash(commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat, sighash: Int): ByteVector64 = {
+    def localSigWithInvalidSighash(commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat, sighash: Int): ByteVector64 = {
       sign(commitKeys.ourHtlcKey, sighash, redeemInfo(commitKeys.publicKeys, commitmentFormat), extraUtxos = Map.empty)
     }
 
@@ -478,31 +478,50 @@ object Transactions {
     }
   }
 
+  /**
+   * Once we've received valid signatures from our peer and the payment preimage for incoming HTLCs, we can create fully
+   * signed HTLC transactions for our local [[CommitTx]].
+   */
+  sealed trait SignedHtlcTx extends HtlcTx {
+    /** Sign an HTLC transaction spending our local commitment. */
+    def localSig(commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ByteVector64 = {
+      sign(commitKeys.ourHtlcKey, sighash(TxOwner.Local, commitmentFormat), redeemInfo(commitKeys.publicKeys, commitmentFormat), extraUtxos)
+    }
+  }
+
   /** This transaction spends a received (incoming) HTLC from a local or remote commitment by revealing the payment preimage. */
-  case class HtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, htlcExpiry: CltvExpiry) extends HtlcTx {
-
+  case class HtlcSuccessTx(input: InputInfo, tx: Transaction, htlcId: Long, htlcExpiry: CltvExpiry, preimage: ByteVector32, remoteSig: ByteVector64) extends SignedHtlcTx {
     override val desc: String = "htlc-success"
+    override val paymentHash: ByteVector32 = Crypto.sha256(preimage)
 
-    override def redeemInfo(commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat): RedeemInfo =
-      HtlcSuccessTx.redeemInfo(commitKeys, paymentHash, htlcExpiry, commitmentFormat)
+    override def redeemInfo(commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat): RedeemInfo = HtlcSuccessTx.redeemInfo(commitKeys, paymentHash, htlcExpiry, commitmentFormat)
 
-    def addSigs(commitKeys: LocalCommitmentKeys, localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, commitmentFormat: CommitmentFormat): HtlcSuccessTx = {
+    def sign(commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): HtlcSuccessTx = {
+      val sig = localSig(commitKeys, commitmentFormat, extraUtxos)
       val witness = redeemInfo(commitKeys.publicKeys, commitmentFormat) match {
         case redeemInfo: RedeemInfo.SegwitV0 =>
-          witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, redeemInfo.redeemScript, commitmentFormat)
+          witnessHtlcSuccess(sig, remoteSig, preimage, redeemInfo.redeemScript, commitmentFormat)
         case _: RedeemInfo.Taproot =>
           val receivedHtlcTree = Taproot.receivedHtlcScriptTree(commitKeys.publicKeys, paymentHash, htlcExpiry)
-          receivedHtlcTree.witnessSuccess(commitKeys, localSig, remoteSig, paymentPreimage)
+          receivedHtlcTree.witnessSuccess(commitKeys, sig, remoteSig, preimage)
       }
       copy(tx = tx.updateWitness(inputIndex, witness))
     }
+  }
+
+  case class UnsignedHtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, htlcExpiry: CltvExpiry) extends UnsignedHtlcTx {
+    override val desc: String = "htlc-success"
+
+    override def redeemInfo(commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat): RedeemInfo = HtlcSuccessTx.redeemInfo(commitKeys, paymentHash, htlcExpiry, commitmentFormat)
+
+    def addRemoteSig(remoteSig: ByteVector64, preimage: ByteVector32): HtlcSuccessTx = HtlcSuccessTx(input, tx, htlcId, htlcExpiry, preimage, remoteSig)
   }
 
   object HtlcSuccessTx {
     def createUnsignedTx(commitTx: Transaction,
                          output: InHtlc,
                          outputIndex: Int,
-                         commitmentFormat: CommitmentFormat): HtlcSuccessTx = {
+                         commitmentFormat: CommitmentFormat): UnsignedHtlcSuccessTx = {
       val htlc = output.htlc.add
       val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
       val tx = Transaction(
@@ -511,7 +530,7 @@ object Transactions {
         txOut = output.htlcDelayedOutput :: Nil,
         lockTime = 0
       )
-      HtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id, htlc.cltvExpiry)
+      UnsignedHtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id, htlc.cltvExpiry)
     }
 
     def redeemInfo(commitKeys: CommitmentPublicKeys, paymentHash: ByteVector32, htlcExpiry: CltvExpiry, commitmentFormat: CommitmentFormat): RedeemInfo = commitmentFormat match {
@@ -522,34 +541,40 @@ object Transactions {
         val receivedHtlcTree = Taproot.receivedHtlcScriptTree(commitKeys, paymentHash, htlcExpiry)
         RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly, receivedHtlcTree.scriptTree, receivedHtlcTree.success.hash())
     }
-
   }
 
   /** This transaction spends an offered (outgoing) HTLC from a local or remote commitment after its expiry. */
-  case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, htlcExpiry: CltvExpiry) extends HtlcTx {
-
+  case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, htlcExpiry: CltvExpiry, remoteSig: ByteVector64) extends SignedHtlcTx {
     override val desc: String = "htlc-timeout"
 
-    override def redeemInfo(commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat): RedeemInfo =
-      HtlcTimeoutTx.redeemInfo(commitKeys, paymentHash, commitmentFormat)
+    override def redeemInfo(commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat): RedeemInfo = HtlcTimeoutTx.redeemInfo(commitKeys, paymentHash, commitmentFormat)
 
-    def addSigs(commitKeys: LocalCommitmentKeys, localSig: ByteVector64, remoteSig: ByteVector64, commitmentFormat: CommitmentFormat): HtlcTimeoutTx = {
+    def sign(commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): HtlcTimeoutTx = {
+      val sig = localSig(commitKeys, commitmentFormat, extraUtxos)
       val witness = redeemInfo(commitKeys.publicKeys, commitmentFormat) match {
         case redeemInfo: RedeemInfo.SegwitV0 =>
-          witnessHtlcTimeout(localSig, remoteSig, redeemInfo.redeemScript, commitmentFormat)
+          witnessHtlcTimeout(sig, remoteSig, redeemInfo.redeemScript, commitmentFormat)
         case _: RedeemInfo.Taproot =>
           val offeredHtlcTree = Taproot.offeredHtlcScriptTree(commitKeys.publicKeys, paymentHash)
-          offeredHtlcTree.witnessTimeout(commitKeys, localSig, remoteSig)
+          offeredHtlcTree.witnessTimeout(commitKeys, sig, remoteSig)
       }
       copy(tx = tx.updateWitness(inputIndex, witness))
     }
+  }
+
+  case class UnsignedHtlcTimeoutTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long, htlcExpiry: CltvExpiry) extends UnsignedHtlcTx {
+    override val desc: String = "htlc-timeout"
+
+    override def redeemInfo(commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat): RedeemInfo = HtlcTimeoutTx.redeemInfo(commitKeys, paymentHash, commitmentFormat)
+
+    def addRemoteSig(remoteSig: ByteVector64): HtlcTimeoutTx = HtlcTimeoutTx(input, tx, paymentHash, htlcId, htlcExpiry, remoteSig)
   }
 
   object HtlcTimeoutTx {
     def createUnsignedTx(commitTx: Transaction,
                          output: OutHtlc,
                          outputIndex: Int,
-                         commitmentFormat: CommitmentFormat): HtlcTimeoutTx = {
+                         commitmentFormat: CommitmentFormat): UnsignedHtlcTimeoutTx = {
       val htlc = output.htlc.add
       val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
       val tx = Transaction(
@@ -558,7 +583,7 @@ object Transactions {
         txOut = output.htlcDelayedOutput :: Nil,
         lockTime = htlc.cltvExpiry.toLong
       )
-      HtlcTimeoutTx(input, tx, htlc.paymentHash, htlc.id, htlc.cltvExpiry)
+      UnsignedHtlcTimeoutTx(input, tx, htlc.paymentHash, htlc.id, htlc.cltvExpiry)
     }
 
     def redeemInfo(commitKeys: CommitmentPublicKeys, paymentHash: ByteVector32, commitmentFormat: CommitmentFormat): RedeemInfo = commitmentFormat match {
@@ -1373,19 +1398,18 @@ object Transactions {
                    outputs: Seq[CommitmentOutput]): CommitTx = {
     val txNumber = obscuredCommitTxNumber(commitTxNumber, localIsChannelOpener, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, lockTime) = encodeTxNumber(txNumber)
-
     val tx = Transaction(
       version = 2,
       txIn = TxIn(commitTxInput.outPoint, ByteVector.empty, sequence = sequence) :: Nil,
       txOut = outputs.map(_.txOut),
-      lockTime = lockTime)
-
+      lockTime = lockTime
+    )
     CommitTx(commitTxInput, tx)
   }
 
   def makeHtlcTxs(commitTx: Transaction,
                   outputs: Seq[CommitmentOutput],
-                  commitmentFormat: CommitmentFormat): Seq[HtlcTx] = {
+                  commitmentFormat: CommitmentFormat): Seq[UnsignedHtlcTx] = {
     outputs.zipWithIndex.collect {
       case (o: OutHtlc, outputIndex) => HtlcTimeoutTx.createUnsignedTx(commitTx, o, outputIndex, commitmentFormat)
       case (i: InHtlc, outputIndex) => HtlcSuccessTx.createUnsignedTx(commitTx, i, outputIndex, commitmentFormat)
