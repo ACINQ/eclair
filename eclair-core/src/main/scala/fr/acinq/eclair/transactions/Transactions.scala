@@ -422,6 +422,21 @@ object Transactions {
     }
   }
 
+  // TODO: add traits for:
+  //  -> LocalCommitForceCloseTransaction { def sign(fundingKey, localCommitKeys) }
+  //  -> RemoteCommitForceCloseTransaction { def sign(fundingKey, remoteCommitKeys) }
+  //  -> RevokedCommitForceCloseTransaction { def sign(revocationKey, remoteCommitKeys) }
+  // And use those in all classes below.
+  // Then create a LocalCommitClosingTx(txInfo: LocalCommitForceCloseTransaction, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys)
+  // And same thing for others, that expose simpler "sign" methods
+  // Also import the WalletInputs structure?
+  //
+  // Maybe simpler to just have LocalCommitForceCloseTransaction / RemoteCommitForceCloseTransaction and wrapping classes with keys
+  // Publisher makes the pattern matching on the tx to sign correctly
+
+  // TODO: introduce LocalCommit/RemoteCommit traits?
+  //  -> and wrapping case class that includes the commitment keys (local or remote) and funding key?
+
   /**
    * HTLC transactions require local and remote signatures and can be spent using two distinct script paths:
    *  - the success path by revealing the payment preimage
@@ -1509,4 +1524,7 @@ object Transactions {
    */
   val PlaceHolderSig: ByteVector64 = ByteVector64(ByteVector.fill(64)(0xaa))
   assert(der(PlaceHolderSig).size == 72)
+
+  // TODO:
+
 }

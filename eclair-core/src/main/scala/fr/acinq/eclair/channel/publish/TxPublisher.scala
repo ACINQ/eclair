@@ -19,12 +19,14 @@ package fr.acinq.eclair.channel.publish
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
-import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
+import fr.acinq.eclair.channel.FullCommitment
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, ForceCloseTransaction, TransactionWithInputInfo}
 import fr.acinq.eclair.{BlockHeight, Logs, NodeParams}
 
 import java.util.UUID
@@ -88,12 +90,30 @@ object TxPublisher {
     def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[TxId]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.amountIn, txInfo.desc, fee, parentTx_opt)
   }
 
+  // TODO: channelKeys doesn't work: for local anchor, we need LocalCommitmentKeys, for remote, RemoteCommitmentKeys
+  //  -> and since we've already derived the commitment keys when creating the txs (in Helpers.scala), it would be nice to include it
+  //  -> we could define LocalForceCloseTransaction(localKeys,
+
+  sealed trait ClosingTxAndKeys {
+    def sign(): Transaction
+  }
+  // TODO: use trait for LocalCommitForceCloseTransactions
+  //  -> have SecondStageTransactions use those!
+  case class LocalCommitClosingTx[T <: ForceCloseTransaction](txInfo: T, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys) extends ClosingTxAndKeys
+  case class RemoteCommitClosingTx(txInfo: ForceCloseTransaction, fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys) extends ClosingTxAndKeys
+  // TODO: revoke case includes revocationKey
+
   /**
-   * Publish an unsigned transaction that can be RBF-ed.
+   * Publish an unsigned force-close transaction that can be RBF-ed.
+   * This is only used for 2nd-stage transactions spending the local or remote commitment transaction.
    */
-  case class PublishReplaceableTx(tx: ReplaceableTx, confirmationTarget: ConfirmationTarget) extends PublishTx {
+  case class PublishReplaceableTx(tx: ReplaceableTx, channelKeys: ChannelKeys, commitTx: Transaction, commitment: FullCommitment, confirmationTarget: ConfirmationTarget) extends PublishTx {
     override def input: OutPoint = tx.txInfo.input.outPoint
     override def desc: String = tx.txInfo.desc
+    val commitmentFormat: CommitmentFormat = commitment.params.commitmentFormat
+    val dustLimit: Satoshi = commitment.localParams.dustLimit
+    val commitFee: Satoshi = commitment.commitInput.txOut.amount - commitTx.txOut.map(_.amount).sum
+    val concurrentCommitTxs: Set[TxId] = commitment.commitTxIds.txIds - commitTx.txid
   }
 
   sealed trait PublishTxResult extends Command { def cmd: PublishTx }
