@@ -240,9 +240,10 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val expiry = CltvExpiry(nodeParams.currentBlockHeight + 12)
     val input = OutPoint(randomTxId(), 7)
-    val paymentHash = randomBytes32()
-    val htlcTx = HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), ByteVector.empty), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, expiry)
-    val cmd = PublishReplaceableTx(ReplaceableHtlcSuccess(htlcTx, null, randomBytes32(), randomBytes64(), null, null), ConfirmationTarget.Absolute(expiry.blockHeight))
+    val preimage = randomBytes32()
+    val remoteSig = randomBytes64()
+    val htlcTx = HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), ByteVector.empty), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), 3, expiry, preimage, remoteSig)
+    val cmd = PublishReplaceableTx(ReplaceableHtlcSuccess(htlcTx, null, null, null), ConfirmationTarget.Absolute(expiry.blockHeight))
     txPublisher ! cmd
     val attempt1 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt1.actor.expectMsgType[ReplaceableTxPublisher.Publish]
@@ -306,8 +307,9 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val input = OutPoint(randomTxId(), 7)
     val paymentHash = randomBytes32()
-    val htlcTx = HtlcTimeoutTx(InputInfo(input, TxOut(25_000 sat, Nil), ByteVector.empty), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, CltvExpiry(nodeParams.currentBlockHeight))
-    val cmd = PublishReplaceableTx(ReplaceableHtlcTimeout(htlcTx, null, randomBytes64(), null, null), ConfirmationTarget.Absolute(nodeParams.currentBlockHeight))
+    val remoteSig = randomBytes64()
+    val htlcTx = HtlcTimeoutTx(InputInfo(input, TxOut(25_000 sat, Nil), ByteVector.empty), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, CltvExpiry(nodeParams.currentBlockHeight), remoteSig)
+    val cmd = PublishReplaceableTx(ReplaceableHtlcTimeout(htlcTx, null, null, null), ConfirmationTarget.Absolute(nodeParams.currentBlockHeight))
     txPublisher ! cmd
     val attempt1 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt1.actor.expectMsgType[ReplaceableTxPublisher.Publish]

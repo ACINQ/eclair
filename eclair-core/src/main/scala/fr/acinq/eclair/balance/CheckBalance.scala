@@ -23,7 +23,6 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.DirectedHtlc.incoming
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 
 import scala.concurrent.{ExecutionContext, Future}

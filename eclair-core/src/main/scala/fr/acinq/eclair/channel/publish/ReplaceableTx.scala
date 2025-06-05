@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.publish
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.channel.FullCommitment
 import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
@@ -154,21 +154,19 @@ sealed trait ReplaceableHtlc extends ReplaceableTxWithWalletInputs {
   }
 }
 
-case class ReplaceableHtlcSuccess(txInfo: HtlcSuccessTx, commitKeys: LocalCommitmentKeys, preimage: ByteVector32, remoteSig: ByteVector64, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableHtlc {
+case class ReplaceableHtlcSuccess(txInfo: HtlcSuccessTx, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableHtlc {
   override def redeemInfo(): RedeemInfo = txInfo.redeemInfo(commitKeys.publicKeys, commitment.params.commitmentFormat)
 
   override def sign(extraUtxos: Map[OutPoint, TxOut]): ReplaceableHtlcSuccess = {
-    val localSig = txInfo.sign(commitKeys, commitment.params.commitmentFormat, extraUtxos)
-    copy(txInfo = txInfo.addSigs(commitKeys, localSig, remoteSig, preimage, commitment.params.commitmentFormat))
+    copy(txInfo = txInfo.sign(commitKeys, commitment.params.commitmentFormat, extraUtxos))
   }
 }
 
-case class ReplaceableHtlcTimeout(txInfo: HtlcTimeoutTx, commitKeys: LocalCommitmentKeys, remoteSig: ByteVector64, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableHtlc {
+case class ReplaceableHtlcTimeout(txInfo: HtlcTimeoutTx, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableHtlc {
   override def redeemInfo(): RedeemInfo = txInfo.redeemInfo(commitKeys.publicKeys, commitment.params.commitmentFormat)
 
   override def sign(extraUtxos: Map[OutPoint, TxOut]): ReplaceableHtlcTimeout = {
-    val localSig = txInfo.sign(commitKeys, commitment.params.commitmentFormat, extraUtxos)
-    copy(txInfo = txInfo.addSigs(commitKeys, localSig, remoteSig, commitment.params.commitmentFormat))
+    copy(txInfo = txInfo.sign(commitKeys, commitment.params.commitmentFormat, extraUtxos))
   }
 }
 
@@ -183,7 +181,7 @@ sealed trait ReplaceableClaimHtlc extends ReplaceableTx {
   def updateFee(fee: Satoshi): ReplaceableClaimHtlc
 }
 
-case class ReplaceableClaimHtlcSuccess(txInfo: ClaimHtlcSuccessTx, commitKeys: RemoteCommitmentKeys, preimage: ByteVector32, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableClaimHtlc {
+case class ReplaceableClaimHtlcSuccess(txInfo: ClaimHtlcSuccessTx, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableClaimHtlc {
   override def sign(): ReplaceableClaimHtlcSuccess = {
     copy(txInfo = txInfo.sign(commitKeys, commitment.params.commitmentFormat))
   }

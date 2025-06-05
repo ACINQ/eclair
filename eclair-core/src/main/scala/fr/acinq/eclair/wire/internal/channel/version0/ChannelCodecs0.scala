@@ -141,8 +141,8 @@ private[channel] object ChannelCodecs0 {
     // complexity and real world impact.
     val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
       .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx])
-      .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | provide(0L)) :: ("htlcExpiry" | missingHtlcExpiry)).as[HtlcSuccessTx])
-      .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | provide(0L)) :: ("htlcExpiry" | missingHtlcExpiry)).as[HtlcTimeoutTx])
+      .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | provide(0L)) :: ("htlcExpiry" | missingHtlcExpiry)).as[UnsignedHtlcSuccessTx])
+      .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | provide(0L)) :: ("htlcExpiry" | missingHtlcExpiry)).as[UnsignedHtlcTimeoutTx])
       .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | provide(0L)) :: ("htlcExpiry" | missingHtlcExpiry)).as[ClaimHtlcSuccessTx])
       .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | provide(0L)) :: ("htlcExpiry" | missingHtlcExpiry)).as[ClaimHtlcTimeoutTx])
       .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
@@ -161,7 +161,7 @@ private[channel] object ChannelCodecs0 {
     )
 
     val htlcTxAndSigsCodec: Codec[HtlcTxAndSigs] = (
-      ("txinfo" | txWithInputInfoCodec.downcast[HtlcTx]) ::
+      ("txinfo" | txWithInputInfoCodec.downcast[UnsignedHtlcTx]) ::
         ("localSig" | variableSizeBytes(uint16, sig64OrDERCodec)) :: // we store as variable length for historical purposes (we used to store as DER encoded)
         ("remoteSig" | variableSizeBytes(uint16, sig64OrDERCodec))).as[HtlcTxAndSigs].decodeOnly
 

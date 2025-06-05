@@ -33,7 +33,7 @@ import fr.acinq.eclair.channel.publish.{ReplaceableClaimHtlcTimeout, Replaceable
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
+import fr.acinq.eclair.transactions.Transactions.UnsignedHtlcSuccessTx
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -615,7 +615,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = bob.signCommitTx()
     val htlcSuccessTx = bob.htlcTxs().head
-    assert(htlcSuccessTx.isInstanceOf[HtlcSuccessTx])
+    assert(htlcSuccessTx.isInstanceOf[UnsignedHtlcSuccessTx])
 
     disconnect(alice, bob)
 
