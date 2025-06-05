@@ -152,7 +152,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_FULFILL_HTLC") { f =>
     import f._
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    bob ! CMD_FULFILL_HTLC(0, r1)
+    bob ! CMD_FULFILL_HTLC(0, r1, None, None)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
     awaitCond(bob.stateData == initialState
       .modify(_.commitments.changes.localChanges.proposed).using(_ :+ fulfill)
@@ -163,7 +163,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    bob ! CMD_FULFILL_HTLC(42, randomBytes32(), replyTo_opt = Some(sender.ref))
+    bob ! CMD_FULFILL_HTLC(42, randomBytes32(), None, None, replyTo_opt = Some(sender.ref))
     sender.expectMsgType[RES_FAILURE[CMD_FULFILL_HTLC, UnknownHtlcId]]
     assert(initialState == bob.stateData)
   }
@@ -172,7 +172,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val c = CMD_FULFILL_HTLC(1, ByteVector32.Zeroes, replyTo_opt = Some(sender.ref))
+    val c = CMD_FULFILL_HTLC(1, ByteVector32.Zeroes, None, None, replyTo_opt = Some(sender.ref))
     bob ! c
     sender.expectMsg(RES_FAILURE(c, InvalidHtlcPreimage(channelId(bob), 1)))
 
@@ -185,7 +185,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val c = CMD_FULFILL_HTLC(0, r1, replyTo_opt = Some(sender.ref))
+    val c = CMD_FULFILL_HTLC(0, r1, None, None, replyTo_opt = Some(sender.ref))
     // this would be done automatically when the relayer calls safeSend
     bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(initialState.channelId, c)
     bob ! c
@@ -200,7 +200,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
 
-    val c = CMD_FULFILL_HTLC(42, randomBytes32(), replyTo_opt = Some(sender.ref))
+    val c = CMD_FULFILL_HTLC(42, randomBytes32(), None, None, replyTo_opt = Some(sender.ref))
     sender.send(bob, c) // this will fail
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     awaitCond(bob.underlyingActor.nodeParams.db.pendingCommands.listSettlementCommands(initialState.channelId).isEmpty)
@@ -359,7 +359,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     // we need to have something to sign so we first send a fulfill and acknowledge (=sign) it
-    bob ! CMD_FULFILL_HTLC(0, r1)
+    bob ! CMD_FULFILL_HTLC(0, r1, None, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
@@ -383,7 +383,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_SIGN (while waiting for RevokeAndAck)") { f =>
     import f._
     val sender = TestProbe()
-    bob ! CMD_FULFILL_HTLC(0, r1)
+    bob ! CMD_FULFILL_HTLC(0, r1, None, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
@@ -399,7 +399,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv CommitSig") { f =>
     import f._
-    bob ! CMD_FULFILL_HTLC(0, r1)
+    bob ! CMD_FULFILL_HTLC(0, r1, None, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     bob ! CMD_SIGN()
@@ -471,7 +471,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv RevokeAndAck (invalid preimage)") { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    bob ! CMD_FULFILL_HTLC(0, r1)
+    bob ! CMD_FULFILL_HTLC(0, r1, None, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     bob ! CMD_SIGN()

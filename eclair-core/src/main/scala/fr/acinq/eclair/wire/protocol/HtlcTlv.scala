@@ -56,7 +56,13 @@ object UpdateAddHtlcTlv {
 sealed trait UpdateFulfillHtlcTlv extends Tlv
 
 object UpdateFulfillHtlcTlv {
-  val updateFulfillHtlcTlvCodec: Codec[TlvStream[UpdateFulfillHtlcTlv]] = tlvStream(discriminated[UpdateFulfillHtlcTlv].by(varint))
+  case class AttributionData(data: ByteVector) extends UpdateFulfillHtlcTlv
+
+  private val attributionData: Codec[AttributionData] = (("length" | constant(hex"fd0398")) :: ("data" | bytes(Sphinx.Attribution.totalLength))).as[AttributionData]
+
+  val updateFulfillHtlcTlvCodec: Codec[TlvStream[UpdateFulfillHtlcTlv]] = tlvStream(discriminated[UpdateFulfillHtlcTlv].by(varint)
+    .typecase(UInt64(1), attributionData)
+  )
 }
 
 sealed trait UpdateFailHtlcTlv extends Tlv
@@ -64,7 +70,7 @@ sealed trait UpdateFailHtlcTlv extends Tlv
 object UpdateFailHtlcTlv {
   case class AttributionData(data: ByteVector) extends UpdateFailHtlcTlv
 
-  private val attributionData: Codec[AttributionData] = (("length" | constant(hex"fd0398")) :: ("data" | bytes(Sphinx.FailurePacket.Attribution.totalLength))).as[AttributionData]
+  private val attributionData: Codec[AttributionData] = (("length" | constant(hex"fd0398")) :: ("data" | bytes(Sphinx.Attribution.totalLength))).as[AttributionData]
 
   val updateFailHtlcTlvCodec: Codec[TlvStream[UpdateFailHtlcTlv]] = tlvStream(discriminated[UpdateFailHtlcTlv].by(varint)
     .typecase(UInt64(1), attributionData)

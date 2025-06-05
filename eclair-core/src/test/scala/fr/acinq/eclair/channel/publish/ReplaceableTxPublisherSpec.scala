@@ -953,7 +953,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       crossSign(alice, bob, alice2bob, bob2alice)
       val (r, htlc) = addHtlc(4_000_000 msat, bob, alice, bob2alice, alice2bob)
       crossSign(bob, alice, bob2alice, alice2bob)
-      probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
+      probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, None, None, replyTo_opt = Some(probe.ref)))
       probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
 
       // Force-close channel.
@@ -1064,7 +1064,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     crossSign(alice, bob, alice2bob, bob2alice)
     val (r, htlc) = addHtlc(incomingHtlcAmount, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
-    probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
+    probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, None, None, replyTo_opt = Some(probe.ref)))
     probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
 
     // Force-close channel and verify txs sent to watcher.
@@ -1519,7 +1519,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       crossSign(alice, bob, alice2bob, bob2alice)
       val (r, htlc) = addHtlc(20_000_000 msat, bob, alice, bob2alice, alice2bob)
       crossSign(bob, alice, bob2alice, alice2bob)
-      probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
+      probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, None, None, replyTo_opt = Some(probe.ref)))
       probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
 
       // Force-close channel.
@@ -1594,7 +1594,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     } else {
       crossSign(alice, bob, alice2bob, bob2alice)
     }
-    probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
+    probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, None, None, replyTo_opt = Some(probe.ref)))
     probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
 
     // Force-close channel and verify txs sent to watcher.

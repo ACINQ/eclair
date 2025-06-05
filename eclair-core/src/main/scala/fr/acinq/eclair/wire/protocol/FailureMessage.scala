@@ -170,7 +170,7 @@ object FailureMessageCodecs {
 
   private val encryptedDownstreamFailure: Codec[FailureReason.EncryptedDownstreamFailure] =
     (("packet" | varsizebinarydata) ::
-      ("attribution_opt" | optional(bool8, bytes(Sphinx.FailurePacket.Attribution.totalLength)))).as[FailureReason.EncryptedDownstreamFailure]
+      ("attribution_opt" | optional(bool8, bytes(Sphinx.Attribution.totalLength)))).as[FailureReason.EncryptedDownstreamFailure]
 
   val failureReasonCodec: Codec[FailureReason] = discriminated[FailureReason].by(uint8)
     // Order matters: latest codec comes first, then old codecs for backward compatibility

@@ -173,7 +173,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(3, Some(minerAddress))
     // we then fulfill the htlc, which will make F redeem it on-chain
-    sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
+    sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage, None, None)))
     // we don't need to generate blocks to confirm the htlc-success; C should extract the preimage as soon as it enters
     // the mempool and fulfill the payment upstream.
     paymentSender.expectMsgType[PaymentSent](max = 60 seconds)
@@ -214,7 +214,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(3, Some(minerAddress))
     // we then fulfill the htlc (it won't be sent to C, and will be used to pull funds on-chain)
-    sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
+    sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage, None, None)))
     // we don't need to generate blocks to confirm the htlc-success; C should extract the preimage as soon as it enters
     // the mempool and fulfill the payment upstream.
     paymentSender.expectMsgType[PaymentSent](max = 60 seconds)

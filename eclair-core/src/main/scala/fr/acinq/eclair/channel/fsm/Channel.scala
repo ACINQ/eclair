@@ -481,7 +481,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(c: CMD_FULFILL_HTLC, d: DATA_NORMAL) =>
-      d.commitments.sendFulfill(c) match {
+      d.commitments.sendFulfill(c, nodeParams.privateKey, nodeParams.features.hasFeature(Features.AttributionData)) match {
         case Right((commitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN()
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
@@ -506,7 +506,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           log.debug("delaying CMD_FAIL_HTLC with id={} for {}", c.id, delay)
           context.system.scheduler.scheduleOnce(delay, self, c.copy(delay_opt = None))
           stay()
-        case None => d.commitments.sendFail(c, nodeParams.privateKey, nodeParams.features.hasFeature(Features.AttributableFailures)) match {
+        case None => d.commitments.sendFail(c, nodeParams.privateKey, nodeParams.features.hasFeature(Features.AttributionData)) match {
           case Right((commitments1, fail)) =>
             if (c.commit) self ! CMD_SIGN()
             context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
@@ -1482,7 +1482,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
   when(SHUTDOWN)(handleExceptions {
     case Event(c: CMD_FULFILL_HTLC, d: DATA_SHUTDOWN) =>
-      d.commitments.sendFulfill(c) match {
+      d.commitments.sendFulfill(c, nodeParams.privateKey, nodeParams.features.hasFeature(Features.AttributionData)) match {
         case Right((commitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN()
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fulfill
@@ -1501,7 +1501,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(c: CMD_FAIL_HTLC, d: DATA_SHUTDOWN) =>
-      d.commitments.sendFail(c, nodeParams.privateKey, nodeParams.features.hasFeature(Features.AttributableFailures)) match {
+      d.commitments.sendFail(c, nodeParams.privateKey, nodeParams.features.hasFeature(Features.AttributionData)) match {
         case Right((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN()
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
@@ -1859,8 +1859,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   when(CLOSING)(handleExceptions {
     case Event(c: HtlcSettlementCommand, d: DATA_CLOSING) =>
       (c match {
-        case c: CMD_FULFILL_HTLC => d.commitments.sendFulfill(c)
-        case c: CMD_FAIL_HTLC => d.commitments.sendFail(c, nodeParams.privateKey, nodeParams.features.hasFeature(Features.AttributableFailures))
+        case c: CMD_FULFILL_HTLC => d.commitments.sendFulfill(c, nodeParams.privateKey, nodeParams.features.hasFeature(Features.AttributionData))
+        case c: CMD_FAIL_HTLC => d.commitments.sendFail(c, nodeParams.privateKey, nodeParams.features.hasFeature(Features.AttributionData))
         case c: CMD_FAIL_MALFORMED_HTLC => d.commitments.sendFailMalformed(c)
       }) match {
         case Right((commitments1, _)) =>
