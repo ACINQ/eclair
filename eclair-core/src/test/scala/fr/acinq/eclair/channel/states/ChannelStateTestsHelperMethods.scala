@@ -600,9 +600,14 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
           assert(localCommitPublished.htlcOutputs.contains(htlcTx.txInfo.input.outPoint))
           htlcTx
         }
-        // the publisher actors will sign those transactions before broadcasting them
-        val successTxs = publishedHtlcTxs.collect { case tx: ReplaceableHtlcSuccess => tx.sign(Map.empty).txInfo.tx }
-        val timeoutTxs = publishedHtlcTxs.collect { case tx: ReplaceableHtlcTimeout => tx.sign(Map.empty).txInfo.tx }
+        val successTxs = publishedHtlcTxs.collect { case tx: ReplaceableHtlcSuccess =>
+          assert(localCommitPublished.incomingHtlcs.get(tx.txInfo.input.outPoint).contains(tx.txInfo.htlcId))
+          tx.txInfo.tx
+        }
+        val timeoutTxs = publishedHtlcTxs.collect { case tx: ReplaceableHtlcTimeout =>
+          assert(localCommitPublished.outgoingHtlcs.get(tx.txInfo.input.outPoint).contains(tx.txInfo.htlcId))
+          tx.txInfo.tx
+        }
         (successTxs, timeoutTxs)
     }
     assert(publishedHtlcSuccessTxs.size == htlcSuccessCount)
@@ -661,9 +666,15 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       Transaction.correctlySpends(claimHtlcTx.tx.txInfo.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       claimHtlcTx
     }
-    val publishedHtlcSuccessTxs = publishedClaimHtlcTxs.map(_.tx).collect { case tx: ReplaceableClaimHtlcSuccess => tx.txInfo.tx }
+    val publishedHtlcSuccessTxs = publishedClaimHtlcTxs.map(_.tx).collect { case tx: ReplaceableClaimHtlcSuccess =>
+      assert(remoteCommitPublished.incomingHtlcs.get(tx.txInfo.input.outPoint).contains(tx.txInfo.htlcId))
+      tx.txInfo.tx
+    }
     assert(publishedHtlcSuccessTxs.size == htlcSuccessCount)
-    val publishedHtlcTimeoutTxs = publishedClaimHtlcTxs.map(_.tx).collect { case tx: ReplaceableClaimHtlcTimeout => tx.txInfo.tx }
+    val publishedHtlcTimeoutTxs = publishedClaimHtlcTxs.map(_.tx).collect { case tx: ReplaceableClaimHtlcTimeout =>
+      assert(remoteCommitPublished.outgoingHtlcs.get(tx.txInfo.input.outPoint).contains(tx.txInfo.htlcId))
+      tx.txInfo.tx
+    }
     assert(publishedHtlcTimeoutTxs.size == htlcTimeoutCount)
 
     // we watch the confirmation of the commitment transaction
@@ -699,7 +710,7 @@ object ChannelStateTestsBase {
 
     def signCommitTx(): Transaction = channel.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.fullySignedLocalCommitTx(channel.underlyingActor.channelKeys)
 
-    def htlcTxs(): Seq[HtlcTx] = channel.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.htlcTxs(channel.underlyingActor.channelKeys).map(_._1)
+    def htlcTxs(): Seq[UnsignedHtlcTx] = channel.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.htlcTxs(channel.underlyingActor.channelKeys).map(_._1)
 
     def setBitcoinCoreFeerates(feerates: FeeratesPerKw): Unit = channel.underlyingActor.nodeParams.setBitcoinCoreFeerates(feerates)
 
