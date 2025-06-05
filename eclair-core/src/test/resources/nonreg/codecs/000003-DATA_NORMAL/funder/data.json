@@ -85,14 +85,15 @@
           "toLocal" : 1343316620,
           "toRemote" : 13656683380
         },
-        "commitTxAndRemoteSig" : {
-          "commitTx" : {
-            "txid" : "65fe0b1f079fa763448df3ab8d94b1ad7d377c061121376be90b9c0c1bb0cd43",
-            "tx" : "02000000016ecfe1e9e01abd3fbe482efde50e4687b3f1f5d8cba609174aebce1c0141561100000000007cf5db8002357d1400000000002200203539c96d5de8d2b2178f798a3b9dd5d390c1080ab4c79803c8878e67f7c801736b62d00000000000160014bcae0020da34e12fc9bd0fd75e3f1e4ee7085f49df013320"
-          },
-          "remoteSig" : "bd09313503ea357b3a231135c87cd1f5b26cb3bd8033e371815b7e2b4af623173b9824adf260c8735a72c58087f88f4a2f39554003996466857c1d1b25c8044f"
+        "txId" : "65fe0b1f079fa763448df3ab8d94b1ad7d377c061121376be90b9c0c1bb0cd43",
+        "input" : {
+          "outPoint" : "115641011cceeb4a1709a6cbd8f5f1b387460ee5fd2e48be3fbd1ae0e9e1cf6e:0",
+          "amountSatoshis" : 15000000
         },
-        "htlcTxsAndRemoteSigs" : [ ]
+        "remoteSig" : {
+          "sig" : "bd09313503ea357b3a231135c87cd1f5b26cb3bd8033e371815b7e2b4af623173b9824adf260c8735a72c58087f88f4a2f39554003996466857c1d1b25c8044f"
+        },
+        "htlcRemoteSigs" : [ ]
       },
       "remoteCommit" : {
         "index" : 20024,
@@ -102,7 +103,7 @@
           "toLocal" : 13656683380,
           "toRemote" : 1343316620
         },
-        "txid" : "919c015d2e0a3dc214786c24c7f035302cb9c954f740ed267a84cdca66b0be49",
+        "txId" : "919c015d2e0a3dc214786c24c7f035302cb9c954f740ed267a84cdca66b0be49",
         "remotePerCommitmentPoint" : "02b82bbd59e0d22665671d9e47d8733058b92f18e906e9403753661aa03dc9e4dd"
       }
     } ],

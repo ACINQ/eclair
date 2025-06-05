@@ -44,7 +44,7 @@ trait CommonFundingHandlers extends CommonHandlers {
    * @param delay_opt optional delay to reduce herd effect at startup.
    */
   def watchFundingSpent(commitment: Commitment, additionalKnownSpendingTxs: Set[TxId], delay_opt: Option[FiniteDuration]): Unit = {
-    val knownSpendingTxs = Set(commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid, commitment.remoteCommit.txid) ++ commitment.nextRemoteCommit_opt.map(_.commit.txid).toSet ++ additionalKnownSpendingTxs
+    val knownSpendingTxs = commitment.commitTxIds.txIds ++ additionalKnownSpendingTxs
     val watch = WatchFundingSpent(self, commitment.commitInput.outPoint.txid, commitment.commitInput.outPoint.index.toInt, knownSpendingTxs)
     delay_opt match {
       case Some(delay) => context.system.scheduler.scheduleOnce(delay, blockchain.toClassic, watch)

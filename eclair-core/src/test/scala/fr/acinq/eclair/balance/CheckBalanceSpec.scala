@@ -10,7 +10,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.using
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx, HtlcSuccessTx}
+import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
@@ -88,7 +88,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     fulfillHtlc(htlcb.id, rb, alice, bob, alice2bob, bob2alice)
 
     // Bob publishes his current commit tx.
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
     assert(bobCommitTx.txOut.size == 8) // two anchor outputs, two main outputs and 4 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     // In response to that, alice publishes her claim txs.
@@ -136,7 +136,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsgType[RevokeAndAck]
 
     // Bob publishes his next commit tx.
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.last.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
     assert(bobCommitTx.txOut.size == 7) // two anchor outputs, two main outputs and 3 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     // In response to that, alice publishes her claim txs
@@ -177,7 +177,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchTxConfirmedTriggered(BlockHeight(750_000), 1, localCommitPublished.commitTx)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.exists(_.isConfirmed))
     val mainTx = localClosingTxs.mainTx_opt.get
-    val mainBalance = localCommitPublished.claimMainDelayedOutputTx.map(_.amountIn).get
+    val mainBalance = localCommitPublished.localOutput_opt.map(o => localCommitPublished.commitTx.txOut(o.index.toInt).amount).get
 
     // We already have an off-chain balance from other channels.
     val balance = OffChainBalance(
@@ -198,13 +198,14 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       alice2blockchain.expectWatchOutputSpent(htlcDelayedTx.input)
       htlcDelayedTx
     })
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.exists(_.claimHtlcDelayedTxs.size == 2))
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.exists(_.htlcDelayedOutputs.size == 2))
     assert(balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING]) == expected1)
 
     // Bob claims the remaining incoming HTLC using his HTLC-timeout transaction: we remove it from our balance.
     val (remoteCommitPublished, remoteClosingTxs) = remoteClose(localCommitPublished.commitTx, bob, bob2blockchain, htlcTimeoutCount = 3)
-    val bobHtlcTimeoutTx = remoteCommitPublished.claimHtlcTxs
-      .collectFirst { case (outpoint, Some(txInfo: ClaimHtlcTimeoutTx)) if txInfo.htlcId == htlcb1.id => outpoint }
+    val bobHtlcTimeoutTx = remoteCommitPublished.htlcs
+      // Note that this is Alice's commit tx, so incoming and outgoing are inverted.
+      .collectFirst { case (outpoint, IncomingHtlcId(htlcId)) if htlcId == htlcb1.id => outpoint }
       .flatMap(outpoint => remoteClosingTxs.htlcTimeoutTxs.find(_.txIn.head.outPoint == outpoint))
       .get
     alice ! WatchTxConfirmedTriggered(BlockHeight(760_010), 0, bobHtlcTimeoutTx)
