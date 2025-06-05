@@ -33,7 +33,7 @@ object OfferCodecs {
 
   private val offerCurrency: Codec[OfferCurrency] = tlvField(utf8)
 
-  private val offerAmount: Codec[OfferAmount] = tlvField(tmillisatoshi)
+  private val offerAmount: Codec[OfferAmount] = tlvField(tu64overflow)
 
   private val offerDescription: Codec[OfferDescription] = tlvField(utf8)
 

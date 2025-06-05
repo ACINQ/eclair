@@ -70,7 +70,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     // changing fields makes the signature invalid
     val withModifiedUnknownTlv = Bolt12Invoice(invoice.records.copy(unknown = Set(GenericTlv(UInt64(7), hex"ade4"))))
     assert(!withModifiedUnknownTlv.checkSignature())
-    val withModifiedAmount = Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferAmount(amount) => OfferAmount(amount + 100.msat) case x => x }, invoice.records.unknown))
+    val withModifiedAmount = Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferAmount(amount) => OfferAmount(amount + 100) case x => x }, invoice.records.unknown))
     assert(!withModifiedAmount.checkSignature())
   }
 
@@ -92,7 +92,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(invoice.validateFor(request, nodeKey.publicKey).isRight)
     // amount must match the request
-    val withOtherAmount = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferAmount(_) => OfferAmount(9000 msat) case x => x })), nodeKey)
+    val withOtherAmount = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferAmount(_) => OfferAmount(9000) case x => x })), nodeKey)
     assert(withOtherAmount.validateFor(request, nodeKey.publicKey).isLeft)
     // description must match the offer
     val withOtherDescription = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferDescription(_) => OfferDescription("other description") case x => x })), nodeKey)
@@ -229,7 +229,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val tlvs = TlvStream[InvoiceTlv](Set[InvoiceTlv](
       InvoiceRequestMetadata(payerInfo),
       OfferChains(Seq(chain)),
-      OfferAmount(amount),
+      OfferAmount(amount.toLong),
       OfferDescription(description),
       OfferFeatures(Features.empty),
       OfferIssuer(issuer),
@@ -339,7 +339,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val preimage = ByteVector32(hex"99221825b86576e94391b179902be8b22c7cfa7c3d14aec6ae86657dfd9bd2a8")
     val offer = Offer(TlvStream[OfferTlv](
       OfferChains(Seq(Block.Testnet3GenesisBlock.hash)),
-      OfferAmount(100000 msat),
+      OfferAmount(100000),
       OfferDescription("offer with quantity"),
       OfferIssuer("alice@bigshop.com"),
       OfferQuantityMax(1000),

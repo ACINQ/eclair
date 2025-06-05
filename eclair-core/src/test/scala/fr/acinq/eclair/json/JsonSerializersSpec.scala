@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.OfferData
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.PeerInfo
@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.{Invoice, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs
-import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
+import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferTlv}
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.AnyFunSuiteLike
 import org.scalatest.matchers.should.Matchers
@@ -332,6 +332,27 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val ref = "lni1qqsf4h8fsnpjkj057gjg9c3eqhv889440xh0z6f5kng9vsaad8pgq7sgqsdjuqsqpgxk66twd9kkzmpqdanxvetjzcss83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh42qsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqzjqsdjupkjtqssx05572ha26x39rczan5yft22pgwa72jw8gytavkm5ydn7yf5kpgh5zsq83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh4q2rd3ny0elv9m7mh38xxwe6ypfheeqeqlwgft05r6dhc50gtw0nv2qgrrl9x2qzzqvwukam32mhkdqrvwwcp5l6jcnnnezdq69vz8gdvvgmsqwk3efqf3f6gmf0ul63940awz429rdhhsts86s0r30e5nffwhrqw90xgxf7f60sm7tcclvyqwz7cer5q9223madstdy2p5q6y8qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqf2qheqqqqq2gprrgshynfszqyk2sgpvkrnmq53kv7r52rpnmtmd9ukredsnygsnymsurdy6e9la6l4hyz4qgxewqmftqggrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet6lqsx4k5r7rsld3hhe87psyy5cnhhzt4dz838f75734mted7pdsrflpvys23tkafmhctf3musnsaa42h6qjdggyqlhtevutzzpzlnwd8alq"
     val pr = Invoice.fromString(ref).get
     JsonSerializers.serialization.write(pr)(JsonSerializers.formats) shouldBe """{"amount":456001234,"nodeId":"03c48ac97e09f3cbbaeb35b02aaa6d072b57726841a34d25952157caca60a1caf5","paymentHash":"2cb0e7b052366787450c33daf6d2f2c3cb6132221326e1c1b49ac97fdd7eb720","description":"minimal offer","features":{"activated":{},"unknown":[]},"blindedPaths":[{"introductionNodeId":"03c48ac97e09f3cbbaeb35b02aaa6d072b57726841a34d25952157caca60a1caf5","blindedNodeIds":["031fca650042031dcb777156ef66806c73b01a7f52c4e73c89a0d15823a1ac6237"]}],"createdAt":1665412681,"expiresAt":1665412981,"serialized":"lni1qqsf4h8fsnpjkj057gjg9c3eqhv889440xh0z6f5kng9vsaad8pgq7sgqsdjuqsqpgxk66twd9kkzmpqdanxvetjzcss83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh42qsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqzjqsdjupkjtqssx05572ha26x39rczan5yft22pgwa72jw8gytavkm5ydn7yf5kpgh5zsq83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh4q2rd3ny0elv9m7mh38xxwe6ypfheeqeqlwgft05r6dhc50gtw0nv2qgrrl9x2qzzqvwukam32mhkdqrvwwcp5l6jcnnnezdq69vz8gdvvgmsqwk3efqf3f6gmf0ul63940awz429rdhhsts86s0r30e5nffwhrqw90xgxf7f60sm7tcclvyqwz7cer5q9223madstdy2p5q6y8qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqf2qheqqqqq2gprrgshynfszqyk2sgpvkrnmq53kv7r52rpnmtmd9ukredsnygsnymsurdy6e9la6l4hyz4qgxewqmftqggrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet6lqsx4k5r7rsld3hhe87psyy5cnhhzt4dz838f75734mted7pdsrflpvys23tkafmhctf3musnsaa42h6qjdggyqlhtevutzzpzlnwd8alq"}"""
+  }
+
+  test("Bolt 12 offer") {
+    val ref = "lno1pqzqzltcgq9q6urvv4shxefqv3hkuct5v58qxrp4qqfquctvd93k2srpvd5kuufwvdh3vggzg2hd49ueds8phzcahvh4p2m3pnen649dza2h3k6gxpaequr8fhtq"
+    val offer = Offer.decode(ref).get
+    JsonSerializers.serialization.write(offer)(JsonSerializers.formats) shouldBe """{"amount":25000000,"description":"please donate","expiry":{"iso":"1970-01-10T06:13:20Z","unix":800000},"issuer":"alice@acinq.co","nodeId":"0242aeda97996c0e1b8b1dbb2f50ab710cf33d54ad175578db48307b9070674dd6"}"""
+
+    val bigOffer = Offer(TlvStream(Set[OfferTlv](
+      OfferTypes.OfferChains(Seq(Block.Testnet4GenesisBlock.hash)),
+      OfferTypes.OfferMetadata(hex"d5f4a6"),
+      OfferTypes.OfferCurrency("EUR"),
+      OfferTypes.OfferAmount(42),
+      OfferTypes.OfferDescription("offer with a lot of fields in it"),
+      OfferTypes.OfferFeatures(Features(Features.ProvideStorage -> FeatureSupport.Mandatory)),
+      OfferTypes.OfferAbsoluteExpiry(TimestampSecond(3600)),
+      OfferTypes.OfferPaths(Seq(Sphinx.RouteBlinding.BlindedRoute(EncodedNodeId.WithPublicKey.Plain(PublicKey(hex"022812e3a3760ac989b8749ee9fc70fd12e4d7f3cad5e3e2bf572e9e4eaaa7b7d9")), PublicKey(hex"028a2b20b2debdfd97de08f6e2374f2946116492f358b78acf9eac05f6fdac632d"), Seq(Sphinx.RouteBlinding.BlindedHop(PublicKey(hex"031b27d9e97dbb0ef87c48bb0231c96c6bca1ee54b0e0cfe869ad2388ce247719f"), hex"def5"))))),
+      OfferTypes.OfferIssuer("bob@bobcorp.com"),
+      OfferTypes.OfferQuantityMax(5),
+      OfferTypes.OfferNodeId(PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")),
+    ), Set(GenericTlv(UInt64(71), hex"bd4e85ce"))))
+    JsonSerializers.serialization.write(bigOffer)(JsonSerializers.formats) shouldBe """{"chains":["43f08bdab050e35b567c864b91f47f50ae725ae2de53bcfbbaf284da00000000"],"currency":"EUR","amount":42,"description":"offer with a lot of fields in it","expiry":{"iso":"1970-01-01T01:00:00Z","unix":3600},"issuer":"bob@bobcorp.com","nodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","paths":[{"firstNodeId":{"publicKey":"022812e3a3760ac989b8749ee9fc70fd12e4d7f3cad5e3e2bf572e9e4eaaa7b7d9"},"firstPathKey":"028a2b20b2debdfd97de08f6e2374f2946116492f358b78acf9eac05f6fdac632d","blindedHops":[{"blindedPublicKey":"031b27d9e97dbb0ef87c48bb0231c96c6bca1ee54b0e0cfe869ad2388ce247719f","encryptedPayload":"def5"}]}],"quantityMax":5,"features":{"activated":{"option_provide_storage":"mandatory"},"unknown":[]},"metadata":"d5f4a6","unknownTlvs":{"71":"bd4e85ce"}}"""
   }
 
   test("Bolt 12 offer data") {

@@ -23,7 +23,7 @@ import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol.CommonCodecs.varint
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
-import fr.acinq.eclair.{Bolt12Feature, CltvExpiryDelta, Feature, Features, MilliSatoshi, TimestampSecond, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{Bolt12Feature, CltvExpiryDelta, Feature, Features, MilliSatoshi, MilliSatoshiLong, TimestampSecond, UInt64, nodeFee, randomBytes32}
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs.vector
@@ -74,9 +74,9 @@ object OfferTypes {
   case class OfferCurrency(iso4217: String) extends OfferTlv
 
   /**
-   * Amount to pay per item. As we only support bitcoin, the amount is in msat.
+   * Amount to pay per item.
    */
-  case class OfferAmount(amount: MilliSatoshi) extends OfferTlv
+  case class OfferAmount(amount: Long) extends OfferTlv
 
   /**
    * Description of the purpose of the payment.
@@ -238,7 +238,7 @@ object OfferTypes {
   case class Offer(records: TlvStream[OfferTlv]) {
     val chains: Seq[BlockHash] = records.get[OfferChains].map(_.chains).getOrElse(Seq(Block.LivenetGenesisBlock.hash))
     val metadata: Option[ByteVector] = records.get[OfferMetadata].map(_.data)
-    val amount: Option[MilliSatoshi] = records.get[OfferAmount].map(_.amount)
+    val amount: Option[MilliSatoshi] = if (records.get[OfferCurrency].isEmpty) records.get[OfferAmount].map(_.amount.msat) else None
     val description: Option[String] = records.get[OfferDescription].map(_.description)
     val features: Features[Bolt12Feature] = records.get[OfferFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
     val expiry: Option[TimestampSecond] = records.get[OfferAbsoluteExpiry].map(_.absoluteExpiry)
@@ -279,7 +279,7 @@ object OfferTypes {
       require(amount_opt.isEmpty || description_opt.nonEmpty)
       val tlvs: Set[OfferTlv] = Set(
         if (chain != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(chain))) else None,
-        amount_opt.map(OfferAmount),
+        amount_opt.map(_.toLong).map(OfferAmount),
         description_opt.map(OfferDescription),
         if (!features.isEmpty) Some(OfferFeatures(features.unscoped())) else None,
         Some(OfferNodeId(nodeId)),
@@ -297,7 +297,7 @@ object OfferTypes {
       require(amount_opt.isEmpty || description_opt.nonEmpty)
       val tlvs: Set[OfferTlv] = Set(
         if (chain != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(chain))) else None,
-        amount_opt.map(OfferAmount),
+        amount_opt.map(_.toLong).map(OfferAmount),
         description_opt.map(OfferDescription),
         if (!features.isEmpty) Some(OfferFeatures(features.unscoped())) else None,
         Some(OfferPaths(paths))
@@ -308,8 +308,6 @@ object OfferTypes {
     def validate(records: TlvStream[OfferTlv]): Either[InvalidTlvPayload, Offer] = {
       if (records.get[OfferDescription].isEmpty && records.get[OfferAmount].nonEmpty) return Left(MissingRequiredTlv(UInt64(10)))
       if (records.get[OfferNodeId].isEmpty && records.get[OfferPaths].forall(_.paths.isEmpty)) return Left(MissingRequiredTlv(UInt64(22)))
-      // Currency conversion isn't supported yet.
-      if (records.get[OfferCurrency].nonEmpty) return Left(ForbiddenTlv(UInt64(6)))
       if (records.unknown.exists(!isOfferTlv(_))) return Left(ForbiddenTlv(records.unknown.find(!isOfferTlv(_)).get.tag))
       Right(Offer(records))
     }
