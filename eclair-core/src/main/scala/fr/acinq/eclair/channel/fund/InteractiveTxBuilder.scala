@@ -118,8 +118,8 @@ object InteractiveTxBuilder {
   }
 
   object Multisig2of2Input {
-    def apply(commitment: Commitment): Multisig2of2Input = Multisig2of2Input(
-      info = commitment.commitInput,
+    def apply(channelKeys: ChannelKeys, commitment: Commitment): Multisig2of2Input = Multisig2of2Input(
+      info = commitment.commitInput(channelKeys),
       fundingTxIndex = commitment.fundingTxIndex,
       remoteFundingPubkey = commitment.remoteFundingPubKey
     )
@@ -1113,7 +1113,7 @@ object InteractiveTxSigningSession {
           LocalCommit.fromCommitSig(channelParams, commitKeys, fundingTx.txId, fundingKey, fundingParams.remoteFundingPubKey, commitInput, remoteCommitSig, localCommitIndex, unsignedLocalCommit.spec).map { signedLocalCommit =>
             if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
               val fundingStatus = LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx, currentBlockHeight, fundingParams, liquidityPurchase_opt)
-              val commitment = Commitment(fundingTxIndex, remoteCommit.index, fundingKey.publicKey, fundingParams.remoteFundingPubKey, fundingTxOutpoint, fundingTx.tx.sharedOutput.amount, fundingStatus, RemoteFundingStatus.NotLocked, channelParams.commitmentFormat, signedLocalCommit, remoteCommit, None)
+              val commitment = Commitment(fundingTxIndex, remoteCommit.index, fundingParams.remoteFundingPubKey, fundingTxOutpoint, fundingTx.tx.sharedOutput.amount, fundingStatus, RemoteFundingStatus.NotLocked, channelParams.commitmentFormat, signedLocalCommit, remoteCommit, None)
               SendingSigs(fundingStatus, commitment, fundingTx.localSigs)
             } else {
               this.copy(localCommit = Right(signedLocalCommit))
@@ -1137,9 +1137,8 @@ object InteractiveTxSigningSession {
               Left(f)
             case Right(fullySignedTx) =>
               log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", fullySignedTx.tx.localInputs.length, fullySignedTx.tx.remoteInputs.length, fullySignedTx.tx.localOutputs.length, fullySignedTx.tx.remoteOutputs.length)
-              val localFundingPubKey = channelKeys.fundingKey(fundingTxIndex).publicKey
               val fundingStatus = LocalFundingStatus.DualFundedUnconfirmedFundingTx(fullySignedTx, currentBlockHeight, fundingParams, liquidityPurchase_opt)
-              val commitment = Commitment(fundingTxIndex, remoteCommit.index, localFundingPubKey, fundingParams.remoteFundingPubKey, fundingTxOutpoint, fundingTx.tx.sharedOutput.amount, fundingStatus, RemoteFundingStatus.NotLocked, channelParams.commitmentFormat, signedLocalCommit, remoteCommit, None)
+              val commitment = Commitment(fundingTxIndex, remoteCommit.index, fundingParams.remoteFundingPubKey, fundingTxOutpoint, fundingTx.tx.sharedOutput.amount, fundingStatus, RemoteFundingStatus.NotLocked, channelParams.commitmentFormat, signedLocalCommit, remoteCommit, None)
               Right(SendingSigs(fundingStatus, commitment, fullySignedTx.localSigs))
           }
       }

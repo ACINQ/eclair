@@ -548,7 +548,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               log.info("rejecting rbf attempt: last attempt was less than {} blocks ago", nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks)
               stay() using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, InvalidRbfAttemptTooSoon(d.channelId, d.latestFundingTx.createdAt, d.latestFundingTx.createdAt + nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks).getMessage)
             } else {
-              val fundingScript = d.commitments.latest.commitInput.txOut.publicKeyScript
+              val fundingScript = d.commitments.latest.commitInput(channelKeys).txOut.publicKeyScript
               LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = true, msg.requestFunding_opt, nodeParams.liquidityAdsConfig.rates_opt, None) match {
                 case Left(t) =>
                   log.warning("rejecting rbf attempt: invalid liquidity ads request ({})", t.getMessage)
@@ -606,7 +606,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             lockTime = cmd.lockTime,
             targetFeerate = cmd.targetFeerate,
           )
-          val fundingScript = d.commitments.latest.commitInput.txOut.publicKeyScript
+          val fundingScript = d.commitments.latest.commitInput(channelKeys).txOut.publicKeyScript
           LiquidityAds.validateRemoteFunding(cmd.requestFunding_opt, remoteNodeId, d.channelId, fundingScript, msg.fundingContribution, cmd.targetFeerate, isChannelCreation = true, msg.willFund_opt) match {
             case Left(t) =>
               log.warning("rejecting rbf attempt: invalid liquidity ads response ({})", t.getMessage)

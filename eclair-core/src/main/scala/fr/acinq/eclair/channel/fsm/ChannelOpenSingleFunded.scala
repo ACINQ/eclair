@@ -284,7 +284,6 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               val commitment = Commitment(
                 fundingTxIndex = 0,
                 firstRemoteCommitIndex = 0,
-                localFundingPubKey = fundingKey.publicKey,
                 remoteFundingPubKey = remoteFundingPubKey,
                 fundingTxOutpoint = localCommitTx.input.outPoint,
                 fundingAmount = localCommitTx.input.txOut.amount,
@@ -333,7 +332,6 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val commitment = Commitment(
             fundingTxIndex = 0,
             firstRemoteCommitIndex = 0,
-            localFundingPubKey = fundingPubkey,
             remoteFundingPubKey = remoteFundingPubKey,
             fundingTxOutpoint = localCommitTx.input.outPoint,
             fundingAmount = localCommitTx.input.txOut.amount,

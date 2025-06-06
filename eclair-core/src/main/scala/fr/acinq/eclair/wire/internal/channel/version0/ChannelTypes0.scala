@@ -220,7 +220,6 @@ private[channel] object ChannelTypes0 {
       val commitment = Commitment(
         fundingTxIndex = 0,
         firstRemoteCommitIndex = 0,
-        localFundingPubKey = randomKey().publicKey,
         remoteFundingPubKey = remoteParams.fundingPubKey,
         fundingTxOutpoint = localCommit.publishableTxs.commitTx.input.outPoint,
         fundingAmount = localCommit.publishableTxs.commitTx.input.txOut.amount,
