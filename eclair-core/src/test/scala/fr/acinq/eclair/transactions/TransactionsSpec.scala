@@ -356,7 +356,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         OutPoint(randomTxId(), 3) -> TxOut(walletAmount, Script.pay2wpkh(walletPub)),
         OutPoint(randomTxId(), 0) -> TxOut(walletAmount, Script.pay2wpkh(walletPub)),
       )
-      val Right(claimAnchorOutputTx) = ClaimAnchorOutputTx.createUnsignedTx(localFundingPriv, localKeys, commitTx, commitmentFormat).map(anchorTx => {
+      val Right(claimAnchorOutputTx) = ClaimLocalAnchorTx.createUnsignedTx(localFundingPriv, localKeys, commitTx, commitmentFormat).map(anchorTx => {
         val walletTxIn = walletInputs.map { case (outpoint, _) => TxIn(outpoint, ByteVector.empty, 0) }
         val unsignedTx = anchorTx.tx.copy(txIn = anchorTx.tx.txIn ++ walletTxIn)
         val sig1 = unsignedTx.signInput(1, Script.pay2pkh(walletPub), SIGHASH_ALL, walletAmount, SigVersion.SIGVERSION_WITNESS_V0, walletPriv)
@@ -378,7 +378,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     if (commitmentFormat != DefaultCommitmentFormat) {
       // remote spends remote anchor
-      val Right(claimAnchorOutputTx) = ClaimAnchorOutputTx.createUnsignedTx(remoteFundingPriv, remoteKeys, commitTx, commitmentFormat)
+      val Right(claimAnchorOutputTx) = ClaimRemoteAnchorTx.createUnsignedTx(remoteFundingPriv, remoteKeys, commitTx, commitmentFormat)
       assert(!claimAnchorOutputTx.validate(Map.empty))
       val signedTx = claimAnchorOutputTx.sign(remoteFundingPriv, remoteKeys, commitmentFormat, Map.empty)
       assert(signedTx.validate(Map.empty))

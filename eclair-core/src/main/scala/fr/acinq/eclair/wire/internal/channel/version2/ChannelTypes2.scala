@@ -22,7 +22,7 @@ import fr.acinq.eclair.transactions.Transactions._
 
 private[channel] object ChannelTypes2 {
 
-  case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[UnsignedHtlcTx]], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) {
+  case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[UnsignedHtlcTx]], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimLocalAnchorTx], irrevocablySpent: Map[OutPoint, Transaction]) {
     def migrate(): channel.LocalCommitPublished = channel.LocalCommitPublished(
       commitTx = commitTx,
       localOutput_opt = claimMainDelayedOutputTx.map(_.input.outPoint),
@@ -43,7 +43,7 @@ private[channel] object ChannelTypes2 {
     )
   }
 
-  case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], claimHtlcTxs: Map[OutPoint, Option[ClaimHtlcTx]], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) {
+  case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], claimHtlcTxs: Map[OutPoint, Option[ClaimHtlcTx]], claimAnchorTxs: List[ClaimLocalAnchorTx], irrevocablySpent: Map[OutPoint, Transaction]) {
     def migrate(): channel.RemoteCommitPublished = channel.RemoteCommitPublished(
       commitTx = commitTx,
       localOutput_opt = claimMainOutputTx.map(_.input.outPoint),

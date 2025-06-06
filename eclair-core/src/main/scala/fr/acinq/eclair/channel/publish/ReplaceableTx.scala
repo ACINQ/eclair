@@ -103,16 +103,16 @@ sealed trait ReplaceableAnchor extends ReplaceableTxWithWalletInputs {
   }
 }
 
-case class ReplaceableLocalCommitAnchor(txInfo: ClaimAnchorOutputTx, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableAnchor {
-  override def redeemInfo(): RedeemInfo = ClaimAnchorOutputTx.redeemInfo(fundingKey.publicKey, commitKeys, commitment.params.commitmentFormat)
+case class ReplaceableLocalCommitAnchor(txInfo: ClaimLocalAnchorTx, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableAnchor {
+  override def redeemInfo(): RedeemInfo = ClaimLocalAnchorTx.redeemInfo(fundingKey.publicKey, commitKeys.publicKeys, commitment.params.commitmentFormat)
 
   override def sign(extraUtxos: Map[OutPoint, TxOut]): ReplaceableLocalCommitAnchor = {
     copy(txInfo = txInfo.sign(fundingKey, commitKeys, commitment.params.commitmentFormat, extraUtxos))
   }
 }
 
-case class ReplaceableRemoteCommitAnchor(txInfo: ClaimAnchorOutputTx, fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableAnchor {
-  override def redeemInfo(): RedeemInfo = ClaimAnchorOutputTx.redeemInfo(fundingKey.publicKey, commitKeys, commitment.params.commitmentFormat)
+case class ReplaceableRemoteCommitAnchor(txInfo: ClaimRemoteAnchorTx, fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableAnchor {
+  override def redeemInfo(): RedeemInfo = ClaimRemoteAnchorTx.redeemInfo(fundingKey.publicKey, commitKeys.publicKeys, commitment.params.commitmentFormat)
 
   override def sign(extraUtxos: Map[OutPoint, TxOut]): ReplaceableRemoteCommitAnchor = {
     copy(txInfo = txInfo.sign(fundingKey, commitKeys, commitment.params.commitmentFormat, extraUtxos))
