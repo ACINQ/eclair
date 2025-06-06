@@ -91,6 +91,7 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
 }
 
 case class OnChainFeeConf(feeTargets: FeeTargets,
+                          maxClosingFeerate: FeeratePerKw,
                           safeUtxosThreshold: Int,
                           spendAnchorWithoutHtlcs: Boolean,
                           anchorWithoutHtlcsMaxFee: Satoshi,
@@ -128,5 +129,5 @@ case class OnChainFeeConf(feeTargets: FeeTargets,
     }
   }
 
-  def getClosingFeerate(feerates: FeeratesPerKw): FeeratePerKw = feeTargets.closing.getFeerate(feerates)
+  def getClosingFeerate(feerates: FeeratesPerKw): FeeratePerKw = feeTargets.closing.getFeerate(feerates).min(maxClosingFeerate)
 }

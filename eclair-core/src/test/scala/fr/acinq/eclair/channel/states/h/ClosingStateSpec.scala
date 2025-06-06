@@ -34,6 +34,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, TimestampSecond, randomBytes32, randomKey}
@@ -1010,12 +1011,14 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     val (closingState, closingTxs) = localClose(alice, alice2blockchain, htlcTimeoutCount = 1)
+    assert(closingTxs.mainTx_opt.nonEmpty)
     val htlcTimeoutTx = closingTxs.htlcTimeoutTxs.head
 
-    // simulate a node restart after a feerate increase
+    // simulate a node restart after a feerate increase that exceeds our max-closing-feerate
     val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
     alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
-    alice.nodeParams.setBitcoinCoreFeerates(FeeratesPerKw.single(FeeratePerKw(15_000 sat)))
+    assert(alice.nodeParams.onChainFeeConf.maxClosingFeerate == FeeratePerKw(15_000 sat))
+    alice.nodeParams.setBitcoinCoreFeerates(FeeratesPerKw.single(FeeratePerKw(20_000 sat)))
     alice ! INPUT_RESTORED(beforeRestart)
     alice2blockchain.expectMsgType[SetChannelId]
     awaitCond(alice.stateName == CLOSING)
@@ -1024,7 +1027,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectMsgType[WatchFundingSpent]
     // then we should re-publish unconfirmed transactions
     alice2blockchain.expectFinalTxPublished(closingState.commitTx.txid)
-    closingTxs.mainTx_opt.foreach(_ => alice2blockchain.expectFinalTxPublished("local-main-delayed"))
+    // we increase the feerate of our main transaction, but cap it to our max-closing-feerate
+    val mainTx2 = closingTxs.mainTx_opt.map(_ => alice2blockchain.expectFinalTxPublished("local-main-delayed")).get
+    assert(mainTx2.tx.txOut.head.amount < closingTxs.mainTx_opt.get.txOut.head.amount)
+    val mainFeerate = Transactions.fee2rate(mainTx2.fee, mainTx2.tx.weight())
+    assert(FeeratePerKw(14_500 sat) <= mainFeerate && mainFeerate <= FeeratePerKw(15_500 sat))
     assert(alice2blockchain.expectFinalTxPublished("htlc-timeout").input == htlcTimeoutTx.txIn.head.outPoint)
     alice2blockchain.expectWatchTxConfirmed(closingState.commitTx.txid)
     closingTxs.mainTx_opt.foreach(tx => alice2blockchain.expectWatchOutputSpent(tx.txIn.head.outPoint))
