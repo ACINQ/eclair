@@ -757,28 +757,24 @@ case class AnnouncedCommitment(commitment: Commitment, announcement: ChannelAnno
 }
 
 /** Subset of Commitments when we want to work with a single, specific commitment. */
-case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
-                          fundingTxIndex: Long,
-                          firstRemoteCommitIndex: Long,
-                          localFundingPubKey: PublicKey,
-                          remoteFundingPubKey: PublicKey,
-                          fundingTxOutpoint: OutPoint,
-                          fundingAmount: Satoshi,
-                          localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
-                          format: CommitmentFormat,
-                          localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
+case class FullCommitment(params: ChannelParams,
+                          changes: CommitmentChanges,
+                          commitment: Commitment) {
   val channelId: ByteVector32 = params.channelId
-  val shortChannelId_opt: Option[RealShortChannelId] = localFundingStatus match {
-    case f: LocalFundingStatus.ConfirmedFundingTx => Some(f.shortChannelId)
-    case _ => None
-  }
+  val shortChannelId_opt: Option[RealShortChannelId] = commitment.shortChannelId_opt
   val localParams: LocalParams = params.localParams
   val remoteParams: RemoteParams = params.remoteParams
-  val fundingTxId: TxId = fundingTxOutpoint.txid
-  val commitTxIds: CommitTxIds = CommitTxIds(localCommit.txId, remoteCommit.txId, nextRemoteCommit_opt.map(_.commit.txId))
-  val capacity: Satoshi = fundingAmount
-  val commitment: Commitment = Commitment(fundingTxIndex, firstRemoteCommitIndex, localFundingPubKey, remoteFundingPubKey, fundingTxOutpoint, fundingAmount, localFundingStatus, remoteFundingStatus, format, localCommit, remoteCommit, nextRemoteCommit_opt)
-  lazy val commitInput: InputInfo = commitment.commitInput
+  val fundingTxId: TxId = commitment.fundingTxOutpoint.txid
+  val commitTxIds: CommitTxIds = commitment.commitTxIds
+  val fundingTxIndex: Long = commitment.fundingTxIndex
+  val capacity: Satoshi = commitment.capacity
+  val remoteFundingPubKey: PublicKey = commitment.remoteFundingPubKey
+  val commitInput: InputInfo = commitment.commitInput
+  val localCommit: LocalCommit = commitment.localCommit
+  val remoteCommit: RemoteCommit = commitment.remoteCommit
+  val nextRemoteCommit_opt: Option[NextRemoteCommit] = commitment.nextRemoteCommit_opt
+  val localFundingStatus: LocalFundingStatus = commitment.localFundingStatus
+  val remoteFundingStatus: RemoteFundingStatus = commitment.remoteFundingStatus
 
   def localKeys(channelKeys: ChannelKeys): LocalCommitmentKeys = commitment.localKeys(params, channelKeys)
 
@@ -854,7 +850,7 @@ case class Commitments(params: ChannelParams,
   val all: Seq[Commitment] = active ++ inactive
 
   // We always use the last commitment that was created, to make sure we never go back in time.
-  val latest: FullCommitment = FullCommitment(params, changes, active.head.fundingTxIndex, active.head.firstRemoteCommitIndex, active.head.localFundingPubKey, active.head.remoteFundingPubKey, active.head.fundingTxOutpoint, active.head.fundingAmount, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.format, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
+  val latest: FullCommitment = FullCommitment(params, changes, active.head)
 
   val lastLocalLocked_opt: Option[Commitment] = active.filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).sortBy(_.fundingTxIndex).lastOption
   val lastRemoteLocked_opt: Option[Commitment] = active.filter(c => c.remoteFundingStatus == RemoteFundingStatus.Locked).sortBy(_.fundingTxIndex).lastOption
