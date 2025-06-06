@@ -177,7 +177,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchTxConfirmedTriggered(BlockHeight(750_000), 1, localCommitPublished.commitTx)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.exists(_.isConfirmed))
     val mainTx = localClosingTxs.mainTx_opt.get
-    val mainBalance = localCommitPublished.claimMainDelayedOutputTx.map(_.amountIn).get
+    val mainBalance = localCommitPublished.localOutput_opt.map(o => localCommitPublished.commitTx.txOut(o.index.toInt).amount).get
 
     // We already have an off-chain balance from other channels.
     val balance = OffChainBalance(
@@ -198,13 +198,14 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       alice2blockchain.expectWatchOutputSpent(htlcDelayedTx.input)
       htlcDelayedTx
     })
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.exists(_.claimHtlcDelayedTxs.size == 2))
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.exists(_.htlcDelayedOutputs.size == 2))
     assert(balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING]) == expected1)
 
     // Bob claims the remaining incoming HTLC using his HTLC-timeout transaction: we remove it from our balance.
     val (remoteCommitPublished, remoteClosingTxs) = remoteClose(localCommitPublished.commitTx, bob, bob2blockchain, htlcTimeoutCount = 3)
-    val bobHtlcTimeoutTx = remoteCommitPublished.claimHtlcTxs
-      .collectFirst { case (outpoint, Some(txInfo: ClaimHtlcTimeoutTx)) if txInfo.htlcId == htlcb1.id => outpoint }
+    val bobHtlcTimeoutTx = remoteCommitPublished.htlcs
+      // Note that this is Alice's commit tx, so incoming and outgoing are inverted.
+      .collectFirst { case (outpoint, IncomingHtlcId(htlcId)) if htlcId == htlcb1.id => outpoint }
       .flatMap(outpoint => remoteClosingTxs.htlcTimeoutTxs.find(_.txIn.head.outPoint == outpoint))
       .get
     alice ! WatchTxConfirmedTriggered(BlockHeight(760_010), 0, bobHtlcTimeoutTx)

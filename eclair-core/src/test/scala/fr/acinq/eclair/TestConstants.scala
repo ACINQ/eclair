@@ -158,6 +158,7 @@ object TestConstants {
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
+        maxClosingFeerate = FeeratePerKw(15_000 sat),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         anchorWithoutHtlcsMaxFee = 100_000.sat,
@@ -346,6 +347,7 @@ object TestConstants {
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
+        maxClosingFeerate = FeeratePerKw(15_000 sat),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         anchorWithoutHtlcsMaxFee = 100_000.sat,

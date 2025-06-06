@@ -21,7 +21,7 @@ import akka.testkit.TestProbe
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, SatoshiLong, Script, Transaction, TxOut}
 import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
@@ -31,7 +31,7 @@ import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
-import fr.acinq.eclair.channel.publish.{ReplaceableClaimHtlcSuccess, ReplaceableClaimHtlcTimeout, ReplaceableHtlcSuccess, ReplaceableHtlcTimeout, ReplaceableLocalCommitAnchor, ReplaceableRemoteCommitAnchor}
+import fr.acinq.eclair.channel.publish._
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.crypto.Sphinx
@@ -2240,7 +2240,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee (sender can't afford it)") { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(100000000 sat))
+    val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(100_000_000 sat))
     // we first update the feerates so that we don't trigger a 'fee too different' error
     bob.setBitcoinCoreFeerate(fee.feeratePerKw)
     bob ! fee
@@ -2249,9 +2249,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId == bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    //bob2blockchain.expectMsgType[PublishTx] // main delayed (removed because of the high fees)
-    bob2blockchain.expectMsgType[WatchTxConfirmed]
+    bob2blockchain.expectFinalTxPublished(tx.txid)
+    // even though the feerate is extremely high, we publish our main transaction with a feerate capped by our max-closing-feerate
+    val mainTx = bob2blockchain.expectFinalTxPublished("local-main-delayed")
+    assert(Transactions.fee2rate(mainTx.fee, mainTx.tx.weight()) <= bob.nodeParams.onChainFeeConf.maxClosingFeerate * 1.1)
+    bob2blockchain.expectWatchTxConfirmed(tx.txid)
   }
 
   test("recv UpdateFee (sender can't afford it, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.HighFeerateMismatchTolerance)) { f =>
@@ -3111,7 +3113,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.isDefined)
     val rcp = alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
-    assert(rcp.claimHtlcTxs.size == 4)
+    assert(rcp.htlcOutputs.size == 4)
 
     // in response to that, alice publishes her claim txs
     val claimAnchor = alice2blockchain.expectReplaceableTxPublished[ReplaceableRemoteCommitAnchor]
@@ -3119,7 +3121,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // in addition to her main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
-    alice2blockchain.expectWatchOutputsSpent(Seq(claimAnchor.txInfo.input.outPoint, claimMain.txIn.head.outPoint) ++ rcp.claimHtlcTxs.keys.toSeq)
+    alice2blockchain.expectWatchOutputsSpent(Seq(claimAnchor.txInfo.input.outPoint, claimMain.txIn.head.outPoint) ++ rcp.htlcOutputs.toSeq)
     alice2blockchain.expectNoMessage(100 millis)
 
     val htlcAmountClaimed = claimHtlcTxs.map(claimHtlcTx => {
@@ -3206,7 +3208,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
-    alice2blockchain.expectWatchOutputsSpent(Seq(claimAnchor.txInfo.input.outPoint, claimMain.txIn.head.outPoint) ++ rcp.claimHtlcTxs.keys.toSeq)
+    alice2blockchain.expectWatchOutputsSpent(Seq(claimAnchor.txInfo.input.outPoint, claimMain.txIn.head.outPoint) ++ rcp.htlcOutputs.toSeq)
     alice2blockchain.expectNoMessage(100 millis)
 
     val htlcAmountClaimed = claimHtlcTxs.map(claimHtlcTx => {
@@ -3279,7 +3281,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
     val rvk = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head
-    assert(rvk.htlcPenaltyTxs.size == 4)
+    assert(rvk.htlcOutputs.size == 4)
 
     val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx
     val mainPenaltyTx = alice2blockchain.expectFinalTxPublished("main-penalty").tx
@@ -3409,8 +3411,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
     val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
     assert(localCommitPublished.commitTx.txid == aliceCommitTx.txid)
-    assert(localCommitPublished.htlcTxs.size == 4)
-    assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
+    assert(localCommitPublished.htlcOutputs.size == 4)
+    assert(localCommitPublished.htlcDelayedOutputs.isEmpty)
 
     // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     // so we expect 4 transactions:
@@ -3424,7 +3426,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // the main delayed output and htlc txs spend the commitment transaction
     Seq(claimMain, htlcTx1, htlcTx2, htlcTx3).foreach(tx => Transaction.correctlySpends(tx.tx, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     alice2blockchain.expectWatchTxConfirmed(aliceCommitTx.txid)
-    alice2blockchain.expectWatchOutputsSpent(claimMain.input +: localCommitPublished.htlcTxs.keys.toSeq)
+    alice2blockchain.expectWatchOutputsSpent(claimMain.input +: localCommitPublished.htlcOutputs.toSeq)
     alice2blockchain.expectNoMessage(100 millis)
 
     // 3rd-stage txs are published when htlc txs confirm
@@ -3436,7 +3438,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       Transaction.correctlySpends(htlcDelayedTx.tx, htlcTx.tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       alice2blockchain.expectWatchOutputSpent(htlcDelayedTx.input)
     }
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 3)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.htlcDelayedOutputs.size == 3)
     alice2blockchain.expectNoMessage(100 millis)
   }
 
@@ -3474,7 +3476,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val htlcTxs = (0 until 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
     alice2blockchain.expectWatchTxConfirmed(aliceCommitTx.txid)
-    alice2blockchain.expectWatchOutputsSpent(claimMain.input +: localAnchor.input +: localCommitPublished.htlcTxs.keys.toSeq)
+    alice2blockchain.expectWatchOutputsSpent(claimMain.input +: localAnchor.input +: localCommitPublished.htlcOutputs.toSeq)
     alice2blockchain.expectNoMessage(100 millis)
 
     // alice sets the confirmation target of each htlc transaction to the htlc expiry
@@ -3506,20 +3508,17 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectFinalTxPublished(aliceCommitTx.txid)
     assert(aliceCommitTx.txOut.size == 4) // two main outputs and two anchors
     awaitCond(alice.stateName == CLOSING)
+    val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
 
-    if (commitFeeBumpDisabled) {
-      val claimMain = alice2blockchain.expectFinalTxPublished("local-main-delayed")
-      alice2blockchain.expectWatchTxConfirmed(aliceCommitTx.txid)
-      alice2blockchain.expectWatchOutputSpent(claimMain.input)
-      alice2blockchain.expectNoMessage(100 millis)
-    } else {
-      // When there are no pending HTLCs, there is no absolute deadline to get the commit tx confirmed, we use priority
-      val localAnchor = alice2blockchain.expectReplaceableTxPublished[ReplaceableLocalCommitAnchor](ConfirmationTarget.Priority(ConfirmationPriority.Medium))
-      val claimMain = alice2blockchain.expectFinalTxPublished("local-main-delayed")
-      alice2blockchain.expectWatchTxConfirmed(aliceCommitTx.txid)
-      alice2blockchain.expectWatchOutputsSpent(Seq(localAnchor.txInfo.input.outPoint, claimMain.input))
-      alice2blockchain.expectNoMessage(100 millis)
+    if (!commitFeeBumpDisabled) {
+      // When there are no pending HTLCs, there is no absolute deadline to get the commit tx confirmed: we use a medium priority.
+      alice2blockchain.expectReplaceableTxPublished[ReplaceableLocalCommitAnchor](ConfirmationTarget.Priority(ConfirmationPriority.Medium))
     }
+
+    alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    alice2blockchain.expectWatchTxConfirmed(aliceCommitTx.txid)
+    alice2blockchain.expectWatchOutputsSpent(lcp.anchorOutput_opt.toSeq ++ lcp.localOutput_opt.toSeq)
+    alice2blockchain.expectNoMessage(100 millis)
   }
 
   test("recv Error (anchor outputs zero fee htlc txs without htlcs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
