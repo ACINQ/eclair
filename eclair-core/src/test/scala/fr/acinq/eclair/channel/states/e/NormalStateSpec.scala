@@ -2240,7 +2240,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee (sender can't afford it)") { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(100000000 sat))
+    val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(100_000_000 sat))
     // we first update the feerates so that we don't trigger a 'fee too different' error
     bob.setBitcoinCoreFeerate(fee.feeratePerKw)
     bob ! fee
@@ -2249,9 +2249,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId == bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    //bob2blockchain.expectMsgType[PublishTx] // main delayed (removed because of the high fees)
-    bob2blockchain.expectMsgType[WatchTxConfirmed]
+    bob2blockchain.expectFinalTxPublished(tx.txid)
+    // even though the feerate is extremely high, we publish our main transaction with a feerate capped by our max-closing-feerate
+    val mainTx = bob2blockchain.expectFinalTxPublished("local-main-delayed")
+    assert(Transactions.fee2rate(mainTx.fee, mainTx.tx.weight()) <= bob.nodeParams.onChainFeeConf.maxClosingFeerate * 1.1)
+    bob2blockchain.expectWatchTxConfirmed(tx.txid)
   }
 
   test("recv UpdateFee (sender can't afford it, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.HighFeerateMismatchTolerance)) { f =>
