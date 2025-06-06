@@ -2088,17 +2088,17 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           // If the tx is one of our HTLC txs, we now publish a 3rd-stage transaction that claims its output.
           val (localCommitPublished1, htlcDelayedTxs) = Closing.LocalClose.claimHtlcDelayedOutput(localCommitPublished, channelKeys, d.commitments.latest, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, d.finalScriptPubKey)
           doPublish(localCommitPublished1, htlcDelayedTxs)
-          Closing.updateLocalCommitPublished(localCommitPublished1, tx)
+          Closing.updateIrrevocablySpent(localCommitPublished1, tx)
         }),
-        remoteCommitPublished = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
-        nextRemoteCommitPublished = d.nextRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
-        futureRemoteCommitPublished = d.futureRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx)),
+        remoteCommitPublished = d.remoteCommitPublished.map(Closing.updateIrrevocablySpent(_, tx)),
+        nextRemoteCommitPublished = d.nextRemoteCommitPublished.map(Closing.updateIrrevocablySpent(_, tx)),
+        futureRemoteCommitPublished = d.futureRemoteCommitPublished.map(Closing.updateIrrevocablySpent(_, tx)),
         revokedCommitPublished = d.revokedCommitPublished.map(rvk => {
           // If the tx is one of our peer's HTLC txs, they were able to claim the output before us.
           // In that case, we immediately publish a penalty transaction spending their HTLC tx to steal their funds.
           val (rvk1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(d.commitments.params, channelKeys, d.commitments.remotePerCommitmentSecrets, rvk, tx, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)
           doPublish(rvk1, penaltyTxs)
-          Closing.updateRevokedCommitPublished(rvk1, tx)
+          Closing.updateIrrevocablySpent(rvk1, tx)
         })
       )
       // if the local commitment tx just got confirmed, let's send an event telling when we will get the main output refund

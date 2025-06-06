@@ -1493,7 +1493,7 @@ object Helpers {
      *
      * @param tx a transaction that has been irrevocably confirmed
      */
-    def updateLocalCommitPublished(localCommitPublished: LocalCommitPublished, tx: Transaction): LocalCommitPublished = {
+    def updateIrrevocablySpent(localCommitPublished: LocalCommitPublished, tx: Transaction): LocalCommitPublished = {
       // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
       // over all of them to check if they are relevant
       val relevantOutpoints = tx.txIn.map(_.outPoint).filter(outPoint => {
@@ -1520,7 +1520,7 @@ object Helpers {
      *
      * @param tx a transaction that has been irrevocably confirmed
      */
-    def updateRemoteCommitPublished(remoteCommitPublished: RemoteCommitPublished, tx: Transaction): RemoteCommitPublished = {
+    def updateIrrevocablySpent(remoteCommitPublished: RemoteCommitPublished, tx: Transaction): RemoteCommitPublished = {
       // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
       // over all of them to check if they are relevant
       val relevantOutpoints = tx.txIn.map(_.outPoint).filter(outPoint => {
@@ -1544,7 +1544,7 @@ object Helpers {
      *
      * @param tx a transaction that has been irrevocably confirmed
      */
-    def updateRevokedCommitPublished(revokedCommitPublished: RevokedCommitPublished, tx: Transaction): RevokedCommitPublished = {
+    def updateIrrevocablySpent(revokedCommitPublished: RevokedCommitPublished, tx: Transaction): RevokedCommitPublished = {
       // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
       // over all of them to check if they are relevant
       val relevantOutpoints = tx.txIn.map(_.outPoint).filter(outPoint => {
