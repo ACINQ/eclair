@@ -34,8 +34,9 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, FeatureSupport, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, FeatureSupport, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -476,6 +477,52 @@ object InvoiceSerializer extends MinimalSerializer({
     JObject(fieldList)
 })
 
+private case class BlindedRouteJson(firstNodeId: EncodedNodeId, length: Int)
+private case class OfferJson(chains: Option[Seq[String]],
+                             amount: Option[String],
+                             currency: Option[String],
+                             description: Option[String],
+                             expiry: Option[TimestampSecond],
+                             issuer: Option[String],
+                             nodeId: Option[PublicKey],
+                             paths: Option[Seq[BlindedRouteJson]],
+                             quantityMax: Option[Long],
+                             features: Option[Features[Feature]],
+                             metadata: Option[String],
+                             unknownTlvs: Option[Map[String, String]])
+object OfferSerializer extends ConvertClassSerializer[Offer](o => {
+  val fractionDigits = o.records.get[OfferTypes.OfferCurrency].map(_.currency.getDefaultFractionDigits()).getOrElse(3)
+  OfferJson(
+    chains = o.records.get[OfferTypes.OfferChains].map(_.chains.map(_.toString())),
+    amount = o.records.get[OfferTypes.OfferAmount].map(a =>
+      if (fractionDigits == 0) {
+        a.amount.toString
+      } else {
+        val one = scala.math.pow(10, fractionDigits).toInt
+        s"${a.amount / one}.%0${fractionDigits}d".format(a.amount % one)
+      }
+    ),
+    currency = if (o.records.get[OfferTypes.OfferAmount].isEmpty) {
+      None
+    } else {
+      Some(o.records.get[OfferTypes.OfferCurrency].map(_.currency.getCurrencyCode()).getOrElse("satoshi"))
+    },
+    description = o.records.get[OfferTypes.OfferDescription].map(_.description),
+    expiry = o.records.get[OfferTypes.OfferAbsoluteExpiry].map(_.absoluteExpiry),
+    issuer = o.records.get[OfferTypes.OfferIssuer].map(_.issuer),
+    nodeId = o.records.get[OfferTypes.OfferNodeId].map(_.publicKey),
+    paths = o.records.get[OfferTypes.OfferPaths].map(_.paths.map(p => BlindedRouteJson(p.firstNodeId, p.blindedHops.length))),
+    quantityMax = o.records.get[OfferTypes.OfferQuantityMax].map(_.max),
+    features = o.records.get[OfferTypes.OfferFeatures].map(_.features),
+    metadata = o.records.get[OfferTypes.OfferMetadata].map(_.data.toHex),
+    unknownTlvs = if (o.records.unknown.isEmpty) {
+      None
+    } else {
+      Some(o.records.unknown.map(tlv => tlv.tag.toString -> tlv.value.toHex).toMap)
+    }
+  )
+})
+
 private case class OfferDataJson(amountMsat: Option[MilliSatoshi],
                                  description: Option[String],
                                  issuer: Option[String],
@@ -733,6 +780,7 @@ object JsonSerializers {
     NodeAddressSerializer +
     DirectedHtlcSerializer +
     InvoiceSerializer +
+    OfferSerializer +
     OfferDataSerializer +
     JavaUUIDSerializer +
     OriginSerializer +
