@@ -400,7 +400,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(msg: InteractiveTxMessage, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
       msg match {
         case txSigs: TxSignatures =>
-          d.signingSession.receiveTxSigs(channelKeys, txSigs, nodeParams.currentBlockHeight) match {
+          d.signingSession.receiveTxSigs(d.channelParams, channelKeys, txSigs, nodeParams.currentBlockHeight) match {
             case Left(f) =>
               rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
               goto(CLOSED) sending Error(d.channelId, f.getMessage)
@@ -468,7 +468,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case _: FullySignedSharedTransaction =>
           d.status match {
             case DualFundingStatus.RbfWaitingForSigs(signingSession) =>
-              signingSession.receiveTxSigs(channelKeys, txSigs, nodeParams.currentBlockHeight) match {
+              signingSession.receiveTxSigs(d.channelParams, channelKeys, txSigs, nodeParams.currentBlockHeight) match {
                 case Left(f) =>
                   rollbackRbfAttempt(signingSession, d)
                   stay() using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, f.getMessage)

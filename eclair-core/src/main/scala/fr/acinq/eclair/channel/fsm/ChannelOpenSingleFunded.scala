@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.fsm
 import akka.actor.Status
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.pattern.pipe
-import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -284,10 +284,14 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               val commitment = Commitment(
                 fundingTxIndex = 0,
                 firstRemoteCommitIndex = 0,
+                localFundingPubKey = fundingKey.publicKey,
                 remoteFundingPubKey = remoteFundingPubKey,
+                fundingTxOutpoint = localCommitTx.input.outPoint,
+                fundingAmount = localCommitTx.input.txOut.amount,
                 localFundingStatus = SingleFundedUnconfirmedFundingTx(None),
                 remoteFundingStatus = RemoteFundingStatus.NotLocked,
-                localCommit = LocalCommit(0, localSpec, localCommitTx.tx.txid, localCommitTx.input, ChannelSpendSignature.IndividualSignature(remoteSig), htlcRemoteSigs = Nil),
+                format = params.commitmentFormat,
+                localCommit = LocalCommit(0, localSpec, localCommitTx.tx.txid, ChannelSpendSignature.IndividualSignature(remoteSig), htlcRemoteSigs = Nil),
                 remoteCommit = RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
                 nextRemoteCommit_opt = None)
               val commitments = Commitments(
@@ -329,10 +333,14 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val commitment = Commitment(
             fundingTxIndex = 0,
             firstRemoteCommitIndex = 0,
+            localFundingPubKey = fundingPubkey,
             remoteFundingPubKey = remoteFundingPubKey,
+            fundingTxOutpoint = localCommitTx.input.outPoint,
+            fundingAmount = localCommitTx.input.txOut.amount,
             localFundingStatus = SingleFundedUnconfirmedFundingTx(Some(fundingTx)),
             remoteFundingStatus = RemoteFundingStatus.NotLocked,
-            localCommit = LocalCommit(0, localSpec, localCommitTx.tx.txid, localCommitTx.input, ChannelSpendSignature.IndividualSignature(remoteSig), htlcRemoteSigs = Nil),
+            format = params.commitmentFormat,
+            localCommit = LocalCommit(0, localSpec, localCommitTx.tx.txid, ChannelSpendSignature.IndividualSignature(remoteSig), htlcRemoteSigs = Nil),
             remoteCommit = remoteCommit,
             nextRemoteCommit_opt = None
           )

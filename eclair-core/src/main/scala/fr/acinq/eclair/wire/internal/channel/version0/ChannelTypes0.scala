@@ -23,7 +23,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.CommitSig
-import fr.acinq.eclair.{CltvExpiryDelta, Features, InitFeature, MilliSatoshi, UInt64, channel}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InitFeature, MilliSatoshi, UInt64, channel, randomKey}
 import scodec.bits.{BitVector, ByteVector}
 
 private[channel] object ChannelTypes0 {
@@ -108,7 +108,7 @@ private[channel] object ChannelTypes0 {
       val remoteSig = extractRemoteSig(publishableTxs.commitTx, remoteFundingPubKey)
       val unsignedCommitTx = publishableTxs.commitTx.copy(tx = removeWitnesses(publishableTxs.commitTx.tx))
       val htlcRemoteSigs = publishableTxs.htlcTxsAndSigs.map(_.remoteSig)
-      channel.LocalCommit(index, spec, unsignedCommitTx.tx.txid, unsignedCommitTx.input, remoteSig, htlcRemoteSigs)
+      channel.LocalCommit(index, spec, unsignedCommitTx.tx.txid, remoteSig, htlcRemoteSigs)
     }
 
     private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): ChannelSpendSignature.IndividualSignature = {
@@ -220,11 +220,15 @@ private[channel] object ChannelTypes0 {
       val commitment = Commitment(
         fundingTxIndex = 0,
         firstRemoteCommitIndex = 0,
+        localFundingPubKey = randomKey().publicKey,
         remoteFundingPubKey = remoteParams.fundingPubKey,
+        fundingTxOutpoint = localCommit.publishableTxs.commitTx.input.outPoint,
+        fundingAmount = localCommit.publishableTxs.commitTx.input.txOut.amount,
         // We set an empty funding tx, even if it may be confirmed already (and the channel fully operational). We could
         // have set a specific Unknown status, but it would have forced us to keep it forever. We will retrieve the
         // funding tx when the channel is instantiated, and update the status (possibly immediately if it was confirmed).
         LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked,
+        format = channelFeatures.commitmentFormat,
         localCommit.migrate(remoteParams.fundingPubKey), remoteCommit, remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit))
       )
       channel.Commitments(

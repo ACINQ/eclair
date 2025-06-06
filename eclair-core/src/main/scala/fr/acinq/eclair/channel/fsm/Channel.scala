@@ -1369,7 +1369,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           d.spliceStatus match {
             case SpliceStatus.SpliceWaitingForSigs(signingSession) =>
               // we have not yet sent our tx_signatures
-              signingSession.receiveTxSigs(channelKeys, msg, nodeParams.currentBlockHeight) match {
+              signingSession.receiveTxSigs(d.commitments.params, channelKeys, msg, nodeParams.currentBlockHeight) match {
                 case Left(f) =>
                   rollbackFundingAttempt(signingSession.fundingTx.tx, previousTxs = Seq.empty) // no splice rbf yet
                   stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, f.getMessage)

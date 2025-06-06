@@ -489,7 +489,6 @@ private[channel] object ChannelCodecs4 {
       ("index" | uint64overflow) ::
         ("spec" | commitmentSpecCodec) ::
         ("txId" | txId) ::
-        ("input" | inputInfoCodec) ::
         ("remoteSig" | channelSpendSignatureCodec) ::
         ("htlcRemoteSigs" | listOfN(uint16, bytes64))).as[LocalCommit]
 

@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
@@ -186,7 +186,7 @@ object ChannelSpendSignature {
  * The local commitment maps to a commitment transaction that we can sign and broadcast if necessary.
  * The [[htlcRemoteSigs]] are stored in the order in which HTLC outputs appear in the commitment transaction.
  */
-case class LocalCommit(index: Long, spec: CommitmentSpec, txId: TxId, input: InputInfo, remoteSig: ChannelSpendSignature, htlcRemoteSigs: List[ByteVector64])
+case class LocalCommit(index: Long, spec: CommitmentSpec, txId: TxId, remoteSig: ChannelSpendSignature, htlcRemoteSigs: List[ByteVector64])
 
 object LocalCommit {
   def fromCommitSig(params: ChannelParams, commitKeys: LocalCommitmentKeys, fundingTxId: TxId,
@@ -215,7 +215,7 @@ object LocalCommit {
         }
         remoteSig
     }
-    Right(LocalCommit(localCommitIndex, spec, localCommitTx.tx.txid, localCommitTx.input, commitTxRemoteSig, htlcRemoteSigs))
+    Right(LocalCommit(localCommitIndex, spec, localCommitTx.tx.txid, commitTxRemoteSig, htlcRemoteSigs))
   }
 }
 
@@ -265,13 +265,19 @@ case class CommitTxIds(localCommitTxId: TxId, remoteCommitTxId: TxId, nextRemote
  */
 case class Commitment(fundingTxIndex: Long,
                       firstRemoteCommitIndex: Long,
+                      localFundingPubKey: PublicKey,
                       remoteFundingPubKey: PublicKey,
+                      fundingTxOutpoint: OutPoint,
+                      fundingAmount: Satoshi,
                       localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
+                      format: CommitmentFormat,
                       localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
-  val commitInput: InputInfo = localCommit.input
-  val fundingTxId: TxId = commitInput.outPoint.txid
+
+  lazy val commitInput: InputInfo = Helpers.Funding.makeFundingInputInfo(fundingTxOutpoint.txid, fundingTxOutpoint.index.toInt, fundingAmount, localFundingPubKey, remoteFundingPubKey, format)
+
   val commitTxIds: CommitTxIds = CommitTxIds(localCommit.txId, remoteCommit.txId, nextRemoteCommit_opt.map(_.commit.txId))
-  val capacity: Satoshi = commitInput.txOut.amount
+  val fundingTxId: TxId = fundingTxOutpoint.txid
+  val capacity: Satoshi = fundingAmount
   /** Once the funding transaction is confirmed, short_channel_id matching this transaction. */
   val shortChannelId_opt: Option[RealShortChannelId] = localFundingStatus match {
     case f: LocalFundingStatus.ConfirmedFundingTx => Some(f.shortChannelId)
@@ -691,7 +697,7 @@ case class Commitment(fundingTxIndex: Long,
   def fullySignedLocalCommitTx(params: ChannelParams, channelKeys: ChannelKeys): Transaction = {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val commitKeys = localKeys(params, channelKeys)
-    val (unsignedCommitTx, _) = Commitment.makeLocalTxs(params, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
+    val (unsignedCommitTx, _) = Commitment.makeLocalTxs(params, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, commitInput, localCommit.spec)
     localCommit.remoteSig match {
       case remoteSig: ChannelSpendSignature.IndividualSignature =>
         val localSig = unsignedCommitTx.sign(fundingKey, remoteFundingPubKey)
@@ -709,7 +715,7 @@ case class Commitment(fundingTxIndex: Long,
 
   /** Return the HTLC transactions for our local commit and the corresponding remote signatures. */
   def htlcTxs(params: ChannelParams, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys): Seq[(HtlcTx, ByteVector64)] = {
-    val (_, htlcTxs) = Commitment.makeLocalTxs(params, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
+    val (_, htlcTxs) = Commitment.makeLocalTxs(params, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, commitInput, localCommit.spec)
     htlcTxs.sortBy(_.input.outPoint.index).zip(localCommit.htlcRemoteSigs)
   }
 
@@ -754,8 +760,12 @@ case class AnnouncedCommitment(commitment: Commitment, announcement: ChannelAnno
 case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
                           fundingTxIndex: Long,
                           firstRemoteCommitIndex: Long,
+                          localFundingPubKey: PublicKey,
                           remoteFundingPubKey: PublicKey,
+                          fundingTxOutpoint: OutPoint,
+                          fundingAmount: Satoshi,
                           localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
+                          format: CommitmentFormat,
                           localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
   val channelId: ByteVector32 = params.channelId
   val shortChannelId_opt: Option[RealShortChannelId] = localFundingStatus match {
@@ -764,11 +774,11 @@ case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
   }
   val localParams: LocalParams = params.localParams
   val remoteParams: RemoteParams = params.remoteParams
-  val commitInput: InputInfo = localCommit.input
-  val fundingTxId: TxId = commitInput.outPoint.txid
+  val fundingTxId: TxId = fundingTxOutpoint.txid
   val commitTxIds: CommitTxIds = CommitTxIds(localCommit.txId, remoteCommit.txId, nextRemoteCommit_opt.map(_.commit.txId))
-  val capacity: Satoshi = commitInput.txOut.amount
-  val commitment: Commitment = Commitment(fundingTxIndex, firstRemoteCommitIndex, remoteFundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, nextRemoteCommit_opt)
+  val capacity: Satoshi = fundingAmount
+  val commitment: Commitment = Commitment(fundingTxIndex, firstRemoteCommitIndex, localFundingPubKey, remoteFundingPubKey, fundingTxOutpoint, fundingAmount, localFundingStatus, remoteFundingStatus, format, localCommit, remoteCommit, nextRemoteCommit_opt)
+  lazy val commitInput: InputInfo = commitment.commitInput
 
   def localKeys(channelKeys: ChannelKeys): LocalCommitmentKeys = commitment.localKeys(params, channelKeys)
 
@@ -844,7 +854,7 @@ case class Commitments(params: ChannelParams,
   val all: Seq[Commitment] = active ++ inactive
 
   // We always use the last commitment that was created, to make sure we never go back in time.
-  val latest: FullCommitment = FullCommitment(params, changes, active.head.fundingTxIndex, active.head.firstRemoteCommitIndex, active.head.remoteFundingPubKey, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
+  val latest: FullCommitment = FullCommitment(params, changes, active.head.fundingTxIndex, active.head.firstRemoteCommitIndex, active.head.localFundingPubKey, active.head.remoteFundingPubKey, active.head.fundingTxOutpoint, active.head.fundingAmount, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.format, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
 
   val lastLocalLocked_opt: Option[Commitment] = active.filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).sortBy(_.fundingTxIndex).lastOption
   val lastRemoteLocked_opt: Option[Commitment] = active.filter(c => c.remoteFundingStatus == RemoteFundingStatus.Locked).sortBy(_.fundingTxIndex).lastOption
@@ -1319,7 +1329,7 @@ case class Commitments(params: ChannelParams,
    * @param spendingTx A transaction that may spend a current or former funding tx
    */
   def resolveCommitment(spendingTx: Transaction): Option[Commitment] = {
-    all.find(c => spendingTx.txIn.map(_.outPoint).contains(c.commitInput.outPoint))
+    all.find(c => spendingTx.txIn.map(_.outPoint).contains(c.fundingTxOutpoint))
   }
 
   /** Find the corresponding commitment based on its short_channel_id (once funding transaction is confirmed). */
