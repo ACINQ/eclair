@@ -45,7 +45,7 @@ trait CommonFundingHandlers extends CommonHandlers {
    */
   def watchFundingSpent(commitment: Commitment, additionalKnownSpendingTxs: Set[TxId], delay_opt: Option[FiniteDuration]): Unit = {
     val knownSpendingTxs = commitment.commitTxIds.txIds ++ additionalKnownSpendingTxs
-    val watch = WatchFundingSpent(self, commitment.commitInput.outPoint.txid, commitment.commitInput.outPoint.index.toInt, knownSpendingTxs)
+    val watch = WatchFundingSpent(self, commitment.fundingTxOutpoint.txid, commitment.fundingTxOutpoint.index.toInt, knownSpendingTxs)
     delay_opt match {
       case Some(delay) => context.system.scheduler.scheduleOnce(delay, blockchain.toClassic, watch)
       case None => blockchain ! watch
@@ -85,7 +85,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
     d.commitments.all.find(_.fundingTxId == w.tx.txid) match {
       case Some(c) =>
-        val scid = RealShortChannelId(w.blockHeight, w.txIndex, c.commitInput.outPoint.index.toInt)
+        val scid = RealShortChannelId(w.blockHeight, w.txIndex, c.fundingTxOutpoint.index.toInt)
         val fundingStatus = ConfirmedFundingTx(w.tx, scid, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
         // When a splice transaction confirms, it double-spends all the commitment transactions that only applied to the
         // previous funding transaction. Our peer cannot publish the corresponding revoked commitments anymore, so we can

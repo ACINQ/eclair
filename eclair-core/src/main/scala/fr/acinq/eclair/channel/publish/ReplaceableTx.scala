@@ -39,7 +39,7 @@ sealed trait ReplaceableTx {
   def commitment: FullCommitment
   def commitmentFormat: CommitmentFormat = commitment.params.commitmentFormat
   def dustLimit: Satoshi = commitment.localParams.dustLimit
-  def commitFee: Satoshi = commitment.commitInput.txOut.amount - commitTx.txOut.map(_.amount).sum
+  def commitFee: Satoshi = commitment.capacity - commitTx.txOut.map(_.amount).sum
   def concurrentCommitTxs: Set[TxId] = commitment.commitTxIds.txIds - commitTx.txid
   // @formatter:on
 }

@@ -662,9 +662,9 @@ object Helpers {
         }
       }
 
-      def firstClosingFee(commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: ClosingFeerates)(implicit log: LoggingAdapter): ClosingFees = {
+      def firstClosingFee(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: ClosingFeerates)(implicit log: LoggingAdapter): ClosingFees = {
         // this is just to estimate the weight, it depends on size of the pubkey scripts
-        val dummyClosingTx = ClosingTx.createUnsignedTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.localParams.paysClosingFees, Satoshi(0), Satoshi(0), commitment.localCommit.spec)
+        val dummyClosingTx = ClosingTx.createUnsignedTx(commitment.commitInput(channelKeys), localScriptPubkey, remoteScriptPubkey, commitment.localParams.paysClosingFees, Satoshi(0), Satoshi(0), commitment.localCommit.spec)
         val dummyPubkey = commitment.remoteFundingPubKey
         val dummySig = ChannelSpendSignature.IndividualSignature(Transactions.PlaceHolderSig)
         val closingWeight = dummyClosingTx.aggregateSigs(dummyPubkey, dummyPubkey, dummySig, dummySig).weight()
@@ -672,7 +672,7 @@ object Helpers {
         feerates.computeFees(closingWeight)
       }
 
-      def firstClosingFee(commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf)(implicit log: LoggingAdapter): ClosingFees = {
+      def firstClosingFee(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf)(implicit log: LoggingAdapter): ClosingFees = {
         val requestedFeerate = onChainFeeConf.getClosingFeerate(feerates)
         val preferredFeerate = commitment.params.commitmentFormat match {
           case DefaultCommitmentFormat =>
@@ -683,15 +683,15 @@ object Helpers {
         // NB: we choose a minimum fee that ensures the tx will easily propagate while allowing low fees since we can
         // always use CPFP to speed up confirmation if necessary.
         val closingFeerates = ClosingFeerates(preferredFeerate, preferredFeerate.min(ConfirmationPriority.Slow.getFeerate(feerates)), preferredFeerate * 2)
-        firstClosingFee(commitment, localScriptPubkey, remoteScriptPubkey, closingFeerates)
+        firstClosingFee(channelKeys, commitment, localScriptPubkey, remoteScriptPubkey, closingFeerates)
       }
 
       def nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
 
       def makeFirstClosingTx(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, closingFeerates_opt: Option[ClosingFeerates])(implicit log: LoggingAdapter): (ClosingTx, ClosingSigned) = {
         val closingFees = closingFeerates_opt match {
-          case Some(closingFeerates) => firstClosingFee(commitment, localScriptPubkey, remoteScriptPubkey, closingFeerates)
-          case None => firstClosingFee(commitment, localScriptPubkey, remoteScriptPubkey, feerates, onChainFeeConf)
+          case Some(closingFeerates) => firstClosingFee(channelKeys, commitment, localScriptPubkey, remoteScriptPubkey, closingFeerates)
+          case None => firstClosingFee(channelKeys, commitment, localScriptPubkey, remoteScriptPubkey, feerates, onChainFeeConf)
         }
         makeClosingTx(channelKeys, commitment, localScriptPubkey, remoteScriptPubkey, closingFees)
       }
@@ -699,7 +699,7 @@ object Helpers {
       def makeClosingTx(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, closingFees: ClosingFees)(implicit log: LoggingAdapter): (ClosingTx, ClosingSigned) = {
         log.debug("making closing tx with closing fee={} and commitments:\n{}", closingFees.preferred, commitment.specs2String)
         val dustLimit = commitment.localParams.dustLimit.max(commitment.remoteParams.dustLimit)
-        val closingTx = ClosingTx.createUnsignedTx(commitment.commitInput, localScriptPubkey, remoteScriptPubkey, commitment.localParams.paysClosingFees, dustLimit, closingFees.preferred, commitment.localCommit.spec)
+        val closingTx = ClosingTx.createUnsignedTx(commitment.commitInput(channelKeys), localScriptPubkey, remoteScriptPubkey, commitment.localParams.paysClosingFees, dustLimit, closingFees.preferred, commitment.localCommit.spec)
         val localClosingSig = closingTx.sign(channelKeys.fundingKey(commitment.fundingTxIndex), commitment.remoteFundingPubKey).sig
         val closingSigned = ClosingSigned(commitment.channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
         log.debug(s"signed closing txid=${closingTx.tx.txid} with closing fee=${closingSigned.feeSatoshis}")
@@ -726,7 +726,7 @@ object Helpers {
       def makeSimpleClosingTx(currentBlockHeight: BlockHeight, channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerate: FeeratePerKw): Either[ChannelException, (ClosingTxs, ClosingComplete)] = {
         // We must convert the feerate to a fee: we must build dummy transactions to compute their weight.
         val closingFee = {
-          val dummyClosingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, SimpleClosingTxFee.PaidByUs(0 sat), currentBlockHeight.toLong, localScriptPubkey, remoteScriptPubkey)
+          val dummyClosingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput(channelKeys), commitment.localCommit.spec, SimpleClosingTxFee.PaidByUs(0 sat), currentBlockHeight.toLong, localScriptPubkey, remoteScriptPubkey)
           dummyClosingTxs.preferred_opt match {
             case Some(dummyTx) =>
               val dummyPubkey = commitment.remoteFundingPubKey
@@ -737,7 +737,7 @@ object Helpers {
           }
         }
         // Now that we know the fee we're ready to pay, we can create our closing transactions.
-        val closingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, closingFee, currentBlockHeight.toLong, localScriptPubkey, remoteScriptPubkey)
+        val closingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput(channelKeys), commitment.localCommit.spec, closingFee, currentBlockHeight.toLong, localScriptPubkey, remoteScriptPubkey)
         closingTxs.preferred_opt match {
           case Some(closingTx) if closingTx.fee > 0.sat => ()
           case _ => return Left(CannotGenerateClosingTx(commitment.channelId))
@@ -759,7 +759,7 @@ object Helpers {
        */
       def signSimpleClosingTx(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, closingComplete: ClosingComplete): Either[ChannelException, (ClosingTx, ClosingSig)] = {
         val closingFee = SimpleClosingTxFee.PaidByThem(closingComplete.fees)
-        val closingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput, commitment.localCommit.spec, closingFee, closingComplete.lockTime, localScriptPubkey, remoteScriptPubkey)
+        val closingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput(channelKeys), commitment.localCommit.spec, closingFee, closingComplete.lockTime, localScriptPubkey, remoteScriptPubkey)
         // If our output isn't dust, they must provide a signature for a transaction that includes it.
         // Note that we're the closee, so we look for signatures including the closee output.
         (closingTxs.localAndRemote_opt, closingTxs.localOnly_opt) match {
@@ -890,7 +890,7 @@ object Helpers {
         val mainDelayedTx_opt = withTxGenerationLog("local-main-delayed") {
           ClaimLocalDelayedOutputTx.createSignedTx(commitmentKeys, commitTx, commitment.localParams.dustLimit, commitment.remoteParams.toSelfDelay, finalScriptPubKey, feerateDelayed, commitment.params.commitmentFormat)
         }
-        val htlcs = claimHtlcOutputs(fundingKey, commitmentKeys, commitment)
+        val htlcs = claimHtlcOutputs(channelKeys, commitmentKeys, commitment)
         val anchorOutput_opt = ClaimAnchorOutputTx.findInput(commitTx, fundingKey.publicKey, commitmentKeys, commitment.params.commitmentFormat).toOption
         val spendAnchor = htlcs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
         val anchorTx_opt = if (spendAnchor) {
@@ -926,7 +926,7 @@ object Helpers {
        * Claim the outputs of a local commit tx corresponding to HTLCs. If we don't have the preimage for a received
        * * HTLC, we still include an entry in the map because we may receive that preimage later.
        */
-      private def claimHtlcOutputs(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitment: FullCommitment)(implicit log: LoggingAdapter): Map[OutPoint, (DirectedHtlcId, Option[HtlcTx])] = {
+      private def claimHtlcOutputs(channelKeys: ChannelKeys, commitKeys: LocalCommitmentKeys, commitment: FullCommitment)(implicit log: LoggingAdapter): Map[OutPoint, (DirectedHtlcId, Option[HtlcTx])] = {
         // We collect all the preimages available.
         val preimages = (commitment.changes.localChanges.all ++ commitment.changes.remoteChanges.all).collect {
           case u: UpdateFulfillHtlc => Crypto.sha256(u.paymentPreimage) -> u.paymentPreimage
@@ -939,7 +939,7 @@ object Helpers {
         // We collect incoming HTLCs that we haven't relayed: they may have been signed by our peer, but we haven't
         // received their revocation yet.
         val nonRelayedIncomingHtlcs: Set[Long] = commitment.changes.remoteChanges.all.collect { case add: UpdateAddHtlc => add.id }.toSet
-        commitment.htlcTxs(fundingKey, commitKeys).collect {
+        commitment.htlcTxs(channelKeys, commitKeys).collect {
           case (txInfo: HtlcSuccessTx, remoteSig) =>
             if (preimages.contains(txInfo.paymentHash)) {
               // We immediately spend incoming htlcs for which we have the preimage.
@@ -976,9 +976,8 @@ object Helpers {
 
       /** Claim the outputs of incoming HTLCs for the payment_hash matching the preimage provided. */
       def claimHtlcsWithPreimage(channelKeys: ChannelKeys, localCommitPublished: LocalCommitPublished, commitment: FullCommitment, preimage: ByteVector32)(implicit log: LoggingAdapter): Seq[TxPublisher.PublishTx] = {
-        val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
         val commitKeys = commitment.localKeys(channelKeys)
-        commitment.htlcTxs(fundingKey, commitKeys).collect {
+        commitment.htlcTxs(channelKeys, commitKeys).collect {
           case (txInfo: HtlcSuccessTx, remoteSig) if txInfo.paymentHash == Crypto.sha256(preimage) =>
             withTxGenerationLog("htlc-success") {
               val localSig = txInfo.sign(commitKeys, commitment.params.commitmentFormat, Map.empty)
@@ -1108,7 +1107,7 @@ object Helpers {
        */
       private def claimHtlcOutputs(channelKeys: ChannelKeys, commitKeys: RemoteCommitmentKeys, commitment: FullCommitment, remoteCommit: RemoteCommit, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Map[OutPoint, (DirectedHtlcId, Option[ClaimHtlcTx])] = {
         val outputs = makeRemoteCommitTxOutputs(channelKeys, commitKeys, commitment, remoteCommit)
-        val remoteCommitTx = makeCommitTx(commitment.commitInput, remoteCommit.index, commitment.params.remoteParams.paymentBasepoint, commitKeys.ourPaymentBasePoint, !commitment.params.localParams.isChannelOpener, outputs)
+        val remoteCommitTx = makeCommitTx(commitment.commitInput(channelKeys), remoteCommit.index, commitment.params.remoteParams.paymentBasepoint, commitKeys.ourPaymentBasePoint, !commitment.params.localParams.isChannelOpener, outputs)
         require(remoteCommitTx.tx.txid == remoteCommit.txId, "txid mismatch, cannot recompute the current remote commit tx")
         // The feerate will be set by the publisher actor based on the HTLC expiry, we don't care which feerate is used here.
         val feerate = FeeratePerKw(FeeratePerByte(1 sat))
