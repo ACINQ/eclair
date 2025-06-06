@@ -28,6 +28,7 @@ import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs.vector
 
+import java.util.Currency
 import scala.util.{Failure, Try}
 
 /**
@@ -71,7 +72,7 @@ object OfferTypes {
   /**
    * Three-letter code of the currency the offer is denominated in. If empty, bitcoin is implied.
    */
-  case class OfferCurrency(iso4217: String) extends OfferTlv
+  case class OfferCurrency(currency: Currency) extends OfferTlv
 
   /**
    * Amount to pay per item.

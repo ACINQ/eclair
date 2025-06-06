@@ -42,7 +42,7 @@ import org.scalatest.matchers.should.Matchers
 import scodec.bits._
 
 import java.net.InetAddress
-import java.util.UUID
+import java.util.{Currency, UUID}
 
 class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Matchers {
 
@@ -335,15 +335,18 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   test("Bolt 12 offer") {
+    val minimalOffer = Offer(TlvStream[OfferTlv](OfferTypes.OfferNodeId(PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"))))
+    JsonSerializers.serialization.write(minimalOffer)(JsonSerializers.formats) shouldBe """{"nodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"}"""
+
     val ref = "lno1pqzqzltcgq9q6urvv4shxefqv3hkuct5v58qxrp4qqfquctvd93k2srpvd5kuufwvdh3vggzg2hd49ueds8phzcahvh4p2m3pnen649dza2h3k6gxpaequr8fhtq"
     val offer = Offer.decode(ref).get
-    JsonSerializers.serialization.write(offer)(JsonSerializers.formats) shouldBe """{"amount":25000000,"description":"please donate","expiry":{"iso":"1970-01-10T06:13:20Z","unix":800000},"issuer":"alice@acinq.co","nodeId":"0242aeda97996c0e1b8b1dbb2f50ab710cf33d54ad175578db48307b9070674dd6"}"""
+    JsonSerializers.serialization.write(offer)(JsonSerializers.formats) shouldBe """{"amount":"25000.000","currency":"satoshi","description":"please donate","expiry":{"iso":"1970-01-10T06:13:20Z","unix":800000},"issuer":"alice@acinq.co","nodeId":"0242aeda97996c0e1b8b1dbb2f50ab710cf33d54ad175578db48307b9070674dd6"}"""
 
     val bigOffer = Offer(TlvStream(Set[OfferTlv](
       OfferTypes.OfferChains(Seq(Block.Testnet4GenesisBlock.hash)),
       OfferTypes.OfferMetadata(hex"d5f4a6"),
-      OfferTypes.OfferCurrency("EUR"),
-      OfferTypes.OfferAmount(42),
+      OfferTypes.OfferCurrency(Currency.getInstance("EUR")),
+      OfferTypes.OfferAmount(86205),
       OfferTypes.OfferDescription("offer with a lot of fields in it"),
       OfferTypes.OfferFeatures(Features(Features.ProvideStorage -> FeatureSupport.Mandatory)),
       OfferTypes.OfferAbsoluteExpiry(TimestampSecond(3600)),
@@ -352,7 +355,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
       OfferTypes.OfferQuantityMax(5),
       OfferTypes.OfferNodeId(PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")),
     ), Set(GenericTlv(UInt64(71), hex"bd4e85ce"))))
-    JsonSerializers.serialization.write(bigOffer)(JsonSerializers.formats) shouldBe """{"chains":["43f08bdab050e35b567c864b91f47f50ae725ae2de53bcfbbaf284da00000000"],"currency":"EUR","amount":42,"description":"offer with a lot of fields in it","expiry":{"iso":"1970-01-01T01:00:00Z","unix":3600},"issuer":"bob@bobcorp.com","nodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","paths":[{"firstNodeId":{"publicKey":"022812e3a3760ac989b8749ee9fc70fd12e4d7f3cad5e3e2bf572e9e4eaaa7b7d9"},"firstPathKey":"028a2b20b2debdfd97de08f6e2374f2946116492f358b78acf9eac05f6fdac632d","blindedHops":[{"blindedPublicKey":"031b27d9e97dbb0ef87c48bb0231c96c6bca1ee54b0e0cfe869ad2388ce247719f","encryptedPayload":"def5"}]}],"quantityMax":5,"features":{"activated":{"option_provide_storage":"mandatory"},"unknown":[]},"metadata":"d5f4a6","unknownTlvs":{"71":"bd4e85ce"}}"""
+    JsonSerializers.serialization.write(bigOffer)(JsonSerializers.formats) shouldBe """{"chains":["43f08bdab050e35b567c864b91f47f50ae725ae2de53bcfbbaf284da00000000"],"amount":"862.05","currency":"EUR","description":"offer with a lot of fields in it","expiry":{"iso":"1970-01-01T01:00:00Z","unix":3600},"issuer":"bob@bobcorp.com","nodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","paths":[{"firstNodeId":{"publicKey":"022812e3a3760ac989b8749ee9fc70fd12e4d7f3cad5e3e2bf572e9e4eaaa7b7d9"},"length":1}],"quantityMax":5,"features":{"activated":{"option_provide_storage":"mandatory"},"unknown":[]},"metadata":"d5f4a6","unknownTlvs":{"71":"bd4e85ce"}}"""
   }
 
   test("Bolt 12 offer data") {
