@@ -53,7 +53,7 @@ object Transactions {
     // @formatter:off
     /** Weight of a fully signed [[CommitTx]] transaction without any HTLCs. */
     def commitWeight: Int
-    /** Weight of a fully signed [[ClaimAnchorOutputTx]] input. */
+    /** Weight of a fully signed [[ClaimLocalAnchorTx]] or [[ClaimRemoteAnchorTx]] input. */
     def anchorInputWeight: Int
     /** Weight of an additional HTLC output added to a [[CommitTx]]. */
     def htlcOutputWeight: Int
@@ -390,7 +390,7 @@ object Transactions {
    *
    * When *local* *current* [[CommitTx]] is published:
    *   - [[ClaimLocalDelayedOutputTx]] spends to-local output of [[CommitTx]] after a delay
-   *   - When using anchor outputs, [[ClaimAnchorOutputTx]] spends to-local anchor of [[CommitTx]]
+   *   - When using anchor outputs, [[ClaimLocalAnchorTx]] spends to-local anchor of [[CommitTx]]
    *   - [[HtlcSuccessTx]] spends htlc-received outputs of [[CommitTx]] for which we have the preimage
    *     - [[HtlcDelayedTx]] spends [[HtlcSuccessTx]] after a delay
    *   - [[HtlcTimeoutTx]] spends htlc-sent outputs of [[CommitTx]] after a timeout
@@ -399,14 +399,14 @@ object Transactions {
    * When *remote* *current* [[CommitTx]] is published:
    *   - When using the default commitment format, [[ClaimP2WPKHOutputTx]] spends to-local output of [[CommitTx]]
    *   - When using anchor outputs, [[ClaimRemoteDelayedOutputTx]] spends to-local output of [[CommitTx]]
-   *   - When using anchor outputs, [[ClaimAnchorOutputTx]] spends to-local anchor of [[CommitTx]]
+   *   - When using anchor outputs, [[ClaimRemoteAnchorTx]] spends to-local anchor of [[CommitTx]]
    *   - [[ClaimHtlcSuccessTx]] spends htlc-received outputs of [[CommitTx]] for which we have the preimage
    *   - [[ClaimHtlcTimeoutTx]] spends htlc-sent outputs of [[CommitTx]] after a timeout
    *
    * When *remote* *revoked* [[CommitTx]] is published:
    *   - When using the default commitment format, [[ClaimP2WPKHOutputTx]] spends to-local output of [[CommitTx]]
    *   - When using anchor outputs, [[ClaimRemoteDelayedOutputTx]] spends to-local output of [[CommitTx]]
-   *   - When using anchor outputs, [[ClaimAnchorOutputTx]] spends to-local anchor of [[CommitTx]]
+   *   - When using anchor outputs, [[ClaimRemoteAnchorTx]] spends to-local anchor of [[CommitTx]]
    *   - [[MainPenaltyTx]] spends remote main output using the per-commitment secret
    *   - [[HtlcSuccessTx]] spends htlc-sent outputs of [[CommitTx]] for which they have the preimage (published by remote)
    *     - [[ClaimHtlcDelayedOutputPenaltyTx]] spends [[HtlcSuccessTx]] using the revocation secret (published by local)
@@ -783,33 +783,18 @@ object Transactions {
     }
   }
 
-  /** This transaction claims our anchor output in either the local or remote commitment, to CPFP and get it confirmed. */
-  case class ClaimAnchorOutputTx(input: InputInfo, tx: Transaction) extends ForceCloseTransaction {
+  /** This transaction claims our anchor output in our local commitment, to CPFP and get it confirmed. */
+  case class ClaimLocalAnchorTx(input: InputInfo, tx: Transaction) extends ForceCloseTransaction {
     override val desc: String = "local-anchor"
 
-    def sign(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ClaimAnchorOutputTx = {
-      commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => sign(fundingKey, commitmentFormat, extraUtxos)
-        case _: SimpleTaprootChannelCommitmentFormat => sign(commitKeys.ourDelayedPaymentKey, commitmentFormat, extraUtxos)
-      }
-    }
-
-    def sign(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ClaimAnchorOutputTx = {
-      commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => sign(fundingKey, commitmentFormat, extraUtxos)
-        case _: SimpleTaprootChannelCommitmentFormat =>
-          val Right(ourPaymentKey) = commitKeys.ourPaymentKey
-          sign(ourPaymentKey, commitmentFormat, extraUtxos)
-      }
-    }
-
-    private def sign(anchorKey: PrivateKey, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ClaimAnchorOutputTx = {
+    def sign(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ClaimLocalAnchorTx = {
       val witness = commitmentFormat match {
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
-          val redeemScript = Script.write(anchor(anchorKey.publicKey))
-          val sig = sign(anchorKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos)
+          val redeemScript = Script.write(anchor(fundingKey.publicKey))
+          val sig = sign(fundingKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos)
           witnessAnchor(sig, redeemScript)
         case _: SimpleTaprootChannelCommitmentFormat =>
+          val anchorKey = commitKeys.ourDelayedPaymentKey
           val redeemInfo = RedeemInfo.TaprootKeyPath(anchorKey.xOnlyPublicKey(), Some(Taproot.anchorScriptTree))
           val sig = sign(anchorKey, sighash(TxOwner.Local, commitmentFormat), redeemInfo, extraUtxos)
           Script.witnessKeyPathPay2tr(sig)
@@ -818,56 +803,75 @@ object Transactions {
     }
   }
 
-  object ClaimAnchorOutputTx {
-    def redeemInfo(fundingKey: PublicKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): RedeemInfo = redeemInfo(fundingKey, commitKeys.publicKeys, toLocal = true, commitmentFormat)
-
-    def findInput(commitTx: Transaction, fundingKey: PublicKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, InputInfo] = {
-      val pubKeyScript = redeemInfo(fundingKey, commitKeys, commitmentFormat).pubkeyScript
-      findPubKeyScriptIndex(commitTx, pubKeyScript).map(outputIndex => InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty))
-    }
-
-    def redeemInfo(fundingKey: PublicKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): RedeemInfo = redeemInfo(fundingKey, commitKeys.publicKeys, toLocal = false, commitmentFormat)
-
-    def findInput(commitTx: Transaction, fundingKey: PublicKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, InputInfo] = {
-      val pubKeyScript = redeemInfo(fundingKey, commitKeys, commitmentFormat).pubkeyScript
-      findPubKeyScriptIndex(commitTx, pubKeyScript).map(outputIndex => InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty))
-    }
-
-    /**
-     *
-     * @param fundingKey       funding public keys
-     * @param commitKeys       commitment keys
-     * @param toLocal          true if this is the redeem info for the `toLocal` commit tx output
-     * @param commitmentFormat commitment format
-     * @return the redeem information for a local or remote commit tx anchor output
-     */
-    def redeemInfo(fundingKey: PublicKey, commitKeys: CommitmentPublicKeys, toLocal: Boolean, commitmentFormat: CommitmentFormat): RedeemInfo = {
+  object ClaimLocalAnchorTx {
+    def redeemInfo(fundingKey: PublicKey, commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat): RedeemInfo = {
       commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
-          val redeemScript = Script.write(anchor(fundingKey))
-          RedeemInfo.P2wsh(redeemScript)
-        case _: SimpleTaprootChannelCommitmentFormat =>
-          val anchorKey = if (toLocal) commitKeys.localDelayedPaymentPublicKey.xOnly else commitKeys.remotePaymentPublicKey.xOnly
-          RedeemInfo.TaprootKeyPath(anchorKey, Some(Taproot.anchorScriptTree))
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => RedeemInfo.P2wsh(anchor(fundingKey))
+        case _: SimpleTaprootChannelCommitmentFormat => RedeemInfo.TaprootKeyPath(commitKeys.localDelayedPaymentPublicKey.xOnly, Some(Taproot.anchorScriptTree))
       }
     }
 
-    private def createUnsignedTx(input: InputInfo): ClaimAnchorOutputTx = {
-      val unsignedTx = Transaction(
-        version = 2,
-        txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
-        txOut = Nil, // anchor is only used to bump fees, the output will be added later depending on available inputs
-        lockTime = 0
-      )
-      ClaimAnchorOutputTx(input, unsignedTx)
+    def findInput(commitTx: Transaction, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, InputInfo] = {
+      val pubKeyScript = redeemInfo(fundingKey.publicKey, commitKeys.publicKeys, commitmentFormat).pubkeyScript
+      findPubKeyScriptIndex(commitTx, pubKeyScript).map(outputIndex => InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty))
     }
 
-    def createUnsignedTx(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimAnchorOutputTx] = {
-      findInput(commitTx, fundingKey.publicKey, commitKeys, commitmentFormat).map(input => createUnsignedTx(input))
+    def createUnsignedTx(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimLocalAnchorTx] = {
+      findInput(commitTx, fundingKey, commitKeys, commitmentFormat).map(input => {
+        val tx = Transaction(
+          version = 2,
+          txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
+          txOut = Nil, // anchor is only used to bump fees, the output will be added later depending on available inputs
+          lockTime = 0
+        )
+        ClaimLocalAnchorTx(input, tx)
+      })
+    }
+  }
+
+  /** This transaction claims our anchor output in a remote commitment, to CPFP and get it confirmed. */
+  case class ClaimRemoteAnchorTx(input: InputInfo, tx: Transaction) extends ForceCloseTransaction {
+    override val desc: String = "remote-anchor"
+
+    def sign(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat, extraUtxos: Map[OutPoint, TxOut]): ClaimRemoteAnchorTx = {
+      val witness = commitmentFormat match {
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+          val redeemScript = Script.write(anchor(fundingKey.publicKey))
+          val sig = sign(fundingKey, sighash(TxOwner.Local, commitmentFormat), RedeemInfo.P2wsh(redeemScript), extraUtxos)
+          witnessAnchor(sig, redeemScript)
+        case _: SimpleTaprootChannelCommitmentFormat =>
+          val Right(anchorKey) = commitKeys.ourPaymentKey
+          val redeemInfo = RedeemInfo.TaprootKeyPath(anchorKey.xOnlyPublicKey(), Some(Taproot.anchorScriptTree))
+          val sig = sign(anchorKey, sighash(TxOwner.Local, commitmentFormat), redeemInfo, extraUtxos)
+          Script.witnessKeyPathPay2tr(sig)
+      }
+      copy(tx = tx.updateWitness(inputIndex, witness))
+    }
+  }
+
+  object ClaimRemoteAnchorTx {
+    def redeemInfo(fundingKey: PublicKey, commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat): RedeemInfo = {
+      commitmentFormat match {
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => RedeemInfo.P2wsh(anchor(fundingKey))
+        case _: SimpleTaprootChannelCommitmentFormat => RedeemInfo.TaprootKeyPath(commitKeys.remotePaymentPublicKey.xOnly, Some(Taproot.anchorScriptTree))
+      }
     }
 
-    def createUnsignedTx(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimAnchorOutputTx] = {
-      findInput(commitTx, fundingKey.publicKey, commitKeys, commitmentFormat).map(input => createUnsignedTx(input))
+    def findInput(commitTx: Transaction, fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, InputInfo] = {
+      val pubKeyScript = redeemInfo(fundingKey.publicKey, commitKeys.publicKeys, commitmentFormat).pubkeyScript
+      findPubKeyScriptIndex(commitTx, pubKeyScript).map(outputIndex => InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty))
+    }
+
+    def createUnsignedTx(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimRemoteAnchorTx] = {
+      findInput(commitTx, fundingKey, commitKeys, commitmentFormat).map(input => {
+        val tx = Transaction(
+          version = 2,
+          txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
+          txOut = Nil, // anchor is only used to bump fees, the output will be added later depending on available inputs
+          lockTime = 0
+        )
+        ClaimRemoteAnchorTx(input, tx)
+      })
     }
   }
 
@@ -1378,11 +1382,11 @@ object Transactions {
       case DefaultCommitmentFormat => ()
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
         if (toLocalAmount >= dustLimit || hasHtlcs) {
-          val redeemInfo = ClaimAnchorOutputTx.redeemInfo(localFundingPublicKey, commitmentKeys, toLocal = true, commitmentFormat)
+          val redeemInfo = ClaimLocalAnchorTx.redeemInfo(localFundingPublicKey, commitmentKeys, commitmentFormat)
           outputs.append(ToLocalAnchor(TxOut(AnchorOutputsCommitmentFormat.anchorAmount, redeemInfo.pubkeyScript)))
         }
         if (toRemoteAmount >= dustLimit || hasHtlcs) {
-          val redeemInfo = ClaimAnchorOutputTx.redeemInfo(remoteFundingPublicKey, commitmentKeys, toLocal = false, commitmentFormat)
+          val redeemInfo = ClaimRemoteAnchorTx.redeemInfo(remoteFundingPublicKey, commitmentKeys, commitmentFormat)
           outputs.append(ToRemoteAnchor(TxOut(AnchorOutputsCommitmentFormat.anchorAmount, redeemInfo.pubkeyScript)))
         }
     }

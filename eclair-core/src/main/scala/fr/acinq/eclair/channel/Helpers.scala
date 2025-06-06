@@ -881,7 +881,7 @@ object Helpers {
     object LocalClose {
 
       /** Transactions spending outputs of our commitment transaction. */
-      case class SecondStageTransactions(mainDelayedTx_opt: Option[ClaimLocalDelayedOutputTx], anchorTx_opt: Option[ClaimAnchorOutputTx], htlcTxs: Seq[SignedHtlcTx])
+      case class SecondStageTransactions(mainDelayedTx_opt: Option[ClaimLocalDelayedOutputTx], anchorTx_opt: Option[ClaimLocalAnchorTx], htlcTxs: Seq[SignedHtlcTx])
 
       /** Transactions spending outputs of our HTLC transactions. */
       case class ThirdStageTransactions(htlcDelayedTxs: Seq[HtlcDelayedTx])
@@ -898,7 +898,7 @@ object Helpers {
         val unsignedHtlcTxs = commitment.htlcTxs(fundingKey, commitmentKeys)
         val (incomingHtlcs, htlcSuccessTxs) = claimIncomingHtlcOutputs(commitmentKeys, commitment, unsignedHtlcTxs)
         val (outgoingHtlcs, htlcTimeoutTxs) = claimOutgoingHtlcOutputs(commitmentKeys, commitment, unsignedHtlcTxs)
-        val anchorOutput_opt = ClaimAnchorOutputTx.findInput(commitTx, fundingKey.publicKey, commitmentKeys, commitment.params.commitmentFormat).toOption
+        val anchorOutput_opt = ClaimLocalAnchorTx.findInput(commitTx, fundingKey, commitmentKeys, commitment.params.commitmentFormat).toOption
         val spendAnchor = incomingHtlcs.nonEmpty || outgoingHtlcs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
         val anchorTx_opt = if (spendAnchor) {
           claimAnchor(fundingKey, commitmentKeys, commitTx, commitment.params.commitmentFormat)
@@ -918,9 +918,9 @@ object Helpers {
         (lcp, txs)
       }
 
-      def claimAnchor(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): Option[ClaimAnchorOutputTx] = {
+      def claimAnchor(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): Option[ClaimLocalAnchorTx] = {
         withTxGenerationLog("local-anchor") {
-          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys, commitTx, commitmentFormat)
+          ClaimLocalAnchorTx.createUnsignedTx(fundingKey, commitKeys, commitTx, commitmentFormat)
         }
       }
 
@@ -1061,7 +1061,7 @@ object Helpers {
     object RemoteClose {
 
       /** Transactions spending outputs of a remote commitment transaction. */
-      case class SecondStageTransactions(mainTx_opt: Option[ClaimRemoteCommitMainOutputTx], anchorTx_opt: Option[ClaimAnchorOutputTx], htlcTxs: Seq[ClaimHtlcTx])
+      case class SecondStageTransactions(mainTx_opt: Option[ClaimRemoteCommitMainOutputTx], anchorTx_opt: Option[ClaimRemoteAnchorTx], htlcTxs: Seq[ClaimHtlcTx])
 
       /** Claim all the outputs that belong to us in the remote commitment transaction (which can be either their current or next commitment). */
       def claimCommitTxOutputs(channelKeys: ChannelKeys, commitment: FullCommitment, remoteCommit: RemoteCommit, commitTx: Transaction, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (RemoteCommitPublished, SecondStageTransactions) = {
@@ -1072,7 +1072,7 @@ object Helpers {
         val mainTx_opt = claimMainOutput(commitment.params, commitKeys, commitTx, feerates, onChainFeeConf, finalScriptPubKey)
         val (incomingHtlcs, htlcSuccessTxs) = claimIncomingHtlcOutputs(commitKeys, commitTx, outputs, commitment, remoteCommit, finalScriptPubKey)
         val (outgoingHtlcs, htlcTimeoutTxs) = claimOutgoingHtlcOutputs(commitKeys, commitTx, outputs, commitment, remoteCommit, finalScriptPubKey)
-        val anchorOutput_opt = ClaimAnchorOutputTx.findInput(commitTx, fundingKey.publicKey, commitKeys, commitment.params.commitmentFormat).toOption
+        val anchorOutput_opt = ClaimRemoteAnchorTx.findInput(commitTx, fundingKey, commitKeys, commitment.params.commitmentFormat).toOption
         val spendAnchor = incomingHtlcs.nonEmpty || outgoingHtlcs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
         val anchorTx_opt = if (spendAnchor) {
           claimAnchor(fundingKey, commitKeys, commitTx, commitment.params.commitmentFormat)
@@ -1091,9 +1091,9 @@ object Helpers {
         (rcp, txs)
       }
 
-      def claimAnchor(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): Option[ClaimAnchorOutputTx] = {
+      def claimAnchor(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat)(implicit log: LoggingAdapter): Option[ClaimRemoteAnchorTx] = {
         withTxGenerationLog("remote-anchor") {
-          ClaimAnchorOutputTx.createUnsignedTx(fundingKey, commitKeys, commitTx, commitmentFormat)
+          ClaimRemoteAnchorTx.createUnsignedTx(fundingKey, commitKeys, commitTx, commitmentFormat)
         }
       }
 
