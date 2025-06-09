@@ -29,6 +29,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair._
 import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams, RealShortChannelId}
 import grizzled.slf4j.Logging
 
@@ -140,6 +141,14 @@ object Relayer extends Logging {
   object InboundFees {
     def apply(feeBaseInt32: Int, feeProportionalMillionthsInt32: Int): InboundFees = {
       InboundFees(MilliSatoshi(feeBaseInt32), feeProportionalMillionthsInt32)
+    }
+
+    def fromOptions(inboundFeeBase_opt: Option[MilliSatoshi], inboundFeeProportionalMillionths_opt: Option[Long]): Option[InboundFees] = {
+      if (inboundFeeBase_opt.isEmpty && inboundFeeProportionalMillionths_opt.isEmpty) {
+        None
+      } else {
+        Some(InboundFees(inboundFeeBase_opt.getOrElse(0.msat), inboundFeeProportionalMillionths_opt.getOrElse(0L)))
+      }
     }
   }
 

@@ -10,7 +10,7 @@ import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.DualDatabases.runAsync
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.payment.relay.Relayer.{InboundFees, RelayFees}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, Features, InitFeature, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond}
@@ -39,6 +39,7 @@ case class DualDatabases(primary: Databases, secondary: Databases) extends Datab
   override val offers: OffersDb = DualOffersDb(primary.offers, secondary.offers)
   override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(primary.pendingCommands, secondary.pendingCommands)
   override val liquidity: LiquidityDb = DualLiquidityDb(primary.liquidity, secondary.liquidity)
+  override val inboundFees: InboundFeesDb = DualInboundFeesDb(primary.inboundFees, secondary.inboundFees)
 
   /** if one of the database supports file backup, we use it */
   override def backup(backupFile: File): Unit = (primary, secondary) match {
@@ -520,4 +521,19 @@ case class DualLiquidityDb(primary: LiquidityDb, secondary: LiquidityDb) extends
     primary.removeFeeCredit(nodeId, amountUsed)
   }
 
+}
+
+
+case class DualInboundFeesDb(primary: InboundFeesDb, secondary: InboundFeesDb) extends InboundFeesDb {
+  private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-liquidity").build()))
+
+  override def addOrUpdateInboundFees(nodeId: PublicKey, fees: InboundFees): Unit = {
+    runAsync(secondary.addOrUpdateInboundFees(nodeId, fees))
+    primary.addOrUpdateInboundFees(nodeId, fees)
+  }
+
+  override def getInboundFees(nodeId: PublicKey): Option[InboundFees] = {
+    runAsync(secondary.getInboundFees(nodeId))
+    primary.getInboundFees(nodeId)
+  }
 }

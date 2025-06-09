@@ -32,7 +32,7 @@ class DbMigrationSpec extends AnyFunSuite {
 
     new PgChannelsDb()(postgresDatasource, PgLock.NoLock)
     new PgPendingCommandsDb()(postgresDatasource, PgLock.NoLock)
-    new PgPeersDb()(postgresDatasource, PgLock.NoLock)
+    new PgInboundFeesDb()(postgresDatasource, PgLock.NoLock)
     new PgPaymentsDb()(postgresDatasource, PgLock.NoLock)
 
     PgUtils.inTransaction { postgres =>
@@ -83,6 +83,7 @@ class DbMigrationSpec extends AnyFunSuite {
       auditJdbc = loadSqlite("migration\\audit.sqlite", readOnly = false),
       eclairJdbc = loadSqlite("migration\\eclair.sqlite", readOnly = false),
       networkJdbc = loadSqlite("migration\\network.sqlite", readOnly = false),
+      inboundFeesJdbc = loadSqlite("migration\\inboundfees.sqlite", readOnly = false),
       jdbcUrlFile_opt = None
     )
     val postgres = {
