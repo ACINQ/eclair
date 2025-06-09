@@ -34,9 +34,11 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.{Peer, PeerReadyManager, Switchboard}
 import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
+import fr.acinq.eclair.payment.relay.Relayer.InboundFees
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentPacketSpec}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.BlindedRouteData.PaymentRelayData
+import fr.acinq.eclair.wire.protocol.ChannelUpdateTlv.Blip18InboundFee
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload.ChannelRelay
 import fr.acinq.eclair.wire.protocol._
@@ -513,6 +515,20 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(FeeInsufficient(r.add.amountMsat, Some(u3.channelUpdate))), commit = true))
   }
 
+  test("relay that would fail (fee insufficient) when inbound fees are set") { f =>
+    import f._
+
+    val payload = ChannelRelay.Standard(realScid1, outgoingAmount, outgoingExpiry)
+    val r = createValidIncomingPacket(payload)
+    val u = createLocalUpdate(channelId1, inboundFees_opt = Some(InboundFees(10000 msat, 100000)))
+
+    channelRelayer ! WrappedLocalChannelUpdate(u)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId)
+
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(FeeInsufficient(r.add.amountMsat, Some(u.channelUpdate))), commit = true))
+  }
+
+
   test("fail to relay when there is a local error") { f =>
     import f._
 
@@ -835,11 +851,12 @@ object ChannelRelayerSpec {
     ShortIdAliases(localAlias, remoteAlias_opt = None)
   }
 
-  def createLocalUpdate(channelId: ByteVector32, channelUpdateScid_opt: Option[ShortChannelId] = None, balance: MilliSatoshi = 100_000_000 msat, capacity: Satoshi = 5_000_000 sat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat, timestamp: TimestampSecond = 0 unixsec, feeBaseMsat: MilliSatoshi = 1000 msat, feeProportionalMillionths: Long = 100, optionScidAlias: Boolean = false): LocalChannelUpdate = {
+  def createLocalUpdate(channelId: ByteVector32, channelUpdateScid_opt: Option[ShortChannelId] = None, balance: MilliSatoshi = 100_000_000 msat, capacity: Satoshi = 5_000_000 sat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat, timestamp: TimestampSecond = 0 unixsec, feeBaseMsat: MilliSatoshi = 1000 msat, feeProportionalMillionths: Long = 100, optionScidAlias: Boolean = false, inboundFees_opt: Option[InboundFees] = None): LocalChannelUpdate = {
     val aliases = createAliases(channelId)
     val realScid = channelIds.collectFirst { case (realScid: RealShortChannelId, cid) if cid == channelId => realScid }.get
     val channelUpdateScid = channelUpdateScid_opt.getOrElse(realScid)
-    val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, channelUpdateScid, timestamp, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = enabled), CltvExpiryDelta(100), htlcMinimum, feeBaseMsat, feeProportionalMillionths, capacity.toMilliSatoshi)
+    val tlvStream = inboundFees_opt.map(fees => TlvStream[ChannelUpdateTlv](Blip18InboundFee(fees))).getOrElse(TlvStream.empty)
+    val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, channelUpdateScid, timestamp, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = enabled), CltvExpiryDelta(100), htlcMinimum, feeBaseMsat, feeProportionalMillionths, capacity.toMilliSatoshi, tlvStream)
     val features: Set[PermanentChannelFeature] = Set(
       if (optionScidAlias) Some(ScidAlias) else None,
     ).flatten

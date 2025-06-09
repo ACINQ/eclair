@@ -161,7 +161,7 @@ private class BlindedPathsResolver(nodeParams: NodeParams,
                             resolved: Seq[ResolvedPath]): Behavior[Command] = {
     // Note that we default to private fees if we don't have a channel yet with that node.
     // The announceChannel parameter is ignored if we already have a channel.
-    val relayFees = getRelayFees(nodeParams, nextNodeId.publicKey, announceChannel = false)
+    val (relayFees, inboundFees_opt) = getRelayFees(nodeParams, nextNodeId.publicKey, announceChannel = false)
     val shouldRelay = paymentRelayData.paymentRelay.feeBase >= relayFees.feeBase &&
       paymentRelayData.paymentRelay.feeProportionalMillionths >= relayFees.feeProportionalMillionths &&
       paymentRelayData.paymentRelay.cltvExpiryDelta >= nodeParams.channelConf.expiryDelta

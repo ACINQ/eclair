@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair._
+import fr.acinq.eclair.payment.relay.Relayer.InboundFees
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate.ChannelFlags
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.nodeAnnouncementCodec
@@ -135,6 +136,9 @@ class AnnouncementsSpec extends AnyFunSuite {
     val ann = makeChannelUpdate(Block.RegtestGenesisBlock.hash, Alice.nodeParams.privateKey, randomKey().publicKey, ShortChannelId(45561L), Alice.nodeParams.channelConf.expiryDelta, Alice.nodeParams.channelConf.htlcMinimum, Alice.nodeParams.relayParams.publicChannelFees.feeBase, Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths, 500000000 msat)
     assert(checkSig(ann, Alice.nodeParams.nodeId))
     assert(!checkSig(ann, randomKey().publicKey))
+    val annInboundFees = makeChannelUpdate(Block.RegtestGenesisBlock.hash, Alice.nodeParams.privateKey, randomKey().publicKey, ShortChannelId(45561L), Alice.nodeParams.channelConf.expiryDelta, Alice.nodeParams.channelConf.htlcMinimum, Alice.nodeParams.relayParams.publicChannelFees.feeBase, Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths, 500000000 msat, inboundFees_opt = Some(InboundFees(1 msat, 1)))
+    assert(checkSig(annInboundFees, Alice.nodeParams.nodeId))
+    assert(!checkSig(annInboundFees.copy(tlvStream = TlvStream.empty), Alice.nodeParams.nodeId))
   }
 
   test("check flags") {

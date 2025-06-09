@@ -26,5 +26,7 @@ project/target
 DeleteMe*.*
 *~
 jdbcUrlFile_*.tmp
+.metals/
+.vscode/
 
 .DS_Store
