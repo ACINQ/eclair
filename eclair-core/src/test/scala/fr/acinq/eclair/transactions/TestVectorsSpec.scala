@@ -260,30 +260,30 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
     val signedTxs = htlcTxs.collect {
       case tx: UnsignedHtlcSuccessTx =>
-        val remoteSig = tx.localSig(remoteCommitmentKeys, commitmentFormat)
-        val htlcIndex = tx.redeemInfo(localCommitmentKeys.publicKeys, commitmentFormat) match {
+        val remoteSig = tx.localSig(remoteCommitmentKeys)
+        val htlcIndex = tx.redeemInfo(localCommitmentKeys.publicKeys) match {
           case redeemInfo: RedeemInfo.SegwitV0 => htlcScripts.indexOf(Script.parse(redeemInfo.redeemScript))
           case _: RedeemInfo.Taproot => ???
         }
         val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
-        val tx1 = tx.addRemoteSig(remoteSig, preimage).sign(localCommitmentKeys, commitmentFormat, Map.empty)
+        val tx1 = tx.addRemoteSig(localCommitmentKeys, remoteSig, preimage).sign(Map.empty)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-success for htlc #$htlcIndex)")
         logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")
-        logger.info(s"# local_htlc_signature = ${Scripts.der(tx1.localSig(localCommitmentKeys, commitmentFormat, Map.empty)).dropRight(1).toHex}")
+        logger.info(s"# local_htlc_signature = ${Scripts.der(tx1.localSig(Map.empty)).dropRight(1).toHex}")
         logger.info(s"htlc_success_tx (htlc #$htlcIndex): ${tx1.tx}")
         tx1
       case tx: UnsignedHtlcTimeoutTx =>
-        val remoteSig = tx.localSig(remoteCommitmentKeys, commitmentFormat)
-        val htlcIndex = tx.redeemInfo(localCommitmentKeys.publicKeys, commitmentFormat) match {
+        val remoteSig = tx.localSig(remoteCommitmentKeys)
+        val htlcIndex = tx.redeemInfo(localCommitmentKeys.publicKeys) match {
           case redeemInfo: RedeemInfo.SegwitV0 => htlcScripts.indexOf(Script.parse(redeemInfo.redeemScript))
           case _: RedeemInfo.Taproot => ???
         }
-        val tx1 = tx.addRemoteSig(remoteSig).sign(localCommitmentKeys, commitmentFormat, Map.empty)
+        val tx1 = tx.addRemoteSig(localCommitmentKeys, remoteSig).sign(Map.empty)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-timeout for htlc #$htlcIndex)")
         logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")
-        logger.info(s"# local_htlc_signature = ${Scripts.der(tx1.localSig(localCommitmentKeys, commitmentFormat, Map.empty)).dropRight(1).toHex}")
+        logger.info(s"# local_htlc_signature = ${Scripts.der(tx1.localSig(Map.empty)).dropRight(1).toHex}")
         logger.info(s"htlc_timeout_tx (htlc #$htlcIndex): ${tx1.tx}")
         tx1
     }

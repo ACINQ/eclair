@@ -854,7 +854,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         channelParams.commitmentFormat match {
           case _: SegwitV0CommitmentFormat =>
             val localSigOfRemoteTx = remoteCommitTx.sign(localFundingKey, fundingParams.remoteFundingPubKey).sig
-            val htlcSignatures = sortedHtlcTxs.map(_.localSig(remoteCommitmentKeys, channelParams.commitmentFormat)).toList
+            val htlcSignatures = sortedHtlcTxs.map(_.localSig(remoteCommitmentKeys)).toList
             val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures)
             val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx.tx.txid, localCommitTx.input)
             val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)

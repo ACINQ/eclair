@@ -953,7 +953,7 @@ object Helpers {
               // We immediately spend incoming htlcs for which we have the preimage.
               val preimage = preimages(txInfo.paymentHash)
               val htlcTx_opt = withTxGenerationLog("htlc-success") {
-                Right(txInfo.addRemoteSig(remoteSig, preimage).sign(commitKeys, commitment.params.commitmentFormat, Map.empty))
+                Right(txInfo.addRemoteSig(commitKeys, remoteSig, preimage).sign(Map.empty))
               }
               Some(txInfo.input.outPoint, txInfo.htlcId, htlcTx_opt)
             } else if (failedIncomingHtlcs.contains(txInfo.htlcId)) {
@@ -985,7 +985,7 @@ object Helpers {
             // claim the output, we will learn the preimage from their transaction, otherwise we will get our funds
             // back after the timeout.
             val htlcTx_opt = withTxGenerationLog("htlc-timeout") {
-              Right(txInfo.addRemoteSig(remoteSig).sign(commitKeys, commitment.params.commitmentFormat, Map.empty))
+              Right(txInfo.addRemoteSig(commitKeys, remoteSig).sign(Map.empty))
             }
             (txInfo.input.outPoint, txInfo.htlcId, htlcTx_opt)
         }
@@ -1000,7 +1000,7 @@ object Helpers {
         commitment.htlcTxs(fundingKey, commitKeys).collect {
           case (txInfo: UnsignedHtlcSuccessTx, remoteSig) if txInfo.paymentHash == Crypto.sha256(preimage) =>
             withTxGenerationLog("htlc-success") {
-              Right(txInfo.addRemoteSig(remoteSig, preimage).sign(commitKeys, commitment.params.commitmentFormat, Map.empty))
+              Right(txInfo.addRemoteSig(commitKeys, remoteSig, preimage).sign(Map.empty))
             }
         }.flatten
       }

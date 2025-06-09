@@ -225,13 +225,11 @@ trait ErrorHandlers extends CommonHandlers {
 
   /** Publish 2nd-stage transactions for our local commitment. */
   def doPublish(lcp: LocalCommitPublished, txs: Closing.LocalClose.SecondStageTransactions, commitment: FullCommitment): Unit = {
-    val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
-    val commitKeys = commitment.localKeys(channelKeys)
     val publishCommitTx = PublishFinalTx(lcp.commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, lcp.commitTx, commitment.localParams.paysCommitTxFees), None)
     val publishAnchorTx_opt = txs.anchorTx_opt match {
       case Some(anchorTx) if !lcp.isConfirmed =>
         val confirmationTarget = Closing.confirmationTarget(commitment.localCommit, commitment.localParams.dustLimit, commitment.params.commitmentFormat, nodeParams.onChainFeeConf)
-        Some(PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, lcp.commitTx, commitment), confirmationTarget))
+        Some(PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, lcp.commitTx, commitment), confirmationTarget))
       case _ => None
     }
     val publishMainDelayedTx_opt = txs.mainDelayedTx_opt.map(tx => PublishFinalTx(tx, tx.fee, None))
@@ -239,8 +237,8 @@ trait ErrorHandlers extends CommonHandlers {
       case DefaultCommitmentFormat => PublishFinalTx(htlcTx, htlcTx.fee, Some(lcp.commitTx.txid))
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
         val replaceableTx = htlcTx match {
-          case htlcTx: HtlcSuccessTx => ReplaceableHtlcSuccess(htlcTx, commitKeys, lcp.commitTx, commitment)
-          case htlcTx: HtlcTimeoutTx => ReplaceableHtlcTimeout(htlcTx, commitKeys, lcp.commitTx, commitment)
+          case htlcTx: HtlcSuccessTx => ReplaceableHtlcSuccess(htlcTx, lcp.commitTx, commitment)
+          case htlcTx: HtlcTimeoutTx => ReplaceableHtlcTimeout(htlcTx, lcp.commitTx, commitment)
         }
         PublishReplaceableTx(replaceableTx, Closing.confirmationTarget(htlcTx))
     })
@@ -306,23 +304,21 @@ trait ErrorHandlers extends CommonHandlers {
 
   /** Publish 2nd-stage transactions for the remote commitment (no need for 3rd-stage transactions in that case). */
   def doPublish(rcp: RemoteCommitPublished, txs: Closing.RemoteClose.SecondStageTransactions, commitment: FullCommitment): Unit = {
-    val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
     val remoteCommit = commitment.nextRemoteCommit_opt match {
       case Some(c) if rcp.commitTx.txid == c.commit.txId => c.commit
       case _ => commitment.remoteCommit
     }
-    val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)
     val publishAnchorTx_opt = txs.anchorTx_opt match {
       case Some(anchorTx) if !rcp.isConfirmed =>
         val confirmationTarget = Closing.confirmationTarget(remoteCommit, commitment.remoteParams.dustLimit, commitment.params.commitmentFormat, nodeParams.onChainFeeConf)
-        Some(PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, rcp.commitTx, commitment), confirmationTarget))
+        Some(PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, rcp.commitTx, commitment), confirmationTarget))
       case _ => None
     }
     val publishMainTx_opt = txs.mainTx_opt.map(tx => PublishFinalTx(tx, tx.fee, None))
     val publishHtlcTxs = txs.htlcTxs.map(htlcTx => {
       val replaceableTx = htlcTx match {
-        case htlcTx: ClaimHtlcSuccessTx => ReplaceableClaimHtlcSuccess(htlcTx, commitKeys, rcp.commitTx, commitment)
-        case htlcTx: ClaimHtlcTimeoutTx => ReplaceableClaimHtlcTimeout(htlcTx, commitKeys, rcp.commitTx, commitment)
+        case htlcTx: ClaimHtlcSuccessTx => ReplaceableClaimHtlcSuccess(htlcTx, rcp.commitTx, commitment)
+        case htlcTx: ClaimHtlcTimeoutTx => ReplaceableClaimHtlcTimeout(htlcTx, rcp.commitTx, commitment)
       }
       PublishReplaceableTx(replaceableTx, Closing.confirmationTarget(htlcTx))
     })
