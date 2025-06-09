@@ -495,12 +495,7 @@ object Router {
     def cltvExpiryDelta: CltvExpiryDelta
     def relayFees: Relayer.RelayFees
     def inboundFees_opt: Option[Relayer.InboundFees]
-    final def fee(amount: MilliSatoshi): MilliSatoshi = {
-      val outFee = nodeFee(relayFees, amount)
-      val inFee = inboundFees_opt.map(i => nodeFee(i.feeBase, i.feeProportionalMillionths, amount + outFee)).getOrElse(0 msat)
-      val totalFee = outFee + inFee
-      if (totalFee.toLong < 0) 0 msat else totalFee
-    }
+    final def fee(amount: MilliSatoshi): MilliSatoshi = totalFee(amount, relayFees, inboundFees_opt)
     def htlcMinimum: MilliSatoshi
     def htlcMaximum_opt: Option[MilliSatoshi]
     // @formatter:on

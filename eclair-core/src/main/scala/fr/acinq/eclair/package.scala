@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.crypto.StrongRandom
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.payment.relay.Relayer.{InboundFees, RelayFees}
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
@@ -70,6 +70,19 @@ package object eclair {
   def nodeFee(baseFee: MilliSatoshi, proportionalFee: Long, paymentAmount: MilliSatoshi): MilliSatoshi = baseFee + (paymentAmount * proportionalFee) / 1000000
 
   def nodeFee(relayFees: RelayFees, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees.feeBase, relayFees.feeProportionalMillionths, paymentAmount)
+
+  def totalFee(amount: MilliSatoshi, baseFee: MilliSatoshi, proportionalFee: Long, inboundBaseFee_opt: Option[MilliSatoshi], inboundProportionalFee_opt: Option[Long]): MilliSatoshi = {
+    val outFee = nodeFee(baseFee, proportionalFee, amount)
+    val inFee = (for {
+      inboundBaseFee <- inboundBaseFee_opt
+      inboundProportionalFee <- inboundProportionalFee_opt
+    } yield nodeFee(inboundBaseFee, inboundProportionalFee, amount + outFee)).getOrElse(0 msat)
+    val totalFee = outFee + inFee
+    if (totalFee.toLong < 0) 0 msat else totalFee
+  }
+
+  def totalFee(amount: MilliSatoshi, relayFees: RelayFees, inboundFees_opt: Option[InboundFees]): MilliSatoshi =
+    totalFee(amount, relayFees.feeBase, relayFees.feeProportionalMillionths, inboundFees_opt.map(_.feeBase), inboundFees_opt.map(_.feeProportionalMillionths))
 
   /**
    * @param baseFee         fixed fee

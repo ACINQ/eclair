@@ -36,6 +36,7 @@ sealed trait TestDatabases extends Databases {
   override def offers: OffersDb = db.offers
   override def pendingCommands: PendingCommandsDb = db.pendingCommands
   override def liquidity: LiquidityDb = db.liquidity
+  override def inboundFees: InboundFeesDb = db.inboundFees
   def close(): Unit
   // @formatter:on
 }
@@ -46,7 +47,7 @@ object TestDatabases {
 
   def inMemoryDb(): Databases = {
     val connection = sqliteInMemory()
-    val dbs = Databases.SqliteDatabases(connection, connection, connection, jdbcUrlFile_opt = None)
+    val dbs = Databases.SqliteDatabases(connection, connection, connection, connection, jdbcUrlFile_opt = None)
     dbs.copy(channels = new SqliteChannelsDbWithValidation(dbs.channels))
   }
 
@@ -102,7 +103,7 @@ object TestDatabases {
     override lazy val db: Databases = {
       val jdbcUrlFile: File = new File(TestUtils.BUILD_DIRECTORY, s"jdbcUrlFile_${UUID.randomUUID()}.tmp")
       jdbcUrlFile.deleteOnExit()
-      val dbs = Databases.SqliteDatabases(connection, connection, connection, jdbcUrlFile_opt = Some(jdbcUrlFile))
+      val dbs = Databases.SqliteDatabases(connection, connection, connection, connection, jdbcUrlFile_opt = Some(jdbcUrlFile))
       dbs.copy(channels = new SqliteChannelsDbWithValidation(dbs.channels))
     }
     override def close(): Unit = connection.close()

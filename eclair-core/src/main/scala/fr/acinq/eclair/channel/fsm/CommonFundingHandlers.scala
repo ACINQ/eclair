@@ -17,7 +17,6 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.{TypedActorRefOps, actorRefAdapter}
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction, TxId}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -139,8 +138,8 @@ trait CommonFundingHandlers extends CommonHandlers {
     // We create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced.
     val scidForChannelUpdate = Helpers.scidForChannelUpdate(channelAnnouncement_opt = None, aliases1.localAlias)
     log.info("using shortChannelId={} for initial channel_update", scidForChannelUpdate)
-    val relayFees = getRelayFees(nodeParams, remoteNodeId, commitments.announceChannel)
-    val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, commitments.params, relayFees, Helpers.maxHtlcAmount(nodeParams, commitments), enable = true)
+    val (relayFees, inboundFees_opt) = getRelayFees(nodeParams, remoteNodeId, commitments.announceChannel)
+    val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, commitments.params, relayFees, Helpers.maxHtlcAmount(nodeParams, commitments), enable = true, inboundFees_opt)
     // We need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network.
     context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
     val commitments1 = commitments.copy(

@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.fsm.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.db.ChannelsDb
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.payment.relay.Relayer.{InboundFees, RelayFees}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Scripts._
@@ -351,9 +351,9 @@ object Helpers {
     commitments.params.maxHtlcAmount
   }
 
-  def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): RelayFees = {
+  def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): (RelayFees, Option[InboundFees]) = {
     val defaultFees = nodeParams.relayParams.defaultFees(announceChannel)
-    nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees)
+    (nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees), nodeParams.db.inboundFees.getInboundFees(remoteNodeId))
   }
 
   object Funding {

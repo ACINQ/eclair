@@ -101,11 +101,9 @@ object RouteCalculation {
               // some nodes in the supplied route aren't connected in our graph
               fr.replyTo ! PaymentRouteNotFound(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
           }
-        case pcr@PredefinedChannelRoute(amount, targetNodeId, shortChannelIds, maxFee_opt) =>
-          log.info(s"$pcr")
+        case PredefinedChannelRoute(amount, targetNodeId, shortChannelIds, maxFee_opt) =>
           val (end, hops) = shortChannelIds.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
             case ((currentNode, previousHops), shortChannelId) =>
-              log.info(s"d.resolve($shortChannelId)=${d.resolve(shortChannelId)}")
               val channelDesc_opt = d.resolve(shortChannelId) match {
                 case Some(c: PublicChannel) => currentNode match {
                   case c.nodeId1 => Some(ChannelDesc(shortChannelId, c.nodeId1, c.nodeId2))
@@ -119,13 +117,11 @@ object RouteCalculation {
                 }
                 case None => extraEdges.find(e => e.desc.shortChannelId == shortChannelId && e.desc.a == currentNode).map(_.desc)
               }
-              log.info(s"$channelDesc_opt")
               channelDesc_opt.flatMap(c => g.getEdge(c)) match {
                 case Some(edge) => (edge.desc.b, previousHops :+ ChannelHop(getEdgeRelayScid(d, localNodeId, edge), edge.desc.a, edge.desc.b, edge.params))
                 case None => (currentNode, previousHops)
               }
           }
-          log.info(s"$end $hops")
           if (end != targetNodeId || hops.length != shortChannelIds.length) {
             fr.replyTo ! PaymentRouteNotFound(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
           } else {

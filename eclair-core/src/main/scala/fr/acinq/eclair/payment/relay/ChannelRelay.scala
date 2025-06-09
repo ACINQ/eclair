@@ -34,12 +34,12 @@ import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{EncodedNodeId, Features, InitFeature, Logs, NodeParams, TimestampMilli, TimestampSecond, channel, nodeFee}
+import fr.acinq.eclair.{EncodedNodeId, Features, InitFeature, Logs, NodeParams, TimestampMilli, TimestampSecond, channel, totalFee}
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.DurationLong
-import scala.util.Random
+import scala.util.{Random, Try, Success, Failure}
 
 object ChannelRelay {
 
@@ -50,6 +50,8 @@ object ChannelRelay {
   private case class WrappedForwardFailure(failure: Register.ForwardFailure[CMD_ADD_HTLC]) extends Command
   private case class WrappedAddResponse(res: CommandResponse[CMD_ADD_HTLC]) extends Command
   private case class WrappedOnTheFlyFundingResponse(result: Peer.ProposeOnTheFlyFundingResponse) extends Command
+  private case class WrappedChannelInfo(result: RES_GET_CHANNEL_INFO) extends Command
+  private case class WrappedChannelInfoFailure(failure: Register.ForwardFailure[CMD_GET_CHANNEL_INFO]) extends Command
   // @formatter:on
 
   // @formatter:off
@@ -126,6 +128,8 @@ class ChannelRelay private(nodeParams: NodeParams,
   private val addResponseAdapter = context.messageAdapter[CommandResponse[CMD_ADD_HTLC]](WrappedAddResponse)
   private val forwardNodeIdFailureAdapter = context.messageAdapter[Register.ForwardNodeIdFailure[Peer.ProposeOnTheFlyFunding]](_ => WrappedOnTheFlyFundingResponse(Peer.ProposeOnTheFlyFundingResponse.NotAvailable("peer not found")))
   private val onTheFlyFundingResponseAdapter = context.messageAdapter[Peer.ProposeOnTheFlyFundingResponse](WrappedOnTheFlyFundingResponse)
+  private val channelInfoAdapter = context.messageAdapter[RES_GET_CHANNEL_INFO](WrappedChannelInfo)
+  private val channelInfoFailureAdapter = context.messageAdapter[Register.ForwardFailure[CMD_GET_CHANNEL_INFO]](WrappedChannelInfoFailure)
 
   private val nextPathKey_opt = r.payload match {
     case payload: IntermediatePayload.ChannelRelay.Blinded => Some(payload.nextPathKey)
@@ -173,29 +177,52 @@ class ChannelRelay private(nodeParams: NodeParams,
     }
   }
 
-  def relay(remoteFeatures_opt: Option[Features[InitFeature]], previousFailures: Seq[PreviouslyTried]): Behavior[Command] = {
+  def relay(remoteFeatures_opt: Option[Features[InitFeature]], previousFailures: Seq[PreviouslyTried], inboundChannelUpdate_opt: Option[Either[Unit, ChannelUpdate]] = None): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case DoRelay =>
-        if (previousFailures.isEmpty) {
-          val nextNodeId_opt = channels.headOption.map(_._2.nextNodeId)
-          context.log.info("relaying htlc #{} from channelId={} to requestedShortChannelId={} nextNode={}", r.add.id, r.add.channelId, requestedShortChannelId_opt, nextNodeId_opt.getOrElse(""))
+        if (nodeParams.routerConf.blip18InboundFees && inboundChannelUpdate_opt.isEmpty) {
+          register ! Register.Forward(channelInfoFailureAdapter, r.add.channelId, CMD_GET_CHANNEL_INFO(channelInfoAdapter))
+          waitForInboundChannelInfo(remoteFeatures_opt, previousFailures)
+        } else {
+          if (previousFailures.isEmpty) {
+            val nextNodeId_opt = channels.headOption.map(_._2.nextNodeId)
+            context.log.info("relaying htlc #{} from channelId={} to requestedShortChannelId={} nextNode={}", r.add.id, r.add.channelId, requestedShortChannelId_opt, nextNodeId_opt.getOrElse(""))
+          }
+          context.log.debug("attempting relay previousAttempts={}", previousFailures.size)
+          handleRelay(remoteFeatures_opt, previousFailures, inboundChannelUpdate_opt.flatMap(_.toOption)) match {
+            case RelayFailure(cmdFail) =>
+              Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
+              context.log.info("rejecting htlc reason={}", cmdFail.reason)
+              safeSendAndStop(r.add.channelId, cmdFail)
+            case RelayNeedsFunding(nextNodeId, cmdFail) =>
+              // Note that in the channel relay case, we don't have any outgoing onion shared secrets.
+              val cmd = Peer.ProposeOnTheFlyFunding(onTheFlyFundingResponseAdapter, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, Nil, nextPathKey_opt, upstream)
+              register ! Register.ForwardNodeId(forwardNodeIdFailureAdapter, nextNodeId, cmd)
+              waitForOnTheFlyFundingResponse(cmdFail)
+            case RelaySuccess(selectedChannelId, cmdAdd) =>
+              context.log.info("forwarding htlc #{} from channelId={} to channelId={}", r.add.id, r.add.channelId, selectedChannelId)
+              register ! Register.Forward(forwardFailureAdapter, selectedChannelId, cmdAdd)
+              waitForAddResponse(selectedChannelId, remoteFeatures_opt, previousFailures)
+          }
         }
-        context.log.debug("attempting relay previousAttempts={}", previousFailures.size)
-        handleRelay(remoteFeatures_opt, previousFailures) match {
-          case RelayFailure(cmdFail) =>
-            Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
-            context.log.info("rejecting htlc reason={}", cmdFail.reason)
-            safeSendAndStop(r.add.channelId, cmdFail)
-          case RelayNeedsFunding(nextNodeId, cmdFail) =>
-            // Note that in the channel relay case, we don't have any outgoing onion shared secrets.
-            val cmd = Peer.ProposeOnTheFlyFunding(onTheFlyFundingResponseAdapter, r.amountToForward, r.add.paymentHash, r.outgoingCltv, r.nextPacket, Nil, nextPathKey_opt, upstream)
-            register ! Register.ForwardNodeId(forwardNodeIdFailureAdapter, nextNodeId, cmd)
-            waitForOnTheFlyFundingResponse(cmdFail)
-          case RelaySuccess(selectedChannelId, cmdAdd) =>
-            context.log.info("forwarding htlc #{} from channelId={} to channelId={}", r.add.id, r.add.channelId, selectedChannelId)
-            register ! Register.Forward(forwardFailureAdapter, selectedChannelId, cmdAdd)
-            waitForAddResponse(selectedChannelId, remoteFeatures_opt, previousFailures)
+    }
+  }
+
+  private def waitForInboundChannelInfo(remoteFeatures_opt: Option[Features[InitFeature]], previousFailures: Seq[PreviouslyTried]): Behavior[Command] = {
+    Behaviors.receiveMessagePartial {
+      case WrappedChannelInfo(res) =>
+        val inboundChannelUpdate_opt = res.data match {
+          case d: DATA_NORMAL => Some(Right(d.channelUpdate))
+          case _ =>
+            context.log.error("Cannot get channel info for {}: invalid channel state {}", res.channelId, res.state)
+            Some(Left(()))
         }
+        context.self ! DoRelay
+        relay(remoteFeatures_opt, previousFailures, inboundChannelUpdate_opt)
+      case WrappedChannelInfoFailure(failure) =>
+        context.log.error("Cannot get channel info for {}", failure.fwd.channelId)
+        context.self ! DoRelay
+        relay(remoteFeatures_opt, previousFailures, Some(Left(())))
     }
   }
 
@@ -282,10 +309,10 @@ class ChannelRelay private(nodeParams: NodeParams,
    *         - a CMD_FAIL_HTLC to be sent back upstream
    *         - a CMD_ADD_HTLC to propagate downstream
    */
-  private def handleRelay(remoteFeatures_opt: Option[Features[InitFeature]], previousFailures: Seq[PreviouslyTried]): RelayResult = {
+  private def handleRelay(remoteFeatures_opt: Option[Features[InitFeature]], previousFailures: Seq[PreviouslyTried], inboundChannelUpdate_opt: Option[ChannelUpdate]): RelayResult = {
     val alreadyTried = previousFailures.map(_.channelId)
-    selectPreferredChannel(alreadyTried) match {
-      case Some(outgoingChannel) => relayOrFail(outgoingChannel)
+    selectPreferredChannel(alreadyTried, inboundChannelUpdate_opt) match {
+      case Some(outgoingChannel) => relayOrFail(outgoingChannel, inboundChannelUpdate_opt)
       case None =>
         // No more channels to try.
         val cmdFail = if (previousFailures.nonEmpty) {
@@ -300,7 +327,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), commit = true)
         }
         walletNodeId_opt match {
-          case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(remoteFeatures_opt, previousFailures) => RelayNeedsFunding(walletNodeId, cmdFail)
+          case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(remoteFeatures_opt, previousFailures, inboundChannelUpdate_opt) => RelayNeedsFunding(walletNodeId, cmdFail)
           case _ => RelayFailure(cmdFail)
         }
     }
@@ -312,7 +339,7 @@ class ChannelRelay private(nodeParams: NodeParams,
    *
    * If no suitable channel is found we default to the originally requested channel.
    */
-  private def selectPreferredChannel(alreadyTried: Seq[ByteVector32]): Option[OutgoingChannel] = {
+  private def selectPreferredChannel(alreadyTried: Seq[ByteVector32], inboundChannelUpdate_opt: Option[ChannelUpdate]): Option[OutgoingChannel] = {
     context.log.debug("selecting next channel with requestedShortChannelId={}", requestedShortChannelId_opt)
     // we filter out channels that we have already tried
     val candidateChannels: Map[ByteVector32, OutgoingChannel] = channels -- alreadyTried
@@ -320,7 +347,7 @@ class ChannelRelay private(nodeParams: NodeParams,
     candidateChannels
       .values
       .map { channel =>
-        val relayResult = relayOrFail(channel)
+        val relayResult = relayOrFail(channel, inboundChannelUpdate_opt)
         context.log.debug("candidate channel: channelId={} availableForSend={} capacity={} channelUpdate={} result={}",
           channel.channelId,
           channel.commitments.availableBalanceForSend,
@@ -369,9 +396,9 @@ class ChannelRelay private(nodeParams: NodeParams,
    * channel, because some parameters don't match with our settings for that channel. In that case we directly fail the
    * htlc.
    */
-  private def relayOrFail(outgoingChannel: OutgoingChannelParams): RelayResult = {
+  private def relayOrFail(outgoingChannel: OutgoingChannelParams, inboundChannelUpdate_opt: Option[ChannelUpdate]): RelayResult = {
     val update = outgoingChannel.channelUpdate
-    validateRelayParams(outgoingChannel) match {
+    validateRelayParams(outgoingChannel, inboundChannelUpdate_opt) match {
       case Some(fail) =>
         RelayFailure(fail)
       case None if !update.channelFlags.isEnabled =>
@@ -382,14 +409,15 @@ class ChannelRelay private(nodeParams: NodeParams,
     }
   }
 
-  private def validateRelayParams(outgoingChannel: OutgoingChannelParams): Option[CMD_FAIL_HTLC] = {
+  private def validateRelayParams(outgoingChannel: OutgoingChannelParams, inboundChannelUpdate_opt: Option[ChannelUpdate]): Option[CMD_FAIL_HTLC] = {
     val update = outgoingChannel.channelUpdate
     // If our current channel update was recently created, we accept payments that used our previous channel update.
     val allowPreviousUpdate = TimestampSecond.now() - update.timestamp <= nodeParams.relayParams.enforcementDelay
     val prevUpdate_opt = if (allowPreviousUpdate) outgoingChannel.prevChannelUpdate else None
     val htlcMinimumOk = update.htlcMinimumMsat <= r.amountToForward || prevUpdate_opt.exists(_.htlcMinimumMsat <= r.amountToForward)
     val expiryDeltaOk = update.cltvExpiryDelta <= r.expiryDelta || prevUpdate_opt.exists(_.cltvExpiryDelta <= r.expiryDelta)
-    val feesOk = nodeFee(update.relayFees, r.amountToForward) <= r.relayFeeMsat || prevUpdate_opt.exists(u => nodeFee(u.relayFees, r.amountToForward) <= r.relayFeeMsat)
+    val feesOk = totalFee(r.amountToForward, update.relayFees, inboundChannelUpdate_opt.flatMap(_.blip18InboundFees_opt)) <= r.relayFeeMsat ||
+      prevUpdate_opt.exists(u => totalFee(r.amountToForward, u.relayFees, inboundChannelUpdate_opt.flatMap(_.blip18InboundFees_opt)) <= r.relayFeeMsat)
     if (!htlcMinimumOk) {
       Some(CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(AmountBelowMinimum(r.amountToForward, Some(update))), commit = true))
     } else if (!expiryDeltaOk) {
@@ -402,7 +430,7 @@ class ChannelRelay private(nodeParams: NodeParams,
   }
 
   /** If we fail to relay a payment, we may want to attempt on-the-fly funding. */
-  private def shouldAttemptOnTheFlyFunding(remoteFeatures_opt: Option[Features[InitFeature]], previousFailures: Seq[PreviouslyTried]): Boolean = {
+  private def shouldAttemptOnTheFlyFunding(remoteFeatures_opt: Option[Features[InitFeature]], previousFailures: Seq[PreviouslyTried], inboundChannelUpdate_opt: Option[ChannelUpdate]): Boolean = {
     val featureOk = Features.canUseFeature(nodeParams.features.initFeatures(), remoteFeatures_opt.getOrElse(Features.empty), Features.OnTheFlyFunding)
     // If we have a channel with the next node, we only want to perform on-the-fly funding for liquidity issues.
     val liquidityIssue = previousFailures.forall {
@@ -411,7 +439,7 @@ class ChannelRelay private(nodeParams: NodeParams,
     }
     // If we have a channel with the next peer, but we skipped it because the sender is using invalid relay parameters,
     // we don't want to perform on-the-fly funding: the sender should send a valid payment first.
-    val relayParamsOk = channels.values.forall(c => validateRelayParams(c).isEmpty)
+    val relayParamsOk = channels.values.forall(c => validateRelayParams(c, inboundChannelUpdate_opt).isEmpty)
     featureOk && liquidityIssue && relayParamsOk
   }
 
