@@ -16,10 +16,8 @@
 
 package fr.acinq.eclair.channel.publish
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.channel.FullCommitment
-import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
 import scodec.bits.ByteVector
 
@@ -103,19 +101,19 @@ sealed trait ReplaceableAnchor extends ReplaceableTxWithWalletInputs {
   }
 }
 
-case class ReplaceableLocalCommitAnchor(txInfo: ClaimLocalAnchorTx, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableAnchor {
-  override def redeemInfo(): RedeemInfo = ClaimLocalAnchorTx.redeemInfo(fundingKey.publicKey, commitKeys.publicKeys, commitment.params.commitmentFormat)
+case class ReplaceableLocalCommitAnchor(txInfo: ClaimLocalAnchorTx, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableAnchor {
+  override def redeemInfo(): RedeemInfo = ClaimLocalAnchorTx.redeemInfo(txInfo.fundingKey.publicKey, txInfo.commitKeys.publicKeys, txInfo.commitmentFormat)
 
   override def sign(extraUtxos: Map[OutPoint, TxOut]): ReplaceableLocalCommitAnchor = {
-    copy(txInfo = txInfo.sign(fundingKey, commitKeys, commitment.params.commitmentFormat, extraUtxos))
+    copy(txInfo = txInfo.sign(extraUtxos))
   }
 }
 
-case class ReplaceableRemoteCommitAnchor(txInfo: ClaimRemoteAnchorTx, fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableAnchor {
-  override def redeemInfo(): RedeemInfo = ClaimRemoteAnchorTx.redeemInfo(fundingKey.publicKey, commitKeys.publicKeys, commitment.params.commitmentFormat)
+case class ReplaceableRemoteCommitAnchor(txInfo: ClaimRemoteAnchorTx, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableAnchor {
+  override def redeemInfo(): RedeemInfo = ClaimRemoteAnchorTx.redeemInfo(txInfo.fundingKey.publicKey, txInfo.commitKeys.publicKeys, txInfo.commitmentFormat)
 
   override def sign(extraUtxos: Map[OutPoint, TxOut]): ReplaceableRemoteCommitAnchor = {
-    copy(txInfo = txInfo.sign(fundingKey, commitKeys, commitment.params.commitmentFormat, extraUtxos))
+    copy(txInfo = txInfo.sign(extraUtxos))
   }
 }
 
@@ -154,19 +152,19 @@ sealed trait ReplaceableHtlc extends ReplaceableTxWithWalletInputs {
   }
 }
 
-case class ReplaceableHtlcSuccess(txInfo: HtlcSuccessTx, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableHtlc {
-  override def redeemInfo(): RedeemInfo = txInfo.redeemInfo(commitKeys.publicKeys, commitment.params.commitmentFormat)
+case class ReplaceableHtlcSuccess(txInfo: HtlcSuccessTx, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableHtlc {
+  override def redeemInfo(): RedeemInfo = txInfo.redeemInfo
 
   override def sign(extraUtxos: Map[OutPoint, TxOut]): ReplaceableHtlcSuccess = {
-    copy(txInfo = txInfo.sign(commitKeys, commitment.params.commitmentFormat, extraUtxos))
+    copy(txInfo = txInfo.sign(extraUtxos))
   }
 }
 
-case class ReplaceableHtlcTimeout(txInfo: HtlcTimeoutTx, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableHtlc {
-  override def redeemInfo(): RedeemInfo = txInfo.redeemInfo(commitKeys.publicKeys, commitment.params.commitmentFormat)
+case class ReplaceableHtlcTimeout(txInfo: HtlcTimeoutTx, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableHtlc {
+  override def redeemInfo(): RedeemInfo = txInfo.redeemInfo
 
   override def sign(extraUtxos: Map[OutPoint, TxOut]): ReplaceableHtlcTimeout = {
-    copy(txInfo = txInfo.sign(commitKeys, commitment.params.commitmentFormat, extraUtxos))
+    copy(txInfo = txInfo.sign(extraUtxos))
   }
 }
 
@@ -181,17 +179,17 @@ sealed trait ReplaceableClaimHtlc extends ReplaceableTx {
   def updateFee(fee: Satoshi): ReplaceableClaimHtlc
 }
 
-case class ReplaceableClaimHtlcSuccess(txInfo: ClaimHtlcSuccessTx, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableClaimHtlc {
+case class ReplaceableClaimHtlcSuccess(txInfo: ClaimHtlcSuccessTx, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableClaimHtlc {
   override def sign(): ReplaceableClaimHtlcSuccess = {
-    copy(txInfo = txInfo.sign(commitKeys, commitment.params.commitmentFormat))
+    copy(txInfo = txInfo.sign())
   }
 
   override def updateFee(fee: Satoshi): ReplaceableClaimHtlcSuccess = copy(txInfo = txInfo.updateFee(fee))
 }
 
-case class ReplaceableClaimHtlcTimeout(txInfo: ClaimHtlcTimeoutTx, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableClaimHtlc {
+case class ReplaceableClaimHtlcTimeout(txInfo: ClaimHtlcTimeoutTx, commitTx: Transaction, commitment: FullCommitment) extends ReplaceableClaimHtlc {
   override def sign(): ReplaceableClaimHtlcTimeout = {
-    copy(txInfo = txInfo.sign(commitKeys, commitment.params.commitmentFormat))
+    copy(txInfo = txInfo.sign())
   }
 
   override def updateFee(fee: Satoshi): ReplaceableClaimHtlcTimeout = copy(txInfo = txInfo.updateFee(fee))

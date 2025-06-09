@@ -317,14 +317,13 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
       case redeemInfo: RedeemInfo.SegwitV0 => fr.acinq.bitcoin.Script.parse(redeemInfo.redeemScript)
       case _: RedeemInfo.Taproot => null
     }
-    val sigHash = locallySignedTx.txInfo.sighash(TxOwner.Local, locallySignedTx.commitmentFormat)
     val psbt = new Psbt(locallySignedTx.txInfo.tx)
       .updateWitnessInput(
         locallySignedTx.txInfo.input.outPoint,
         locallySignedTx.txInfo.input.txOut,
         null,
         witnessScript,
-        sigHash,
+        locallySignedTx.txInfo.sighash,
         java.util.Map.of(),
         null,
         null,

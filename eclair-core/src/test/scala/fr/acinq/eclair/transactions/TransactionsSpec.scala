@@ -369,9 +369,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val allInputs = walletInputs + (claimAnchorOutputTx.input.outPoint -> claimAnchorOutputTx.input.txOut)
       assert(Try(Transaction.correctlySpends(claimAnchorOutputTx.tx, allInputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isFailure)
       // All wallet inputs must be provided when signing.
-      assert(Try(claimAnchorOutputTx.sign(localFundingPriv, localKeys, commitmentFormat, Map.empty)).isFailure)
-      assert(Try(claimAnchorOutputTx.sign(localFundingPriv, localKeys, commitmentFormat, walletInputs.take(1))).isFailure)
-      val signedTx = claimAnchorOutputTx.sign(localFundingPriv, localKeys, commitmentFormat, walletInputs)
+      assert(Try(claimAnchorOutputTx.sign(Map.empty)).isFailure)
+      assert(Try(claimAnchorOutputTx.sign(walletInputs.take(1))).isFailure)
+      val signedTx = claimAnchorOutputTx.sign(walletInputs)
       val anchorInputWeight = signedTx.tx.weight() - signedTx.tx.copy(txIn = signedTx.tx.txIn.tail).weight()
       checkExpectedWeight(anchorInputWeight, commitmentFormat.anchorInputWeight, commitmentFormat)
       Transaction.correctlySpends(signedTx.tx, allInputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -380,7 +380,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // remote spends remote anchor
       val Right(claimAnchorOutputTx) = ClaimRemoteAnchorTx.createUnsignedTx(remoteFundingPriv, remoteKeys, commitTx, commitmentFormat)
       assert(!claimAnchorOutputTx.validate(Map.empty))
-      val signedTx = claimAnchorOutputTx.sign(remoteFundingPriv, remoteKeys, commitmentFormat, Map.empty)
+      val signedTx = claimAnchorOutputTx.sign(Map.empty)
       assert(signedTx.validate(Map.empty))
     }
     {
@@ -392,8 +392,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // local spends received htlc with HTLC-timeout tx
       for (htlcTimeoutTx <- htlcTimeoutTxs) {
-        val remoteSig = htlcTimeoutTx.localSig(remoteKeys, commitmentFormat)
-        val signedTx = htlcTimeoutTx.addRemoteSig(remoteSig).sign(localKeys, commitmentFormat, Map.empty)
+        val remoteSig = htlcTimeoutTx.localSig(remoteKeys)
+        val signedTx = htlcTimeoutTx.addRemoteSig(localKeys, remoteSig).sign(Map.empty)
         assert(signedTx.validate(Map.empty))
         // local detects when remote doesn't use the right sighash flags
         val invalidSighash = commitmentFormat match {
@@ -401,8 +401,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           case _ => Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         }
         for (sighash <- invalidSighash) {
-          val invalidRemoteSig = htlcTimeoutTx.localSigWithInvalidSighash(remoteKeys, commitmentFormat, sighash)
-          val invalidTx = htlcTimeoutTx.addRemoteSig(invalidRemoteSig).sign(localKeys, commitmentFormat, Map.empty)
+          val invalidRemoteSig = htlcTimeoutTx.localSigWithInvalidSighash(remoteKeys, sighash)
+          val invalidTx = htlcTimeoutTx.addRemoteSig(localKeys, invalidRemoteSig).sign(Map.empty)
           assert(!invalidTx.validate(Map.empty))
         }
       }
@@ -420,21 +420,21 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // local spends offered htlc with HTLC-success tx
       for (htlcSuccessTx <- htlcSuccessTxs(0) :: htlcSuccessTxs(1) :: htlcSuccessTxs(2) :: Nil) {
         val preimage = paymentPreimageMap(htlcSuccessTx.paymentHash)
-        val remoteSig = htlcSuccessTx.localSig(remoteKeys, commitmentFormat)
-        val signedTx = htlcSuccessTx.addRemoteSig(remoteSig, preimage).sign(localKeys, commitmentFormat, Map.empty)
+        val remoteSig = htlcSuccessTx.localSig(remoteKeys)
+        val signedTx = htlcSuccessTx.addRemoteSig(localKeys, remoteSig, preimage).sign(Map.empty)
         assert(signedTx.validate(Map.empty))
         // check remote sig
-        assert(htlcSuccessTx.checkRemoteSig(localKeys, remoteSig, commitmentFormat))
+        assert(htlcSuccessTx.checkRemoteSig(localKeys, remoteSig))
         // local detects when remote doesn't use the right sighash flags
         val invalidSighash = commitmentFormat match {
           case DefaultCommitmentFormat => Seq(SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
           case _ => Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         }
         for (sighash <- invalidSighash) {
-          val invalidRemoteSig = htlcSuccessTx.localSigWithInvalidSighash(remoteKeys, commitmentFormat, sighash)
-          val invalidTx = htlcSuccessTx.addRemoteSig(invalidRemoteSig, preimage).sign(localKeys, commitmentFormat, Map.empty)
+          val invalidRemoteSig = htlcSuccessTx.localSigWithInvalidSighash(remoteKeys, sighash)
+          val invalidTx = htlcSuccessTx.addRemoteSig(localKeys, invalidRemoteSig, preimage).sign(Map.empty)
           assert(!invalidTx.validate(Map.empty))
-          assert(!htlcSuccessTx.checkRemoteSig(localKeys, invalidRemoteSig, commitmentFormat))
+          assert(!htlcSuccessTx.checkRemoteSig(localKeys, invalidRemoteSig))
         }
       }
     }

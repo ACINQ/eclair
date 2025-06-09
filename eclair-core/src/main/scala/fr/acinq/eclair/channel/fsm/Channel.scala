@@ -1900,7 +1900,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   case Transactions.DefaultCommitmentFormat =>
                     txPublisher ! TxPublisher.PublishFinalTx(htlcTx, htlcTx.fee, Some(lcp.commitTx.txid))
                   case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat =>
-                    val replaceableTx = ReplaceableHtlcSuccess(htlcTx, commitKeys, lcp.commitTx, commitment)
+                    val replaceableTx = ReplaceableHtlcSuccess(htlcTx, lcp.commitTx, commitment)
                     txPublisher ! TxPublisher.PublishReplaceableTx(replaceableTx, Closing.confirmationTarget(htlcTx))
                 })
               })
@@ -1908,7 +1908,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 val remoteCommit = commitment.remoteCommit
                 val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)
                 Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, commitKeys, rcp, commitment, remoteCommit, c.r, d.finalScriptPubKey).foreach(htlcTx => {
-                  val replaceableTx = ReplaceableClaimHtlcSuccess(htlcTx, commitKeys, rcp.commitTx, commitment)
+                  val replaceableTx = ReplaceableClaimHtlcSuccess(htlcTx, rcp.commitTx, commitment)
                   txPublisher ! TxPublisher.PublishReplaceableTx(replaceableTx, Closing.confirmationTarget(htlcTx))
                 })
               })
@@ -1916,7 +1916,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 val remoteCommit = commitment.nextRemoteCommit_opt.get.commit
                 val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)
                 Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, commitKeys, nrcp, commitment, remoteCommit, c.r, d.finalScriptPubKey).foreach(htlcTx => {
-                  val replaceableTx = ReplaceableClaimHtlcSuccess(htlcTx, commitKeys, nrcp.commitTx, commitment)
+                  val replaceableTx = ReplaceableClaimHtlcSuccess(htlcTx, nrcp.commitTx, commitment)
                   txPublisher ! TxPublisher.PublishReplaceableTx(replaceableTx, Closing.confirmationTarget(htlcTx))
                 })
               })
@@ -2217,17 +2217,17 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             lcp <- d.localCommitPublished
             commitKeys = commitment.localKeys(channelKeys)
             anchorTx <- Closing.LocalClose.claimAnchor(fundingKey, commitKeys, lcp.commitTx, commitmentFormat)
-          } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, lcp.commitTx, commitment), c.confirmationTarget)
+          } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, lcp.commitTx, commitment), c.confirmationTarget)
           val remoteAnchor_opt = for {
             rcp <- d.remoteCommitPublished
             commitKeys = commitment.remoteKeys(channelKeys, commitment.remoteCommit.remotePerCommitmentPoint)
             anchorTx <- Closing.RemoteClose.claimAnchor(fundingKey, commitKeys, rcp.commitTx, commitmentFormat)
-          } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, rcp.commitTx, commitment), c.confirmationTarget)
+          } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, rcp.commitTx, commitment), c.confirmationTarget)
           val nextRemoteAnchor_opt = for {
             nrcp <- d.nextRemoteCommitPublished
             commitKeys = commitment.remoteKeys(channelKeys, commitment.nextRemoteCommit_opt.get.commit.remotePerCommitmentPoint)
             anchorTx <- Closing.RemoteClose.claimAnchor(fundingKey, commitKeys, nrcp.commitTx, commitmentFormat)
-          } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, nrcp.commitTx, commitment), c.confirmationTarget)
+          } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, nrcp.commitTx, commitment), c.confirmationTarget)
           // We favor the remote commitment(s) because they're more interesting than the local commitment (no CSV delays).
           if (remoteAnchor_opt.nonEmpty) {
             remoteAnchor_opt.foreach { publishTx => txPublisher ! publishTx }

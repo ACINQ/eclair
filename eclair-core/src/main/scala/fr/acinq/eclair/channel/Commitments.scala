@@ -210,7 +210,7 @@ object LocalCommit {
     }
     val htlcRemoteSigs = sortedHtlcTxs.zip(commit.htlcSignatures).toList.map {
       case (htlcTx: HtlcTx, remoteSig) =>
-        if (!htlcTx.checkRemoteSig(commitKeys, remoteSig, params.commitmentFormat)) {
+        if (!htlcTx.checkRemoteSig(commitKeys, remoteSig)) {
           return Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
         }
         remoteSig
@@ -226,7 +226,7 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePer
     val commitKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentPoint)
     val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, commitKeys, index, fundingKey, remoteFundingPubKey, commitInput, spec)
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
-    val htlcSigs = sortedHtlcTxs.map(_.localSig(commitKeys, params.commitmentFormat))
+    val htlcSigs = sortedHtlcTxs.map(_.localSig(commitKeys))
     params.commitmentFormat match {
       case _: SegwitV0CommitmentFormat =>
         val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey).sig
@@ -650,7 +650,7 @@ case class Commitment(fundingTxIndex: Long,
     val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, commitKeys, remoteCommit.index + 1, fundingKey, remoteFundingPubKey, commitInput, spec)
-    val htlcSigs = htlcTxs.sortBy(_.input.outPoint.index).map(_.localSig(commitKeys, params.commitmentFormat))
+    val htlcSigs = htlcTxs.sortBy(_.input.outPoint.index).map(_.localSig(commitKeys))
 
     // NB: IN/OUT htlcs are inverted because this is the remote commit
     log.info(s"built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${remoteCommitTx.tx.txid} fundingTxId=$fundingTxId", spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","))
