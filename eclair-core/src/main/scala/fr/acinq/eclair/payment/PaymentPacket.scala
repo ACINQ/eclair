@@ -355,7 +355,7 @@ object OutgoingPaymentPacket {
         case FailureReason.LocalFailure(failure) => (Sphinx.FailurePacket.create(sharedSecret, failure), None)
       }
       val tlvs: TlvStream[UpdateFailHtlcTlv] = if (useAttributableFailures) {
-        TlvStream(UpdateFailHtlcTlv.AttributionData(Sphinx.Attribution.create(attribution, packet, holdTime, sharedSecret)))
+        TlvStream(UpdateFailHtlcTlv.AttributionData(Sphinx.Attribution.create(attribution, Some(packet), holdTime, sharedSecret)))
       } else {
         TlvStream.empty
       }
@@ -398,8 +398,7 @@ object OutgoingPaymentPacket {
         case Left(_) => TlvStream.empty
         case Right(sharedSecret) =>
           val holdTime = cmd.htlcReceivedAt_opt.map(now - _).getOrElse(0 millisecond)
-          TlvStream(UpdateFulfillHtlcTlv.AttributionData(Sphinx.Attribution.create(cmd.downstreamAttribution_opt, ByteVector.empty, holdTime, sharedSecret)))
-
+          TlvStream(UpdateFulfillHtlcTlv.AttributionData(Sphinx.Attribution.create(cmd.downstreamAttribution_opt, None, holdTime, sharedSecret)))
       }
     } else {
       TlvStream.empty

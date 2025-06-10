@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC, HtlcSettlementCommand}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.Attribution
 import fr.acinq.eclair.db.pg.PgPendingCommandsDb
 import fr.acinq.eclair.db.sqlite.SqlitePendingCommandsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{setVersion, using}
@@ -53,7 +54,7 @@ class PendingCommandsDbSpec extends AnyFunSuite {
       val channelId1 = randomBytes32()
       val channelId2 = randomBytes32()
       val msg0 = CMD_FULFILL_HTLC(0, randomBytes32(), None, None)
-      val msg1 = CMD_FULFILL_HTLC(1, randomBytes32(), None, None)
+      val msg1 = CMD_FULFILL_HTLC(1, randomBytes32(), Some(randomBytes(Attribution.totalLength)), Some(TimestampMilli.now()))
       val msg2 = CMD_FAIL_HTLC(2, FailureReason.EncryptedDownstreamFailure(randomBytes32(), None), None)
       val msg3 = CMD_FAIL_HTLC(3, FailureReason.EncryptedDownstreamFailure(randomBytes32(), Some(randomBytes(Sphinx.Attribution.totalLength))), Some(TimestampMilli.now()))
       val msg4 = CMD_FAIL_MALFORMED_HTLC(4, randomBytes32(), FailureMessageCodecs.BADONION)

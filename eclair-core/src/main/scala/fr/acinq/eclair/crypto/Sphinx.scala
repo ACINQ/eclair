@@ -404,14 +404,14 @@ object Sphinx extends Logging {
     /**
      * Create attribution data to send with the failure packet or with a fulfilled HTLC
      *
-     * @param failurePacket the failure packet before being wrapped or an empty byte vector for fulfilled HTLCs
+     * @param failurePacket_opt the failure packet before being wrapped or `None` for fulfilled HTLCs
      */
-    def create(previousAttribution_opt: Option[ByteVector], failurePacket: ByteVector, holdTime: FiniteDuration, sharedSecret: ByteVector32): ByteVector = {
+    def create(previousAttribution_opt: Option[ByteVector], failurePacket_opt: Option[ByteVector], holdTime: FiniteDuration, sharedSecret: ByteVector32): ByteVector = {
       val previousAttribution = previousAttribution_opt.getOrElse(ByteVector.low(totalLength))
       val previousHmacs = getHmacs(previousAttribution).dropRight(1).map(_.drop(1))
       val mac = Hmac256(generateKey("um", sharedSecret))
       val holdTimes = uint32.encode(holdTime.toMillis).require.bytes ++ previousAttribution.take((maxNumHops - 1) * holdTimeLength)
-      val hmacs = computeHmacs(mac, failurePacket, holdTimes, previousHmacs, 0) +: previousHmacs
+      val hmacs = computeHmacs(mac, failurePacket_opt.getOrElse(ByteVector.empty), holdTimes, previousHmacs, 0) +: previousHmacs
       cipher(holdTimes ++ ByteVector.concat(hmacs.map(ByteVector.concat(_))), sharedSecret)
     }
 
@@ -439,7 +439,7 @@ object Sphinx extends Logging {
       sharedSecrets match {
         case Nil => Nil
         case ss :: tail =>
-          Attribution.unwrap(attribution, ByteVector.empty, ss.secret, hopIndex) match {
+          unwrap(attribution, ByteVector.empty, ss.secret, hopIndex) match {
             case Some((holdTime, nextAttribution)) =>
               HoldTime(holdTime, ss.remoteNodeId) :: fulfillHoldTimes(nextAttribution, tail, hopIndex + 1)
             case None => Nil
