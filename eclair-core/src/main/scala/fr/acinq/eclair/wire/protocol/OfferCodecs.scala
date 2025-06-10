@@ -34,10 +34,10 @@ object OfferCodecs {
 
   private val offerMetadata: Codec[OfferMetadata] = tlvField(bytes)
 
-  private val offerCurrency: Codec[OfferCurrency] =
+  val offerCurrency: Codec[OfferCurrency] =
     tlvField(utf8.narrow[Currency](s => Attempt.fromTry(Try{
       val c = Currency.getInstance(s)
-      require(c.getDefaultFractionDigits() >= 0)
+      require(c.getDefaultFractionDigits() >= 0) // getDefaultFractionDigits may return -1 for things that are not currencies
       c
     }), _.getCurrencyCode()))
 

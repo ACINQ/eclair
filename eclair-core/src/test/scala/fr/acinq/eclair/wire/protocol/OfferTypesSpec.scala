@@ -22,13 +22,15 @@ import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.BasicMultiPartPayment
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedHop, BlindedRoute}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.varintoverflow
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceRequestTlvCodec, offerTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.{BlockHeight, EncodedNodeId, Features, MilliSatoshiLong, RealShortChannelId, randomBytes32, randomKey}
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
+import scodec.codecs.{utf8, variableSizeBytesLong}
 
 import java.io.File
 import scala.io.Source
@@ -330,5 +332,22 @@ class OfferTypesSpec extends AnyFunSuite {
     for (vector <- testVectors) {
       assert(Offer.decode(vector.string).isSuccess == vector.valid, vector.comment)
     }
+  }
+
+  test("offer currency") {
+    def encode(s: String): BitVector = variableSizeBytesLong(varintoverflow, utf8).encode(s).require
+
+    assert(OfferCodecs.offerCurrency.decode(encode("EUR")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("USD")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("CHF")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("JOD")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("CNY")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("GBP")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("JPY")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("EURO")).isFailure)
+    assert(OfferCodecs.offerCurrency.decode(encode("eur")).isFailure)
+    assert(OfferCodecs.offerCurrency.decode(encode("BTC")).isFailure)
+    assert(OfferCodecs.offerCurrency.decode(encode("XAU")).isFailure)
+    assert(OfferCodecs.offerCurrency.decode(hex"ffffff".bits).isFailure)
   }
 }

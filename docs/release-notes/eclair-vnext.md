@@ -26,7 +26,7 @@ It can be enabled by setting `eclair.features.option_attributable_failure = opti
 ### API changes
 
 - `listoffers` now returns more details about each offer.
-- 'parseoffer' is added to display offer fields in a human-readable format. 
+- `parseoffer` is added to display offer fields in a human-readable format. 
 
 
 ### Configuration changes
