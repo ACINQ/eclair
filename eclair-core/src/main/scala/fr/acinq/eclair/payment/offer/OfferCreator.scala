@@ -83,7 +83,7 @@ private class OfferCreator(context: ActorContext[OfferCreator.Command],
     } else {
       val tlvs: Set[OfferTlv] = Set(
         if (nodeParams.chainHash != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(nodeParams.chainHash))) else None,
-        amount_opt.map(OfferAmount),
+        amount_opt.map(_.toLong).map(OfferAmount),
         description_opt.map(OfferDescription),
         expiry_opt.map(OfferAbsoluteExpiry),
         issuer_opt.map(OfferIssuer),

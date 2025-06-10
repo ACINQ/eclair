@@ -23,17 +23,25 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{EncodedNodeId, TimestampSecond, UInt64}
-import scodec.Codec
+import scodec.{Attempt, Codec}
 import scodec.codecs._
+
+import java.util.Currency
+import scala.util.Try
 
 object OfferCodecs {
   private val offerChains: Codec[OfferChains] = tlvField(list(blockHash).xmap[Seq[BlockHash]](_.toSeq, _.toList))
 
   private val offerMetadata: Codec[OfferMetadata] = tlvField(bytes)
 
-  private val offerCurrency: Codec[OfferCurrency] = tlvField(utf8)
+  val offerCurrency: Codec[OfferCurrency] =
+    tlvField(utf8.narrow[Currency](s => Attempt.fromTry(Try{
+      val c = Currency.getInstance(s)
+      require(c.getDefaultFractionDigits() >= 0) // getDefaultFractionDigits may return -1 for things that are not currencies
+      c
+    }), _.getCurrencyCode()))
 
-  private val offerAmount: Codec[OfferAmount] = tlvField(tmillisatoshi)
+  private val offerAmount: Codec[OfferAmount] = tlvField(tu64overflow)
 
   private val offerDescription: Codec[OfferDescription] = tlvField(utf8)
 

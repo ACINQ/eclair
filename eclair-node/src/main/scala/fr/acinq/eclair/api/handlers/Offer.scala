@@ -45,6 +45,12 @@ trait Offer {
     }
   }
 
-  val offerRoutes: Route = createOffer ~ disableOffer ~ listoffers
+  val parseOffer: Route = postRequest("parseoffer") { implicit t =>
+    formFields(offerFormParam) { offer =>
+      complete(offer)
+    }
+  }
+
+  val offerRoutes: Route = createOffer ~ disableOffer ~ listoffers ~ parseOffer
 
 }
