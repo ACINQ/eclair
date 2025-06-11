@@ -440,10 +440,10 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]]
     val Right(finalAddressC) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, nodes("C").wallet.getReceivePublicKeyScript(renew = false))
     val htlcSuccess = htlcSuccessTxs.zip(Seq(preimage1, preimage2)).map {
-      case ((htlcTx, remoteSig), preimage) => htlcTx.addRemoteSig(commitmentKeysF, remoteSig, preimage).sign(Map.empty).tx
+      case ((htlcTx, remoteSig), preimage) => htlcTx.addRemoteSig(commitmentKeysF, remoteSig, preimage).sign()
     }
     val htlcTimeout = htlcTimeoutTxs.map {
-      case (htlcTx, remoteSig) => htlcTx.addRemoteSig(commitmentKeysF, remoteSig).sign(Map.empty).tx
+      case (htlcTx, remoteSig) => htlcTx.addRemoteSig(commitmentKeysF, remoteSig).sign()
     }
     htlcSuccess.foreach(tx => Transaction.correctlySpends(tx, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     htlcTimeout.foreach(tx => Transaction.correctlySpends(tx, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))

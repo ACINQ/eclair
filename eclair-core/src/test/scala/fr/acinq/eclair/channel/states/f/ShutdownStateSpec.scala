@@ -26,7 +26,6 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishTx}
-import fr.acinq.eclair.channel.publish.{ReplaceableClaimHtlcTimeout, ReplaceableRemoteCommitAnchor}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment._
@@ -34,6 +33,7 @@ import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTimeoutTx, ClaimRemoteAnchorTx}
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -731,22 +731,22 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(rcp.htlcOutputs.size == 2)
 
     // in response to that, alice publishes her claim txs
-    val anchorTx = alice2blockchain.expectReplaceableTxPublished[ReplaceableRemoteCommitAnchor]
+    val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
     val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
     // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectReplaceableTxPublished[ReplaceableClaimHtlcTimeout])
+    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx])
     val htlcAmountClaimed = claimHtlcTxs.map(claimHtlcTx => {
-      assert(claimHtlcTx.txInfo.tx.txIn.size == 1)
-      assert(claimHtlcTx.txInfo.tx.txOut.size == 1)
-      Transaction.correctlySpends(claimHtlcTx.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      claimHtlcTx.txInfo.tx.txOut.head.amount
+      assert(claimHtlcTx.tx.txIn.size == 1)
+      assert(claimHtlcTx.tx.txOut.size == 1)
+      Transaction.correctlySpends(claimHtlcTx.sign(), bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      claimHtlcTx.tx.txOut.head.amount
     }).sum
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
     val amountClaimed = htlcAmountClaimed + claimMain.tx.txOut.head.amount
     assert(amountClaimed == 790_974.sat)
 
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
-    alice2blockchain.expectWatchOutputsSpent(Seq(anchorTx.txInfo.input.outPoint, claimMain.input) ++ claimHtlcTxs.map(_.txInfo.input.outPoint))
+    alice2blockchain.expectWatchOutputsSpent(Seq(anchorTx.input.outPoint, claimMain.input) ++ claimHtlcTxs.map(_.input.outPoint))
     alice2blockchain.expectNoMessage(100 millis)
   }
 
@@ -776,11 +776,11 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(rcp.htlcOutputs.size == 1)
 
     // in response to that, alice publishes her claim txs
-    val anchorTx = alice2blockchain.expectReplaceableTxPublished[ReplaceableRemoteCommitAnchor]
+    val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
     val claimTxs = Seq(
       alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx,
       // there is only one htlc to claim in the commitment bob published
-      alice2blockchain.expectReplaceableTxPublished[ReplaceableClaimHtlcTimeout].txInfo.tx
+      alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx].sign()
     )
     val amountClaimed = claimTxs.map(claimTx => {
       assert(claimTx.txIn.size == 1)
@@ -792,7 +792,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(amountClaimed == 491_542.sat)
 
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
-    alice2blockchain.expectWatchOutputsSpent(anchorTx.txInfo.input.outPoint +: claimTxs.flatMap(_.txIn.map(_.outPoint)))
+    alice2blockchain.expectWatchOutputsSpent(anchorTx.input.outPoint +: claimTxs.flatMap(_.txIn.map(_.outPoint)))
     alice2blockchain.expectNoMessage(100 millis)
   }
 
@@ -934,7 +934,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
     // 3rd-stage txs are published when htlc txs confirm
     Seq(htlc1, htlc2).foreach(htlcTimeoutTx => {
-      alice ! WatchOutputSpentTriggered(htlcTimeoutTx.amount, htlcTimeoutTx.tx)
+      alice ! WatchOutputSpentTriggered(0 sat, htlcTimeoutTx.tx)
       alice2blockchain.expectWatchTxConfirmed(htlcTimeoutTx.tx.txid)
       alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTimeoutTx.tx)
       val htlcDelayedTx = alice2blockchain.expectFinalTxPublished("htlc-delayed")

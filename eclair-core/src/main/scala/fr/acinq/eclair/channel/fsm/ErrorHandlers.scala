@@ -26,7 +26,6 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx, PublishTx}
-import fr.acinq.eclair.channel.publish._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelReestablish, Error, OpenChannel, Warning}
 
@@ -60,7 +59,7 @@ trait ErrorHandlers extends CommonHandlers {
 
   def doPublish(closingTx: ClosingTx, localPaysClosingFees: Boolean): Unit = {
     val fee = if (localPaysClosingFees) closingTx.fee else 0.sat
-    txPublisher ! PublishFinalTx(closingTx, fee, None)
+    txPublisher ! PublishFinalTx(closingTx.tx, closingTx.input.outPoint, closingTx.desc, fee, None)
     blockchain ! WatchTxConfirmed(self, closingTx.tx.txid, nodeParams.channelConf.minDepth)
   }
 
@@ -225,22 +224,17 @@ trait ErrorHandlers extends CommonHandlers {
 
   /** Publish 2nd-stage transactions for our local commitment. */
   def doPublish(lcp: LocalCommitPublished, txs: Closing.LocalClose.SecondStageTransactions, commitment: FullCommitment): Unit = {
-    val publishCommitTx = PublishFinalTx(lcp.commitTx, commitment.commitInput.outPoint, commitment.capacity, "commit-tx", Closing.commitTxFee(commitment.commitInput, lcp.commitTx, commitment.localParams.paysCommitTxFees), None)
+    val publishCommitTx = PublishFinalTx(lcp.commitTx, commitment.commitInput.outPoint, "commit-tx", Closing.commitTxFee(commitment.commitInput, lcp.commitTx, commitment.localParams.paysCommitTxFees), None)
     val publishAnchorTx_opt = txs.anchorTx_opt match {
       case Some(anchorTx) if !lcp.isConfirmed =>
         val confirmationTarget = Closing.confirmationTarget(commitment.localCommit, commitment.localParams.dustLimit, commitment.params.commitmentFormat, nodeParams.onChainFeeConf)
-        Some(PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, lcp.commitTx, commitment), confirmationTarget))
+        Some(PublishReplaceableTx(anchorTx, lcp.commitTx, commitment, confirmationTarget))
       case _ => None
     }
-    val publishMainDelayedTx_opt = txs.mainDelayedTx_opt.map(tx => PublishFinalTx(tx, tx.fee, None))
+    val publishMainDelayedTx_opt = txs.mainDelayedTx_opt.map(tx => PublishFinalTx(tx, None))
     val publishHtlcTxs = txs.htlcTxs.map(htlcTx => commitment.params.commitmentFormat match {
-      case DefaultCommitmentFormat => PublishFinalTx(htlcTx, htlcTx.fee, Some(lcp.commitTx.txid))
-      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
-        val replaceableTx = htlcTx match {
-          case htlcTx: HtlcSuccessTx => ReplaceableHtlcSuccess(htlcTx, lcp.commitTx, commitment)
-          case htlcTx: HtlcTimeoutTx => ReplaceableHtlcTimeout(htlcTx, lcp.commitTx, commitment)
-        }
-        PublishReplaceableTx(replaceableTx, Closing.confirmationTarget(htlcTx))
+      case DefaultCommitmentFormat => PublishFinalTx(htlcTx, Some(lcp.commitTx.txid))
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => PublishReplaceableTx(htlcTx, lcp.commitTx, commitment, Closing.confirmationTarget(htlcTx))
     })
     val publishQueue = Seq(publishCommitTx) ++ publishAnchorTx_opt ++ publishMainDelayedTx_opt ++ publishHtlcTxs
     publishIfNeeded(publishQueue, lcp.irrevocablySpent)
@@ -260,7 +254,7 @@ trait ErrorHandlers extends CommonHandlers {
 
   /** Publish 3rd-stage transactions for our local commitment. */
   def doPublish(lcp: LocalCommitPublished, txs: Closing.LocalClose.ThirdStageTransactions): Unit = {
-    val publishHtlcDelayedTxs = txs.htlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
+    val publishHtlcDelayedTxs = txs.htlcDelayedTxs.map(tx => PublishFinalTx(tx, None))
     publishIfNeeded(publishHtlcDelayedTxs, lcp.irrevocablySpent)
     // We watch the spent outputs to detect our RBF attempts.
     txs.htlcDelayedTxs.foreach(tx => watchSpentIfNeeded(tx.input, lcp.irrevocablySpent))
@@ -311,17 +305,11 @@ trait ErrorHandlers extends CommonHandlers {
     val publishAnchorTx_opt = txs.anchorTx_opt match {
       case Some(anchorTx) if !rcp.isConfirmed =>
         val confirmationTarget = Closing.confirmationTarget(remoteCommit, commitment.remoteParams.dustLimit, commitment.params.commitmentFormat, nodeParams.onChainFeeConf)
-        Some(PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, rcp.commitTx, commitment), confirmationTarget))
+        Some(PublishReplaceableTx(anchorTx, rcp.commitTx, commitment, confirmationTarget))
       case _ => None
     }
-    val publishMainTx_opt = txs.mainTx_opt.map(tx => PublishFinalTx(tx, tx.fee, None))
-    val publishHtlcTxs = txs.htlcTxs.map(htlcTx => {
-      val replaceableTx = htlcTx match {
-        case htlcTx: ClaimHtlcSuccessTx => ReplaceableClaimHtlcSuccess(htlcTx, rcp.commitTx, commitment)
-        case htlcTx: ClaimHtlcTimeoutTx => ReplaceableClaimHtlcTimeout(htlcTx, rcp.commitTx, commitment)
-      }
-      PublishReplaceableTx(replaceableTx, Closing.confirmationTarget(htlcTx))
-    })
+    val publishMainTx_opt = txs.mainTx_opt.map(tx => PublishFinalTx(tx, None))
+    val publishHtlcTxs = txs.htlcTxs.map(htlcTx => PublishReplaceableTx(htlcTx, rcp.commitTx, commitment, Closing.confirmationTarget(htlcTx)))
     val publishQueue = publishAnchorTx_opt ++ publishMainTx_opt ++ publishHtlcTxs
     publishIfNeeded(publishQueue, rcp.irrevocablySpent)
 
@@ -386,7 +374,7 @@ trait ErrorHandlers extends CommonHandlers {
 
   /** Publish 2nd-stage transactions for a revoked remote commitment. */
   def doPublish(rvk: RevokedCommitPublished, txs: Closing.RevokedClose.SecondStageTransactions): Unit = {
-    val publishQueue = (txs.mainTx_opt ++ txs.mainPenaltyTx_opt ++ txs.htlcPenaltyTxs).map(tx => PublishFinalTx(tx, tx.fee, None))
+    val publishQueue = (txs.mainTx_opt ++ txs.mainPenaltyTx_opt ++ txs.htlcPenaltyTxs).map(tx => PublishFinalTx(tx, None))
     publishIfNeeded(publishQueue, rvk.irrevocablySpent)
 
     if (!rvk.isConfirmed) {
@@ -401,7 +389,7 @@ trait ErrorHandlers extends CommonHandlers {
 
   /** Publish 3rd-stage transactions for a revoked remote commitment. */
   def doPublish(rvk: RevokedCommitPublished, txs: Closing.RevokedClose.ThirdStageTransactions): Unit = {
-    val publishQueue = txs.htlcDelayedPenaltyTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
+    val publishQueue = txs.htlcDelayedPenaltyTxs.map(tx => PublishFinalTx(tx, None))
     publishIfNeeded(publishQueue, rvk.irrevocablySpent)
     // We watch the spent outputs to detect our own RBF attempts.
     txs.htlcDelayedPenaltyTxs.foreach(tx => watchSpentIfNeeded(tx.input, rvk.irrevocablySpent))

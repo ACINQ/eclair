@@ -126,6 +126,7 @@ private[channel] object ChannelCodecs2 {
     private val unusedLocalCommitKeys: Codec[LocalCommitmentKeys] = provide(LocalCommitmentKeys(dummyPrivateKey, dummyPublicKey, dummyPublicKey, dummyPrivateKey, dummyPublicKey, dummyPublicKey))
     private val unusedFundingKey: Codec[PrivateKey] = provide(dummyPrivateKey)
     private val unusedRevocationKey: Codec[PrivateKey] = provide(dummyPrivateKey)
+    private val unusedRevokedRedeemInfo: Codec[RedeemInfo] = provide(RedeemInfo.P2wsh(Nil))
 
     val htlcSuccessTxCodec: Codec[UnsignedHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | missingHtlcExpiry) :: unusedCommitmentFormat).as[UnsignedHtlcSuccessTx]
     val htlcTimeoutTxCodec: Codec[UnsignedHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | missingHtlcExpiry) :: unusedCommitmentFormat).as[UnsignedHtlcTimeoutTx]
@@ -136,7 +137,7 @@ private[channel] object ChannelCodecs2 {
     val claimP2WPKHOutputTxCodec: Codec[ClaimP2WPKHOutputTx] = (unusedRemoteCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: unusedCommitmentFormat).as[ClaimP2WPKHOutputTx]
     val claimRemoteDelayedOutputTxCodec: Codec[ClaimRemoteDelayedOutputTx] = (unusedRemoteCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: unusedCommitmentFormat).as[ClaimRemoteDelayedOutputTx]
     val mainPenaltyTxCodec: Codec[MainPenaltyTx] = (unusedRemoteCommitKeys :: unusedRevocationKey :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | missingToSelfDelay) :: unusedCommitmentFormat).as[MainPenaltyTx]
-    val htlcPenaltyTxCodec: Codec[HtlcPenaltyTx] = (unusedRemoteCommitKeys :: unusedRevocationKey :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcExpiry" | missingHtlcExpiry) :: unusedCommitmentFormat).as[HtlcPenaltyTx]
+    val htlcPenaltyTxCodec: Codec[HtlcPenaltyTx] = (unusedRemoteCommitKeys :: unusedRevocationKey :: unusedRevokedRedeemInfo :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcExpiry" | missingHtlcExpiry) :: unusedCommitmentFormat).as[HtlcPenaltyTx]
     val claimHtlcDelayedOutputPenaltyTxCodec: Codec[ClaimHtlcDelayedOutputPenaltyTx] = (unusedRemoteCommitKeys :: unusedRevocationKey :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | missingToSelfDelay) :: unusedCommitmentFormat).as[ClaimHtlcDelayedOutputPenaltyTx]
     val claimLocalAnchorOutputTxCodec: Codec[ClaimLocalAnchorTx] = (unusedFundingKey :: unusedLocalCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: unusedCommitmentFormat).as[ClaimLocalAnchorTx]
     // We previously created an unused transaction spending the remote anchor (after the 16-blocks delay).

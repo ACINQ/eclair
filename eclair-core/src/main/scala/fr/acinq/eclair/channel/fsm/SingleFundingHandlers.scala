@@ -79,7 +79,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
             // if we are funder, we never give up
             // we cannot correctly set the fee, but it was correctly set when we initially published the transaction
             log.debug("republishing the funding tx...")
-            txPublisher ! PublishFinalTx(fundingTx, fundingTx.txIn.head.outPoint, 0 sat, "funding", 0 sat, None)
+            txPublisher ! PublishFinalTx(fundingTx, fundingTx.txIn.head.outPoint, "funding", 0 sat, None)
             // we also check if the funding tx has been double-spent
             checkDoubleSpent(fundingTx)
             context.system.scheduler.scheduleOnce(1 day, blockchain.toClassic, GetTxWithMeta(self, txid))
