@@ -344,8 +344,7 @@ object Features {
     val mandatory = 28
   }
 
-  // TODO: this should also extend NodeFeature once the spec is finalized
-  case object Quiescence extends Feature with InitFeature {
+  case object Quiescence extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_quiesce"
     val mandatory = 34
   }
@@ -393,6 +392,11 @@ object Features {
   case object SimpleClose extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_simple_close"
     val mandatory = 60
+  }
+
+  case object Splicing extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_splice"
+    val mandatory = 62
   }
 
   case object PhoenixZeroReserve extends Feature with InitFeature with ChannelTypeFeature with PermanentChannelFeature {
@@ -482,6 +486,7 @@ object Features {
     ZeroConf,
     KeySend,
     SimpleClose,
+    Splicing,
     SimpleTaprootChannelsPhoenix,
     SimpleTaprootChannelsStaging,
     WakeUpNotificationClient,
@@ -506,7 +511,6 @@ object Features {
     SimpleClose -> (ShutdownAnySegwit :: Nil),
     SimpleTaprootChannelsPhoenix -> (ChannelType :: SimpleClose :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
-    OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)
   )
 
