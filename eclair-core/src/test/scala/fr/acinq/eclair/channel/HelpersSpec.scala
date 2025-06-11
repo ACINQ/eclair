@@ -24,7 +24,6 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
-import fr.acinq.eclair.channel.publish.{ReplaceableHtlc, ReplaceableLocalCommitAnchor, ReplaceableRemoteCommitAnchor}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions._
@@ -95,16 +94,16 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     awaitCond(alice.stateName == CLOSING)
 
     val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
-    lcp.anchorOutput_opt.foreach(_ => alice2blockchain.expectReplaceableTxPublished[ReplaceableLocalCommitAnchor])
+    lcp.anchorOutput_opt.foreach(_ => alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx])
     lcp.localOutput_opt.foreach(_ => alice2blockchain.expectFinalTxPublished("local-main-delayed"))
     // Alice is missing the preimage for 2 of the HTLCs she received.
     assert(lcp.htlcOutputs.size == 6)
-    val htlcTxs = (0 until 4).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx]).map(_.tx).collect { case tx: ReplaceableHtlc => tx.sign(Map.empty) }
+    val htlcTxs = (0 until 4).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx]).map(_.txInfo).collect { case tx: SignedHtlcTx => tx }
     alice2blockchain.expectWatchTxConfirmed(commitTx.tx.txid)
-    val htlcTimeoutTxs = htlcTxs.map(_.txInfo).collect { case tx: HtlcTimeoutTx => tx }
+    val htlcTimeoutTxs = htlcTxs.collect { case tx: HtlcTimeoutTx => tx }
     assert(htlcTimeoutTxs.length == 3)
     assert(lcp.outgoingHtlcs.values.toSet == htlcTimeoutTxs.map(_.htlcId).toSet)
-    val htlcSuccessTxs = htlcTxs.map(_.txInfo).collect { case tx: HtlcSuccessTx => tx }
+    val htlcSuccessTxs = htlcTxs.collect { case tx: HtlcSuccessTx => tx }
     assert(htlcSuccessTxs.length == 1)
     assert(lcp.incomingHtlcs.values.toSet.contains(htlcSuccessTxs.head.htlcId))
 
@@ -113,16 +112,16 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     awaitCond(bob.stateName == CLOSING)
 
     val rcp = bob.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
-    rcp.anchorOutput_opt.foreach(_ => bob2blockchain.expectReplaceableTxPublished[ReplaceableRemoteCommitAnchor])
+    rcp.anchorOutput_opt.foreach(_ => bob2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx])
     rcp.localOutput_opt.foreach(_ => bob2blockchain.expectFinalTxPublished("remote-main-delayed"))
     // Bob is missing the preimage for 2 of the HTLCs she received.
     assert(rcp.htlcOutputs.size == 6)
     val claimHtlcTxs = (0 until 4).map(_ => bob2blockchain.expectMsgType[PublishReplaceableTx])
     bob2blockchain.expectWatchTxConfirmed(commitTx.tx.txid)
-    val claimHtlcTimeoutTxs = claimHtlcTxs.map(_.tx.txInfo).collect { case tx: ClaimHtlcTimeoutTx => tx }
+    val claimHtlcTimeoutTxs = claimHtlcTxs.map(_.txInfo).collect { case tx: ClaimHtlcTimeoutTx => tx }
     assert(claimHtlcTimeoutTxs.length == 3)
     assert(rcp.outgoingHtlcs.values.toSet == claimHtlcTimeoutTxs.map(_.htlcId).toSet)
-    val claimHtlcSuccessTxs = claimHtlcTxs.map(_.tx.txInfo).collect { case tx: ClaimHtlcSuccessTx => tx }
+    val claimHtlcSuccessTxs = claimHtlcTxs.map(_.txInfo).collect { case tx: ClaimHtlcSuccessTx => tx }
     assert(claimHtlcSuccessTxs.length == 1)
     assert(rcp.incomingHtlcs.values.toSet.contains(claimHtlcSuccessTxs.head.htlcId))
 
@@ -164,14 +163,14 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     })
     assert(bobTimedOutHtlcs2.toSet == bobHtlcs)
 
-    aliceHtlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, htlcSuccess.tx).isEmpty))
-    aliceHtlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, htlcSuccess.tx).isEmpty))
-    bobClaimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, claimHtlcSuccess.tx).isEmpty))
-    bobClaimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, claimHtlcSuccess.tx).isEmpty))
-    bobClaimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, claimHtlcSuccess.tx).isEmpty))
-    bobClaimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, claimHtlcSuccess.tx).isEmpty))
-    aliceHtlcTimeoutTxs.foreach(htlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, htlcTimeout.tx).isEmpty))
-    bobClaimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, claimHtlcTimeout.tx).isEmpty))
+    aliceHtlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, htlcSuccess.sign()).isEmpty))
+    aliceHtlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, htlcSuccess.sign()).isEmpty))
+    bobClaimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, claimHtlcSuccess.sign()).isEmpty))
+    bobClaimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, claimHtlcSuccess.sign()).isEmpty))
+    bobClaimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, claimHtlcSuccess.sign()).isEmpty))
+    bobClaimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, claimHtlcSuccess.sign()).isEmpty))
+    aliceHtlcTimeoutTxs.foreach(htlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, htlcTimeout.sign()).isEmpty))
+    bobClaimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, claimHtlcTimeout.sign()).isEmpty))
   }
 
   test("find timed out htlcs (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) {

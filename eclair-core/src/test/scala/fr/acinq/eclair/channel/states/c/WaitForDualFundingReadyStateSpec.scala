@@ -23,11 +23,13 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
+import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
-import fr.acinq.eclair.channel.publish.{ReplaceableRemoteCommitAnchor, TxPublisher}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.testutils.PimpTestProbe.convert
+import fr.acinq.eclair.transactions.Transactions.ClaimRemoteAnchorTx
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass}
 import org.scalatest.OptionValues.convertOptionToValuable
@@ -270,7 +272,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     // bob publishes his commitment tx
     val bobCommitTx = bob.signCommitTx()
     alice ! WatchFundingSpentTriggered(bobCommitTx)
-    assert(alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].tx.isInstanceOf[ReplaceableRemoteCommitAnchor])
+    alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobCommitTx.txid)
     listener.expectMsgType[ChannelAborted]

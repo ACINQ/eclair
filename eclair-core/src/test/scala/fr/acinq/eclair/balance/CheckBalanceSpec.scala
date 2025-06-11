@@ -4,13 +4,12 @@ import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.balance.CheckBalance.{MainAndHtlcBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{apply => _, _}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
-import fr.acinq.eclair.channel.publish.{ReplaceableClaimHtlcTimeout, ReplaceableRemoteCommitAnchor}
+import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.using
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx}
+import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx, ClaimLocalAnchorTx, ClaimRemoteAnchorTx}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
@@ -92,9 +91,10 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(bobCommitTx.txOut.size == 8) // two anchor outputs, two main outputs and 4 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     // In response to that, alice publishes her claim txs.
-    alice2blockchain.expectMsgType[PublishReplaceableTx] // claim-anchor
-    val claimMain = alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
-    val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].tx.txInfo)
+    alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
+    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val mainAmount = bobCommitTx.txOut(claimMain.input.index.toInt).amount
+    val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo)
     assert(claimHtlcTxs.collect { case tx: ClaimHtlcSuccessTx => tx }.size == 1)
     assert(claimHtlcTxs.collect { case tx: ClaimHtlcTimeoutTx => tx }.size == 2)
     alice ! WatchTxConfirmedTriggered(BlockHeight(600_000), 5, bobCommitTx)
@@ -106,13 +106,13 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       closing = MainAndHtlcBalance(toLocal = 50_000_000 sat, htlcs = 100_000 sat),
     )
     // We add our main balance and the amount of the incoming HTLCs.
-    val expected1 = balance.copy(closing = MainAndHtlcBalance(toLocal = 50_000_000.sat + claimMain.amount, htlcs = 100_000.sat + 50_000.sat + 55_000.sat))
+    val expected1 = balance.copy(closing = MainAndHtlcBalance(toLocal = 50_000_000.sat + mainAmount, htlcs = 100_000.sat + 50_000.sat + 55_000.sat))
     val balance1 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING])
     assert(balance1 == expected1)
     // When our HTLC transaction confirms, we stop including it in our off-chain balance: it appears in our on-chain balance.
     alice ! WatchTxConfirmedTriggered(BlockHeight(601_000), 2, claimHtlcTxs.collectFirst { case tx: ClaimHtlcSuccessTx => tx }.get.tx)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.irrevocablySpent.size == 2)
-    val expected2 = balance.copy(closing = MainAndHtlcBalance(toLocal = 50_000_000.sat + claimMain.amount, htlcs = 100_000.sat + 55_000.sat))
+    val expected2 = balance.copy(closing = MainAndHtlcBalance(toLocal = 50_000_000.sat + mainAmount, htlcs = 100_000.sat + 55_000.sat))
     val balance2 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING])
     assert(balance2 == expected2)
   }
@@ -140,9 +140,10 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(bobCommitTx.txOut.size == 7) // two anchor outputs, two main outputs and 3 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     // In response to that, alice publishes her claim txs
-    alice2blockchain.expectReplaceableTxPublished[ReplaceableRemoteCommitAnchor]
+    alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
     val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
-    (1 to 2).map(_ => alice2blockchain.expectReplaceableTxPublished[ReplaceableClaimHtlcTimeout].txInfo)
+    val mainAmount = bobCommitTx.txOut(claimMain.input.index.toInt).amount
+    (1 to 2).map(_ => alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx])
     alice ! WatchTxConfirmedTriggered(BlockHeight(600_000), 5, bobCommitTx)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.exists(_.isConfirmed))
 
@@ -152,7 +153,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       closing = MainAndHtlcBalance(toLocal = 20_000_000 sat, htlcs = 0 sat),
     )
     // We add our main balance and the amount of the remaining incoming HTLC.
-    val expected1 = balance.copy(closing = MainAndHtlcBalance(toLocal = 20_000_000.sat + claimMain.amount, htlcs = 50_000.sat))
+    val expected1 = balance.copy(closing = MainAndHtlcBalance(toLocal = 20_000_000.sat + mainAmount, htlcs = 50_000.sat))
     val balance1 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING])
     assert(balance1 == expected1)
   }

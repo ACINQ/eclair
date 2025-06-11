@@ -18,10 +18,11 @@ package fr.acinq.eclair.channel.publish
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.scalacompat.{Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxId}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
+import fr.acinq.eclair.transactions.Transactions._
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
@@ -39,7 +40,7 @@ object ReplaceableTxPrePublisher {
 
   // @formatter:off
   sealed trait Command
-  case class CheckPreconditions(replyTo: ActorRef[PreconditionsResult], tx: ReplaceableTx) extends Command
+  case class CheckPreconditions(replyTo: ActorRef[PreconditionsResult], txInfo: ForceCloseTransaction, commitTx: Transaction, concurrentCommitTxs: Set[TxId]) extends Command
 
   private case object ParentTxOk extends Command
   private case object FundingTxNotFound extends Command
@@ -62,15 +63,15 @@ object ReplaceableTxPrePublisher {
     Behaviors.setup { context =>
       Behaviors.withMdc(txPublishContext.mdc()) {
         Behaviors.receiveMessagePartial {
-          case CheckPreconditions(replyTo, tx) =>
+          case CheckPreconditions(replyTo, txInfo, commitTx, concurrentCommitTxs) =>
             val prePublisher = new ReplaceableTxPrePublisher(nodeParams, replyTo, bitcoinClient, context)
-            tx match {
-              case tx: ReplaceableLocalCommitAnchor => prePublisher.checkLocalCommitAnchorPreconditions(tx.commitTx)
-              case tx: ReplaceableRemoteCommitAnchor => prePublisher.checkRemoteCommitAnchorPreconditions(tx.commitTx)
-              case _: ReplaceableHtlcSuccess => prePublisher.checkHtlcPreconditions(tx, tx.commitTx)
-              case _: ReplaceableHtlcTimeout => prePublisher.checkHtlcPreconditions(tx, tx.commitTx)
-              case _: ReplaceableClaimHtlcSuccess => prePublisher.checkHtlcPreconditions(tx, tx.commitTx)
-              case _: ReplaceableClaimHtlcTimeout => prePublisher.checkHtlcPreconditions(tx, tx.commitTx)
+            txInfo match {
+              case _: ClaimLocalAnchorTx => prePublisher.checkLocalCommitAnchorPreconditions(commitTx)
+              case _: ClaimRemoteAnchorTx => prePublisher.checkRemoteCommitAnchorPreconditions(commitTx)
+              case _: SignedHtlcTx | _: ClaimHtlcTx => prePublisher.checkHtlcPreconditions(txInfo.desc, txInfo.input.outPoint, commitTx, concurrentCommitTxs)
+              case _ =>
+                replyTo ! PreconditionsOk
+                Behaviors.stopped
             }
         }
       }
@@ -215,19 +216,19 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
    * HTLC transaction has become obsolete. Then we check that the HTLC output that we're spending isn't already spent
    * by a confirmed transaction, which may happen in case of a race between HTLC-timeout and HTLC-success.
    */
-  private def checkHtlcPreconditions(tx: ReplaceableTx, commitTx: Transaction): Behavior[Command] = {
+  private def checkHtlcPreconditions(desc: String, input: OutPoint, commitTx: Transaction, concurrentCommitTxs: Set[TxId]): Behavior[Command] = {
     context.pipeToSelf(bitcoinClient.getTxConfirmations(commitTx.txid).flatMap {
       case Some(_) =>
         // If the HTLC output is already spent by a confirmed transaction, there is no need for RBF: either this is one
         // of our transactions (which thus has a high enough feerate), or it was a race with our peer and we lost.
-        bitcoinClient.isTransactionOutputSpent(tx.txInfo.input.outPoint.txid, tx.txInfo.input.outPoint.index.toInt).map {
+        bitcoinClient.isTransactionOutputSpent(input.txid, input.index.toInt).map {
           case true => HtlcOutputAlreadySpent
           case false => ParentTxOk
         }
       case None =>
         // The parent commitment is unconfirmed: we shouldn't try to publish this HTLC transaction if a concurrent
         // commitment is deeply confirmed.
-        checkConcurrentCommits(tx.concurrentCommitTxs.toSeq).map {
+        checkConcurrentCommits(concurrentCommitTxs.toSeq).map {
           case Some(confirmations) if confirmations >= nodeParams.channelConf.minDepth => ConcurrentCommitDeeplyConfirmed
           case Some(_) => ConcurrentCommitRecentlyConfirmed
           case None => ParentTxOk
@@ -241,20 +242,20 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         replyTo ! PreconditionsOk
         Behaviors.stopped
       case ConcurrentCommitRecentlyConfirmed =>
-        log.debug("cannot publish {} spending commitTxId={}: concurrent commit tx was recently confirmed, let's check again later", tx.txInfo.desc, commitTx.txid)
+        log.debug("cannot publish {} spending commitTxId={}: concurrent commit tx was recently confirmed, let's check again later", desc, commitTx.txid)
         // We keep retrying until the concurrent commit reaches min-depth to protect against reorgs.
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
         Behaviors.stopped
       case ConcurrentCommitDeeplyConfirmed =>
-        log.warn("cannot publish {} spending commitTxId={}: concurrent commit is deeply confirmed", tx.txInfo.desc, commitTx.txid)
+        log.warn("cannot publish {} spending commitTxId={}: concurrent commit is deeply confirmed", desc, commitTx.txid)
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
         Behaviors.stopped
       case HtlcOutputAlreadySpent =>
-        log.warn("cannot publish {}: htlc output {} has already been spent", tx.txInfo.desc, tx.txInfo.input.outPoint)
+        log.warn("cannot publish {}: htlc output {} has already been spent", desc, input)
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
         Behaviors.stopped
       case UnknownFailure(reason) =>
-        log.error(s"could not check ${tx.txInfo.desc} preconditions, proceeding anyway: ", reason)
+        log.error(s"could not check $desc preconditions, proceeding anyway: ", reason)
         // If our checks fail, we don't want it to prevent us from trying to publish our htlc transactions.
         replyTo ! PreconditionsOk
         Behaviors.stopped
