@@ -337,7 +337,7 @@ object ChannelCodecsSpec {
     val commitments = Commitments(
       ChannelParams(channelId, ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, channelFlags),
       CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 32, remoteNextHtlcId = 4),
-      Seq(Commitment(fundingTxIndex, 0, remoteFundingPubKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.NotLocked, localCommit, remoteCommit, None)),
+      Seq(Commitment(ChannelFeatures().commitmentFormat, fundingTxIndex, 0, remoteFundingPubKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.NotLocked, localCommit, remoteCommit, None)),
       remoteNextCommitInfo = Right(randomKey().publicKey),
       remotePerCommitmentSecrets = ShaChain.init,
       originChannels = origins)

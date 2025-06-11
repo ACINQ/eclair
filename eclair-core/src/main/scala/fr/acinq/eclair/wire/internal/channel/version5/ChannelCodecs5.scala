@@ -295,7 +295,8 @@ private[channel] object ChannelCodecs5
         ("lockTime" | uint32) ::
         ("dustLimit" | satoshi) ::
         ("targetFeerate" | feeratePerKw) ::
-        ("requireConfirmedInputs" | requireConfirmedInputsCodec)).as[InteractiveTxBuilder.InteractiveTxParams]
+        ("requireConfirmedInputs" | requireConfirmedInputsCodec) ::
+        ("commitmentFormat_opt" | optional(bool8, commitmentFormatCodec))).as[InteractiveTxBuilder.InteractiveTxParams]
 
     // This codec was used by a first prototype version of splicing that only worked without HTLCs.
     private val sharedInteractiveTxInputWithoutHtlcsCodec: Codec[InteractiveTxBuilder.Input.Shared] = (
@@ -503,7 +504,8 @@ private[channel] object ChannelCodecs5
         ("commit" | remoteCommitCodec(commitmentSpecCodec))).as[NextRemoteCommit]
 
     private def commitmentCodecWithoutFirstRemoteCommitIndex(htlcs: Set[DirectedHtlc]): Codec[Commitment] = (
-      ("fundingTxIndex" | uint32) ::
+      ("commitmentFormat" | commitmentFormatCodec) ::
+        ("fundingTxIndex" | uint32) ::
         ("firstRemoteCommitIndex" | provide(0L)) ::
         ("fundingPubKey" | publicKey) ::
         ("fundingTxStatus" | fundingTxStatusCodec) ::
@@ -513,7 +515,8 @@ private[channel] object ChannelCodecs5
         ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite)))))).as[Commitment]
 
     private def commitmentCodec(htlcs: Set[DirectedHtlc]): Codec[Commitment] = (
-      ("fundingTxIndex" | uint32) ::
+      ("commitmentFormat" | commitmentFormatCodec) ::
+        ("fundingTxIndex" | uint32) ::
         ("firstRemoteCommitIndex" | uint64overflow) ::
         ("fundingPubKey" | publicKey) ::
         ("fundingTxStatus" | fundingTxStatusCodec) ::

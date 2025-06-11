@@ -25,6 +25,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelSpendSignature, ChannelType}
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.transactions.Transactions.CommitmentFormat
 import fr.acinq.eclair.wire.protocol.ChannelReadyTlv.ShortChannelIdTlv
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, isAsciiPrintable}
 import scodec.bits.ByteVector
@@ -341,17 +342,22 @@ case class SpliceInit(channelId: ByteVector32,
   val usesOnTheFlyFunding: Boolean = requestFunding_opt.exists(_.paymentDetails.paymentType.isInstanceOf[LiquidityAds.OnTheFlyFundingPaymentType])
   val useFeeCredit_opt: Option[MilliSatoshi] = tlvStream.get[ChannelTlv.UseFeeCredit].map(_.amount)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
+  val commitmentFormat_opt: Option[CommitmentFormat] = tlvStream.get[ChannelTlv.UpgradeCommitmentFormatTlv].map(_.commitmentFormat)
 }
 
 object SpliceInit {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, requestFunding_opt: Option[LiquidityAds.RequestFunding]): SpliceInit = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, requestFunding_opt: Option[LiquidityAds.RequestFunding], commitmentFormat_opt: Option[CommitmentFormat]): SpliceInit = {
     val tlvs: Set[SpliceInitTlv] = Set(
       if (pushAmount > 0.msat) Some(ChannelTlv.PushAmountTlv(pushAmount)) else None,
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
-      requestFunding_opt.map(ChannelTlv.RequestFundingTlv)
+      requestFunding_opt.map(ChannelTlv.RequestFundingTlv),
+      commitmentFormat_opt.map(ChannelTlv.UpgradeCommitmentFormatTlv),
     ).flatten
     SpliceInit(channelId, fundingContribution, feerate, lockTime, fundingPubKey, TlvStream(tlvs))
   }
+
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, lockTime: Long, feerate: FeeratePerKw, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, requestFunding_opt: Option[LiquidityAds.RequestFunding]): SpliceInit =
+    apply(channelId, fundingContribution, lockTime, feerate, fundingPubKey, pushAmount, requireConfirmedInputs, requestFunding_opt, None)
 }
 
 case class SpliceAck(channelId: ByteVector32,
@@ -361,18 +367,23 @@ case class SpliceAck(channelId: ByteVector32,
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val willFund_opt: Option[LiquidityAds.WillFund] = tlvStream.get[ChannelTlv.ProvideFundingTlv].map(_.willFund)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
+  val commitmentFormat_opt: Option[CommitmentFormat] = tlvStream.get[ChannelTlv.UpgradeCommitmentFormatTlv].map(_.commitmentFormat)
 }
 
 object SpliceAck {
-  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund], feeCreditUsed_opt: Option[MilliSatoshi]): SpliceAck = {
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund], feeCreditUsed_opt: Option[MilliSatoshi], commitmentFormat_opt: Option[CommitmentFormat]): SpliceAck = {
     val tlvs: Set[SpliceAckTlv] = Set(
       if (pushAmount > 0.msat) Some(ChannelTlv.PushAmountTlv(pushAmount)) else None,
       if (requireConfirmedInputs) Some(ChannelTlv.RequireConfirmedInputsTlv()) else None,
       willFund_opt.map(ChannelTlv.ProvideFundingTlv),
       feeCreditUsed_opt.map(ChannelTlv.FeeCreditUsedTlv),
+      commitmentFormat_opt.map(ChannelTlv.UpgradeCommitmentFormatTlv),
     ).flatten
     SpliceAck(channelId, fundingContribution, fundingPubKey, TlvStream(tlvs))
   }
+
+  def apply(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubKey: PublicKey, pushAmount: MilliSatoshi, requireConfirmedInputs: Boolean, willFund_opt: Option[LiquidityAds.WillFund], feeCreditUsed_opt: Option[MilliSatoshi]): SpliceAck =
+    apply(channelId, fundingContribution, fundingPubKey, pushAmount, requireConfirmedInputs, willFund_opt, feeCreditUsed_opt, None)
 }
 
 case class SpliceLocked(channelId: ByteVector32,

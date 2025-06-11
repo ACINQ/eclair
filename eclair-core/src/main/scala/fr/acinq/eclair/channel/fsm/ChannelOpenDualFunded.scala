@@ -207,7 +207,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             lockTime = open.lockTime,
             dustLimit = open.dustLimit.max(accept.dustLimit),
             targetFeerate = open.fundingFeerate,
-            requireConfirmedInputs = RequireConfirmedInputs(forLocal = open.requireConfirmedInputs, forRemote = accept.requireConfirmedInputs)
+            requireConfirmedInputs = RequireConfirmedInputs(forLocal = open.requireConfirmedInputs, forRemote = accept.requireConfirmedInputs),
+            currentCommitmentFormat = channelParams.commitmentFormat,
+            nextCommitmentFormat = channelParams.commitmentFormat,
           )
           val purpose = InteractiveTxBuilder.FundingTx(open.commitmentFeerate, open.firstPerCommitmentPoint, feeBudget_opt = None)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
@@ -271,7 +273,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             lockTime = d.lastSent.lockTime,
             dustLimit = d.lastSent.dustLimit.max(accept.dustLimit),
             targetFeerate = d.lastSent.fundingFeerate,
-            requireConfirmedInputs = RequireConfirmedInputs(forLocal = accept.requireConfirmedInputs, forRemote = d.lastSent.requireConfirmedInputs)
+            requireConfirmedInputs = RequireConfirmedInputs(forLocal = accept.requireConfirmedInputs, forRemote = d.lastSent.requireConfirmedInputs),
+            currentCommitmentFormat = channelParams.commitmentFormat,
+            nextCommitmentFormat = channelParams.commitmentFormat,
           )
           val purpose = InteractiveTxBuilder.FundingTx(d.lastSent.commitmentFeerate, accept.firstPerCommitmentPoint, feeBudget_opt = d.init.fundingTxFeeBudget_opt)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
@@ -401,7 +405,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(msg: InteractiveTxMessage, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
       msg match {
         case txSigs: TxSignatures =>
-          d.signingSession.receiveTxSigs(channelKeys, txSigs, nodeParams.currentBlockHeight) match {
+          d.signingSession.receiveTxSigs(d.channelParams, channelKeys, txSigs, nodeParams.currentBlockHeight) match {
             case Left(f) =>
               rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
               goto(CLOSED) sending Error(d.channelId, f.getMessage)
@@ -469,7 +473,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case _: FullySignedSharedTransaction =>
           d.status match {
             case DualFundingStatus.RbfWaitingForSigs(signingSession) =>
-              signingSession.receiveTxSigs(channelKeys, txSigs, nodeParams.currentBlockHeight) match {
+              signingSession.receiveTxSigs(d.channelParams, channelKeys, txSigs, nodeParams.currentBlockHeight) match {
                 case Left(f) =>
                   rollbackRbfAttempt(signingSession, d)
                   stay() using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, f.getMessage)

@@ -244,6 +244,7 @@ private[channel] object ChannelTypes0 {
         ChannelFeatures()
       }
       val commitment = Commitment(
+        channelFeatures.commitmentFormat,
         fundingTxIndex = 0,
         firstRemoteCommitIndex = 0,
         remoteFundingPubKey = remoteParams.fundingPubKey,

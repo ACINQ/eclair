@@ -137,7 +137,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       Transaction(2, Seq(TxIn(fundingInput.outPoint, Nil, 0)), Seq(TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0),
     )
     val waitingForSigs = InteractiveTxSigningSession.WaitingForSigs(
-      InteractiveTxParams(channelId, isInitiator = true, 100_000 sat, 75_000 sat, None, randomKey().publicKey, Nil, 0, 330 sat, FeeratePerKw(500 sat), RequireConfirmedInputs(forLocal = false, forRemote = false)),
+      InteractiveTxParams(channelId, isInitiator = true, 100_000 sat, 75_000 sat, None, randomKey().publicKey, Nil, 0, 330 sat, FeeratePerKw(500 sat), RequireConfirmedInputs(forLocal = false, forRemote = false), DefaultCommitmentFormat, DefaultCommitmentFormat),
       fundingTxIndex = 0,
       PartiallySignedSharedTransaction(fundingTx, TxSignatures(channelId, randomTxId(), Nil)),
       Left(UnsignedLocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 100_000_000 msat, 75_000_000 msat), commitTx, Nil)),
@@ -153,8 +153,8 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       DualFundingStatus.RbfAborted -> DualFundingStatus.WaitingForConfirmations,
     )
     testCases.foreach { case (status, expected) =>
-      val encoded = dualFundingStatusCodec.encode(status).require
-      val decoded = dualFundingStatusCodec.decode(encoded).require.value
+      val encoded = dualFundingStatusCodec(DefaultCommitmentFormat).encode(status).require
+      val decoded = dualFundingStatusCodec(DefaultCommitmentFormat).decode(encoded).require.value
       assert(decoded == expected)
     }
   }
@@ -162,7 +162,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
   test("decode unconfirmed dual funded") {
     // data encoded with the previous version of eclair, when Shared.Input did not include a pubkey script
     val raw = ByteVector.fromValidHex("0x020001ff02000000000000002a2400000000000000000000000000000000000000000000000000000000000000000000000000003039000000000000006400000000000000c8000000000000012c02000000000000002b04deadbeef000000000000006400000000000000c8000000000000012c00000000000000000000000042000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003e80000000000000000000000000000000000000000000000000000000000000000ff000000000000006400000000000000c8ff0001240000000000000000000000000000000000000000000000000000000000000000000000002be803000000000000220020eb72e573a9513d982a01f0e6a6b53e92764db81a0c26d2be94c5fc5b69a0db7d475221024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d076621031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f52ae00000000024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d0766031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f000000000000000000000000014a000002ee0000")
-    val decoded = fundingTxStatusCodec.decode(raw.bits).require.value.asInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx]
+    val decoded = fundingTxStatusCodec(DefaultCommitmentFormat).decode(raw.bits).require.value.asInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx]
 
     // check that our codec will set the pubkeyscript using the one from the funding params
     val channelId = ByteVector32.Zeroes
@@ -185,7 +185,8 @@ class ChannelCodecs4Spec extends AnyFunSuite {
           PrivateKey(ByteVector.fromValidHex("02" * 32)).publicKey
         )),
         remoteFundingPubKey = PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey,
-        localOutputs = Nil, lockTime = 0, dustLimit = 330.sat, targetFeerate = FeeratePerKw(FeeratePerByte(3.sat)), requireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false)),
+        localOutputs = Nil, lockTime = 0, dustLimit = 330.sat, targetFeerate = FeeratePerKw(FeeratePerByte(3.sat)), requireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false),
+        DefaultCommitmentFormat, DefaultCommitmentFormat),
       liquidityPurchase_opt = None
     )
     assert(decoded == dualFundedUnconfirmedFundingTx)
@@ -193,7 +194,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
     val dualFundedUnconfirmedFundingTx1 = dualFundedUnconfirmedFundingTx.copy(
       liquidityPurchase_opt = Some(LiquidityAds.PurchaseBasicInfo(isBuyer = true, 250_000 sat, LiquidityAds.Fees(1500 sat, 700 sat)))
     )
-    assert(fundingTxStatusCodec.decode(fundingTxStatusCodec.encode(dualFundedUnconfirmedFundingTx1).require).require.value == dualFundedUnconfirmedFundingTx1)
+    assert(fundingTxStatusCodec(DefaultCommitmentFormat).decode(fundingTxStatusCodec(DefaultCommitmentFormat).encode(dualFundedUnconfirmedFundingTx1).require).require.value == dualFundedUnconfirmedFundingTx1)
   }
 
   test("decode local params pay commit tx fees field") {

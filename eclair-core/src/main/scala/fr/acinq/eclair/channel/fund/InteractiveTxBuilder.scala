@@ -110,6 +110,13 @@ object InteractiveTxBuilder {
     // @formatter:on
   }
 
+  object SharedFundingInput {
+    def apply(commitment: Commitment): SharedFundingInput = commitment.commitmentFormat match {
+      case _: SimpleTaprootChannelCommitmentFormat => Musig2Input(commitment)
+      case _ => Multisig2of2Input(commitment)
+    }
+  }
+
   case class Multisig2of2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
     override val weight: Int = 388
 
@@ -163,7 +170,9 @@ object InteractiveTxBuilder {
                                  lockTime: Long,
                                  dustLimit: Satoshi,
                                  targetFeerate: FeeratePerKw,
-                                 requireConfirmedInputs: RequireConfirmedInputs) {
+                                 requireConfirmedInputs: RequireConfirmedInputs,
+                                 currentCommitmentFormat: CommitmentFormat,
+                                 nextCommitmentFormat: CommitmentFormat) {
     /** The amount of the new funding output, which is the sum of the shared input, if any, and both sides' contributions. */
     val fundingAmount: Satoshi = sharedInput_opt.map(_.info.txOut.amount).getOrElse(0 sat) + localContribution + remoteContribution
     // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
@@ -477,7 +486,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   private val log = context.log
   private val localFundingKey: PrivateKey = channelKeys.fundingKey(purpose.fundingTxIndex)
-  private val fundingPubkeyScript: ByteVector = Funding.makeFundingScript(localFundingKey.publicKey, fundingParams.remoteFundingPubKey, channelParams.commitmentFormat).pubkeyScript
+  private val fundingPubkeyScript: ByteVector = Funding.makeFundingScript(localFundingKey.publicKey, fundingParams.remoteFundingPubKey, fundingParams.nextCommitmentFormat).pubkeyScript
   private val remoteNodeId = channelParams.remoteParams.nodeId
   private val previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction] = purpose match {
     case rbf: FundingTxRbf => rbf.previousTransactions
@@ -558,12 +567,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         val next = session.copy(toSend = tail, localOutputs = session.localOutputs :+ addOutput, txCompleteSent = None)
         receive(next)
       case Nil =>
-        val txComplete = channelParams.commitmentFormat match {
+        val txComplete = fundingParams.nextCommitmentFormat match {
           case _: SimpleTaprootChannelCommitmentFormat =>
             // funding nonces are used to sign shared inputs (funding transactions), are randomized and are local to this interactive session
             val fundingNonce_opt = (session.remoteInputs ++ session.localInputs).sortBy(_.serialId).collectFirst {
-              case i: Input.Shared => session.secretNonces.get(i.serialId).map(_.publicNonce).getOrElse(throw new RuntimeException("missing secret nonce"))
-            }
+              case i: Input.Shared => session.secretNonces.get(i.serialId).map(_.publicNonce) // .getOrElse(throw new RuntimeException("missing secret nonce"))
+            }.flatten
             // commit nonces are used to sign commit transactions and are sent to our peer. Once this session complete the last one we've received becomes "their next remote nonce"
             validateTx(session).map(_.buildUnsignedTx().txid).map { fundingTxId =>
               TxComplete(fundingParams.channelId,
@@ -887,6 +896,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val liquidityFee = fundingParams.liquidityFees(liquidityPurchase_opt)
     val localCommitmentKeys = LocalCommitmentKeys(channelParams, channelKeys, purpose.localCommitIndex)
     val remoteCommitmentKeys = RemoteCommitmentKeys(channelParams, channelKeys, purpose.remotePerCommitmentPoint)
+
     Funding.makeCommitTxs(channelParams,
       fundingAmount = fundingParams.fundingAmount,
       toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - liquidityFee,
@@ -897,17 +907,17 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       fundingTx.txid, fundingOutputIndex,
       localFundingKey, fundingParams.remoteFundingPubKey,
       localCommitmentKeys, remoteCommitmentKeys,
-      localCommitmentIndex = purpose.localCommitIndex, remoteCommitmentIndex = purpose.remoteCommitIndex) match {
+      localCommitmentIndex = purpose.localCommitIndex, remoteCommitmentIndex = purpose.remoteCommitIndex, fundingParams.nextCommitmentFormat) match {
       case Left(cause) =>
         replyTo ! RemoteFailure(cause)
         unlockAndStop(completeTx)
       case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)) =>
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
-        val localSigOfRemoteTx = channelParams.commitmentFormat match {
+        val localSigOfRemoteTx = fundingParams.nextCommitmentFormat match {
           case _: SimpleTaprootChannelCommitmentFormat => ByteVector64.Zeroes
           case _: SegwitV0CommitmentFormat => remoteCommitTx.sign(localFundingKey, fundingParams.remoteFundingPubKey).sig
         }
-        val tlvs: TlvStream[CommitSigTlv] = channelParams.commitmentFormat match {
+        val tlvs: TlvStream[CommitSigTlv] = fundingParams.nextCommitmentFormat match {
           case _: SimpleTaprootChannelCommitmentFormat =>
             val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey)
             val Some(remoteNonce) = session.txCompleteReceived.flatMap(_.nonces).map(_.remoteNonce)
@@ -916,7 +926,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(psig))
           case _: SegwitV0CommitmentFormat => TlvStream.empty[CommitSigTlv]
         }
-        val htlcSignatures = sortedHtlcTxs.map(_.sign(remoteCommitmentKeys, channelParams.commitmentFormat)).toList
+        val htlcSignatures = sortedHtlcTxs.map(_.sign(remoteCommitmentKeys, fundingParams.nextCommitmentFormat)).toList
         val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures, tlvs)
         val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx, htlcTxs = Nil)
         val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)
@@ -1211,10 +1221,11 @@ object InteractiveTxSigningSession {
         case Left(unsignedLocalCommit) =>
           val fundingKey = channelKeys.fundingKey(fundingTxIndex)
           val commitKeys = LocalCommitmentKeys(channelParams, channelKeys, localCommitIndex)
-          LocalCommit.fromCommitSig(channelParams, commitKeys, fundingTx.txId, fundingKey, fundingParams.remoteFundingPubKey, commitInput, remoteCommitSig, localCommitIndex, unsignedLocalCommit.spec).map { signedLocalCommit =>
+          val commitmentFormat = fundingParams.nextCommitmentFormat
+          LocalCommit.fromCommitSig(channelParams, commitKeys, fundingTx.txId, fundingKey, fundingParams.remoteFundingPubKey, commitInput, remoteCommitSig, localCommitIndex, unsignedLocalCommit.spec, fundingParams.nextCommitmentFormat).map { signedLocalCommit =>
             if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
               val fundingStatus = LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx, currentBlockHeight, fundingParams, liquidityPurchase_opt)
-              val commitment = Commitment(fundingTxIndex, remoteCommit.index, fundingParams.remoteFundingPubKey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, None)
+              val commitment = Commitment(commitmentFormat, fundingTxIndex, remoteCommit.index, fundingParams.remoteFundingPubKey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, None)
               SendingSigs(fundingStatus, commitment, fundingTx.localSigs)
             } else {
               this.copy(localCommit = Right(signedLocalCommit))
@@ -1226,7 +1237,7 @@ object InteractiveTxSigningSession {
       }
     }
 
-    def receiveTxSigs(channelKeys: ChannelKeys, remoteTxSigs: TxSignatures, currentBlockHeight: BlockHeight)(implicit log: LoggingAdapter): Either[ChannelException, SendingSigs] = {
+    def receiveTxSigs(channelParams: ChannelParams, channelKeys: ChannelKeys, remoteTxSigs: TxSignatures, currentBlockHeight: BlockHeight)(implicit log: LoggingAdapter): Either[ChannelException, SendingSigs] = {
       localCommit match {
         case Left(_) =>
           log.info("received tx_signatures before commit_sig")
@@ -1239,7 +1250,8 @@ object InteractiveTxSigningSession {
             case Right(fullySignedTx) =>
               log.info("interactive-tx fully signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", fullySignedTx.tx.localInputs.length, fullySignedTx.tx.remoteInputs.length, fullySignedTx.tx.localOutputs.length, fullySignedTx.tx.remoteOutputs.length)
               val fundingStatus = LocalFundingStatus.DualFundedUnconfirmedFundingTx(fullySignedTx, currentBlockHeight, fundingParams, liquidityPurchase_opt)
-              val commitment = Commitment(fundingTxIndex, remoteCommit.index, fundingParams.remoteFundingPubKey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, None)
+              val commitmentFormat = fundingParams.nextCommitmentFormat
+              val commitment = Commitment(commitmentFormat, fundingTxIndex, remoteCommit.index, fundingParams.remoteFundingPubKey, fundingStatus, RemoteFundingStatus.NotLocked, signedLocalCommit, remoteCommit, None)
               Right(SendingSigs(fundingStatus, commitment, fullySignedTx.localSigs))
           }
       }

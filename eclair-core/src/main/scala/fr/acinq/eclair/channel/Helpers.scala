@@ -409,7 +409,7 @@ object Helpers {
         fundingTxId, fundingTxOutputIndex,
         localFundingKey, remoteFundingPubKey,
         localCommitKeys, remoteCommitKeys,
-        localCommitmentIndex = 0, remoteCommitmentIndex = 0).map {
+        localCommitmentIndex = 0, remoteCommitmentIndex = 0, params.commitmentFormat).map {
         case (localSpec, localCommit, remoteSpec, remoteCommit, _) => (localSpec, localCommit, remoteSpec, remoteCommit)
       }
     }
@@ -427,7 +427,8 @@ object Helpers {
                       fundingTxId: TxId, fundingTxOutputIndex: Int,
                       localFundingKey: PrivateKey, remoteFundingPubKey: PublicKey,
                       localCommitKeys: LocalCommitmentKeys, remoteCommitKeys: RemoteCommitmentKeys,
-                      localCommitmentIndex: Long, remoteCommitmentIndex: Long): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx, Seq[HtlcTx])] = {
+                      localCommitmentIndex: Long, remoteCommitmentIndex: Long,
+                      commitmentFormat: CommitmentFormat): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx, Seq[HtlcTx])] = {
       val localSpec = CommitmentSpec(localHtlcs, commitTxFeerate, toLocal = toLocal, toRemote = toRemote)
       val remoteSpec = CommitmentSpec(localHtlcs.map(_.opposite), commitTxFeerate, toLocal = toRemote, toRemote = toLocal)
 
@@ -436,16 +437,16 @@ object Helpers {
         // Note that the reserve may not always be met: we could be using dual funding with a large funding amount on
         // our side and a small funding amount on their side. But we shouldn't care as long as they can pay the fees for
         // the commitment transaction.
-        val fees = commitTxTotalCost(params.remoteParams.dustLimit, remoteSpec, params.commitmentFormat)
+        val fees = commitTxTotalCost(params.remoteParams.dustLimit, remoteSpec, commitmentFormat)
         val missing = fees - toRemote.truncateToSatoshi
         if (missing > 0.sat) {
           return Left(CannotAffordFirstCommitFees(params.channelId, missing = missing, fees = fees))
         }
       }
 
-      val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, localFundingKey.publicKey, remoteFundingPubKey, params.commitmentFormat)
-      val (localCommitTx, _) = Commitment.makeLocalTxs(params, localCommitKeys, localCommitmentIndex, localFundingKey, remoteFundingPubKey, commitmentInput, localSpec)
-      val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, remoteCommitKeys, remoteCommitmentIndex, localFundingKey, remoteFundingPubKey, commitmentInput, remoteSpec)
+      val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, localFundingKey.publicKey, remoteFundingPubKey, commitmentFormat)
+      val (localCommitTx, _) = Commitment.makeLocalTxs(params, localCommitKeys, localCommitmentIndex, localFundingKey, remoteFundingPubKey, commitmentInput, localSpec, commitmentFormat)
+      val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, remoteCommitKeys, remoteCommitmentIndex, localFundingKey, remoteFundingPubKey, commitmentInput, remoteSpec, commitmentFormat)
       val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
       Right(localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)
     }
@@ -605,9 +606,9 @@ object Helpers {
         case _ if closing.localCommitPublished.exists(_.isConfirmed) =>
           Some(LocalClose(closing.commitments.latest.localCommit, closing.localCommitPublished.get))
         case _ if closing.remoteCommitPublished.exists(_.isConfirmed) =>
-          Some(CurrentRemoteClose(closing.commitments.latest.remoteCommit, closing.remoteCommitPublished.get))
+          Some(CurrentRemoteClose(closing.commitments.latest.commitment.remoteCommit, closing.remoteCommitPublished.get))
         case _ if closing.nextRemoteCommitPublished.exists(_.isConfirmed) =>
-          Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get.commit, closing.nextRemoteCommitPublished.get))
+          Some(NextRemoteClose(closing.commitments.latest.commitment.nextRemoteCommit_opt.get.commit, closing.nextRemoteCommitPublished.get))
         case _ if closing.futureRemoteCommitPublished.exists(_.isConfirmed) =>
           Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
         case _ if closing.revokedCommitPublished.exists(_.isConfirmed) =>
@@ -631,9 +632,9 @@ object Helpers {
       case closing: DATA_CLOSING if closing.localCommitPublished.exists(_.isDone) =>
         Some(LocalClose(closing.commitments.latest.localCommit, closing.localCommitPublished.get))
       case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(_.isDone) =>
-        Some(CurrentRemoteClose(closing.commitments.latest.remoteCommit, closing.remoteCommitPublished.get))
+        Some(CurrentRemoteClose(closing.commitments.latest.commitment.remoteCommit, closing.remoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(_.isDone) =>
-        Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get.commit, closing.nextRemoteCommitPublished.get))
+        Some(NextRemoteClose(closing.commitments.latest.commitment.nextRemoteCommit_opt.get.commit, closing.nextRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(_.isDone) =>
         Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(_.isDone) =>
@@ -1413,10 +1414,10 @@ object Helpers {
           case OutgoingHtlc(add) if add.paymentHash == paymentHash => (add, paymentPreimage)
         }
         // From the remote point of view, those are incoming HTLCs.
-        val fromRemote = commitment.remoteCommit.spec.htlcs.collect {
+        val fromRemote = commitment.commitment.remoteCommit.spec.htlcs.collect {
           case IncomingHtlc(add) if add.paymentHash == paymentHash => (add, paymentPreimage)
         }
-        val fromNextRemote = commitment.nextRemoteCommit_opt.map(_.commit.spec.htlcs).getOrElse(Set.empty).collect {
+        val fromNextRemote = commitment.commitment.nextRemoteCommit_opt.map(_.commit.spec.htlcs).getOrElse(Set.empty).collect {
           case IncomingHtlc(add) if add.paymentHash == paymentHash => (add, paymentPreimage)
         }
         fromLocal ++ fromRemote ++ fromNextRemote
@@ -1510,8 +1511,8 @@ object Helpers {
      */
     def overriddenOutgoingHtlcs(d: DATA_CLOSING, tx: Transaction): Set[UpdateAddHtlc] = {
       val localCommit = d.commitments.latest.localCommit
-      val remoteCommit = d.commitments.latest.remoteCommit
-      val nextRemoteCommit_opt = d.commitments.latest.nextRemoteCommit_opt.map(_.commit)
+      val remoteCommit = d.commitments.latest.commitment.remoteCommit
+      val nextRemoteCommit_opt = d.commitments.latest.commitment.nextRemoteCommit_opt.map(_.commit)
       // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs.
       val outgoingHtlcs = localCommit.spec.htlcs.collect(outgoing) ++ (remoteCommit.spec.htlcs ++ nextRemoteCommit_opt.map(_.spec.htlcs).getOrElse(Set.empty)).collect(incoming)
       if (localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid) {
