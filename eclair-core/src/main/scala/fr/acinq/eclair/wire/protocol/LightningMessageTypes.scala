@@ -97,13 +97,14 @@ case class TxAddInput(channelId: ByteVector32,
                       tlvStream: TlvStream[TxAddInputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId {
   /** This field may replace [[previousTx_opt]] when using taproot. */
   val previousTxOut_opt: Option[InputInfo] = tlvStream.get[TxAddInputTlv.PrevTxOut].map(tlv => InputInfo(OutPoint(tlv.txId, previousTxOutput), TxOut(tlv.amount, tlv.publicKeyScript)))
-  val sharedInput_opt: Option[OutPoint] = tlvStream.get[TxAddInputTlv.SharedInputTxId].map(i => OutPoint(i.txId, previousTxOutput))
+  val sharedInput_opt: Option[OutPoint] = tlvStream.get[TxAddInputTlv.SharedInputTxId].map(i => OutPoint(i.txId, previousTxOutput)).orElse(tlvStream.get[TxAddInputTlv.ExperimentalSharedInputTxId].map(i => OutPoint(i.txId, previousTxOutput)))
 }
 
 object TxAddInput {
   def apply(channelId: ByteVector32, serialId: UInt64, sharedInput: OutPoint, sequence: Long): TxAddInput = {
     val tlvs = Set[TxAddInputTlv](
       TxAddInputTlv.SharedInputTxId(sharedInput.txid),
+      TxAddInputTlv.ExperimentalSharedInputTxId(sharedInput.txid),
     )
     TxAddInput(channelId, serialId, None, sharedInput.index, sequence, TlvStream(tlvs))
   }
@@ -143,14 +144,14 @@ case class TxSignatures(channelId: ByteVector32,
                         txId: TxId,
                         witnesses: Seq[ScriptWitness],
                         tlvStream: TlvStream[TxSignaturesTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
-  val previousFundingTxSig_opt: Option[ByteVector64] = tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].map(_.sig)
+  val previousFundingTxSig_opt: Option[ByteVector64] = tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].map(_.sig).orElse(tlvStream.get[TxSignaturesTlv.ExperimentalPreviousFundingTxSig].map(_.sig))
   val previousFundingTxPartialSig_opt: Option[PartialSignatureWithNonce] = tlvStream.get[TxSignaturesTlv.PreviousFundingTxPartialSig].map(_.partialSigWithNonce)
 }
 
 object TxSignatures {
   def apply(channelId: ByteVector32, tx: Transaction, witnesses: Seq[ScriptWitness], previousFundingSig_opt: Option[ChannelSpendSignature]): TxSignatures = {
     val tlvs: Set[TxSignaturesTlv] = previousFundingSig_opt match {
-      case Some(IndividualSignature(sig)) => Set(TxSignaturesTlv.PreviousFundingTxSig(sig))
+      case Some(IndividualSignature(sig)) => Set(TxSignaturesTlv.PreviousFundingTxSig(sig), TxSignaturesTlv.ExperimentalPreviousFundingTxSig(sig))
       case Some(partialSig: PartialSignatureWithNonce) => Set(TxSignaturesTlv.PreviousFundingTxPartialSig(partialSig))
       case None => Set.empty
     }
@@ -411,6 +412,19 @@ object SpliceInit {
     apply(channelId, fundingContribution, lockTime, feerate, fundingPubKey, pushAmount, requireConfirmedInputs, requestFunding_opt, None)
 }
 
+case class ExperimentalSpliceInit(channelId: ByteVector32,
+                                  fundingContribution: Satoshi,
+                                  feerate: FeeratePerKw,
+                                  lockTime: Long,
+                                  fundingPubKey: PublicKey,
+                                  tlvStream: TlvStream[SpliceInitTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  def toSpliceInit: SpliceInit = SpliceInit(channelId, fundingContribution, feerate, lockTime, fundingPubKey, tlvStream)
+}
+
+object ExperimentalSpliceInit {
+  def from(msg: SpliceInit): ExperimentalSpliceInit = ExperimentalSpliceInit(msg.channelId, msg.fundingContribution, msg.feerate, msg.lockTime, msg.fundingPubKey, msg.tlvStream)
+}
+
 case class SpliceAck(channelId: ByteVector32,
                      fundingContribution: Satoshi,
                      fundingPubKey: PublicKey,
@@ -437,9 +451,30 @@ object SpliceAck {
     apply(channelId, fundingContribution, fundingPubKey, pushAmount, requireConfirmedInputs, willFund_opt, feeCreditUsed_opt, None)
 }
 
+case class ExperimentalSpliceAck(channelId: ByteVector32,
+                                 fundingContribution: Satoshi,
+                                 fundingPubKey: PublicKey,
+                                 tlvStream: TlvStream[SpliceAckTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  def toSpliceAck: SpliceAck = SpliceAck(channelId, fundingContribution, fundingPubKey, tlvStream)
+}
+
+object ExperimentalSpliceAck {
+  def from(msg: SpliceAck): ExperimentalSpliceAck = ExperimentalSpliceAck(msg.channelId, msg.fundingContribution, msg.fundingPubKey, msg.tlvStream)
+}
+
 case class SpliceLocked(channelId: ByteVector32,
                         fundingTxId: TxId,
                         tlvStream: TlvStream[SpliceLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+}
+
+case class ExperimentalSpliceLocked(channelId: ByteVector32,
+                                    fundingTxId: TxId,
+                                    tlvStream: TlvStream[SpliceLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  def toSpliceLocked: SpliceLocked = SpliceLocked(channelId, fundingTxId, tlvStream)
+}
+
+object ExperimentalSpliceLocked {
+  def from(msg: SpliceLocked): ExperimentalSpliceLocked = ExperimentalSpliceLocked(msg.channelId, msg.fundingTxId, msg.tlvStream)
 }
 
 case class Shutdown(channelId: ByteVector32,

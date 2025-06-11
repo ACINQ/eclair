@@ -16,7 +16,6 @@
             "option_simple_close" : "optional",
             "option_simple_taproot_phoenix" : "optional",
             "option_route_blinding" : "optional",
-            "splice_prototype" : "optional",
             "payment_secret" : "mandatory",
             "gossip_queries_ex" : "optional",
             "option_quiesce" : "optional",
@@ -29,7 +28,7 @@
             "basic_mpp" : "optional",
             "gossip_queries" : "optional"
           },
-          "unknown" : [ ]
+          "unknown" : [ 155 ]
         }
       },
       "remoteParams" : {
@@ -46,7 +45,6 @@
             "option_simple_taproot_phoenix" : "optional",
             "option_route_blinding" : "optional",
             "option_provide_storage" : "optional",
-            "splice_prototype" : "optional",
             "payment_secret" : "mandatory",
             "gossip_queries_ex" : "optional",
             "option_quiesce" : "optional",
@@ -57,7 +55,7 @@
             "basic_mpp" : "optional",
             "gossip_queries" : "optional"
           },
-          "unknown" : [ 50001 ]
+          "unknown" : [ 155, 50001 ]
         }
       },
       "channelFlags" : {
