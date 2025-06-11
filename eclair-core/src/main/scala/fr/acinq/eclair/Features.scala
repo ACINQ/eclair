@@ -261,8 +261,7 @@ object Features {
     val mandatory = 28
   }
 
-  // TODO: this should also extend NodeFeature once the spec is finalized
-  case object Quiescence extends Feature with InitFeature {
+  case object Quiescence extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_quiesce"
     val mandatory = 34
   }
@@ -312,6 +311,11 @@ object Features {
     val mandatory = 60
   }
 
+  case object Splicing extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_splice"
+    val mandatory = 62
+  }
+
   case object PhoenixZeroReserve extends Feature with InitFeature with ChannelTypeFeature with PermanentChannelFeature {
     val rfcName = "phoenix_zero_reserve"
     val mandatory = 128
@@ -338,12 +342,6 @@ object Features {
   case object AsyncPaymentPrototype extends Feature with InitFeature with Bolt11Feature {
     val rfcName = "async_payment_prototype"
     val mandatory = 152
-  }
-
-  // TODO: @pm47 custom splices implementation for phoenix, to be replaced once splices is spec-ed (currently reserved here: https://github.com/lightning/bolts/issues/605)
-  case object SplicePrototype extends Feature with InitFeature {
-    val rfcName = "splice_prototype"
-    val mandatory = 154
   }
 
   case object SimpleTaprootChannelsPhoenix extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
@@ -399,12 +397,12 @@ object Features {
     ZeroConf,
     KeySend,
     SimpleClose,
+    Splicing,
     SimpleTaprootChannelsPhoenix,
     SimpleTaprootChannelsStaging,
     WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
-    SplicePrototype,
     OnTheFlyFunding,
     FundingFeeCredit,
     PhoenixZeroReserve
@@ -423,7 +421,6 @@ object Features {
     SimpleClose -> (ShutdownAnySegwit :: Nil),
     SimpleTaprootChannelsPhoenix -> (ChannelType :: SimpleClose :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
-    OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)
   )
 

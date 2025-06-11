@@ -97,12 +97,16 @@ case class TxAddInput(channelId: ByteVector32,
                       tlvStream: TlvStream[TxAddInputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId {
   /** This field may replace [[previousTx_opt]] when using taproot. */
   val previousTxOut_opt: Option[InputInfo] = tlvStream.get[TxAddInputTlv.PrevTxOut].map(tlv => InputInfo(OutPoint(tlv.txId, previousTxOutput), TxOut(tlv.amount, tlv.publicKeyScript)))
-  val sharedInput_opt: Option[OutPoint] = tlvStream.get[TxAddInputTlv.SharedInputTxId].map(i => OutPoint(i.txId, previousTxOutput))
+  val sharedInput_opt: Option[OutPoint] = tlvStream.get[TxAddInputTlv.SharedInputTxId].map(i => OutPoint(i.txId, previousTxOutput)).orElse(tlvStream.get[TxAddInputTlv.ExperimentalSharedInputTxId].map(i => OutPoint(i.txId, previousTxOutput)))
 }
 
 object TxAddInput {
   def apply(channelId: ByteVector32, serialId: UInt64, sharedInput: OutPoint, sequence: Long): TxAddInput = {
-    TxAddInput(channelId, serialId, None, sharedInput.index, sequence, TlvStream(TxAddInputTlv.SharedInputTxId(sharedInput.txid)))
+    val tlvs = Set[TxAddInputTlv](
+      TxAddInputTlv.SharedInputTxId(sharedInput.txid),
+      TxAddInputTlv.ExperimentalSharedInputTxId(sharedInput.txid),
+    )
+    TxAddInput(channelId, serialId, None, sharedInput.index, sequence, TlvStream(tlvs))
   }
 }
 
@@ -140,18 +144,17 @@ case class TxSignatures(channelId: ByteVector32,
                         txId: TxId,
                         witnesses: Seq[ScriptWitness],
                         tlvStream: TlvStream[TxSignaturesTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
-  val previousFundingTxSig_opt: Option[ByteVector64] = tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].map(_.sig)
+  val previousFundingTxSig_opt: Option[ByteVector64] = tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].map(_.sig).orElse(tlvStream.get[TxSignaturesTlv.ExperimentalPreviousFundingTxSig].map(_.sig))
   val previousFundingTxPartialSig_opt: Option[PartialSignatureWithNonce] = tlvStream.get[TxSignaturesTlv.PreviousFundingTxPartialSig].map(_.partialSigWithNonce)
 }
 
 object TxSignatures {
   def apply(channelId: ByteVector32, tx: Transaction, witnesses: Seq[ScriptWitness], previousFundingSig_opt: Option[ChannelSpendSignature]): TxSignatures = {
-    val tlvs: Set[TxSignaturesTlv] = Set(
-      previousFundingSig_opt.map {
-        case IndividualSignature(sig) => TxSignaturesTlv.PreviousFundingTxSig(sig)
-        case partialSig: PartialSignatureWithNonce => TxSignaturesTlv.PreviousFundingTxPartialSig(partialSig)
-      }
-    ).flatten
+    val tlvs: Set[TxSignaturesTlv] = previousFundingSig_opt match {
+      case Some(IndividualSignature(sig)) => Set(TxSignaturesTlv.PreviousFundingTxSig(sig), TxSignaturesTlv.ExperimentalPreviousFundingTxSig(sig))
+      case Some(partialSig: PartialSignatureWithNonce) => Set(TxSignaturesTlv.PreviousFundingTxPartialSig(partialSig))
+      case None => Set.empty
+    }
     TxSignatures(channelId, tx.txid, witnesses, TlvStream(tlvs))
   }
 }
@@ -409,6 +412,19 @@ object SpliceInit {
     apply(channelId, fundingContribution, lockTime, feerate, fundingPubKey, pushAmount, requireConfirmedInputs, requestFunding_opt, None)
 }
 
+case class ExperimentalSpliceInit(channelId: ByteVector32,
+                                  fundingContribution: Satoshi,
+                                  feerate: FeeratePerKw,
+                                  lockTime: Long,
+                                  fundingPubKey: PublicKey,
+                                  tlvStream: TlvStream[SpliceInitTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  def toSpliceInit(): SpliceInit = SpliceInit(channelId, fundingContribution, feerate, lockTime, fundingPubKey, tlvStream)
+}
+
+object ExperimentalSpliceInit {
+  def from(msg: SpliceInit): ExperimentalSpliceInit = ExperimentalSpliceInit(msg.channelId, msg.fundingContribution, msg.feerate, msg.lockTime, msg.fundingPubKey, msg.tlvStream)
+}
+
 case class SpliceAck(channelId: ByteVector32,
                      fundingContribution: Satoshi,
                      fundingPubKey: PublicKey,
@@ -435,9 +451,30 @@ object SpliceAck {
     apply(channelId, fundingContribution, fundingPubKey, pushAmount, requireConfirmedInputs, willFund_opt, feeCreditUsed_opt, None)
 }
 
+case class ExperimentalSpliceAck(channelId: ByteVector32,
+                                 fundingContribution: Satoshi,
+                                 fundingPubKey: PublicKey,
+                                 tlvStream: TlvStream[SpliceAckTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  def toSpliceAck(): SpliceAck = SpliceAck(channelId, fundingContribution, fundingPubKey, tlvStream)
+}
+
+object ExperimentalSpliceAck {
+  def from(msg: SpliceAck): ExperimentalSpliceAck = ExperimentalSpliceAck(msg.channelId, msg.fundingContribution, msg.fundingPubKey, msg.tlvStream)
+}
+
 case class SpliceLocked(channelId: ByteVector32,
                         fundingTxId: TxId,
                         tlvStream: TlvStream[SpliceLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+}
+
+case class ExperimentalSpliceLocked(channelId: ByteVector32,
+                                    fundingTxId: TxId,
+                                    tlvStream: TlvStream[SpliceLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  def toSpliceLocked(): SpliceLocked = SpliceLocked(channelId, fundingTxId, tlvStream)
+}
+
+object ExperimentalSpliceLocked {
+  def from(msg: SpliceLocked): ExperimentalSpliceLocked = ExperimentalSpliceLocked(msg.channelId, msg.fundingTxId, msg.tlvStream)
 }
 
 case class Shutdown(channelId: ByteVector32,
@@ -474,6 +511,15 @@ case class ClosingSig(channelId: ByteVector32, closerScriptPubKey: ByteVector, c
   val closeeOutputOnlyPartialSig_opt: Option[ByteVector32] = tlvStream.get[ClosingSigTlv.CloseeOutputOnlyPartialSignature].map(_.partialSignature)
   val closerAndCloseeOutputsPartialSig_opt: Option[ByteVector32] = tlvStream.get[ClosingSigTlv.CloserAndCloseeOutputsPartialSignature].map(_.partialSignature)
   val nextCloseeNonce_opt: Option[IndividualNonce] = tlvStream.get[ClosingSigTlv.NextCloseeNonce].map(_.nonce)
+}
+
+/** This message is used to indicate that the next [[batchSize]] messages form a single logical message. */
+case class StartBatch(channelId: ByteVector32, batchSize: Int, tlvStream: TlvStream[StartBatchTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val messageType_opt: Option[Long] = tlvStream.get[StartBatchTlv.MessageType].map(_.tag)
+}
+
+object StartBatch {
+  def commitSigBatch(channelId: ByteVector32, batchSize: Int): StartBatch = StartBatch(channelId, batchSize, TlvStream(StartBatchTlv.MessageType(132)))
 }
 
 case class UpdateAddHtlc(channelId: ByteVector32,
@@ -545,19 +591,21 @@ case class CommitSig(channelId: ByteVector32,
                      signature: IndividualSignature,
                      htlcSignatures: List[ByteVector64],
                      tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends CommitSigs {
+  val fundingTxId_opt: Option[TxId] = tlvStream.get[CommitSigTlv.FundingTx].map(_.txId)
   val partialSignature_opt: Option[PartialSignatureWithNonce] = tlvStream.get[CommitSigTlv.PartialSignatureWithNonceTlv].map(_.partialSigWithNonce)
   val sigOrPartialSig: ChannelSpendSignature = partialSignature_opt.getOrElse(signature)
 }
 
 object CommitSig {
-  def apply(channelId: ByteVector32, signature: ChannelSpendSignature, htlcSignatures: List[ByteVector64], batchSize: Int): CommitSig = {
+  def apply(channelId: ByteVector32, fundingTxId: TxId, signature: ChannelSpendSignature, htlcSignatures: List[ByteVector64], batchSize: Int): CommitSig = {
     val (individualSig, partialSig_opt) = signature match {
       case sig: IndividualSignature => (sig, None)
       case psig: PartialSignatureWithNonce => (IndividualSignature(ByteVector64.Zeroes), Some(psig))
     }
     val tlvs = Set(
-      if (batchSize > 1) Some(CommitSigTlv.BatchTlv(batchSize)) else None,
-      partialSig_opt.map(CommitSigTlv.PartialSignatureWithNonceTlv(_))
+      Some(CommitSigTlv.FundingTx(fundingTxId)),
+      partialSig_opt.map(CommitSigTlv.PartialSignatureWithNonceTlv(_)),
+      if (batchSize > 1) Some(CommitSigTlv.ExperimentalBatchTlv(batchSize)) else None,
     ).flatten[CommitSigTlv]
     CommitSig(channelId, individualSig, htlcSignatures, TlvStream(tlvs))
   }
