@@ -1522,16 +1522,18 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! CMD_SIGN()
     val sigsA = alice2bob.expectMsgType[CommitSigBatch]
     assert(sigsA.batchSize == 2)
+    assert(sigsA.messages.flatMap(_.fundingTxId_opt).toSet == alice.commitments.active.map(_.fundingTxId).toSet)
     alice2bob.forward(bob, sigsA)
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     val sigsB = bob2alice.expectMsgType[CommitSigBatch]
     assert(sigsB.batchSize == 2)
+    assert(sigsB.messages.flatMap(_.fundingTxId_opt).toSet == alice.commitments.active.map(_.fundingTxId).toSet)
     bob2alice.forward(alice, sigsB)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.forall(_.localCommit.spec.htlcs.size == 1))
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.forall(_.localCommit.spec.htlcs.size == 1))
+    awaitCond(alice.commitments.active.forall(_.localCommit.spec.htlcs.size == 1))
+    awaitCond(bob.commitments.active.forall(_.localCommit.spec.htlcs.size == 1))
   }
 
   test("recv CMD_ADD_HTLC with multiple commitments and reconnect") { f =>
@@ -1551,11 +1553,13 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.forward(bob)
     val sigsA = alice2bob.expectMsgType[CommitSigBatch]
     assert(sigsA.batchSize == 2)
+    assert(sigsA.messages.flatMap(_.fundingTxId_opt).toSet == alice.commitments.active.map(_.fundingTxId).toSet)
     alice2bob.forward(bob, sigsA)
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     val sigsB = bob2alice.expectMsgType[CommitSigBatch]
     assert(sigsB.batchSize == 2)
+    assert(sigsB.messages.flatMap(_.fundingTxId_opt).toSet == alice.commitments.active.map(_.fundingTxId).toSet)
     bob2alice.forward(alice, sigsB)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
@@ -1682,7 +1686,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.forward(bob, commitSigsAlice)
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
-    bob2alice.expectMsgType[CommitSig]
+    assert(bob2alice.expectMsgType[CommitSig].fundingTxId_opt.contains(spliceTx2.txid))
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
@@ -1786,10 +1790,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val bobCommitIndex = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex
 
     val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
-    alice2bob.expectMsgType[CommitSig] // Bob doesn't receive Alice's commit_sig
-    bob2alice.expectMsgType[CommitSig] // Alice doesn't receive Bob's commit_sig
+    val commitSigA = alice2bob.expectMsgType[CommitSig] // Bob doesn't receive Alice's commit_sig
+    val commitSigB = bob2alice.expectMsgType[CommitSig] // Alice doesn't receive Bob's commit_sig
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceWaitingForSigs])
     val spliceStatus = alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.asInstanceOf[SpliceStatus.SpliceWaitingForSigs]
+    assert(commitSigA.fundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
+    assert(commitSigB.fundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
 
     disconnect(f)
 
@@ -1802,7 +1808,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.forward(bob, channelReestablishAlice1)
     bob2alice.forward(alice, channelReestablishBob1.copy(nextLocalCommitmentNumber = bobCommitIndex + 1))
     // In that case Alice won't retransmit commit_sig and the splice won't complete since they haven't exchanged tx_signatures.
-    bob2alice.expectMsgType[CommitSig]
+    assert(bob2alice.expectMsgType[CommitSig].fundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
     bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceWaitingForSigs])
@@ -1823,7 +1829,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(channelReestablishBob2.nextLocalCommitmentNumber == bobCommitIndex)
 
     // Alice retransmits commit_sig and both retransmit tx_signatures.
-    alice2bob.expectMsgType[CommitSig]
+    assert(alice2bob.expectMsgType[CommitSig].fundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
     alice2bob.forward(bob)
     bob2alice.expectMsgType[TxSignatures]
     bob2alice.forward(alice)
@@ -1832,6 +1838,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     sender.expectMsgType[RES_SPLICE]
 
     val spliceTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+    assert(spliceTx.txid == spliceStatus.signingSession.fundingTx.txId)
     alice2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
     bob2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
     alice ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
@@ -2476,7 +2483,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
-  test("disconnect before channel update and tx_signatures are received") { f=>
+  test("disconnect before channel update and tx_signatures are received") { f =>
     import f._
     // Disconnection with both sides sending tx_signatures and channel updates
     // alice                    bob
@@ -2515,11 +2522,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectMsgType[TxSignatures] // Bob doesn't receive Alice's tx_signatures
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
+    val fundingTxIds = alice.commitments.active.map(_.fundingTxId).toSet
+    assert(fundingTxIds.size == 2)
     val (_, cmd) = makeCmdAdd(25_000_000 msat, bob.nodeParams.nodeId, bob.nodeParams.currentBlockHeight)
     alice ! cmd.copy(commit = true)
     alice2bob.expectMsgType[UpdateAddHtlc] // Bob doesn't receive Alice's update_add_htlc
     inside(alice2bob.expectMsgType[CommitSigBatch]) { batch => // Bob doesn't receive Alice's commit_sigs
       assert(batch.batchSize == 2)
+      assert(batch.messages.flatMap(_.fundingTxId_opt).toSet == fundingTxIds)
     }
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
@@ -2535,12 +2545,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.forward(bob)
     inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>
       assert(batch.batchSize == 2)
+      assert(batch.messages.flatMap(_.fundingTxId_opt).toSet == fundingTxIds)
       alice2bob.forward(bob)
     }
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     inside(bob2alice.expectMsgType[CommitSigBatch]) { batch =>
       assert(batch.batchSize == 2)
+      assert(batch.messages.flatMap(_.fundingTxId_opt).toSet == fundingTxIds)
       bob2alice.forward(alice)
     }
     alice2bob.expectMsgType[RevokeAndAck]
@@ -2593,12 +2605,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val sender = TestProbe()
     alice ! CMD_SIGN(Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
-    alice2bob.expectMsgType[CommitSig]
+    assert(alice2bob.expectMsgType[CommitSig].fundingTxId_opt.contains(fundingTx.txid))
     alice2bob.forward(bob)
     bob2alice.forward(alice, bobSpliceLocked)
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
-    bob2alice.expectMsgType[CommitSig]
+    assert(bob2alice.expectMsgType[CommitSig].fundingTxId_opt.contains(fundingTx.txid))
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
@@ -2654,7 +2666,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
     addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN(None)
-    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>  // Bob doesn't receive Alice's commit_sig
+    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch => // Bob doesn't receive Alice's commit_sig
       assert(batch.batchSize == 2)
     }
     alice2bob.expectNoMessage(100 millis)
@@ -2687,7 +2699,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectNoMessage(100 millis)
   }
 
-  test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update; revoke_and_ack not received") { f =>
+  test("disconnection after exchanging tx_signatures and both sides send commit_sig for channel update; revoke_and_ack not received") { f =>
     import f._
     // alice                    bob
     //   |         ...           |
@@ -2735,7 +2747,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishAlice.nextRemoteRevocationNumber == 0)
-    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishBob.nextRemoteRevocationNumber == 0)
 
     // Bob must retransmit his commit_sigs first.
@@ -2752,7 +2764,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectNoMessage(100 millis)
   }
 
-  test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update") { f =>
+  test("disconnection after exchanging tx_signatures and both sides send commit_sig for channel update") { f =>
     import f._
     // alice                    bob
     //   |         ...           |
@@ -2802,12 +2814,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishAlice.nextRemoteRevocationNumber == 1)
-    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishBob.nextRemoteRevocationNumber == 0)
 
     // Bob must retransmit his commit_sigs first.
     alice2bob.expectNoMessage(100 millis)
-    inside(bob2alice.expectMsgType[CommitSigBatch] ) { batch =>
+    inside(bob2alice.expectMsgType[CommitSigBatch]) { batch =>
       assert(batch.batchSize == 2)
       bob2alice.forward(alice)
     }

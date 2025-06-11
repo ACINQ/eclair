@@ -93,11 +93,16 @@ case class TxAddInput(channelId: ByteVector32,
                       sequence: Long,
                       tlvStream: TlvStream[TxAddInputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId {
   val sharedInput_opt: Option[OutPoint] = tlvStream.get[TxAddInputTlv.SharedInputTxId].map(i => OutPoint(i.txId, previousTxOutput))
+    .orElse(tlvStream.get[TxAddInputTlv.ExperimentalSharedInputTxId].map(i => OutPoint(i.txId, previousTxOutput)))
 }
 
 object TxAddInput {
   def apply(channelId: ByteVector32, serialId: UInt64, sharedInput: OutPoint, sequence: Long): TxAddInput = {
-    TxAddInput(channelId, serialId, None, sharedInput.index, sequence, TlvStream(TxAddInputTlv.SharedInputTxId(sharedInput.txid)))
+    val tlvs = Set[TxAddInputTlv](
+      TxAddInputTlv.SharedInputTxId(sharedInput.txid),
+      TxAddInputTlv.ExperimentalSharedInputTxId(sharedInput.txid),
+    )
+    TxAddInput(channelId, serialId, None, sharedInput.index, sequence, TlvStream(tlvs))
   }
 }
 
@@ -123,11 +128,16 @@ case class TxSignatures(channelId: ByteVector32,
                         witnesses: Seq[ScriptWitness],
                         tlvStream: TlvStream[TxSignaturesTlv] = TlvStream.empty) extends InteractiveTxMessage with HasChannelId {
   val previousFundingTxSig_opt: Option[ByteVector64] = tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].map(_.sig)
+    .orElse(tlvStream.get[TxSignaturesTlv.ExperimentalPreviousFundingTxSig].map(_.sig))
 }
 
 object TxSignatures {
   def apply(channelId: ByteVector32, tx: Transaction, witnesses: Seq[ScriptWitness], previousFundingSig_opt: Option[ByteVector64]): TxSignatures = {
-    TxSignatures(channelId, tx.txid, witnesses, TlvStream(previousFundingSig_opt.map(TxSignaturesTlv.PreviousFundingTxSig).toSet[TxSignaturesTlv]))
+    val tlvs = Set(
+      previousFundingSig_opt.map(TxSignaturesTlv.PreviousFundingTxSig),
+      previousFundingSig_opt.map(TxSignaturesTlv.ExperimentalPreviousFundingTxSig),
+    ).flatten[TxSignaturesTlv]
+    TxSignatures(channelId, tx.txid, witnesses, TlvStream(tlvs))
   }
 }
 
@@ -327,6 +337,19 @@ object SpliceInit {
   }
 }
 
+case class ExperimentalSpliceInit(channelId: ByteVector32,
+                                  fundingContribution: Satoshi,
+                                  feerate: FeeratePerKw,
+                                  lockTime: Long,
+                                  fundingPubKey: PublicKey,
+                                  tlvStream: TlvStream[SpliceInitTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  def toSpliceInit(): SpliceInit = SpliceInit(channelId, fundingContribution, feerate, lockTime, fundingPubKey, tlvStream)
+}
+
+object ExperimentalSpliceInit {
+  def from(msg: SpliceInit): ExperimentalSpliceInit = ExperimentalSpliceInit(msg.channelId, msg.fundingContribution, msg.feerate, msg.lockTime, msg.fundingPubKey, msg.tlvStream)
+}
+
 case class SpliceAck(channelId: ByteVector32,
                      fundingContribution: Satoshi,
                      fundingPubKey: PublicKey,
@@ -348,9 +371,30 @@ object SpliceAck {
   }
 }
 
+case class ExperimentalSpliceAck(channelId: ByteVector32,
+                                 fundingContribution: Satoshi,
+                                 fundingPubKey: PublicKey,
+                                 tlvStream: TlvStream[SpliceAckTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  def toSpliceAck(): SpliceAck = SpliceAck(channelId, fundingContribution, fundingPubKey, tlvStream)
+}
+
+object ExperimentalSpliceAck {
+  def from(msg: SpliceAck): ExperimentalSpliceAck = ExperimentalSpliceAck(msg.channelId, msg.fundingContribution, msg.fundingPubKey, msg.tlvStream)
+}
+
 case class SpliceLocked(channelId: ByteVector32,
                         fundingTxId: TxId,
                         tlvStream: TlvStream[SpliceLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+}
+
+case class ExperimentalSpliceLocked(channelId: ByteVector32,
+                                    fundingTxId: TxId,
+                                    tlvStream: TlvStream[SpliceLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  def toSpliceLocked(): SpliceLocked = SpliceLocked(channelId, fundingTxId, tlvStream)
+}
+
+object ExperimentalSpliceLocked {
+  def from(msg: SpliceLocked): ExperimentalSpliceLocked = ExperimentalSpliceLocked(msg.channelId, msg.fundingTxId, msg.tlvStream)
 }
 
 case class Shutdown(channelId: ByteVector32,
@@ -374,6 +418,15 @@ case class ClosingSig(channelId: ByteVector32, closerScriptPubKey: ByteVector, c
   val closerOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserOutputOnly].map(_.sig)
   val closeeOutputOnlySig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloseeOutputOnly].map(_.sig)
   val closerAndCloseeOutputsSig_opt: Option[ByteVector64] = tlvStream.get[ClosingTlv.CloserAndCloseeOutputs].map(_.sig)
+}
+
+/** This message is used to indicate that the next [[batchSize]] messages form a single logical message. */
+case class StartBatch(channelId: ByteVector32, batchSize: Int, tlvStream: TlvStream[StartBatchTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val messageType_opt: Option[Long] = tlvStream.get[StartBatchTlv.MessageType].map(_.tag)
+}
+
+object StartBatch {
+  def commitSigBatch(channelId: ByteVector32, batchSize: Int): StartBatch = StartBatch(channelId, batchSize, TlvStream(StartBatchTlv.MessageType(132)))
 }
 
 case class UpdateAddHtlc(channelId: ByteVector32,
@@ -442,7 +495,9 @@ object CommitSigs {
 case class CommitSig(channelId: ByteVector32,
                      signature: ByteVector64,
                      htlcSignatures: List[ByteVector64],
-                     tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends CommitSigs
+                     tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends CommitSigs {
+  val fundingTxId_opt: Option[TxId] = tlvStream.get[CommitSigTlv.FundingTx].map(_.txId)
+}
 
 case class CommitSigBatch(messages: Seq[CommitSig]) extends CommitSigs {
   require(messages.map(_.channelId).toSet.size == 1, "commit_sig messages in a batch must be for the same channel")
