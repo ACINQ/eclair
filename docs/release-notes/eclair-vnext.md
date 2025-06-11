@@ -13,15 +13,17 @@ When using anchor outputs, allows propagating our local commitment transaction t
 
 This removes the need for increasing the commitment feerate based on mempool conditions, which ensures that channels won't be force-closed anymore when nodes disagree on the current feerate.
 
-### Attributable failures
+### Attribution data
 
-Eclair now supports attributable failures which allow nodes to prove they are not the source of the failure and provide timing data.
+Eclair now supports attributable failures which allow nodes to prove they are not the source of the failure.
 Previously a failing node could choose not to report the failure and we would penalize all nodes of the route.
 If all nodes of the route support attributable failures, we only need to penalize two nodes (there is still some uncertainty as to which of the two nodes is the failing one).
 See https://github.com/lightning/bolts/pull/1044 for more details.
 
+Attribution data also provides hold times from payment relayers, both for fulfilled and failed HTLCs.
+
 Support is disabled by default as the spec is not yet final.
-It can be enabled by setting `eclair.features.option_attributable_failure = optional` at the risk of being incompatible with the final spec.
+It can be enabled by setting `eclair.features.option_attribution_data = optional` at the risk of being incompatible with the final spec.
 
 ### API changes
 

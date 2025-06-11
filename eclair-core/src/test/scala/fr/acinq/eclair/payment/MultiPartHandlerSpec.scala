@@ -602,8 +602,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     f.register.expectMsgAllOf(
       Register.Forward(null, add2.channelId, CMD_FAIL_HTLC(add2.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)), Some(receivedAt2), commit = true)),
-      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, commit = true)),
-      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(add3.id, preimage, commit = true))
+      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, None, Some(receivedAt1), commit = true)),
+      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(add3.id, preimage, None, Some(receivedAt3), commit = true))
     )
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
@@ -617,8 +617,9 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     })
 
     // Extraneous HTLCs should be fulfilled.
-    f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(invoice.paymentHash, HtlcPart(1000 msat, UpdateAddHtlc(ByteVector32.One, 44, 200 msat, invoice.paymentHash, add1.cltvExpiry, add1.onionRoutingPacket, None, 1.0, None), TimestampMilli.now()), None))
-    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FULFILL_HTLC(44, preimage, commit = true)))
+    val receivedAt4 = receivedAt1 + 3.millis
+    f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(invoice.paymentHash, HtlcPart(1000 msat, UpdateAddHtlc(ByteVector32.One, 44, 200 msat, invoice.paymentHash, add1.cltvExpiry, add1.onionRoutingPacket, None, 1.0, None), receivedAt4), None))
+    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FULFILL_HTLC(44, preimage, None, Some(receivedAt4), commit = true)))
     assert(f.eventListener.expectMsgType[PaymentReceived].amount == 200.msat)
     val received2 = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(received2.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount == 1200.msat)
@@ -636,13 +637,15 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val invoice = f.sender.expectMsgType[Bolt11Invoice]
 
     val add1 = UpdateAddHtlc(randomBytes32(), 0, 1100 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None, 1.0, None)
-    f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add1, FinalPayload.Standard.createPayload(add1.amountMsat, 1500 msat, add1.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata), TimestampMilli.now()))
+    val receivedAt1 = TimestampMilli.now()
+    f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add1, FinalPayload.Standard.createPayload(add1.amountMsat, 1500 msat, add1.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata), receivedAt1))
     val add2 = UpdateAddHtlc(randomBytes32(), 1, 500 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None, 1.0, None)
-    f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add2, FinalPayload.Standard.createPayload(add2.amountMsat, 1500 msat, add2.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata), TimestampMilli.now()))
+    val receivedAt2 = TimestampMilli.now() + 5.millis
+    f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add2, FinalPayload.Standard.createPayload(add2.amountMsat, 1500 msat, add2.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata), receivedAt2))
 
     f.register.expectMsgAllOf(
-      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, commit = true)),
-      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(add2.id, preimage, commit = true))
+      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, None, Some(receivedAt1), commit = true)),
+      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(add2.id, preimage, None, Some(receivedAt2), commit = true))
     )
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
@@ -672,14 +675,16 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     })
 
     val add2 = UpdateAddHtlc(ByteVector32.One, 2, 300 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None, 1.0, None)
-    f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add2, FinalPayload.Standard.createPayload(add2.amountMsat, 1000 msat, add2.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata), TimestampMilli.now()))
+    val receivedAt2 = TimestampMilli.now() + 10.millis
+    f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add2, FinalPayload.Standard.createPayload(add2.amountMsat, 1000 msat, add2.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata), receivedAt2))
     val add3 = UpdateAddHtlc(ByteVector32.Zeroes, 5, 700 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None, 1.0, None)
-    f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add3, FinalPayload.Standard.createPayload(add3.amountMsat, 1000 msat, add3.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata), TimestampMilli.now()))
+    val receivedAt3 = TimestampMilli.now() + 50.millis
+    f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add3, FinalPayload.Standard.createPayload(add3.amountMsat, 1000 msat, add3.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata), receivedAt3))
 
     // the fulfill are not necessarily in the same order as the commands
     f.register.expectMsgAllOf(
-      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(2, preimage, commit = true)),
-      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(5, preimage, commit = true))
+      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(2, preimage, None, Some(receivedAt2), commit = true)),
+      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(5, preimage, None, Some(receivedAt3), commit = true))
     )
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]

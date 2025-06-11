@@ -83,9 +83,9 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     crossSign(bob, alice, bob2alice, alice2bob)
 
     // Alice and Bob both know the preimage for only one of the two HTLCs they received.
-    alice ! CMD_FULFILL_HTLC(htlcb2.id, rb2, replyTo_opt = Some(probe.ref))
+    alice ! CMD_FULFILL_HTLC(htlcb2.id, rb2, None, None, replyTo_opt = Some(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
-    bob ! CMD_FULFILL_HTLC(htlca2.id, ra2, replyTo_opt = Some(probe.ref))
+    bob ! CMD_FULFILL_HTLC(htlca2.id, ra2, None, None, replyTo_opt = Some(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
 
     // Alice publishes her commitment.

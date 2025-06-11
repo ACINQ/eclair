@@ -124,8 +124,8 @@ object OnTheFlyFunding {
     /** Create commands to fulfill all upstream HTLCs. */
     def createFulfillCommands(preimage: ByteVector32): Seq[(ByteVector32, CMD_FULFILL_HTLC)] = upstream match {
       case _: Upstream.Local => Nil
-      case u: Upstream.Hot.Channel => Seq(u.add.channelId -> CMD_FULFILL_HTLC(u.add.id, preimage, commit = true))
-      case u: Upstream.Hot.Trampoline => u.received.map(_.add).map(add => add.channelId -> CMD_FULFILL_HTLC(add.id, preimage, commit = true))
+      case u: Upstream.Hot.Channel => Seq(u.add.channelId -> CMD_FULFILL_HTLC(u.add.id, preimage, None, Some(u.receivedAt), commit = true))
+      case u: Upstream.Hot.Trampoline => u.received.map(_.add).map(add => add.channelId -> CMD_FULFILL_HTLC(add.id, preimage, None, Some(u.receivedAt), commit = true))
     }
   }
 

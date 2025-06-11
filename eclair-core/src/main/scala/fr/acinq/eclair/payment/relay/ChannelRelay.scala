@@ -222,7 +222,11 @@ class ChannelRelay private(nodeParams: NodeParams,
       case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill)) =>
         context.log.info("relaying fulfill to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, confidence, upstream.receivedFrom, htlc.channelId)
         Metrics.relayFulfill(confidence)
-        val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, commit = true)
+        val downstreamAttribution_opt = fulfill match {
+          case HtlcResult.RemoteFulfill(fulfill) => fulfill.attribution_opt
+          case HtlcResult.OnChainFulfill(_) => None
+        }
+        val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, downstreamAttribution_opt, Some(upstream.receivedAt), commit = true)
         context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(upstream.amountIn, htlc.amountMsat, htlc.paymentHash, upstream.add.channelId, htlc.channelId, upstream.receivedAt, r.receivedAt))
         recordRelayDuration(isSuccess = true)
         safeSendAndStop(upstream.add.channelId, cmd)

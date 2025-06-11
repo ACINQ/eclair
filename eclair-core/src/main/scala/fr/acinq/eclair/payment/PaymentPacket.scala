@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractSharedSecret, Origin}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CMD_FULFILL_HTLC, CannotExtractSharedSecret, Origin}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.router.Router.Route
@@ -355,7 +355,7 @@ object OutgoingPaymentPacket {
         case FailureReason.LocalFailure(failure) => (Sphinx.FailurePacket.create(sharedSecret, failure), None)
       }
       val tlvs: TlvStream[UpdateFailHtlcTlv] = if (useAttributableFailures) {
-        TlvStream(UpdateFailHtlcTlv.AttributionData(Sphinx.FailurePacket.Attribution.create(attribution, packet, holdTime, sharedSecret)))
+        TlvStream(UpdateFailHtlcTlv.AttributionData(Sphinx.Attribution.create(attribution, Some(packet), holdTime, sharedSecret)))
       } else {
         TlvStream.empty
       }
@@ -391,4 +391,18 @@ object OutgoingPaymentPacket {
     }
   }
 
+  def buildHtlcFulfill(nodeSecret: PrivateKey, useAttributionData: Boolean, cmd: CMD_FULFILL_HTLC, add: UpdateAddHtlc, now: TimestampMilli = TimestampMilli.now()): UpdateFulfillHtlc = {
+    // If we are part of a blinded route, we must not populate attribution data.
+    val tlvs: TlvStream[UpdateFulfillHtlcTlv] = if (useAttributionData && add.pathKey_opt.isEmpty) {
+      extractSharedSecret(nodeSecret, add) match {
+        case Left(_) => TlvStream.empty
+        case Right(sharedSecret) =>
+          val holdTime = cmd.htlcReceivedAt_opt.map(now - _).getOrElse(0 millisecond)
+          TlvStream(UpdateFulfillHtlcTlv.AttributionData(Sphinx.Attribution.create(cmd.downstreamAttribution_opt, None, holdTime, sharedSecret)))
+      }
+    } else {
+      TlvStream.empty
+    }
+    UpdateFulfillHtlc(add.channelId, cmd.id, cmd.r, tlvs)
+  }
 }

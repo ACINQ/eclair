@@ -414,7 +414,9 @@ object UpdateAddHtlc {
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,
                              paymentPreimage: ByteVector32,
-                             tlvStream: TlvStream[UpdateFulfillHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
+                             tlvStream: TlvStream[UpdateFulfillHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage {
+  val attribution_opt: Option[ByteVector] = tlvStream.get[UpdateFulfillHtlcTlv.AttributionData].map(_.data)
+}
 
 case class UpdateFailHtlc(channelId: ByteVector32,
                           id: Long,
