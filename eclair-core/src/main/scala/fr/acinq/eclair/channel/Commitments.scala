@@ -211,14 +211,14 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePer
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat =>
         val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey)
-        Right(CommitSig(channelParams.channelId, sig, htlcSigs.toList, batchSize))
+        Right(CommitSig(channelParams.channelId, commitInput.outPoint.txid, sig, htlcSigs.toList, batchSize))
       case _: SimpleTaprootChannelCommitmentFormat =>
         remoteNonce_opt match {
           case Some(remoteNonce) =>
             val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, remoteFundingPubKey, commitInput.outPoint.txid)
             remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
               case Left(_) => Left(InvalidCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
-              case Right(psig) => Right(CommitSig(channelParams.channelId, psig, htlcSigs.toList, batchSize))
+              case Right(psig) => Right(CommitSig(channelParams.channelId, commitInput.outPoint.txid, psig, htlcSigs.toList, batchSize))
             }
           case None => Left(MissingCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
         }
@@ -653,7 +653,7 @@ case class Commitment(fundingTxIndex: Long,
           case None => return Left(MissingCommitNonce(params.channelId, fundingTxId, remoteCommit.index + 1))
         }
     }
-    val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList, batchSize)
+    val commitSig = CommitSig(params.channelId, fundingTxId, sig, htlcSigs.toList, batchSize)
     val nextRemoteCommit = RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint)
     Right((copy(nextRemoteCommit_opt = Some(nextRemoteCommit)), commitSig))
   }
@@ -1093,9 +1093,11 @@ case class Commitments(channelParams: ChannelParams,
       case _: CommitSig if active.size > 1 => return Left(CommitSigCountMismatch(channelId, active.size, 1))
       case commitSig: CommitSig => Seq(commitSig)
     }
-    // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
     val commitKeys = LocalCommitmentKeys(channelParams, channelKeys, localCommitIndex + 1)
-    val active1 = active.zip(sigs).map { case (commitment, commit) =>
+    val active1 = active.zipWithIndex.map { case (commitment, idx) =>
+      // If the funding_txid isn't provided, we assume that signatures are sent in order (most recent first).
+      // This matches the behavior of peers who only support the experimental version of splicing.
+      val commit = sigs.find(_.fundingTxId_opt.contains(commitment.fundingTxId)).getOrElse(sigs(idx))
       commitment.receiveCommit(channelParams, channelKeys, commitKeys, changes, commit) match {
         case Left(f) => return Left(f)
         case Right(commitment1) => commitment1

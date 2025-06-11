@@ -952,7 +952,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(cmd: CMD_SPLICE, d: DATA_NORMAL) =>
-      if (!d.commitments.remoteChannelParams.initFeatures.hasFeature(Features.SplicePrototype)) {
+      if (!d.commitments.remoteChannelParams.initFeatures.hasFeature(Features.Splicing)) {
         log.warning("cannot initiate splice, peer doesn't support splicing")
         cmd.replyTo ! RES_FAILURE(cmd, CommandUnavailableInThisState(d.channelId, "splice", NORMAL))
         stay()
@@ -2470,7 +2470,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         }
         case _ => Set.empty
       }
-      val lastFundingLockedTlvs: Set[ChannelReestablishTlv] = if (d.commitments.remoteChannelParams.initFeatures.hasFeature(Features.SplicePrototype)) {
+      val remoteFeatures = d.commitments.remoteChannelParams.initFeatures
+      val lastFundingLockedTlvs: Set[ChannelReestablishTlv] = if (remoteFeatures.hasFeature(Features.Splicing) || remoteFeatures.unknown.contains(UnknownFeature(154)) || remoteFeatures.unknown.contains(UnknownFeature(155))) {
         d.commitments.lastLocalLocked_opt.map(c => ChannelReestablishTlv.MyCurrentFundingLockedTlv(c.fundingTxId)).toSet ++
           d.commitments.lastRemoteLocked_opt.map(c => ChannelReestablishTlv.YourLastFundingLockedTlv(c.fundingTxId)).toSet
       } else Set.empty
@@ -3393,7 +3394,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // We only send channel_ready for initial funding transactions.
       case Some(c) if c.fundingTxIndex != 0 => (None, None)
       case Some(c) =>
-        val remoteSpliceSupport = d.commitments.remoteChannelParams.initFeatures.hasFeature(Features.SplicePrototype)
+        val remoteFeatures = d.commitments.remoteChannelParams.initFeatures
+        val remoteSpliceSupport = remoteFeatures.hasFeature(Features.Splicing) || remoteFeatures.unknown.contains(UnknownFeature(154)) || remoteFeatures.unknown.contains(UnknownFeature(155))
         // If our peer has not received our channel_ready, we retransmit it.
         val notReceivedByRemote = remoteSpliceSupport && channelReestablish.yourLastFundingLocked_opt.isEmpty
         // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node
