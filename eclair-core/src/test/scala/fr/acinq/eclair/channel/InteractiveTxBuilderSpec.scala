@@ -2926,7 +2926,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     bob ! ReceiveMessage(alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxComplete])
     // Alice <-- commit_sig --- Bob
     val successA1 = alice2bob.expectMsgType[Succeeded]
-    val invalidCommitSig = CommitSig(params.channelId, PartialSignatureWithNonce(randomBytes32(), txCompleteBob.nonces_opt.get.commitNonce), Nil, batchSize = 1)
+    val invalidCommitSig = CommitSig(params.channelId, randomTxId(), PartialSignatureWithNonce(randomBytes32(), txCompleteBob.nonces_opt.get.commitNonce), Nil, batchSize = 1)
     val Left(error) = successA1.signingSession.receiveCommitSig(params.channelParamsA, params.channelKeysA, invalidCommitSig, params.nodeParamsA.currentBlockHeight)(akka.event.NoLogging)
     assert(error.isInstanceOf[InvalidCommitmentSignature])
   }
