@@ -890,9 +890,10 @@ object Helpers {
         val mainDelayedTx_opt = withTxGenerationLog("local-main-delayed") {
           ClaimLocalDelayedOutputTx.createSignedTx(commitmentKeys, commitTx, commitment.localParams.dustLimit, commitment.remoteParams.toSelfDelay, finalScriptPubKey, feerateDelayed, commitment.params.commitmentFormat)
         }
-        val htlcs = claimHtlcOutputs(commitmentKeys, commitment)
+        val (incomingHtlcs, htlcSuccessTxs) = claimIncomingHtlcOutputs(commitmentKeys, commitment)
+        val (outgoingHtlcs, htlcTimeoutTxs) = claimOutgoingHtlcOutputs(commitmentKeys, commitment)
         val anchorOutput_opt = ClaimAnchorOutputTx.findInput(commitTx, fundingKey.publicKey, commitmentKeys, commitment.params.commitmentFormat).toOption
-        val spendAnchor = htlcs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
+        val spendAnchor = incomingHtlcs.nonEmpty || outgoingHtlcs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
         val anchorTx_opt = if (spendAnchor) {
           claimAnchor(fundingKey, commitmentKeys, commitTx, commitment.params.commitmentFormat)
         } else {
@@ -902,11 +903,12 @@ object Helpers {
           commitTx = commitTx,
           localOutput_opt = mainDelayedTx_opt.map(_.input.outPoint),
           anchorOutput_opt = anchorOutput_opt.map(_.outPoint),
-          htlcs = htlcs.map { case (outpoint, (htlcId, _)) => (outpoint, htlcId) },
+          incomingHtlcs = incomingHtlcs,
+          outgoingHtlcs = outgoingHtlcs,
           htlcDelayedOutputs = Set.empty, // we will add these once the htlc txs are confirmed
           irrevocablySpent = Map.empty
         )
-        val txs = SecondStageTransactions(mainDelayedTx_opt, anchorTx_opt, htlcs.values.flatMap(_._2).toSeq)
+        val txs = SecondStageTransactions(mainDelayedTx_opt, anchorTx_opt, htlcSuccessTxs ++ htlcTimeoutTxs)
         (lcp, txs)
       }
 
@@ -917,10 +919,10 @@ object Helpers {
       }
 
       /**
-       * Claim the outputs of a local commit tx corresponding to HTLCs. If we don't have the preimage for a received
-       * * HTLC, we still include an entry in the map because we may receive that preimage later.
+       * Claim the outputs of a local commit tx corresponding to incoming HTLCs. If we don't have the preimage for an
+       * incoming HTLC, we still include an entry in the map because we may receive that preimage later.
        */
-      private def claimHtlcOutputs(commitKeys: LocalCommitmentKeys, commitment: FullCommitment)(implicit log: LoggingAdapter): Map[OutPoint, (DirectedHtlcId, Option[HtlcTx])] = {
+      private def claimIncomingHtlcOutputs(commitKeys: LocalCommitmentKeys, commitment: FullCommitment)(implicit log: LoggingAdapter): (Map[OutPoint, Long], Seq[HtlcSuccessTx]) = {
         // We collect all the preimages available.
         val preimages = (commitment.changes.localChanges.all ++ commitment.changes.remoteChanges.all).collect {
           case u: UpdateFulfillHtlc => Crypto.sha256(u.paymentPreimage) -> u.paymentPreimage
@@ -933,7 +935,7 @@ object Helpers {
         // We collect incoming HTLCs that we haven't relayed: they may have been signed by our peer, but we haven't
         // received their revocation yet.
         val nonRelayedIncomingHtlcs: Set[Long] = commitment.changes.remoteChanges.all.collect { case add: UpdateAddHtlc => add.id }.toSet
-        commitment.localCommit.htlcTxsAndRemoteSigs.collect {
+        val incomingHtlcs = commitment.localCommit.htlcTxsAndRemoteSigs.collect {
           case HtlcTxAndRemoteSig(txInfo: HtlcSuccessTx, remoteSig) =>
             if (preimages.contains(txInfo.paymentHash)) {
               // We immediately spend incoming htlcs for which we have the preimage.
@@ -942,7 +944,7 @@ object Helpers {
                 val localSig = txInfo.sign(commitKeys, commitment.params.commitmentFormat, Map.empty)
                 Right(txInfo.addSigs(commitKeys, localSig, remoteSig, preimage, commitment.params.commitmentFormat))
               }
-              Some(txInfo.input.outPoint -> (IncomingHtlcId(txInfo.htlcId), htlcTx_opt))
+              Some(txInfo.input.outPoint, txInfo.htlcId, htlcTx_opt)
             } else if (failedIncomingHtlcs.contains(txInfo.htlcId)) {
               // We can ignore incoming htlcs that we started failing: our peer will claim them after the timeout.
               // We don't track those outputs because we want to move to the CLOSED state even if our peer never claims them.
@@ -954,8 +956,19 @@ object Helpers {
               // For all other incoming htlcs, we may receive the preimage later from downstream. We thus want to track
               // the corresponding outputs to ensure we don't move to the CLOSED state until they've been spent, either
               // by us if we receive the preimage, or by our peer after the timeout.
-              Some(txInfo.input.outPoint -> (IncomingHtlcId(txInfo.htlcId), None))
+              Some(txInfo.input.outPoint, txInfo.htlcId, None)
             }
+        }.flatten
+        val htlcOutputs = incomingHtlcs.collect { case (outpoint, htlcId, _) => outpoint -> htlcId }.toMap
+        val htlcTxs = incomingHtlcs.collect { case (_, _, htlcTx_opt) => htlcTx_opt }.flatten
+        (htlcOutputs, htlcTxs)
+      }
+
+      /**
+       * Claim the outputs of a local commit tx corresponding to outgoing HTLCs, after their timeout.
+       */
+      private def claimOutgoingHtlcOutputs(commitKeys: LocalCommitmentKeys, commitment: FullCommitment)(implicit log: LoggingAdapter): (Map[OutPoint, Long], Seq[HtlcTimeoutTx]) = {
+        val outgoingHtlcs = commitment.localCommit.htlcTxsAndRemoteSigs.collect {
           case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, remoteSig) =>
             // We track all outputs that belong to outgoing htlcs. Our peer may or may not have the preimage: if they
             // claim the output, we will learn the preimage from their transaction, otherwise we will get our funds
@@ -964,8 +977,11 @@ object Helpers {
               val localSig = txInfo.sign(commitKeys, commitment.params.commitmentFormat, Map.empty)
               Right(txInfo.addSigs(commitKeys, localSig, remoteSig, commitment.params.commitmentFormat))
             }
-            Some(txInfo.input.outPoint -> (OutgoingHtlcId(txInfo.htlcId), htlcTx_opt))
-        }.flatten.toMap
+            (txInfo.input.outPoint, txInfo.htlcId, htlcTx_opt)
+        }
+        val htlcOutputs = outgoingHtlcs.collect { case (outpoint, htlcId, _) => outpoint -> htlcId }.toMap
+        val htlcTxs = outgoingHtlcs.collect { case (_, _, htlcTx_opt) => htlcTx_opt }.flatten
+        (htlcOutputs, htlcTxs)
       }
 
       /** Claim the outputs of incoming HTLCs for the payment_hash matching the preimage provided. */
@@ -1000,7 +1016,7 @@ object Helpers {
         val outpoints = commitment.localCommit.htlcTxsAndRemoteSigs.collect {
           case HtlcTxAndRemoteSig(txInfo: HtlcSuccessTx, _) if txInfo.htlcId == htlcId && !preimages.contains(txInfo.paymentHash) => txInfo.input.outPoint
         }.toSet
-        localCommitPublished.copy(htlcs = localCommitPublished.htlcs -- outpoints)
+        localCommitPublished.copy(incomingHtlcs = localCommitPublished.incomingHtlcs -- outpoints)
       }
 
       /**
@@ -1046,10 +1062,12 @@ object Helpers {
         require(remoteCommit.txid == commitTx.txid, "txid mismatch, provided tx is not the current remote commit tx")
         val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
         val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)
+        val outputs = makeRemoteCommitTxOutputs(channelKeys, commitKeys, commitment, remoteCommit)
         val mainTx_opt = claimMainOutput(commitment.params, commitKeys, commitTx, feerates, onChainFeeConf, finalScriptPubKey)
-        val htlcs = claimHtlcOutputs(channelKeys, commitKeys, commitment, remoteCommit, finalScriptPubKey)
+        val (incomingHtlcs, htlcSuccessTxs) = claimIncomingHtlcOutputs(commitKeys, commitTx, outputs, commitment, remoteCommit, finalScriptPubKey)
+        val (outgoingHtlcs, htlcTimeoutTxs) = claimOutgoingHtlcOutputs(commitKeys, commitTx, outputs, commitment, remoteCommit, finalScriptPubKey)
         val anchorOutput_opt = ClaimAnchorOutputTx.findInput(commitTx, fundingKey.publicKey, commitKeys, commitment.params.commitmentFormat).toOption
-        val spendAnchor = htlcs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
+        val spendAnchor = incomingHtlcs.nonEmpty || outgoingHtlcs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
         val anchorTx_opt = if (spendAnchor) {
           claimAnchor(fundingKey, commitKeys, commitTx, commitment.params.commitmentFormat)
         } else {
@@ -1059,10 +1077,11 @@ object Helpers {
           commitTx = commitTx,
           localOutput_opt = mainTx_opt.map(_.input.outPoint),
           anchorOutput_opt = anchorOutput_opt.map(_.outPoint),
-          htlcs = htlcs.map { case (outpoint, (htlcId, _)) => (outpoint, htlcId) },
+          incomingHtlcs = incomingHtlcs,
+          outgoingHtlcs = outgoingHtlcs,
           irrevocablySpent = Map.empty
         )
-        val txs = SecondStageTransactions(mainTx_opt, anchorTx_opt, htlcs.values.flatMap(_._2).toSeq)
+        val txs = SecondStageTransactions(mainTx_opt, anchorTx_opt, htlcSuccessTxs ++ htlcTimeoutTxs)
         (rcp, txs)
       }
 
@@ -1092,16 +1111,12 @@ object Helpers {
       }
 
       /**
-       * Claim the outputs of a remote commit tx corresponding to HTLCs. If we don't have the preimage for a received
-       * * HTLC, we still include an entry in the map because we may receive that preimage later.
+       * Claim the outputs of a remote commit tx corresponding to incoming HTLCs. If we don't have the preimage for an
+       * incoming HTLC, we still include an entry in the map because we may receive that preimage later.
        */
-      private def claimHtlcOutputs(channelKeys: ChannelKeys, commitKeys: RemoteCommitmentKeys, commitment: FullCommitment, remoteCommit: RemoteCommit, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Map[OutPoint, (DirectedHtlcId, Option[ClaimHtlcTx])] = {
-        val outputs = makeRemoteCommitTxOutputs(channelKeys, commitKeys, commitment, remoteCommit)
-        val remoteCommitTx = makeCommitTx(commitment.commitInput, remoteCommit.index, commitment.params.remoteParams.paymentBasepoint, commitKeys.ourPaymentBasePoint, !commitment.params.localParams.isChannelOpener, outputs)
-        require(remoteCommitTx.tx.txid == remoteCommit.txid, "txid mismatch, cannot recompute the current remote commit tx")
+      private def claimIncomingHtlcOutputs(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, outputs: Seq[CommitmentOutput], commitment: FullCommitment, remoteCommit: RemoteCommit, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (Map[OutPoint, Long], Seq[ClaimHtlcSuccessTx]) = {
         // The feerate will be set by the publisher actor based on the HTLC expiry, we don't care which feerate is used here.
         val feerate = FeeratePerKw(FeeratePerByte(1 sat))
-
         // We collect all the preimages available.
         val preimages = (commitment.changes.localChanges.all ++ commitment.changes.remoteChanges.all).collect {
           case u: UpdateFulfillHtlc => Crypto.sha256(u.paymentPreimage) -> u.paymentPreimage
@@ -1114,16 +1129,15 @@ object Helpers {
         // We collect incoming HTLCs that we haven't relayed: they may have been signed by our peer, but they haven't
         // sent their revocation yet.
         val nonRelayedIncomingHtlcs: Set[Long] = commitment.changes.remoteChanges.all.collect { case add: UpdateAddHtlc => add.id }.toSet
-
         // Remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa.
-        remoteCommit.spec.htlcs.collect {
+        val incomingHtlcs = remoteCommit.spec.htlcs.collect {
           case OutgoingHtlc(add: UpdateAddHtlc) =>
             if (preimages.contains(add.paymentHash)) {
               // We immediately spend incoming htlcs for which we have the preimage.
               val preimage = preimages(add.paymentHash)
               withTxGenerationLog("claim-htlc-success") {
-                ClaimHtlcSuccessTx.createSignedTx(commitKeys, remoteCommitTx.tx, commitment.localParams.dustLimit, outputs, finalScriptPubKey, add, preimage, feerate, commitment.params.commitmentFormat)
-              }.map(claimHtlcTx => claimHtlcTx.input.outPoint -> (OutgoingHtlcId(add.id), Some(claimHtlcTx)))
+                ClaimHtlcSuccessTx.createSignedTx(commitKeys, commitTx, commitment.localParams.dustLimit, outputs, finalScriptPubKey, add, preimage, feerate, commitment.params.commitmentFormat)
+              }.map(claimHtlcTx => (claimHtlcTx.input.outPoint, add.id, Some(claimHtlcTx)))
             } else if (failedIncomingHtlcs.contains(add.id)) {
               // We can ignore incoming htlcs that we started failing: our peer will claim them after the timeout.
               // We don't track those outputs because we want to move to the CLOSED state even if our peer never claims them.
@@ -1135,16 +1149,33 @@ object Helpers {
               // For all other incoming htlcs, we may receive the preimage later from downstream. We thus want to track
               // the corresponding outputs to ensure we don't move to the CLOSED state until they've been spent, either
               // by us if we receive the preimage, or by our peer after the timeout.
-              ClaimHtlcSuccessTx.findInput(remoteCommitTx.tx, outputs, add).map(input => input.outPoint -> (OutgoingHtlcId(add.id), None))
+              ClaimHtlcSuccessTx.findInput(commitTx, outputs, add).map(input => (input.outPoint, add.id, None))
             }
+        }.flatten.toSeq
+        val htlcOutputs = incomingHtlcs.collect { case (outpoint, htlcId, _) => outpoint -> htlcId }.toMap
+        val htlcTxs = incomingHtlcs.collect { case (_, _, htlcTx_opt) => htlcTx_opt }.flatten
+        (htlcOutputs, htlcTxs)
+      }
+
+      /**
+       * Claim the outputs of a remote commit tx corresponding to outgoing HTLCs, after their timeout.
+       */
+      private def claimOutgoingHtlcOutputs(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, outputs: Seq[CommitmentOutput], commitment: FullCommitment, remoteCommit: RemoteCommit, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (Map[OutPoint, Long], Seq[ClaimHtlcTimeoutTx]) = {
+        // The feerate will be set by the publisher actor based on the HTLC expiry, we don't care which feerate is used here.
+        val feerate = FeeratePerKw(FeeratePerByte(1 sat))
+        // Remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa.
+        val outgoingHtlcs = remoteCommit.spec.htlcs.collect {
           case IncomingHtlc(add: UpdateAddHtlc) =>
             // We track all outputs that belong to outgoing htlcs. Our peer may or may not have the preimage: if they
             // claim the output, we will learn the preimage from their transaction, otherwise we will get our funds
             // back after the timeout.
             withTxGenerationLog("claim-htlc-timeout") {
-              ClaimHtlcTimeoutTx.createSignedTx(commitKeys, remoteCommitTx.tx, commitment.localParams.dustLimit, outputs, finalScriptPubKey, add, feerate, commitment.params.commitmentFormat)
-            }.map(claimHtlcTx => claimHtlcTx.input.outPoint -> (IncomingHtlcId(add.id), Some(claimHtlcTx)))
-        }.flatten.toMap
+              ClaimHtlcTimeoutTx.createSignedTx(commitKeys, commitTx, commitment.localParams.dustLimit, outputs, finalScriptPubKey, add, feerate, commitment.params.commitmentFormat)
+            }.map(claimHtlcTx => (claimHtlcTx.input.outPoint, add.id, Some(claimHtlcTx)))
+        }.flatten.toSeq
+        val htlcOutputs = outgoingHtlcs.collect { case (outpoint, htlcId, _) => outpoint -> htlcId }.toMap
+        val htlcTxs = outgoingHtlcs.collect { case (_, _, htlcTx_opt) => htlcTx_opt }.flatten
+        (htlcOutputs, htlcTxs)
       }
 
       /** Claim the outputs of incoming HTLCs for the payment_hash matching the preimage provided. */
@@ -1180,10 +1211,10 @@ object Helpers {
         val htlcsWithPreimage = remoteCommit.spec.htlcs.collect {
           case OutgoingHtlc(add: UpdateAddHtlc) if preimages.contains(add.paymentHash) => add.id
         }
-        val outpoints = remoteCommitPublished.htlcs.collect {
-          case (outpoint, OutgoingHtlcId(id)) if id == htlcId && !htlcsWithPreimage.contains(id) => outpoint
+        val outpoints = remoteCommitPublished.incomingHtlcs.collect {
+          case (outpoint, id) if id == htlcId && !htlcsWithPreimage.contains(id) => outpoint
         }.toSet
-        remoteCommitPublished.copy(htlcs = remoteCommitPublished.htlcs -- outpoints)
+        remoteCommitPublished.copy(incomingHtlcs = remoteCommitPublished.incomingHtlcs -- outpoints)
       }
 
     }

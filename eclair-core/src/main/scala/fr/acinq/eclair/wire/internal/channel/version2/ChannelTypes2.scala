@@ -18,7 +18,6 @@ package fr.acinq.eclair.wire.internal.channel.version2
 
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction}
 import fr.acinq.eclair.channel
-import fr.acinq.eclair.channel.{IncomingHtlcId, OutgoingHtlcId}
 import fr.acinq.eclair.transactions.Transactions._
 
 private[channel] object ChannelTypes2 {
@@ -28,14 +27,16 @@ private[channel] object ChannelTypes2 {
       commitTx = commitTx,
       localOutput_opt = claimMainDelayedOutputTx.map(_.input.outPoint),
       anchorOutput_opt = claimAnchorTxs.headOption.map(_.input.outPoint),
-      htlcs = htlcTxs.map {
-        case (outpoint, Some(htlcTx: HtlcSuccessTx)) => outpoint -> IncomingHtlcId(htlcTx.htlcId)
-        case (outpoint, Some(htlcTx: HtlcTimeoutTx)) => outpoint -> OutgoingHtlcId(htlcTx.htlcId)
+      incomingHtlcs = htlcTxs.collect {
+        case (outpoint, Some(htlcTx: HtlcSuccessTx)) => outpoint -> htlcTx.htlcId
         // This case only happens for a received HTLC for which we don't yet have the preimage.
         // We cannot easily find the htlcId, so we just set it to a high value that won't match existing HTLCs.
         // This is fine because it is only used to unwatch HTLC outpoints that were failed downstream, which is just
         // an optimization to go to CLOSED more quickly.
-        case (outpoint, None) => outpoint -> IncomingHtlcId(0x00ffffffffffffffL)
+        case (outpoint, None) => outpoint -> 0x00ffffffffffffffL
+      },
+      outgoingHtlcs = htlcTxs.collect {
+        case (outpoint, Some(htlcTx: HtlcTimeoutTx)) => outpoint -> htlcTx.htlcId
       },
       htlcDelayedOutputs = claimHtlcDelayedTxs.map(_.input.outPoint).toSet,
       irrevocablySpent = irrevocablySpent
@@ -47,11 +48,13 @@ private[channel] object ChannelTypes2 {
       commitTx = commitTx,
       localOutput_opt = claimMainOutputTx.map(_.input.outPoint),
       anchorOutput_opt = claimAnchorTxs.headOption.map(_.input.outPoint),
-      htlcs = claimHtlcTxs.map {
-        case (outpoint, Some(htlcTx: ClaimHtlcSuccessTx)) => outpoint -> OutgoingHtlcId(htlcTx.htlcId)
-        case (outpoint, Some(htlcTx: ClaimHtlcTimeoutTx)) => outpoint -> IncomingHtlcId(htlcTx.htlcId)
+      incomingHtlcs = claimHtlcTxs.collect {
+        case (outpoint, Some(htlcTx: ClaimHtlcSuccessTx)) => outpoint -> htlcTx.htlcId
         // Similarly to LocalCommitPublished above, it is fine to ignore this case.
-        case (outpoint, None) => outpoint -> OutgoingHtlcId(0x00ffffffffffffffL)
+        case (outpoint, None) => outpoint -> 0x00ffffffffffffffL
+      },
+      outgoingHtlcs = claimHtlcTxs.collect {
+        case (outpoint, Some(htlcTx: ClaimHtlcTimeoutTx)) => outpoint -> htlcTx.htlcId
       },
       irrevocablySpent = irrevocablySpent
     )

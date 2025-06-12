@@ -573,8 +573,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val localCommitPublished = closingState.localCommitPublished.get
     // It may be strictly greater if we're waiting for preimages for some of our HTLC-success txs, or if we're ignoring
     // HTLCs that where failed downstream or not relayed.
-    assert(localCommitPublished.htlcs.values.collect { case i: IncomingHtlcId => i }.size >= htlcSuccessCount)
-    assert(localCommitPublished.htlcs.values.collect { case i: OutgoingHtlcId => i }.size == htlcTimeoutCount)
+    assert(localCommitPublished.incomingHtlcs.size >= htlcSuccessCount)
+    assert(localCommitPublished.outgoingHtlcs.size == htlcTimeoutCount)
 
     val publishedLocalCommitTx = s2blockchain.expectFinalTxPublished("commit-tx").tx
     assert(publishedLocalCommitTx.txid == commitTx.txid)
@@ -650,8 +650,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val remoteCommitPublished = remoteCommitPublished_opt.get
     // It may be strictly greater if we're waiting for preimages for some of our HTLC-success txs, or if we're ignoring
     // HTLCs that where failed downstream or not relayed. Note that since this is the remote commit, IN/OUT are inverted.
-    assert(remoteCommitPublished.htlcs.values.collect { case i: OutgoingHtlcId => i }.size >= htlcSuccessCount)
-    assert(remoteCommitPublished.htlcs.values.collect { case i: IncomingHtlcId => i }.size == htlcTimeoutCount)
+    assert(remoteCommitPublished.incomingHtlcs.size >= htlcSuccessCount)
+    assert(remoteCommitPublished.outgoingHtlcs.size == htlcTimeoutCount)
 
     // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
     val publishedAnchorTx_opt = closingData.commitments.params.commitmentFormat match {

@@ -41,14 +41,6 @@ private[channel] object ChannelTypes0 {
   //  - the `htlcId` in htlc txs is used to detect timed out htlcs and relay them upstream, but it can be safely set to
   //    0 because the `timedOutHtlcs` in `Helpers.scala` explicitly handle the case where this information is unavailable.
 
-  private def getPartialInputInfo(parentTx: Transaction, childTx: Transaction): InputInfo = {
-    // When using the default commitment format, spending txs have a single input. These txs are fully signed and never
-    // modified: we don't use the InputInfo in closing business logic, so we don't need to fill everything (this part
-    // assumes that we only have standard channels, no anchor output channels - which was the case before version2).
-    val input = childTx.txIn.head.outPoint
-    InputInfo(input, parentTx.txOut(input.index.toInt), ByteVector.empty)
-  }
-
   case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, TxId]) {
     def migrate(): channel.LocalCommitPublished = {
       val htlcTxs = htlcSuccessTxs ++ htlcTimeoutTxs
@@ -57,10 +49,10 @@ private[channel] object ChannelTypes0 {
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
       val localOutput_opt = claimMainDelayedOutputTx.map(_.txIn.head.outPoint)
-      val htlcSuccessOutputs = htlcSuccessTxs.map(tx => tx.txIn.head.outPoint -> IncomingHtlcId(0)).toMap
-      val htlcTimeoutOutputs = htlcTimeoutTxs.map(tx => tx.txIn.head.outPoint -> OutgoingHtlcId(0)).toMap
+      val incomingHtlcs = htlcSuccessTxs.map(tx => tx.txIn.head.outPoint -> 0L).toMap
+      val outgoingHtlcs = htlcTimeoutTxs.map(tx => tx.txIn.head.outPoint -> 0L).toMap
       val htlcDelayedOutputs = claimHtlcDelayedTxs.map(_.txIn.head.outPoint).toSet
-      channel.LocalCommitPublished(commitTx, localOutput_opt, anchorOutput_opt = None, htlcSuccessOutputs ++ htlcTimeoutOutputs, htlcDelayedOutputs, irrevocablySpentNew)
+      channel.LocalCommitPublished(commitTx, localOutput_opt, anchorOutput_opt = None, incomingHtlcs = incomingHtlcs, outgoingHtlcs = outgoingHtlcs, htlcDelayedOutputs, irrevocablySpentNew)
     }
   }
 
@@ -72,9 +64,9 @@ private[channel] object ChannelTypes0 {
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
       val localOutput_opt = claimMainOutputTx.map(_.txIn.head.outPoint)
-      val htlcSuccessOutputs = claimHtlcSuccessTxs.map(tx => tx.txIn.head.outPoint -> OutgoingHtlcId(0)).toMap
-      val htlcTimeoutOutputs = claimHtlcTimeoutTxs.map(tx => tx.txIn.head.outPoint -> IncomingHtlcId(0)).toMap
-      channel.RemoteCommitPublished(commitTx, localOutput_opt, anchorOutput_opt = None, htlcSuccessOutputs ++ htlcTimeoutOutputs, irrevocablySpentNew)
+      val incomingHtlcs = claimHtlcSuccessTxs.map(tx => tx.txIn.head.outPoint -> 0L).toMap
+      val outgoingHtlcs = claimHtlcTimeoutTxs.map(tx => tx.txIn.head.outPoint -> 0L).toMap
+      channel.RemoteCommitPublished(commitTx, localOutput_opt, anchorOutput_opt = None, incomingHtlcs = incomingHtlcs, outgoingHtlcs = outgoingHtlcs, irrevocablySpentNew)
     }
   }
 

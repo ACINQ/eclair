@@ -414,7 +414,8 @@ trait ErrorHandlers extends CommonHandlers {
             commitTx = tx,
             localOutput_opt = mainTx_opt.map(_.input.outPoint),
             anchorOutput_opt = None,
-            htlcs = Map.empty,
+            incomingHtlcs = Map.empty,
+            outgoingHtlcs = Map.empty,
             irrevocablySpent = Map.empty)
           val closingTxs = Closing.RemoteClose.SecondStageTransactions(mainTx_opt, anchorTx_opt = None, htlcTxs = Nil)
           val nextData = DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))

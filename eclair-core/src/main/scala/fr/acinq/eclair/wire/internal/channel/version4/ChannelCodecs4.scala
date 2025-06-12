@@ -610,10 +610,6 @@ private[channel] object ChannelCodecs4 {
       ("unsignedTx" | closingTxCodec) ::
         ("localClosingSigned" | lengthDelimited(closingSignedCodec))).as[ClosingTxProposed]
 
-    private val directedHtlcIdCodec: Codec[DirectedHtlcId] = discriminated[DirectedHtlcId].by(uint8)
-      .typecase(0x01, uint64overflow.as[IncomingHtlcId])
-      .typecase(0x02, uint64overflow.as[OutgoingHtlcId])
-
     private val localCommitPublishedCodec_07: Codec[LocalCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainDelayedOutputTx" | optional(bool8, claimLocalDelayedOutputTxNoToSelfDelayCodec)) ::
@@ -634,7 +630,8 @@ private[channel] object ChannelCodecs4 {
       ("commitTx" | txCodec) ::
         ("localOutput_opt" | optional(bool8, outPointCodec)) ::
         ("anchorOutput_opt" | optional(bool8, outPointCodec)) ::
-        ("htlcOutputs" | mapCodec(outPointCodec, directedHtlcIdCodec)) ::
+        ("incomingHtlcs" | mapCodec(outPointCodec, uint64overflow)) ::
+        ("outgoingHtlcs" | mapCodec(outPointCodec, uint64overflow)) ::
         ("htlcDelayedOutputs" | setCodec(outPointCodec)) ::
         ("irrevocablySpent" | spentMapCodec)).as[LocalCommitPublished]
 
@@ -649,7 +646,8 @@ private[channel] object ChannelCodecs4 {
       ("commitTx" | txCodec) ::
         ("localOutput_opt" | optional(bool8, outPointCodec)) ::
         ("anchorOutput_opt" | optional(bool8, outPointCodec)) ::
-        ("htlcOutputs" | mapCodec(outPointCodec, directedHtlcIdCodec)) ::
+        ("incomingHtlcs" | mapCodec(outPointCodec, uint64overflow)) ::
+        ("outgoingHtlcs" | mapCodec(outPointCodec, uint64overflow)) ::
         ("irrevocablySpent" | spentMapCodec)).as[RemoteCommitPublished]
 
     private val revokedCommitPublishedCodec_07: Codec[RevokedCommitPublished] = (

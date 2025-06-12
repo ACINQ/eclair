@@ -10,7 +10,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.using
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx, HtlcSuccessTx}
+import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
@@ -203,9 +203,8 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Bob claims the remaining incoming HTLC using his HTLC-timeout transaction: we remove it from our balance.
     val (remoteCommitPublished, remoteClosingTxs) = remoteClose(localCommitPublished.commitTx, bob, bob2blockchain, htlcTimeoutCount = 3)
-    val bobHtlcTimeoutTx = remoteCommitPublished.htlcs
-      // Note that this is Alice's commit tx, so incoming and outgoing are inverted.
-      .collectFirst { case (outpoint, IncomingHtlcId(htlcId)) if htlcId == htlcb1.id => outpoint }
+    val bobHtlcTimeoutTx = remoteCommitPublished.outgoingHtlcs
+      .collectFirst { case (outpoint, htlcId) if htlcId == htlcb1.id => outpoint }
       .flatMap(outpoint => remoteClosingTxs.htlcTimeoutTxs.find(_.txIn.head.outPoint == outpoint))
       .get
     alice ! WatchTxConfirmedTriggered(BlockHeight(760_010), 0, bobHtlcTimeoutTx)

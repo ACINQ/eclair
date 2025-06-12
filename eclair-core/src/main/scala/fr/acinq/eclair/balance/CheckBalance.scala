@@ -23,7 +23,6 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.DirectedHtlc.incoming
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -73,26 +72,22 @@ object CheckBalance {
         case Some(outpoint) if !lcp.irrevocablySpent.contains(outpoint) => lcp.commitTx.txOut(outpoint.index.toInt).amount
         case _ => 0 sat
       }
-      val additionalHtlcs = lcp.htlcs.map {
-        case (outpoint, directedHtlcId) =>
-          val htlcAmount = lcp.commitTx.txOut(outpoint.index.toInt).amount
-          lcp.irrevocablySpent.get(outpoint) match {
-            case Some(spendingTx) =>
-              // If the HTLC was spent by us, there will be an entry in our 3rd-stage transactions.
-              // Otherwise it was spent by the remote and we don't have anything to add to our balance.
-              val delayedHtlcOutpoint = OutPoint(spendingTx.txid, 0)
-              val htlcSpentByUs = lcp.htlcDelayedOutputs.contains(delayedHtlcOutpoint)
-              // If our 3rd-stage transaction isn't confirmed yet, we should count it in our off-chain balance.
-              // Once confirmed, we should ignore it since it will appear in our on-chain balance.
-              val htlcDelayedPending = !lcp.irrevocablySpent.contains(delayedHtlcOutpoint)
-              if (htlcSpentByUs && htlcDelayedPending) htlcAmount else 0 sat
-            case None =>
-              // We assume that HTLCs will be fulfilled, so we only count incoming HTLCs in our off-chain balance.
-              directedHtlcId match {
-                case _: IncomingHtlcId => htlcAmount
-                case _: OutgoingHtlcId => 0 sat
-              }
-          }
+      val additionalHtlcs = lcp.htlcOutputs.map { outpoint =>
+        val htlcAmount = lcp.commitTx.txOut(outpoint.index.toInt).amount
+        lcp.irrevocablySpent.get(outpoint) match {
+          case Some(spendingTx) =>
+            // If the HTLC was spent by us, there will be an entry in our 3rd-stage transactions.
+            // Otherwise it was spent by the remote and we don't have anything to add to our balance.
+            val delayedHtlcOutpoint = OutPoint(spendingTx.txid, 0)
+            val htlcSpentByUs = lcp.htlcDelayedOutputs.contains(delayedHtlcOutpoint)
+            // If our 3rd-stage transaction isn't confirmed yet, we should count it in our off-chain balance.
+            // Once confirmed, we should ignore it since it will appear in our on-chain balance.
+            val htlcDelayedPending = !lcp.irrevocablySpent.contains(delayedHtlcOutpoint)
+            if (htlcSpentByUs && htlcDelayedPending) htlcAmount else 0 sat
+          case None =>
+            // We assume that HTLCs will be fulfilled, so we only count incoming HTLCs in our off-chain balance.
+            if (lcp.incomingHtlcs.contains(outpoint)) htlcAmount else 0 sat
+        }
       }.sum
       MainAndHtlcBalance(toLocal = toLocal + additionalToLocal, htlcs = htlcs + additionalHtlcs)
     }
@@ -108,8 +103,8 @@ object CheckBalance {
       // If HTLC transactions are confirmed, they will appear in our on-chain balance if we were the one to claim them.
       // We only need to include incoming HTLCs that haven't been claimed yet (since we assume that they will be fulfilled).
       // Note that it is their commitment, so incoming/outgoing are inverted.
-      val additionalHtlcs = rcp.htlcs.map {
-        case (outpoint, OutgoingHtlcId(_)) if !rcp.irrevocablySpent.contains(outpoint) => rcp.commitTx.txOut(outpoint.index.toInt).amount
+      val additionalHtlcs = rcp.incomingHtlcs.keys.map {
+        case outpoint if !rcp.irrevocablySpent.contains(outpoint) => rcp.commitTx.txOut(outpoint.index.toInt).amount
         case _ => 0 sat
       }.sum
       MainAndHtlcBalance(toLocal = toLocal + additionalToLocal, htlcs = htlcs + additionalHtlcs)

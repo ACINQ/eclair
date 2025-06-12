@@ -308,11 +308,6 @@ final case class RES_GET_CHANNEL_INFO(nodeId: PublicKey, channelId: ByteVector32
 
 case class ClosingTxProposed(unsignedTx: ClosingTx, localClosingSigned: ClosingSigned)
 
-/** When channels are closing, we map each HTLC output to the corresponding HTLC. */
-sealed trait DirectedHtlcId { def htlcId: Long }
-case class IncomingHtlcId(htlcId: Long) extends DirectedHtlcId
-case class OutgoingHtlcId(htlcId: Long) extends DirectedHtlcId
-
 /**
  * When a commitment is published, we keep track of all outputs that can be spent (even if we don't yet have the data
  * to spend them, for example the preimage for received HTLCs). Once all of those outputs have been spent by a confirmed
@@ -357,8 +352,8 @@ sealed trait CommitPublished {
  *                           transaction. An entry containing the corresponding output must be added to this set to
  *                           ensure that we don't forget the channel too soon, and correctly wait until we've spent it.
  */
-case class LocalCommitPublished(commitTx: Transaction, localOutput_opt: Option[OutPoint], anchorOutput_opt: Option[OutPoint], htlcs: Map[OutPoint, DirectedHtlcId], htlcDelayedOutputs: Set[OutPoint], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
-  override val htlcOutputs: Set[OutPoint] = htlcs.keySet
+case class LocalCommitPublished(commitTx: Transaction, localOutput_opt: Option[OutPoint], anchorOutput_opt: Option[OutPoint], incomingHtlcs: Map[OutPoint, Long], outgoingHtlcs: Map[OutPoint, Long], htlcDelayedOutputs: Set[OutPoint], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+  override val htlcOutputs: Set[OutPoint] = incomingHtlcs.keySet ++ outgoingHtlcs.keySet
   override val isDone: Boolean = {
     val mainOutputSpent = localOutput_opt.forall(o => irrevocablySpent.contains(o))
     val allHtlcsSpent = (htlcOutputs -- irrevocablySpent.keySet).isEmpty
@@ -370,8 +365,8 @@ case class LocalCommitPublished(commitTx: Transaction, localOutput_opt: Option[O
 /**
  * Details about a force-close where they published their commitment (current or next).
  */
-case class RemoteCommitPublished(commitTx: Transaction, localOutput_opt: Option[OutPoint], anchorOutput_opt: Option[OutPoint], htlcs: Map[OutPoint, DirectedHtlcId], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
-  override val htlcOutputs: Set[OutPoint] = htlcs.keySet
+case class RemoteCommitPublished(commitTx: Transaction, localOutput_opt: Option[OutPoint], anchorOutput_opt: Option[OutPoint], incomingHtlcs: Map[OutPoint, Long], outgoingHtlcs: Map[OutPoint, Long], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+  override val htlcOutputs: Set[OutPoint] = incomingHtlcs.keySet ++ outgoingHtlcs.keySet
   override val isDone: Boolean = {
     val mainOutputSpent = localOutput_opt.forall(o => irrevocablySpent.contains(o))
     val allHtlcsSpent = (htlcOutputs -- irrevocablySpent.keySet).isEmpty

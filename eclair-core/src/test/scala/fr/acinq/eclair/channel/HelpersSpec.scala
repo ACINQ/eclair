@@ -103,10 +103,10 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     alice2blockchain.expectWatchTxConfirmed(commitTx.tx.txid)
     val htlcTimeoutTxs = htlcTxs.map(_.txInfo).collect { case tx: HtlcTimeoutTx => tx }
     assert(htlcTimeoutTxs.length == 3)
-    assert(lcp.htlcs.collect { case (_, OutgoingHtlcId(htlcId)) => htlcId }.toSet == htlcTimeoutTxs.map(_.htlcId).toSet)
+    assert(lcp.outgoingHtlcs.values.toSet == htlcTimeoutTxs.map(_.htlcId).toSet)
     val htlcSuccessTxs = htlcTxs.map(_.txInfo).collect { case tx: HtlcSuccessTx => tx }
     assert(htlcSuccessTxs.length == 1)
-    assert(lcp.htlcs.collect { case (_, IncomingHtlcId(htlcId)) => htlcId }.toSet.contains(htlcSuccessTxs.head.htlcId))
+    assert(lcp.incomingHtlcs.values.toSet.contains(htlcSuccessTxs.head.htlcId))
 
     // Bob detects Alice's force-close.
     bob ! WatchFundingSpentTriggered(commitTx.tx)
@@ -121,10 +121,10 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     bob2blockchain.expectWatchTxConfirmed(commitTx.tx.txid)
     val claimHtlcTimeoutTxs = claimHtlcTxs.map(_.tx.txInfo).collect { case tx: ClaimHtlcTimeoutTx => tx }
     assert(claimHtlcTimeoutTxs.length == 3)
-    assert(rcp.htlcs.collect { case (_, IncomingHtlcId(htlcId)) => htlcId }.toSet == claimHtlcTimeoutTxs.map(_.htlcId).toSet)
+    assert(rcp.outgoingHtlcs.values.toSet == claimHtlcTimeoutTxs.map(_.htlcId).toSet)
     val claimHtlcSuccessTxs = claimHtlcTxs.map(_.tx.txInfo).collect { case tx: ClaimHtlcSuccessTx => tx }
     assert(claimHtlcSuccessTxs.length == 1)
-    assert(rcp.htlcs.collect { case (_, OutgoingHtlcId(htlcId)) => htlcId }.toSet.contains(claimHtlcSuccessTxs.head.htlcId))
+    assert(rcp.incomingHtlcs.values.toSet.contains(claimHtlcSuccessTxs.head.htlcId))
 
     Fixture(alice, Set(htlca1a, htlca1b, htlca2), htlcSuccessTxs, htlcTimeoutTxs, bob, Set(htlcb1a, htlcb1b, htlcb2), claimHtlcSuccessTxs, claimHtlcTimeoutTxs, probe)
   }
@@ -247,7 +247,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           commitTx = tx2.tx,
           localOutput_opt = Some(tx3.input.outPoint),
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
@@ -269,7 +270,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           commitTx = tx2.tx,
           localOutput_opt = Some(tx3.input.outPoint),
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map(tx2.input.outPoint -> tx2.tx)
         )),
@@ -291,7 +293,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           commitTx = tx2.tx,
           localOutput_opt = None,
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
@@ -299,7 +302,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           commitTx = tx3.tx,
           localOutput_opt = None,
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map.empty
         )),
         nextRemoteCommitPublished = None,
@@ -319,7 +323,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           commitTx = tx2.tx,
           localOutput_opt = None,
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
@@ -327,7 +332,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           commitTx = tx3.tx,
           localOutput_opt = None,
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map(tx3.input.outPoint -> tx3.tx)
         )),
         nextRemoteCommitPublished = None,
@@ -349,7 +355,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           commitTx = tx2.tx,
           localOutput_opt = None,
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
@@ -357,14 +364,16 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           commitTx = tx3.tx,
           localOutput_opt = None,
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map.empty
         )),
         nextRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4.tx,
           localOutput_opt = Some(tx5.input.outPoint),
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map(tx4.input.outPoint -> tx4.tx)
         )),
         futureRemoteCommitPublished = None,
@@ -386,7 +395,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           commitTx = tx4.tx,
           localOutput_opt = Some(tx5.input.outPoint),
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map.empty
         )),
         revokedCommitPublished = Nil)
@@ -407,7 +417,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           commitTx = tx4.tx,
           localOutput_opt = Some(tx5.input.outPoint),
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map(tx4.input.outPoint -> tx4.tx)
         )),
         revokedCommitPublished = Nil)
@@ -425,7 +436,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           commitTx = tx1.tx,
           localOutput_opt = None,
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
@@ -472,7 +484,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
           commitTx = tx1.tx,
           localOutput_opt = None,
           anchorOutput_opt = None,
-          htlcs = Map.empty,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
