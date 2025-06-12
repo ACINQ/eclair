@@ -106,11 +106,11 @@ object OnTheFlyFunding {
           case Some(f) => f match {
             case f: FailureReason.EncryptedDownstreamFailure =>
               Sphinx.FailurePacket.decrypt(f.packet, f.attribution_opt, onionSharedSecrets).failure match {
-                case Left(Sphinx.CannotDecryptFailurePacket(unwrapped)) =>
+                case Left(Sphinx.CannotDecryptFailurePacket(unwrapped, attribution_opt)) =>
                   log.info("received encrypted on-the-fly funding failure")
                   // If we cannot decrypt the error, it is encrypted for the payer using the trampoline onion secrets.
                   // We unwrap the outer onion encryption and will relay the error upstream.
-                  FailureReason.EncryptedDownstreamFailure(unwrapped, None)
+                  FailureReason.EncryptedDownstreamFailure(unwrapped, attribution_opt)
                 case Right(f) =>
                   log.warning("downstream on-the-fly funding failure: {}", f.failureMessage.message)
                   // Otherwise, there was an issue with the way we forwarded the payment to the recipient.

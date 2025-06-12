@@ -264,7 +264,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       assert(fwd.message.id == add.id)
       assert(fwd.message.reason.isInstanceOf[FailureReason.EncryptedDownstreamFailure])
       // This is a trampoline payment: we unwrap the failure packet before forwarding upstream.
-      val Left(Sphinx.CannotDecryptFailurePacket(expected)) = Sphinx.FailurePacket.decrypt(fail4.reason, attribution_opt = None, onionSharedSecrets).failure
+      val Left(Sphinx.CannotDecryptFailurePacket(expected, None)) = Sphinx.FailurePacket.decrypt(fail4.reason, attribution_opt = None, onionSharedSecrets).failure
       assert(fwd.message.reason.asInstanceOf[FailureReason.EncryptedDownstreamFailure].packet == expected)
     })
 
@@ -276,7 +276,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       assert(fwd.message.id == add.id)
       assert(fwd.message.reason.isInstanceOf[FailureReason.EncryptedDownstreamFailure])
       // This is a trampoline payment: we unwrap the failure packet before forwarding upstream.
-      val Left(Sphinx.CannotDecryptFailurePacket(expected)) = Sphinx.FailurePacket.decrypt(fail5.reason, attribution_opt = None, onionSharedSecrets).failure
+      val Left(Sphinx.CannotDecryptFailurePacket(expected, None)) = Sphinx.FailurePacket.decrypt(fail5.reason, attribution_opt = None, onionSharedSecrets).failure
       assert(fwd.message.reason.asInstanceOf[FailureReason.EncryptedDownstreamFailure].packet == expected)
     })
   }
