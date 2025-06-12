@@ -361,7 +361,7 @@ class SphinxSpec extends AnyFunSuite {
       val attribution4 = Attribution.create(Some(attribution3), None, 500 milliseconds, sharedSecret0)
       assert(attribution4 == hex"84986c936d26bfd3bb2d34d3ec62cfdb63e0032fdb3d9d75f3e5d456f73dffa7e35aab1db4f1bd3b98ff585caf004f656c51037a3f4e810d275f3f6aea0c8e3a125ebee5f374b6440bcb9bb2955ebf70c06d64090f9f6cf098200305f7f4305ba9e1350a0c3f7dab4ccf35b8399b9650d8e363bf83d3a0a09706433f0adae6562eb338b21ea6f21329b3775905e59187c325c9cbf589f5da5e915d9e5ad1d21aa1431f9bdc587185ed8b5d4928e697e67cc96bee6d5354e3764cede3f385588fa665310356b2b1e68f8bd30c75d395405614a40a587031ebd6ace60dfb7c6dd188b572bd8e3e9a47b06c2187b528c5ed35c32da5130a21cd881138a5fcac806858ce6c596d810a7492eb261bcc91cead1dae75075b950c2e81cecf7e5fdb2b51df005d285803201ce914dfbf3218383829a0caa8f15486dd801133f1ed7edec436730b0ec98f48732547927229ac80269fcdc5e4f4db264274e940178732b429f9f0e582c559f994a7cdfb76c93ffc39de91ff936316726cc561a6520d47b2cd487299a96322dadc463ef06127fc63902ff9cc4f265e2fbd9de3fa5e48b7b51aa0850580ef9f3b5ebb60c6c3216c5a75a93e82936113d9cad57ae4a94dd6481954a9bd1b5cff4ab29ca221fa2bf9b28a362c9661206f896fc7cec563fb80aa5eaccb26c09fa4ef7a981e63028a9c4dac12f82ccb5bea090d56bbb1a4c431e315d9a169299224a8dbd099fb67ea61dfc604edf8a18ee742550b636836bb552dabb28820221bf8546331f32b0c143c1c89310c4fa2e1e0e895ce1a1eb0f43278fdb528131a3e32bfffe0c6de9006418f5309cba773ca38b6ad8507cc59445ccc0257506ebc16a4c01d4cd97e03fcf7a2049fea0db28447858f73b8e9fe98b391b136c9dc510288630a1f0af93b26a8891b857bfe4b818af99a1e011e6dbaa53982d29cf74ae7dffef45545279f19931708ed3eede5e82280eab908e8eb80abff3f1f023ab66869297b40da8496861dc455ac3abe1efa8a6f9e2c4eda48025d43a486a3f26f269743eaa30d6f0e1f48db6287751358a41f5b07aee0f098862e3493731fe2697acce734f004907c6f11eef189424fee52cd30ad708707eaf2e441f52bcf3d0c5440c1742458653c0c8a27b5ade784d9e09c8b47f1671901a29360e7e5e94946b9c75752a1a8d599d2a3e14ac81b84d42115cd688c8383a64fc6e7e1dc5568bb4837358ebe63207a4067af66b2027ad2ce8fb7ae3a452d40723a51fdf9f9c9913e8029a222cf81d12ad41e58860d75deb6de30ad")
 
-      val holdTimes = Attribution.fulfillHoldTimes(attribution4, sharedSecrets)
+      val Attribution.UnwrappedAttribution(holdTimes, Some(_)) = Attribution.fulfillHoldTimes(attribution4, sharedSecrets)
       assert(holdTimes == Seq(HoldTime(500 millisecond, publicKeys(0)), HoldTime(400 milliseconds, publicKeys(1)), HoldTime(300 milliseconds, publicKeys(2)), HoldTime(200 milliseconds, publicKeys(3)), HoldTime(100 milliseconds, publicKeys(4))))
     }
   }
@@ -425,7 +425,7 @@ class SphinxSpec extends AnyFunSuite {
       val attribution4 = Attribution.create(Some(attribution3), Some(error3), 500 milliseconds, sharedSecret0)
 
       // origin can't parse the failure packet but the hold times tell us that nodes #0 to #2 are honest
-      val HtlcFailure(holdTimes, Left(CannotDecryptFailurePacket(_))) = FailurePacket.decrypt(error4, Some(attribution4), sharedSecrets)
+      val HtlcFailure(holdTimes, Left(CannotDecryptFailurePacket(_, _))) = FailurePacket.decrypt(error4, Some(attribution4), sharedSecrets)
       assert(holdTimes == Seq(HoldTime(500 millisecond, publicKeys(0)), HoldTime(400 milliseconds, publicKeys(1)), HoldTime(300 milliseconds, publicKeys(2)), HoldTime(200 milliseconds, publicKeys(3))))
     }
   }

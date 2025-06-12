@@ -280,9 +280,10 @@ object Sphinx extends Logging {
   /**
    * The downstream failure could not be decrypted.
    *
-   * @param unwrapped encrypted failure packet after unwrapping using our shared secrets.
+   * @param unwrapped       encrypted failure packet after unwrapping using our shared secrets.
+   * @param attribution_opt attribution data after unwrapping using our shared secrets
    */
-  case class CannotDecryptFailurePacket(unwrapped: ByteVector)
+  case class CannotDecryptFailurePacket(unwrapped: ByteVector, attribution_opt: Option[ByteVector])
 
   case class HoldTime(duration: FiniteDuration, remoteNodeId: PublicKey)
 
@@ -336,7 +337,7 @@ object Sphinx extends Logging {
      */
     def decrypt(packet: ByteVector, attribution_opt: Option[ByteVector], sharedSecrets: Seq[SharedSecret], hopIndex: Int = 0): HtlcFailure = {
       sharedSecrets match {
-        case Nil => HtlcFailure(Nil, Left(CannotDecryptFailurePacket(packet)))
+        case Nil => HtlcFailure(Nil, Left(CannotDecryptFailurePacket(packet, attribution_opt)))
         case ss :: tail =>
           val packet1 = wrap(packet, ss.secret)
           val attribution1_opt = attribution_opt.flatMap(Attribution.unwrap(_, packet1, ss.secret, hopIndex))
@@ -432,17 +433,20 @@ object Sphinx extends Logging {
       }
     }
 
+    case class UnwrappedAttribution(holdTimes: List[HoldTime], remaining_opt: Option[ByteVector])
+
     /**
      * Decrypt the hold times from the attribution data of a fulfilled HTLC
      */
-    def fulfillHoldTimes(attribution: ByteVector, sharedSecrets: Seq[SharedSecret], hopIndex: Int = 0): List[HoldTime] = {
+    def fulfillHoldTimes(attribution: ByteVector, sharedSecrets: Seq[SharedSecret], hopIndex: Int = 0): UnwrappedAttribution = {
       sharedSecrets match {
-        case Nil => Nil
+        case Nil => UnwrappedAttribution(Nil, Some(attribution))
         case ss :: tail =>
           unwrap(attribution, ByteVector.empty, ss.secret, hopIndex) match {
             case Some((holdTime, nextAttribution)) =>
-              HoldTime(holdTime, ss.remoteNodeId) :: fulfillHoldTimes(nextAttribution, tail, hopIndex + 1)
-            case None => Nil
+              val UnwrappedAttribution(holdTimes, remaining_opt) = fulfillHoldTimes(nextAttribution, tail, hopIndex + 1)
+              UnwrappedAttribution(HoldTime(holdTime, ss.remoteNodeId) :: holdTimes, remaining_opt)
+            case None => UnwrappedAttribution(Nil, None)
           }
       }
     }

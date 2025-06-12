@@ -46,15 +46,16 @@ sealed trait PaymentEvent {
 /**
  * A payment was successfully sent and fulfilled.
  *
- * @param id              id of the whole payment attempt (if using multi-part, there will be multiple parts, each with
- *                        a different id).
- * @param paymentHash     payment hash.
- * @param paymentPreimage payment preimage (proof of payment).
- * @param recipientAmount amount that has been received by the final recipient.
- * @param recipientNodeId id of the final recipient.
- * @param parts           child payments (actual outgoing HTLCs).
+ * @param id                       id of the whole payment attempt (if using multi-part, there will be multiple parts,
+ *                                 each with a different id).
+ * @param paymentHash              payment hash.
+ * @param paymentPreimage          payment preimage (proof of payment).
+ * @param recipientAmount          amount that has been received by the final recipient.
+ * @param recipientNodeId          id of the final recipient.
+ * @param parts                    child payments (actual outgoing HTLCs).
+ * @param remainingAttribution_opt for relayed trampoline payments, the attribution data that needs to be sent upstream
  */
-case class PaymentSent(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment]) extends PaymentEvent {
+case class PaymentSent(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment], remainingAttribution_opt: Option[ByteVector]) extends PaymentEvent {
   require(parts.nonEmpty, "must have at least one payment part")
   val amountWithFees: MilliSatoshi = parts.map(_.amountWithFees).sum
   val feesPaid: MilliSatoshi = amountWithFees - recipientAmount // overall fees for this payment
@@ -151,7 +152,7 @@ case class LocalFailure(amount: MilliSatoshi, route: Seq[Hop], t: Throwable) ext
 case class RemoteFailure(amount: MilliSatoshi, route: Seq[Hop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
 
 /** A remote node failed the payment but we couldn't decrypt the failure (e.g. a malicious node tampered with the message). */
-case class UnreadableRemoteFailure(amount: MilliSatoshi, route: Seq[Hop], failurePacket: ByteVector, holdTimes: Seq[HoldTime]) extends PaymentFailure
+case class UnreadableRemoteFailure(amount: MilliSatoshi, route: Seq[Hop], failurePacket: ByteVector, attribution_opt: Option[ByteVector], holdTimes: Seq[HoldTime]) extends PaymentFailure
 
 object PaymentFailure {
 
@@ -236,7 +237,7 @@ object PaymentFailure {
       }
     case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
       ignoreNodeOutgoingEdge(nodeId, hops, ignore)
-    case UnreadableRemoteFailure(_, hops, _, holdTimes) =>
+    case UnreadableRemoteFailure(_, hops, _, _, holdTimes) =>
       // TODO: Once everyone supports attributable errors, we should only exclude two nodes: the last for which we have attribution data and the next one.
       // We don't know which node is sending garbage, let's blacklist all nodes except:
       //  - the nodes that returned attribution data (except the last one)
