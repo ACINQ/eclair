@@ -167,7 +167,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
             waitForSettlement(remaining - 1, attemptNumber, parts)
           } else {
             context.log.info("trampoline payment succeeded")
-            cmd.replyTo ! PaymentSent(cmd.paymentId, paymentHash, fulfill.paymentPreimage, totalAmount, cmd.invoice.nodeId, parts)
+            cmd.replyTo ! PaymentSent(cmd.paymentId, paymentHash, fulfill.paymentPreimage, totalAmount, cmd.invoice.nodeId, parts, None)
             Behaviors.stopped
           }
         case fail: HtlcResult.Fail =>

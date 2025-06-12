@@ -108,7 +108,7 @@ object OnTheFlyFunding {
               // In the trampoline case, we currently ignore downstream failures: we should add dedicated failures to
               // the BOLTs to better handle those cases.
               Sphinx.FailurePacket.decrypt(f.packet, f.attribution_opt, onionSharedSecrets).failure match {
-                case Left(Sphinx.CannotDecryptFailurePacket(_)) =>
+                case Left(Sphinx.CannotDecryptFailurePacket(_, _)) =>
                   log.warning("couldn't decrypt downstream on-the-fly funding failure")
                 case Right(f) =>
                   log.warning("downstream on-the-fly funding failure: {}", f.failureMessage.message)
