@@ -430,7 +430,7 @@ object PostRestartHtlcCleaner {
             val params = d.commitments.params
             val channelKeys = nodeParams.channelKeyManager.channelKeys(params.channelConfig, params.localParams.fundingKeyPath)
             val timedOutHtlcs: Set[Long] = (closingType_opt match {
-              case Some(c: Closing.LocalClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(params.commitmentFormat, c.localCommit, params.localParams.dustLimit, tx))
+              case Some(c: Closing.LocalClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.localCommit, tx))
               case Some(c: Closing.RemoteClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.remoteCommit, tx))
               case Some(_: Closing.RevokedClose) => Set.empty // revoked commitments are handled using [[overriddenOutgoingHtlcs]] above
               case Some(_: Closing.RecoveryClose) => Set.empty // we lose htlc outputs in dataloss protection scenarios (future remote commit)

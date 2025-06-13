@@ -29,11 +29,10 @@ import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
-import fr.acinq.eclair.channel.publish.{ReplaceableClaimHtlcTimeout, ReplaceableRemoteCommitAnchor}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
+import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTimeoutTx, ClaimRemoteAnchorTx, UnsignedHtlcSuccessTx}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -380,7 +379,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsgType[CommitSig]
 
     // we keep track of bob commitment tx for later
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobCommitTx = bob.signCommitTx()
 
     // we simulate a disconnection
     disconnect(alice, bob)
@@ -425,7 +424,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // the current state contains a pending htlc
     addHtlc(250_000_000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobCommitTx = bob.signCommitTx()
 
     // we simulate a disconnection followed by a reconnection
     disconnect(alice, bob)
@@ -446,19 +445,18 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // alice is able to claim her main output and the htlc (once it times out)
-    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].tx.isInstanceOf[ReplaceableRemoteCommitAnchor])
+    alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
     val claimMainOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    val claimHtlc = alice2blockchain.expectMsgType[PublishReplaceableTx]
-    assert(claimHtlc.tx.isInstanceOf[ReplaceableClaimHtlcTimeout])
-    Transaction.correctlySpends(claimHtlc.tx.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    val claimHtlc = alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx]
+    Transaction.correctlySpends(claimHtlc.sign(), bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
   test("counterparty lies about having a more recent commitment and publishes revoked commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
     // we sign a new commitment to make sure the first one is revoked
-    val bobRevokedCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobRevokedCommitTx = bob.signCommitTx()
     addHtlc(250_000_000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
@@ -613,9 +611,9 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val initialCommitTx = initialState.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val htlcSuccessTx = initialState.commitments.latest.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
-    assert(htlcSuccessTx.isInstanceOf[HtlcSuccessTx])
+    val initialCommitTx = bob.signCommitTx()
+    val htlcSuccessTx = bob.htlcTxs().head
+    assert(htlcSuccessTx.isInstanceOf[UnsignedHtlcSuccessTx])
 
     disconnect(alice, bob)
 
@@ -673,14 +671,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we simulate a disconnection
     disconnect(alice, bob)
 
-    val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val aliceCommitTx = aliceStateData.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-
-    val currentFeeratePerKw = aliceStateData.commitments.latest.localCommit.spec.commitTxFeerate
+    val aliceCommitTx = alice.signCommitTx()
+    val currentFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.commitTxFeerate
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
-    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Bob.nodeParams.nodeId).ratioLow)
-    val networkFeerates = FeeratesPerKw.single(networkFeeratePerKw)
+    val networkFeerate = currentFeerate * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Bob.nodeParams.nodeId).ratioLow)
+    val networkFeerates = FeeratesPerKw.single(networkFeerate)
 
     // alice is funder
     alice.setBitcoinCoreFeerates(networkFeerates)
@@ -783,14 +779,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we simulate a disconnection
     disconnect(alice, bob)
 
-    val bobStateData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val bobCommitTx = bobStateData.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
-
-    val currentFeeratePerKw = bobStateData.commitments.latest.localCommit.spec.commitTxFeerate
+    val bobCommitTx = bob.signCommitTx()
+    val currentFeerate = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.commitTxFeerate
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
-    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / bob.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Alice.nodeParams.nodeId).ratioLow)
-    val networkFeerates = FeeratesPerKw.single(networkFeeratePerKw)
+    val networkFeerate = currentFeerate * (1.1 / bob.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Alice.nodeParams.nodeId).ratioLow)
+    val networkFeerates = FeeratesPerKw.single(networkFeerate)
 
     // bob is fundee
     bob.setBitcoinCoreFeerates(networkFeerates)

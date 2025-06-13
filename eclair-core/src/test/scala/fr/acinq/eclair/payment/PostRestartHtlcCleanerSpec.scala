@@ -21,7 +21,7 @@ import akka.actor.ActorRef
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, TxId, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
@@ -510,7 +510,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       val normal = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc, origins)
       // NB: this isn't actually a revoked commit tx, but we don't check that here, if the channel says it's a revoked
       // commit we accept it as such, so it simplifies the test.
-      val revokedCommitTx = normal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.copy(txOut = Seq(TxOut(4500 sat, Script.pay2wpkh(randomKey().publicKey))))
+      val revokedCommitTx = Transaction(2, Seq(TxIn(normal.commitments.latest.localCommit.input.outPoint, Nil, 0)), Seq(TxOut(4500 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
       val rcp = RevokedCommitPublished(revokedCommitTx, Some(OutPoint(revokedCommitTx, 0)), None, Set.empty, Set.empty, Map(revokedCommitTx.txIn.head.outPoint -> revokedCommitTx))
       DATA_CLOSING(normal.commitments, BlockHeight(0), Script.write(Script.pay2wpkh(randomKey().publicKey)), mutualCloseProposed = Nil, revokedCommitPublished = List(rcp))
     }

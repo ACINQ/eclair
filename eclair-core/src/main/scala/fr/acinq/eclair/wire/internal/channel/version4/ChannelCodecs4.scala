@@ -1,6 +1,6 @@
 package fr.acinq.eclair.wire.internal.channel.version4
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationPriority, ConfirmationTarget}
@@ -10,6 +10,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTrans
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.version2.ChannelTypes2
@@ -17,8 +18,8 @@ import fr.acinq.eclair.wire.internal.channel.version3.ChannelTypes3
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, PermanentChannelFeature, RealShortChannelId, channel}
-import scodec.bits.{BitVector, ByteVector}
+import fr.acinq.eclair.{Alias, CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, PermanentChannelFeature, RealShortChannelId, channel}
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 import shapeless.{::, HList, HNil}
@@ -135,46 +136,55 @@ private[channel] object ChannelCodecs4 {
     private val confirmationTarget: Codec[ConfirmationTarget] = discriminated[ConfirmationTarget].by(uint8)
       .typecase(0x00, blockHeightConfirmationTarget)
       .typecase(0x01, priorityConfirmationTarget)
+    // Those fields have been added to our transactions after we stopped storing them in our channel data, so they're safe to ignore.
+    private val unusedCommitmentFormat: Codec[CommitmentFormat] = provide(DefaultCommitmentFormat)
+    private val dummyPrivateKey = PrivateKey(hex"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1")
+    private val dummyPublicKey = dummyPrivateKey.publicKey
+    private val unusedRemoteCommitKeys: Codec[RemoteCommitmentKeys] = provide(RemoteCommitmentKeys(Right(dummyPrivateKey), dummyPublicKey, dummyPublicKey, dummyPrivateKey, dummyPublicKey, dummyPublicKey))
+    private val unusedLocalCommitKeys: Codec[LocalCommitmentKeys] = provide(LocalCommitmentKeys(dummyPrivateKey, dummyPublicKey, dummyPublicKey, dummyPrivateKey, dummyPublicKey, dummyPublicKey))
+    private val unusedFundingKey: Codec[PrivateKey] = provide(dummyPrivateKey)
+    private val unusedRevocationKey: Codec[PrivateKey] = provide(dummyPrivateKey)
+    private val unusedRevokedRedeemInfo: Codec[RedeemInfo] = provide(RedeemInfo.P2wsh(Nil))
 
     val commitTxCodec: Codec[CommitTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx]
-    val htlcSuccessTxCodec: Codec[HtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | cltvExpiry)).as[HtlcSuccessTx]
-    val htlcTimeoutTxCodec: Codec[HtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | cltvExpiry)).as[HtlcTimeoutTx]
-    private val htlcTimeoutTxNoPaymentHashCodec: Codec[HtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | cltvExpiry)).as[HtlcTimeoutTx]
-    private val htlcSuccessTxNoConfirmCodec: Codec[HtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | missingHtlcExpiry)).as[HtlcSuccessTx]
-    private val htlcTimeoutTxNoConfirmCodec: Codec[HtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | missingHtlcExpiry)).as[HtlcTimeoutTx]
-    private val htlcDelayedTxNoToSelfDelayCodec: Codec[HtlcDelayedTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | missingToSelfDelay)).as[HtlcDelayedTx]
-    val htlcDelayedTxCodec: Codec[HtlcDelayedTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | cltvExpiryDelta)).as[HtlcDelayedTx]
-    private val legacyClaimHtlcSuccessTxCodec: Codec[ClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | missingHtlcExpiry)).as[ClaimHtlcSuccessTx]
-    val claimHtlcSuccessTxCodec: Codec[ClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | cltvExpiry)).as[ClaimHtlcSuccessTx]
-    val claimHtlcTimeoutTxCodec: Codec[ClaimHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | cltvExpiry)).as[ClaimHtlcTimeoutTx]
-    private val claimHtlcTimeoutTxNoPaymentHashCodec: Codec[ClaimHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | cltvExpiry)).as[ClaimHtlcTimeoutTx]
-    private val claimHtlcSuccessTxNoConfirmCodec: Codec[ClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | missingHtlcExpiry)).as[ClaimHtlcSuccessTx]
-    private val claimHtlcTimeoutTxNoConfirmCodec: Codec[ClaimHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | missingHtlcExpiry)).as[ClaimHtlcTimeoutTx]
-    private val claimLocalDelayedOutputTxNoToSelfDelayCodec: Codec[ClaimLocalDelayedOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | missingToSelfDelay)).as[ClaimLocalDelayedOutputTx]
-    val claimLocalDelayedOutputTxCodec: Codec[ClaimLocalDelayedOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | cltvExpiryDelta)).as[ClaimLocalDelayedOutputTx]
-    val claimP2WPKHOutputTxCodec: Codec[ClaimP2WPKHOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx]
-    val claimRemoteDelayedOutputTxCodec: Codec[ClaimRemoteDelayedOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimRemoteDelayedOutputTx]
-    private val mainPenaltyTxNoToSelfDelayCodec: Codec[MainPenaltyTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | missingToSelfDelay)).as[MainPenaltyTx]
-    val mainPenaltyTxCodec: Codec[MainPenaltyTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | cltvExpiryDelta)).as[MainPenaltyTx]
-    private val htlcPenaltyTxNoPaymentHashCodec: Codec[HtlcPenaltyTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcExpiry" | missingHtlcExpiry)).as[HtlcPenaltyTx]
-    val htlcPenaltyTxCodec: Codec[HtlcPenaltyTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcExpiry" | cltvExpiry)).as[HtlcPenaltyTx]
-    private val claimHtlcDelayedOutputPenaltyTxNoToSelfDelayCodec: Codec[ClaimHtlcDelayedOutputPenaltyTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | missingToSelfDelay)).as[ClaimHtlcDelayedOutputPenaltyTx]
-    val claimHtlcDelayedOutputPenaltyTxCodec: Codec[ClaimHtlcDelayedOutputPenaltyTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | cltvExpiryDelta)).as[ClaimHtlcDelayedOutputPenaltyTx]
-    val claimLocalAnchorOutputTxCodec: Codec[ClaimAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimAnchorOutputTx]
-    private val claimLocalAnchorOutputTxWithConfirmationTargetCodec: Codec[ClaimAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("confirmationTarget" | confirmationTarget)).map {
-      case inputInfo :: tx :: _ :: HNil => ClaimAnchorOutputTx(inputInfo, tx)
+    val htlcSuccessTxCodec: Codec[UnsignedHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | cltvExpiry) :: unusedCommitmentFormat).as[UnsignedHtlcSuccessTx]
+    val htlcTimeoutTxCodec: Codec[UnsignedHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | cltvExpiry) :: unusedCommitmentFormat).as[UnsignedHtlcTimeoutTx]
+    private val htlcTimeoutTxNoPaymentHashCodec: Codec[UnsignedHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | cltvExpiry) :: unusedCommitmentFormat).as[UnsignedHtlcTimeoutTx]
+    private val htlcSuccessTxNoConfirmCodec: Codec[UnsignedHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | missingHtlcExpiry) :: unusedCommitmentFormat).as[UnsignedHtlcSuccessTx]
+    private val htlcTimeoutTxNoConfirmCodec: Codec[UnsignedHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | missingHtlcExpiry) :: unusedCommitmentFormat).as[UnsignedHtlcTimeoutTx]
+    private val htlcDelayedTxNoToSelfDelayCodec: Codec[HtlcDelayedTx] = (unusedLocalCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | missingToSelfDelay) :: unusedCommitmentFormat).as[HtlcDelayedTx]
+    val htlcDelayedTxCodec: Codec[HtlcDelayedTx] = (unusedLocalCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | cltvExpiryDelta) :: unusedCommitmentFormat).as[HtlcDelayedTx]
+    private val legacyClaimHtlcSuccessTxCodec: Codec[ClaimHtlcSuccessTx] = (unusedRemoteCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | missingHtlcExpiry) :: unusedCommitmentFormat).as[ClaimHtlcSuccessTx]
+    val claimHtlcSuccessTxCodec: Codec[ClaimHtlcSuccessTx] = (unusedRemoteCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | cltvExpiry) :: unusedCommitmentFormat).as[ClaimHtlcSuccessTx]
+    val claimHtlcTimeoutTxCodec: Codec[ClaimHtlcTimeoutTx] = (unusedRemoteCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | cltvExpiry) :: unusedCommitmentFormat).as[ClaimHtlcTimeoutTx]
+    private val claimHtlcTimeoutTxNoPaymentHashCodec: Codec[ClaimHtlcTimeoutTx] = (unusedRemoteCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | cltvExpiry) :: unusedCommitmentFormat).as[ClaimHtlcTimeoutTx]
+    private val claimHtlcSuccessTxNoConfirmCodec: Codec[ClaimHtlcSuccessTx] = (unusedRemoteCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | missingHtlcExpiry) :: unusedCommitmentFormat).as[ClaimHtlcSuccessTx]
+    private val claimHtlcTimeoutTxNoConfirmCodec: Codec[ClaimHtlcTimeoutTx] = (unusedRemoteCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcId" | uint64overflow) :: ("htlcExpiry" | missingHtlcExpiry) :: unusedCommitmentFormat).as[ClaimHtlcTimeoutTx]
+    private val claimLocalDelayedOutputTxNoToSelfDelayCodec: Codec[ClaimLocalDelayedOutputTx] = (unusedLocalCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | missingToSelfDelay) :: unusedCommitmentFormat).as[ClaimLocalDelayedOutputTx]
+    val claimLocalDelayedOutputTxCodec: Codec[ClaimLocalDelayedOutputTx] = (unusedLocalCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | cltvExpiryDelta) :: unusedCommitmentFormat).as[ClaimLocalDelayedOutputTx]
+    val claimP2WPKHOutputTxCodec: Codec[ClaimP2WPKHOutputTx] = (unusedRemoteCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: unusedCommitmentFormat).as[ClaimP2WPKHOutputTx]
+    val claimRemoteDelayedOutputTxCodec: Codec[ClaimRemoteDelayedOutputTx] = (unusedRemoteCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: unusedCommitmentFormat).as[ClaimRemoteDelayedOutputTx]
+    private val mainPenaltyTxNoToSelfDelayCodec: Codec[MainPenaltyTx] = (unusedRemoteCommitKeys :: unusedRevocationKey :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | missingToSelfDelay) :: unusedCommitmentFormat).as[MainPenaltyTx]
+    val mainPenaltyTxCodec: Codec[MainPenaltyTx] = (unusedRemoteCommitKeys :: unusedRevocationKey :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | cltvExpiryDelta) :: unusedCommitmentFormat).as[MainPenaltyTx]
+    private val htlcPenaltyTxNoPaymentHashCodec: Codec[HtlcPenaltyTx] = (unusedRemoteCommitKeys :: unusedRevocationKey :: unusedRevokedRedeemInfo :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | missingPaymentHash) :: ("htlcExpiry" | missingHtlcExpiry) :: unusedCommitmentFormat).as[HtlcPenaltyTx]
+    val htlcPenaltyTxCodec: Codec[HtlcPenaltyTx] = (unusedRemoteCommitKeys :: unusedRevocationKey :: unusedRevokedRedeemInfo :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcExpiry" | cltvExpiry) :: unusedCommitmentFormat).as[HtlcPenaltyTx]
+    private val claimHtlcDelayedOutputPenaltyTxNoToSelfDelayCodec: Codec[ClaimHtlcDelayedOutputPenaltyTx] = (unusedRemoteCommitKeys :: unusedRevocationKey :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | missingToSelfDelay) :: unusedCommitmentFormat).as[ClaimHtlcDelayedOutputPenaltyTx]
+    val claimHtlcDelayedOutputPenaltyTxCodec: Codec[ClaimHtlcDelayedOutputPenaltyTx] = (unusedRemoteCommitKeys :: unusedRevocationKey :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("toSelfDelay" | cltvExpiryDelta) :: unusedCommitmentFormat).as[ClaimHtlcDelayedOutputPenaltyTx]
+    val claimLocalAnchorOutputTxCodec: Codec[ClaimLocalAnchorTx] = (unusedFundingKey :: unusedLocalCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: unusedCommitmentFormat).as[ClaimLocalAnchorTx]
+    private val claimLocalAnchorOutputTxWithConfirmationTargetCodec: Codec[ClaimLocalAnchorTx] = (unusedFundingKey :: unusedLocalCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("confirmationTarget" | confirmationTarget) :: unusedCommitmentFormat).map {
+      case fundingKey :: commitKeys :: inputInfo :: tx :: _ :: commitmentFormat :: HNil => ClaimLocalAnchorTx(fundingKey, commitKeys, inputInfo, tx, commitmentFormat)
     }.decodeOnly
-    private val claimLocalAnchorOutputTxBlockHeightConfirmCodec: Codec[ClaimAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("confirmationTarget" | ignore(32))).as[ClaimAnchorOutputTx]
-    private val claimLocalAnchorOutputTxNoConfirmCodec: Codec[ClaimAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimAnchorOutputTx]
+    private val claimLocalAnchorOutputTxBlockHeightConfirmCodec: Codec[ClaimLocalAnchorTx] = (unusedFundingKey :: unusedLocalCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("confirmationTarget" | ignore(32)) :: unusedCommitmentFormat).as[ClaimLocalAnchorTx]
+    private val claimLocalAnchorOutputTxNoConfirmCodec: Codec[ClaimLocalAnchorTx] = (unusedFundingKey :: unusedLocalCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: unusedCommitmentFormat).as[ClaimLocalAnchorTx]
     // We previously created an unused transaction spending the remote anchor (after the 16-blocks delay).
-    private val unusedRemoteAnchorOutputTxCodec: Codec[ClaimAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimAnchorOutputTx]
+    private val unusedRemoteAnchorOutputTxCodec: Codec[ClaimLocalAnchorTx] = (unusedFundingKey :: unusedLocalCommitKeys :: ("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: unusedCommitmentFormat).as[ClaimLocalAnchorTx]
     val closingTxCodec: Codec[ClosingTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("outputIndex" | optional(bool8, outputInfoCodec))).as[ClosingTx]
 
     val claimRemoteCommitMainOutputTxCodec: Codec[ClaimRemoteCommitMainOutputTx] = discriminated[ClaimRemoteCommitMainOutputTx].by(uint8)
       .typecase(0x01, claimP2WPKHOutputTxCodec)
       .typecase(0x02, claimRemoteDelayedOutputTxCodec)
 
-    val claimAnchorOutputTxCodec: Codec[ClaimAnchorOutputTx] = discriminated[ClaimAnchorOutputTx].by(uint8)
+    val claimAnchorOutputTxCodec: Codec[ClaimLocalAnchorTx] = discriminated[ClaimLocalAnchorTx].by(uint8)
       // Important: order matters!
       .typecase(0x13, claimLocalAnchorOutputTxCodec)
       .typecase(0x12, claimLocalAnchorOutputTxWithConfirmationTargetCodec)
@@ -182,7 +192,7 @@ private[channel] object ChannelCodecs4 {
       .typecase(0x01, claimLocalAnchorOutputTxNoConfirmCodec)
       .typecase(0x02, unusedRemoteAnchorOutputTxCodec)
 
-    val htlcTxCodec: Codec[HtlcTx] = discriminated[HtlcTx].by(uint8)
+    val htlcTxCodec: Codec[UnsignedHtlcTx] = discriminated[UnsignedHtlcTx].by(uint8)
       // Important: order matters!
       .typecase(0x13, htlcTimeoutTxCodec)
       .typecase(0x11, htlcSuccessTxCodec)
@@ -199,13 +209,17 @@ private[channel] object ChannelCodecs4 {
       .typecase(0x02, claimHtlcTimeoutTxNoConfirmCodec)
       .typecase(0x03, claimHtlcSuccessTxNoConfirmCodec)
 
-    val htlcTxsAndRemoteSigsCodec: Codec[HtlcTxAndRemoteSig] = (
+    val htlcTxsAndRemoteSigsCodec: Codec[ChannelTypes3.HtlcTxAndRemoteSig] = (
       ("txinfo" | htlcTxCodec) ::
-        ("remoteSig" | bytes64)).as[HtlcTxAndRemoteSig]
-    
-    val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = (
+        ("remoteSig" | bytes64)).as[ChannelTypes3.HtlcTxAndRemoteSig]
+
+    val commitTxAndRemoteSigCodec: Codec[ChannelTypes3.CommitTxAndRemoteSig] = (
       ("commitTx" | commitTxCodec) ::
-        ("remoteSig" | bytes64.as[ChannelSpendSignature.IndividualSignature].upcast[ChannelSpendSignature])).as[CommitTxAndRemoteSig]
+        ("remoteSig" | bytes64.as[ChannelSpendSignature.IndividualSignature])).as[ChannelTypes3.CommitTxAndRemoteSig]
+
+    val channelSpendSignatureCodec: Codec[ChannelSpendSignature] = discriminated[ChannelSpendSignature].by(uint8)
+      .typecase(0x01, bytes64.as[ChannelSpendSignature.IndividualSignature])
+      .typecase(0x02, (("partialSig" | bytes32) :: ("nonce" | publicNonce)).as[ChannelSpendSignature.PartialSignatureWithNonce])
 
     val updateMessageCodec: Codec[UpdateMessage] = lengthDelimited(lightningMessageCodec.narrow[UpdateMessage](f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g))
 
@@ -475,11 +489,19 @@ private[channel] object ChannelCodecs4 {
         ("localNextHtlcId" | uint64overflow) ::
         ("remoteNextHtlcId" | uint64overflow)).as[CommitmentChanges]
 
-    private def localCommitCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[LocalCommit] = (
+    private def localCommitWithTxsCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[LocalCommit] = (
       ("index" | uint64overflow) ::
         ("spec" | commitmentSpecCodec) ::
         ("commitTxAndRemoteSig" | commitTxAndRemoteSigCodec) ::
-        ("htlcTxsAndRemoteSigs" | listOfN(uint16, htlcTxsAndRemoteSigsCodec))).as[LocalCommit]
+        ("htlcTxsAndRemoteSigs" | listOfN(uint16, htlcTxsAndRemoteSigsCodec))).as[ChannelTypes3.LocalCommit].decodeOnly.map[LocalCommit](_.migrate()).decodeOnly
+
+    private def localCommitCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[LocalCommit] = (
+      ("index" | uint64overflow) ::
+        ("spec" | commitmentSpecCodec) ::
+        ("txId" | txId) ::
+        ("input" | inputInfoCodec) ::
+        ("remoteSig" | channelSpendSignatureCodec) ::
+        ("htlcRemoteSigs" | listOfN(uint16, bytes64))).as[LocalCommit]
 
     private def remoteCommitCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[RemoteCommit] = (
       ("index" | uint64overflow) ::
@@ -497,7 +519,17 @@ private[channel] object ChannelCodecs4 {
         ("fundingPubKey" | publicKey) ::
         ("fundingTxStatus" | fundingTxStatusCodec) ::
         ("remoteFundingStatus" | remoteFundingStatusCodec) ::
-        ("localCommit" | localCommitCodec(minimalCommitmentSpecCodec(htlcs))) ::
+        ("localCommit" | localCommitWithTxsCodec(minimalCommitmentSpecCodec(htlcs))) ::
+        ("remoteCommit" | remoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite)))) ::
+        ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite)))))).as[Commitment]
+
+    private def commitmentCodecWithLocalTxs(htlcs: Set[DirectedHtlc]): Codec[Commitment] = (
+      ("fundingTxIndex" | uint32) ::
+        ("firstRemoteCommitIndex" | uint64overflow) ::
+        ("fundingPubKey" | publicKey) ::
+        ("fundingTxStatus" | fundingTxStatusCodec) ::
+        ("remoteFundingStatus" | remoteFundingStatusCodec) ::
+        ("localCommit" | localCommitWithTxsCodec(minimalCommitmentSpecCodec(htlcs))) ::
         ("remoteCommit" | remoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite)))) ::
         ("nextRemoteCommit_opt" | optional(bool8, nextRemoteCommitCodec(minimalCommitmentSpecCodec(htlcs.map(_.opposite)))))).as[Commitment]
 
@@ -579,6 +611,21 @@ private[channel] object ChannelCodecs4 {
       commitments => EncodedCommitments(commitments)
     )
 
+    val commitmentsCodecWithLocalTxs: Codec[Commitments] = (
+      ("params" | paramsCodec) ::
+        ("changes" | changesCodec) ::
+        (("htlcs" | setCodec(htlcCodec)) >>:~ { htlcs =>
+          ("active" | listOfN(uint16, commitmentCodecWithLocalTxs(htlcs))) ::
+            ("inactive" | listOfN(uint16, commitmentCodecWithLocalTxs(htlcs))) ::
+            ("remoteNextCommitInfo" | either(bool8, waitForRevCodec, publicKey)) ::
+            ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
+            ("originChannels" | originsMapCodec) ::
+            ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))
+        })).as[EncodedCommitments].xmap(
+      encoded => encoded.toCommitments,
+      commitments => EncodedCommitments(commitments)
+    )
+
     val commitmentsCodec: Codec[Commitments] = (
       ("params" | paramsCodec) ::
         ("changes" | changesCodec) ::
@@ -595,7 +642,8 @@ private[channel] object ChannelCodecs4 {
     )
 
     val versionedCommitmentsCodec: Codec[Commitments] = discriminated[Commitments].by(uint8)
-      .typecase(0x01, commitmentsCodec)
+      .typecase(0x02, commitmentsCodec)
+      .typecase(0x01, commitmentsCodecWithLocalTxs)
 
     val closingFeeratesCodec: Codec[ClosingFeerates] = (
       ("preferred" | feeratePerKw) ::
@@ -603,8 +651,8 @@ private[channel] object ChannelCodecs4 {
         ("max" | feeratePerKw)).as[ClosingFeerates]
 
     val closeStatusCodec: Codec[CloseStatus] = discriminated[CloseStatus].by(uint8)
-        .typecase(0x01, optional(bool8, closingFeeratesCodec).as[CloseStatus.Initiator])
-        .typecase(0x02, optional(bool8, closingFeeratesCodec).as[CloseStatus.NonInitiator])
+      .typecase(0x01, optional(bool8, closingFeeratesCodec).as[CloseStatus.Initiator])
+      .typecase(0x02, optional(bool8, closingFeeratesCodec).as[CloseStatus.NonInitiator])
 
     val closingTxProposedCodec: Codec[ClosingTxProposed] = (
       ("unsignedTx" | closingTxCodec) ::
@@ -676,20 +724,34 @@ private[channel] object ChannelCodecs4 {
 
     // We don't bother removing the duplication across HTLCs: this is a short-lived state during which the channel
     // cannot be used for payments.
-    private val (interactiveTxWaitingForSigsWithoutLiquidityPurchaseCodec, interactiveTxWaitingForSigsCodec): (Codec[InteractiveTxSigningSession.WaitingForSigs], Codec[InteractiveTxSigningSession.WaitingForSigs]) = {
-      val unsignedLocalCommitCodec: Codec[UnsignedLocalCommit] = (
+    private val (interactiveTxWaitingForSigsWithoutLiquidityPurchaseCodec, interactiveTxWaitingForSigsWithTxsCodec, interactiveTxWaitingForSigsCodec): (Codec[InteractiveTxSigningSession.WaitingForSigs], Codec[InteractiveTxSigningSession.WaitingForSigs], Codec[InteractiveTxSigningSession.WaitingForSigs]) = {
+      val unsignedLocalCommitWithTxsCodec: Codec[UnsignedLocalCommit] = (
         ("index" | uint64overflow) ::
           ("spec" | commitmentSpecCodec) ::
           ("commitTx" | commitTxCodec) ::
-          ("htlcTxs" | listOfN(uint16, htlcTxCodec))).as[UnsignedLocalCommit]
+          ("htlcTxs" | listOfN(uint16, htlcTxCodec))).as[ChannelTypes3.UnsignedLocalCommit].decodeOnly.map[UnsignedLocalCommit](_.migrate()).decodeOnly
+
+      val unsignedLocalCommitCodec: Codec[UnsignedLocalCommit] = (
+        ("index" | uint64overflow) ::
+          ("spec" | commitmentSpecCodec) ::
+          ("txId" | txId) ::
+          ("input" | inputInfoCodec)).as[UnsignedLocalCommit]
 
       val waitingForSigsWithoutLiquidityPurchaseCodec: Codec[InteractiveTxSigningSession.WaitingForSigs] = (
         ("fundingParams" | fundingParamsCodec) ::
           ("fundingTxIndex" | uint32) ::
           ("fundingTx" | partiallySignedSharedTransactionCodec) ::
-          ("localCommit" | either(bool8, unsignedLocalCommitCodec, localCommitCodec(commitmentSpecCodec))) ::
+          ("localCommit" | either(bool8, unsignedLocalCommitWithTxsCodec, localCommitWithTxsCodec(commitmentSpecCodec))) ::
           ("remoteCommit" | remoteCommitCodec(commitmentSpecCodec)) ::
           ("liquidityPurchase" | provide(Option.empty[LiquidityAds.PurchaseBasicInfo]))).as[InteractiveTxSigningSession.WaitingForSigs]
+
+      val waitingForSigsWithTxsCodec: Codec[InteractiveTxSigningSession.WaitingForSigs] = (
+        ("fundingParams" | fundingParamsCodec) ::
+          ("fundingTxIndex" | uint32) ::
+          ("fundingTx" | partiallySignedSharedTransactionCodec) ::
+          ("localCommit" | either(bool8, unsignedLocalCommitWithTxsCodec, localCommitWithTxsCodec(commitmentSpecCodec))) ::
+          ("remoteCommit" | remoteCommitCodec(commitmentSpecCodec)) ::
+          ("liquidityPurchase" | optional(bool8, liquidityPurchaseCodec))).as[InteractiveTxSigningSession.WaitingForSigs]
 
       val waitingForSigsCodec: Codec[InteractiveTxSigningSession.WaitingForSigs] = (
         ("fundingParams" | fundingParamsCodec) ::
@@ -699,17 +761,19 @@ private[channel] object ChannelCodecs4 {
           ("remoteCommit" | remoteCommitCodec(commitmentSpecCodec)) ::
           ("liquidityPurchase" | optional(bool8, liquidityPurchaseCodec))).as[InteractiveTxSigningSession.WaitingForSigs]
 
-      (waitingForSigsWithoutLiquidityPurchaseCodec, waitingForSigsCodec)
+      (waitingForSigsWithoutLiquidityPurchaseCodec, waitingForSigsWithTxsCodec, waitingForSigsCodec)
     }
 
     val dualFundingStatusCodec: Codec[DualFundingStatus] = discriminated[DualFundingStatus].by(uint8)
       .\(0x01) { case status: DualFundingStatus if !status.isInstanceOf[DualFundingStatus.RbfWaitingForSigs] => DualFundingStatus.WaitingForConfirmations }(provide(DualFundingStatus.WaitingForConfirmations))
-      .\(0x03) { case status: DualFundingStatus.RbfWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[DualFundingStatus.RbfWaitingForSigs])
+      .\(0x04) { case status: DualFundingStatus.RbfWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[DualFundingStatus.RbfWaitingForSigs])
+      .\(0x03) { case status: DualFundingStatus.RbfWaitingForSigs => status }(interactiveTxWaitingForSigsWithTxsCodec.as[DualFundingStatus.RbfWaitingForSigs])
       .\(0x02) { case status: DualFundingStatus.RbfWaitingForSigs => status }(interactiveTxWaitingForSigsWithoutLiquidityPurchaseCodec.as[DualFundingStatus.RbfWaitingForSigs])
 
     val spliceStatusCodec: Codec[SpliceStatus] = discriminated[SpliceStatus].by(uint8)
       .\(0x01) { case status: SpliceStatus if !status.isInstanceOf[SpliceStatus.SpliceWaitingForSigs] => SpliceStatus.NoSplice }(provide(SpliceStatus.NoSplice))
-      .\(0x03) { case status: SpliceStatus.SpliceWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[channel.SpliceStatus.SpliceWaitingForSigs])
+      .\(0x04) { case status: SpliceStatus.SpliceWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[channel.SpliceStatus.SpliceWaitingForSigs])
+      .\(0x03) { case status: SpliceStatus.SpliceWaitingForSigs => status }(interactiveTxWaitingForSigsWithTxsCodec.as[channel.SpliceStatus.SpliceWaitingForSigs])
       .\(0x02) { case status: SpliceStatus.SpliceWaitingForSigs => status }(interactiveTxWaitingForSigsWithoutLiquidityPurchaseCodec.as[channel.SpliceStatus.SpliceWaitingForSigs])
 
     private val shortids: Codec[ChannelTypes4.ShortIds] = (
@@ -751,6 +815,14 @@ private[channel] object ChannelCodecs4 {
         ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))).as[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED]
 
     val DATA_WAIT_FOR_DUAL_FUNDING_SIGNED_13_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED] = (
+      ("channelParams" | paramsCodec) ::
+        ("secondRemotePerCommitmentPoint" | publicKey) ::
+        ("localPushAmount" | millisatoshi) ::
+        ("remotePushAmount" | millisatoshi) ::
+        ("status" | interactiveTxWaitingForSigsWithTxsCodec) ::
+        ("remoteChannelData_opt" | optional(bool8, varsizebinarydata))).as[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED]
+
+    val DATA_WAIT_FOR_DUAL_FUNDING_SIGNED_1c_Codec: Codec[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED] = (
       ("channelParams" | paramsCodec) ::
         ("secondRemotePerCommitmentPoint" | publicKey) ::
         ("localPushAmount" | millisatoshi) ::
@@ -869,6 +941,14 @@ private[channel] object ChannelCodecs4 {
         ("remoteOnly_opt" | optional(bool8, closingTxCodec))).as[ClosingTxs]
 
     val DATA_NEGOTIATING_SIMPLE_17_Codec: Codec[DATA_NEGOTIATING_SIMPLE] = (
+      ("commitments" | commitmentsCodecWithLocalTxs) ::
+        ("lastClosingFeerate" | feeratePerKw) ::
+        ("localScriptPubKey" | varsizebinarydata) ::
+        ("remoteScriptPubKey" | varsizebinarydata) ::
+        ("proposedClosingTxs" | listOfN(uint16, closingTxsCodec)) ::
+        ("publishedClosingTxs" | listOfN(uint16, closingTxCodec))).as[DATA_NEGOTIATING_SIMPLE]
+
+    val DATA_NEGOTIATING_SIMPLE_1d_Codec: Codec[DATA_NEGOTIATING_SIMPLE] = (
       ("commitments" | commitmentsCodec) ::
         ("lastClosingFeerate" | feeratePerKw) ::
         ("localScriptPubKey" | varsizebinarydata) ::
@@ -935,6 +1015,8 @@ private[channel] object ChannelCodecs4 {
 
   // Order matters!
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(uint16)
+    .typecase(0x1d, Codecs.DATA_NEGOTIATING_SIMPLE_1d_Codec)
+    .typecase(0x1c, Codecs.DATA_WAIT_FOR_DUAL_FUNDING_SIGNED_1c_Codec)
     .typecase(0x1b, Codecs.DATA_CLOSING_1b_Codec)
     .typecase(0x1a, Codecs.DATA_CLOSING_1a_Codec)
     .typecase(0x19, Codecs.DATA_SHUTDOWN_19_Codec)

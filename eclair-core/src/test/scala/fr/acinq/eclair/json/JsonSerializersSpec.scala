@@ -125,7 +125,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val localParams = LocalParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, Long.MaxValue.msat, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
     val remoteParams = RemoteParams(dummyPublicKey, 546 sat, UInt64.MaxValue, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey, DefaultCommitmentFormat)
-    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), IndividualSignature(ByteVector64.Zeroes)), Nil)
+    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), TxId(dummyBytes32), commitmentInput, IndividualSignature(ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 50_000_000 msat, 100_000_000 msat), TxId(dummyBytes32), dummyPublicKey)
     val channelInfo = RES_GET_CHANNEL_INFO(
       PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"),
@@ -207,13 +207,20 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "localCommit": {
         |           "index": 0,
         |           "spec": { "htlcs": [], "commitTxFeerate": 2500, "toLocal": 100000000, "toRemote": 50000000 },
-        |           "commitTxAndRemoteSig": { "commitTx": { "txid": "4ebd325a4b394cff8c57e8317ccf5a8d0e2bdf1b8526f8aad6c8e43d8240621a", "tx": "02000000000000000000" },"remoteSig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
-        |           "htlcTxsAndRemoteSigs": []
+        |           "txId": "0202020202020202020202020202020202020202020202020202020202020202",
+        |           "input": {
+        |             "outPoint":"0202020202020202020202020202020202020202020202020202020202020202:0",
+        |             "amountSatoshis": 150000
+        |           },
+        |           "remoteSig": {
+        |             "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        |           },
+        |           "htlcRemoteSigs": []
         |         },
         |         "remoteCommit": {
         |           "index": 0,
         |           "spec": { "htlcs": [], "commitTxFeerate": 2500, "toLocal": 50000000, "toRemote": 100000000 },
-        |           "txid": "0202020202020202020202020202020202020202020202020202020202020202",
+        |           "txId": "0202020202020202020202020202020202020202020202020202020202020202",
         |           "remotePerCommitmentPoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
         |         }
         |       }
@@ -408,7 +415,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val dummyInputInfo = InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(Satoshi(0), Nil), ByteVector.empty)
 
     val htlcSuccessTx = Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800")
-    val htlcSuccessTxInfo = HtlcSuccessTx(dummyInputInfo, htlcSuccessTx, ByteVector32.One, 3, CltvExpiry(1105))
+    val htlcSuccessTxInfo = UnsignedHtlcSuccessTx(dummyInputInfo, htlcSuccessTx, ByteVector32.One, 3, CltvExpiry(1105), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val htlcSuccessJson =
       s"""{
          |  "txid": "${htlcSuccessTx.txid.value.toHex}",
@@ -421,7 +428,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     assertJsonEquals(JsonSerializers.serialization.write(htlcSuccessTxInfo)(JsonSerializers.formats), htlcSuccessJson)
 
     val claimHtlcTimeoutTx = Transaction.read("010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000")
-    val claimHtlcTimeoutTxInfo = ClaimHtlcTimeoutTx(dummyInputInfo, claimHtlcTimeoutTx, ByteVector32.One, 2, CltvExpiry(144))
+    val claimHtlcTimeoutTxInfo = ClaimHtlcTimeoutTx(null, dummyInputInfo, claimHtlcTimeoutTx, ByteVector32.One, 2, CltvExpiry(144), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val claimHtlcTimeoutJson =
       s"""{
          |  "txid": "${claimHtlcTimeoutTx.txid.value.toHex}",

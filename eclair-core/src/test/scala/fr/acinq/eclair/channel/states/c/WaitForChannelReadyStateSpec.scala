@@ -24,6 +24,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
@@ -252,7 +253,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
   test("recv WatchFundingSpentTriggered (remote commit)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     // bob publishes his commitment tx
-    val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.signCommitTx()
     alice ! WatchFundingSpentTriggered(tx)
     alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx]
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]
@@ -270,7 +271,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
 
   test("recv Error") { f =>
     import f._
-    val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = alice.signCommitTx()
     alice ! Error(ByteVector32.Zeroes, "oops")
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)
@@ -281,7 +282,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
 
   test("recv Error (nothing at stake)", Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
     import f._
-    val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = bob.signCommitTx()
     bob ! Error(ByteVector32.Zeroes, "funding double-spent")
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSING)
@@ -300,7 +301,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
   test("recv CMD_FORCECLOSE") { f =>
     import f._
     val sender = TestProbe()
-    val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val tx = alice.signCommitTx()
     alice ! CMD_FORCECLOSE(sender.ref)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)

@@ -559,13 +559,6 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   }
 
   def localClose(s: TestFSMRef[ChannelState, ChannelData, Channel], s2blockchain: TestProbe, htlcSuccessCount: Int = 0, htlcTimeoutCount: Int = 0): (LocalCommitPublished, PublishedForceCloseTxs) = {
-    // an error occurs and s publishes its commit tx
-    val localCommit = s.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit
-    // check that we store the local txs without sigs
-    localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull))
-    localCommit.htlcTxsAndRemoteSigs.foreach(_.htlcTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull)))
-
-    val commitTx = localCommit.commitTxAndRemoteSig.commitTx.tx
     s ! Error(ByteVector32.Zeroes, "oops")
     eventually(assert(s.stateName == CLOSING))
     val closingState = s.stateData.asInstanceOf[DATA_CLOSING]
@@ -576,14 +569,13 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(localCommitPublished.incomingHtlcs.size >= htlcSuccessCount)
     assert(localCommitPublished.outgoingHtlcs.size == htlcTimeoutCount)
 
-    val publishedLocalCommitTx = s2blockchain.expectFinalTxPublished("commit-tx").tx
-    assert(publishedLocalCommitTx.txid == commitTx.txid)
-    assert(publishedLocalCommitTx.wtxid != commitTx.wtxid)
+    val commitTx = s2blockchain.expectFinalTxPublished("commit-tx").tx
+    assert(commitTx.txid == closingState.commitments.latest.localCommit.txId)
     val commitInput = closingState.commitments.latest.commitInput
-    Transaction.correctlySpends(publishedLocalCommitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    Transaction.correctlySpends(commitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     val publishedAnchorTx_opt = closingState.commitments.params.commitmentFormat match {
       case DefaultCommitmentFormat => None
-      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(s2blockchain.expectReplaceableTxPublished[ReplaceableLocalCommitAnchor].txInfo.tx)
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(s2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx].tx)
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     val publishedMainTx_opt = localCommitPublished.localOutput_opt.map(_ => s2blockchain.expectFinalTxPublished("local-main-delayed").tx)
@@ -603,19 +595,25 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       case _: Transactions.AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
         // all htlcs success/timeout should be published as replaceable txs
         val publishedHtlcTxs = (0 until htlcSuccessCount + htlcTimeoutCount).map { _ =>
-          val htlcTx = s2blockchain.expectReplaceableTxPublished[ReplaceableHtlc]
-          assert(htlcTx.commitTx == publishedLocalCommitTx)
+          val htlcTx = s2blockchain.expectMsgType[PublishReplaceableTx]
+          assert(htlcTx.commitTx == commitTx)
           assert(localCommitPublished.htlcOutputs.contains(htlcTx.txInfo.input.outPoint))
-          htlcTx
+          htlcTx.txInfo
         }
-        // the publisher actors will sign those transactions before broadcasting them
-        val successTxs = publishedHtlcTxs.collect { case tx: ReplaceableHtlcSuccess => tx.sign(Map.empty).txInfo.tx }
-        val timeoutTxs = publishedHtlcTxs.collect { case tx: ReplaceableHtlcTimeout => tx.sign(Map.empty).txInfo.tx }
+        // the publisher actors will sign the HTLC transactions, so we sign them here to test witness validity
+        val successTxs = publishedHtlcTxs.collect { case tx: HtlcSuccessTx =>
+          assert(localCommitPublished.incomingHtlcs.get(tx.input.outPoint).contains(tx.htlcId))
+          tx.sign()
+        }
+        val timeoutTxs = publishedHtlcTxs.collect { case tx: HtlcTimeoutTx =>
+          assert(localCommitPublished.outgoingHtlcs.get(tx.input.outPoint).contains(tx.htlcId))
+          tx.sign()
+        }
         (successTxs, timeoutTxs)
     }
     assert(publishedHtlcSuccessTxs.size == htlcSuccessCount)
     assert(publishedHtlcTimeoutTxs.size == htlcTimeoutCount)
-    (publishedHtlcSuccessTxs ++ publishedHtlcTimeoutTxs).foreach(htlcTx => Transaction.correctlySpends(htlcTx, publishedLocalCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    (publishedHtlcSuccessTxs ++ publishedHtlcTimeoutTxs).foreach(htlcTx => Transaction.correctlySpends(htlcTx, commitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     // we're not claiming the outputs of htlc txs yet
     assert(localCommitPublished.htlcDelayedOutputs.isEmpty)
 
@@ -655,7 +653,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
     val publishedAnchorTx_opt = closingData.commitments.params.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(s2blockchain.expectReplaceableTxPublished[ReplaceableRemoteCommitAnchor].txInfo.tx)
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(s2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx].tx)
       case Transactions.DefaultCommitmentFormat => None
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
@@ -664,15 +662,22 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     // all htlcs success/timeout should be claimed
     val publishedClaimHtlcTxs = (0 until htlcSuccessCount + htlcTimeoutCount).map { _ =>
       val claimHtlcTx = s2blockchain.expectMsgType[PublishReplaceableTx]
-      assert(claimHtlcTx.tx.commitTx == rCommitTx)
+      assert(claimHtlcTx.commitTx == rCommitTx)
       assert(remoteCommitPublished.htlcOutputs.contains(claimHtlcTx.input))
-      Transaction.correctlySpends(claimHtlcTx.tx.txInfo.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      claimHtlcTx
+      claimHtlcTx.txInfo
     }
-    val publishedHtlcSuccessTxs = publishedClaimHtlcTxs.map(_.tx).collect { case tx: ReplaceableClaimHtlcSuccess => tx.txInfo.tx }
+    // the publisher actors will sign the HTLC transactions, so we sign them here to test witness validity
+    val publishedHtlcSuccessTxs = publishedClaimHtlcTxs.collect { case tx: ClaimHtlcSuccessTx =>
+      assert(remoteCommitPublished.incomingHtlcs.get(tx.input.outPoint).contains(tx.htlcId))
+      tx.sign()
+    }
     assert(publishedHtlcSuccessTxs.size == htlcSuccessCount)
-    val publishedHtlcTimeoutTxs = publishedClaimHtlcTxs.map(_.tx).collect { case tx: ReplaceableClaimHtlcTimeout => tx.txInfo.tx }
+    val publishedHtlcTimeoutTxs = publishedClaimHtlcTxs.collect { case tx: ClaimHtlcTimeoutTx =>
+      assert(remoteCommitPublished.outgoingHtlcs.get(tx.input.outPoint).contains(tx.htlcId))
+      tx.sign()
+    }
     assert(publishedHtlcTimeoutTxs.size == htlcTimeoutCount)
+    (publishedHtlcSuccessTxs ++ publishedHtlcTimeoutTxs).foreach(htlcTx => Transaction.correctlySpends(htlcTx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
     // we watch the confirmation of the commitment transaction
     s2blockchain.expectWatchTxConfirmed(rCommitTx.txid)
@@ -704,6 +709,10 @@ object ChannelStateTestsBase {
 
   implicit class PimpTestFSM(private val channel: TestFSMRef[ChannelState, ChannelData, Channel]) {
     val nodeParams: NodeParams = channel.underlyingActor.nodeParams
+
+    def signCommitTx(): Transaction = channel.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.fullySignedLocalCommitTx(channel.underlyingActor.channelKeys)
+
+    def htlcTxs(): Seq[UnsignedHtlcTx] = channel.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.htlcTxs(channel.underlyingActor.channelKeys).map(_._1)
 
     def setBitcoinCoreFeerates(feerates: FeeratesPerKw): Unit = channel.underlyingActor.nodeParams.setBitcoinCoreFeerates(feerates)
 

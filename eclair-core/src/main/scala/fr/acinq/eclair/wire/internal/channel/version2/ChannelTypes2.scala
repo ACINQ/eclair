@@ -22,13 +22,13 @@ import fr.acinq.eclair.transactions.Transactions._
 
 private[channel] object ChannelTypes2 {
 
-  case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[HtlcTx]], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) {
+  case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[UnsignedHtlcTx]], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimLocalAnchorTx], irrevocablySpent: Map[OutPoint, Transaction]) {
     def migrate(): channel.LocalCommitPublished = channel.LocalCommitPublished(
       commitTx = commitTx,
       localOutput_opt = claimMainDelayedOutputTx.map(_.input.outPoint),
       anchorOutput_opt = claimAnchorTxs.headOption.map(_.input.outPoint),
       incomingHtlcs = htlcTxs.collect {
-        case (outpoint, Some(htlcTx: HtlcSuccessTx)) => outpoint -> htlcTx.htlcId
+        case (outpoint, Some(htlcTx: UnsignedHtlcSuccessTx)) => outpoint -> htlcTx.htlcId
         // This case only happens for a received HTLC for which we don't yet have the preimage.
         // We cannot easily find the htlcId, so we just set it to a high value that won't match existing HTLCs.
         // This is fine because it is only used to unwatch HTLC outpoints that were failed downstream, which is just
@@ -36,14 +36,14 @@ private[channel] object ChannelTypes2 {
         case (outpoint, None) => outpoint -> 0x00ffffffffffffffL
       },
       outgoingHtlcs = htlcTxs.collect {
-        case (outpoint, Some(htlcTx: HtlcTimeoutTx)) => outpoint -> htlcTx.htlcId
+        case (outpoint, Some(htlcTx: UnsignedHtlcTimeoutTx)) => outpoint -> htlcTx.htlcId
       },
       htlcDelayedOutputs = claimHtlcDelayedTxs.map(_.input.outPoint).toSet,
       irrevocablySpent = irrevocablySpent
     )
   }
 
-  case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], claimHtlcTxs: Map[OutPoint, Option[ClaimHtlcTx]], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) {
+  case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], claimHtlcTxs: Map[OutPoint, Option[ClaimHtlcTx]], claimAnchorTxs: List[ClaimLocalAnchorTx], irrevocablySpent: Map[OutPoint, Transaction]) {
     def migrate(): channel.RemoteCommitPublished = channel.RemoteCommitPublished(
       commitTx = commitTx,
       localOutput_opt = claimMainOutputTx.map(_.input.outPoint),
