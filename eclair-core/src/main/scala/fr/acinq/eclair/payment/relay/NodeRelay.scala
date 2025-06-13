@@ -42,6 +42,7 @@ import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Alias, CltvExpiry, CltvExpiryDelta, EncodedNodeId, FeatureSupport, Features, InitFeature, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, UInt64, UnknownFeature, nodeFee, randomBytes32}
+import scodec.bits.ByteVector
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -195,7 +196,7 @@ object NodeRelay {
             // If we received a failure from the next trampoline node, we won't be able to decrypt it: we should encrypt
             // it with our trampoline shared secret and relay it upstream, because only the sender can decrypt it.
             // Note that we currently don't process the downstream attribution data, but we could!
-            failures.collectFirst { case UnreadableRemoteFailure(_, _, packet, _) => FailureReason.EncryptedDownstreamFailure(packet, attribution_opt = None) }
+            failures.collectFirst { case UnreadableRemoteFailure(_, _, packet, attribution_opt, _) => FailureReason.EncryptedDownstreamFailure(packet, attribution_opt) }
               .getOrElse(FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure()))
           case nextPayload: IntermediatePayload.NodeRelay.ToNonTrampoline =>
             // The recipient doesn't support trampoline: if we received a failure from them, we forward it upstream.
@@ -416,11 +417,11 @@ class NodeRelay private(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         // this is the fulfill that arrives from downstream channels
-        case WrappedPreimageReceived(PreimageReceived(_, paymentPreimage)) =>
+        case WrappedPreimageReceived(PreimageReceived(_, paymentPreimage, attribution_opt)) =>
           if (!fulfilledUpstream) {
             // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
             context.log.debug("got preimage from downstream")
-            fulfillPayment(upstream, paymentPreimage)
+            fulfillPayment(upstream, paymentPreimage, attribution_opt)
             sending(upstream, recipient, walletNodeId_opt, recipientFeatures_opt, nextPayload, startedAt, fulfilledUpstream = true)
           } else {
             // we don't want to fulfill multiple times
@@ -548,16 +549,15 @@ class NodeRelay private(nodeParams: NodeParams,
     upstream.received.foreach(r => rejectHtlc(r.add.id, r.add.channelId, upstream.amountIn, r.receivedAt, Some(failure1)))
   }
 
-  private def fulfillPayment(upstream: Upstream.Hot.Trampoline, paymentPreimage: ByteVector32): Unit = upstream.received.foreach(r => {
-    // Note that we currently ignore downstream attribution data, but we could process it here to score downstream nodes.
-    val cmd = CMD_FULFILL_HTLC(r.add.id, paymentPreimage, downstreamAttribution_opt = None, Some(r.receivedAt), commit = true)
+  private def fulfillPayment(upstream: Upstream.Hot.Trampoline, paymentPreimage: ByteVector32, downstreamAttribution_opt: Option[ByteVector]): Unit = upstream.received.foreach(r => {
+    val cmd = CMD_FULFILL_HTLC(r.add.id, paymentPreimage, downstreamAttribution_opt, Some(r.receivedAt), commit = true)
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, r.add.channelId, cmd)
   })
 
   private def success(upstream: Upstream.Hot.Trampoline, fulfilledUpstream: Boolean, paymentSent: PaymentSent): Unit = {
     // We may have already fulfilled upstream, but we can now emit an accurate relayed event and clean-up resources.
     if (!fulfilledUpstream) {
-      fulfillPayment(upstream, paymentSent.paymentPreimage)
+      fulfillPayment(upstream, paymentSent.paymentPreimage, paymentSent.remainingAttribution_opt)
     }
     val incoming = upstream.received.map(r => PaymentRelayed.IncomingPart(r.add.amountMsat, r.add.channelId, r.receivedAt))
     val outgoing = paymentSent.parts.map(part => PaymentRelayed.OutgoingPart(part.amountWithFees, part.toChannelId, part.timestamp))
