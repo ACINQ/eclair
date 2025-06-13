@@ -261,8 +261,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(8, Some(minerAddress))
     // we wait until the htlc-timeout has been broadcast
-    assert(localCommit.htlcTxs.size == 1)
-    waitForOutputSpent(localCommit.htlcTxs.keys.head, bitcoinClient, sender)
+    assert(localCommit.htlcOutputs.size == 1)
+    waitForOutputSpent(localCommit.htlcOutputs.head, bitcoinClient, sender)
     // we generate more blocks for the htlc-timeout to reach enough confirmations
     generateBlocks(8, Some(minerAddress))
     // this will fail the htlc
@@ -317,8 +317,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     generateBlocks((htlc.cltvExpiry.blockHeight - getBlockHeight()).toInt, Some(minerAddress))
     // we wait until the claim-htlc-timeout has been broadcast
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
-    assert(remoteCommit.claimHtlcTxs.size == 1)
-    waitForOutputSpent(remoteCommit.claimHtlcTxs.keys.head, bitcoinClient, sender)
+    assert(remoteCommit.htlcOutputs.size == 1)
+    waitForOutputSpent(remoteCommit.htlcOutputs.head, bitcoinClient, sender)
     // and we generate blocks for the claim-htlc-timeout to reach enough confirmations
     generateBlocks(8, Some(minerAddress))
     // this will fail the htlc

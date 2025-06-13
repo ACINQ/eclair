@@ -607,6 +607,7 @@ object NodeParams extends Logging {
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
+        maxClosingFeerate = FeeratePerKw(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.max-closing-feerate")))),
         safeUtxosThreshold = config.getInt("on-chain-fees.safe-utxos-threshold"),
         spendAnchorWithoutHtlcs = config.getBoolean("on-chain-fees.spend-anchor-without-htlcs"),
         anchorWithoutHtlcsMaxFee = Satoshi(config.getLong("on-chain-fees.anchor-without-htlcs-max-fee-satoshis")),

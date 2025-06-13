@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong, randomKey}
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -95,32 +95,36 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     awaitCond(alice.stateName == CLOSING)
 
     val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
-    lcp.claimAnchorTx_opt.foreach(_ => alice2blockchain.expectReplaceableTxPublished[ReplaceableLocalCommitAnchor])
-    lcp.claimMainDelayedOutputTx.foreach(_ => alice2blockchain.expectFinalTxPublished("local-main-delayed"))
+    lcp.anchorOutput_opt.foreach(_ => alice2blockchain.expectReplaceableTxPublished[ReplaceableLocalCommitAnchor])
+    lcp.localOutput_opt.foreach(_ => alice2blockchain.expectFinalTxPublished("local-main-delayed"))
     // Alice is missing the preimage for 2 of the HTLCs she received.
-    assert(lcp.htlcTxs.size == 6)
+    assert(lcp.htlcOutputs.size == 6)
     val htlcTxs = (0 until 4).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx]).map(_.tx).collect { case tx: ReplaceableHtlc => tx.sign(Map.empty) }
     alice2blockchain.expectWatchTxConfirmed(commitTx.tx.txid)
     val htlcTimeoutTxs = htlcTxs.map(_.txInfo).collect { case tx: HtlcTimeoutTx => tx }
     assert(htlcTimeoutTxs.length == 3)
+    assert(lcp.outgoingHtlcs.values.toSet == htlcTimeoutTxs.map(_.htlcId).toSet)
     val htlcSuccessTxs = htlcTxs.map(_.txInfo).collect { case tx: HtlcSuccessTx => tx }
     assert(htlcSuccessTxs.length == 1)
+    assert(lcp.incomingHtlcs.values.toSet.contains(htlcSuccessTxs.head.htlcId))
 
     // Bob detects Alice's force-close.
     bob ! WatchFundingSpentTriggered(commitTx.tx)
     awaitCond(bob.stateName == CLOSING)
 
     val rcp = bob.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
-    rcp.claimAnchorTx_opt.foreach(_ => bob2blockchain.expectReplaceableTxPublished[ReplaceableRemoteCommitAnchor])
-    rcp.claimMainOutputTx.foreach(_ => bob2blockchain.expectFinalTxPublished("remote-main-delayed"))
+    rcp.anchorOutput_opt.foreach(_ => bob2blockchain.expectReplaceableTxPublished[ReplaceableRemoteCommitAnchor])
+    rcp.localOutput_opt.foreach(_ => bob2blockchain.expectFinalTxPublished("remote-main-delayed"))
     // Bob is missing the preimage for 2 of the HTLCs she received.
-    assert(rcp.claimHtlcTxs.size == 6)
+    assert(rcp.htlcOutputs.size == 6)
     val claimHtlcTxs = (0 until 4).map(_ => bob2blockchain.expectMsgType[PublishReplaceableTx])
     bob2blockchain.expectWatchTxConfirmed(commitTx.tx.txid)
     val claimHtlcTimeoutTxs = claimHtlcTxs.map(_.tx.txInfo).collect { case tx: ClaimHtlcTimeoutTx => tx }
     assert(claimHtlcTimeoutTxs.length == 3)
+    assert(rcp.outgoingHtlcs.values.toSet == claimHtlcTimeoutTxs.map(_.htlcId).toSet)
     val claimHtlcSuccessTxs = claimHtlcTxs.map(_.tx.txInfo).collect { case tx: ClaimHtlcSuccessTx => tx }
     assert(claimHtlcSuccessTxs.length == 1)
+    assert(rcp.incomingHtlcs.values.toSet.contains(claimHtlcSuccessTxs.head.htlcId))
 
     Fixture(alice, Set(htlca1a, htlca1b, htlca2), htlcSuccessTxs, htlcTimeoutTxs, bob, Set(htlcb1a, htlcb1b, htlcb2), claimHtlcSuccessTxs, claimHtlcTimeoutTxs, probe)
   }
@@ -241,10 +245,11 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = Some(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx, CltvExpiryDelta(720))),
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = Some(tx3.input.outPoint),
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = None,
@@ -263,10 +268,11 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = Some(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx, CltvExpiryDelta(720))),
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = Some(tx3.input.outPoint),
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map(tx2.input.outPoint -> tx2.tx)
         )),
         remoteCommitPublished = None,
@@ -285,17 +291,19 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = None,
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx3.tx,
-          claimMainOutputTx = None,
-          claimHtlcTxs = Map.empty,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map.empty
         )),
         nextRemoteCommitPublished = None,
@@ -313,17 +321,19 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = None,
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx3.tx,
-          claimMainOutputTx = None,
-          claimHtlcTxs = Map.empty,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map(tx3.input.outPoint -> tx3.tx)
         )),
         nextRemoteCommitPublished = None,
@@ -343,24 +353,27 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = None,
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx3.tx,
-          claimMainOutputTx = None,
-          claimHtlcTxs = Map.empty,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map.empty
         )),
         nextRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4.tx,
-          claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
-          claimHtlcTxs = Map.empty,
-          claimAnchorTxs = Nil,
+          localOutput_opt = Some(tx5.input.outPoint),
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map(tx4.input.outPoint -> tx4.tx)
         )),
         futureRemoteCommitPublished = None,
@@ -380,9 +393,10 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         nextRemoteCommitPublished = None,
         futureRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4.tx,
-          claimMainOutputTx = Some(ClaimRemoteDelayedOutputTx(tx5.input, tx5.tx)),
-          claimHtlcTxs = Map.empty,
-          claimAnchorTxs = Nil,
+          localOutput_opt = Some(tx5.input.outPoint),
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map.empty
         )),
         revokedCommitPublished = Nil)
@@ -401,9 +415,10 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         nextRemoteCommitPublished = None,
         futureRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4.tx,
-          claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
-          claimHtlcTxs = Map.empty,
-          claimAnchorTxs = Nil,
+          localOutput_opt = Some(tx5.input.outPoint),
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map(tx4.input.outPoint -> tx4.tx)
         )),
         revokedCommitPublished = Nil)
@@ -419,10 +434,11 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx1.tx,
-          claimMainDelayedOutputTx = None,
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = None,
@@ -431,26 +447,26 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         revokedCommitPublished =
           RevokedCommitPublished(
             commitTx = tx2.tx,
-            claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx3.input, tx3.tx)),
-            mainPenaltyTx = None,
-            htlcPenaltyTxs = Nil,
-            claimHtlcDelayedPenaltyTxs = Nil,
+            localOutput_opt = Some(tx3.input.outPoint),
+            remoteOutput_opt = None,
+            htlcOutputs = Set.empty,
+            htlcDelayedOutputs = Set.empty,
             irrevocablySpent = Map.empty
           ) ::
             RevokedCommitPublished(
               commitTx = tx4.tx,
-              claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
-              mainPenaltyTx = None,
-              htlcPenaltyTxs = Nil,
-              claimHtlcDelayedPenaltyTxs = Nil,
+              localOutput_opt = Some(tx5.input.outPoint),
+              remoteOutput_opt = None,
+              htlcOutputs = Set.empty,
+              htlcDelayedOutputs = Set.empty,
               irrevocablySpent = Map.empty
             ) ::
             RevokedCommitPublished(
               commitTx = tx6.tx,
-              claimMainOutputTx = None,
-              mainPenaltyTx = None,
-              htlcPenaltyTxs = Nil,
-              claimHtlcDelayedPenaltyTxs = Nil,
+              localOutput_opt = None,
+              remoteOutput_opt = None,
+              htlcOutputs = Set.empty,
+              htlcDelayedOutputs = Set.empty,
               irrevocablySpent = Map.empty
             ) :: Nil
       )
@@ -466,10 +482,11 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx1.tx,
-          claimMainDelayedOutputTx = None,
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = None,
@@ -478,26 +495,26 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         revokedCommitPublished =
           RevokedCommitPublished(
             commitTx = tx2.tx,
-            claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx3.input, tx3.tx)),
-            mainPenaltyTx = None,
-            htlcPenaltyTxs = Nil,
-            claimHtlcDelayedPenaltyTxs = Nil,
+            localOutput_opt = Some(tx3.input.outPoint),
+            remoteOutput_opt = None,
+            htlcOutputs = Set.empty,
+            htlcDelayedOutputs = Set.empty,
             irrevocablySpent = Map.empty
           ) ::
             RevokedCommitPublished(
               commitTx = tx4.tx,
-              claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
-              mainPenaltyTx = None,
-              htlcPenaltyTxs = Nil,
-              claimHtlcDelayedPenaltyTxs = Nil,
+              localOutput_opt = Some(tx5.input.outPoint),
+              remoteOutput_opt = None,
+              htlcOutputs = Set.empty,
+              htlcDelayedOutputs = Set.empty,
               irrevocablySpent = Map(tx4.input.outPoint -> tx4.tx)
             ) ::
             RevokedCommitPublished(
               commitTx = tx6.tx,
-              claimMainOutputTx = None,
-              mainPenaltyTx = None,
-              htlcPenaltyTxs = Nil,
-              claimHtlcDelayedPenaltyTxs = Nil,
+              localOutput_opt = None,
+              remoteOutput_opt = None,
+              htlcOutputs = Set.empty,
+              htlcDelayedOutputs = Set.empty,
               irrevocablySpent = Map.empty
             ) :: Nil
       )

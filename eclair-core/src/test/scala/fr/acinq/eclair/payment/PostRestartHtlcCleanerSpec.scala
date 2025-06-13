@@ -21,7 +21,7 @@ import akka.actor.ActorRef
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, OutPoint, SatoshiLong, Script, TxId, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
@@ -34,7 +34,6 @@ import fr.acinq.eclair.payment.relay.{OnTheFlyFunding, PostRestartHtlcCleaner, R
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.router.BaseRouterSpec.channelHopFromUpdate
 import fr.acinq.eclair.router.Router.Route
-import fr.acinq.eclair.transactions.Transactions.{ClaimRemoteDelayedOutputTx, InputInfo}
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.{ChannelCodecs, ChannelCodecsSpec}
 import fr.acinq.eclair.wire.protocol._
@@ -426,7 +425,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       val (closingState, closingTxs) = localClose(alice, alice2blockchain, htlcTimeoutCount = 4)
       alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, closingState.commitTx)
       // All committed htlcs timed out except the last two; one will be fulfilled later and the other will timeout later.
-      assert(closingState.htlcTxs.size == 4)
+      assert(closingState.htlcOutputs.size == 4)
       assert(closingTxs.htlcTxs.size == 4)
       val htlcTxs = closingTxs.htlcTxs.sortBy(_.txOut.map(_.amount).sum)
       htlcTxs.reverse.drop(2).zipWithIndex.foreach {
@@ -512,9 +511,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       // NB: this isn't actually a revoked commit tx, but we don't check that here, if the channel says it's a revoked
       // commit we accept it as such, so it simplifies the test.
       val revokedCommitTx = normal.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.copy(txOut = Seq(TxOut(4500 sat, Script.pay2wpkh(randomKey().publicKey))))
-      val dummyClaimMainTx = Transaction(2, Seq(TxIn(OutPoint(revokedCommitTx, 0), Nil, 0)), Seq(revokedCommitTx.txOut.head.copy(amount = 4000 sat)), 0)
-      val dummyClaimMain = ClaimRemoteDelayedOutputTx(InputInfo(OutPoint(revokedCommitTx, 0), revokedCommitTx.txOut.head, ByteVector.empty), dummyClaimMainTx)
-      val rcp = RevokedCommitPublished(revokedCommitTx, Some(dummyClaimMain), None, Nil, Nil, Map(revokedCommitTx.txIn.head.outPoint -> revokedCommitTx))
+      val rcp = RevokedCommitPublished(revokedCommitTx, Some(OutPoint(revokedCommitTx, 0)), None, Set.empty, Set.empty, Map(revokedCommitTx.txIn.head.outPoint -> revokedCommitTx))
       DATA_CLOSING(normal.commitments, BlockHeight(0), Script.write(Script.pay2wpkh(randomKey().publicKey)), mutualCloseProposed = Nil, revokedCommitPublished = List(rcp))
     }
 

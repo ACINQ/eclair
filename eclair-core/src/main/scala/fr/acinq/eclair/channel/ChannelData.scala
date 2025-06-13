@@ -308,10 +308,28 @@ final case class RES_GET_CHANNEL_INFO(nodeId: PublicKey, channelId: ByteVector32
 
 case class ClosingTxProposed(unsignedTx: ClosingTx, localClosingSigned: ClosingSigned)
 
+/**
+ * When a commitment is published, we keep track of all outputs that can be spent (even if we don't yet have the data
+ * to spend them, for example the preimage for received HTLCs). Once all of those outputs have been spent by a confirmed
+ * transaction, the channel close is complete.
+ *
+ * Note that we only store transactions after they have been confirmed: we're using RBF to get transactions confirmed,
+ * and it would be wasteful to store previous versions of the transactions that have been replaced.
+ */
 sealed trait CommitPublished {
   /** Commitment tx. */
   def commitTx: Transaction
-  /** Map of relevant outpoints that have been spent and the confirmed transaction that spends them. */
+  /** Our main output, if we had some balance in the channel. */
+  def localOutput_opt: Option[OutPoint]
+  /** Our anchor output, if one is available to CPFP the [[commitTx]]. */
+  def anchorOutput_opt: Option[OutPoint]
+  /**
+   * Outputs corresponding to HTLCs that we may be able to claim (even when we don't have the preimage yet).
+   * Note that some HTLC outputs of the [[commitTx]] may not be included, if we know that we will never claim them
+   * (such as HTLCs that we didn't relay or that were failed downstream).
+   */
+  def htlcOutputs: Set[OutPoint]
+  /** Map of outpoints that have been spent and the confirmed transaction that spends them. */
   def irrevocablySpent: Map[OutPoint, Transaction]
   /** Returns true if the commitment transaction is confirmed. */
   def isConfirmed: Boolean = {
@@ -320,101 +338,57 @@ sealed trait CommitPublished {
     // the type of closing.
     irrevocablySpent.values.exists(tx => tx.txid == commitTx.txid) || irrevocablySpent.keys.exists(_.txid == commitTx.txid)
   }
+  /**
+   * Returns true when all outputs that can be claimed have been spent: we can forget the channel at that point.
+   * Note that some of those outputs may be claimed by our peer (e.g. HTLCs that reached their expiry).
+   */
+  def isDone: Boolean
 }
 
 /**
  * Details about a force-close where we published our commitment.
  *
- * @param claimMainDelayedOutputTx tx claiming our main output (if we have one).
- * @param htlcTxs                  txs claiming HTLCs. There will be one entry for each pending HTLC. The value will be
- *                                 None only for incoming HTLCs for which we don't have the preimage (we can't claim them yet).
- * @param claimHtlcDelayedTxs      3rd-stage txs (spending the output of HTLC txs).
- * @param claimAnchorTxs           txs spending our anchor output to bump the feerate of the commitment tx (if applicable).
+ * @param htlcDelayedOutputs when an HTLC transaction confirms, we must claim its output using a 3rd-stage delayed
+ *                           transaction. An entry containing the corresponding output must be added to this set to
+ *                           ensure that we don't forget the channel too soon, and correctly wait until we've spent it.
  */
-case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[HtlcTx]], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
-  // We previously used a list of anchor transactions because we included the confirmation target, but that's obsolete and should be overridden on updates.
-  val claimAnchorTx_opt: Option[ClaimAnchorOutputTx] = claimAnchorTxs.headOption
-
-  /**
-   * A local commit is considered done when:
-   * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
-   * - all 3rd stage txs (txs spending htlc txs) have been confirmed
-   */
-  def isDone: Boolean = {
-    val confirmedTxs = irrevocablySpent.values.map(_.txid).toSet
-    // is the commitment tx confirmed (we need to check this because we may not have any outputs)?
-    val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
-    // is our main output confirmed (if we have one)?
-    val isMainOutputConfirmed = claimMainDelayedOutputTx.forall(tx => irrevocablySpent.contains(tx.input.outPoint))
-    // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
-    val allHtlcsSpent = (htlcTxs.keySet -- irrevocablySpent.keys).isEmpty
-    // are all outputs from htlc txs spent?
-    val unconfirmedHtlcDelayedTxs = claimHtlcDelayedTxs.map(_.input.outPoint)
-      // only the txs which parents are already confirmed may get confirmed (note that this eliminates outputs that have been double-spent by a competing tx)
-      .filter(input => confirmedTxs.contains(input.txid))
-      // has the tx already been confirmed?
-      .filterNot(input => irrevocablySpent.contains(input))
-    isCommitTxConfirmed && isMainOutputConfirmed && allHtlcsSpent && unconfirmedHtlcDelayedTxs.isEmpty
+case class LocalCommitPublished(commitTx: Transaction, localOutput_opt: Option[OutPoint], anchorOutput_opt: Option[OutPoint], incomingHtlcs: Map[OutPoint, Long], outgoingHtlcs: Map[OutPoint, Long], htlcDelayedOutputs: Set[OutPoint], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+  override val htlcOutputs: Set[OutPoint] = incomingHtlcs.keySet ++ outgoingHtlcs.keySet
+  override val isDone: Boolean = {
+    val mainOutputSpent = localOutput_opt.forall(o => irrevocablySpent.contains(o))
+    val allHtlcsSpent = (htlcOutputs -- irrevocablySpent.keySet).isEmpty
+    val allHtlcTxsSpent = (htlcDelayedOutputs -- irrevocablySpent.keySet).isEmpty
+    isConfirmed && mainOutputSpent && allHtlcsSpent && allHtlcTxsSpent
   }
 }
 
 /**
- * Details about a force-close where they published their commitment.
- *
- * @param claimMainOutputTx tx claiming our main output (if we have one).
- * @param claimHtlcTxs      txs claiming HTLCs. There will be one entry for each pending HTLC. The value will be None
- *                          only for incoming HTLCs for which we don't have the preimage (we can't claim them yet).
- * @param claimAnchorTxs    txs spending our anchor output to bump the feerate of the commitment tx (if applicable).
+ * Details about a force-close where they published their commitment (current or next).
  */
-case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], claimHtlcTxs: Map[OutPoint, Option[ClaimHtlcTx]], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
-  // We previously used a list of anchor transactions because we included the confirmation target, but that's obsolete and should be overridden on updates.
-  val claimAnchorTx_opt: Option[ClaimAnchorOutputTx] = claimAnchorTxs.headOption
-
-  /**
-   * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
-   * (even if the spending tx was not ours).
-   */
-  def isDone: Boolean = {
-    val confirmedTxs = irrevocablySpent.values.map(_.txid).toSet
-    // is the commitment tx confirmed (we need to check this because we may not have any outputs)?
-    val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
-    // is our main output confirmed (if we have one)?
-    val isMainOutputConfirmed = claimMainOutputTx.forall(tx => irrevocablySpent.contains(tx.input.outPoint))
-    // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
-    val allHtlcsSpent = (claimHtlcTxs.keySet -- irrevocablySpent.keys).isEmpty
-    isCommitTxConfirmed && isMainOutputConfirmed && allHtlcsSpent
+case class RemoteCommitPublished(commitTx: Transaction, localOutput_opt: Option[OutPoint], anchorOutput_opt: Option[OutPoint], incomingHtlcs: Map[OutPoint, Long], outgoingHtlcs: Map[OutPoint, Long], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+  override val htlcOutputs: Set[OutPoint] = incomingHtlcs.keySet ++ outgoingHtlcs.keySet
+  override val isDone: Boolean = {
+    val mainOutputSpent = localOutput_opt.forall(o => irrevocablySpent.contains(o))
+    val allHtlcsSpent = (htlcOutputs -- irrevocablySpent.keySet).isEmpty
+    isConfirmed && mainOutputSpent && allHtlcsSpent
   }
 }
 
 /**
  * Details about a force-close where they published one of their revoked commitments.
+ * In that case, we're able to spend every output of the commitment transaction (if economical).
  *
- * @param claimMainOutputTx          tx claiming our main output (if we have one).
- * @param mainPenaltyTx              penalty tx claiming their main output (if they have one).
- * @param htlcPenaltyTxs             penalty txs claiming every HTLC output.
- * @param claimHtlcDelayedPenaltyTxs penalty txs claiming the output of their HTLC txs (if they managed to get them confirmed before our htlcPenaltyTxs).
+ * @param htlcDelayedOutputs if our peer manages to get some of their HTLC transactions confirmed before our penalty
+ *                           transactions, we must spend the output(s) of their HTLC transactions.
  */
-case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], mainPenaltyTx: Option[MainPenaltyTx], htlcPenaltyTxs: List[HtlcPenaltyTx], claimHtlcDelayedPenaltyTxs: List[ClaimHtlcDelayedOutputPenaltyTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
-  /**
-   * A revoked commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
-   * (even if the spending tx was not ours).
-   */
-  def isDone: Boolean = {
-    val confirmedTxs = irrevocablySpent.values.map(_.txid).toSet
-    // is the commitment tx confirmed (we need to check this because we may not have any outputs)?
-    val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
-    // are there remaining spendable outputs from the commitment tx?
-    val unspentCommitTxOutputs = {
-      val commitOutputsSpendableByUs = (claimMainOutputTx.toSeq ++ mainPenaltyTx.toSeq ++ htlcPenaltyTxs).map(_.input.outPoint)
-      commitOutputsSpendableByUs.toSet -- irrevocablySpent.keys
-    }
-    // are all outputs from htlc txs spent?
-    val unconfirmedHtlcDelayedTxs = claimHtlcDelayedPenaltyTxs.map(_.input.outPoint)
-      // only the txs which parents are already confirmed may get confirmed (note that this eliminates outputs that have been double-spent by a competing tx)
-      .filter(input => confirmedTxs.contains(input.txid))
-      // if one of the tx inputs has been spent, the tx has already been confirmed or a competing tx has been confirmed
-      .filterNot(input => irrevocablySpent.contains(input))
-    isCommitTxConfirmed && unspentCommitTxOutputs.isEmpty && unconfirmedHtlcDelayedTxs.isEmpty
+case class RevokedCommitPublished(commitTx: Transaction, localOutput_opt: Option[OutPoint], remoteOutput_opt: Option[OutPoint], htlcOutputs: Set[OutPoint], htlcDelayedOutputs: Set[OutPoint], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+  // We don't use the anchor output, we can CPFP the commitment with any other output.
+  override val anchorOutput_opt: Option[OutPoint] = None
+  override val isDone: Boolean = {
+    val mainOutputsSpent = (localOutput_opt.toSeq ++ remoteOutput_opt.toSeq).forall(o => irrevocablySpent.contains(o))
+    val allHtlcsSpent = (htlcOutputs -- irrevocablySpent.keySet).isEmpty
+    val allHtlcTxsSpent = (htlcDelayedOutputs -- irrevocablySpent.keySet).isEmpty
+    isConfirmed && mainOutputsSpent && allHtlcsSpent && allHtlcTxsSpent
   }
 }
 

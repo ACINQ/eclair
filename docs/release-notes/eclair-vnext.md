@@ -39,6 +39,12 @@ It can be enabled by setting `eclair.features.option_attribution_data = optional
 
 ### Miscellaneous improvements and bug fixes
 
+#### Add `max-closing-feerate` configuration parameter
+
+We added a new configuration value to `eclair.conf` to limit the feerate used for force-close transactions where funds aren't at risk: `eclair.on-chain-fees.max-closing-feerate`.
+This ensures that you won't end up paying a lot of fees during mempool congestion: your node will wait for the feerate to decrease to get your non-urgent transactions confirmed.
+If you need those transactions to confirm because you are low on liquidity, you should update `eclair.on-chain-fees.max-closing-feerate` and restart your node: `eclair` will automatically RBF all available transactions.
+
 #### Remove confirmation scaling based on funding amount
 
 We previously scaled the number of confirmations based on the channel funding amount.
