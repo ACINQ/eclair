@@ -53,8 +53,8 @@ object Transactions {
   /** Weight of an additional p2tr wallet output added to a transaction. */
   val p2trOutputWeight = 172
 
-  val maxWalletInputWeight = p2wpkhInputWeight.max(p2trInputWeight)
-  val maxWalletOutputWeight = p2wpkhOutputWeight.max(p2trOutputWeight)
+  val maxWalletInputWeight: Int = p2wpkhInputWeight.max(p2trInputWeight)
+  val maxWalletOutputWeight: Int = p2wpkhOutputWeight.max(p2trOutputWeight)
 
   sealed trait CommitmentFormat {
     // @formatter:off
@@ -184,9 +184,7 @@ object Transactions {
 
   case object ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat extends SimpleTaprootChannelCommitmentFormat
 
-  // TODO: we're currently keeping the now unused redeemScript to avoid a painful codec update. When creating v5 codecs
-  //  (for taproot channels), don't forget to remove this field from the InputInfo class!
-  case class InputInfo(outPoint: OutPoint, txOut: TxOut, unusedRedeemScript: ByteVector)
+  case class InputInfo(outPoint: OutPoint, txOut: TxOut)
 
   // @formatter:off
   /** This trait contains redeem information necessary to spend different types of segwit inputs. */
@@ -598,7 +596,7 @@ object Transactions {
                          outputIndex: Int,
                          commitmentFormat: CommitmentFormat): UnsignedHtlcSuccessTx = {
       val htlc = output.htlc.add
-      val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
+      val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
       val tx = Transaction(
         version = 2,
         txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
@@ -654,7 +652,7 @@ object Transactions {
                          outputIndex: Int,
                          commitmentFormat: CommitmentFormat): UnsignedHtlcTimeoutTx = {
       val htlc = output.htlc.add
-      val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
+      val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
       val tx = Transaction(
         version = 2,
         txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
@@ -701,7 +699,7 @@ object Transactions {
       findPubKeyScriptIndex(htlcTx, pubkeyScript) match {
         case Left(skip) => Left(skip)
         case Right(outputIndex) =>
-          val input = InputInfo(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex), ByteVector.empty)
+          val input = InputInfo(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex))
           val amount = input.txOut.amount - weight2fee(feerate, commitmentFormat.htlcDelayedWeight)
           val tx = Transaction(
             version = 2,
@@ -764,7 +762,7 @@ object Transactions {
     def findInput(commitTx: Transaction, outputs: Seq[CommitmentOutput], htlc: UpdateAddHtlc): Option[InputInfo] = {
       outputs.zipWithIndex.collectFirst {
         case (OutHtlc(outgoingHtlc, _, _), outputIndex) if outgoingHtlc.add.id == htlc.id =>
-          InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
+          InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
       }
     }
 
@@ -824,7 +822,7 @@ object Transactions {
     def findInput(commitTx: Transaction, outputs: Seq[CommitmentOutput], htlc: UpdateAddHtlc): Option[InputInfo] = {
       outputs.zipWithIndex.collectFirst {
         case (InHtlc(incomingHtlc, _, _), outputIndex) if incomingHtlc.add.id == htlc.id =>
-          InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
+          InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
       }
     }
 
@@ -892,7 +890,7 @@ object Transactions {
 
     def findInput(commitTx: Transaction, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, InputInfo] = {
       val pubKeyScript = redeemInfo(fundingKey.publicKey, commitKeys.publicKeys, commitmentFormat).pubkeyScript
-      findPubKeyScriptIndex(commitTx, pubKeyScript).map(outputIndex => InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty))
+      findPubKeyScriptIndex(commitTx, pubKeyScript).map(outputIndex => InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex)))
     }
 
     def createUnsignedTx(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimLocalAnchorTx] = {
@@ -942,7 +940,7 @@ object Transactions {
 
     def findInput(commitTx: Transaction, fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, InputInfo] = {
       val pubKeyScript = redeemInfo(fundingKey.publicKey, commitKeys.publicKeys, commitmentFormat).pubkeyScript
-      findPubKeyScriptIndex(commitTx, pubKeyScript).map(outputIndex => InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty))
+      findPubKeyScriptIndex(commitTx, pubKeyScript).map(outputIndex => InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex)))
     }
 
     def createUnsignedTx(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimRemoteAnchorTx] = {
@@ -983,7 +981,7 @@ object Transactions {
           commitKeys.ourPaymentKey match {
             case Left(_) => Left(OutputAlreadyInWallet)
             case Right(_) =>
-              val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
+              val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
               val amount = input.txOut.amount - weight2fee(feerate, commitmentFormat.toRemoteWeight)
               val tx = Transaction(
                 version = 2,
@@ -1036,7 +1034,7 @@ object Transactions {
           commitKeys.ourPaymentKey match {
             case Left(_) => Left(OutputAlreadyInWallet)
             case Right(_) =>
-              val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
+              val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
               val amount = input.txOut.amount - weight2fee(feerate, commitmentFormat.toRemoteWeight)
               val tx = Transaction(
                 version = 2,
@@ -1085,7 +1083,7 @@ object Transactions {
       findPubKeyScriptIndex(commitTx, redeemInfo.pubkeyScript) match {
         case Left(skip) => Left(skip)
         case Right(outputIndex) =>
-          val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
+          val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
           val amount = input.txOut.amount - weight2fee(feerate, commitmentFormat.toLocalDelayedWeight)
           val tx = Transaction(
             version = 2,
@@ -1133,7 +1131,7 @@ object Transactions {
       findPubKeyScriptIndex(commitTx, redeemInfo.pubkeyScript) match {
         case Left(skip) => Left(skip)
         case Right(outputIndex) =>
-          val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), ByteVector.empty)
+          val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
           val amount = input.txOut.amount - weight2fee(feerate, commitmentFormat.mainPenaltyWeight)
           val tx = Transaction(
             version = 2,
@@ -1210,7 +1208,7 @@ object Transactions {
                                  localFinalScriptPubKey: ByteVector,
                                  feerate: FeeratePerKw,
                                  commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, HtlcPenaltyTx] = {
-      val input = InputInfo(OutPoint(commitTx, htlcOutputIndex), commitTx.txOut(htlcOutputIndex), ByteVector.empty)
+      val input = InputInfo(OutPoint(commitTx, htlcOutputIndex), commitTx.txOut(htlcOutputIndex))
       val amount = input.txOut.amount - weight2fee(feerate, redeemDetails.weight)
       val tx = Transaction(
         version = 2,
@@ -1262,7 +1260,7 @@ object Transactions {
       // Note that we check *all* outputs of the tx, because it could spend a batch of HTLC outputs from the commit tx.
       htlcTx.txOut.zipWithIndex.collect {
         case (txOut, outputIndex) if txOut.publicKeyScript == redeemInfo.pubkeyScript =>
-          val input = InputInfo(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex), ByteVector.empty)
+          val input = InputInfo(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex))
           val amount = input.txOut.amount - weight2fee(feerate, commitmentFormat.claimHtlcPenaltyWeight)
           val tx = Transaction(
             version = 2,
@@ -1412,7 +1410,6 @@ object Transactions {
     case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => 1 // htlc txs have a 1-block delay to allow CPFP carve-out on anchors
   }
 
-
   def makeCommitTxOutputs(localFundingPublicKey: PublicKey,
                           remoteFundingPublicKey: PublicKey,
                           commitmentKeys: CommitmentPublicKeys,
@@ -1511,6 +1508,19 @@ object Transactions {
       case (o: OutHtlc, outputIndex) => HtlcTimeoutTx.createUnsignedTx(commitTx, o, outputIndex, commitmentFormat)
       case (i: InHtlc, outputIndex) => HtlcSuccessTx.createUnsignedTx(commitTx, i, outputIndex, commitmentFormat)
     }
+  }
+
+  def makeFundingScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat): RedeemInfo = {
+    commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => RedeemInfo.P2wsh(Script.write(multiSig2of2(localFundingKey, remoteFundingKey)))
+      case _: SimpleTaprootChannelCommitmentFormat => RedeemInfo.TaprootKeyPath(Taproot.musig2Aggregate(localFundingKey, remoteFundingKey), None)
+    }
+  }
+
+  def makeFundingInputInfo(fundingTxId: TxId, fundingOutputIndex: Int, fundingAmount: Satoshi, localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat): InputInfo = {
+    val redeemInfo = makeFundingScript(localFundingKey, remoteFundingKey, commitmentFormat)
+    val fundingTxOut = TxOut(fundingAmount, redeemInfo.pubkeyScript)
+    InputInfo(OutPoint(fundingTxId, fundingOutputIndex), fundingTxOut)
   }
 
   // @formatter:off

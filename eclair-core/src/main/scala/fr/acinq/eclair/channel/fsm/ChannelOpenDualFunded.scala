@@ -338,7 +338,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         liquidityPurchase_opt.collect {
           case purchase if !status.fundingParams.isInitiator => peer ! LiquidityPurchaseSigned(d.channelId, status.fundingTx.txId, status.fundingTxIndex, d.channelParams.remoteParams.htlcMinimum, purchase)
         }
-        val d1 = DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(d.channelParams, d.secondRemotePerCommitmentPoint, d.localPushAmount, d.remotePushAmount, status, None)
+        val d1 = DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(d.channelParams, d.secondRemotePerCommitmentPoint, d.localPushAmount, d.remotePushAmount, status)
         goto(WAIT_FOR_DUAL_FUNDING_SIGNED) using d1 storing() sending commitSig
       case f: InteractiveTxBuilder.Failed =>
         d.replyTo_opt.foreach(_ ! OpenChannelResponse.Rejected(f.cause.getMessage))

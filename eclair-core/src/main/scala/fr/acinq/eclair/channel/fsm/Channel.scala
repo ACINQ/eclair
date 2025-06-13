@@ -2829,7 +2829,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // slightly before us. In that case, the WatchConfirmed may trigger first, and it would be inefficient to let the
       // WatchPublished override our funding status: it will make us set a new WatchConfirmed that will instantly
       // trigger and rewrite the funding status again.
-      val alreadyConfirmed = d.commitments.active.map(_.localFundingStatus).collect { case f: LocalFundingStatus.ConfirmedFundingTx => f.tx }.exists(_.txid == w.tx.txid)
+      val alreadyConfirmed = d.commitments.active.exists(c => c.fundingTxId == w.tx.txid && c.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
       if (alreadyConfirmed) {
         stay()
       } else {

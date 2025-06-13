@@ -34,7 +34,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Output.Local
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Purpose
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
-import fr.acinq.eclair.transactions.Transactions.{InputInfo, SegwitV0CommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo, SegwitV0CommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ToMilliSatoshiConversion, UInt64}
@@ -145,6 +145,7 @@ object InteractiveTxBuilder {
                                  sharedInput_opt: Option[SharedFundingInput],
                                  remoteFundingPubKey: PublicKey,
                                  localOutputs: List[TxOut],
+                                 commitmentFormat: CommitmentFormat,
                                  lockTime: Long,
                                  dustLimit: Satoshi,
                                  targetFeerate: FeeratePerKw,
@@ -739,7 +740,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         // operation, remote post-splice reserve may actually be worse than before, but that's not their fault.
       } else {
         // If remote removes funds from the channel, it must meet reserve requirements post-splice
-        val remoteReserve = channelParams.remoteChannelReserveForCapacity(fundingParams.fundingAmount, isSplice = true)
+        val remoteReserve = (fundingParams.fundingAmount / 100).max(fundingParams.dustLimit)
         if (sharedOutput.remoteAmount < remoteReserve) {
           log.warn("invalid interactive tx: peer takes too much funds out and falls below the channel reserve ({} < {})", sharedOutput.remoteAmount, remoteReserve)
           return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
@@ -851,7 +852,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         unlockAndStop(completeTx)
       case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)) =>
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
-        channelParams.commitmentFormat match {
+        fundingParams.commitmentFormat match {
           case _: SegwitV0CommitmentFormat =>
             val localSigOfRemoteTx = remoteCommitTx.sign(localFundingKey, fundingParams.remoteFundingPubKey).sig
             val htlcSignatures = sortedHtlcTxs.map(_.localSig(remoteCommitmentKeys)).toList
@@ -859,8 +860,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx.tx.txid, localCommitTx.input)
             val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)
             signFundingTx(completeTx, localCommitSig, localCommit, remoteCommit)
-          case _: SimpleTaprootChannelCommitmentFormat => ???
-
+          case _: SimpleTaprootChannelCommitmentFormat =>
+            ???
         }
     }
   }
@@ -1020,7 +1021,7 @@ object InteractiveTxSigningSession {
   //     +-------+                             +-------+
 
   /** A local commitment for which we haven't received our peer's signatures. */
-  case class UnsignedLocalCommit(index: Long, spec: CommitmentSpec, txId: TxId, input: InputInfo)
+  case class UnsignedLocalCommit(index: Long, spec: CommitmentSpec, txId: TxId)
 
   private def shouldSignFirst(isInitiator: Boolean, channelParams: ChannelParams, tx: SharedTransaction): Boolean = {
     val sharedAmountIn = tx.sharedInput_opt.map(_.txOut.amount).getOrElse(0 sat)

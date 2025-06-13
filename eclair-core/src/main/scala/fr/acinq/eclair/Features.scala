@@ -259,6 +259,7 @@ object Features {
     val mandatory = 26
   }
 
+  // Note that this is a permanent channel feature because it permanently affects the channel reserve, which is set at 1%.
   case object DualFunding extends Feature with InitFeature with NodeFeature with PermanentChannelFeature {
     val rfcName = "option_dual_fund"
     val mandatory = 28

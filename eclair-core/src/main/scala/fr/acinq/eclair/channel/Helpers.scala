@@ -369,19 +369,6 @@ object Helpers {
 
   object Funding {
 
-    def makeFundingScript(localFundingKey: PublicKey, remoteFundingKey: PublicKey, commitmentFormat: CommitmentFormat): RedeemInfo = {
-      commitmentFormat match {
-        case _: SegwitV0CommitmentFormat => RedeemInfo.P2wsh(Script.write(multiSig2of2(localFundingKey, remoteFundingKey)))
-        case _: SimpleTaprootChannelCommitmentFormat => RedeemInfo.TaprootKeyPath(Taproot.musig2Aggregate(localFundingKey, remoteFundingKey), None)
-      }
-    }
-
-    def makeFundingInputInfo(fundingTxId: TxId, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey, commitmentFormat: CommitmentFormat): InputInfo = {
-      val redeemInfo = makeFundingScript(fundingPubkey1, fundingPubkey2, commitmentFormat)
-      val fundingTxOut = TxOut(fundingSatoshis, redeemInfo.pubkeyScript)
-      InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, ByteVector.empty)
-    }
-
     /**
      * Creates both sides' first commitment transaction.
      *
