@@ -1143,8 +1143,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val fundingTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     checkWatchConfirmed(f, fundingTx1)
-    val commitAlice1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val commitBob1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitAlice1 = alice.signCommitTx()
+    val commitBob1 = bob.signCommitTx()
 
     // Bob sees the first splice confirm, but Alice doesn't.
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
@@ -1155,8 +1155,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // Alice creates another splice spending the first splice.
     val fundingTx2 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     checkWatchConfirmed(f, fundingTx2)
-    val commitAlice2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val commitBob2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitAlice2 = alice.signCommitTx()
+    val commitBob2 = bob.signCommitTx()
     assert(commitAlice1.txid != commitAlice2.txid)
     assert(commitBob1.txid != commitBob2.txid)
 
@@ -1239,8 +1239,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // Alice creates another splice spending the first splice.
     val fundingTx2 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     checkWatchConfirmed(f, fundingTx2)
-    val commitAlice2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val commitBob2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitAlice2 = alice.signCommitTx()
+    val commitBob2 = bob.signCommitTx()
 
     // Alice sees the second splice confirm.
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
@@ -3116,8 +3116,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectWatchFundingSpent(fundingTx1.txid)
 
     // Bob publishes his commit tx for the first splice transaction (which double-spends the second splice transaction).
-    val bobCommitment1 = bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.active.find(_.fundingTxIndex == 1).get
-    val bobCommitTx1 = bobCommitment1.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+    val bobCommitments = bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments
+    val previousCommitment = bobCommitments.active.find(_.fundingTxIndex == 1).get
+    val bobCommitTx1 = previousCommitment.fullySignedLocalCommitTx(bobCommitments.params, bob.underlyingActor.channelKeys)
+    val bobHtlcTxs = previousCommitment.htlcTxs(bobCommitments.params, bob.underlyingActor.channelKeys).map(_._1)
     Transaction.correctlySpends(bobCommitTx1, Seq(fundingTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
     assert(alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == bobCommitTx1.txid)
@@ -3149,7 +3151,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateName == CLOSING)
 
     // Bob's 2nd-stage transactions confirm.
-    bobCommitment1.localCommit.htlcTxsAndRemoteSigs.foreach(txAndSig => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, txAndSig.htlcTx.tx))
+    bobHtlcTxs.foreach(htlcTx => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, htlcTx.tx))
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(alice.stateName == CLOSED)
 
@@ -3166,7 +3168,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val fundingTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 10_000_000 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     checkWatchConfirmed(f, fundingTx1)
     // remember bob's commitment for later
-    val bobCommit1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head
+    val bobRevokedCommitTx = bob.signCommitTx()
 
     // The first splice confirms on Bob's side.
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
@@ -3195,7 +3197,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     alice2blockchain.expectWatchFundingSpent(fundingTx1.txid)
     // Bob publishes a revoked commitment for fundingTx1!
-    val bobRevokedCommitTx = bobCommit1.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobRevokedCommitTx)
     // Alice watches bob's revoked commit tx, and force-closes with her latest commitment.
     assert(alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == bobRevokedCommitTx.txid)
@@ -3262,7 +3263,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // remember bob's commitment for later
-    val bobCommit1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head
+    val bobCommitTx1 = bob.signCommitTx()
+    val bobHtlcTxs = bob.htlcTxs()
 
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     val fundingTx2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
@@ -3293,7 +3295,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.size == 1)
     // bob publishes his latest (inactive) commitment for fundingTx1
-    val bobCommitTx1 = bobCommit1.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
     // alice watches bob's commit tx, and force-closes with her latest commitment
     assert(alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == bobCommitTx1.txid)
@@ -3326,7 +3327,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     claimHtlcTimeout.foreach(htlcTx => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, htlcTx.tx))
     assert(alice.stateName == CLOSING)
     // Bob's htlc-timeout txs confirm.
-    bobCommit1.localCommit.htlcTxsAndRemoteSigs.foreach(txAndSigs => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, txAndSigs.htlcTx.tx))
+    bobHtlcTxs.foreach(htlcTx => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, htlcTx.tx))
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(alice.stateName == CLOSED)
 
@@ -3344,7 +3345,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectWatchPublished(fundingTx1.txid)
     bob2blockchain.expectWatchPublished(fundingTx1.txid)
     // remember bob's commitment for later
-    val bobCommit1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head
+    val bobRevokedCommitTx = bob.signCommitTx()
     // splice 1 gets published
     alice ! WatchPublishedTriggered(fundingTx1)
     bob ! WatchPublishedTriggered(fundingTx1)
@@ -3395,7 +3396,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.size == 1)
     // bob publishes his latest commitment for fundingTx1, which is now revoked
-    val bobRevokedCommitTx = bobCommit1.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobRevokedCommitTx)
     // alice watches bob's revoked commit tx, and force-closes with her latest commitment
     assert(alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == bobRevokedCommitTx.txid)
@@ -3557,12 +3557,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     crossSign(bob, alice, bob2alice, alice2bob)
     val aliceCommitments1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     aliceCommitments1.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(alice.underlyingActor.channelKeys)
+      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments1.params, alice.underlyingActor.channelKeys)
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     val bobCommitments1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     bobCommitments1.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+      val commitTx = c.fullySignedLocalCommitTx(bobCommitments1.params, bob.underlyingActor.channelKeys)
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
@@ -3571,12 +3571,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     crossSign(alice, bob, alice2bob, bob2alice)
     val aliceCommitments2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     aliceCommitments2.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(alice.underlyingActor.channelKeys)
+      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments2.params, alice.underlyingActor.channelKeys)
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     val bobCommitments2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     bobCommitments2.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+      val commitTx = c.fullySignedLocalCommitTx(bobCommitments2.params, bob.underlyingActor.channelKeys)
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 

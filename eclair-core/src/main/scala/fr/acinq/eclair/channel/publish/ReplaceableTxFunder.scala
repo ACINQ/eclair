@@ -94,7 +94,7 @@ object ReplaceableTxFunder {
       case _: ReplaceableHtlc => tx.txInfo.amountIn
       case _: ReplaceableClaimHtlc => tx.txInfo.amountIn
       case _: ReplaceableAnchor =>
-        val htlcBalance = tx.commitment.localCommit.htlcTxsAndRemoteSigs.map(_.htlcTx.amountIn).sum
+        val htlcBalance = tx.commitment.localCommit.spec.htlcs.map(_.add.amountMsat).sum.truncateToSatoshi
         val mainBalance = tx.commitment.localCommit.spec.toLocal.truncateToSatoshi
         // If there are no HTLCs or a low HTLC amount, we still want to get back our main balance.
         // In that case, we spend at most 5% of our balance in fees, with a hard cap configured by the node operator.
@@ -141,7 +141,7 @@ object ReplaceableTxFunder {
 
   // @formatter:off
   sealed trait AdjustPreviousTxOutputResult
-  object AdjustPreviousTxOutputResult {
+  private object AdjustPreviousTxOutputResult {
     case class Skip(reason: String) extends AdjustPreviousTxOutputResult
     case class AddWalletInputs(previousTx: ReplaceableTxWithWalletInputs) extends AdjustPreviousTxOutputResult
     case class TxOutputAdjusted(updatedTx: ReplaceableTx) extends AdjustPreviousTxOutputResult
@@ -152,7 +152,7 @@ object ReplaceableTxFunder {
    * Adjust the outputs of a transaction that was previously published at a lower feerate.
    * If the current set of inputs doesn't let us reach the target feerate, we will request new wallet inputs from bitcoind.
    */
-  def adjustPreviousTxOutput(previousTx: FundedTx, targetFeerate: FeeratePerKw): AdjustPreviousTxOutputResult = {
+  private def adjustPreviousTxOutput(previousTx: FundedTx, targetFeerate: FeeratePerKw): AdjustPreviousTxOutputResult = {
     val targetFee = previousTx.tx match {
       case anchorTx: ReplaceableAnchor =>
         val totalWeight = previousTx.signedTx.weight() + anchorTx.commitTx.weight()

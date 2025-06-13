@@ -127,10 +127,10 @@ object Transactions {
     override val toLocalDelayedWeight = 483
     override val toRemoteWeight = 442
     override val htlcDelayedWeight = 483
-    override val mainPenaltyWeight = 484
+    override val mainPenaltyWeight = 483
     override val htlcOfferedPenaltyWeight = 575
     override val htlcReceivedPenaltyWeight = 580
-    override val claimHtlcPenaltyWeight = 484
+    override val claimHtlcPenaltyWeight = 483
   }
 
   object AnchorOutputsCommitmentFormat {

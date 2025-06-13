@@ -125,7 +125,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val localParams = LocalParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, Long.MaxValue.msat, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
     val remoteParams = RemoteParams(dummyPublicKey, 546 sat, UInt64.MaxValue, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey, DefaultCommitmentFormat)
-    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), IndividualSignature(ByteVector64.Zeroes)), Nil)
+    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), TxId(dummyBytes32), commitmentInput, IndividualSignature(ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 50_000_000 msat, 100_000_000 msat), TxId(dummyBytes32), dummyPublicKey)
     val channelInfo = RES_GET_CHANNEL_INFO(
       PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"),
@@ -207,13 +207,20 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "localCommit": {
         |           "index": 0,
         |           "spec": { "htlcs": [], "commitTxFeerate": 2500, "toLocal": 100000000, "toRemote": 50000000 },
-        |           "commitTxAndRemoteSig": { "commitTx": { "txid": "4ebd325a4b394cff8c57e8317ccf5a8d0e2bdf1b8526f8aad6c8e43d8240621a", "tx": "02000000000000000000" },"remoteSig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
-        |           "htlcTxsAndRemoteSigs": []
+        |           "txId": "0202020202020202020202020202020202020202020202020202020202020202",
+        |           "input": {
+        |             "outPoint":"0202020202020202020202020202020202020202020202020202020202020202:0",
+        |             "amountSatoshis": 150000
+        |           },
+        |           "remoteSig": {
+        |             "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        |           },
+        |           "htlcRemoteSigs": []
         |         },
         |         "remoteCommit": {
         |           "index": 0,
         |           "spec": { "htlcs": [], "commitTxFeerate": 2500, "toLocal": 50000000, "toRemote": 100000000 },
-        |           "txid": "0202020202020202020202020202020202020202020202020202020202020202",
+        |           "txId": "0202020202020202020202020202020202020202020202020202020202020202",
         |           "remotePerCommitmentPoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
         |         }
         |       }

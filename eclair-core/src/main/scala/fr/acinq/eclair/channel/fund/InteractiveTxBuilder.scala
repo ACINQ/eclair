@@ -34,7 +34,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Output.Local
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Purpose
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx, InputInfo, SegwitV0CommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{InputInfo, SegwitV0CommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ToMilliSatoshiConversion, UInt64}
@@ -856,7 +856,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             val localSigOfRemoteTx = remoteCommitTx.sign(localFundingKey, fundingParams.remoteFundingPubKey).sig
             val htlcSignatures = sortedHtlcTxs.map(_.sign(remoteCommitmentKeys, channelParams.commitmentFormat)).toList
             val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures)
-            val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx, htlcTxs = Nil)
+            val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx.tx.txid, localCommitTx.input)
             val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)
             signFundingTx(completeTx, localCommitSig, localCommit, remoteCommit)
           case _: SimpleTaprootChannelCommitmentFormat => ???
@@ -1020,7 +1020,7 @@ object InteractiveTxSigningSession {
   //     +-------+                             +-------+
 
   /** A local commitment for which we haven't received our peer's signatures. */
-  case class UnsignedLocalCommit(index: Long, spec: CommitmentSpec, commitTx: CommitTx, htlcTxs: List[HtlcTx])
+  case class UnsignedLocalCommit(index: Long, spec: CommitmentSpec, txId: TxId, input: InputInfo)
 
   private def shouldSignFirst(isInitiator: Boolean, channelParams: ChannelParams, tx: SharedTransaction): Boolean = {
     val sharedAmountIn = tx.sharedInput_opt.map(_.txOut.amount).getOrElse(0 sat)
@@ -1095,7 +1095,7 @@ object InteractiveTxSigningSession {
                             localCommit: Either[UnsignedLocalCommit, LocalCommit],
                             remoteCommit: RemoteCommit,
                             liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends InteractiveTxSigningSession {
-    val commitInput: InputInfo = localCommit.fold(_.commitTx.input, _.commitTxAndRemoteSig.commitTx.input)
+    val commitInput: InputInfo = localCommit.fold(_.input, _.input)
     val localCommitIndex: Long = localCommit.fold(_.index, _.index)
     // This value tells our peer whether we need them to retransmit their commit_sig on reconnection or not.
     val nextLocalCommitmentNumber: Long = localCommit match {

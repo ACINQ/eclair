@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorRef, FSM}
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, SatoshiLong, Transaction}
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
@@ -239,7 +240,7 @@ trait ErrorHandlers extends CommonHandlers {
       case _ => None
     }
     val publishMainDelayedTx_opt = txs.mainDelayedTx_opt.map(tx => PublishFinalTx(tx, tx.fee, None))
-    val publishHtlcTxs = redeemableHtlcTxs(lcp.commitTx, commitKeys, commitment)
+    val publishHtlcTxs = redeemableHtlcTxs(lcp.commitTx, fundingKey, commitKeys, commitment)
     val publishQueue = Seq(publishCommitTx) ++ publishAnchorTx_opt ++ publishMainDelayedTx_opt ++ publishHtlcTxs
     publishIfNeeded(publishQueue, lcp.irrevocablySpent)
 
@@ -264,12 +265,12 @@ trait ErrorHandlers extends CommonHandlers {
     txs.htlcDelayedTxs.foreach(tx => watchSpentIfNeeded(tx.input, lcp.irrevocablySpent))
   }
 
-  private def redeemableHtlcTxs(commitTx: Transaction, commitKeys: LocalCommitmentKeys, commitment: FullCommitment): Iterable[PublishTx] = {
+  private def redeemableHtlcTxs(commitTx: Transaction, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitment: FullCommitment): Iterable[PublishTx] = {
     val preimages = (commitment.changes.localChanges.all ++ commitment.changes.remoteChanges.all).collect {
       case fulfill: UpdateFulfillHtlc => Crypto.sha256(fulfill.paymentPreimage) -> fulfill.paymentPreimage
     }.toMap
-    commitment.localCommit.htlcTxsAndRemoteSigs.flatMap {
-      case HtlcTxAndRemoteSig(htlcTx, remoteSig) =>
+    commitment.htlcTxs(fundingKey, commitKeys).flatMap {
+      case (htlcTx, remoteSig) =>
         val preimage_opt = preimages.get(htlcTx.paymentHash)
         commitment.params.commitmentFormat match {
           case Transactions.DefaultCommitmentFormat =>
@@ -295,7 +296,7 @@ trait ErrorHandlers extends CommonHandlers {
   def handleRemoteSpentCurrent(commitTx: Transaction, d: ChannelDataWithCommitments) = {
     val commitments = d.commitments.latest
     log.warning(s"they published their current commit in txid=${commitTx.txid}")
-    require(commitTx.txid == commitments.remoteCommit.txid, "txid mismatch")
+    require(commitTx.txid == commitments.remoteCommit.txId, "txid mismatch")
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitments.commitInput, commitTx, d.commitments.params.localParams.paysCommitTxFees), "remote-commit"))
     val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitments, commitments.remoteCommit, commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
@@ -313,7 +314,7 @@ trait ErrorHandlers extends CommonHandlers {
     log.warning(s"they published their next commit in txid=${commitTx.txid}")
     require(commitment.nextRemoteCommit_opt.nonEmpty, "next remote commit must be defined")
     val remoteCommit = commitment.nextRemoteCommit_opt.get.commit
-    require(commitTx.txid == remoteCommit.txid, "txid mismatch")
+    require(commitTx.txid == remoteCommit.txId, "txid mismatch")
 
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitment.commitInput, commitTx, d.commitments.params.localParams.paysCommitTxFees), "next-remote-commit"))
@@ -332,7 +333,7 @@ trait ErrorHandlers extends CommonHandlers {
   def doPublish(rcp: RemoteCommitPublished, txs: Closing.RemoteClose.SecondStageTransactions, commitment: FullCommitment, finalScriptPubKey: ByteVector): Unit = {
     val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
     val remoteCommit = commitment.nextRemoteCommit_opt match {
-      case Some(c) if rcp.commitTx.txid == c.commit.txid => c.commit
+      case Some(c) if rcp.commitTx.txid == c.commit.txId => c.commit
       case _ => commitment.remoteCommit
     }
     val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)

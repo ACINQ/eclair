@@ -18,7 +18,6 @@ package fr.acinq.eclair.wire.internal.channel.version3
 
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Transaction, TxOut}
-import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.LocalFundingStatus._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
@@ -206,19 +205,19 @@ private[channel] object ChannelCodecs3 {
       .typecase(0x02, claimHtlcTimeoutTxNoConfirmCodec)
       .typecase(0x03, claimHtlcSuccessTxNoConfirmCodec)
 
-    val htlcTxsAndRemoteSigsCodec: Codec[HtlcTxAndRemoteSig] = (
+    val htlcTxsAndRemoteSigsCodec: Codec[ChannelTypes3.HtlcTxAndRemoteSig] = (
       ("txinfo" | htlcTxCodec) ::
-        ("remoteSig" | bytes64)).as[HtlcTxAndRemoteSig]
+        ("remoteSig" | bytes64)).as[ChannelTypes3.HtlcTxAndRemoteSig]
 
-    val commitTxAndRemoteSigCodec: Codec[CommitTxAndRemoteSig] = (
+    val commitTxAndRemoteSigCodec: Codec[ChannelTypes3.CommitTxAndRemoteSig] = (
       ("commitTx" | commitTxCodec) ::
-        ("remoteSig" | bytes64.as[ChannelSpendSignature.IndividualSignature].upcast[ChannelSpendSignature])).as[CommitTxAndRemoteSig]
+        ("remoteSig" | bytes64.as[ChannelSpendSignature.IndividualSignature])).as[ChannelTypes3.CommitTxAndRemoteSig]
 
-    val localCommitCodec: Codec[LocalCommit] = (
+    val localCommitCodec: Codec[ChannelTypes3.LocalCommit] = (
       ("index" | uint64overflow) ::
         ("spec" | commitmentSpecCodec) ::
         ("commitTxAndRemoteSig" | commitTxAndRemoteSigCodec) ::
-        ("htlcTxsAndRemoteSigs" | listOfN(uint16, htlcTxsAndRemoteSigsCodec))).as[LocalCommit]
+        ("htlcTxsAndRemoteSigs" | listOfN(uint16, htlcTxsAndRemoteSigsCodec))).as[ChannelTypes3.LocalCommit]
 
     val remoteCommitCodec: Codec[RemoteCommit] = (
       ("index" | uint64overflow) ::
