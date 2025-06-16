@@ -48,7 +48,7 @@ object RouteCalculation {
     }
   }
 
-  def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute, replyTo: ActorRef)(implicit log: DiagnosticLoggingAdapter): Data = {
     def validateMaxRouteFee(route: Route, maxFee_opt: Option[MilliSatoshi]): Try[Route] = {
       val routeFee = route.channelFee(includeLocalChannelCost = false)
       maxFee_opt match {
@@ -62,7 +62,6 @@ object RouteCalculation {
       parentPaymentId_opt = fr.paymentContext.map(_.parentId),
       paymentId_opt = fr.paymentContext.map(_.id),
       paymentHash_opt = fr.paymentContext.map(_.paymentHash))) {
-      implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
       val extraEdges = fr.extraEdges.map(GraphEdge(_))
       val g = extraEdges.foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
@@ -180,13 +179,12 @@ object RouteCalculation {
     })
   }
 
-  def handleRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: RouteRequest)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  def handleRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: RouteRequest, replyTo: ActorRef)(implicit log: DiagnosticLoggingAdapter): Data = {
     Logs.withMdc(log)(Logs.mdc(
       category_opt = Some(LogCategory.PAYMENT),
       parentPaymentId_opt = r.paymentContext.map(_.parentId),
       paymentId_opt = r.paymentContext.map(_.id),
       paymentHash_opt = r.paymentContext.map(_.paymentHash))) {
-      implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
       val ignoredEdges = r.ignore.channels ++ d.excludedChannels.keySet
       val (targetNodeId, amountToSend, maxFee, extraEdges) = computeTarget(r, ignoredEdges)
