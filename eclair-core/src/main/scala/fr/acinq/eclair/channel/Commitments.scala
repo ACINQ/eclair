@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
@@ -166,8 +166,6 @@ object CommitmentChanges {
   }
 }
 
-case class HtlcTxAndRemoteSig(htlcTx: HtlcTx, remoteSig: ByteVector64)
-
 /**
  * The channel funding output requires signatures from both channel participants to be spent.
  * Depending on the segwit version used, those signatures have a different format.
@@ -184,10 +182,11 @@ object ChannelSpendSignature {
   case class PartialSignatureWithNonce(partialSig: ByteVector32, nonce: IndividualNonce) extends ChannelSpendSignature
 }
 
-case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: ChannelSpendSignature)
-
-/** The local commitment maps to a commitment transaction that we can sign and broadcast if necessary. */
-case class LocalCommit(index: Long, spec: CommitmentSpec, commitTxAndRemoteSig: CommitTxAndRemoteSig, htlcTxsAndRemoteSigs: List[HtlcTxAndRemoteSig])
+/**
+ * The local commitment maps to a commitment transaction that we can sign and broadcast if necessary.
+ * The [[htlcRemoteSigs]] are stored in the order in which HTLC outputs appear in the commitment transaction.
+ */
+case class LocalCommit(index: Long, spec: CommitmentSpec, txId: TxId, input: InputInfo, remoteSig: ChannelSpendSignature, htlcRemoteSigs: List[ByteVector64])
 
 object LocalCommit {
   def fromCommitSig(params: ChannelParams, commitKeys: LocalCommitmentKeys, fundingTxId: TxId,
@@ -201,27 +200,27 @@ object LocalCommit {
     if (!remoteCommitSigOk) {
       return Left(InvalidCommitmentSignature(params.channelId, fundingTxId, localCommitIndex, localCommitTx.tx))
     }
-    val commitxTxAndRemoteSig = params.commitmentFormat match {
-      case _: SegwitV0CommitmentFormat => CommitTxAndRemoteSig(localCommitTx, ChannelSpendSignature.IndividualSignature(commit.signature))
+    val commitTxRemoteSig = params.commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => ChannelSpendSignature.IndividualSignature(commit.signature)
       case _: SimpleTaprootChannelCommitmentFormat => ???
     }
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
     if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
       return Left(HtlcSigCountMismatch(params.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
     }
-    val htlcTxsAndRemoteSigs = sortedHtlcTxs.zip(commit.htlcSignatures).toList.map {
+    val htlcRemoteSigs = sortedHtlcTxs.zip(commit.htlcSignatures).toList.map {
       case (htlcTx: HtlcTx, remoteSig) =>
         if (!htlcTx.checkRemoteSig(commitKeys, remoteSig, params.commitmentFormat)) {
           return Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
         }
-        HtlcTxAndRemoteSig(htlcTx, remoteSig)
+        remoteSig
     }
-    Right(LocalCommit(localCommitIndex, spec, commitxTxAndRemoteSig, htlcTxsAndRemoteSigs))
+    Right(LocalCommit(localCommitIndex, spec, localCommitTx.tx.txid, localCommitTx.input, commitTxRemoteSig, htlcRemoteSigs))
   }
 }
 
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
-case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: TxId, remotePerCommitmentPoint: PublicKey) {
+case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePerCommitmentPoint: PublicKey) {
   def sign(params: ChannelParams, channelKeys: ChannelKeys, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo): CommitSig = {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val commitKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentPoint)
@@ -269,9 +268,9 @@ case class Commitment(fundingTxIndex: Long,
                       remoteFundingPubKey: PublicKey,
                       localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
                       localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
-  val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
+  val commitInput: InputInfo = localCommit.input
   val fundingTxId: TxId = commitInput.outPoint.txid
-  val commitTxIds: CommitTxIds = CommitTxIds(localCommit.commitTxAndRemoteSig.commitTx.tx.txid, remoteCommit.txid, nextRemoteCommit_opt.map(_.commit.txid))
+  val commitTxIds: CommitTxIds = CommitTxIds(localCommit.txId, remoteCommit.txId, nextRemoteCommit_opt.map(_.commit.txId))
   val capacity: Satoshi = commitInput.txOut.amount
   /** Once the funding transaction is confirmed, short_channel_id matching this transaction. */
   val shortChannelId_opt: Option[RealShortChannelId] = localFundingStatus match {
@@ -683,21 +682,35 @@ case class Commitment(fundingTxIndex: Long,
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val spec = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
     LocalCommit.fromCommitSig(params, commitKeys, fundingTxId, fundingKey, remoteFundingPubKey, commitInput, commit, localCommitIndex, spec).map { localCommit1 =>
-      log.info(s"built local commit number=$localCommitIndex toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${localCommit1.commitTxAndRemoteSig.commitTx.tx.txid} fundingTxId=$fundingTxId", spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","))
+      log.info(s"built local commit number=$localCommitIndex toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${localCommit1.txId} fundingTxId=$fundingTxId", spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","))
       copy(localCommit = localCommit1)
     }
   }
 
   /** Return a fully signed commit tx, that can be published as-is. */
-  def fullySignedLocalCommitTx(channelKeys: ChannelKeys): Transaction = {
-    val unsignedCommitTx = localCommit.commitTxAndRemoteSig.commitTx
+  def fullySignedLocalCommitTx(params: ChannelParams, channelKeys: ChannelKeys): Transaction = {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
-    localCommit.commitTxAndRemoteSig.remoteSig match {
+    val commitKeys = localKeys(params, channelKeys)
+    val (unsignedCommitTx, _) = Commitment.makeLocalTxs(params, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
+    localCommit.remoteSig match {
       case remoteSig: ChannelSpendSignature.IndividualSignature =>
         val localSig = unsignedCommitTx.sign(fundingKey, remoteFundingPubKey)
         unsignedCommitTx.aggregateSigs(fundingKey.publicKey, remoteFundingPubKey, localSig, remoteSig)
       case _: ChannelSpendSignature.PartialSignatureWithNonce => ???
     }
+  }
+
+  /** Return the HTLC transactions for our local commit and the corresponding remote signatures. */
+  def htlcTxs(params: ChannelParams, channelKeys: ChannelKeys): Seq[(HtlcTx, ByteVector64)] = {
+    val fundingKey = channelKeys.fundingKey(fundingTxIndex)
+    val commitKeys = localKeys(params, channelKeys)
+    htlcTxs(params, fundingKey, commitKeys)
+  }
+
+  /** Return the HTLC transactions for our local commit and the corresponding remote signatures. */
+  def htlcTxs(params: ChannelParams, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys): Seq[(HtlcTx, ByteVector64)] = {
+    val (_, htlcTxs) = Commitment.makeLocalTxs(params, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
+    htlcTxs.sortBy(_.input.outPoint.index).zip(localCommit.htlcRemoteSigs)
   }
 
 }
@@ -751,9 +764,9 @@ case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
   }
   val localParams: LocalParams = params.localParams
   val remoteParams: RemoteParams = params.remoteParams
-  val commitInput: InputInfo = localCommit.commitTxAndRemoteSig.commitTx.input
+  val commitInput: InputInfo = localCommit.input
   val fundingTxId: TxId = commitInput.outPoint.txid
-  val commitTxIds: CommitTxIds = CommitTxIds(localCommit.commitTxAndRemoteSig.commitTx.tx.txid, remoteCommit.txid, nextRemoteCommit_opt.map(_.commit.txid))
+  val commitTxIds: CommitTxIds = CommitTxIds(localCommit.txId, remoteCommit.txId, nextRemoteCommit_opt.map(_.commit.txId))
   val capacity: Satoshi = commitInput.txOut.amount
   val commitment: Commitment = Commitment(fundingTxIndex, firstRemoteCommitIndex, remoteFundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, nextRemoteCommit_opt)
 
@@ -765,7 +778,11 @@ case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
 
   def remoteChannelReserve: Satoshi = commitment.remoteChannelReserve(params)
 
-  def fullySignedLocalCommitTx(channelKeys: ChannelKeys): Transaction = commitment.fullySignedLocalCommitTx(channelKeys)
+  def fullySignedLocalCommitTx(channelKeys: ChannelKeys): Transaction = commitment.fullySignedLocalCommitTx(params, channelKeys)
+
+  def htlcTxs(channelKeys: ChannelKeys): Seq[(HtlcTx, ByteVector64)] = commitment.htlcTxs(params, channelKeys)
+
+  def htlcTxs(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys): Seq[(HtlcTx, ByteVector64)] = commitment.htlcTxs(params, fundingKey, commitKeys)
 
   def specs2String: String = {
     s"""specs:
@@ -1170,7 +1187,7 @@ case class Commitments(params: ChannelParams,
 
   /** This function should be used to ignore a commit_sig that we've already received. */
   def ignoreRetransmittedCommitSig(commitSig: CommitSig): Boolean = {
-    val isLatestSig = latest.localCommit.commitTxAndRemoteSig.remoteSig match {
+    val isLatestSig = latest.localCommit.remoteSig match {
       case ChannelSpendSignature.IndividualSignature(latestRemoteSig) => latestRemoteSig == commitSig.signature
       case ChannelSpendSignature.PartialSignatureWithNonce(_, _) => ???
     }

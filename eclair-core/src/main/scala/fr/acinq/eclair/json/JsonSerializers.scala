@@ -318,17 +318,6 @@ object ColorSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
-private case class CommitTxAndRemoteSigJson(commitTx: CommitTx, remoteSig: ByteVector64)
-private case class CommitTxAndRemotePartialSigJson(commitTx: CommitTx, remoteSig: ChannelSpendSignature.PartialSignatureWithNonce)
-object CommitTxAndRemoteSigSerializer extends ConvertClassSerializer[CommitTxAndRemoteSig](
-  i => i.remoteSig match {
-    case f: ChannelSpendSignature.IndividualSignature => CommitTxAndRemoteSigJson(i.commitTx, f.sig)
-    case p: ChannelSpendSignature.PartialSignatureWithNonce => CommitTxAndRemotePartialSigJson(i.commitTx, p)
-    }
-)
-// @formatter:on
-
-// @formatter:off
 private sealed trait HopJson
 private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: HopRelayParams) extends HopJson
 private case class BlindedHopJson(nodeId: PublicKey, nextNodeId: PublicKey, paymentInfo: OfferTypes.PaymentInfo) extends HopJson
@@ -772,7 +761,6 @@ object JsonSerializers {
     OpenChannelResponseSerializer +
     CommandResponseSerializer +
     InputInfoSerializer +
-    CommitTxAndRemoteSigSerializer +
     ColorSerializer +
     ThrowableSerializer +
     FailureMessageSerializer +

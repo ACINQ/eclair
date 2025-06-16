@@ -287,7 +287,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                 remoteFundingPubKey = remoteFundingPubKey,
                 localFundingStatus = SingleFundedUnconfirmedFundingTx(None),
                 remoteFundingStatus = RemoteFundingStatus.NotLocked,
-                localCommit = LocalCommit(0, localSpec, CommitTxAndRemoteSig(localCommitTx, ChannelSpendSignature.IndividualSignature(remoteSig)), htlcTxsAndRemoteSigs = Nil),
+                localCommit = LocalCommit(0, localSpec, localCommitTx.tx.txid, localCommitTx.input, ChannelSpendSignature.IndividualSignature(remoteSig), htlcRemoteSigs = Nil),
                 remoteCommit = RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
                 nextRemoteCommit_opt = None)
               val commitments = Commitments(
@@ -332,7 +332,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             remoteFundingPubKey = remoteFundingPubKey,
             localFundingStatus = SingleFundedUnconfirmedFundingTx(Some(fundingTx)),
             remoteFundingStatus = RemoteFundingStatus.NotLocked,
-            localCommit = LocalCommit(0, localSpec, CommitTxAndRemoteSig(localCommitTx, ChannelSpendSignature.IndividualSignature(remoteSig)), htlcTxsAndRemoteSigs = Nil),
+            localCommit = LocalCommit(0, localSpec, localCommitTx.tx.txid, localCommitTx.input, ChannelSpendSignature.IndividualSignature(remoteSig), htlcRemoteSigs = Nil),
             remoteCommit = remoteCommit,
             nextRemoteCommit_opt = None
           )

@@ -23,11 +23,11 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.FullySignedSharedTransaction
-import fr.acinq.eclair.channel.publish.{ReplaceableRemoteCommitAnchor, TxPublisher}
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
+import fr.acinq.eclair.channel.publish.{ReplaceableRemoteCommitAnchor, TxPublisher}
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.transactions.Transactions.ClaimAnchorOutputTx
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass}
 import org.scalatest.OptionValues.convertOptionToValuable
@@ -268,7 +268,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv WatchFundingSpentTriggered (remote commit)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     // bob publishes his commitment tx
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val bobCommitTx = bob.signCommitTx()
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].tx.isInstanceOf[ReplaceableRemoteCommitAnchor])
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]
@@ -287,7 +287,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
 
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
-    val commitTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitTx = alice.signCommitTx()
     alice ! Error(ByteVector32.Zeroes, "dual funding failure")
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)
@@ -308,7 +308,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv CMD_FORCECLOSE", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val sender = TestProbe()
-    val commitTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_READY].commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val commitTx = alice.signCommitTx()
     alice ! CMD_FORCECLOSE(sender.ref)
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)
