@@ -389,8 +389,9 @@ object OutgoingPaymentPacket {
               // We drop downstream attribution data and report our own attribution data to the previous trampoline node.
               // Note that we could use the downstream attribution data to score downstream nodes.
               val trampolinePacket = Sphinx.FailurePacket.wrap(packet, trampolineOnionSecret)
-              val attribution = Sphinx.Attribution.create(previousAttribution_opt = None, Some(trampolinePacket), holdTime, ss.outerOnionSecret)
-              (Sphinx.FailurePacket.wrap(trampolinePacket, ss.outerOnionSecret), attribution)
+              val attributionInner = Sphinx.Attribution.create(previousAttribution_opt, Some(packet), holdTime, trampolineOnionSecret)
+              val attributionOuter = Sphinx.Attribution.create(Some(attributionInner), Some(trampolinePacket), holdTime, ss.outerOnionSecret)
+              (Sphinx.FailurePacket.wrap(trampolinePacket, ss.outerOnionSecret), attributionOuter)
             case None =>
               val attribution = Sphinx.Attribution.create(previousAttribution_opt, Some(packet), holdTime, ss.outerOnionSecret)
               (Sphinx.FailurePacket.wrap(packet, ss.outerOnionSecret), attribution)
@@ -402,12 +403,19 @@ object OutgoingPaymentPacket {
           (Sphinx.FailurePacket.wrap(packet, ss.outerOnionSecret), attribution)
         case FailureReason.LocalTrampolineFailure(failure) =>
           // This is a trampoline failure: we try to encrypt it to the node who created the trampoline onion.
-          val packet = ss.trampolineOnionSecret_opt match {
-            case Some(trampolineOnionSecret) => Sphinx.FailurePacket.wrap(Sphinx.FailurePacket.create(trampolineOnionSecret, failure), trampolineOnionSecret)
-            case None => ByteVector.empty // this shouldn't happen, we only generate trampoline failures when there was a trampoline onion
+          ss.trampolineOnionSecret_opt match {
+            case Some(trampolineOnionSecret) =>
+              val packet = Sphinx.FailurePacket.create(trampolineOnionSecret, failure)
+              val trampolinePacket = Sphinx.FailurePacket.wrap(packet, trampolineOnionSecret)
+              val attributionInner = Sphinx.Attribution.create(previousAttribution_opt = None, Some(packet), holdTime, trampolineOnionSecret)
+              val attributionOuter = Sphinx.Attribution.create(Some(attributionInner), Some(trampolinePacket), holdTime, ss.outerOnionSecret)
+              (Sphinx.FailurePacket.wrap(trampolinePacket, ss.outerOnionSecret), attributionOuter)
+
+            case None => // this shouldn't happen, we only generate trampoline failures when there was a trampoline onion
+              val packet = Sphinx.FailurePacket.create(ss.outerOnionSecret, failure)
+              val attribution = Sphinx.Attribution.create(previousAttribution_opt = None, Some(packet), holdTime, ss.outerOnionSecret)
+              (Sphinx.FailurePacket.wrap(packet, ss.outerOnionSecret), attribution)
           }
-          val attribution = Sphinx.Attribution.create(previousAttribution_opt = None, Some(packet), holdTime, ss.outerOnionSecret)
-          (Sphinx.FailurePacket.wrap(packet, ss.outerOnionSecret), attribution)
       }
     })
   }

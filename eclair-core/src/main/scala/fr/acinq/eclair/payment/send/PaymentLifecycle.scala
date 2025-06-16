@@ -102,7 +102,12 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       router ! Router.RouteDidRelay(d.route)
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
       val p = PartialPayment(id, d.request.amount, d.cmd.amount - d.request.amount, htlc.channelId, Some(d.route.fullRoute))
-      myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil)))
+      val remainingAttribution_opt = fulfill match {
+        case HtlcResult.RemoteFulfill(fulfill) =>
+          fulfill.attribution_opt.flatMap(Sphinx.Attribution.fulfillHoldTimes(_, d.sharedSecrets).remaining_opt)
+        case _: HtlcResult.OnChainFulfill => None
+      }
+      myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, remainingAttribution_opt)))
 
     case Event(RES_ADD_SETTLED(_, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
       fail match {
@@ -170,7 +175,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(RemoteFailure(request.amount, Nil, e))).increment()
         success
       case failure@Left(e) =>
-        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(UnreadableRemoteFailure(request.amount, Nil, e.unwrapped, htlcFailure.holdTimes))).increment()
+        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(UnreadableRemoteFailure(request.amount, Nil, e.unwrapped, e.attribution_opt, htlcFailure.holdTimes))).increment()
         failure
     }) match {
       case res@Right(Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
@@ -216,15 +221,15 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               case _ =>
             }
             RemoteFailure(request.amount, route.fullRoute, e)
-          case Left(Sphinx.CannotDecryptFailurePacket(unwrapped)) =>
+          case Left(Sphinx.CannotDecryptFailurePacket(unwrapped, attribution_opt)) =>
             log.warning(s"cannot parse returned error ${fail.reason.toHex} with sharedSecrets=$sharedSecrets: unwrapped=$unwrapped")
-            UnreadableRemoteFailure(request.amount, route.fullRoute, unwrapped, htlcFailure.holdTimes)
+            UnreadableRemoteFailure(request.amount, route.fullRoute, unwrapped, attribution_opt, htlcFailure.holdTimes)
         }
         log.warning(s"too many failed attempts, failing the payment")
         myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ failure)))
-      case Left(Sphinx.CannotDecryptFailurePacket(unwrapped)) =>
+      case Left(Sphinx.CannotDecryptFailurePacket(unwrapped, attribution_opt)) =>
         log.warning(s"cannot parse returned error: unwrapped=$unwrapped, route=${route.printNodes()}")
-        val failure = UnreadableRemoteFailure(request.amount, route.fullRoute, unwrapped, htlcFailure.holdTimes)
+        val failure = UnreadableRemoteFailure(request.amount, route.fullRoute, unwrapped, attribution_opt, htlcFailure.holdTimes)
         retry(failure, d)
       case Right(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Node)) =>
         log.info(s"received 'Node' type error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
