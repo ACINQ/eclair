@@ -24,9 +24,9 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.NumericSatoshi.abs
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{DummyOnChainWallet, SingleKeyOnChainWallet, SingleKeyOnChainWalletWithConfirmedInputs}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.{DummyOnChainWallet, SingleKeyOnChainWallet, SingleKeyOnChainWalletWithConfirmedInputs}
 import fr.acinq.eclair.channel.Helpers.Closing.{LocalClose, RemoteClose, RevokedClose}
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
@@ -350,7 +350,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
       // The duplicated transaction overhead is up to 42 weight units.
       val remoteWeight = if (remoteFundedTx.weight() <= 42) 0 else remoteFundedTx.weight() - 42
       assert(localFundedTx.weight() + remoteWeight == sharedTx.signedTx.weight())
-      val remoteFeerate: FeeratePerKw = Transactions.fee2rate(sharedTx.tx.remoteFees.truncateToSatoshi, remoteFundedTx.weight())
+      // Remove 2 weight units from the dummy remote funded tx because signature sizes can vary.
+      val remoteFeerate: FeeratePerKw = Transactions.fee2rate(sharedTx.tx.remoteFees.truncateToSatoshi, remoteFundedTx.weight() - 2)
       assert(minFeerate <= remoteFeerate && remoteFeerate < maxFeerate)
     }
     assert(minFeerate <= sharedTx.feerate && sharedTx.feerate < maxFeerate)
@@ -810,7 +811,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     confirmSpliceTx(f, spliceTx1)
 
     // Bob initiates a second splice that spends the first splice.
-    val spliceTx2 = initiateSplice(bob, alice, bob2alice, alice2bob, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = Some(SpliceOut(25_000 sat, defaultSpliceOutScriptPubKey)), sendTxComplete = true, changelessFunding = false)
+    val spliceTx2 = initiateSplice(bob, alice, bob2alice, alice2bob, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = Some(SpliceOut(20_000 sat, defaultSpliceOutScriptPubKey)), sendTxComplete = true, changelessFunding = false)
     assert(spliceTx2.txIn.exists(_.outPoint.txid == spliceTx1.txid))
 
     // Alice cannot RBF her first splice, so she RBFs Bob's splice instead.
