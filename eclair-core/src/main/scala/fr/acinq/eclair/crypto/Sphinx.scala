@@ -410,7 +410,7 @@ object Sphinx extends Logging {
       val previousAttribution = previousAttribution_opt.getOrElse(ByteVector.low(totalLength))
       val previousHmacs = getHmacs(previousAttribution).dropRight(1).map(_.drop(1))
       val mac = Hmac256(generateKey("um", sharedSecret))
-      val holdTimes = uint32.encode(holdTime.toMillis).require.bytes ++ previousAttribution.take((maxNumHops - 1) * holdTimeLength)
+      val holdTimes = uint32.encode(holdTime.toMillis / 100).require.bytes ++ previousAttribution.take((maxNumHops - 1) * holdTimeLength)
       val hmacs = computeHmacs(mac, failurePacket_opt.getOrElse(ByteVector.empty), holdTimes, previousHmacs, 0) +: previousHmacs
       cipher(holdTimes ++ ByteVector.concat(hmacs.map(ByteVector.concat(_))), sharedSecret)
     }
@@ -421,7 +421,7 @@ object Sphinx extends Logging {
      */
     def unwrap(encrypted: ByteVector, failurePacket: ByteVector, sharedSecret: ByteVector32, minNumHop: Int): Option[(FiniteDuration, ByteVector)] = {
       val bytes = cipher(encrypted, sharedSecret)
-      val holdTime = uint32.decode(bytes.take(holdTimeLength).bits).require.value.milliseconds
+      val holdTime = (uint32.decode(bytes.take(holdTimeLength).bits).require.value * 100).milliseconds
       val hmacs = getHmacs(bytes)
       val mac = Hmac256(generateKey("um", sharedSecret))
       if (computeHmacs(mac, failurePacket, bytes.take(maxNumHops * holdTimeLength), hmacs.drop(1), minNumHop) == hmacs.head.drop(minNumHop)) {

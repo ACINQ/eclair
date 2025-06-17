@@ -22,8 +22,8 @@ See https://github.com/lightning/bolts/pull/1044 for more details.
 
 Attribution data also provides hold times from payment relayers, both for fulfilled and failed HTLCs.
 
-Support is disabled by default as the spec is not yet final.
-It can be enabled by setting `eclair.features.option_attribution_data = optional` at the risk of being incompatible with the final spec.
+Support is enabled by default.
+It can be disabled by setting `eclair.features.option_attribution_data = disabled`.
 
 ### API changes
 
