@@ -175,7 +175,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(RemoteFailure(request.amount, Nil, e))).increment()
         success
       case failure@Left(e) =>
-        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(UnreadableRemoteFailure(request.amount, Nil, e.unwrapped, e.attribution_opt, htlcFailure.holdTimes))).increment()
+        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(UnreadableRemoteFailure(request.amount, Nil, e, htlcFailure.holdTimes))).increment()
         failure
     }) match {
       case res@Right(Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
@@ -221,15 +221,15 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               case _ =>
             }
             RemoteFailure(request.amount, route.fullRoute, e)
-          case Left(Sphinx.CannotDecryptFailurePacket(unwrapped, attribution_opt)) =>
+          case Left(e@Sphinx.CannotDecryptFailurePacket(unwrapped, _)) =>
             log.warning(s"cannot parse returned error ${fail.reason.toHex} with sharedSecrets=$sharedSecrets: unwrapped=$unwrapped")
-            UnreadableRemoteFailure(request.amount, route.fullRoute, unwrapped, attribution_opt, htlcFailure.holdTimes)
+            UnreadableRemoteFailure(request.amount, route.fullRoute, e, htlcFailure.holdTimes)
         }
         log.warning(s"too many failed attempts, failing the payment")
         myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ failure)))
-      case Left(Sphinx.CannotDecryptFailurePacket(unwrapped, attribution_opt)) =>
+      case Left(e@Sphinx.CannotDecryptFailurePacket(unwrapped, _)) =>
         log.warning(s"cannot parse returned error: unwrapped=$unwrapped, route=${route.printNodes()}")
-        val failure = UnreadableRemoteFailure(request.amount, route.fullRoute, unwrapped, attribution_opt, htlcFailure.holdTimes)
+        val failure = UnreadableRemoteFailure(request.amount, route.fullRoute, e, htlcFailure.holdTimes)
         retry(failure, d)
       case Right(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Node)) =>
         log.info(s"received 'Node' type error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
