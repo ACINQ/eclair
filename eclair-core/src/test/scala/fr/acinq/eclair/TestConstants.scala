@@ -200,6 +200,7 @@ object TestConstants {
       ),
       routerConf = RouterConf(
         watchSpentWindow = 1 second,
+        channelSpentSpliceDelay = 12,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
         syncConf = Router.SyncConf(
@@ -389,6 +390,7 @@ object TestConstants {
       ),
       routerConf = RouterConf(
         watchSpentWindow = 1 second,
+        channelSpentSpliceDelay = 12,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
         syncConf = Router.SyncConf(
