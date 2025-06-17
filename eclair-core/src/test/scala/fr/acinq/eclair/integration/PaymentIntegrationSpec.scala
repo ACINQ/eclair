@@ -370,7 +370,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     awaitCond(nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now()).nonEmpty)
     val sent = nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now())
     assert(sent.length == 1, sent)
-    assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) == paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
+    assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) == paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp), remainingAttribution_opt = None), sent)
 
     awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
