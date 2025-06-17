@@ -664,6 +664,7 @@ object NodeParams extends Logging {
       ),
       routerConf = RouterConf(
         watchSpentWindow = watchSpentWindow,
+        channelSpentSpliceDelay = config.getInt("router.channel-spent-splice-delay"),
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         syncConf = Router.SyncConf(

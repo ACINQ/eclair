@@ -109,6 +109,7 @@ object EclairInternalsSerializer {
 
   val routerConfCodec: Codec[RouterConf] = (
     ("watchSpentWindow" | finiteDurationCodec) ::
+      ("channelSpentSpliceDelay" | int32) ::
       ("channelExcludeDuration" | finiteDurationCodec) ::
       ("routerBroadcastInterval" | finiteDurationCodec) ::
       ("syncConf" | syncConfCodec) ::
