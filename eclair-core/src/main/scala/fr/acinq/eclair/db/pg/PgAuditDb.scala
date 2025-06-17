@@ -391,7 +391,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
                 rs.getByteVector32FromHex("payment_preimage"),
                 MilliSatoshi(rs.getLong("recipient_amount_msat")),
                 PublicKey(rs.getByteVectorFromHex("recipient_node_id")),
-                Seq(part))
+                Seq(part),
+                None)
             }
             sentByParentId + (parentId -> sent)
           }.values.toSeq.sortBy(_.timestamp)

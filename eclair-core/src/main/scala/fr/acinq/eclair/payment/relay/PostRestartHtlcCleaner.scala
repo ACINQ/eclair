@@ -177,7 +177,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
           val feesPaid = 0.msat // fees are unknown since we lost the reference to the payment
           nodeParams.db.payments.getOutgoingPayment(id) match {
             case Some(p) =>
-              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
+              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil, None))
               // If all downstream HTLCs are now resolved, we can emit the payment event.
               val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
               if (!payments.exists(p => p.status == OutgoingPaymentStatus.Pending)) {
@@ -185,7 +185,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                   case OutgoingPayment(id, _, _, _, _, amount, _, _, _, _, _, OutgoingPaymentStatus.Succeeded(_, feesPaid, _, completedAt)) =>
                     PaymentSent.PartialPayment(id, amount, feesPaid, ByteVector32.Zeroes, None, completedAt)
                 }
-                val sent = PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, succeeded)
+                val sent = PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, succeeded, None)
                 log.info(s"payment id=${sent.id} paymentHash=${sent.paymentHash} successfully sent (amount=${sent.recipientAmount})")
                 context.system.eventStream.publish(sent)
               }
@@ -196,7 +196,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
               val dummyFinalAmount = fulfilledHtlc.amountMsat
               val dummyNodeId = nodeParams.nodeId
               nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id, id, None, fulfilledHtlc.paymentHash, PaymentType.Standard, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Pending))
-              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(id, fulfilledHtlc.paymentHash, paymentPreimage, dummyFinalAmount, dummyNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
+              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(id, fulfilledHtlc.paymentHash, paymentPreimage, dummyFinalAmount, dummyNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil, None))
           }
           // There can never be more than one pending downstream HTLC for a given local origin (a multi-part payment is
           // instead spread across multiple local origins) so we can now forget this origin.
