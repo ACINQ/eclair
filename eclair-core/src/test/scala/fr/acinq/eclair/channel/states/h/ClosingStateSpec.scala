@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel.states.h
 
-import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, actorRefAdapter}
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
@@ -71,14 +71,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     if (unconfirmedFundingTx) {
       within(30 seconds) {
-        val channelConfig = ChannelConfig.standard
-        val channelFlags = ChannelFlags(announceChannel = false)
-        val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
-        val aliceInit = Init(aliceParams.initFeatures)
-        val bobInit = Init(bobParams.initFeatures)
-        alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+        val (aliceChannelParams, aliceCommitParams, bobChannelParams, bobCommitParams, channelType) = computeFeatures(setup, test.tags, ChannelFlags(announceChannel = false))
+        alice ! initChannelInitiator(TestConstants.fundingSatoshis, aliceChannelParams, aliceCommitParams, bobCommitParams, channelType, pushAmount_opt = Some(TestConstants.initiatorPushAmount))
         alice2blockchain.expectMsgType[SetChannelId]
-        bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+        bob ! initChannelNonInitiator(bobChannelParams, bobCommitParams, aliceCommitParams, channelType)
         bob2blockchain.expectMsgType[SetChannelId]
         alice2bob.expectMsgType[OpenChannel]
         alice2bob.forward(bob)
@@ -399,7 +395,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Bob claims the htlc output from Alice's commit tx using its preimage.
     bob ! WatchFundingSpentTriggered(lcp.commitTx)
-    initialState.commitments.params.commitmentFormat match {
+    initialState.commitments.latest.commitmentFormat match {
       case DefaultCommitmentFormat => ()
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
         bob2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
@@ -508,7 +504,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Alice prepares Claim-HTLC-timeout transactions for each HTLC.
     alice ! WatchFundingSpentTriggered(rcp.commitTx)
-    val (anchorTx_opt, mainTx_opt) = bobStateWithHtlc.commitments.params.commitmentFormat match {
+    val (anchorTx_opt, mainTx_opt) = bobStateWithHtlc.commitments.latest.commitmentFormat match {
       case DefaultCommitmentFormat => (None, None)
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
         val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
@@ -588,7 +584,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(closingTxs.htlcTxs.isEmpty)
     // Bob receives the preimage for the first two HTLCs.
     bob ! CMD_FULFILL_HTLC(htlc1.id, preimage, None, None)
-    val htlcSuccessTxs = aliceStateWithoutHtlcs.commitments.params.commitmentFormat match {
+    val htlcSuccessTxs = aliceStateWithoutHtlcs.commitments.latest.commitmentFormat match {
       case DefaultCommitmentFormat => (0 until 2).map(_ => bob2blockchain.expectFinalTxPublished("htlc-success").tx)
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
         val htlcSuccess = (0 until 2).map(_ => bob2blockchain.expectReplaceableTxPublished[HtlcSuccessTx])
@@ -600,7 +596,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Alice prepares Claim-HTLC-timeout transactions for each HTLC.
     alice ! WatchFundingSpentTriggered(rcp.commitTx)
-    val (anchorTx_opt, mainTx_opt) = aliceStateWithoutHtlcs.commitments.params.commitmentFormat match {
+    val (anchorTx_opt, mainTx_opt) = aliceStateWithoutHtlcs.commitments.latest.commitmentFormat match {
       case DefaultCommitmentFormat => (None, None)
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
         val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
@@ -681,7 +677,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice sends an htlc to bob
     val (_, htlca1) = addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
     // alice sends an htlc below dust to bob
-    val amountBelowDust = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.params.localParams.dustLimit - 100.msat
+    val amountBelowDust = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommitParams.dustLimit - 100.msat
     val (_, htlca2) = addHtlc(amountBelowDust, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     val (closingState, closingTxs) = localClose(alice, alice2blockchain, htlcTimeoutCount = 1)
@@ -695,7 +691,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(closingState.htlcDelayedOutputs.isEmpty)
     alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, closingState.commitTx)
     assert(txListener.expectMsgType[TransactionConfirmed].tx == closingState.commitTx)
-    assert(listener.expectMsgType[LocalCommitConfirmed].refundAtBlock == BlockHeight(42) + bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.localParams.toSelfDelay.toInt)
+    assert(listener.expectMsgType[LocalCommitConfirmed].refundAtBlock == BlockHeight(42) + alice.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.localCommitParams.toSelfDelay.toInt)
     assert(listener.expectMsgType[PaymentSettlingOnChain].paymentHash == htlca1.paymentHash)
     // htlcs below dust will never reach the chain, once the commit tx is confirmed we can consider them failed
     inside(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]]) { settled =>
@@ -743,7 +739,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val htlca2 = addHtlc(cmd2, alice, bob, alice2bob, bob2alice)
     val (_, cmd3) = makeCmdAdd(30_000_000 msat, bob.nodeParams.nodeId, alice.nodeParams.currentBlockHeight, ra1)
     val htlca3 = addHtlc(cmd3, alice, bob, alice2bob, bob2alice)
-    val amountBelowDust = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.params.localParams.dustLimit - 100.msat
+    val amountBelowDust = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommitParams.dustLimit - 100.msat
     val (_, dustCmd) = makeCmdAdd(amountBelowDust, bob.nodeParams.nodeId, alice.nodeParams.currentBlockHeight, ra1)
     val dust = addHtlc(dustCmd, alice, bob, alice2bob, bob2alice)
     val (_, cmd4) = makeCmdAdd(20_000_000 msat, bob.nodeParams.nodeId, alice.nodeParams.currentBlockHeight + 1, ra1)
@@ -2198,7 +2194,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobRevokedCommit = revokedCloseFixture.bobRevokedTxs(2)
     alice ! WatchFundingSpentTriggered(bobRevokedCommit.commitTx)
     awaitCond(alice.stateData.isInstanceOf[DATA_CLOSING])
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.params.commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
     val rvk = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head
     assert(rvk.commitTx == bobRevokedCommit.commitTx)

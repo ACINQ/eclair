@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.channel.states.a
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -49,17 +48,15 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ChannelIdAssigned])
     bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ChannelAborted])
 
-    val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags(announceChannel = false)
     val pushAmount = if (test.tags.contains(ChannelStateTestsTags.NoPushAmount)) None else Some(TestConstants.initiatorPushAmount)
     val nonInitiatorContribution = if (test.tags.contains(ChannelStateTestsTags.LiquidityAds)) Some(LiquidityAds.AddFunding(TestConstants.nonInitiatorFundingSatoshis, Some(TestConstants.defaultLiquidityRates))) else None
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
-    val aliceInit = Init(aliceParams.initFeatures)
-    val bobInit = Init(bobParams.initFeatures)
+    val (aliceChannelParams, aliceCommitParams, bobChannelParams, bobCommitParams, channelType) = computeFeatures(setup, test.tags, ChannelFlags(announceChannel = false))
+    val aliceInit = Init(aliceChannelParams.initFeatures)
+    val bobInit = Init(bobChannelParams.initFeatures)
     val requireConfirmedInputs = test.tags.contains(aliceRequiresConfirmedInputs)
     within(30 seconds) {
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, pushAmount, requireConfirmedInputs, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorContribution, dualFunded = true, None, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! initChannelInitiator(TestConstants.fundingSatoshis, aliceChannelParams, aliceCommitParams, bobCommitParams, channelType, dualFunded = true, pushAmount_opt = pushAmount, requireConfirmedInputs = requireConfirmedInputs, remoteInit_opt = Some(bobInit))
+      bob ! initChannelNonInitiator(bobChannelParams, bobCommitParams, aliceCommitParams, channelType, dualFunded = true, fundingContribution_opt = nonInitiatorContribution, remoteInit_opt = Some(aliceInit))
       awaitCond(bob.stateName == WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL)
       withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, aliceListener, bobListener)))
     }

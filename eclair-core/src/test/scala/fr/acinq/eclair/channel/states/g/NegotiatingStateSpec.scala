@@ -106,7 +106,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     systemA.eventStream.subscribe(aliceListener.ref, classOf[LocalChannelUpdate])
     val bobListener = TestProbe()
     systemB.eventStream.subscribe(bobListener.ref, classOf[LocalChannelUpdate])
-    
+
     alice2bob.expectMsgType[AnnouncementSignatures]
     alice2bob.forward(bob)
     alice2bob.expectMsgType[ChannelUpdate]
@@ -456,7 +456,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("recv ClosingSigned (fee higher than commit tx fee)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val commitment = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
-    val commitFee = Transactions.commitTxFeeMsat(commitment.localParams.dustLimit, commitment.localCommit.spec, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val commitFee = Transactions.commitTxFeeMsat(commitment.localCommitParams.dustLimit, commitment.localCommit.spec, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     aliceClose(f)
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
     assert(aliceCloseSig.feeSatoshis > commitFee.truncateToSatoshi)

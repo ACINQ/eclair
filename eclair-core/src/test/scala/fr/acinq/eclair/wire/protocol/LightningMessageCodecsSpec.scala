@@ -386,6 +386,34 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     }
   }
 
+  test("restrict max_htlc_value_in_flight_msat to millisatoshi amounts") {
+    val defaultOpenChannel = OpenChannel(BlockHash(ByteVector32.Zeroes), ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, FeeratePerKw(1 sat), CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags(announceChannel = false))
+    val defaultOpenDualFundedChannel = OpenDualFundedChannel(BlockHash(ByteVector32.Zeroes), ByteVector32.One, FeeratePerKw(5000 sat), FeeratePerKw(4000 sat), 250_000 sat, 500 sat, UInt64(50_000), 15 msat, CltvExpiryDelta(144), 483, 650_000, publicKey(1), publicKey(2), publicKey(3), publicKey(4), publicKey(5), publicKey(6), publicKey(7), ChannelFlags(true))
+    val defaultAcceptChannel = AcceptChannel(ByteVector32.Zeroes, 1 sat, UInt64(1), 1 sat, 1 msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6))
+    val defaultAcceptDualFundedChannel = AcceptDualFundedChannel(ByteVector32.One, 50_000 sat, 473 sat, UInt64(100_000_000), 1 msat, 6, CltvExpiryDelta(144), 50, publicKey(1), point(2), point(3), point(4), point(5), point(6), point(7))
+    val testCases = Seq(
+      (UInt64(500_000_000), 500_000_000.msat),
+      (UInt64(MilliSatoshi.maxValue.toLong), MilliSatoshi.maxValue),
+      (UInt64(MilliSatoshi.maxValue.toLong + 1), MilliSatoshi.maxValue),
+      (UInt64(Long.MaxValue), MilliSatoshi.maxValue),
+      (UInt64(hex"ffffffffffffffff"), MilliSatoshi.maxValue),
+    )
+    testCases.foreach { case (encoded, expected) =>
+      val openChannel = defaultOpenChannel.copy(maxHtlcValueInFlightMsat = encoded)
+      assert(openChannel.maxHtlcValueInFlight == expected)
+      assert(lightningMessageCodec.decode(lightningMessageCodec.encode(openChannel).require).require.value == openChannel)
+      val openDualFundedChannel = defaultOpenDualFundedChannel.copy(maxHtlcValueInFlightMsat = encoded)
+      assert(openDualFundedChannel.maxHtlcValueInFlight == expected)
+      assert(lightningMessageCodec.decode(lightningMessageCodec.encode(openDualFundedChannel).require).require.value == openDualFundedChannel)
+      val acceptChannel = defaultAcceptChannel.copy(maxHtlcValueInFlightMsat = encoded)
+      assert(acceptChannel.maxHtlcValueInFlight == expected)
+      assert(lightningMessageCodec.decode(lightningMessageCodec.encode(acceptChannel).require).require.value == acceptChannel)
+      val acceptDualFundedChannel = defaultAcceptDualFundedChannel.copy(maxHtlcValueInFlightMsat = encoded)
+      assert(acceptDualFundedChannel.maxHtlcValueInFlight == expected)
+      assert(lightningMessageCodec.decode(lightningMessageCodec.encode(acceptDualFundedChannel).require).require.value == acceptDualFundedChannel)
+    }
+  }
+
   test("encode/decode splice messages") {
     val channelId = ByteVector32(hex"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     val fundingTxId = TxId(TxHash(ByteVector32(hex"24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566")))

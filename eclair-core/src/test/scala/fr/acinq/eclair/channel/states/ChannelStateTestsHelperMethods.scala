@@ -22,7 +22,7 @@ import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, SatoshiLong, Script, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -117,6 +117,71 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
                           alicePeer: TestProbe,
                           bobPeer: TestProbe) {
     def currentBlockHeight: BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
+
+    def initChannelInitiator(fundingAmount: Satoshi,
+                             channelParams: LocalChannelParams,
+                             localCommitParams: CommitParams,
+                             remoteCommitParams: CommitParams,
+                             channelType: SupportedChannelType,
+                             dualFunded: Boolean = false,
+                             remoteInit_opt: Option[Init] = None,
+                             requireConfirmedInputs: Boolean = false,
+                             channelFlags: ChannelFlags = ChannelFlags(announceChannel = false),
+                             requestFunding_opt: Option[LiquidityAds.RequestFunding] = None,
+                             pushAmount_opt: Option[MilliSatoshi] = None): INPUT_INIT_CHANNEL_INITIATOR = {
+      INPUT_INIT_CHANNEL_INITIATOR(
+        temporaryChannelId = ByteVector32.Zeroes,
+        fundingAmount = fundingAmount,
+        dualFunded = dualFunded,
+        commitTxFeerate = channelType.commitmentFormat match {
+          case DefaultCommitmentFormat => TestConstants.feeratePerKw
+          case _ => TestConstants.anchorOutputsFeeratePerKw
+        },
+        fundingTxFeerate = TestConstants.feeratePerKw,
+        fundingTxFeeBudget_opt = None,
+        pushAmount_opt = pushAmount_opt,
+        requireConfirmedInputs = requireConfirmedInputs,
+        requestFunding_opt = requestFunding_opt,
+        localChannelParams = channelParams,
+        dustLimit = localCommitParams.dustLimit,
+        htlcMinimum = localCommitParams.htlcMinimum,
+        maxHtlcValueInFlight = localCommitParams.maxHtlcValueInFlightMsat,
+        maxAcceptedHtlcs = localCommitParams.maxAcceptedHtlcs,
+        toRemoteDelay = remoteCommitParams.toSelfDelay,
+        remote = alice2bob.ref,
+        remoteInit = remoteInit_opt.getOrElse(Init(channelParams.initFeatures)),
+        channelFlags = channelFlags,
+        channelConfig = ChannelConfig.standard,
+        channelType = channelType,
+        replyTo = aliceOpenReplyTo.ref.toTyped)
+    }
+
+    def initChannelNonInitiator(channelParams: LocalChannelParams,
+                                localCommitParams: CommitParams,
+                                remoteCommitParams: CommitParams,
+                                channelType: SupportedChannelType,
+                                dualFunded: Boolean = false,
+                                remoteInit_opt: Option[Init] = None,
+                                requireConfirmedInputs: Boolean = false,
+                                fundingContribution_opt: Option[LiquidityAds.AddFunding] = None,
+                                pushAmount_opt: Option[MilliSatoshi] = None): INPUT_INIT_CHANNEL_NON_INITIATOR = {
+      INPUT_INIT_CHANNEL_NON_INITIATOR(
+        temporaryChannelId = ByteVector32.Zeroes,
+        fundingContribution_opt = fundingContribution_opt,
+        dualFunded = dualFunded,
+        pushAmount_opt = pushAmount_opt,
+        requireConfirmedInputs = requireConfirmedInputs,
+        localChannelParams = channelParams,
+        dustLimit = localCommitParams.dustLimit,
+        htlcMinimum = localCommitParams.htlcMinimum,
+        maxHtlcValueInFlight = localCommitParams.maxHtlcValueInFlightMsat,
+        maxAcceptedHtlcs = localCommitParams.maxAcceptedHtlcs,
+        toRemoteDelay = remoteCommitParams.toSelfDelay,
+        remote = bob2alice.ref,
+        remoteInit = remoteInit_opt.getOrElse(Init(channelParams.initFeatures)),
+        channelConfig = ChannelConfig.standard,
+        channelType = channelType)
+    }
   }
 
   implicit val system: ActorSystem
@@ -209,7 +274,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     (nodeParamsA1, nodeParamsB1)
   }
 
-  def computeFeatures(setup: SetupFixture, tags: Set[String], channelFlags: ChannelFlags): (LocalParams, LocalParams, SupportedChannelType) = {
+  def computeFeatures(setup: SetupFixture, tags: Set[String], channelFlags: ChannelFlags): (LocalChannelParams, CommitParams, LocalChannelParams, CommitParams, SupportedChannelType) = {
     import setup._
 
     val (nodeParamsA, nodeParamsB) = updateInitFeatures(alice.underlyingActor.nodeParams, bob.underlyingActor.nodeParams, tags)
@@ -223,34 +288,34 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     if (tags.contains(ChannelStateTestsTags.ScidAlias)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), "invalid test configuration")
 
     implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
-    val aliceParams = Alice.channelParams
+    val aliceChannelParams = Alice.channelParams
       .modify(_.initFeatures).setTo(aliceInitFeatures)
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))
+      .modify(_.initialRequestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
+      .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))))
+    val aliceCommitParams = CommitParams(nodeParamsA.channelConf.dustLimit, nodeParamsA.channelConf.htlcMinimum, nodeParamsA.channelConf.maxHtlcValueInFlightMsat, nodeParamsA.channelConf.maxAcceptedHtlcs, nodeParamsB.channelConf.toRemoteDelay)
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(Long.MaxValue.msat)
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.AliceLowMaxHtlcValueInFlight))(150_000_000 msat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(5000 sat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
-      .modify(_.initialRequestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
-      .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))))
-    val bobParams = Bob.channelParams
+    val bobChannelParams = Bob.channelParams
       .modify(_.initFeatures).setTo(bobInitFeatures)
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))
+      .modify(_.initialRequestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
+      .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))))
+    val bobCommitParams = CommitParams(nodeParamsB.channelConf.dustLimit, nodeParamsB.channelConf.htlcMinimum, nodeParamsB.channelConf.maxHtlcValueInFlightMsat, nodeParamsB.channelConf.maxAcceptedHtlcs, nodeParamsA.channelConf.toRemoteDelay)
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(Long.MaxValue.msat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
-      .modify(_.initialRequestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
-      .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))))
 
-    (aliceParams, bobParams, channelType)
+    (aliceChannelParams, aliceCommitParams, bobChannelParams, bobCommitParams, channelType)
   }
 
   def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Transaction = {
     import setup._
 
-    val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags(announceChannel = tags.contains(ChannelStateTestsTags.ChannelsPublic))
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, tags, channelFlags)
-    val commitTxFeerate = if (tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
+    val (aliceChannelParams, aliceCommitParams, bobChannelParams, bobCommitParams, channelType) = computeFeatures(setup, tags, channelFlags)
     val fundingAmount = TestConstants.fundingSatoshis
     val initiatorPushAmount = if (tags.contains(ChannelStateTestsTags.NoPushAmount)) None else Some(TestConstants.initiatorPushAmount)
     val nonInitiatorPushAmount = if (tags.contains(ChannelStateTestsTags.NonInitiatorPushAmount)) Some(TestConstants.nonInitiatorPushAmount) else None
@@ -271,11 +336,11 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val eventListener = TestProbe()
     systemA.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
 
-    val aliceInit = Init(aliceParams.initFeatures)
-    val bobInit = Init(bobParams.initFeatures)
-    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded, commitTxFeerate, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, initiatorPushAmount, requireConfirmedInputs = false, requestFunds_opt, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+    val aliceInit = Init(aliceChannelParams.initFeatures)
+    val bobInit = Init(bobChannelParams.initFeatures)
+    alice ! initChannelInitiator(fundingAmount, aliceChannelParams, aliceCommitParams, bobCommitParams, channelType, dualFunded, pushAmount_opt = initiatorPushAmount, requestFunding_opt = requestFunds_opt, channelFlags = channelFlags, remoteInit_opt = Some(bobInit))
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId == ByteVector32.Zeroes)
-    bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorFunding_opt, dualFunded, nonInitiatorPushAmount, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+    bob ! initChannelNonInitiator(bobChannelParams, bobCommitParams, aliceCommitParams, channelType, dualFunded, Some(aliceInit), fundingContribution_opt = nonInitiatorFunding_opt, pushAmount_opt = nonInitiatorPushAmount)
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId == ByteVector32.Zeroes)
 
     val fundingTx = if (!dualFunded) {
@@ -571,15 +636,15 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     val commitTx = s2blockchain.expectFinalTxPublished("commit-tx").tx
     assert(commitTx.txid == closingState.commitments.latest.localCommit.txId)
-    val commitInput = closingState.commitments.latest.commitInput
+    val commitInput = closingState.commitments.latest.commitInput(s.underlyingActor.channelKeys)
     Transaction.correctlySpends(commitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    val publishedAnchorTx_opt = closingState.commitments.params.commitmentFormat match {
+    val publishedAnchorTx_opt = closingState.commitments.latest.commitmentFormat match {
       case DefaultCommitmentFormat => None
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(s2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx].tx)
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     val publishedMainTx_opt = localCommitPublished.localOutput_opt.map(_ => s2blockchain.expectFinalTxPublished("local-main-delayed").tx)
-    val (publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs) = closingState.commitments.params.commitmentFormat match {
+    val (publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs) = closingState.commitments.latest.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         // all htlcs success/timeout should be published as-is, we cannot RBF
         val publishedHtlcTxs = (0 until htlcSuccessCount + htlcTimeoutCount).map { _ =>
@@ -652,7 +717,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(remoteCommitPublished.outgoingHtlcs.size == htlcTimeoutCount)
 
     // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
-    val publishedAnchorTx_opt = closingData.commitments.params.commitmentFormat match {
+    val publishedAnchorTx_opt = closingData.commitments.latest.commitmentFormat match {
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(s2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx].tx)
       case Transactions.DefaultCommitmentFormat => None
     }

@@ -210,6 +210,7 @@ case class OpenChannel(chainHash: BlockHash,
                        tlvStream: TlvStream[OpenChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId with HasChainHash {
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
+  val maxHtlcValueInFlight: MilliSatoshi = maxHtlcValueInFlightMsat.toBigInt.min(MilliSatoshi.maxValue.toLong).toLong.msat
 }
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
@@ -229,6 +230,7 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          tlvStream: TlvStream[AcceptChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId {
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
   val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
+  val maxHtlcValueInFlight: MilliSatoshi = maxHtlcValueInFlightMsat.toBigInt.min(MilliSatoshi.maxValue.toLong).toLong.msat
 }
 
 // NB: this message is named open_channel2 in the specification.
@@ -259,6 +261,7 @@ case class OpenDualFundedChannel(chainHash: BlockHash,
   val usesOnTheFlyFunding: Boolean = requestFunding_opt.exists(_.paymentDetails.paymentType.isInstanceOf[LiquidityAds.OnTheFlyFundingPaymentType])
   val useFeeCredit_opt: Option[MilliSatoshi] = tlvStream.get[ChannelTlv.UseFeeCredit].map(_.amount)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
+  val maxHtlcValueInFlight: MilliSatoshi = maxHtlcValueInFlightMsat.toBigInt.min(MilliSatoshi.maxValue.toLong).toLong.msat
 }
 
 // NB: this message is named accept_channel2 in the specification.
@@ -283,6 +286,7 @@ case class AcceptDualFundedChannel(temporaryChannelId: ByteVector32,
   val requireConfirmedInputs: Boolean = tlvStream.get[ChannelTlv.RequireConfirmedInputsTlv].nonEmpty
   val willFund_opt: Option[LiquidityAds.WillFund] = tlvStream.get[ChannelTlv.ProvideFundingTlv].map(_.willFund)
   val pushAmount: MilliSatoshi = tlvStream.get[ChannelTlv.PushAmountTlv].map(_.amount).getOrElse(0 msat)
+  val maxHtlcValueInFlight: MilliSatoshi = maxHtlcValueInFlightMsat.toBigInt.min(MilliSatoshi.maxValue.toLong).toLong.msat
 }
 
 case class FundingCreated(temporaryChannelId: ByteVector32,

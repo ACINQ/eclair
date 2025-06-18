@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.channel.states.c
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -46,16 +45,13 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     val setup = init(tags = test.tags)
     import setup._
 
-    val channelConfig = ChannelConfig.standard
     val channelFlags = ChannelFlags(announceChannel = test.tags.contains(ChannelStateTestsTags.ChannelsPublic))
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
-    val aliceInit = Init(aliceParams.initFeatures)
-    val bobInit = Init(bobParams.initFeatures)
+    val (aliceChannelParams, aliceCommitParams, bobChannelParams, bobCommitParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
     val listener = TestProbe()
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, None, requireConfirmedInputs = false, requestFunding_opt = None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, Some(LiquidityAds.AddFunding(TestConstants.nonInitiatorFundingSatoshis, None)), dualFunded = true, None, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! initChannelInitiator(TestConstants.fundingSatoshis, aliceChannelParams, aliceCommitParams, bobCommitParams, channelType, dualFunded = true, channelFlags = channelFlags)
+      bob ! initChannelNonInitiator(bobChannelParams, bobCommitParams, aliceCommitParams, channelType, dualFunded = true, fundingContribution_opt = Some(LiquidityAds.AddFunding(TestConstants.nonInitiatorFundingSatoshis, None)))
       alice2blockchain.expectMsgType[SetChannelId] // temporary channel id
       bob2blockchain.expectMsgType[SetChannelId] // temporary channel id
       alice2bob.expectMsgType[OpenDualFundedChannel]
@@ -155,7 +151,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(aliceUpdate.shortChannelId == aliceChannelReady.alias_opt.value)
     assert(aliceUpdate.feeBaseMsat == 20.msat)
     assert(aliceUpdate.feeProportionalMillionths == 125)
-    assert(aliceCommitments.localChannelReserve == aliceCommitments.commitInput.txOut.amount / 100)
+    assert(aliceCommitments.localChannelReserve == aliceCommitments.capacity / 100)
     assert(aliceCommitments.localChannelReserve == aliceCommitments.remoteChannelReserve)
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(bobCommitments.commitment.shortChannelId_opt.nonEmpty)
@@ -194,7 +190,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(aliceCommitments.commitment.shortChannelId_opt.isEmpty)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceChannelReady.alias_opt.value)
-    assert(aliceCommitments.localChannelReserve == aliceCommitments.commitInput.txOut.amount / 100)
+    assert(aliceCommitments.localChannelReserve == aliceCommitments.capacity / 100)
     assert(aliceCommitments.localChannelReserve == aliceCommitments.remoteChannelReserve)
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(bobCommitments.commitment.shortChannelId_opt.isEmpty)

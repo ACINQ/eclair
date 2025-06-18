@@ -589,8 +589,8 @@ class PeerSpec extends FixtureSpec {
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
     assert(init.channelType == ChannelTypes.StaticRemoteKey())
     assert(!init.dualFunded)
-    assert(init.localParams.walletStaticPaymentBasepoint.isDefined)
-    assert(init.localParams.upfrontShutdownScript_opt.isEmpty)
+    assert(init.localChannelParams.walletStaticPaymentBasepoint.isDefined)
+    assert(init.localChannelParams.upfrontShutdownScript_opt.isEmpty)
   }
 
   test("compute max-htlc-value-in-flight based on funding amount", Tag("max-htlc-value-in-flight-percent"), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -604,25 +604,25 @@ class PeerSpec extends FixtureSpec {
     {
       probe.send(peer, Peer.OpenChannel(remoteNodeId, 200_000 sat, None, None, None, None, None, None, None))
       val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
-      assert(init.localParams.maxHtlcValueInFlightMsat == 50_000_000.msat) // max-htlc-value-in-flight-percent
+      assert(init.maxHtlcValueInFlight == 50_000_000.msat) // max-htlc-value-in-flight-percent
     }
     {
       probe.send(peer, Peer.OpenChannel(remoteNodeId, 500_000 sat, None, None, None, None, None, None, None))
       val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
-      assert(init.localParams.maxHtlcValueInFlightMsat == 100_000_000.msat) // max-htlc-value-in-flight-msat
+      assert(init.maxHtlcValueInFlight == 100_000_000.msat) // max-htlc-value-in-flight-msat
     }
     {
       val open = createOpenChannelMessage().copy(fundingSatoshis = 200_000 sat)
       peerConnection.send(peer, open)
       val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
-      assert(init.localParams.maxHtlcValueInFlightMsat == 50_000_000.msat) // max-htlc-value-in-flight-percent
+      assert(init.maxHtlcValueInFlight == 50_000_000.msat) // max-htlc-value-in-flight-percent
       channel.expectMsg(open)
     }
     {
       val open = createOpenChannelMessage().copy(fundingSatoshis = 500_000 sat)
       peerConnection.send(peer, open)
       val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
-      assert(init.localParams.maxHtlcValueInFlightMsat == 100_000_000.msat) // max-htlc-value-in-flight-msat
+      assert(init.maxHtlcValueInFlight == 100_000_000.msat) // max-htlc-value-in-flight-msat
       channel.expectMsg(open)
     }
   }

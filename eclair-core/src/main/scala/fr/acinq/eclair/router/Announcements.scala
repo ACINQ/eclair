@@ -18,7 +18,6 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector64, Crypto, LexicographicalOrdering}
-import fr.acinq.eclair.channel.ChannelParams
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, NodeFeature, NodeParams, RealShortChannelId, ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
@@ -30,13 +29,13 @@ import shapeless.HNil
  */
 object Announcements {
 
-  def channelAnnouncementWitnessEncode(chainHash: BlockHash, shortChannelId: RealShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: Features[Feature], tlvStream: TlvStream[ChannelAnnouncementTlv]): ByteVector =
+  private def channelAnnouncementWitnessEncode(chainHash: BlockHash, shortChannelId: RealShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: Features[Feature], tlvStream: TlvStream[ChannelAnnouncementTlv]): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.channelAnnouncementWitnessCodec.encode(features :: chainHash :: shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: tlvStream :: HNil))))
 
-  def nodeAnnouncementWitnessEncode(timestamp: TimestampSecond, nodeId: PublicKey, rgbColor: Color, alias: String, features: Features[Feature], addresses: List[NodeAddress], tlvStream: TlvStream[NodeAnnouncementTlv]): ByteVector =
+  private def nodeAnnouncementWitnessEncode(timestamp: TimestampSecond, nodeId: PublicKey, rgbColor: Color, alias: String, features: Features[Feature], addresses: List[NodeAddress], tlvStream: TlvStream[NodeAnnouncementTlv]): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.nodeAnnouncementWitnessCodec.encode(features :: timestamp :: nodeId :: rgbColor :: alias :: addresses :: tlvStream :: HNil))))
 
-  def channelUpdateWitnessEncode(chainHash: BlockHash, shortChannelId: ShortChannelId, timestamp: TimestampSecond, messageFlags: ChannelUpdate.MessageFlags, channelFlags: ChannelUpdate.ChannelFlags, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, tlvStream: TlvStream[ChannelUpdateTlv]): ByteVector =
+  private def channelUpdateWitnessEncode(chainHash: BlockHash, shortChannelId: ShortChannelId, timestamp: TimestampSecond, messageFlags: ChannelUpdate.MessageFlags, channelFlags: ChannelUpdate.ChannelFlags, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, tlvStream: TlvStream[ChannelUpdateTlv]): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.channelUpdateWitnessCodec.encode(chainHash :: shortChannelId :: timestamp :: messageFlags :: channelFlags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: htlcMaximumMsat :: tlvStream :: HNil))))
 
   def generateChannelAnnouncementWitness(chainHash: BlockHash, shortChannelId: RealShortChannelId, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, features: Features[Feature]): ByteVector =
@@ -122,8 +121,8 @@ object Announcements {
       u1.htlcMinimumMsat == u2.htlcMinimumMsat &&
       u1.htlcMaximumMsat == u2.htlcMaximumMsat
 
-  def makeChannelUpdate(nodeParams: NodeParams, remoteNodeId: PublicKey, scid: ShortChannelId, params: ChannelParams, relayFees: RelayFees, maxHtlcAmount: MilliSatoshi, enable: Boolean): ChannelUpdate = {
-    makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scid, nodeParams.channelConf.expiryDelta, params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, maxHtlcAmount, isPrivate = !params.announceChannel, enable)
+  def makeChannelUpdate(nodeParams: NodeParams, remoteNodeId: PublicKey, scid: ShortChannelId, relayFees: RelayFees, minHtlcAmount: MilliSatoshi, maxHtlcAmount: MilliSatoshi, isPrivate: Boolean, enable: Boolean): ChannelUpdate = {
+    makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scid, nodeParams.channelConf.expiryDelta, minHtlcAmount, relayFees.feeBase, relayFees.feeProportionalMillionths, maxHtlcAmount, isPrivate = isPrivate, enable = enable)
   }
 
   def makeChannelUpdate(chainHash: BlockHash, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, isPrivate: Boolean = false, enable: Boolean = true, timestamp: TimestampSecond = TimestampSecond.now()): ChannelUpdate = {

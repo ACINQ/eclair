@@ -256,7 +256,7 @@ object TestConstants {
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
-    def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
+    def channelParams: LocalChannelParams = OpenChannelInterceptor.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
       None,
@@ -264,8 +264,7 @@ object TestConstants {
       isChannelOpener = true,
       paysCommitTxFees = true,
       dualFunded = false,
-      fundingSatoshis,
-      unlimitedMaxHtlcValueInFlight = false,
+      fundingSatoshis
     ).copy(
       fundingKeyPath = fundingKeyPath,
       initialRequestedChannelReserve_opt = Some(10_000 sat) // Bob will need to keep that much satoshis in his balance
@@ -445,7 +444,7 @@ object TestConstants {
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
-    def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
+    def channelParams: LocalChannelParams = OpenChannelInterceptor.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
       None,
@@ -453,8 +452,7 @@ object TestConstants {
       isChannelOpener = false,
       paysCommitTxFees = false,
       dualFunded = false,
-      fundingSatoshis,
-      unlimitedMaxHtlcValueInFlight = false,
+      fundingSatoshis
     ).copy(
       fundingKeyPath = fundingKeyPath,
       initialRequestedChannelReserve_opt = Some(20_000 sat) // Alice will need to keep that much satoshis in her balance

@@ -17,7 +17,6 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.actor.ActorRef
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -54,17 +53,13 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
       (TestConstants.fundingSatoshis, TestConstants.initiatorPushAmount)
     }
 
-    val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags(announceChannel = false)
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
-    val aliceInit = Init(aliceParams.initFeatures)
-    val bobInit = Init(bobParams.initFeatures)
+    val (aliceChannelParams, aliceCommitParams, bobChannelParams, bobCommitParams, channelType) = computeFeatures(setup, test.tags, ChannelFlags(announceChannel = false))
     val listener = TestProbe()
     within(30 seconds) {
       bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(pushMsat), requireConfirmedInputs = false, requestFunding_opt = None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+      alice ! initChannelInitiator(fundingSatoshis, aliceChannelParams, aliceCommitParams, bobCommitParams, channelType, pushAmount_opt = Some(pushMsat))
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      bob ! initChannelNonInitiator(bobChannelParams, bobCommitParams, aliceCommitParams, channelType)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)

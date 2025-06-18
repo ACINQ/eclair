@@ -124,8 +124,8 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
 
   import ReplaceableTxFunder._
 
-  private val dustLimit = commitment.localParams.dustLimit
-  private val commitFee: Satoshi = commitment.commitInput.txOut.amount - commitTx.txOut.map(_.amount).sum
+  private val dustLimit = commitment.localCommitParams.dustLimit
+  private val commitFee: Satoshi = commitment.capacity - commitTx.txOut.map(_.amount).sum
 
   private val log = context.log
 

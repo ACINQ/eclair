@@ -598,7 +598,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val commitment = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(commitment.localCommit.spec.toLocal == 770_000_000.msat)
     assert(commitment.localChannelReserve == 15_000.sat)
-    val commitFees = Transactions.commitTxTotalCost(commitment.remoteParams.dustLimit, commitment.remoteCommit.spec, commitment.params.commitmentFormat)
+    val commitFees = Transactions.commitTxTotalCost(commitment.remoteCommitParams.dustLimit, commitment.remoteCommit.spec, commitment.commitmentFormat)
     assert(commitFees < 15_000.sat)
 
     val sender = TestProbe()
@@ -618,7 +618,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val commitment = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(commitment.localCommit.spec.toLocal == 650_000_000.msat)
     assert(commitment.localChannelReserve == 15_000.sat)
-    val commitFees = Transactions.commitTxTotalCost(commitment.remoteParams.dustLimit, commitment.remoteCommit.spec, commitment.params.commitmentFormat)
+    val commitFees = Transactions.commitTxTotalCost(commitment.remoteCommitParams.dustLimit, commitment.remoteCommit.spec, commitment.commitmentFormat)
     assert(commitFees > 20_000.sat)
 
     val sender = TestProbe()
@@ -2476,7 +2476,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
-  test("disconnect before channel update and tx_signatures are received") { f=>
+  test("disconnect before channel update and tx_signatures are received") { f =>
     import f._
     // Disconnection with both sides sending tx_signatures and channel updates
     // alice                    bob
@@ -2654,7 +2654,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
     addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN(None)
-    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>  // Bob doesn't receive Alice's commit_sig
+    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch => // Bob doesn't receive Alice's commit_sig
       assert(batch.batchSize == 2)
     }
     alice2bob.expectNoMessage(100 millis)
@@ -2735,7 +2735,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishAlice.nextRemoteRevocationNumber == 0)
-    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishBob.nextRemoteRevocationNumber == 0)
 
     // Bob must retransmit his commit_sigs first.
@@ -2802,12 +2802,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishAlice.nextRemoteRevocationNumber == 1)
-    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishBob.nextRemoteRevocationNumber == 0)
 
     // Bob must retransmit his commit_sigs first.
     alice2bob.expectNoMessage(100 millis)
-    inside(bob2alice.expectMsgType[CommitSigBatch] ) { batch =>
+    inside(bob2alice.expectMsgType[CommitSigBatch]) { batch =>
       assert(batch.batchSize == 2)
       bob2alice.forward(alice)
     }
@@ -3558,12 +3558,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val aliceCommitments1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     aliceCommitments1.active.foreach { c =>
       val commitTx = c.fullySignedLocalCommitTx(aliceCommitments1.params, alice.underlyingActor.channelKeys)
-      Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(commitTx, Map(c.fundingInput -> c.commitInput(alice.underlyingActor.channelKeys).txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     val bobCommitments1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     bobCommitments1.active.foreach { c =>
       val commitTx = c.fullySignedLocalCommitTx(bobCommitments1.params, bob.underlyingActor.channelKeys)
-      Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(commitTx, Map(c.fundingInput -> c.commitInput(bob.underlyingActor.channelKeys).txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
     // alice fulfills that HTLC in both commitments
@@ -3572,12 +3572,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val aliceCommitments2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     aliceCommitments2.active.foreach { c =>
       val commitTx = c.fullySignedLocalCommitTx(aliceCommitments2.params, alice.underlyingActor.channelKeys)
-      Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(commitTx, Map(c.fundingInput -> c.commitInput(alice.underlyingActor.channelKeys).txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     val bobCommitments2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     bobCommitments2.active.foreach { c =>
       val commitTx = c.fullySignedLocalCommitTx(bobCommitments2.params, bob.underlyingActor.channelKeys)
-      Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(commitTx, Map(c.fundingInput -> c.commitInput(bob.underlyingActor.channelKeys).txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
     resolveHtlcs(f, htlcs)
