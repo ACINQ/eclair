@@ -30,14 +30,14 @@ import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
-import fr.acinq.eclair.io.OpenChannelInterceptor.{DefaultParams, OpenChannelInitiator, OpenChannelNonInitiator}
+import fr.acinq.eclair.io.OpenChannelInterceptor.{OpenChannelInitiator, OpenChannelNonInitiator}
 import fr.acinq.eclair.io.Peer.{OpenChannelResponse, OutgoingMessage, SpawnChannelInitiator, SpawnChannelNonInitiator}
 import fr.acinq.eclair.io.PeerSpec.{createOpenChannelMessage, createOpenDualFundedChannelMessage}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.transactions.Transactions.{ClosingTx, InputInfo}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{ChannelReestablish, ChannelTlv, Error, IPAddress, LiquidityAds, NodeAddress, OpenChannel, OpenChannelTlv, Shutdown, TlvStream}
-import fr.acinq.eclair.{AcceptOpenChannel, BlockHeight, CltvExpiryDelta, FeatureSupport, Features, InitFeature, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, UInt64, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.{AcceptOpenChannel, BlockHeight, FeatureSupport, Features, InitFeature, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, UInt64, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -47,7 +47,6 @@ import scala.concurrent.duration.DurationInt
 
 class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
   val remoteNodeId: Crypto.PublicKey = randomKey().publicKey
-  val defaultParams: DefaultParams = DefaultParams(100 sat, UInt64(100000), 100 msat, CltvExpiryDelta(288), 10)
   val openChannel: OpenChannel = createOpenChannelMessage()
   val remoteAddress: NodeAddress = IPAddress(InetAddress.getLoopbackAddress, 19735)
   val defaultFeatures: Features[InitFeature] = Features(Map[InitFeature, FeatureSupport](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional))
@@ -103,13 +102,8 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), defaultFeatures, defaultFeatures, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
-    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, addFunding_opt = None)
-    val updatedLocalParams = peer.expectMessageType[SpawnChannelNonInitiator].localParams
-    assert(updatedLocalParams.dustLimit == defaultParams.dustLimit)
-    assert(updatedLocalParams.htlcMinimum == defaultParams.htlcMinimum)
-    assert(updatedLocalParams.maxAcceptedHtlcs == defaultParams.maxAcceptedHtlcs)
-    assert(updatedLocalParams.maxHtlcValueInFlightMsat == defaultParams.maxHtlcValueInFlightMsat)
-    assert(updatedLocalParams.toSelfDelay == defaultParams.toSelfDelay)
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), addFunding_opt = None)
+    assert(peer.expectMessageType[SpawnChannelNonInitiator].addFunding_opt.isEmpty)
   }
 
   test("add liquidity if interceptor plugin requests it") { f =>
@@ -119,7 +113,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     val addFunding = LiquidityAds.AddFunding(100_000 sat, None)
-    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, Some(addFunding))
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), Some(addFunding))
     assert(peer.expectMessageType[SpawnChannelNonInitiator].addFunding_opt.contains(addFunding))
   }
 
@@ -222,7 +216,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].channelId == ByteVector32.One)
 
     // original request accepted after plugin accepts it
-    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, None)
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), None)
     assert(peer.expectMessageType[SpawnChannelNonInitiator].open == Left(openChannel))
     eventListener.expectMessageType[ChannelAborted]
   }
@@ -242,7 +236,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), staticRemoteKeyFeatures, staticRemoteKeyFeatures, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
     pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
-    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), defaultParams, Some(LiquidityAds.AddFunding(50_000 sat, None)))
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), Some(LiquidityAds.AddFunding(50_000 sat, None)))
     peer.expectMessageType[SpawnChannelNonInitiator]
   }
 

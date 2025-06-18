@@ -31,7 +31,7 @@ import fr.acinq.eclair.io.Peer.{OpenChannelResponse, SpawnChannelNonInitiator}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{Error, LiquidityAds, NodeAddress}
-import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, Features, InitFeature, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, InterceptOpenChannelResponse, Logs, MilliSatoshi, NodeParams, RejectOpenChannel, UInt64}
+import fr.acinq.eclair.{AcceptOpenChannel, Features, InitFeature, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, InterceptOpenChannelResponse, Logs, NodeParams, RejectOpenChannel}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -69,13 +69,6 @@ object OpenChannelInterceptor {
   private case class PluginOpenChannelResponse(pluginResponse: InterceptOpenChannelResponse) extends QueryPluginCommands
   private case object PluginTimeout extends QueryPluginCommands
   // @formatter:on
-
-  /** DefaultParams are a subset of ChannelData.LocalParams that can be modified by an InterceptOpenChannelPlugin */
-  case class DefaultParams(dustLimit: Satoshi,
-                           maxHtlcValueInFlightMsat: UInt64,
-                           htlcMinimum: MilliSatoshi,
-                           toSelfDelay: CltvExpiryDelta,
-                           maxAcceptedHtlcs: Int)
 
   def apply(peer: ActorRef[Any], nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainPubkeyCache, pendingChannelsRateLimiter: ActorRef[PendingChannelsRateLimiter.Command], pluginTimeout: FiniteDuration = 1 minute): Behavior[Command] =
     Behaviors.setup { context =>
@@ -239,12 +232,10 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     Behaviors.withTimers { timers =>
       timers.startSingleTimer(PluginTimeout, pluginTimeout)
       val pluginResponseAdapter = context.messageAdapter[InterceptOpenChannelResponse](PluginOpenChannelResponse)
-      val defaultParams = DefaultParams(localParams.dustLimit, localParams.maxHtlcValueInFlightMsat, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs)
-      plugin.openChannelInterceptor ! InterceptOpenChannelReceived(pluginResponseAdapter, request, defaultParams)
+      plugin.openChannelInterceptor ! InterceptOpenChannelReceived(pluginResponseAdapter, request)
       receiveCommandMessage[QueryPluginCommands](context, "queryPlugin") {
         case PluginOpenChannelResponse(pluginResponse: AcceptOpenChannel) =>
-          val localParams1 = updateLocalParams(localParams, pluginResponse.defaultParams)
-          peer ! SpawnChannelNonInitiator(request.open, channelConfig, channelType, pluginResponse.addFunding_opt, localParams1, request.peerConnection.toClassic)
+          peer ! SpawnChannelNonInitiator(request.open, channelConfig, channelType, pluginResponse.addFunding_opt, localParams, request.peerConnection.toClassic)
           timers.cancel(PluginTimeout)
           waitForRequest()
         case PluginOpenChannelResponse(pluginResponse: RejectOpenChannel) =>
@@ -325,16 +316,6 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       dualFunded = dualFunded,
       fundingAmount,
       disableMaxHtlcValueInFlight
-    )
-  }
-
-  private def updateLocalParams(localParams: LocalParams, defaultParams: DefaultParams): LocalParams = {
-    localParams.copy(
-      dustLimit = defaultParams.dustLimit,
-      maxHtlcValueInFlightMsat = defaultParams.maxHtlcValueInFlightMsat,
-      htlcMinimum = defaultParams.htlcMinimum,
-      toSelfDelay = defaultParams.toSelfDelay,
-      maxAcceptedHtlcs = defaultParams.maxAcceptedHtlcs
     )
   }
 
