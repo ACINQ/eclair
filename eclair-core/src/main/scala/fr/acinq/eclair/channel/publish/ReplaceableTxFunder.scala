@@ -253,12 +253,9 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
 
   private def sign(tx: ForceCloseTransaction, txFeerate: FeeratePerKw, walletInputs_opt: Option[WalletInputs]): Behavior[Command] = {
     (tx, walletInputs_opt) match {
-      case (anchorTx: ClaimAnchorTx, Some(walletInputs)) =>
-        val locallySignedTx = anchorTx.sign(walletInputs)
-        signWalletInputs(anchorTx, locallySignedTx, txFeerate, walletInputs)
-      case (htlcTx: SignedHtlcTx, Some(walletInputs)) =>
-        val locallySignedTx = htlcTx.sign(walletInputs)
-        signWalletInputs(htlcTx, locallySignedTx, txFeerate, walletInputs)
+      case (tx: HasWalletInputs, Some(walletInputs)) =>
+        val locallySignedTx = tx.sign(walletInputs)
+        signWalletInputs(tx, locallySignedTx, txFeerate, walletInputs)
       case _ =>
         val signedTx = tx.sign()
         replyTo ! TransactionReady(FundedTx(tx, None, signedTx, txFeerate))
