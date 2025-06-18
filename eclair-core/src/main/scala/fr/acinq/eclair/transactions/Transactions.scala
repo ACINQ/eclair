@@ -53,8 +53,8 @@ object Transactions {
   /** Weight of an additional p2tr wallet output added to a transaction. */
   val p2trOutputWeight = 172
 
-  val maxWalletInputWeight = p2wpkhInputWeight.max(p2trInputWeight)
-  val maxWalletOutputWeight = p2wpkhOutputWeight.max(p2trOutputWeight)
+  val maxWalletInputWeight: Int = p2wpkhInputWeight.max(p2trInputWeight)
+  val maxWalletOutputWeight: Int = p2wpkhOutputWeight.max(p2trOutputWeight)
 
   sealed trait CommitmentFormat {
     // @formatter:off
@@ -441,6 +441,8 @@ object Transactions {
     /** Sign the transaction combined with the wallet inputs provided. */
     def sign(walletInputs: WalletInputs): Transaction
 
+    override def sign(): Transaction = sign(WalletInputs(Nil, None))
+
     protected def setWalletInputs(walletInputs: WalletInputs): Transaction = {
       // Note that we always keep the channel input in first position for simplicity.
       val txIn = tx.txIn.take(1) ++ walletInputs.txIn
@@ -568,8 +570,6 @@ object Transactions {
     override val redeemInfo: RedeemInfo = HtlcSuccessTx.redeemInfo(commitKeys.publicKeys, paymentHash, htlcExpiry, commitmentFormat)
     override val expectedWeight: Int = commitmentFormat.htlcSuccessWeight
 
-    override def sign(): Transaction = sign(WalletInputs(Nil, None))
-
     override def sign(walletInputs: WalletInputs): Transaction = {
       val toSign = copy(tx = setWalletInputs(walletInputs))
       val sig = toSign.localSig(walletInputs)
@@ -623,8 +623,6 @@ object Transactions {
     override val desc: String = "htlc-timeout"
     override val redeemInfo: RedeemInfo = HtlcTimeoutTx.redeemInfo(commitKeys.publicKeys, paymentHash, commitmentFormat)
     override val expectedWeight: Int = commitmentFormat.htlcTimeoutWeight
-
-    override def sign(): Transaction = sign(WalletInputs(Nil, None))
 
     def sign(walletInputs: WalletInputs): Transaction = {
       val toSign = copy(tx = setWalletInputs(walletInputs))
@@ -858,14 +856,30 @@ object Transactions {
     override def expectedWeight: Int = commitmentFormat.anchorInputWeight + 42
   }
 
+  object ClaimAnchorTx {
+    def redeemInfo(fundingKey: PublicKey, paymentKey: PublicKey, commitmentFormat: CommitmentFormat): RedeemInfo = {
+      commitmentFormat match {
+        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => RedeemInfo.P2wsh(anchor(fundingKey))
+        case _: SimpleTaprootChannelCommitmentFormat => RedeemInfo.TaprootKeyPath(paymentKey.xOnly, Some(Taproot.anchorScriptTree))
+      }
+    }
+
+    def createUnsignedTx(input: InputInfo): Transaction = {
+      Transaction(
+        version = 2,
+        txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
+        txOut = Nil, // anchor is only used to bump fees, the output will be added later depending on available inputs
+        lockTime = 0
+      )
+    }
+  }
+
   /** This transaction claims our anchor output in our local commitment. */
   case class ClaimLocalAnchorTx(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, input: InputInfo, tx: Transaction, commitmentFormat: CommitmentFormat) extends ClaimAnchorTx with LocalCommitForceCloseTransaction {
     override val desc: String = "local-anchor"
     override val redeemInfo: RedeemInfo = ClaimLocalAnchorTx.redeemInfo(fundingKey.publicKey, commitKeys.publicKeys, commitmentFormat)
 
-    override def sign(): Transaction = sign(WalletInputs(Nil, None))
-
-    def sign(walletInputs: WalletInputs): Transaction = {
+    override def sign(walletInputs: WalletInputs): Transaction = {
       val toSign = copy(tx = setWalletInputs(walletInputs))
       val witness = commitmentFormat match {
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
@@ -884,10 +898,7 @@ object Transactions {
 
   object ClaimLocalAnchorTx {
     def redeemInfo(fundingKey: PublicKey, commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat): RedeemInfo = {
-      commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => RedeemInfo.P2wsh(anchor(fundingKey))
-        case _: SimpleTaprootChannelCommitmentFormat => RedeemInfo.TaprootKeyPath(commitKeys.localDelayedPaymentPublicKey.xOnly, Some(Taproot.anchorScriptTree))
-      }
+      ClaimAnchorTx.redeemInfo(fundingKey, commitKeys.localDelayedPaymentPublicKey, commitmentFormat)
     }
 
     def findInput(commitTx: Transaction, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, InputInfo] = {
@@ -896,15 +907,7 @@ object Transactions {
     }
 
     def createUnsignedTx(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimLocalAnchorTx] = {
-      findInput(commitTx, fundingKey, commitKeys, commitmentFormat).map(input => {
-        val tx = Transaction(
-          version = 2,
-          txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
-          txOut = Nil, // anchor is only used to bump fees, the output will be added later depending on available inputs
-          lockTime = 0
-        )
-        ClaimLocalAnchorTx(fundingKey, commitKeys, input, tx, commitmentFormat)
-      })
+      findInput(commitTx, fundingKey, commitKeys, commitmentFormat).map(input => ClaimLocalAnchorTx(fundingKey, commitKeys, input, ClaimAnchorTx.createUnsignedTx(input), commitmentFormat))
     }
   }
 
@@ -913,9 +916,7 @@ object Transactions {
     override val desc: String = "remote-anchor"
     override val redeemInfo: RedeemInfo = ClaimRemoteAnchorTx.redeemInfo(fundingKey.publicKey, commitKeys.publicKeys, commitmentFormat)
 
-    override def sign(): Transaction = sign(WalletInputs(Nil, None))
-
-    def sign(walletInputs: WalletInputs): Transaction = {
+    override def sign(walletInputs: WalletInputs): Transaction = {
       val toSign = copy(tx = setWalletInputs(walletInputs))
       val witness = commitmentFormat match {
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
@@ -934,10 +935,7 @@ object Transactions {
 
   object ClaimRemoteAnchorTx {
     def redeemInfo(fundingKey: PublicKey, commitKeys: CommitmentPublicKeys, commitmentFormat: CommitmentFormat): RedeemInfo = {
-      commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => RedeemInfo.P2wsh(anchor(fundingKey))
-        case _: SimpleTaprootChannelCommitmentFormat => RedeemInfo.TaprootKeyPath(commitKeys.remotePaymentPublicKey.xOnly, Some(Taproot.anchorScriptTree))
-      }
+      ClaimAnchorTx.redeemInfo(fundingKey, commitKeys.remotePaymentPublicKey, commitmentFormat)
     }
 
     def findInput(commitTx: Transaction, fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, InputInfo] = {
@@ -946,15 +944,7 @@ object Transactions {
     }
 
     def createUnsignedTx(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimRemoteAnchorTx] = {
-      findInput(commitTx, fundingKey, commitKeys, commitmentFormat).map(input => {
-        val tx = Transaction(
-          version = 2,
-          txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
-          txOut = Nil, // anchor is only used to bump fees, the output will be added later depending on available inputs
-          lockTime = 0
-        )
-        ClaimRemoteAnchorTx(fundingKey, commitKeys, input, tx, commitmentFormat)
-      })
+      findInput(commitTx, fundingKey, commitKeys, commitmentFormat).map(input => ClaimRemoteAnchorTx(fundingKey, commitKeys, input, ClaimAnchorTx.createUnsignedTx(input), commitmentFormat))
     }
   }
 
@@ -1279,9 +1269,9 @@ object Transactions {
   // @formatter:off
   sealed trait TxGenerationSkipped
   case object OutputNotFound extends TxGenerationSkipped { override def toString = "output not found (probably trimmed)" }
-  case object OutputAlreadyInWallet extends TxGenerationSkipped { override def toString = "output doesn't need to be claimed, it belongs to our bitcoin wallet (p2wpkh or p2tr)" }
+  private case object OutputAlreadyInWallet extends TxGenerationSkipped { override def toString = "output doesn't need to be claimed, it belongs to our bitcoin wallet (p2wpkh or p2tr)" }
   case object AmountBelowDustLimit extends TxGenerationSkipped { override def toString = "amount is below dust limit" }
-  case class CannotUpdateFee(txInfo: ForceCloseTransaction) extends TxGenerationSkipped { override def toString = s"cannot update fee for ${txInfo.desc} transactions" }
+  private case class CannotUpdateFee(txInfo: ForceCloseTransaction) extends TxGenerationSkipped { override def toString = s"cannot update fee for ${txInfo.desc} transactions" }
   // @formatter:on
 
   private def weight2feeMsat(feeratePerKw: FeeratePerKw, weight: Int): MilliSatoshi = MilliSatoshi(feeratePerKw.toLong * weight)
@@ -1411,7 +1401,6 @@ object Transactions {
     case DefaultCommitmentFormat => 0 // htlc txs immediately spend the commit tx
     case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => 1 // htlc txs have a 1-block delay to allow CPFP carve-out on anchors
   }
-
 
   def makeCommitTxOutputs(localFundingPublicKey: PublicKey,
                           remoteFundingPublicKey: PublicKey,
