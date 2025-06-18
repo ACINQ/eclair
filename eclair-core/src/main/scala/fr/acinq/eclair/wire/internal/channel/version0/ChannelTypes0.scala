@@ -97,7 +97,7 @@ private[channel] object ChannelTypes0 {
    */
   def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), ByteVector.empty), tx, None)
 
-  case class HtlcTxAndSigs(txinfo: HtlcTx, localSig: ByteVector64, remoteSig: ByteVector64)
+  case class HtlcTxAndSigs(txinfo: UnsignedHtlcTx, localSig: ByteVector64, remoteSig: ByteVector64)
 
   case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
 

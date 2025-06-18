@@ -199,7 +199,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"htlc $i payment_preimage: ${if (i < paymentPreimages.size) paymentPreimages(i) else paymentPreimages.last}")
   }
 
-  def run(name: String, specHtlcs: Set[DirectedHtlc]): (Transaction, Seq[TransactionWithInputInfo]) = {
+  def run(name: String, specHtlcs: Set[DirectedHtlc]): (Transaction, Seq[Transaction]) = {
     logger.info(s"name: $name")
     val spec = CommitmentSpec(specHtlcs, getFeerate(name), getToLocal(name), getToRemote(name))
     val dustLimit = getDustLimit(name).getOrElse(Local.dustLimit)
@@ -259,45 +259,43 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"num_htlcs: ${htlcTxs.length}")
 
     val signedTxs = htlcTxs.collect {
-      case tx: HtlcSuccessTx =>
-        val localSig = tx.sign(localCommitmentKeys, commitmentFormat, Map.empty)
-        val remoteSig = tx.sign(remoteCommitmentKeys, commitmentFormat)
-        val htlcIndex = tx.redeemInfo(localCommitmentKeys.publicKeys, commitmentFormat) match {
+      case tx: UnsignedHtlcSuccessTx =>
+        val remoteSig = tx.localSig(remoteCommitmentKeys)
+        val htlcIndex = tx.redeemInfo(localCommitmentKeys.publicKeys) match {
           case redeemInfo: RedeemInfo.SegwitV0 => htlcScripts.indexOf(Script.parse(redeemInfo.redeemScript))
           case _: RedeemInfo.Taproot => ???
         }
         val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
-        val tx1 = tx.addSigs(localCommitmentKeys, localSig, remoteSig, preimage, commitmentFormat)
-        Transaction.correctlySpends(tx1.tx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val tx1 = tx.addRemoteSig(localCommitmentKeys, remoteSig, preimage).sign()
+        Transaction.correctlySpends(tx1, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-success for htlc #$htlcIndex)")
         logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")
-        logger.info(s"# local_htlc_signature = ${Scripts.der(localSig).dropRight(1).toHex}")
-        logger.info(s"htlc_success_tx (htlc #$htlcIndex): ${tx1.tx}")
+        logger.info(s"# local_htlc_signature = ${Scripts.der(tx.addRemoteSig(localCommitmentKeys, remoteSig, preimage).localSig(WalletInputs(Nil, None))).dropRight(1).toHex}")
+        logger.info(s"htlc_success_tx (htlc #$htlcIndex): $tx1")
         tx1
-      case tx: HtlcTimeoutTx =>
-        val localSig = tx.sign(localCommitmentKeys, commitmentFormat, Map.empty)
-        val remoteSig = tx.sign(remoteCommitmentKeys, commitmentFormat)
-        val htlcIndex = tx.redeemInfo(localCommitmentKeys.publicKeys, commitmentFormat) match {
+      case tx: UnsignedHtlcTimeoutTx =>
+        val remoteSig = tx.localSig(remoteCommitmentKeys)
+        val htlcIndex = tx.redeemInfo(localCommitmentKeys.publicKeys) match {
           case redeemInfo: RedeemInfo.SegwitV0 => htlcScripts.indexOf(Script.parse(redeemInfo.redeemScript))
           case _: RedeemInfo.Taproot => ???
         }
-        val tx1 = tx.addSigs(localCommitmentKeys, localSig, remoteSig, commitmentFormat)
-        Transaction.correctlySpends(tx1.tx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val tx1 = tx.addRemoteSig(localCommitmentKeys, remoteSig).sign()
+        Transaction.correctlySpends(tx1, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-timeout for htlc #$htlcIndex)")
         logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")
-        logger.info(s"# local_htlc_signature = ${Scripts.der(localSig).dropRight(1).toHex}")
-        logger.info(s"htlc_timeout_tx (htlc #$htlcIndex): ${tx1.tx}")
+        logger.info(s"# local_htlc_signature = ${Scripts.der(tx.addRemoteSig(localCommitmentKeys, remoteSig).localSig(WalletInputs(Nil, None))).dropRight(1).toHex}")
+        logger.info(s"htlc_timeout_tx (htlc #$htlcIndex): $tx1")
         tx1
     }
 
     (commitTx, signedTxs)
   }
 
-  def verifyHtlcTxs(name: String, htlcTxs: Seq[TransactionWithInputInfo]): Unit = {
+  def verifyHtlcTxs(name: String, htlcTxs: Seq[Transaction]): Unit = {
     val check = (0 to 4).flatMap(i =>
       tests(name).get(s"htlc_success_tx (htlc #$i)").toSeq ++ tests(name).get(s"htlc_timeout_tx (htlc #$i)").toSeq
     ).toSet.map((tx: String) => Transaction.read(tx))
-    assert(htlcTxs.map(_.tx).toSet == check)
+    assert(htlcTxs.toSet == check)
   }
 
   test("simple commitment tx with no HTLCs") {
@@ -433,9 +431,9 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
 
     assert(htlcTxs.size == 3) // one htlc-success-tx + two htlc-timeout-tx
-    assert(htlcTxs(0).tx == Transaction.read(tests(name)("htlc_success_tx (htlc #1)")))
-    assert(htlcTxs(1).tx == Transaction.read(tests(name)("htlc_timeout_tx (htlc #6)")))
-    assert(htlcTxs(2).tx == Transaction.read(tests(name)("htlc_timeout_tx (htlc #5)")))
+    assert(htlcTxs(0) == Transaction.read(tests(name)("htlc_success_tx (htlc #1)")))
+    assert(htlcTxs(1) == Transaction.read(tests(name)("htlc_timeout_tx (htlc #6)")))
+    assert(htlcTxs(2) == Transaction.read(tests(name)("htlc_timeout_tx (htlc #5)")))
   }
 
 }

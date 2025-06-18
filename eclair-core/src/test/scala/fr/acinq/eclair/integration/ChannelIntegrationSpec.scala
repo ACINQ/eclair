@@ -412,8 +412,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     }
     val outgoingHtlcExpiry = commitmentsF.latest.localCommit.spec.htlcs.collect { case OutgoingHtlc(add) => add.cltvExpiry }.max
     val htlcTxsF = commitmentsF.latest.htlcTxs(channelKeysF)
-    val htlcTimeoutTxs = htlcTxsF.collect { case (tx: Transactions.HtlcTimeoutTx, remoteSig) => (tx, remoteSig) }
-    val htlcSuccessTxs = htlcTxsF.collect { case (tx: Transactions.HtlcSuccessTx, remoteSig) => (tx, remoteSig) }
+    val htlcTimeoutTxs = htlcTxsF.collect { case (tx: Transactions.UnsignedHtlcTimeoutTx, remoteSig) => (tx, remoteSig) }
+    val htlcSuccessTxs = htlcTxsF.collect { case (tx: Transactions.UnsignedHtlcSuccessTx, remoteSig) => (tx, remoteSig) }
     assert(htlcTimeoutTxs.size == 2)
     assert(htlcSuccessTxs.size == 2)
     // we fulfill htlcs to get the preimages
@@ -440,14 +440,10 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]]
     val Right(finalAddressC) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, nodes("C").wallet.getReceivePublicKeyScript(renew = false))
     val htlcSuccess = htlcSuccessTxs.zip(Seq(preimage1, preimage2)).map {
-      case ((htlcTx, remoteSig), preimage) =>
-        val localSig = htlcTx.sign(commitmentKeysF, commitmentFormat, Map.empty)
-        htlcTx.addSigs(commitmentKeysF, localSig, remoteSig, preimage, commitmentsF.params.commitmentFormat).tx
+      case ((htlcTx, remoteSig), preimage) => htlcTx.addRemoteSig(commitmentKeysF, remoteSig, preimage).sign()
     }
     val htlcTimeout = htlcTimeoutTxs.map {
-      case (htlcTx, remoteSig) =>
-        val localSig = htlcTx.sign(commitmentKeysF, commitmentFormat, Map.empty)
-        htlcTx.addSigs(commitmentKeysF, localSig, remoteSig, commitmentsF.params.commitmentFormat).tx
+      case (htlcTx, remoteSig) => htlcTx.addRemoteSig(commitmentKeysF, remoteSig).sign()
     }
     htlcSuccess.foreach(tx => Transaction.correctlySpends(tx, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     htlcTimeout.foreach(tx => Transaction.correctlySpends(tx, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))

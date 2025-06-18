@@ -6,8 +6,8 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.AvailableBalanceChanged
-import fr.acinq.eclair.channel.publish.ReplaceableTx
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
+import fr.acinq.eclair.transactions.Transactions.ForceCloseTransaction
 import org.scalatest.Assertions
 
 import scala.reflect.ClassTag
@@ -31,21 +31,21 @@ case class PimpTestProbe(probe: TestProbe) extends Assertions {
   def expectFinalTxPublished(txId: TxId): PublishFinalTx =
     expectMsgTypeHaving[PublishFinalTx](p => assert(p.tx.txid == txId))
 
-  private def expectReplaceableTx[T <: ReplaceableTx](tx: ReplaceableTx)(implicit t: ClassTag[T]): T = {
+  private def expectForceCloseTx[T <: ForceCloseTransaction](tx: ForceCloseTransaction)(implicit t: ClassTag[T]): T = {
     val c = t.runtimeClass.asInstanceOf[Class[T]]
-    assert(c.isInstance(tx), s"expected published tx of type ${c.getSimpleName} but got ${tx.getClass.getSimpleName}")
+    assert(c.isInstance(tx), s"expected force-close tx of type ${c.getSimpleName} but got ${tx.getClass.getSimpleName}")
     tx.asInstanceOf[T]
   }
 
-  def expectReplaceableTxPublished[T <: ReplaceableTx](implicit t: ClassTag[T]): T = {
+  def expectReplaceableTxPublished[T <: ForceCloseTransaction](implicit t: ClassTag[T]): T = {
     val p = probe.expectMsgType[PublishReplaceableTx]
-    expectReplaceableTx(p.tx)(t)
+    expectForceCloseTx(p.txInfo)(t)
   }
 
-  def expectReplaceableTxPublished[T <: ReplaceableTx](confirmationTarget: ConfirmationTarget)(implicit t: ClassTag[T]): T = {
+  def expectReplaceableTxPublished[T <: ForceCloseTransaction](confirmationTarget: ConfirmationTarget)(implicit t: ClassTag[T]): T = {
     val p = probe.expectMsgType[PublishReplaceableTx]
     assert(p.confirmationTarget == confirmationTarget)
-    expectReplaceableTx(p.tx)(t)
+    expectForceCloseTx(p.txInfo)(t)
   }
 
   def expectWatchFundingSpent(txid: TxId, hints_opt: Option[Set[TxId]] = None): WatchFundingSpent =

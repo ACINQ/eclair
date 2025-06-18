@@ -210,7 +210,7 @@ object LocalCommit {
     }
     val htlcRemoteSigs = sortedHtlcTxs.zip(commit.htlcSignatures).toList.map {
       case (htlcTx: HtlcTx, remoteSig) =>
-        if (!htlcTx.checkRemoteSig(commitKeys, remoteSig, params.commitmentFormat)) {
+        if (!htlcTx.checkRemoteSig(commitKeys, remoteSig)) {
           return Left(InvalidHtlcSignature(params.channelId, htlcTx.tx.txid))
         }
         remoteSig
@@ -226,7 +226,7 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePer
     val commitKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentPoint)
     val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, commitKeys, index, fundingKey, remoteFundingPubKey, commitInput, spec)
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
-    val htlcSigs = sortedHtlcTxs.map(_.sign(commitKeys, params.commitmentFormat))
+    val htlcSigs = sortedHtlcTxs.map(_.localSig(commitKeys))
     params.commitmentFormat match {
       case _: SegwitV0CommitmentFormat =>
         val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey).sig
@@ -650,7 +650,7 @@ case class Commitment(fundingTxIndex: Long,
     val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, commitKeys, remoteCommit.index + 1, fundingKey, remoteFundingPubKey, commitInput, spec)
-    val htlcSigs = htlcTxs.sortBy(_.input.outPoint.index).map(_.sign(commitKeys, params.commitmentFormat))
+    val htlcSigs = htlcTxs.sortBy(_.input.outPoint.index).map(_.localSig(commitKeys))
 
     // NB: IN/OUT htlcs are inverted because this is the remote commit
     log.info(s"built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${remoteCommitTx.tx.txid} fundingTxId=$fundingTxId", spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","))
@@ -701,14 +701,14 @@ case class Commitment(fundingTxIndex: Long,
   }
 
   /** Return the HTLC transactions for our local commit and the corresponding remote signatures. */
-  def htlcTxs(params: ChannelParams, channelKeys: ChannelKeys): Seq[(HtlcTx, ByteVector64)] = {
+  def htlcTxs(params: ChannelParams, channelKeys: ChannelKeys): Seq[(UnsignedHtlcTx, ByteVector64)] = {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val commitKeys = localKeys(params, channelKeys)
     htlcTxs(params, fundingKey, commitKeys)
   }
 
   /** Return the HTLC transactions for our local commit and the corresponding remote signatures. */
-  def htlcTxs(params: ChannelParams, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys): Seq[(HtlcTx, ByteVector64)] = {
+  def htlcTxs(params: ChannelParams, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys): Seq[(UnsignedHtlcTx, ByteVector64)] = {
     val (_, htlcTxs) = Commitment.makeLocalTxs(params, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
     htlcTxs.sortBy(_.input.outPoint.index).zip(localCommit.htlcRemoteSigs)
   }
@@ -722,7 +722,7 @@ object Commitment {
                    localFundingKey: PrivateKey,
                    remoteFundingPubKey: PublicKey,
                    commitmentInput: InputInfo,
-                   spec: CommitmentSpec): (CommitTx, Seq[HtlcTx]) = {
+                   spec: CommitmentSpec): (CommitTx, Seq[UnsignedHtlcTx]) = {
     val outputs = makeCommitTxOutputs(localFundingKey.publicKey, remoteFundingPubKey, commitKeys.publicKeys, params.localParams.paysCommitTxFees, params.localParams.dustLimit, params.remoteParams.toSelfDelay, spec, params.commitmentFormat)
     val commitTx = makeCommitTx(commitmentInput, commitTxNumber, commitKeys.ourPaymentBasePoint, params.remoteParams.paymentBasepoint, params.localParams.isChannelOpener, outputs)
     val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, params.commitmentFormat)
@@ -735,7 +735,7 @@ object Commitment {
                     localFundingKey: PrivateKey,
                     remoteFundingPubKey: PublicKey,
                     commitmentInput: InputInfo,
-                    spec: CommitmentSpec): (CommitTx, Seq[HtlcTx]) = {
+                    spec: CommitmentSpec): (CommitTx, Seq[UnsignedHtlcTx]) = {
     val outputs = makeCommitTxOutputs(remoteFundingPubKey, localFundingKey.publicKey, commitKeys.publicKeys, !params.localParams.paysCommitTxFees, params.remoteParams.dustLimit, params.localParams.toSelfDelay, spec, params.commitmentFormat)
     val commitTx = makeCommitTx(commitmentInput, commitTxNumber, params.remoteParams.paymentBasepoint, commitKeys.ourPaymentBasePoint, !params.localParams.isChannelOpener, outputs)
     val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, params.commitmentFormat)
@@ -780,9 +780,9 @@ case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
 
   def fullySignedLocalCommitTx(channelKeys: ChannelKeys): Transaction = commitment.fullySignedLocalCommitTx(params, channelKeys)
 
-  def htlcTxs(channelKeys: ChannelKeys): Seq[(HtlcTx, ByteVector64)] = commitment.htlcTxs(params, channelKeys)
+  def htlcTxs(channelKeys: ChannelKeys): Seq[(UnsignedHtlcTx, ByteVector64)] = commitment.htlcTxs(params, channelKeys)
 
-  def htlcTxs(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys): Seq[(HtlcTx, ByteVector64)] = commitment.htlcTxs(params, fundingKey, commitKeys)
+  def htlcTxs(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys): Seq[(UnsignedHtlcTx, ByteVector64)] = commitment.htlcTxs(params, fundingKey, commitKeys)
 
   def specs2String: String = {
     s"""specs:

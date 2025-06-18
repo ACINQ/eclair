@@ -29,11 +29,10 @@ import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
-import fr.acinq.eclair.channel.publish.{ReplaceableClaimHtlcTimeout, ReplaceableRemoteCommitAnchor}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
+import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTimeoutTx, ClaimRemoteAnchorTx, UnsignedHtlcSuccessTx}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -446,12 +445,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // alice is able to claim her main output and the htlc (once it times out)
-    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].tx.isInstanceOf[ReplaceableRemoteCommitAnchor])
+    alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
     val claimMainOutput = alice2blockchain.expectMsgType[PublishFinalTx].tx
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    val claimHtlc = alice2blockchain.expectMsgType[PublishReplaceableTx]
-    assert(claimHtlc.tx.isInstanceOf[ReplaceableClaimHtlcTimeout])
-    Transaction.correctlySpends(claimHtlc.tx.txInfo.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    val claimHtlc = alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx]
+    Transaction.correctlySpends(claimHtlc.sign(), bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
   test("counterparty lies about having a more recent commitment and publishes revoked commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -615,7 +613,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = bob.signCommitTx()
     val htlcSuccessTx = bob.htlcTxs().head
-    assert(htlcSuccessTx.isInstanceOf[HtlcSuccessTx])
+    assert(htlcSuccessTx.isInstanceOf[UnsignedHtlcSuccessTx])
 
     disconnect(alice, bob)
 

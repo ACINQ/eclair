@@ -23,7 +23,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcTx}
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, UnsignedHtlcTx}
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0
 import fr.acinq.eclair.wire.protocol.CommitSig
 
@@ -31,7 +31,7 @@ private[channel] object ChannelTypes3 {
 
   case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long)
 
-  case class HtlcTxAndRemoteSig(htlcTx: HtlcTx, remoteSig: ByteVector64)
+  case class HtlcTxAndRemoteSig(htlcTx: UnsignedHtlcTx, remoteSig: ByteVector64)
 
   case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: ChannelSpendSignature.IndividualSignature)
 
@@ -41,7 +41,7 @@ private[channel] object ChannelTypes3 {
     def migrate(): channel.LocalCommit = channel.LocalCommit(index, spec, commitTxAndRemoteSig.commitTx.tx.txid, commitTxAndRemoteSig.commitTx.input, commitTxAndRemoteSig.remoteSig, htlcTxsAndRemoteSigs.map(_.remoteSig))
   }
 
-  case class UnsignedLocalCommit(index: Long, spec: CommitmentSpec, commitTx: CommitTx, htlcTxs: List[HtlcTx]) {
+  case class UnsignedLocalCommit(index: Long, spec: CommitmentSpec, commitTx: CommitTx, htlcTxs: List[UnsignedHtlcTx]) {
     def migrate(): InteractiveTxSigningSession.UnsignedLocalCommit = InteractiveTxSigningSession.UnsignedLocalCommit(index, spec, commitTx.tx.txid, commitTx.input)
   }
 

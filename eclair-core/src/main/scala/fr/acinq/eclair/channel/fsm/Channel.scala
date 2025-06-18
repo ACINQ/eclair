@@ -39,7 +39,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxFunder, InteractiveTxSigningSession}
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishReplaceableTx, SetChannelId}
-import fr.acinq.eclair.channel.publish.{ReplaceableLocalCommitAnchor, ReplaceableRemoteCommitAnchor, TxPublisher}
+import fr.acinq.eclair.channel.publish._
 import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent.EventType
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -367,11 +367,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               doPublish(c.localCommitPublished, thirdStageTransactions)
             case Some(c: Closing.RemoteClose) =>
               val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, c.remoteCommit, c.remoteCommitPublished.commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
-              doPublish(c.remoteCommitPublished, secondStageTransactions, commitment, closing.finalScriptPubKey)
+              doPublish(c.remoteCommitPublished, secondStageTransactions, commitment)
             case Some(c: Closing.RecoveryClose) =>
               // We cannot do anything in that case: we've already published our recovery transaction before restarting,
               // and must wait for it to confirm.
-              doPublish(c.remoteCommitPublished, Closing.RemoteClose.SecondStageTransactions(None, None, Nil), commitment, closing.finalScriptPubKey)
+              doPublish(c.remoteCommitPublished, Closing.RemoteClose.SecondStageTransactions(None, None, Nil), commitment)
             case Some(c: Closing.RevokedClose) =>
               Closing.RevokedClose.getRemotePerCommitmentSecret(closing.commitments.params, channelKeys, closing.commitments.remotePerCommitmentSecrets, c.revokedCommitPublished.commitTx).foreach {
                 case (commitmentNumber, remotePerCommitmentSecret) =>
@@ -392,12 +392,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               })
               closing.remoteCommitPublished.foreach(rcp => {
                 val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, commitment.remoteCommit, rcp.commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
-                doPublish(rcp, secondStageTransactions, commitment, closing.finalScriptPubKey)
+                doPublish(rcp, secondStageTransactions, commitment)
               })
               closing.nextRemoteCommitPublished.foreach(rcp => {
                 val remoteCommit = commitment.nextRemoteCommit_opt.get.commit
                 val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, rcp.commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
-                doPublish(rcp, secondStageTransactions, commitment, closing.finalScriptPubKey)
+                doPublish(rcp, secondStageTransactions, commitment)
               })
               closing.revokedCommitPublished.foreach(rvk => {
                 Closing.RevokedClose.getRemotePerCommitmentSecret(closing.commitments.params, channelKeys, closing.commitments.remotePerCommitmentSecrets, rvk.commitTx).foreach {
@@ -406,7 +406,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                     doPublish(rvk, secondStageTransactions)
                 }
               })
-              closing.futureRemoteCommitPublished.foreach(rcp => doPublish(rcp, Closing.RemoteClose.SecondStageTransactions(None, None, Nil), commitment, closing.finalScriptPubKey))
+              closing.futureRemoteCommitPublished.foreach(rcp => doPublish(rcp, Closing.RemoteClose.SecondStageTransactions(None, None, Nil), commitment))
           }
           // no need to go OFFLINE, we can directly switch to CLOSING
           goto(CLOSING) using closing
@@ -1894,10 +1894,29 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               log.info("htlc #{} with payment_hash={} was fulfilled downstream, recalculating htlc-success transactions", c.id, c.r)
               // We may be able to publish HTLC-success transactions for which we didn't have the preimage.
               // We are already watching the corresponding outputs: no need to set additional watches.
-              val localTxs = d.localCommitPublished.map(lcp => Closing.LocalClose.claimHtlcsWithPreimage(channelKeys, lcp, commitment, c.r)).getOrElse(Nil)
-              val remoteTxs = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, rcp, commitment, commitment.remoteCommit, c.r, d.finalScriptPubKey)).getOrElse(Nil)
-              val nextRemoteTxs = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, nrcp, commitment, commitment.nextRemoteCommit_opt.get.commit, c.r, d.finalScriptPubKey)).getOrElse(Nil)
-              (localTxs ++ remoteTxs ++ nextRemoteTxs).foreach(publishTx => txPublisher ! publishTx)
+              d.localCommitPublished.foreach(lcp => {
+                val commitKeys = commitment.localKeys(channelKeys)
+                Closing.LocalClose.claimHtlcsWithPreimage(channelKeys, commitKeys, commitment, c.r).foreach(htlcTx => commitment.params.commitmentFormat match {
+                  case Transactions.DefaultCommitmentFormat =>
+                    txPublisher ! TxPublisher.PublishFinalTx(htlcTx, Some(lcp.commitTx.txid))
+                  case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat =>
+                    txPublisher ! TxPublisher.PublishReplaceableTx(htlcTx, lcp.commitTx, commitment, Closing.confirmationTarget(htlcTx))
+                })
+              })
+              d.remoteCommitPublished.foreach(rcp => {
+                val remoteCommit = commitment.remoteCommit
+                val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)
+                Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, commitKeys, rcp, commitment, remoteCommit, c.r, d.finalScriptPubKey).foreach(htlcTx => {
+                  txPublisher ! TxPublisher.PublishReplaceableTx(htlcTx, rcp.commitTx, commitment, Closing.confirmationTarget(htlcTx))
+                })
+              })
+              d.nextRemoteCommitPublished.foreach(nrcp => {
+                val remoteCommit = commitment.nextRemoteCommit_opt.get.commit
+                val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)
+                Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, commitKeys, nrcp, commitment, remoteCommit, c.r, d.finalScriptPubKey).foreach(htlcTx => {
+                  txPublisher ! TxPublisher.PublishReplaceableTx(htlcTx, nrcp.commitTx, commitment, Closing.confirmationTarget(htlcTx))
+                })
+              })
               d.copy(commitments = commitments1)
             case _: CMD_FAIL_HTLC | _: CMD_FAIL_MALFORMED_HTLC =>
               log.info("htlc #{} was failed downstream, recalculating watched htlc outputs", c.id)
@@ -2195,17 +2214,17 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             lcp <- d.localCommitPublished
             commitKeys = commitment.localKeys(channelKeys)
             anchorTx <- Closing.LocalClose.claimAnchor(fundingKey, commitKeys, lcp.commitTx, commitmentFormat)
-          } yield PublishReplaceableTx(ReplaceableLocalCommitAnchor(anchorTx, fundingKey, commitKeys, lcp.commitTx, commitment), c.confirmationTarget)
+          } yield PublishReplaceableTx(anchorTx, lcp.commitTx, commitment, c.confirmationTarget)
           val remoteAnchor_opt = for {
             rcp <- d.remoteCommitPublished
             commitKeys = commitment.remoteKeys(channelKeys, commitment.remoteCommit.remotePerCommitmentPoint)
             anchorTx <- Closing.RemoteClose.claimAnchor(fundingKey, commitKeys, rcp.commitTx, commitmentFormat)
-          } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, rcp.commitTx, commitment), c.confirmationTarget)
+          } yield PublishReplaceableTx(anchorTx, rcp.commitTx, commitment, c.confirmationTarget)
           val nextRemoteAnchor_opt = for {
             nrcp <- d.nextRemoteCommitPublished
             commitKeys = commitment.remoteKeys(channelKeys, commitment.nextRemoteCommit_opt.get.commit.remotePerCommitmentPoint)
             anchorTx <- Closing.RemoteClose.claimAnchor(fundingKey, commitKeys, nrcp.commitTx, commitmentFormat)
-          } yield PublishReplaceableTx(ReplaceableRemoteCommitAnchor(anchorTx, fundingKey, commitKeys, nrcp.commitTx, commitment), c.confirmationTarget)
+          } yield PublishReplaceableTx(anchorTx, nrcp.commitTx, commitment, c.confirmationTarget)
           // We favor the remote commitment(s) because they're more interesting than the local commitment (no CSV delays).
           if (remoteAnchor_opt.nonEmpty) {
             remoteAnchor_opt.foreach { publishTx => txPublisher ! publishTx }

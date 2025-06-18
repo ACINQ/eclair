@@ -79,7 +79,7 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     createBlocks(5, probe)
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_500 sat, sequence = 5, lockTime = 0)
-    val cmd = PublishFinalTx(tx, tx.txIn.head.outPoint, 125_000 sat, "tx-time-locks", 0 sat, None)
+    val cmd = PublishFinalTx(tx, tx.txIn.head.outPoint, "tx-time-locks", 0 sat, None)
     publisher ! Publish(probe.ref, cmd)
 
     // Time locks are satisfied, the transaction should be published:
@@ -103,7 +103,7 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     val ancestorTx = sendToAddress(address, 125_000 sat, probe)
     val parentTx = createSpendP2WPKH(ancestorTx, priv, priv.publicKey, 2_500 sat, 0, 0)
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_000 sat, 0, 0)
-    val cmd = PublishFinalTx(tx, tx.txIn.head.outPoint, 125_000 sat, "tx-with-parent", 10 sat, Some(parentTx.txid))
+    val cmd = PublishFinalTx(tx, tx.txIn.head.outPoint, "tx-with-parent", 10 sat, Some(parentTx.txid))
     publisher ! Publish(probe.ref, cmd)
 
     // Since the parent is not published yet, we can't publish the child tx either:
@@ -125,7 +125,7 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     val (priv, address) = createExternalAddress()
     val parentTx = sendToAddress(address, 125_000 sat, probe)
     val tx1 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_500 sat, 0, 0)
-    val cmd = PublishFinalTx(tx1, tx1.txIn.head.outPoint, 125_000 sat, "tx-time-locks", 10 sat, None)
+    val cmd = PublishFinalTx(tx1, tx1.txIn.head.outPoint, "tx-time-locks", 10 sat, None)
     publisher ! Publish(probe.ref, cmd)
     waitTxInMempool(bitcoinClient, tx1.txid, probe)
 
@@ -150,7 +150,7 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     import f._
 
     val tx = sendToAddress(getNewAddress(probe), 125_000 sat, probe)
-    val cmd = PublishFinalTx(tx, tx.txIn.head.outPoint, 125_000 sat, "final-tx", 10 sat, None)
+    val cmd = PublishFinalTx(tx, tx.txIn.head.outPoint, "final-tx", 10 sat, None)
     publisher ! Publish(probe.ref, cmd)
 
     probe.watch(publisher.toClassic)
