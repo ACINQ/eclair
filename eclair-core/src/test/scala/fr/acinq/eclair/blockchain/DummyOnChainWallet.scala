@@ -176,34 +176,50 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainPubkeyCache {
 
   override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(p2wpkhPublicKey)
 
-  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, changePosition: Option[Int], externalInputsWeight: Map[OutPoint, Long], minInputConfirmations_opt: Option[Int], feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = synchronized {
+  def createFundedTx(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, changePosition: Option[Int], externalInputsWeight: Map[OutPoint, Long], minInputConfirmations_opt: Option[Int], feeBudget_opt: Option[Satoshi], changeless: Boolean): Either[Exception, FundTransactionResponse] = {
     val currentAmountIn = tx.txIn.flatMap(txIn => inputs.find(_.txid == txIn.outPoint.txid).flatMap(_.txOut.lift(txIn.outPoint.index.toInt))).map(_.amount).sum
     val amountOut = tx.txOut.map(_.amount).sum
+    if (amountOut >= DummyOnChainWallet.invalidFundingAmount) return Left(new RuntimeException(s"invalid funding amount"))
     // We add a single input to reach the desired feerate.
-    val inputAmount = amountOut + 100_000.sat
+    val inputAmount = if (!changeless) amountOut + 100_000.sat else amountOut
     // We randomly use either p2wpkh or p2tr.
     val script = if (Random.nextBoolean()) p2trScript else p2wpkhScript
     val dummyP2wpkhWitness = Script.witnessPay2wpkh(p2wpkhPublicKey, ByteVector.fill(73)(0))
     val dummyP2trWitness = Script.witnessKeyPathPay2tr(ByteVector64.Zeroes)
     val inputTx = Transaction(2, Seq(TxIn(OutPoint(randomTxId(), 1), Nil, 0)), Seq(TxOut(inputAmount, script)), 0)
-    inputs = inputs :+ inputTx
     val dummySignedTx = tx.copy(
       txIn = tx.txIn.filterNot(i => externalInputsWeight.contains(i.outPoint)).appended(TxIn(OutPoint(inputTx, 0), ByteVector.empty, 0, ScriptWitness.empty)).map(txIn => {
         val isP2tr = inputs.find(_.txid == txIn.outPoint.txid).map(_.txOut(txIn.outPoint.index.toInt).publicKeyScript).map(Script.parse).exists(Script.isPay2tr)
         txIn.copy(witness = if (isP2tr) dummyP2trWitness else dummyP2wpkhWitness)
       }),
-      txOut = tx.txOut :+ TxOut(inputAmount, script),
+      txOut = if (changeless) tx.txOut else tx.txOut :+ TxOut(inputAmount, script)
     )
+    // When funding an output of exactly 100_000 sats, we add excess of exactly 1_000 sats to a changeless funding request.
+    val excess = if (amountOut - currentAmountIn == 100_000.sat) 1_000.sat else 0.sat
     val fee = Transactions.weight2fee(feeRate, dummySignedTx.weight() + externalInputsWeight.values.sum.toInt)
+    // We add a single input to reach the desired feerate.
+    val inputAmount1 = if (changeless) amountOut + fee + excess - currentAmountIn else inputAmount
+    val inputTx1 = Transaction(2, Seq(TxIn(OutPoint(randomTxId(), 1), Nil, 0)), Seq(TxOut(inputAmount1, script)), 0)
+    inputs = inputs :+ inputTx1
     feeBudget_opt match {
-      case Some(feeBudget) if fee > feeBudget =>
-        Future.failed(new RuntimeException(s"mining fee is higher than budget ($fee > $feeBudget)"))
+      case Some(feeBudget) if fee > feeBudget => Left(new RuntimeException(s"mining fee is higher than budget ($fee > $feeBudget)"))
       case _ =>
         val fundedTx = tx.copy(
-          txIn = tx.txIn :+ TxIn(OutPoint(inputTx, 0), Nil, 0),
-          txOut = tx.txOut :+ TxOut(inputAmount + currentAmountIn - amountOut - fee, script),
+          txIn = tx.txIn :+ TxIn(OutPoint(inputTx1, 0), Nil, 0),
+          txOut = if (changeless) tx.txOut else tx.txOut :+ TxOut(inputAmount + currentAmountIn - amountOut - fee, script),
         )
-        Future.successful(FundTransactionResponse(fundedTx, fee, Some(tx.txOut.length)))
+        if (changeless) {
+          Right(FundTransactionResponse(fundedTx, fee + excess, None))
+        } else {
+          Right(FundTransactionResponse(fundedTx, fee, Some(tx.txOut.length)))
+        }
+    }
+  }
+
+  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, changePosition: Option[Int], externalInputsWeight: Map[OutPoint, Long], minInputConfirmations_opt: Option[Int], feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = synchronized {
+    createFundedTx(tx, feeRate, replaceable, changePosition, externalInputsWeight, minInputConfirmations_opt, feeBudget_opt, changeless = false) match {
+      case Right(response) => Future.successful(response)
+      case Left(error) => Future.failed(error)
     }
   }
 
@@ -286,8 +302,22 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainPubkeyCache {
   override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = p2trScript
 }
 
+class SingleKeyOnChainWalletWithConfirmedInputs extends SingleKeyOnChainWallet {
+  override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(Some(6))
+}
+
+class ChangelessFundingWallet extends SingleKeyOnChainWallet {
+  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, changePosition: Option[Int], externalInputsWeight: Map[OutPoint, Long], minInputConfirmations_opt: Option[Int], feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = synchronized {
+    createFundedTx(tx, feeRate, replaceable, changePosition, externalInputsWeight, minInputConfirmations_opt, feeBudget_opt, changeless = true) match {
+      case Right(response) => Future.successful(response)
+      case Left(error) => Future.failed(error)
+    }
+  }
+}
+
 object DummyOnChainWallet {
   val dummyReceivePubkey: PublicKey = PublicKey(hex"028feba10d0eafd0fad8fe20e6d9206e6bd30242826de05c63f459a00aced24b12")
+  val invalidFundingAmount: Satoshi = 2_100_000_000.sat
 
   def makeDummyFundingTx(pubkeyScript: ByteVector, amount: Satoshi): MakeFundingTxResponse = {
     val fundingTx = Transaction(

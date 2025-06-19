@@ -505,7 +505,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     // alice sends splice-init to bob, bob responds with splice-ack
     alice2bob.forward(bob)
     bob2alice.expectMsgType[SpliceAck]
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceInProgress])
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceInProgress])
 
     // bob sends a warning and disconnects if the splice takes too long to complete
     bob ! Channel.QuiescenceTimeout(bobPeer.ref)
