@@ -255,7 +255,7 @@ object ChannelCodecsSpec {
     nodeKeyManager.nodeId,
     fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
     dustLimit = Satoshi(546),
-    maxHtlcValueInFlightMsat = 50_000_000 msat,
+    maxHtlcValueInFlightMsat = UInt64(50_000_000),
     initialRequestedChannelReserve_opt = Some(10000 sat),
     htlcMinimum = 10000 msat,
     toSelfDelay = CltvExpiryDelta(144),

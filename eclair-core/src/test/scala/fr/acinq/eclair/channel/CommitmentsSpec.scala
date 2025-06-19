@@ -491,7 +491,7 @@ object CommitmentsSpec {
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isOpener: Boolean = true, announcement_opt: Option[ChannelAnnouncement] = None): Commitments = {
     val channelReserve = (toLocal + toRemote).truncateToSatoshi * 0.01
-    val localParams = LocalParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, Long.MaxValue.msat, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, isOpener, isOpener, None, None, Features.empty)
+    val localParams = LocalParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, UInt64.MaxValue, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, isOpener, isOpener, None, None, Features.empty)
     val remoteParams = RemoteParams(randomKey().publicKey, dustLimit, UInt64.MaxValue, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
     val localFundingPubKey = randomKey().publicKey
     val remoteFundingPubKey = randomKey().publicKey
@@ -516,7 +516,7 @@ object CommitmentsSpec {
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announcement_opt: Option[ChannelAnnouncement]): Commitments = {
     val channelReserve = (toLocal + toRemote).truncateToSatoshi * 0.01
-    val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, Long.MaxValue.msat, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
+    val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, UInt64.MaxValue, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
     val remoteParams = RemoteParams(remoteNodeId, 0 sat, UInt64.MaxValue, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
     val localFundingPubKey = randomKey().publicKey
     val remoteFundingPubKey = randomKey().publicKey

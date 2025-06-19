@@ -37,7 +37,7 @@ import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.transactions.Transactions.{ClosingTx, InputInfo}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{ChannelReestablish, ChannelTlv, Error, IPAddress, LiquidityAds, NodeAddress, OpenChannel, OpenChannelTlv, Shutdown, TlvStream}
-import fr.acinq.eclair.{AcceptOpenChannel, BlockHeight, CltvExpiryDelta, FeatureSupport, Features, InitFeature, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.{AcceptOpenChannel, BlockHeight, CltvExpiryDelta, FeatureSupport, Features, InitFeature, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, UInt64, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -47,7 +47,7 @@ import scala.concurrent.duration.DurationInt
 
 class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
   val remoteNodeId: Crypto.PublicKey = randomKey().publicKey
-  val defaultParams: DefaultParams = DefaultParams(100 sat, 100000 msat, 100 msat, CltvExpiryDelta(288), 10)
+  val defaultParams: DefaultParams = DefaultParams(100 sat, UInt64(100000), 100 msat, CltvExpiryDelta(288), 10)
   val openChannel: OpenChannel = createOpenChannelMessage()
   val remoteAddress: NodeAddress = IPAddress(InetAddress.getLoopbackAddress, 19735)
   val defaultFeatures: Features[InitFeature] = Features(Map[InitFeature, FeatureSupport](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional))
@@ -146,7 +146,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val result = peer.expectMessageType[SpawnChannelNonInitiator]
     assert(!result.localParams.isChannelOpener)
     assert(result.localParams.paysCommitTxFees)
-    assert(result.localParams.maxHtlcValueInFlightMsat == 500_000_000.msat)
+    assert(result.localParams.maxHtlcValueInFlightMsat == UInt64(500_000_000))
     assert(result.addFunding_opt.map(_.fundingAmount).contains(250_000 sat))
     assert(result.addFunding_opt.flatMap(_.rates_opt).contains(TestConstants.defaultLiquidityRates))
   }
@@ -160,7 +160,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     openChannelInterceptor ! openChannelInitiator
     val result = peer.expectMessageType[SpawnChannelInitiator]
     assert(result.cmd == openChannelInitiator.open)
-    assert(result.localParams.maxHtlcValueInFlightMsat == 450_000_000.msat)
+    assert(result.localParams.maxHtlcValueInFlightMsat == UInt64(450_000_000))
   }
 
   test("continue channel open if no interceptor plugin registered and pending channels rate limiter accepts it") { f =>

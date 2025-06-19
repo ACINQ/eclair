@@ -604,25 +604,25 @@ class PeerSpec extends FixtureSpec {
     {
       probe.send(peer, Peer.OpenChannel(remoteNodeId, 200_000 sat, None, None, None, None, None, None, None))
       val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
-      assert(init.localParams.maxHtlcValueInFlightMsat == 50_000_000.msat) // max-htlc-value-in-flight-percent
+      assert(init.localParams.maxHtlcValueInFlightMsat == UInt64(50_000_000)) // max-htlc-value-in-flight-percent
     }
     {
       probe.send(peer, Peer.OpenChannel(remoteNodeId, 500_000 sat, None, None, None, None, None, None, None))
       val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
-      assert(init.localParams.maxHtlcValueInFlightMsat == 100_000_000.msat) // max-htlc-value-in-flight-msat
+      assert(init.localParams.maxHtlcValueInFlightMsat == UInt64(100_000_000)) // max-htlc-value-in-flight-msat
     }
     {
       val open = createOpenChannelMessage().copy(fundingSatoshis = 200_000 sat)
       peerConnection.send(peer, open)
       val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
-      assert(init.localParams.maxHtlcValueInFlightMsat == 50_000_000.msat) // max-htlc-value-in-flight-percent
+      assert(init.localParams.maxHtlcValueInFlightMsat == UInt64(50_000_000)) // max-htlc-value-in-flight-percent
       channel.expectMsg(open)
     }
     {
       val open = createOpenChannelMessage().copy(fundingSatoshis = 500_000 sat)
       peerConnection.send(peer, open)
       val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
-      assert(init.localParams.maxHtlcValueInFlightMsat == 100_000_000.msat) // max-htlc-value-in-flight-msat
+      assert(init.localParams.maxHtlcValueInFlightMsat == UInt64(100_000_000)) // max-htlc-value-in-flight-msat
       channel.expectMsg(open)
     }
   }

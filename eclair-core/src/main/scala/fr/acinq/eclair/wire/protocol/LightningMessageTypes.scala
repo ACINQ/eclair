@@ -58,9 +58,9 @@ sealed trait HtlcFailureMessage extends HtlcSettlementMessage // <- not in the s
 // @formatter:on
 
 case class Init(features: Features[InitFeature], tlvStream: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
-  val networks = tlvStream.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
-  val remoteAddress_opt = tlvStream.get[InitTlv.RemoteAddress].map(_.address)
-  val fundingRates_opt = tlvStream.get[InitTlv.OptionWillFund].map(_.rates)
+  val networks: Seq[BlockHash] = tlvStream.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
+  val remoteAddress_opt: Option[NodeAddress] = tlvStream.get[InitTlv.RemoteAddress].map(_.address)
+  val fundingRates_opt: Option[LiquidityAds.WillFundRates] = tlvStream.get[InitTlv.OptionWillFund].map(_.rates)
 }
 
 case class Warning(channelId: ByteVector32, data: ByteVector, tlvStream: TlvStream[WarningTlv] = TlvStream.empty) extends SetupMessage with HasChannelId {
@@ -361,7 +361,7 @@ case class ClosingSigned(channelId: ByteVector32,
                          feeSatoshis: Satoshi,
                          signature: ByteVector64,
                          tlvStream: TlvStream[ClosingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
-  val feeRange_opt = tlvStream.get[ClosingSignedTlv.FeeRange]
+  val feeRange_opt: Option[ClosingSignedTlv.FeeRange] = tlvStream.get[ClosingSignedTlv.FeeRange]
 }
 
 case class ClosingComplete(channelId: ByteVector32, closerScriptPubKey: ByteVector, closeeScriptPubKey: ByteVector, fees: Satoshi, lockTime: Long, tlvStream: TlvStream[ClosingTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
@@ -551,7 +551,7 @@ case class NodeAnnouncement(signature: ByteVector64,
                             alias: String,
                             addresses: List[NodeAddress],
                             tlvStream: TlvStream[NodeAnnouncementTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp {
-  val fundingRates_opt = tlvStream.get[NodeAnnouncementTlv.OptionWillFund].map(_.rates)
+  val fundingRates_opt: Option[LiquidityAds.WillFundRates] = tlvStream.get[NodeAnnouncementTlv.OptionWillFund].map(_.rates)
   val validAddresses: List[NodeAddress] = {
     // if port is equal to 0, SHOULD ignore ipv6_addr OR ipv4_addr OR hostname; SHOULD ignore Tor v2 onion services.
     val validAddresses = addresses.filter(address => address.port != 0 || address.isInstanceOf[Tor3]).filterNot(address => address.isInstanceOf[Tor2])

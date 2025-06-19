@@ -345,11 +345,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.params.localParams.maxHtlcValueInFlightMsat == initialState.commitments.latest.capacity.toMilliSatoshi)
-    assert(initialState.commitments.params.remoteParams.maxHtlcValueInFlightMsat == UInt64(150000000))
-    val add = CMD_ADD_HTLC(sender.ref, 151000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
+    assert(initialState.commitments.params.localParams.maxHtlcValueInFlightMsat == UInt64(initialState.commitments.latest.capacity.toMilliSatoshi.toLong))
+    assert(initialState.commitments.params.remoteParams.maxHtlcValueInFlightMsat == UInt64(150_000_000))
+    val add = CMD_ADD_HTLC(sender.ref, 151_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     bob ! add
-    val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000 msat, actual = 151000000 msat)
+    val error = HtlcValueTooHighInFlight(channelId(bob), maximum = UInt64(150_000_000), actual = 151_000_000 msat)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
     bob2alice.expectNoMessage(200 millis)
   }
@@ -358,15 +358,15 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.params.localParams.maxHtlcValueInFlightMsat == initialState.commitments.latest.capacity.toMilliSatoshi)
-    assert(initialState.commitments.params.remoteParams.maxHtlcValueInFlightMsat == UInt64(150000000))
-    val add = CMD_ADD_HTLC(sender.ref, 75500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
+    assert(initialState.commitments.params.localParams.maxHtlcValueInFlightMsat == UInt64(initialState.commitments.latest.capacity.toMilliSatoshi.toLong))
+    assert(initialState.commitments.params.remoteParams.maxHtlcValueInFlightMsat == UInt64(150_000_000))
+    val add = CMD_ADD_HTLC(sender.ref, 75_500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     bob ! add
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     bob2alice.expectMsgType[UpdateAddHtlc]
-    val add1 = CMD_ADD_HTLC(sender.ref, 75500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
+    val add1 = CMD_ADD_HTLC(sender.ref, 75_500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     bob ! add1
-    val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000 msat, actual = 151000000 msat)
+    val error = HtlcValueTooHighInFlight(channelId(bob), maximum = UInt64(150_000_000), actual = 151_000_000 msat)
     sender.expectMsg(RES_ADD_FAILED(add1, error, Some(initialState.channelUpdate)))
     bob2alice.expectNoMessage(200 millis)
   }
@@ -375,11 +375,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.params.localParams.maxHtlcValueInFlightMsat == 150000000.msat)
+    assert(initialState.commitments.params.localParams.maxHtlcValueInFlightMsat == UInt64(150_000_000))
     assert(initialState.commitments.params.remoteParams.maxHtlcValueInFlightMsat == UInt64(initialState.commitments.latest.capacity.toMilliSatoshi.toLong))
-    val add = CMD_ADD_HTLC(sender.ref, 151000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
+    val add = CMD_ADD_HTLC(sender.ref, 151_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     alice ! add
-    val error = HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000 msat, actual = 151000000 msat)
+    val error = HtlcValueTooHighInFlight(channelId(alice), maximum = UInt64(150_000_000), actual = 151_000_000 msat)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
     alice2bob.expectNoMessage(200 millis)
   }
@@ -728,9 +728,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateAddHtlc (over max inflight htlc value)", Tag(ChannelStateTestsTags.AliceLowMaxHtlcValueInFlight)) { f =>
     import f._
     val tx = alice.signCommitTx()
-    alice2bob.forward(alice, UpdateAddHtlc(ByteVector32.Zeroes, 0, 151000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None))
+    alice2bob.forward(alice, UpdateAddHtlc(ByteVector32.Zeroes, 0, 151_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None))
     val error = alice2bob.expectMsgType[Error]
-    assert(new String(error.data.toArray) == HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000 msat, actual = 151000000 msat).getMessage)
+    assert(new String(error.data.toArray) == HtlcValueTooHighInFlight(channelId(alice), maximum = UInt64(150_000_000), actual = 151_000_000 msat).getMessage)
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId == alice.stateData.asInstanceOf[DATA_CLOSING].channelId)

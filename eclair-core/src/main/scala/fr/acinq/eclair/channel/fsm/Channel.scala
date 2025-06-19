@@ -112,6 +112,18 @@ object Channel {
     require(balanceThresholds.sortBy(_.available) == balanceThresholds, "channel-update.balance-thresholds must be sorted by available-sat")
 
     def minFundingSatoshis(flags: ChannelFlags): Satoshi = if (flags.announceChannel) minFundingPublicSatoshis else minFundingPrivateSatoshis
+
+    def maxHtlcValueInFlight(fundingAmount: Satoshi, unlimited: Boolean): UInt64 = {
+      if (unlimited) {
+        // We don't want to impose limits on the amount in flight, typically to allow fully emptying the channel.
+        UInt64.MaxValue
+      } else {
+        // NB: when we're the initiator, we don't know yet if the remote peer will contribute to the funding amount, so
+        // the percentage-based value may be underestimated. That's ok, this is a security parameter so it makes sense to
+        // base it on the amount that we're contributing instead of the total funding amount.
+        UInt64(maxHtlcValueInFlightMsat.min(fundingAmount * maxHtlcValueInFlightPercent / 100).toLong)
+      }
+    }
   }
 
   trait TxPublisherFactory {

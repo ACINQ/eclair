@@ -23,7 +23,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.{UInt64, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, UInt64, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits.{BinStringSyntax, BitVector, HexStringSyntax}
@@ -136,6 +136,22 @@ class CommonCodecsSpec extends AnyFunSuite {
 
     for (testCase <- testCases) {
       assert(varintoverflow.decode(testCase).isFailure, testCase.toByteVector)
+    }
+  }
+
+  test("encode/decode millisatoshi amounts") {
+    val testCases = Seq(
+      0 msat,
+      1 msat,
+      100_000 msat,
+      250_000_000 msat,
+      MilliSatoshi.MaxMoney - 1.msat,
+      MilliSatoshi.MaxMoney,
+      Long.MaxValue.msat - 1.msat,
+      Long.MaxValue.msat,
+    )
+    testCases.foreach { amount =>
+      assert(millisatoshi.decode(millisatoshi.encode(amount).require).require.value == amount)
     }
   }
 

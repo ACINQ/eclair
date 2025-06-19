@@ -57,7 +57,7 @@ private[channel] object ChannelCodecs2 {
       ("nodeId" | publicKey) ::
         ("channelPath" | keyPathCodec) ::
         ("dustLimit" | satoshi) ::
-        ("maxHtlcValueInFlightMsat" | millisatoshi) ::
+        ("maxHtlcValueInFlightMsat" | uint64) ::
         ("channelReserve" | conditional(included = true, satoshi)) ::
         ("htlcMinimum" | millisatoshi) ::
         ("toSelfDelay" | cltvExpiryDelta) ::

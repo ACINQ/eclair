@@ -33,7 +33,7 @@ import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.{SegwitV0CommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, TlvStream}
-import fr.acinq.eclair.{MilliSatoshiLong, UInt64, randomKey, toLongId}
+import fr.acinq.eclair.{MilliSatoshiLong, randomKey, toLongId}
 import scodec.bits.ByteVector
 
 /**
@@ -82,7 +82,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         fundingSatoshis = input.fundingAmount,
         pushMsat = input.pushAmount_opt.getOrElse(0 msat),
         dustLimitSatoshis = input.localParams.dustLimit,
-        maxHtlcValueInFlightMsat = UInt64(input.localParams.maxHtlcValueInFlightMsat.toLong),
+        maxHtlcValueInFlightMsat = input.localParams.maxHtlcValueInFlightMsat,
         channelReserveSatoshis = input.localParams.initialRequestedChannelReserve_opt.get,
         htlcMinimumMsat = input.localParams.htlcMinimum,
         feeratePerKw = input.commitTxFeerate,
@@ -132,7 +132,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val localShutdownScript = d.initFundee.localParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = d.initFundee.localParams.dustLimit,
-            maxHtlcValueInFlightMsat = UInt64(d.initFundee.localParams.maxHtlcValueInFlightMsat.toLong),
+            maxHtlcValueInFlightMsat = d.initFundee.localParams.maxHtlcValueInFlightMsat,
             channelReserveSatoshis = d.initFundee.localParams.initialRequestedChannelReserve_opt.get,
             minimumDepth = minimumDepth.getOrElse(0).toLong,
             htlcMinimumMsat = d.initFundee.localParams.htlcMinimum,
