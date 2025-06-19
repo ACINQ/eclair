@@ -709,8 +709,10 @@ private[channel] object ChannelCodecs4 {
 
     val spliceStatusCodec: Codec[SpliceStatus] = discriminated[SpliceStatus].by(uint8)
       .\(0x01) { case status: SpliceStatus if !status.isInstanceOf[SpliceStatus.SpliceWaitingForSigs] => SpliceStatus.NoSplice }(provide(SpliceStatus.NoSplice))
-      .\(0x03) { case status: SpliceStatus.SpliceWaitingForSigs => status }(interactiveTxWaitingForSigsCodec.as[channel.SpliceStatus.SpliceWaitingForSigs])
-      .\(0x02) { case status: SpliceStatus.SpliceWaitingForSigs => status }(interactiveTxWaitingForSigsWithoutLiquidityPurchaseCodec.as[channel.SpliceStatus.SpliceWaitingForSigs])
+      .\(0x03) { case status: SpliceStatus.SpliceWaitingForSigs => status }(
+        (("cmd_opt" | provide(Option.empty[ChannelFundingCommand])) :: ("signingSession" | interactiveTxWaitingForSigsCodec)).as[channel.SpliceStatus.SpliceWaitingForSigs])
+      .\(0x02) { case status: SpliceStatus.SpliceWaitingForSigs => status }(
+        (("cmd_opt" | provide(Option.empty[ChannelFundingCommand])) :: ("signingSession" | interactiveTxWaitingForSigsWithoutLiquidityPurchaseCodec)).as[channel.SpliceStatus.SpliceWaitingForSigs])
 
     private val shortids: Codec[ChannelTypes4.ShortIds] = (
       ("real_opt" | optional(bool8, realshortchannelid)) ::

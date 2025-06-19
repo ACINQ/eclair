@@ -148,6 +148,9 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
         case _: CommandSuccess[_] =>
           // HTLC was correctly sent out.
           Behaviors.same
+        case _: CommandPending[_] =>
+          // HTLC was correctly sent out, but not fully signed before the nodes disconnected.
+          Behaviors.same
         case failure: CommandFailure[_, Throwable] =>
           context.log.warn("HTLC could not be sent: {}", failure.t.getMessage)
           if (remaining > 1) {

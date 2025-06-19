@@ -319,6 +319,8 @@ object OnTheFlyFunding {
           case WrappedCommandResponse(response) => response match {
             case _: CommandSuccess[_] =>
               waitForCommandResult(stash, remaining - 1, htlcSent + 1)
+            case _: CommandPending[_] =>
+              waitForCommandResult(stash, remaining - 1, htlcSent + 1)
             case failure: CommandFailure[_, _] =>
               cmd.replyTo ! RelayFailed(paymentHash, CannotAddToChannel(failure.t))
               waitForCommandResult(stash, remaining - 1, htlcSent)

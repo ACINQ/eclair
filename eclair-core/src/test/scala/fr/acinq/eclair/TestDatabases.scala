@@ -80,7 +80,7 @@ object TestDatabases {
         case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = freeze2(d.commitments))
         case d: DATA_NORMAL => d.copy(commitments = freeze2(d.commitments))
           .modify(_.spliceStatus).using {
-            case s: SpliceStatus.SpliceWaitingForSigs => s
+            case SpliceStatus.SpliceWaitingForSigs(_, signingSession) => SpliceStatus.SpliceWaitingForSigs(None, signingSession)
             case _ => SpliceStatus.NoSplice
           }
         case d: DATA_CLOSING => d.copy(commitments = freeze2(d.commitments))

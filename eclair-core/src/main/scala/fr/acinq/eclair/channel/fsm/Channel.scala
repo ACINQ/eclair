@@ -618,7 +618,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case (SpliceStatus.SpliceAborted, sig: CommitSig) =>
           log.warning("received commit_sig after sending tx_abort, they probably sent it before receiving our tx_abort, ignoring...")
           stay()
-        case (SpliceStatus.SpliceWaitingForSigs(signingSession), sig: CommitSig) =>
+        case (SpliceStatus.SpliceWaitingForSigs(cmd_opt, signingSession), sig: CommitSig) =>
           signingSession.receiveCommitSig(d.commitments.params, channelKeys, sig, nodeParams.currentBlockHeight) match {
             case Left(f) =>
               rollbackFundingAttempt(signingSession.fundingTx.tx, Nil)
@@ -627,7 +627,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               case signingSession1: InteractiveTxSigningSession.WaitingForSigs =>
                 // In theory we don't have to store their commit_sig here, as they would re-send it if we disconnect, but
                 // it is more consistent with the case where we send our tx_signatures first.
-                val d1 = d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(signingSession1))
+                val d1 = d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(cmd_opt, signingSession1))
                 stay() using d1 storing()
               case signingSession1: InteractiveTxSigningSession.SendingSigs =>
                 // We don't have their tx_sigs, but they have ours, and could publish the funding tx without telling us.
@@ -637,6 +637,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
                 val commitments1 = d.commitments.add(signingSession1.commitment)
                 val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
+                cmd_opt.foreach(cmd => cmd.replyTo ! RES_SPLICE(fundingTxIndex = signingSession.fundingTxIndex, signingSession.fundingTx.txId, signingSession.fundingParams.fundingAmount, signingSession.localCommit.fold(_.spec, _.spec).toLocal))
                 stay() using d1 storing() sending signingSession1.localSigs calling endQuiescence(d1)
             }
           }
@@ -1408,9 +1409,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, SpliceAttemptAborted(d.channelId)))
           txBuilder ! InteractiveTxBuilder.Abort
           stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
-        case SpliceStatus.SpliceWaitingForSigs(signingSession) =>
+        case SpliceStatus.SpliceWaitingForSigs(cmd_opt, signingSession) =>
           log.info("our peer aborted the splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           rollbackFundingAttempt(signingSession.fundingTx.tx, previousTxs = Seq.empty) // no splice rbf yet
+          cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, SpliceAttemptAborted(d.channelId)))
           stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
         case SpliceStatus.SpliceRequested(cmd, _, fundingContributions_opt) =>
           log.info("our peer rejected our splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
@@ -1453,12 +1455,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               }
             case InteractiveTxBuilder.Succeeded(signingSession, commitSig, liquidityPurchase_opt) =>
               log.info(s"splice tx created with fundingTxIndex=${signingSession.fundingTxIndex} fundingTxId=${signingSession.fundingTx.txId}")
-              cmd_opt.foreach(cmd => cmd.replyTo ! RES_SPLICE(fundingTxIndex = signingSession.fundingTxIndex, signingSession.fundingTx.txId, signingSession.fundingParams.fundingAmount, signingSession.localCommit.fold(_.spec, _.spec).toLocal))
               remoteCommitSig_opt.foreach(self ! _)
               liquidityPurchase_opt.collect {
                 case purchase if !signingSession.fundingParams.isInitiator => peer ! LiquidityPurchaseSigned(d.channelId, signingSession.fundingTx.txId, signingSession.fundingTxIndex, d.commitments.params.remoteParams.htlcMinimum, purchase)
               }
-              val d1 = d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(signingSession))
+              val d1 = d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(cmd_opt, signingSession))
               stay() using d1 storing() sending commitSig
             case f: InteractiveTxBuilder.Failed =>
               log.info("splice attempt failed: {}", f.cause.getMessage)
@@ -1494,7 +1495,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           }
         case _ =>
           d.spliceStatus match {
-            case SpliceStatus.SpliceWaitingForSigs(signingSession) =>
+            case SpliceStatus.SpliceWaitingForSigs(cmd_opt, signingSession) =>
               // we have not yet sent our tx_signatures
               signingSession.receiveTxSigs(channelKeys, msg, nodeParams.currentBlockHeight, signingSession.liquidityPurchase_opt.isDefined) match {
                 case Left(f) =>
@@ -1507,6 +1508,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
                   log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, signingSession1.fundingTx.sharedTx.txId)
                   Metrics.recordSplice(signingSession1.fundingTx.fundingParams, signingSession1.fundingTx.sharedTx.tx)
+                  cmd_opt.foreach(cmd => cmd.replyTo ! RES_SPLICE(fundingTxIndex = signingSession.fundingTxIndex, signingSession.fundingTx.txId, signingSession.fundingParams.fundingAmount, signingSession.localCommit.fold(_.spec, _.spec).toLocal))
                   stay() using d1 storing() sending signingSession1.localSigs calling publishFundingTx(signingSession1.fundingTx) calling endQuiescence(d1)
               }
             case _ =>
@@ -1596,12 +1598,15 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     case Event(INPUT_DISCONNECTED, d: DATA_NORMAL) =>
       // we cancel the timer that would have made us send the enabled update after reconnection (flappy channel protection)
       cancelTimer(Reconnected.toString)
-      // if we are splicing, we need to cancel it
-      reportSpliceFailure(d.spliceStatus, new RuntimeException("splice attempt failed: disconnected"))
       val d1 = d.spliceStatus match {
         // We keep track of the RBF status: we should be able to complete the signature steps on reconnection.
-        case _: SpliceStatus.SpliceWaitingForSigs => d
-        case _ => d.copy(spliceStatus = SpliceStatus.NoSplice)
+        case SpliceStatus.SpliceWaitingForSigs(cmd_opt, signingSession) =>
+          cmd_opt.foreach(cmd => reportSplicePending(cmd, signingSession))
+          d
+        case _ =>
+          // if we are splicing, we need to cancel it
+          reportSpliceFailure(d.spliceStatus, new RuntimeException("splice attempt failed: disconnected"))
+          d.copy(spliceStatus = SpliceStatus.NoSplice)
       }
       // if we have pending unsigned htlcs, then we cancel them and generate an update with the disabled flag set, that will be returned to the sender in a temporary channel failure
       if (d.commitments.changes.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
@@ -2444,7 +2449,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           case _ => d.commitments.localCommitIndex + 1
         }
         case d: DATA_NORMAL => d.spliceStatus match {
-          case SpliceStatus.SpliceWaitingForSigs(status) => status.nextLocalCommitmentNumber
+          case SpliceStatus.SpliceWaitingForSigs(cmd_opt, status) => status.nextLocalCommitmentNumber
           case _ => d.commitments.localCommitIndex + 1
         }
         case _ => d.commitments.localCommitIndex + 1
@@ -2459,7 +2464,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           }
         }
         case d: DATA_NORMAL => d.spliceStatus match {
-          case SpliceStatus.SpliceWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId))
+          case SpliceStatus.SpliceWaitingForSigs(cmd_opt, status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId))
           case _ => d.commitments.latest.localFundingStatus match {
             case LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx: PartiallySignedSharedTransaction, _, _, _) => Set(ChannelReestablishTlv.NextFundingTlv(fundingTx.txId))
             case _ => Set.empty
@@ -2626,7 +2631,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           val spliceStatus1 = channelReestablish.nextFundingTxId_opt match {
             case Some(fundingTxId) =>
               d.spliceStatus match {
-                case SpliceStatus.SpliceWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
+                case SpliceStatus.SpliceWaitingForSigs(cmd_opt, signingSession) if signingSession.fundingTx.txId == fundingTxId =>
                   if (channelReestablish.nextLocalCommitmentNumber == d.commitments.remoteCommitIndex) {
                     // They haven't received our commit_sig: we retransmit it.
                     // We're also waiting for signatures from them, and will send our tx_signatures once we receive them.
@@ -3526,6 +3531,13 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       case _ => None
     }
     cmd_opt.foreach(cmd => cmd.replyTo ! RES_FAILURE(cmd, f))
+  }
+
+  private def reportSplicePending(cmd: ChannelFundingCommand, signingSession: InteractiveTxSigningSession.WaitingForSigs): Unit = {
+    cmd match {
+      case cmd: CMD_SPLICE => cmd.replyTo ! RES_SPLICE_PENDING(signingSession.fundingTxIndex, signingSession.fundingTx.txId, signingSession.fundingParams.fundingAmount, signingSession.localCommit.fold(_.spec, _.spec).toLocal)
+      case cmd: CMD_BUMP_FUNDING_FEE => cmd.replyTo ! RES_BUMP_FUNDING_FEE_PENDING(signingSession.fundingTx.txId, signingSession.fundingTx.tx.localFees.truncateToSatoshi)
+    }
   }
 
   override def mdc(currentMessage: Any): MDC = {

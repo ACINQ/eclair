@@ -262,10 +262,12 @@ final case class CMD_GET_CHANNEL_INFO(replyTo: akka.actor.typed.ActorRef[RES_GET
 /** response to [[Command]] requests */
 sealed trait CommandResponse[+C <: Command]
 sealed trait CommandSuccess[+C <: Command] extends CommandResponse[C]
+sealed trait CommandPending[+C <: Command] extends CommandResponse[C]
 sealed trait CommandFailure[+C <: Command, +T <: Throwable] extends CommandResponse[C] { def t: T }
 
 /** generic responses */
 final case class RES_SUCCESS[+C <: Command](cmd: C, channelId: ByteVector32) extends CommandSuccess[C]
+final case class RES_PENDING[+C <: Command](cmd: C, channelId: ByteVector32) extends CommandPending[C]
 final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) extends CommandFailure[C, T]
 
 /**
@@ -291,7 +293,9 @@ final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc
 
 /** other specific responses */
 final case class RES_BUMP_FUNDING_FEE(rbfIndex: Int, fundingTxId: TxId, fee: Satoshi) extends CommandSuccess[CMD_BUMP_FUNDING_FEE]
+final case class RES_BUMP_FUNDING_FEE_PENDING(fundingTxId: TxId, fee: Satoshi) extends CommandPending[CMD_BUMP_FUNDING_FEE]
 final case class RES_SPLICE(fundingTxIndex: Long, fundingTxId: TxId, capacity: Satoshi, balance: MilliSatoshi) extends CommandSuccess[CMD_SPLICE]
+final case class RES_SPLICE_PENDING(fundingTxIndex: Long, fundingTxId: TxId, capacity: Satoshi, balance: MilliSatoshi) extends CommandPending[CMD_SPLICE]
 final case class RES_GET_CHANNEL_STATE(state: ChannelState) extends CommandSuccess[CMD_GET_CHANNEL_STATE]
 final case class RES_GET_CHANNEL_DATA[+D <: ChannelData](data: D) extends CommandSuccess[CMD_GET_CHANNEL_DATA]
 final case class RES_GET_CHANNEL_INFO(nodeId: PublicKey, channelId: ByteVector32, channel: ActorRef, state: ChannelState, data: ChannelData) extends CommandSuccess[CMD_GET_CHANNEL_INFO]
@@ -506,7 +510,7 @@ object SpliceStatus {
   /** We both agreed to splice/rbf and are building the corresponding transaction. */
   case class SpliceInProgress(cmd_opt: Option[ChannelFundingCommand], sessionId: ByteVector32, splice: typed.ActorRef[InteractiveTxBuilder.Command], remoteCommitSig: Option[CommitSig]) extends SpliceStatus
   /** The splice transaction has been negotiated, we're exchanging signatures. */
-  case class SpliceWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends SpliceStatus
+  case class SpliceWaitingForSigs(cmd_opt: Option[ChannelFundingCommand], signingSession: InteractiveTxSigningSession.WaitingForSigs) extends SpliceStatus
   /** The splice attempt was aborted by us, we're waiting for our peer to ack. */
   case object SpliceAborted extends SpliceStatus
 }
