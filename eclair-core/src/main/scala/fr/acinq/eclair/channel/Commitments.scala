@@ -22,18 +22,20 @@ import scodec.bits.ByteVector
 case class ChannelParams(channelId: ByteVector32,
                          channelConfig: ChannelConfig,
                          channelFeatures: ChannelFeatures,
-                         localParams: LocalParams, remoteParams: RemoteParams,
+                         localParams: LocalChannelParams, remoteParams: RemoteChannelParams,
                          channelFlags: ChannelFlags) {
-
   require(channelFeatures.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (channel features: $channelFeatures")
   require(channelFeatures.hasFeature(Features.DualFunding) == localParams.initialRequestedChannelReserve_opt.isEmpty, "custom local channel reserve is incompatible with dual-funded channels")
-  require(channelFeatures.hasFeature(Features.DualFunding) == remoteParams.initialRequestedChannelReserve_opt.isEmpty, "custom remote channel reserve is incompatible with dual-funded channels")
+  require(channelFeatures.hasFeature(Features.DualFunding) == localParams.initialRequestedChannelReserve_opt.isEmpty, "custom remote channel reserve is incompatible with dual-funded channels")
 
   val commitmentFormat: CommitmentFormat = channelFeatures.commitmentFormat
   val announceChannel: Boolean = channelFlags.announceChannel
 
   val localNodeId: PublicKey = localParams.nodeId
   val remoteNodeId: PublicKey = remoteParams.nodeId
+
+  val localCommitParams: CommitParams = CommitParams(localParams.dustLimit, localParams.htlcMinimum, localParams.maxHtlcValueInFlightMsat, localParams.maxAcceptedHtlcs, remoteParams.toRemoteDelay)
+  val remoteCommitParams: CommitParams = CommitParams(remoteParams.dustLimit, remoteParams.htlcMinimum, remoteParams.maxHtlcValueInFlightMsat, remoteParams.maxAcceptedHtlcs, localParams.toRemoteDelay)
 
   // We can safely cast to millisatoshis since we verify that it's less than a valid millisatoshi amount.
   val maxHtlcAmount: MilliSatoshi = Seq(localParams.maxHtlcValueInFlightMsat, remoteParams.maxHtlcValueInFlightMsat, UInt64(MilliSatoshi.MaxMoney.toLong)).min.toBigInt.toLong.msat
@@ -46,7 +48,7 @@ case class ChannelParams(channelId: ByteVector32,
    */
   def updateFeatures(localInit: Init, remoteInit: Init): ChannelParams = copy(
     localParams = localParams.copy(initFeatures = localInit.features),
-    remoteParams = remoteParams.copy(initFeatures = remoteInit.features)
+    remoteParams = remoteParams.copy(initFeatures = remoteInit.features),
   )
 
   /**
@@ -57,16 +59,16 @@ case class ChannelParams(channelId: ByteVector32,
 
   /** Channel reserve that applies to our funds. */
   def localChannelReserveForCapacity(capacity: Satoshi, isSplice: Boolean): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding) || isSplice) {
-    (capacity / 100).max(remoteParams.dustLimit)
+    (capacity / 100).max(remoteCommitParams.dustLimit)
   } else {
-    remoteParams.initialRequestedChannelReserve_opt.get // this is guarded by a require() in Params
+    remoteParams.initialRequestedChannelReserve_opt.get // this is guarded by a require() in ChannelParams
   }
 
   /** Channel reserve that applies to our peer's funds. */
   def remoteChannelReserveForCapacity(capacity: Satoshi, isSplice: Boolean): Satoshi = if (channelFeatures.hasFeature(Features.DualFunding) || isSplice) {
-    (capacity / 100).max(localParams.dustLimit)
+    (capacity / 100).max(localCommitParams.dustLimit)
   } else {
-    localParams.initialRequestedChannelReserve_opt.get // this is guarded by a require() in Params
+    localParams.initialRequestedChannelReserve_opt.get // this is guarded by a require() in ChannelParams
   }
 
   /**
@@ -192,7 +194,7 @@ object LocalCommit {
   def fromCommitSig(params: ChannelParams, commitKeys: LocalCommitmentKeys, fundingTxId: TxId,
                     fundingKey: PrivateKey, remoteFundingPubKey: PublicKey, commitInput: InputInfo,
                     commit: CommitSig, localCommitIndex: Long, spec: CommitmentSpec): Either[ChannelException, LocalCommit] = {
-    val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(params, commitKeys, localCommitIndex, fundingKey, remoteFundingPubKey, commitInput, spec)
+    val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(params, params.localCommitParams, commitKeys, localCommitIndex, fundingKey, remoteFundingPubKey, commitInput, spec)
     val remoteCommitSigOk = params.commitmentFormat match {
       case _: SegwitV0CommitmentFormat => localCommitTx.checkRemoteSig(fundingKey.publicKey, remoteFundingPubKey, ChannelSpendSignature.IndividualSignature(commit.signature))
       case _: SimpleTaprootChannelCommitmentFormat => ???
@@ -224,7 +226,7 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePer
   def sign(params: ChannelParams, channelKeys: ChannelKeys, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo): CommitSig = {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val commitKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentPoint)
-    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, commitKeys, index, fundingKey, remoteFundingPubKey, commitInput, spec)
+    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, params.remoteCommitParams, commitKeys, index, fundingKey, remoteFundingPubKey, commitInput, spec)
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
     val htlcSigs = sortedHtlcTxs.map(_.localSig(commitKeys))
     params.commitmentFormat match {
@@ -322,11 +324,11 @@ case class Commitment(fundingTxIndex: Long,
     val balanceNoFees = (reduced.toRemote - localChannelReserve(params)).max(0 msat)
     if (localParams.paysCommitTxFees) {
       // The initiator always pays the on-chain fees, so we must subtract that from the amount we can send.
-      val commitFees = commitTxTotalCostMsat(remoteParams.dustLimit, reduced, commitmentFormat)
+      val commitFees = commitTxTotalCostMsat(remoteCommitParams.dustLimit, reduced, commitmentFormat)
       // the initiator needs to keep a "funder fee buffer" (see explanation above)
-      val funderFeeBuffer = commitTxTotalCostMsat(remoteParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), commitmentFormat) + htlcOutputFee(reduced.commitTxFeerate * 2, commitmentFormat)
+      val funderFeeBuffer = commitTxTotalCostMsat(remoteCommitParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), commitmentFormat) + htlcOutputFee(reduced.commitTxFeerate * 2, commitmentFormat)
       val amountToReserve = commitFees.max(funderFeeBuffer)
-      if (balanceNoFees - amountToReserve < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced, commitmentFormat)) {
+      if (balanceNoFees - amountToReserve < offeredHtlcTrimThreshold(remoteCommitParams.dustLimit, reduced, commitmentFormat)) {
         // htlc will be trimmed
         (balanceNoFees - amountToReserve).max(0 msat)
       } else {
@@ -352,11 +354,11 @@ case class Commitment(fundingTxIndex: Long,
       balanceNoFees
     } else {
       // The initiator always pays the on-chain fees, so we must subtract that from the amount we can receive.
-      val commitFees = commitTxTotalCostMsat(localParams.dustLimit, reduced, commitmentFormat)
+      val commitFees = commitTxTotalCostMsat(localCommitParams.dustLimit, reduced, commitmentFormat)
       // we expected the initiator to keep a "funder fee buffer" (see explanation above)
-      val funderFeeBuffer = commitTxTotalCostMsat(localParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), commitmentFormat) + htlcOutputFee(reduced.commitTxFeerate * 2, commitmentFormat)
+      val funderFeeBuffer = commitTxTotalCostMsat(localCommitParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), commitmentFormat) + htlcOutputFee(reduced.commitTxFeerate * 2, commitmentFormat)
       val amountToReserve = commitFees.max(funderFeeBuffer)
-      if (balanceNoFees - amountToReserve < receivedHtlcTrimThreshold(localParams.dustLimit, reduced, commitmentFormat)) {
+      if (balanceNoFees - amountToReserve < receivedHtlcTrimThreshold(localCommitParams.dustLimit, reduced, commitmentFormat)) {
         // htlc will be trimmed
         (balanceNoFees - amountToReserve).max(0 msat)
       } else {
@@ -471,10 +473,10 @@ case class Commitment(fundingTxIndex: Long,
     val outgoingHtlcs = reduced.htlcs.collect(DirectedHtlc.incoming)
 
     // note that the initiator pays the fee, so if sender != initiator, both sides will have to afford this payment
-    val fees = commitTxTotalCost(params.remoteParams.dustLimit, reduced, params.commitmentFormat)
+    val fees = commitTxTotalCost(params.remoteCommitParams.dustLimit, reduced, params.commitmentFormat)
     // the initiator needs to keep an extra buffer to be able to handle a x2 feerate increase and an additional htlc to avoid
     // getting the channel stuck (see https://github.com/lightningnetwork/lightning-rfc/issues/728).
-    val funderFeeBuffer = commitTxTotalCostMsat(params.remoteParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), params.commitmentFormat) + htlcOutputFee(reduced.commitTxFeerate * 2, params.commitmentFormat)
+    val funderFeeBuffer = commitTxTotalCostMsat(params.remoteCommitParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), params.commitmentFormat) + htlcOutputFee(reduced.commitTxFeerate * 2, params.commitmentFormat)
     // NB: increasing the feerate can actually remove htlcs from the commit tx (if they fall below the trim threshold)
     // which may result in a lower commit tx fee; this is why we take the max of the two.
     val missingForSender = reduced.toRemote - localChannelReserve(params) - (if (params.localParams.paysCommitTxFees) fees.max(funderFeeBuffer.truncateToSatoshi) else 0.sat)
@@ -509,19 +511,19 @@ case class Commitment(fundingTxIndex: Long,
     if (allowedHtlcValueInFlight < htlcValueInFlight) {
       return Left(HtlcValueTooHighInFlight(params.channelId, maximum = allowedHtlcValueInFlight, actual = htlcValueInFlight))
     }
-    if (Seq(params.localParams.maxAcceptedHtlcs, params.remoteParams.maxAcceptedHtlcs).min < outgoingHtlcs.size) {
-      return Left(TooManyAcceptedHtlcs(params.channelId, maximum = Seq(params.localParams.maxAcceptedHtlcs, params.remoteParams.maxAcceptedHtlcs).min))
+    if (Seq(params.localCommitParams.maxAcceptedHtlcs, params.remoteCommitParams.maxAcceptedHtlcs).min < outgoingHtlcs.size) {
+      return Left(TooManyAcceptedHtlcs(params.channelId, maximum = Seq(params.localCommitParams.maxAcceptedHtlcs, params.remoteCommitParams.maxAcceptedHtlcs).min))
     }
 
     // If sending this htlc would overflow our dust exposure, we reject it.
     val maxDustExposure = feeConf.feerateToleranceFor(params.remoteNodeId).dustTolerance.maxExposure
     val localReduced = DustExposure.reduceForDustExposure(localCommit.spec, changes.localChanges.all, changes.remoteChanges.all)
-    val localDustExposureAfterAdd = DustExposure.computeExposure(localReduced, params.localParams.dustLimit, params.commitmentFormat)
+    val localDustExposureAfterAdd = DustExposure.computeExposure(localReduced, params.localCommitParams.dustLimit, params.commitmentFormat)
     if (localDustExposureAfterAdd > maxDustExposure) {
       return Left(LocalDustHtlcExposureTooHigh(params.channelId, maxDustExposure, localDustExposureAfterAdd))
     }
     val remoteReduced = DustExposure.reduceForDustExposure(remoteCommit1.spec, changes.remoteChanges.all, changes.localChanges.all)
-    val remoteDustExposureAfterAdd = DustExposure.computeExposure(remoteReduced, params.remoteParams.dustLimit, params.commitmentFormat)
+    val remoteDustExposureAfterAdd = DustExposure.computeExposure(remoteReduced, params.remoteCommitParams.dustLimit, params.commitmentFormat)
     if (remoteDustExposureAfterAdd > maxDustExposure) {
       return Left(RemoteDustHtlcExposureTooHigh(params.channelId, maxDustExposure, remoteDustExposureAfterAdd))
     }
@@ -545,7 +547,7 @@ case class Commitment(fundingTxIndex: Long,
     val incomingHtlcs = reduced.htlcs.collect(DirectedHtlc.incoming)
 
     // note that the initiator pays the fee, so if sender != initiator, both sides will have to afford this payment
-    val fees = commitTxTotalCost(params.localParams.dustLimit, reduced, params.commitmentFormat)
+    val fees = commitTxTotalCost(params.localCommitParams.dustLimit, reduced, params.commitmentFormat)
     // NB: we don't enforce the funderFeeReserve (see sendAdd) because it would confuse a remote initiator that doesn't have this mitigation in place
     // We could enforce it once we're confident a large portion of the network implements it.
     val missingForSender = reduced.toRemote - remoteChannelReserve(params) - (if (params.localParams.paysCommitTxFees) 0.sat else fees)
@@ -565,12 +567,12 @@ case class Commitment(fundingTxIndex: Long,
 
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since incomingHtlcs is a Set).
     val htlcValueInFlight = incomingHtlcs.toSeq.map(_.amountMsat).sum
-    if (params.localParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
-      return Left(HtlcValueTooHighInFlight(params.channelId, maximum = params.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
+    if (params.localCommitParams.maxHtlcValueInFlight < htlcValueInFlight) {
+      return Left(HtlcValueTooHighInFlight(params.channelId, maximum = params.localCommitParams.maxHtlcValueInFlight, actual = htlcValueInFlight))
     }
 
-    if (incomingHtlcs.size > params.localParams.maxAcceptedHtlcs) {
-      return Left(TooManyAcceptedHtlcs(params.channelId, maximum = params.localParams.maxAcceptedHtlcs))
+    if (incomingHtlcs.size > params.localCommitParams.maxAcceptedHtlcs) {
+      return Left(TooManyAcceptedHtlcs(params.channelId, maximum = params.localCommitParams.maxAcceptedHtlcs))
     }
 
     Right(())
@@ -581,7 +583,7 @@ case class Commitment(fundingTxIndex: Long,
     val reduced = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     // we look from remote's point of view, so if local is initiator remote doesn't pay the fees
-    val fees = commitTxTotalCost(params.remoteParams.dustLimit, reduced, params.commitmentFormat)
+    val fees = commitTxTotalCost(params.remoteCommitParams.dustLimit, reduced, params.commitmentFormat)
     val missing = reduced.toRemote.truncateToSatoshi - localChannelReserve(params) - fees
     if (missing < 0.sat) {
       return Left(CannotAffordFees(params.channelId, missing = -missing, reserve = localChannelReserve(params), fees = fees))
@@ -592,12 +594,12 @@ case class Commitment(fundingTxIndex: Long,
       // this is the commitment as it would be if our update_fee was immediately signed by both parties (it is only an
       // estimate because there can be concurrent updates)
       val localReduced = DustExposure.reduceForDustExposure(localCommit.spec, changes.localChanges.all, changes.remoteChanges.all)
-      val localDustExposureAfterFeeUpdate = DustExposure.computeExposure(localReduced, targetFeerate, params.localParams.dustLimit, params.commitmentFormat)
+      val localDustExposureAfterFeeUpdate = DustExposure.computeExposure(localReduced, targetFeerate, params.localCommitParams.dustLimit, params.commitmentFormat)
       if (localDustExposureAfterFeeUpdate > maxDustExposure) {
         return Left(LocalDustHtlcExposureTooHigh(params.channelId, maxDustExposure, localDustExposureAfterFeeUpdate))
       }
       val remoteReduced = DustExposure.reduceForDustExposure(remoteCommit.spec, changes.remoteChanges.all, changes.localChanges.all)
-      val remoteDustExposureAfterFeeUpdate = DustExposure.computeExposure(remoteReduced, targetFeerate, params.remoteParams.dustLimit, params.commitmentFormat)
+      val remoteDustExposureAfterFeeUpdate = DustExposure.computeExposure(remoteReduced, targetFeerate, params.remoteCommitParams.dustLimit, params.commitmentFormat)
       if (remoteDustExposureAfterFeeUpdate > maxDustExposure) {
         return Left(RemoteDustHtlcExposureTooHigh(params.channelId, maxDustExposure, remoteDustExposureAfterFeeUpdate))
       }
@@ -620,7 +622,7 @@ case class Commitment(fundingTxIndex: Long,
       // (it also means that we need to check the fee of the initial commitment tx somewhere)
       val reduced = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
       // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-      val fees = commitTxTotalCost(params.localParams.dustLimit, reduced, params.commitmentFormat)
+      val fees = commitTxTotalCost(params.localCommitParams.dustLimit, reduced, params.commitmentFormat)
       val missing = reduced.toRemote.truncateToSatoshi - remoteChannelReserve(params) - fees
       if (missing < 0.sat) {
         return Left(CannotAffordFees(params.channelId, missing = -missing, reserve = remoteChannelReserve(params), fees = fees))
@@ -629,14 +631,14 @@ case class Commitment(fundingTxIndex: Long,
       if (feeConf.feerateToleranceFor(params.remoteNodeId).dustTolerance.closeOnUpdateFeeOverflow) {
         val maxDustExposure = feeConf.feerateToleranceFor(params.remoteNodeId).dustTolerance.maxExposure
         val localReduced = DustExposure.reduceForDustExposure(localCommit.spec, changes.localChanges.all, changes.remoteChanges.all)
-        val localDustExposureAfterFeeUpdate = DustExposure.computeExposure(localReduced, targetFeerate, params.localParams.dustLimit, params.commitmentFormat)
+        val localDustExposureAfterFeeUpdate = DustExposure.computeExposure(localReduced, targetFeerate, params.localCommitParams.dustLimit, params.commitmentFormat)
         if (localDustExposureAfterFeeUpdate > maxDustExposure) {
           return Left(LocalDustHtlcExposureTooHigh(params.channelId, maxDustExposure, localDustExposureAfterFeeUpdate))
         }
         // this is the commitment as it would be if their update_fee was immediately signed by both parties (it is only an
         // estimate because there can be concurrent updates)
         val remoteReduced = DustExposure.reduceForDustExposure(remoteCommit.spec, changes.remoteChanges.all, changes.localChanges.all)
-        val remoteDustExposureAfterFeeUpdate = DustExposure.computeExposure(remoteReduced, targetFeerate, params.remoteParams.dustLimit, params.commitmentFormat)
+        val remoteDustExposureAfterFeeUpdate = DustExposure.computeExposure(remoteReduced, targetFeerate, params.remoteCommitParams.dustLimit, params.commitmentFormat)
         if (remoteDustExposureAfterFeeUpdate > maxDustExposure) {
           return Left(RemoteDustHtlcExposureTooHigh(params.channelId, maxDustExposure, remoteDustExposureAfterFeeUpdate))
         }
@@ -649,7 +651,7 @@ case class Commitment(fundingTxIndex: Long,
     // remote commitment will include all local proposed changes + remote acked changes
     val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
-    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, commitKeys, remoteCommit.index + 1, fundingKey, remoteFundingPubKey, commitInput, spec)
+    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, params.remoteCommitParams, commitKeys, remoteCommit.index + 1, fundingKey, remoteFundingPubKey, commitInput, spec)
     val htlcSigs = htlcTxs.sortBy(_.input.outPoint.index).map(_.localSig(commitKeys))
 
     // NB: IN/OUT htlcs are inverted because this is the remote commit
@@ -691,7 +693,7 @@ case class Commitment(fundingTxIndex: Long,
   def fullySignedLocalCommitTx(params: ChannelParams, channelKeys: ChannelKeys): Transaction = {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val commitKeys = localKeys(params, channelKeys)
-    val (unsignedCommitTx, _) = Commitment.makeLocalTxs(params, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
+    val (unsignedCommitTx, _) = Commitment.makeLocalTxs(params, params.localCommitParams, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
     localCommit.remoteSig match {
       case remoteSig: ChannelSpendSignature.IndividualSignature =>
         val localSig = unsignedCommitTx.sign(fundingKey, remoteFundingPubKey)
@@ -709,36 +711,38 @@ case class Commitment(fundingTxIndex: Long,
 
   /** Return the HTLC transactions for our local commit and the corresponding remote signatures. */
   def htlcTxs(params: ChannelParams, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys): Seq[(UnsignedHtlcTx, ByteVector64)] = {
-    val (_, htlcTxs) = Commitment.makeLocalTxs(params, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
+    val (_, htlcTxs) = Commitment.makeLocalTxs(params, params.localCommitParams, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
     htlcTxs.sortBy(_.input.outPoint.index).zip(localCommit.htlcRemoteSigs)
   }
 
 }
 
 object Commitment {
-  def makeLocalTxs(params: ChannelParams,
+  def makeLocalTxs(channelParams: ChannelParams,
+                   commitParams: CommitParams,
                    commitKeys: LocalCommitmentKeys,
                    commitTxNumber: Long,
                    localFundingKey: PrivateKey,
                    remoteFundingPubKey: PublicKey,
                    commitmentInput: InputInfo,
                    spec: CommitmentSpec): (CommitTx, Seq[UnsignedHtlcTx]) = {
-    val outputs = makeCommitTxOutputs(localFundingKey.publicKey, remoteFundingPubKey, commitKeys.publicKeys, params.localParams.paysCommitTxFees, params.localParams.dustLimit, params.remoteParams.toSelfDelay, spec, params.commitmentFormat)
-    val commitTx = makeCommitTx(commitmentInput, commitTxNumber, commitKeys.ourPaymentBasePoint, params.remoteParams.paymentBasepoint, params.localParams.isChannelOpener, outputs)
-    val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, params.commitmentFormat)
+    val outputs = makeCommitTxOutputs(localFundingKey.publicKey, remoteFundingPubKey, commitKeys.publicKeys, channelParams.localParams.paysCommitTxFees, commitParams.dustLimit, commitParams.toSelfDelay, spec, channelParams.commitmentFormat)
+    val commitTx = makeCommitTx(commitmentInput, commitTxNumber, commitKeys.ourPaymentBasePoint, channelParams.remoteParams.paymentBasepoint, channelParams.localParams.isChannelOpener, outputs)
+    val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, channelParams.commitmentFormat)
     (commitTx, htlcTxs)
   }
 
-  def makeRemoteTxs(params: ChannelParams,
+  def makeRemoteTxs(channelParams: ChannelParams,
+                    commitParams: CommitParams,
                     commitKeys: RemoteCommitmentKeys,
                     commitTxNumber: Long,
                     localFundingKey: PrivateKey,
                     remoteFundingPubKey: PublicKey,
                     commitmentInput: InputInfo,
                     spec: CommitmentSpec): (CommitTx, Seq[UnsignedHtlcTx]) = {
-    val outputs = makeCommitTxOutputs(remoteFundingPubKey, localFundingKey.publicKey, commitKeys.publicKeys, !params.localParams.paysCommitTxFees, params.remoteParams.dustLimit, params.localParams.toSelfDelay, spec, params.commitmentFormat)
-    val commitTx = makeCommitTx(commitmentInput, commitTxNumber, params.remoteParams.paymentBasepoint, commitKeys.ourPaymentBasePoint, !params.localParams.isChannelOpener, outputs)
-    val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, params.commitmentFormat)
+    val outputs = makeCommitTxOutputs(remoteFundingPubKey, localFundingKey.publicKey, commitKeys.publicKeys, !channelParams.localParams.paysCommitTxFees, commitParams.dustLimit, commitParams.toSelfDelay, spec, channelParams.commitmentFormat)
+    val commitTx = makeCommitTx(commitmentInput, commitTxNumber, channelParams.remoteParams.paymentBasepoint, commitKeys.ourPaymentBasePoint, !channelParams.localParams.isChannelOpener, outputs)
+    val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, channelParams.commitmentFormat)
     (commitTx, htlcTxs)
   }
 }
@@ -751,38 +755,41 @@ case class AnnouncedCommitment(commitment: Commitment, announcement: ChannelAnno
 }
 
 /** Subset of Commitments when we want to work with a single, specific commitment. */
-case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
+case class FullCommitment(channelParams: ChannelParams, changes: CommitmentChanges,
                           fundingTxIndex: Long,
                           firstRemoteCommitIndex: Long,
                           remoteFundingPubKey: PublicKey,
                           localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
                           localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
-  val channelId: ByteVector32 = params.channelId
+  val channelId: ByteVector32 = channelParams.channelId
   val shortChannelId_opt: Option[RealShortChannelId] = localFundingStatus match {
     case f: LocalFundingStatus.ConfirmedFundingTx => Some(f.shortChannelId)
     case _ => None
   }
-  val localParams: LocalParams = params.localParams
-  val remoteParams: RemoteParams = params.remoteParams
+  val localChannelParams: LocalChannelParams = channelParams.localParams
+  val localCommitParams: CommitParams = channelParams.localCommitParams
+  val remoteChannelParams: RemoteChannelParams = channelParams.remoteParams
+  val remoteCommitParams: CommitParams = channelParams.remoteCommitParams
   val commitInput: InputInfo = localCommit.input
   val fundingTxId: TxId = commitInput.outPoint.txid
   val commitTxIds: CommitTxIds = CommitTxIds(localCommit.txId, remoteCommit.txId, nextRemoteCommit_opt.map(_.commit.txId))
   val capacity: Satoshi = commitInput.txOut.amount
+  val commitmentFormat: CommitmentFormat = channelParams.commitmentFormat
   val commitment: Commitment = Commitment(fundingTxIndex, firstRemoteCommitIndex, remoteFundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, nextRemoteCommit_opt)
 
-  def localKeys(channelKeys: ChannelKeys): LocalCommitmentKeys = commitment.localKeys(params, channelKeys)
+  def localKeys(channelKeys: ChannelKeys): LocalCommitmentKeys = commitment.localKeys(channelParams, channelKeys)
 
-  def remoteKeys(channelKeys: ChannelKeys, remotePerCommitmentPoint: PublicKey): RemoteCommitmentKeys = commitment.remoteKeys(params, channelKeys, remotePerCommitmentPoint)
+  def remoteKeys(channelKeys: ChannelKeys, remotePerCommitmentPoint: PublicKey): RemoteCommitmentKeys = commitment.remoteKeys(channelParams, channelKeys, remotePerCommitmentPoint)
 
-  def localChannelReserve: Satoshi = commitment.localChannelReserve(params)
+  def localChannelReserve: Satoshi = commitment.localChannelReserve(channelParams)
 
-  def remoteChannelReserve: Satoshi = commitment.remoteChannelReserve(params)
+  def remoteChannelReserve: Satoshi = commitment.remoteChannelReserve(channelParams)
 
-  def fullySignedLocalCommitTx(channelKeys: ChannelKeys): Transaction = commitment.fullySignedLocalCommitTx(params, channelKeys)
+  def fullySignedLocalCommitTx(channelKeys: ChannelKeys): Transaction = commitment.fullySignedLocalCommitTx(channelParams, channelKeys)
 
-  def htlcTxs(channelKeys: ChannelKeys): Seq[(UnsignedHtlcTx, ByteVector64)] = commitment.htlcTxs(params, channelKeys)
+  def htlcTxs(channelKeys: ChannelKeys): Seq[(UnsignedHtlcTx, ByteVector64)] = commitment.htlcTxs(channelParams, channelKeys)
 
-  def htlcTxs(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys): Seq[(UnsignedHtlcTx, ByteVector64)] = commitment.htlcTxs(params, fundingKey, commitKeys)
+  def htlcTxs(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys): Seq[(UnsignedHtlcTx, ByteVector64)] = commitment.htlcTxs(channelParams, fundingKey, commitKeys)
 
   def specs2String: String = {
     s"""specs:
@@ -813,7 +820,7 @@ case class WaitForRev(sentAfterLocalCommitIndex: Long)
  *                              commitment, which funding tx is not yet confirmed, and will be pruned when it confirms
  * @param remoteChannelData_opt peer backup
  */
-case class Commitments(params: ChannelParams,
+case class Commitments(channelParams: ChannelParams,
                        changes: CommitmentChanges,
                        active: Seq[Commitment],
                        inactive: Seq[Commitment] = Nil,
@@ -826,10 +833,13 @@ case class Commitments(params: ChannelParams,
 
   require(active.nonEmpty, "there must be at least one active commitment")
 
-  val channelId: ByteVector32 = params.channelId
-  val localNodeId: PublicKey = params.localNodeId
-  val remoteNodeId: PublicKey = params.remoteNodeId
-  val announceChannel: Boolean = params.announceChannel
+  val channelId: ByteVector32 = channelParams.channelId
+  val localNodeId: PublicKey = channelParams.localNodeId
+  val remoteNodeId: PublicKey = channelParams.remoteNodeId
+  val announceChannel: Boolean = channelParams.announceChannel
+
+  val localChannelParams: LocalChannelParams = channelParams.localParams
+  val remoteChannelParams: RemoteChannelParams = channelParams.remoteParams
 
   // Commitment numbers are the same for all active commitments.
   val localCommitIndex: Long = active.head.localCommit.index
@@ -838,13 +848,13 @@ case class Commitments(params: ChannelParams,
 
   // While we have multiple active commitments, we use the most restrictive one.
   val capacity: Satoshi = active.map(_.capacity).min
-  lazy val availableBalanceForSend: MilliSatoshi = active.map(_.availableBalanceForSend(params, changes)).min
-  lazy val availableBalanceForReceive: MilliSatoshi = active.map(_.availableBalanceForReceive(params, changes)).min
+  lazy val availableBalanceForSend: MilliSatoshi = active.map(_.availableBalanceForSend(channelParams, changes)).min
+  lazy val availableBalanceForReceive: MilliSatoshi = active.map(_.availableBalanceForReceive(channelParams, changes)).min
 
   val all: Seq[Commitment] = active ++ inactive
 
   // We always use the last commitment that was created, to make sure we never go back in time.
-  val latest: FullCommitment = FullCommitment(params, changes, active.head.fundingTxIndex, active.head.firstRemoteCommitIndex, active.head.remoteFundingPubKey, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
+  val latest: FullCommitment = FullCommitment(channelParams, changes, active.head.fundingTxIndex, active.head.firstRemoteCommitIndex, active.head.remoteFundingPubKey, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
 
   val lastLocalLocked_opt: Option[Commitment] = active.filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).sortBy(_.fundingTxIndex).lastOption
   val lastRemoteLocked_opt: Option[Commitment] = active.filter(c => c.remoteFundingStatus == RemoteFundingStatus.Locked).sortBy(_.fundingTxIndex).lastOption
@@ -864,7 +874,7 @@ case class Commitments(params: ChannelParams,
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = active.head.getIncomingHtlcCrossSigned(htlcId)
   // @formatter:on
 
-  def updateInitFeatures(localInit: Init, remoteInit: Init): Commitments = this.copy(params = params.updateFeatures(localInit, remoteInit))
+  def updateInitFeatures(localInit: Init, remoteInit: Init): Commitments = this.copy(channelParams = channelParams.updateFeatures(localInit, remoteInit))
 
   /**
    * @param cmd add HTLC command
@@ -884,9 +894,9 @@ case class Commitments(params: ChannelParams,
     }
 
     // even if remote advertises support for 0 msat htlc, we limit ourselves to values strictly positive, hence the max(1 msat)
-    val htlcMinimum = params.remoteParams.htlcMinimum.max(1 msat)
+    val htlcMinimum = channelParams.remoteCommitParams.htlcMinimum.max(1 msat)
     if (cmd.amount < htlcMinimum) {
-      return Left(HtlcValueTooSmall(params.channelId, minimum = htlcMinimum, actual = cmd.amount))
+      return Left(HtlcValueTooSmall(channelId, minimum = htlcMinimum, actual = cmd.amount))
     }
 
     val add = UpdateAddHtlc(channelId, changes.localNextHtlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.confidence, cmd.fundingFee_opt)
@@ -894,7 +904,7 @@ case class Commitments(params: ChannelParams,
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
     // we verify that this htlc is allowed in every active commitment
-    active.map(_.canSendAdd(add.amountMsat, params, changes1, feerates, feeConf))
+    active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feerates, feeConf))
       .collectFirst { case Left(f) => Left(f) }
       .getOrElse(Right(copy(changes = changes1, originChannels = originChannels1), add))
   }
@@ -905,14 +915,14 @@ case class Commitments(params: ChannelParams,
     }
 
     // we used to not enforce a strictly positive minimum, hence the max(1 msat)
-    val htlcMinimum = params.localParams.htlcMinimum.max(1 msat)
+    val htlcMinimum = channelParams.localCommitParams.htlcMinimum.max(1 msat)
     if (add.amountMsat < htlcMinimum) {
       return Left(HtlcValueTooSmall(channelId, minimum = htlcMinimum, actual = add.amountMsat))
     }
 
     val changes1 = changes.addRemoteProposal(add).copy(remoteNextHtlcId = changes.remoteNextHtlcId + 1)
     // we verify that this htlc is allowed in every active commitment
-    active.map(_.canReceiveAdd(add.amountMsat, params, changes1, feerates, feeConf))
+    active.map(_.canReceiveAdd(add.amountMsat, channelParams, changes1, feerates, feeConf))
       .collectFirst { case Left(f) => Left(f) }
       .getOrElse(Right(copy(changes = changes1)))
   }
@@ -923,7 +933,7 @@ case class Commitments(params: ChannelParams,
         // we have already sent a fail/fulfill for this htlc
         Left(UnknownHtlcId(channelId, cmd.id))
       case Some(htlc) if htlc.paymentHash == Crypto.sha256(cmd.r) =>
-        payment.Monitoring.Metrics.recordIncomingPaymentDistribution(params.remoteNodeId, htlc.amountMsat)
+        payment.Monitoring.Metrics.recordIncomingPaymentDistribution(remoteNodeId, htlc.amountMsat)
         val fulfill = OutgoingPaymentPacket.buildHtlcFulfill(nodeSecret, useAttributionData, cmd, htlc)
         Right((copy(changes = changes.addLocalProposal(fulfill)), fulfill))
       case Some(_) => Left(InvalidHtlcPreimage(channelId, cmd.id))
@@ -934,7 +944,7 @@ case class Commitments(params: ChannelParams,
     getOutgoingHtlcCrossSigned(fulfill.id) match {
       case Some(htlc) if htlc.paymentHash == Crypto.sha256(fulfill.paymentPreimage) => originChannels.get(fulfill.id) match {
         case Some(origin) =>
-          payment.Monitoring.Metrics.recordOutgoingPaymentDistribution(params.remoteNodeId, htlc.amountMsat)
+          payment.Monitoring.Metrics.recordOutgoingPaymentDistribution(remoteNodeId, htlc.amountMsat)
           Right(copy(changes = changes.addRemoteProposal(fulfill)), origin, htlc)
         case None => Left(UnknownHtlcId(channelId, fulfill.id))
       }
@@ -995,35 +1005,35 @@ case class Commitments(params: ChannelParams,
   }
 
   def sendFee(cmd: CMD_UPDATE_FEE, feeConf: OnChainFeeConf): Either[ChannelException, (Commitments, UpdateFee)] = {
-    if (!params.localParams.paysCommitTxFees) {
+    if (!channelParams.localParams.paysCommitTxFees) {
       Left(NonInitiatorCannotSendUpdateFee(channelId))
     } else {
       val fee = UpdateFee(channelId, cmd.feeratePerKw)
       // update_fee replace each other, so we can remove previous ones
       val changes1 = changes.copy(localChanges = changes.localChanges.copy(proposed = changes.localChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-      active.map(_.canSendFee(cmd.feeratePerKw, params, changes1, feeConf))
+      active.map(_.canSendFee(cmd.feeratePerKw, channelParams, changes1, feeConf))
         .collectFirst { case Left(f) => Left(f) }
         .getOrElse {
-          Metrics.LocalFeeratePerByte.withTag(Tags.CommitmentFormat, params.commitmentFormat.toString).record(FeeratePerByte(cmd.feeratePerKw).feerate.toLong)
+          Metrics.LocalFeeratePerByte.withTag(Tags.CommitmentFormat, channelParams.commitmentFormat.toString).record(FeeratePerByte(cmd.feeratePerKw).feerate.toLong)
           Right(copy(changes = changes1), fee)
         }
     }
   }
 
   def receiveFee(fee: UpdateFee, feerates: FeeratesPerKw, feeConf: OnChainFeeConf)(implicit log: LoggingAdapter): Either[ChannelException, Commitments] = {
-    if (params.localParams.paysCommitTxFees) {
+    if (channelParams.localParams.paysCommitTxFees) {
       Left(NonInitiatorCannotSendUpdateFee(channelId))
     } else if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw) {
       Left(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
     } else {
-      val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, params.commitmentFormat, active.head.capacity)
+      val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, remoteNodeId, channelParams.commitmentFormat, active.head.capacity)
       log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toLong.toDouble / localFeeratePerKw.toLong)
       // update_fee replace each other, so we can remove previous ones
       val changes1 = changes.copy(remoteChanges = changes.remoteChanges.copy(proposed = changes.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))
-      active.map(_.canReceiveFee(fee.feeratePerKw, params, changes1, feerates, feeConf))
+      active.map(_.canReceiveFee(fee.feeratePerKw, channelParams, changes1, feerates, feeConf))
         .collectFirst { case Left(f) => Left(f) }
         .getOrElse {
-          Metrics.RemoteFeeratePerByte.withTag(Tags.CommitmentFormat, params.commitmentFormat.toString).record(FeeratePerByte(fee.feeratePerKw).feerate.toLong)
+          Metrics.RemoteFeeratePerByte.withTag(Tags.CommitmentFormat, channelParams.commitmentFormat.toString).record(FeeratePerByte(fee.feeratePerKw).feerate.toLong)
           Right(copy(changes = changes1))
         }
     }
@@ -1033,8 +1043,8 @@ case class Commitments(params: ChannelParams,
     remoteNextCommitInfo match {
       case Right(_) if !changes.localHasChanges => Left(CannotSignWithoutChanges(channelId))
       case Right(remoteNextPerCommitmentPoint) =>
-        val commitKeys = RemoteCommitmentKeys(params, channelKeys, remoteNextPerCommitmentPoint)
-        val (active1, sigs) = active.map(_.sendCommit(params, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, active.size)).unzip
+        val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remoteNextPerCommitmentPoint)
+        val (active1, sigs) = active.map(_.sendCommit(channelParams, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, active.size)).unzip
         val commitments1 = copy(
           changes = changes.copy(
             localChanges = changes.localChanges.copy(proposed = Nil, signed = changes.localChanges.proposed),
@@ -1058,10 +1068,10 @@ case class Commitments(params: ChannelParams,
       case _: CommitSig if active.size > 1 => return Left(CommitSigCountMismatch(channelId, active.size, 1))
       case commitSig: CommitSig => Seq(commitSig)
     }
-    val commitKeys = LocalCommitmentKeys(params, channelKeys, localCommitIndex + 1)
+    val commitKeys = LocalCommitmentKeys(channelParams, channelKeys, localCommitIndex + 1)
     // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
     val active1 = active.zip(sigs).map { case (commitment, commit) =>
-      commitment.receiveCommit(params, channelKeys, commitKeys, changes, commit) match {
+      commitment.receiveCommit(channelParams, channelKeys, commitKeys, changes, commit) match {
         case Left(f) => return Left(f)
         case Right(commitment1) => commitment1
       }
@@ -1125,21 +1135,21 @@ case class Commitments(params: ChannelParams,
             case _ => true
           })
           val localReduced = DustExposure.reduceForDustExposure(localSpecWithoutNewHtlcs, changes.localChanges.all, changes.remoteChanges.acked)
-          val localCommitDustExposure = DustExposure.computeExposure(localReduced, params.localParams.dustLimit, params.commitmentFormat)
+          val localCommitDustExposure = DustExposure.computeExposure(localReduced, channelParams.localCommitParams.dustLimit, channelParams.commitmentFormat)
           val remoteReduced = DustExposure.reduceForDustExposure(remoteSpecWithoutNewHtlcs, changes.remoteChanges.acked, changes.localChanges.all)
-          val remoteCommitDustExposure = DustExposure.computeExposure(remoteReduced, params.remoteParams.dustLimit, params.commitmentFormat)
+          val remoteCommitDustExposure = DustExposure.computeExposure(remoteReduced, channelParams.remoteCommitParams.dustLimit, channelParams.commitmentFormat)
           // we sort incoming htlcs by decreasing amount: we want to prioritize higher amounts.
           val sortedReceivedHtlcs = receivedHtlcs.sortBy(_.amountMsat).reverse
           DustExposure.filterBeforeForward(
             maxDustExposure,
             localReduced,
-            params.localParams.dustLimit,
+            channelParams.localCommitParams.dustLimit,
             localCommitDustExposure,
             remoteReduced,
-            params.remoteParams.dustLimit,
+            channelParams.remoteCommitParams.dustLimit,
             remoteCommitDustExposure,
             sortedReceivedHtlcs,
-            params.commitmentFormat)
+            channelParams.commitmentFormat)
         }
         val actions = acceptedHtlcs.map(add => PostRevocationAction.RelayHtlc(add)) ++
           rejectedHtlcs.map(add => PostRevocationAction.RejectHtlc(add)) ++
@@ -1180,7 +1190,7 @@ case class Commitments(params: ChannelParams,
     active.forall { commitment =>
       val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex).publicKey
       val remoteFundingKey = commitment.remoteFundingPubKey
-      val redeemInfo = Helpers.Funding.makeFundingScript(localFundingKey, remoteFundingKey, params.commitmentFormat)
+      val redeemInfo = Helpers.Funding.makeFundingScript(localFundingKey, remoteFundingKey, channelParams.commitmentFormat)
       commitment.commitInput.txOut.publicKeyScript == redeemInfo.pubkeyScript
     }
   }
@@ -1191,7 +1201,7 @@ case class Commitments(params: ChannelParams,
       case ChannelSpendSignature.IndividualSignature(latestRemoteSig) => latestRemoteSig == commitSig.signature
       case ChannelSpendSignature.PartialSignatureWithNonce(_, _) => ???
     }
-    params.channelFeatures.hasFeature(Features.DualFunding) && isLatestSig
+    channelParams.channelFeatures.hasFeature(Features.DualFunding) && isLatestSig
   }
 
   def localFundingSigs(fundingTxId: TxId): Option[TxSignatures] = {
@@ -1294,7 +1304,7 @@ case class Commitments(params: ChannelParams,
       case Some(lastConfirmed) =>
         // NB: we cannot prune active commitments, even if we know that they have been double-spent, because our peer
         // may not yet be aware of it, and will expect us to send commit_sig.
-        val pruned = if (params.announceChannel) {
+        val pruned = if (channelParams.announceChannel) {
           // If the most recently confirmed commitment isn't announced yet, we cannot prune the last commitment we
           // announced, because our channel updates are based on its announcement (and its short_channel_id).
           // If we never announced the channel, we don't need to announce old commitments, we will directly announce the last one.

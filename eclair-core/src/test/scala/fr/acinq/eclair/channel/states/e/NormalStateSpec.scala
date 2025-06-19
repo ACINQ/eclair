@@ -31,7 +31,6 @@ import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
-import fr.acinq.eclair.channel.publish._
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.crypto.Sphinx
@@ -189,7 +188,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     // Alice has a minimum set to 0 msat (which should be invalid, but may mislead Bob into relaying 0-value HTLCs which is forbidden by the spec).
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.params.localParams.htlcMinimum == 0.msat)
+    assert(alice.commitments.latest.localCommitParams.htlcMinimum == 0.msat)
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val add = CMD_ADD_HTLC(sender.ref, 0 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     bob ! add
@@ -224,7 +223,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     // The anchor outputs commitment format costs more fees for the funder (bigger commit tx + cost of anchor outputs)
-    assert(initialState.commitments.availableBalanceForSend < initialState.commitments.modify(_.params.channelFeatures).setTo(ChannelFeatures()).availableBalanceForSend)
+    assert(initialState.commitments.availableBalanceForSend < initialState.commitments.modify(_.channelParams.channelFeatures).setTo(ChannelFeatures()).availableBalanceForSend)
     val add = CMD_ADD_HTLC(sender.ref, initialState.commitments.availableBalanceForSend + 1.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     alice ! add
 
@@ -345,8 +344,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.params.localParams.maxHtlcValueInFlightMsat == UInt64(initialState.commitments.latest.capacity.toMilliSatoshi.toLong))
-    assert(initialState.commitments.params.remoteParams.maxHtlcValueInFlightMsat == UInt64(150_000_000))
+    assert(initialState.commitments.latest.localCommitParams.maxHtlcValueInFlight == UInt64(initialState.commitments.latest.capacity.toMilliSatoshi.toLong))
+    assert(initialState.commitments.latest.remoteCommitParams.maxHtlcValueInFlight == UInt64(150_000_000))
     val add = CMD_ADD_HTLC(sender.ref, 151_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     bob ! add
     val error = HtlcValueTooHighInFlight(channelId(bob), maximum = UInt64(150_000_000), actual = 151_000_000 msat)
@@ -358,8 +357,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.params.localParams.maxHtlcValueInFlightMsat == UInt64(initialState.commitments.latest.capacity.toMilliSatoshi.toLong))
-    assert(initialState.commitments.params.remoteParams.maxHtlcValueInFlightMsat == UInt64(150_000_000))
+    assert(initialState.commitments.latest.localCommitParams.maxHtlcValueInFlight == UInt64(initialState.commitments.latest.capacity.toMilliSatoshi.toLong))
+    assert(initialState.commitments.latest.remoteCommitParams.maxHtlcValueInFlight == UInt64(150_000_000))
     val add = CMD_ADD_HTLC(sender.ref, 75_500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     bob ! add
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
@@ -375,8 +374,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.params.localParams.maxHtlcValueInFlightMsat == UInt64(150_000_000))
-    assert(initialState.commitments.params.remoteParams.maxHtlcValueInFlightMsat == UInt64(initialState.commitments.latest.capacity.toMilliSatoshi.toLong))
+    assert(initialState.commitments.latest.localCommitParams.maxHtlcValueInFlight == UInt64(150_000_000))
+    assert(initialState.commitments.latest.remoteCommitParams.maxHtlcValueInFlight == UInt64(initialState.commitments.latest.capacity.toMilliSatoshi.toLong))
     val add = CMD_ADD_HTLC(sender.ref, 151_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     alice ! add
     val error = HtlcValueTooHighInFlight(channelId(alice), maximum = UInt64(150_000_000), actual = 151_000_000 msat)
@@ -388,14 +387,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.params.localParams.maxAcceptedHtlcs == 100)
-    assert(initialState.commitments.params.remoteParams.maxAcceptedHtlcs == 30) // Bob accepts a maximum of 30 htlcs
+    assert(initialState.commitments.latest.localCommitParams.maxAcceptedHtlcs == 100)
+    assert(initialState.commitments.latest.remoteCommitParams.maxAcceptedHtlcs == 30) // Bob accepts a maximum of 30 htlcs
     for (_ <- 0 until 30) {
-      alice ! CMD_ADD_HTLC(sender.ref, 10000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
+      alice ! CMD_ADD_HTLC(sender.ref, 10_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       alice2bob.expectMsgType[UpdateAddHtlc]
     }
-    val add = CMD_ADD_HTLC(sender.ref, 10000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
+    val add = CMD_ADD_HTLC(sender.ref, 10_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     alice ! add
     val error = TooManyAcceptedHtlcs(channelId(alice), maximum = 30)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
@@ -406,14 +405,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.params.localParams.maxAcceptedHtlcs == 30) // Bob accepts a maximum of 30 htlcs
-    assert(initialState.commitments.params.remoteParams.maxAcceptedHtlcs == 100) // Alice accepts more, but Bob will stop at 30 HTLCs
+    assert(initialState.commitments.latest.localCommitParams.maxAcceptedHtlcs == 30) // Bob accepts a maximum of 30 htlcs
+    assert(initialState.commitments.latest.remoteCommitParams.maxAcceptedHtlcs == 100) // Alice accepts more, but Bob will stop at 30 HTLCs
     for (_ <- 0 until 30) {
-      bob ! CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
+      bob ! CMD_ADD_HTLC(sender.ref, 500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       bob2alice.expectMsgType[UpdateAddHtlc]
     }
-    val add = CMD_ADD_HTLC(sender.ref, 500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
+    val add = CMD_ADD_HTLC(sender.ref, 500_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     bob ! add
     val error = TooManyAcceptedHtlcs(channelId(bob), maximum = 30)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
@@ -426,10 +425,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val aliceCommitments = initialState.commitments
     assert(alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(bob.underlyingActor.nodeParams.nodeId).dustTolerance.maxExposure == 25_000.sat)
-    assert(Transactions.offeredHtlcTrimThreshold(aliceCommitments.params.localParams.dustLimit, aliceCommitments.latest.localCommit.spec, aliceCommitments.params.commitmentFormat) == 7730.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(aliceCommitments.params.localParams.dustLimit, aliceCommitments.latest.localCommit.spec, aliceCommitments.params.commitmentFormat) == 8130.sat)
-    assert(Transactions.offeredHtlcTrimThreshold(aliceCommitments.params.remoteParams.dustLimit, aliceCommitments.latest.localCommit.spec, aliceCommitments.params.commitmentFormat) == 7630.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(aliceCommitments.params.remoteParams.dustLimit, aliceCommitments.latest.localCommit.spec, aliceCommitments.params.commitmentFormat) == 8030.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(aliceCommitments.latest.localCommitParams.dustLimit, aliceCommitments.latest.localCommit.spec, aliceCommitments.latest.commitmentFormat) == 7730.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(aliceCommitments.latest.localCommitParams.dustLimit, aliceCommitments.latest.localCommit.spec, aliceCommitments.latest.commitmentFormat) == 8130.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(aliceCommitments.latest.remoteCommitParams.dustLimit, aliceCommitments.latest.localCommit.spec, aliceCommitments.latest.commitmentFormat) == 7630.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(aliceCommitments.latest.remoteCommitParams.dustLimit, aliceCommitments.latest.localCommit.spec, aliceCommitments.latest.commitmentFormat) == 8030.sat)
 
     // Alice sends HTLCs to Bob that add 10 000 sat to the dust exposure:
     addHtlc(500.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice) // dust htlc
@@ -937,8 +936,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
     inside(bobListener.expectMsgType[LocalChannelUpdate]) { lcu =>
-      assert(lcu.commitments.params.localParams.htlcMinimum == 1000.msat)
-      assert(lcu.commitments.params.remoteParams.htlcMinimum == 0.msat)
+      assert(lcu.commitments.channelParams.localCommitParams.htlcMinimum == 1000.msat)
+      assert(lcu.commitments.channelParams.remoteCommitParams.htlcMinimum == 0.msat)
       assert(lcu.channelUpdate.htlcMaximumMsat == 1000.msat)
       assert(lcu.channelUpdate.shortChannelId.isInstanceOf[RealShortChannelId])
       assert(lcu.channelUpdate.channelFlags.isEnabled)
@@ -1395,8 +1394,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     assert(alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(bob.underlyingActor.nodeParams.nodeId).dustTolerance.maxExposure == 25_000.sat)
-    assert(Transactions.offeredHtlcTrimThreshold(aliceCommitments.params.localParams.dustLimit, aliceCommitments.latest.localCommit.spec, aliceCommitments.params.commitmentFormat) == 7730.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(aliceCommitments.params.remoteParams.dustLimit, aliceCommitments.latest.localCommit.spec, aliceCommitments.params.commitmentFormat) == 8030.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(aliceCommitments.latest.localCommitParams.dustLimit, aliceCommitments.latest.localCommit.spec, aliceCommitments.latest.commitmentFormat) == 7730.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(aliceCommitments.latest.remoteCommitParams.dustLimit, aliceCommitments.latest.localCommit.spec, aliceCommitments.latest.commitmentFormat) == 8030.sat)
 
     // Alice sends HTLCs to Bob that add 10 000 sat to the dust exposure:
     addHtlc(500.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice) // dust htlc
@@ -1586,8 +1585,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   def testRevokeAndAckHtlcStaticRemoteKey(f: FixtureParam): Unit = {
     import f._
 
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.params.localParams.initFeatures.hasFeature(StaticRemoteKey))
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.localParams.initFeatures.hasFeature(StaticRemoteKey))
+    assert(alice.commitments.localChannelParams.initFeatures.hasFeature(StaticRemoteKey))
+    assert(bob.commitments.localChannelParams.initFeatures.hasFeature(StaticRemoteKey))
 
     def aliceToRemoteScript(): ByteVector = {
       val toRemoteAmount = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toRemote
@@ -1597,7 +1596,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     val initialToRemoteScript = aliceToRemoteScript()
 
-    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
 
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
@@ -1639,10 +1638,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.forward(bob)
 
     // actual test begins
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isLeft)
+    awaitCond(alice.commitments.remoteNextCommitInfo.isLeft)
     val peer = TestProbe()
-    alice ! RevocationTimeout(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommitIndex, peer.ref)
-    peer.expectMsg(Peer.Disconnect(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId))
+    alice ! RevocationTimeout(alice.commitments.remoteCommitIndex, peer.ref)
+    peer.expectMsg(Peer.Disconnect(alice.commitments.remoteNodeId))
   }
 
   private def testReceiveCmdFulfillHtlc(f: FixtureParam): Unit = {
@@ -2084,8 +2083,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     addHtlc(14000.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    assert(DustExposure.computeExposure(aliceCommitments.latest.localCommit.spec, aliceCommitments.params.localParams.dustLimit, aliceCommitments.params.commitmentFormat) == 0.msat)
-    assert(DustExposure.computeExposure(aliceCommitments.latest.remoteCommit.spec, aliceCommitments.params.remoteParams.dustLimit, aliceCommitments.params.commitmentFormat) == 0.msat)
+    assert(DustExposure.computeExposure(aliceCommitments.latest.localCommit.spec, aliceCommitments.latest.localCommitParams.dustLimit, aliceCommitments.latest.commitmentFormat) == 0.msat)
+    assert(DustExposure.computeExposure(aliceCommitments.latest.remoteCommit.spec, aliceCommitments.latest.remoteCommitParams.dustLimit, aliceCommitments.latest.commitmentFormat) == 0.msat)
 
     // A large feerate increase would make these HTLCs overflow alice's dust exposure, so she rejects it:
     val sender = TestProbe()
@@ -2109,8 +2108,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // Alice sends another HTLC to Bob that is not included in the dust exposure at the current feerate.
     addHtlc(14000.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    assert(DustExposure.computeExposure(aliceCommitments.latest.localCommit.spec, aliceCommitments.params.localParams.dustLimit, aliceCommitments.params.commitmentFormat) == 0.msat)
-    assert(DustExposure.computeExposure(aliceCommitments.latest.remoteCommit.spec, aliceCommitments.params.remoteParams.dustLimit, aliceCommitments.params.commitmentFormat) == 0.msat)
+    assert(DustExposure.computeExposure(aliceCommitments.latest.localCommit.spec, aliceCommitments.latest.localCommitParams.dustLimit, aliceCommitments.latest.commitmentFormat) == 0.msat)
+    assert(DustExposure.computeExposure(aliceCommitments.latest.remoteCommit.spec, aliceCommitments.latest.remoteCommitParams.dustLimit, aliceCommitments.latest.commitmentFormat) == 0.msat)
 
     // A large feerate increase would make these HTLCs overflow alice's dust exposure, so she rejects it:
     val cmd = CMD_UPDATE_FEE(FeeratePerKw(20000 sat), replyTo_opt = Some(sender.ref))
@@ -2128,20 +2127,20 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     updateFee(initialFeerate, alice, bob, alice2bob, bob2alice)
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     assert(alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(bob.underlyingActor.nodeParams.nodeId).dustTolerance.maxExposure == 25_000.sat)
-    val higherDustLimit = Seq(aliceCommitments.params.localParams.dustLimit, aliceCommitments.params.remoteParams.dustLimit).max
-    val lowerDustLimit = Seq(aliceCommitments.params.localParams.dustLimit, aliceCommitments.params.remoteParams.dustLimit).min
+    val higherDustLimit = Seq(aliceCommitments.latest.localCommitParams.dustLimit, aliceCommitments.latest.remoteCommitParams.dustLimit).max
+    val lowerDustLimit = Seq(aliceCommitments.latest.localCommitParams.dustLimit, aliceCommitments.latest.remoteCommitParams.dustLimit).min
     // We have the following dust thresholds at the current feerate
-    assert(Transactions.offeredHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.params.commitmentFormat) == 6989.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.params.commitmentFormat) == 7109.sat)
-    assert(Transactions.offeredHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.params.commitmentFormat) == 2989.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.params.commitmentFormat) == 3109.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.latest.commitmentFormat) == 6989.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.latest.commitmentFormat) == 7109.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.latest.commitmentFormat) == 2989.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.latest.commitmentFormat) == 3109.sat)
     // And the following thresholds after the feerate update
     // NB: we apply the real feerate when sending update_fee, not the one adjusted for dust
     val updatedFeerate = FeeratePerKw(4000 sat)
-    assert(Transactions.offeredHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.params.commitmentFormat) == 7652.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.params.commitmentFormat) == 7812.sat)
-    assert(Transactions.offeredHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.params.commitmentFormat) == 3652.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.params.commitmentFormat) == 3812.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.latest.commitmentFormat) == 7652.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.latest.commitmentFormat) == 7812.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.latest.commitmentFormat) == 3652.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.latest.commitmentFormat) == 3812.sat)
 
     // Alice send HTLCs to Bob that are not included in the dust exposure at the current feerate.
     // She signs them but Bob doesn't answer yet.
@@ -2158,7 +2157,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice.setBitcoinCoreFeerate(updatedFeerate)
     bob.setBitcoinCoreFeerate(updatedFeerate)
     alice ! cmd
-    if (higherDustLimit == aliceCommitments.params.localParams.dustLimit) {
+    if (higherDustLimit == aliceCommitments.latest.localCommitParams.dustLimit) {
       sender.expectMsg(RES_FAILURE(cmd, LocalDustHtlcExposureTooHigh(channelId(alice), 25000 sat, 29600000 msat)))
     } else {
       sender.expectMsg(RES_FAILURE(cmd, RemoteDustHtlcExposureTooHigh(channelId(alice), 25000 sat, 29600000 msat)))
@@ -2322,7 +2321,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     val tx = bob.signCommitTx()
-    val expectedFeeratePerKw = bob.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(bob.underlyingActor.nodeParams.currentBitcoinCoreFeerates, bob.underlyingActor.remoteNodeId, bobCommitments.params.commitmentFormat, bobCommitments.latest.capacity)
+    val expectedFeeratePerKw = bob.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(bob.underlyingActor.nodeParams.currentBitcoinCoreFeerates, bob.underlyingActor.remoteNodeId, bobCommitments.latest.commitmentFormat, bobCommitments.latest.capacity)
     assert(bobCommitments.latest.localCommit.spec.commitTxFeerate == expectedFeeratePerKw)
     bob ! UpdateFee(ByteVector32.Zeroes, FeeratePerKw(252 sat))
     val error = bob2alice.expectMsgType[Error]
@@ -2344,8 +2343,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     addHtlc(14000.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
-    assert(DustExposure.computeExposure(bobCommitments.latest.localCommit.spec, bobCommitments.params.localParams.dustLimit, bobCommitments.params.commitmentFormat) == 0.msat)
-    assert(DustExposure.computeExposure(bobCommitments.latest.remoteCommit.spec, bobCommitments.params.remoteParams.dustLimit, bobCommitments.params.commitmentFormat) == 0.msat)
+    assert(DustExposure.computeExposure(bobCommitments.latest.localCommit.spec, bobCommitments.latest.localCommitParams.dustLimit, bobCommitments.latest.commitmentFormat) == 0.msat)
+    assert(DustExposure.computeExposure(bobCommitments.latest.remoteCommit.spec, bobCommitments.latest.remoteCommitParams.dustLimit, bobCommitments.latest.commitmentFormat) == 0.msat)
     val tx = bob.signCommitTx()
 
     // A large feerate increase would make these HTLCs overflow Bob's dust exposure, so he force-closes:
@@ -2373,8 +2372,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // Bob sends another HTLC to Alice that is not included in the dust exposure at the current feerate.
     addHtlc(14000.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob)
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
-    assert(DustExposure.computeExposure(bobCommitments.latest.localCommit.spec, bobCommitments.params.localParams.dustLimit, bobCommitments.params.commitmentFormat) == 0.msat)
-    assert(DustExposure.computeExposure(bobCommitments.latest.remoteCommit.spec, bobCommitments.params.remoteParams.dustLimit, bobCommitments.params.commitmentFormat) == 0.msat)
+    assert(DustExposure.computeExposure(bobCommitments.latest.localCommit.spec, bobCommitments.latest.localCommitParams.dustLimit, bobCommitments.latest.commitmentFormat) == 0.msat)
+    assert(DustExposure.computeExposure(bobCommitments.latest.remoteCommit.spec, bobCommitments.latest.remoteCommitParams.dustLimit, bobCommitments.latest.commitmentFormat) == 0.msat)
 
     // A large feerate increase would make these HTLCs overflow Bob's dust exposure, so he force-close:
     val tx = bob.signCommitTx()
@@ -2397,20 +2396,20 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val aliceCommitments = initialState.commitments
     assert(alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(bob.underlyingActor.nodeParams.nodeId).dustTolerance.maxExposure == 25_000.sat)
-    val higherDustLimit = Seq(aliceCommitments.params.localParams.dustLimit, aliceCommitments.params.remoteParams.dustLimit).max
-    val lowerDustLimit = Seq(aliceCommitments.params.localParams.dustLimit, aliceCommitments.params.remoteParams.dustLimit).min
+    val higherDustLimit = Seq(aliceCommitments.latest.localCommitParams.dustLimit, aliceCommitments.latest.remoteCommitParams.dustLimit).max
+    val lowerDustLimit = Seq(aliceCommitments.latest.localCommitParams.dustLimit, aliceCommitments.latest.remoteCommitParams.dustLimit).min
     // We have the following dust thresholds at the current feerate
-    assert(Transactions.offeredHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.params.commitmentFormat) == 6989.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.params.commitmentFormat) == 7109.sat)
-    assert(Transactions.offeredHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.params.commitmentFormat) == 2989.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.params.commitmentFormat) == 3109.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.latest.commitmentFormat) == 6989.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.latest.commitmentFormat) == 7109.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.latest.commitmentFormat) == 2989.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.latest.commitmentFormat) == 3109.sat)
     // And the following thresholds after the feerate update
     // NB: we apply the real feerate when sending update_fee, not the one adjusted for dust
     val updatedFeerate = FeeratePerKw(4000 sat)
-    assert(Transactions.offeredHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.params.commitmentFormat) == 7652.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.params.commitmentFormat) == 7812.sat)
-    assert(Transactions.offeredHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.params.commitmentFormat) == 3652.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.params.commitmentFormat) == 3812.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.latest.commitmentFormat) == 7652.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(higherDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.latest.commitmentFormat) == 7812.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.latest.commitmentFormat) == 3652.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(lowerDustLimit, aliceCommitments.latest.localCommit.spec.copy(commitTxFeerate = updatedFeerate), aliceCommitments.latest.commitmentFormat) == 3812.sat)
 
     // Bob send HTLCs to Alice that are not included in the dust exposure at the current feerate.
     // He signs them but Alice doesn't answer yet.
@@ -2594,11 +2593,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CMD_CLOSE (with a script that does match our upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val sender = TestProbe()
-    val shutdownScript = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.params.localParams.upfrontShutdownScript_opt.get
+    val shutdownScript = alice.commitments.localChannelParams.upfrontShutdownScript_opt.get
     alice ! CMD_CLOSE(sender.ref, Some(shutdownScript), None)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     val shutdown = alice2bob.expectMsgType[Shutdown]
-    assert(shutdown.scriptPubKey == alice.stateData.asInstanceOf[DATA_NORMAL].commitments.params.localParams.upfrontShutdownScript_opt.get)
+    assert(shutdown.scriptPubKey == alice.commitments.localChannelParams.upfrontShutdownScript_opt.get)
     awaitCond(alice.stateName == NORMAL)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
   }
@@ -2609,7 +2608,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     val shutdown = alice2bob.expectMsgType[Shutdown]
-    assert(shutdown.scriptPubKey == alice.stateData.asInstanceOf[DATA_NORMAL].commitments.params.localParams.upfrontShutdownScript_opt.get)
+    assert(shutdown.scriptPubKey == alice.commitments.localChannelParams.upfrontShutdownScript_opt.get)
     awaitCond(alice.stateName == NORMAL)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
   }
@@ -2720,7 +2719,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[Warning]
     // we should fail the connection as per the BOLTs
     bobPeer.fishForMessage(3 seconds) {
-      case Peer.Disconnect(nodeId, _) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
+      case Peer.Disconnect(nodeId, _) if nodeId == bob.commitments.remoteNodeId => true
       case _ => false
     }
   }
@@ -2731,7 +2730,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[Warning]
     // we should fail the connection as per the BOLTs
     bobPeer.fishForMessage(3 seconds) {
-      case Peer.Disconnect(nodeId, _) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
+      case Peer.Disconnect(nodeId, _) if nodeId == bob.commitments.remoteNodeId => true
       case _ => false
     }
   }
@@ -2751,7 +2750,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! Shutdown(ByteVector32.Zeroes, hex"00112233445566778899")
     // we should fail the connection as per the BOLTs
     bobPeer.fishForMessage(3 seconds) {
-      case Peer.Disconnect(nodeId, _) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
+      case Peer.Disconnect(nodeId, _) if nodeId == bob.commitments.remoteNodeId => true
       case _ => false
     }
   }
@@ -2762,7 +2761,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // we should fail the connection as per the BOLTs
     bobPeer.fishForMessage(3 seconds) {
-      case Peer.Disconnect(nodeId, _) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.remoteParams.nodeId => true
+      case Peer.Disconnect(nodeId, _) if nodeId == bob.commitments.remoteNodeId => true
       case _ => false
     }
   }
@@ -2984,7 +2983,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw(minimum = FeeratePerKw(250 sat), fastest = FeeratePerKw(10_000 sat), fast = FeeratePerKw(5_000 sat), medium = FeeratePerKw(1000 sat), slow = FeeratePerKw(500 sat)))
     alice.setBitcoinCoreFeerates(event.feeratesPerKw)
     alice ! event
-    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, alice.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.remoteNodeId, initialState.commitments.params.commitmentFormat, initialState.commitments.latest.capacity)))
+    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, alice.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.remoteNodeId, initialState.commitments.latest.commitmentFormat, initialState.commitments.latest.capacity)))
   }
 
   test("recv CurrentFeerate (when funder, triggers an UpdateFee, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>

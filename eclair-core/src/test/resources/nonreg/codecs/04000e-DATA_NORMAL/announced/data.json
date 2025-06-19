@@ -1,7 +1,7 @@
 {
   "type" : "DATA_NORMAL",
   "commitments" : {
-    "params" : {
+    "channelParams" : {
       "channelId" : "c380aa11700db0a6d797dfd0be8aecfadad9397e4975f0fa8c9d10db71feac38",
       "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
       "channelFeatures" : [ "option_static_remotekey" ],
@@ -12,7 +12,7 @@
         "maxHtlcValueInFlightMsat" : 500000000,
         "initialRequestedChannelReserve_opt" : 10000,
         "htlcMinimum" : 0,
-        "toSelfDelay" : 144,
+        "toRemoteDelay" : 144,
         "maxAcceptedHtlcs" : 100,
         "isChannelOpener" : true,
         "paysCommitTxFees" : true,
@@ -41,7 +41,7 @@
         "maxHtlcValueInFlightMsat" : 1000000000,
         "initialRequestedChannelReserve_opt" : 20000,
         "htlcMinimum" : 1000,
-        "toSelfDelay" : 144,
+        "toRemoteDelay" : 144,
         "maxAcceptedHtlcs" : 30,
         "revocationBasepoint" : "02f943c4f199d1425fc6e52f160be536d526e9643af1430cfed4ce63f88beebd2f",
         "paymentBasepoint" : "028feba10d0eafd0fad8fe20e6d9206e6bd30242826de05c63f459a00aced24b12",

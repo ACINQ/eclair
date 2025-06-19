@@ -59,7 +59,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       val db = dbs.channels
 
       val channel1 = ChannelCodecsSpec.normal
-      val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(randomBytes32())
+      val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.channelParams.channelId).setTo(randomBytes32())
       val channel2b = channel2a.modify(_.aliases.remoteAlias_opt).setTo(Some(Alias(randomLong())))
 
       val commitNumber = 42
@@ -107,7 +107,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       val db = dbs.channels
 
       val channel1 = ChannelCodecsSpec.normal
-      val channel2 = ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(randomBytes32())
+      val channel2 = ChannelCodecsSpec.normal.modify(_.commitments.channelParams.channelId).setTo(randomBytes32())
       db.addOrUpdateChannel(channel1)
       db.addOrUpdateChannel(channel2)
 
@@ -169,7 +169,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       val channelIds = (0 until 10).map(_ => randomBytes32()).toList
       val futures = for (i <- 0 until 10000) yield {
         val channelId = channelIds(i % channelIds.size)
-        Future(db.addOrUpdateChannel(channel.modify(_.commitments.params.channelId).setTo(channelId)))
+        Future(db.addOrUpdateChannel(channel.modify(_.commitments.channelParams.channelId).setTo(channelId)))
         Future(db.updateChannelMeta(channelId, ChannelEvent.EventType.PaymentSent))
       }
       val res = Future.sequence(futures)
@@ -182,7 +182,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       val db = dbs.channels
 
       val channel1 = ChannelCodecsSpec.normal
-      val channel2 = channel1.modify(_.commitments.params.channelId).setTo(randomBytes32())
+      val channel2 = channel1.modify(_.commitments.channelParams.channelId).setTo(randomBytes32())
 
       // first we add channels
       db.addOrUpdateChannel(channel1)
@@ -431,8 +431,8 @@ object ChannelsDbSpec {
     val channelId = randomBytes32()
     val remoteNodeId = randomKey().publicKey
     val channel = ChannelCodecsSpec.normal
-      .modify(_.commitments.params.channelId).setTo(channelId)
-      .modify(_.commitments.params.remoteParams.nodeId).setTo(remoteNodeId)
+      .modify(_.commitments.channelParams.channelId).setTo(channelId)
+      .modify(_.commitments.channelParams.remoteParams.nodeId).setTo(remoteNodeId)
     val data = channelDataCodec.encode(channel).require.bytes
     TestCase(
       channelId = channelId,

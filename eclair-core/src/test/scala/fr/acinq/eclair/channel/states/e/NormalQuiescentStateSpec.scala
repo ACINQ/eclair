@@ -68,8 +68,8 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
   private def reconnect(f: FixtureParam): Unit = {
     import f._
 
-    val aliceInit = Init(alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params.localParams.initFeatures)
-    val bobInit = Init(bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params.localParams.initFeatures)
+    val aliceInit = Init(alice.commitments.localChannelParams.initFeatures)
+    val bobInit = Init(bob.commitments.localChannelParams.initFeatures)
     alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
     alice2bob.expectMsgType[ChannelReestablish]

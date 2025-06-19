@@ -122,9 +122,9 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     val (_, channelId_bc) = createChannels(f, confirm)
 
     eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.features.contains(ZeroConf) == bcZeroConf)
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.features.contains(ScidAlias) == bcScidAlias)
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.params.channelFlags.announceChannel == bcPublic)
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelParams.channelFeatures.features.contains(ZeroConf) == bcZeroConf)
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelParams.channelFeatures.features.contains(ScidAlias) == bcScidAlias)
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelParams.channelFlags.announceChannel == bcPublic)
       if (confirm) {
         assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
       } else {
@@ -261,8 +261,8 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     val (_, channelId_bc) = createChannels(f, confirm = false)
 
     eventually {
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.features.contains(ZeroConf))
-      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.features.contains(ScidAlias))
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelParams.channelFeatures.features.contains(ZeroConf))
+      assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.channelParams.channelFeatures.features.contains(ScidAlias))
       assert(getChannelData(bob, channelId_bc).asInstanceOf[DATA_NORMAL].commitments.latest.shortChannelId_opt.isEmpty)
       assert(getRouterData(bob).privateChannels.values.exists(_.nodeId2 == carol.nodeParams.nodeId))
     }

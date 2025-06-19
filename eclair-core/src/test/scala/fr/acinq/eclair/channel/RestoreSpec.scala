@@ -94,7 +94,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     val OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil = Script.parse(ourOutput.publicKeyScript)
 
     // check that our output in Bob's commit tx sends to our static payment point
-    val Some(ourStaticPaymentPoint) = oldStateData.asInstanceOf[DATA_NORMAL].commitments.params.localParams.walletStaticPaymentBasepoint
+    val Some(ourStaticPaymentPoint) = oldStateData.asInstanceOf[DATA_NORMAL].commitments.localChannelParams.walletStaticPaymentBasepoint
     assert(pubKeyHash == ourStaticPaymentPoint.hash160)
   }
 

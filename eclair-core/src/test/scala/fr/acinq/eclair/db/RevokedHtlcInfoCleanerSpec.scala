@@ -34,7 +34,7 @@ class RevokedHtlcInfoCleanerSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val channelsDb = TestSqliteDatabases().channels
 
     val channelId = randomBytes32()
-    channelsDb.addOrUpdateChannel(ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(channelId))
+    channelsDb.addOrUpdateChannel(ChannelCodecsSpec.normal.modify(_.commitments.channelParams.channelId).setTo(channelId))
     channelsDb.addHtlcInfo(channelId, 17, randomBytes32(), CltvExpiry(561))
     channelsDb.addHtlcInfo(channelId, 19, randomBytes32(), CltvExpiry(1105))
     channelsDb.addHtlcInfo(channelId, 23, randomBytes32(), CltvExpiry(1729))
@@ -57,7 +57,7 @@ class RevokedHtlcInfoCleanerSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val channelsDb = TestSqliteDatabases().channels
 
     val channelId = randomBytes32()
-    channelsDb.addOrUpdateChannel(ChannelCodecsSpec.normal.modify(_.commitments.params.channelId).setTo(channelId))
+    channelsDb.addOrUpdateChannel(ChannelCodecsSpec.normal.modify(_.commitments.channelParams.channelId).setTo(channelId))
     channelsDb.addHtlcInfo(channelId, 1, randomBytes32(), CltvExpiry(561))
     channelsDb.addHtlcInfo(channelId, 2, randomBytes32(), CltvExpiry(1105))
     channelsDb.addHtlcInfo(channelId, 2, randomBytes32(), CltvExpiry(1105))

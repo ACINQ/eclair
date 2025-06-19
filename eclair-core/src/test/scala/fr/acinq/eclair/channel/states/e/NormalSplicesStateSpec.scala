@@ -377,7 +377,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.ignoreMsg { case _: ChannelUpdate => true }
     awaitCond(alice.stateName == NORMAL && bob.stateName == NORMAL)
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(!initialState.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
+    assert(!initialState.commitments.channelParams.channelFeatures.hasFeature(Features.DualFunding))
     assert(initialState.commitments.latest.capacity == 1_000_000.sat)
     assert(initialState.commitments.latest.localCommit.spec.toLocal == 800_000_000.msat)
     assert(initialState.commitments.latest.localCommit.spec.toRemote == 200_000_000.msat)
@@ -388,7 +388,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // We can splice on top of a non dual-funded channel.
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     val postSpliceState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(!postSpliceState.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
+    assert(!postSpliceState.commitments.channelParams.channelFeatures.hasFeature(Features.DualFunding))
     assert(postSpliceState.commitments.latest.capacity == 1_500_000.sat)
     assert(postSpliceState.commitments.latest.localCommit.spec.toLocal == 1_300_000_000.msat)
     assert(postSpliceState.commitments.latest.localCommit.spec.toRemote == 200_000_000.msat)
@@ -598,7 +598,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val commitment = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(commitment.localCommit.spec.toLocal == 770_000_000.msat)
     assert(commitment.localChannelReserve == 15_000.sat)
-    val commitFees = Transactions.commitTxTotalCost(commitment.remoteParams.dustLimit, commitment.remoteCommit.spec, commitment.params.commitmentFormat)
+    val commitFees = Transactions.commitTxTotalCost(commitment.remoteCommitParams.dustLimit, commitment.remoteCommit.spec, commitment.commitmentFormat)
     assert(commitFees < 15_000.sat)
 
     val sender = TestProbe()
@@ -618,7 +618,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val commitment = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(commitment.localCommit.spec.toLocal == 650_000_000.msat)
     assert(commitment.localChannelReserve == 15_000.sat)
-    val commitFees = Transactions.commitTxTotalCost(commitment.remoteParams.dustLimit, commitment.remoteCommit.spec, commitment.params.commitmentFormat)
+    val commitFees = Transactions.commitTxTotalCost(commitment.remoteCommitParams.dustLimit, commitment.remoteCommit.spec, commitment.commitmentFormat)
     assert(commitFees > 20_000.sat)
 
     val sender = TestProbe()
@@ -1715,8 +1715,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   private def reconnect(f: FixtureParam, sendReestablish: Boolean = true): (ChannelReestablish, ChannelReestablish) = {
     import f._
 
-    val aliceInit = Init(alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params.localParams.initFeatures)
-    val bobInit = Init(bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params.localParams.initFeatures)
+    val aliceInit = Init(alice.commitments.localChannelParams.initFeatures)
+    val bobInit = Init(bob.commitments.localChannelParams.initFeatures)
     alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
     val channelReestablishAlice = alice2bob.expectMsgType[ChannelReestablish]
@@ -3118,8 +3118,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // Bob publishes his commit tx for the first splice transaction (which double-spends the second splice transaction).
     val bobCommitments = bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments
     val previousCommitment = bobCommitments.active.find(_.fundingTxIndex == 1).get
-    val bobCommitTx1 = previousCommitment.fullySignedLocalCommitTx(bobCommitments.params, bob.underlyingActor.channelKeys)
-    val bobHtlcTxs = previousCommitment.htlcTxs(bobCommitments.params, bob.underlyingActor.channelKeys).map(_._1)
+    val bobCommitTx1 = previousCommitment.fullySignedLocalCommitTx(bobCommitments.channelParams, bob.underlyingActor.channelKeys)
+    val bobHtlcTxs = previousCommitment.htlcTxs(bobCommitments.channelParams, bob.underlyingActor.channelKeys).map(_._1)
     Transaction.correctlySpends(bobCommitTx1, Seq(fundingTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
     assert(alice2blockchain.expectMsgType[WatchAlternativeCommitTxConfirmed].txId == bobCommitTx1.txid)
@@ -3557,12 +3557,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     crossSign(bob, alice, bob2alice, alice2bob)
     val aliceCommitments1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     aliceCommitments1.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments1.params, alice.underlyingActor.channelKeys)
+      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments1.channelParams, alice.underlyingActor.channelKeys)
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     val bobCommitments1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     bobCommitments1.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(bobCommitments1.params, bob.underlyingActor.channelKeys)
+      val commitTx = c.fullySignedLocalCommitTx(bobCommitments1.channelParams, bob.underlyingActor.channelKeys)
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
@@ -3571,12 +3571,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     crossSign(alice, bob, alice2bob, bob2alice)
     val aliceCommitments2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     aliceCommitments2.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments2.params, alice.underlyingActor.channelKeys)
+      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments2.channelParams, alice.underlyingActor.channelKeys)
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     val bobCommitments2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     bobCommitments2.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(bobCommitments2.params, bob.underlyingActor.channelKeys)
+      val commitTx = c.fullySignedLocalCommitTx(bobCommitments2.channelParams, bob.underlyingActor.channelKeys)
       Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 

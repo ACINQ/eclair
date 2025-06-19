@@ -166,7 +166,7 @@ private[channel] object ChannelTypes0 {
                           maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                           requestedChannelReserve_opt: Option[Satoshi],
                           htlcMinimum: MilliSatoshi,
-                          toSelfDelay: CltvExpiryDelta,
+                          toRemoteDelay: CltvExpiryDelta,
                           maxAcceptedHtlcs: Int,
                           fundingPubKey: PublicKey,
                           revocationBasepoint: PublicKey,
@@ -175,13 +175,13 @@ private[channel] object ChannelTypes0 {
                           htlcBasepoint: PublicKey,
                           initFeatures: Features[InitFeature],
                           upfrontShutdownScript_opt: Option[ByteVector]) {
-    def migrate(): channel.RemoteParams = channel.RemoteParams(
+    def migrate(): channel.RemoteChannelParams = channel.RemoteChannelParams(
       nodeId = nodeId,
       dustLimit = dustLimit,
       maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat,
       initialRequestedChannelReserve_opt = requestedChannelReserve_opt,
       htlcMinimum = htlcMinimum,
-      toSelfDelay = toSelfDelay,
+      toRemoteDelay = toRemoteDelay,
       maxAcceptedHtlcs = maxAcceptedHtlcs,
       revocationBasepoint = revocationBasepoint,
       paymentBasepoint = paymentBasepoint,
@@ -195,7 +195,7 @@ private[channel] object ChannelTypes0 {
   case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long)
 
   case class Commitments(channelVersion: ChannelVersion,
-                         localParams: LocalParams, remoteParams: RemoteParams,
+                         localParams: LocalChannelParams, remoteParams: RemoteParams,
                          channelFlags: ChannelFlags,
                          localCommit: LocalCommit, remoteCommit: RemoteCommit,
                          localChanges: LocalChanges, remoteChanges: RemoteChanges,

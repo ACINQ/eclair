@@ -54,11 +54,11 @@ object PendingChannelsRateLimiter {
   private[io] def filterPendingChannels(nodeParams: NodeParams, channels: Seq[PersistentChannelData]): Map[PublicKey, Seq[PersistentChannelData]] = {
     channels.filter {
       case p: PersistentChannelData if nodeParams.channelConf.channelOpenerWhitelist.contains(p.remoteNodeId) => false
-      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED if !d.commitments.params.localParams.isChannelOpener => true
+      case d: DATA_WAIT_FOR_FUNDING_CONFIRMED if !d.commitments.localChannelParams.isChannelOpener => true
       case d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED if !d.channelParams.localParams.isChannelOpener => true
-      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED if !d.commitments.params.localParams.isChannelOpener => true
-      case d: DATA_WAIT_FOR_CHANNEL_READY if !d.commitments.params.localParams.isChannelOpener => true
-      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY if !d.commitments.params.localParams.isChannelOpener => true
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED if !d.commitments.localChannelParams.isChannelOpener => true
+      case d: DATA_WAIT_FOR_CHANNEL_READY if !d.commitments.localChannelParams.isChannelOpener => true
+      case d: DATA_WAIT_FOR_DUAL_FUNDING_READY if !d.commitments.localChannelParams.isChannelOpener => true
       case _ => false
     }.groupBy(_.remoteNodeId)
   }

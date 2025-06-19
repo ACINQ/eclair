@@ -1601,7 +1601,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     // Force-close channel and verify txs sent to watcher.
     val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
-    bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.commitmentFormat match {
+    bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => assert(remoteCommitTx.txOut.size == 4)
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => assert(remoteCommitTx.txOut.size == 6)
     }
@@ -1612,11 +1612,11 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     probe.expectMsg(remoteCommitTx.txid)
     generateBlocks(1)
 
-    val anchorTx_opt = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.commitmentFormat match {
+    val anchorTx_opt = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => None
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx])
     }
-    val mainTx_opt = if (!bob.stateData.asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.paysDirectlyToWallet) Some(alice2blockchain.expectFinalTxPublished("remote-main-delayed")) else None
+    val mainTx_opt = if (!bob.stateData.asInstanceOf[DATA_NORMAL].commitments.channelParams.channelFeatures.paysDirectlyToWallet) Some(alice2blockchain.expectFinalTxPublished("remote-main-delayed")) else None
     val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(claimHtlcSuccess.txInfo.isInstanceOf[ClaimHtlcSuccessTx])
     val claimHtlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))

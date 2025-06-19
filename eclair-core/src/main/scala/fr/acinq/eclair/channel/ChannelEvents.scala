@@ -62,7 +62,7 @@ case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, aliase
    * However we only include the real scid if option_scid_alias is disabled, because we otherwise want to hide it.
    */
   def scidsForRouting: Seq[ShortChannelId] = {
-    val canUseRealScid = !commitments.params.channelFeatures.hasFeature(Features.ScidAlias)
+    val canUseRealScid = !commitments.channelParams.channelFeatures.hasFeature(Features.ScidAlias)
     if (canUseRealScid) {
       announcement_opt.map(_.shortChannelId).toSeq :+ aliases.localAlias
     } else {
