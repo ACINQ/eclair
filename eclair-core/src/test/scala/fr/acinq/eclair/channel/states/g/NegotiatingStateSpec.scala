@@ -483,19 +483,20 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     bob2blockchain.expectMsgType[WatchTxConfirmed]
   }
 
-  test("recv ClosingComplete (both outputs)", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+  def `recv ClosingComplete (both outputs)`(f: FixtureParam): Unit = {
     import f._
+
     aliceClose(f)
     val aliceClosingComplete = alice2bob.expectMsgType[ClosingComplete]
     assert(aliceClosingComplete.fees > 0.sat)
-    assert(aliceClosingComplete.closerAndCloseeOutputsSig_opt.nonEmpty)
-    assert(aliceClosingComplete.closerOutputOnlySig_opt.nonEmpty)
-    assert(aliceClosingComplete.closeeOutputOnlySig_opt.isEmpty)
+    assert(aliceClosingComplete.closerAndCloseeOutputsSigOrPartialSig_opt.nonEmpty)
+    assert(aliceClosingComplete.closerOutputOnlySigOrPartialSig_opt.nonEmpty)
+    assert(aliceClosingComplete.closeeOutputOnlySigOrPartialSig_opt.isEmpty)
     val bobClosingComplete = bob2alice.expectMsgType[ClosingComplete]
     assert(bobClosingComplete.fees > 0.sat)
-    assert(bobClosingComplete.closerAndCloseeOutputsSig_opt.nonEmpty)
-    assert(bobClosingComplete.closerOutputOnlySig_opt.nonEmpty)
-    assert(bobClosingComplete.closeeOutputOnlySig_opt.isEmpty)
+    assert(bobClosingComplete.closerAndCloseeOutputsSigOrPartialSig_opt.nonEmpty)
+    assert(bobClosingComplete.closerOutputOnlySigOrPartialSig_opt.nonEmpty)
+    assert(bobClosingComplete.closeeOutputOnlySigOrPartialSig_opt.isEmpty)
 
     alice2bob.forward(bob, aliceClosingComplete)
     val bobClosingSig = bob2alice.expectMsgType[ClosingSig]
@@ -529,6 +530,18 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(aliceTx.tx.txid != bobTx.tx.txid)
     alice2blockchain.expectWatchTxConfirmed(bobTx.tx.txid)
     assert(bob.stateName == NEGOTIATING_SIMPLE)
+  }
+
+  test("recv ClosingComplete (both outputs)", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+    `recv ClosingComplete (both outputs)`(f)
+  }
+
+  test("recv ClosingComplete (both outputs, simple taproot channels)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+    `recv ClosingComplete (both outputs)`(f)
+  }
+
+  test("recv ClosingComplete (both outputs, simple taproot channels zero fee)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee)) { f =>
+    `recv ClosingComplete (both outputs)`(f)
   }
 
   test("recv ClosingComplete (single output)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
