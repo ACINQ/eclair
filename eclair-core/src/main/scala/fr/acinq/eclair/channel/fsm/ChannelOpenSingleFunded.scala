@@ -317,6 +317,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                   FundingSigned(channelId = channelId, signature = localSigOfRemoteTx)
               }
               val commitment = Commitment(
+                params.commitmentFormat,
                 fundingTxIndex = 0,
                 firstRemoteCommitIndex = 0,
                 remoteFundingPubKey = remoteFundingPubKey,
@@ -371,6 +372,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           handleLocalError(InvalidCommitmentSignature(d.channelId, fundingTx.txid, commitmentNumber = 0, localCommitTx.tx), d, Some(fundingSigned))
         case true =>
           val commitment = Commitment(
+            params.commitmentFormat,
             fundingTxIndex = 0,
             firstRemoteCommitIndex = 0,
             remoteFundingPubKey = remoteFundingPubKey,

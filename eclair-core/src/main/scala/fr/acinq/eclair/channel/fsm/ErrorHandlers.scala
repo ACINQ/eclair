@@ -227,12 +227,12 @@ trait ErrorHandlers extends CommonHandlers {
     val publishCommitTx = PublishFinalTx(lcp.commitTx, commitment.commitInput.outPoint, "commit-tx", Closing.commitTxFee(commitment.commitInput, lcp.commitTx, commitment.localParams.paysCommitTxFees), None)
     val publishAnchorTx_opt = txs.anchorTx_opt match {
       case Some(anchorTx) if !lcp.isConfirmed =>
-        val confirmationTarget = Closing.confirmationTarget(commitment.localCommit, commitment.localParams.dustLimit, commitment.params.commitmentFormat, nodeParams.onChainFeeConf)
+        val confirmationTarget = Closing.confirmationTarget(commitment.localCommit, commitment.localParams.dustLimit, commitment.commitmentFormat, nodeParams.onChainFeeConf)
         Some(PublishReplaceableTx(anchorTx, lcp.commitTx, commitment, confirmationTarget))
       case _ => None
     }
     val publishMainDelayedTx_opt = txs.mainDelayedTx_opt.map(tx => PublishFinalTx(tx, None))
-    val publishHtlcTxs = txs.htlcTxs.map(htlcTx => commitment.params.commitmentFormat match {
+    val publishHtlcTxs = txs.htlcTxs.map(htlcTx => commitment.commitmentFormat match {
       case DefaultCommitmentFormat => PublishFinalTx(htlcTx, Some(lcp.commitTx.txid))
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => PublishReplaceableTx(htlcTx, lcp.commitTx, commitment, Closing.confirmationTarget(htlcTx))
     })
@@ -304,7 +304,7 @@ trait ErrorHandlers extends CommonHandlers {
     }
     val publishAnchorTx_opt = txs.anchorTx_opt match {
       case Some(anchorTx) if !rcp.isConfirmed =>
-        val confirmationTarget = Closing.confirmationTarget(remoteCommit, commitment.remoteParams.dustLimit, commitment.params.commitmentFormat, nodeParams.onChainFeeConf)
+        val confirmationTarget = Closing.confirmationTarget(remoteCommit, commitment.remoteParams.dustLimit, commitment.commitmentFormat, nodeParams.onChainFeeConf)
         Some(PublishReplaceableTx(anchorTx, rcp.commitTx, commitment, confirmationTarget))
       case _ => None
     }
@@ -332,7 +332,7 @@ trait ErrorHandlers extends CommonHandlers {
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
     Closing.RevokedClose.getRemotePerCommitmentSecret(d.commitments.params, channelKeys, d.commitments.remotePerCommitmentSecrets, tx) match {
       case Some((commitmentNumber, remotePerCommitmentSecret)) =>
-        val (revokedCommitPublished, closingTxs) = Closing.RevokedClose.claimCommitTxOutputs(d.commitments.params, channelKeys, tx, commitmentNumber, remotePerCommitmentSecret, nodeParams.db.channels, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
+        val (revokedCommitPublished, closingTxs) = Closing.RevokedClose.claimCommitTxOutputs(d.commitments.params, commitment.commitmentFormat, channelKeys, tx, commitmentNumber, remotePerCommitmentSecret, nodeParams.db.channels, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
         log.warning("txid={} was a revoked commitment, publishing the penalty tx", tx.txid)
         context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(commitment.commitInput, tx, d.commitments.params.localParams.paysCommitTxFees), "revoked-commit"))
         val exc = FundingTxSpent(d.channelId, tx.txid)
@@ -351,7 +351,7 @@ trait ErrorHandlers extends CommonHandlers {
           context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(d.commitments.latest.commitInput, tx, d.commitments.latest.localParams.paysCommitTxFees), "future-remote-commit"))
           val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
           val commitKeys = d.commitments.latest.remoteKeys(channelKeys, remotePerCommitmentPoint)
-          val mainTx_opt = Closing.RemoteClose.claimMainOutput(d.commitments.params, commitKeys, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
+          val mainTx_opt = Closing.RemoteClose.claimMainOutput(d.commitments.params, d.commitments.latest.commitmentFormat, commitKeys, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
           mainTx_opt.foreach(tx => log.warning("publishing our recovery transaction: tx={}", tx.toString))
           val remoteCommitPublished = RemoteCommitPublished(
             commitTx = tx,

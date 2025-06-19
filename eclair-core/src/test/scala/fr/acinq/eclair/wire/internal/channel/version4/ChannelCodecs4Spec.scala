@@ -133,7 +133,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       lockTime = 0
     )
     val waitingForSigs = InteractiveTxSigningSession.WaitingForSigs(
-      InteractiveTxParams(channelId, isInitiator = true, 100_000 sat, 75_000 sat, None, randomKey().publicKey, Nil, 0, 330 sat, FeeratePerKw(500 sat), RequireConfirmedInputs(forLocal = false, forRemote = false)),
+      InteractiveTxParams(channelId, isInitiator = true, 100_000 sat, 75_000 sat, None, randomKey().publicKey, Nil, 0, 330 sat, FeeratePerKw(500 sat), RequireConfirmedInputs(forLocal = false, forRemote = false), DefaultCommitmentFormat),
       fundingTxIndex = 0,
       PartiallySignedSharedTransaction(fundingTx, TxSignatures(channelId, randomTxId(), Nil)),
       Left(UnsignedLocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(1000 sat), 100_000_000 msat, 75_000_000 msat), randomTxId(), fundingInput)),
@@ -181,7 +181,7 @@ class ChannelCodecs4Spec extends AnyFunSuite {
           PrivateKey(ByteVector.fromValidHex("02" * 32)).publicKey
         )),
         remoteFundingPubKey = PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey,
-        localOutputs = Nil, lockTime = 0, dustLimit = 330.sat, targetFeerate = FeeratePerKw(FeeratePerByte(3.sat)), requireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false)),
+        localOutputs = Nil, lockTime = 0, dustLimit = 330.sat, targetFeerate = FeeratePerKw(FeeratePerByte(3.sat)), requireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false), DefaultCommitmentFormat),
       liquidityPurchase_opt = None
     )
     assert(decoded == dualFundedUnconfirmedFundingTx)

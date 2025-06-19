@@ -207,7 +207,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             lockTime = open.lockTime,
             dustLimit = open.dustLimit.max(accept.dustLimit),
             targetFeerate = open.fundingFeerate,
-            requireConfirmedInputs = RequireConfirmedInputs(forLocal = open.requireConfirmedInputs, forRemote = accept.requireConfirmedInputs)
+            requireConfirmedInputs = RequireConfirmedInputs(forLocal = open.requireConfirmedInputs, forRemote = accept.requireConfirmedInputs),
+            channelParams.commitmentFormat
           )
           val purpose = InteractiveTxBuilder.FundingTx(open.commitmentFeerate, open.firstPerCommitmentPoint, feeBudget_opt = None)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
@@ -271,7 +272,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             lockTime = d.lastSent.lockTime,
             dustLimit = d.lastSent.dustLimit.max(accept.dustLimit),
             targetFeerate = d.lastSent.fundingFeerate,
-            requireConfirmedInputs = RequireConfirmedInputs(forLocal = accept.requireConfirmedInputs, forRemote = d.lastSent.requireConfirmedInputs)
+            requireConfirmedInputs = RequireConfirmedInputs(forLocal = accept.requireConfirmedInputs, forRemote = d.lastSent.requireConfirmedInputs),
+            channelParams.commitmentFormat
           )
           val purpose = InteractiveTxBuilder.FundingTx(d.lastSent.commitmentFeerate, accept.firstPerCommitmentPoint, feeBudget_opt = d.init.fundingTxFeeBudget_opt)
           val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
