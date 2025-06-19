@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, TxId}
 import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
+import fr.acinq.eclair.transactions.Transactions.CommitmentFormat
 import fr.acinq.eclair.wire.protocol.ChannelTlv.{nextLocalNonceTlvCodec, nextLocalNoncesTlvCodec}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tmillisatoshi}
@@ -71,6 +72,8 @@ object ChannelTlv {
   case class RequestFundingTlv(request: LiquidityAds.RequestFunding) extends OpenDualFundedChannelTlv with TxInitRbfTlv with SpliceInitTlv
 
   val requestFundingCodec: Codec[RequestFundingTlv] = tlvField(LiquidityAds.Codecs.requestFunding)
+
+  case class UpgradeCommitmentFormatTlv(commitmentFormat: CommitmentFormat) extends SpliceInitTlv with SpliceAckTlv
 
   /** Accept inbound liquidity request. */
   case class ProvideFundingTlv(willFund: LiquidityAds.WillFund) extends AcceptDualFundedChannelTlv with TxAckRbfTlv with SpliceAckTlv
@@ -181,6 +184,7 @@ object SpliceInitTlv {
     // We use a temporary TLV while the spec is being reviewed.
     .typecase(UInt64(1339), requestFundingCodec)
     .typecase(UInt64(0x47000007), tlvField(tmillisatoshi.as[PushAmountTlv]))
+    .typecase(UInt64(0x47000011), tlvField(commitmentFormatCodec.as[UpgradeCommitmentFormatTlv]))
   )
 }
 
@@ -194,6 +198,7 @@ object SpliceAckTlv {
     .typecase(UInt64(1339), provideFundingCodec)
     .typecase(UInt64(41042), feeCreditUsedCodec)
     .typecase(UInt64(0x47000007), tlvField(tmillisatoshi.as[PushAmountTlv]))
+    .typecase(UInt64(0x47000011), tlvField(commitmentFormatCodec.as[UpgradeCommitmentFormatTlv]))
   )
 }
 

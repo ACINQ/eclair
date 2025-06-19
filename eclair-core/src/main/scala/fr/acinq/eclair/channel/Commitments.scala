@@ -189,10 +189,11 @@ object ChannelSpendSignature {
 case class LocalCommit(index: Long, spec: CommitmentSpec, txId: TxId, input: InputInfo, remoteSig: ChannelSpendSignature, htlcRemoteSigs: List[ByteVector64])
 
 object LocalCommit {
-  def fromCommitSig(params: ChannelParams, commitKeys: LocalCommitmentKeys, fundingTxId: TxId,
+  def fromCommitSig(params: ChannelParams, commitmentFormat: CommitmentFormat,
+                    commitKeys: LocalCommitmentKeys, fundingTxId: TxId,
                     fundingKey: PrivateKey, remoteFundingPubKey: PublicKey, commitInput: InputInfo,
                     commit: CommitSig, localCommitIndex: Long, spec: CommitmentSpec)(implicit log: LoggingAdapter): Either[ChannelException, LocalCommit] = {
-    val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(params, commitKeys, localCommitIndex, fundingKey, remoteFundingPubKey, commitInput, spec)
+    val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(params, commitmentFormat, commitKeys, localCommitIndex, fundingKey, remoteFundingPubKey, commitInput, spec)
 
     val remoteCommitSigOk = commit.sigOrPartialSig match {
       case ChannelSpendSignature.IndividualSignature(sig) => localCommitTx.checkRemoteSig(fundingKey.publicKey, remoteFundingPubKey, ChannelSpendSignature.IndividualSignature(sig))
@@ -222,13 +223,13 @@ object LocalCommit {
 
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePerCommitmentPoint: PublicKey) {
-  def sign(params: ChannelParams, channelKeys: ChannelKeys, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo, remoteNonce_opt: Option[IndividualNonce]): CommitSig = {
+  def sign(params: ChannelParams, commitmentFormat: CommitmentFormat, channelKeys: ChannelKeys, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo, remoteNonce_opt: Option[IndividualNonce]): CommitSig = {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val commitKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentPoint)
-    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, commitKeys, index, fundingKey, remoteFundingPubKey, commitInput, spec)
+    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, commitmentFormat, commitKeys, index, fundingKey, remoteFundingPubKey, commitInput, spec)
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
     val htlcSigs = sortedHtlcTxs.map(_.localSig(commitKeys))
-    params.commitmentFormat match {
+    commitmentFormat match {
       case _: SegwitV0CommitmentFormat =>
         val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey).sig
         CommitSig(params.channelId, sig, htlcSigs.toList)
@@ -267,7 +268,8 @@ case class CommitTxIds(localCommitTxId: TxId, remoteCommitTxId: TxId, nextRemote
  *                               Once the funding transaction confirms, our peer won't be able to publish revoked
  *                               commitments with lower commitment indices.
  */
-case class Commitment(fundingTxIndex: Long,
+case class Commitment(commitmentFormat: CommitmentFormat,
+                      fundingTxIndex: Long,
                       firstRemoteCommitIndex: Long,
                       remoteFundingPubKey: PublicKey,
                       localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
@@ -319,18 +321,17 @@ case class Commitment(fundingTxIndex: Long,
   // In that case the current commit tx fee is higher than the funder fee buffer and will dominate the balance restrictions.
 
   def availableBalanceForSend(params: ChannelParams, changes: CommitmentChanges): MilliSatoshi = {
-    import params._
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val remoteCommit1 = nextRemoteCommit_opt.map(_.commit).getOrElse(remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
     val balanceNoFees = (reduced.toRemote - localChannelReserve(params)).max(0 msat)
-    if (localParams.paysCommitTxFees) {
+    if (params.localParams.paysCommitTxFees) {
       // The initiator always pays the on-chain fees, so we must subtract that from the amount we can send.
-      val commitFees = commitTxTotalCostMsat(remoteParams.dustLimit, reduced, commitmentFormat)
+      val commitFees = commitTxTotalCostMsat(params.remoteParams.dustLimit, reduced, commitmentFormat)
       // the initiator needs to keep a "funder fee buffer" (see explanation above)
-      val funderFeeBuffer = commitTxTotalCostMsat(remoteParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), commitmentFormat) + htlcOutputFee(reduced.commitTxFeerate * 2, commitmentFormat)
+      val funderFeeBuffer = commitTxTotalCostMsat(params.remoteParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), commitmentFormat) + htlcOutputFee(reduced.commitTxFeerate * 2, commitmentFormat)
       val amountToReserve = commitFees.max(funderFeeBuffer)
-      if (balanceNoFees - amountToReserve < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced, commitmentFormat)) {
+      if (balanceNoFees - amountToReserve < offeredHtlcTrimThreshold(params.remoteParams.dustLimit, reduced, commitmentFormat)) {
         // htlc will be trimmed
         (balanceNoFees - amountToReserve).max(0 msat)
       } else {
@@ -348,19 +349,18 @@ case class Commitment(fundingTxIndex: Long,
   }
 
   def availableBalanceForReceive(params: ChannelParams, changes: CommitmentChanges): MilliSatoshi = {
-    import params._
     val reduced = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
     val balanceNoFees = (reduced.toRemote - remoteChannelReserve(params)).max(0 msat)
-    if (localParams.paysCommitTxFees) {
+    if (params.localParams.paysCommitTxFees) {
       // The non-initiator doesn't pay on-chain fees so we don't take those into account when receiving.
       balanceNoFees
     } else {
       // The initiator always pays the on-chain fees, so we must subtract that from the amount we can receive.
-      val commitFees = commitTxTotalCostMsat(localParams.dustLimit, reduced, commitmentFormat)
+      val commitFees = commitTxTotalCostMsat(params.localParams.dustLimit, reduced, commitmentFormat)
       // we expected the initiator to keep a "funder fee buffer" (see explanation above)
-      val funderFeeBuffer = commitTxTotalCostMsat(localParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), commitmentFormat) + htlcOutputFee(reduced.commitTxFeerate * 2, commitmentFormat)
+      val funderFeeBuffer = commitTxTotalCostMsat(params.localParams.dustLimit, reduced.copy(commitTxFeerate = reduced.commitTxFeerate * 2), commitmentFormat) + htlcOutputFee(reduced.commitTxFeerate * 2, commitmentFormat)
       val amountToReserve = commitFees.max(funderFeeBuffer)
-      if (balanceNoFees - amountToReserve < receivedHtlcTrimThreshold(localParams.dustLimit, reduced, commitmentFormat)) {
+      if (balanceNoFees - amountToReserve < receivedHtlcTrimThreshold(params.localParams.dustLimit, reduced, commitmentFormat)) {
         // htlc will be trimmed
         (balanceNoFees - amountToReserve).max(0 msat)
       } else {
@@ -653,7 +653,7 @@ case class Commitment(fundingTxIndex: Long,
     // remote commitment will include all local proposed changes + remote acked changes
     val spec = CommitmentSpec.reduce(remoteCommit.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
-    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, commitKeys, remoteCommit.index + 1, fundingKey, remoteFundingPubKey, commitInput, spec)
+    val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, this.commitmentFormat, commitKeys, remoteCommit.index + 1, fundingKey, remoteFundingPubKey, commitInput, spec)
     val htlcSigs = htlcTxs.sortBy(_.input.outPoint.index).map(_.localSig(commitKeys))
 
     // NB: IN/OUT htlcs are inverted because this is the remote commit
@@ -694,7 +694,7 @@ case class Commitment(fundingTxIndex: Long,
     val localCommitIndex = localCommit.index + 1
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val spec = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
-    LocalCommit.fromCommitSig(params, commitKeys, fundingTxId, fundingKey, remoteFundingPubKey, commitInput, commit, localCommitIndex, spec).map { localCommit1 =>
+    LocalCommit.fromCommitSig(params, this.commitmentFormat, commitKeys, fundingTxId, fundingKey, remoteFundingPubKey, commitInput, commit, localCommitIndex, spec).map { localCommit1 =>
       log.info(s"built local commit number=$localCommitIndex toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${localCommit1.txId} fundingTxId=$fundingTxId", spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","))
       copy(localCommit = localCommit1)
     }
@@ -704,7 +704,7 @@ case class Commitment(fundingTxIndex: Long,
   def fullySignedLocalCommitTx(params: ChannelParams, channelKeys: ChannelKeys): Transaction = {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val commitKeys = localKeys(params, channelKeys)
-    val (unsignedCommitTx, _) = Commitment.makeLocalTxs(params, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
+    val (unsignedCommitTx, _) = Commitment.makeLocalTxs(params, this.commitmentFormat, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
     localCommit.remoteSig match {
       case remoteSig: ChannelSpendSignature.IndividualSignature =>
         val localSig = unsignedCommitTx.sign(fundingKey, remoteFundingPubKey)
@@ -739,7 +739,7 @@ case class Commitment(fundingTxIndex: Long,
 
   /** Return the HTLC transactions for our local commit and the corresponding remote signatures. */
   def htlcTxs(params: ChannelParams, fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys): Seq[(UnsignedHtlcTx, ByteVector64)] = {
-    val (_, htlcTxs) = Commitment.makeLocalTxs(params, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
+    val (_, htlcTxs) = Commitment.makeLocalTxs(params, this.commitmentFormat, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, localCommit.input, localCommit.spec)
     htlcTxs.sortBy(_.input.outPoint.index).zip(localCommit.htlcRemoteSigs)
   }
 
@@ -747,28 +747,30 @@ case class Commitment(fundingTxIndex: Long,
 
 object Commitment {
   def makeLocalTxs(params: ChannelParams,
+                   commitmentFormat: CommitmentFormat,
                    commitKeys: LocalCommitmentKeys,
                    commitTxNumber: Long,
                    localFundingKey: PrivateKey,
                    remoteFundingPubKey: PublicKey,
                    commitmentInput: InputInfo,
                    spec: CommitmentSpec): (CommitTx, Seq[UnsignedHtlcTx]) = {
-    val outputs = makeCommitTxOutputs(localFundingKey.publicKey, remoteFundingPubKey, commitKeys.publicKeys, params.localParams.paysCommitTxFees, params.localParams.dustLimit, params.remoteParams.toSelfDelay, spec, params.commitmentFormat)
+    val outputs = makeCommitTxOutputs(localFundingKey.publicKey, remoteFundingPubKey, commitKeys.publicKeys, params.localParams.paysCommitTxFees, params.localParams.dustLimit, params.remoteParams.toSelfDelay, spec, commitmentFormat)
     val commitTx = makeCommitTx(commitmentInput, commitTxNumber, commitKeys.ourPaymentBasePoint, params.remoteParams.paymentBasepoint, params.localParams.isChannelOpener, outputs)
-    val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, params.commitmentFormat)
+    val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, commitmentFormat)
     (commitTx, htlcTxs)
   }
 
   def makeRemoteTxs(params: ChannelParams,
+                    commitmentFormat: CommitmentFormat,
                     commitKeys: RemoteCommitmentKeys,
                     commitTxNumber: Long,
                     localFundingKey: PrivateKey,
                     remoteFundingPubKey: PublicKey,
                     commitmentInput: InputInfo,
                     spec: CommitmentSpec): (CommitTx, Seq[UnsignedHtlcTx]) = {
-    val outputs = makeCommitTxOutputs(remoteFundingPubKey, localFundingKey.publicKey, commitKeys.publicKeys, !params.localParams.paysCommitTxFees, params.remoteParams.dustLimit, params.localParams.toSelfDelay, spec, params.commitmentFormat)
+    val outputs = makeCommitTxOutputs(remoteFundingPubKey, localFundingKey.publicKey, commitKeys.publicKeys, !params.localParams.paysCommitTxFees, params.remoteParams.dustLimit, params.localParams.toSelfDelay, spec, commitmentFormat)
     val commitTx = makeCommitTx(commitmentInput, commitTxNumber, params.remoteParams.paymentBasepoint, commitKeys.ourPaymentBasePoint, !params.localParams.isChannelOpener, outputs)
-    val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, params.commitmentFormat)
+    val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, commitmentFormat)
     (commitTx, htlcTxs)
   }
 }
@@ -781,13 +783,13 @@ case class AnnouncedCommitment(commitment: Commitment, announcement: ChannelAnno
 }
 
 /** Subset of Commitments when we want to work with a single, specific commitment. */
-case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
-                          fundingTxIndex: Long,
-                          firstRemoteCommitIndex: Long,
-                          remoteFundingPubKey: PublicKey,
-                          localFundingStatus: LocalFundingStatus, remoteFundingStatus: RemoteFundingStatus,
-                          localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[NextRemoteCommit]) {
+case class FullCommitment(params: ChannelParams, changes: CommitmentChanges, commitment: Commitment) {
   val channelId: ByteVector32 = params.channelId
+  val localFundingStatus: LocalFundingStatus = commitment.localFundingStatus
+  val remoteFundingPubKey: PublicKey = commitment.remoteFundingPubKey
+  val localCommit: LocalCommit = commitment.localCommit
+  val remoteCommit: RemoteCommit = commitment.remoteCommit
+  val nextRemoteCommit_opt: Option[NextRemoteCommit] = commitment.nextRemoteCommit_opt
   val shortChannelId_opt: Option[RealShortChannelId] = localFundingStatus match {
     case f: LocalFundingStatus.ConfirmedFundingTx => Some(f.shortChannelId)
     case _ => None
@@ -796,9 +798,10 @@ case class FullCommitment(params: ChannelParams, changes: CommitmentChanges,
   val remoteParams: RemoteParams = params.remoteParams
   val commitInput: InputInfo = localCommit.input
   val fundingTxId: TxId = commitInput.outPoint.txid
-  val commitTxIds: CommitTxIds = CommitTxIds(localCommit.txId, remoteCommit.txId, nextRemoteCommit_opt.map(_.commit.txId))
+  val commitTxIds: CommitTxIds = commitment.commitTxIds
   val capacity: Satoshi = commitInput.txOut.amount
-  val commitment: Commitment = Commitment(fundingTxIndex, firstRemoteCommitIndex, remoteFundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, nextRemoteCommit_opt)
+  val fundingTxIndex: Long = commitment.fundingTxIndex
+  //val commitment: Commitment = Commitment(fundingTxIndex, firstRemoteCommitIndex, remoteFundingPubKey, localFundingStatus, remoteFundingStatus, localCommit, remoteCommit, nextRemoteCommit_opt)
 
   def localKeys(channelKeys: ChannelKeys): LocalCommitmentKeys = commitment.localKeys(params, channelKeys)
 
@@ -874,7 +877,7 @@ case class Commitments(params: ChannelParams,
   val all: Seq[Commitment] = active ++ inactive
 
   // We always use the last commitment that was created, to make sure we never go back in time.
-  val latest: FullCommitment = FullCommitment(params, changes, active.head.fundingTxIndex, active.head.firstRemoteCommitIndex, active.head.remoteFundingPubKey, active.head.localFundingStatus, active.head.remoteFundingStatus, active.head.localCommit, active.head.remoteCommit, active.head.nextRemoteCommit_opt)
+  val latest: FullCommitment = FullCommitment(params, changes, active.head)
 
   val lastLocalLocked_opt: Option[Commitment] = active.filter(_.localFundingStatus.isInstanceOf[LocalFundingStatus.Locked]).sortBy(_.fundingTxIndex).lastOption
   val lastRemoteLocked_opt: Option[Commitment] = active.filter(c => c.remoteFundingStatus == RemoteFundingStatus.Locked).sortBy(_.fundingTxIndex).lastOption
@@ -1236,22 +1239,7 @@ case class Commitments(params: ChannelParams,
   }
 
   /** This function should be used to ignore a commit_sig that we've already received. */
-  def ignoreRetransmittedCommitSig(channelKeys: ChannelKeys, commitSig: CommitSig): Boolean = {
-    val isLatestSig = latest.localCommit.remoteSig match {
-      case ChannelSpendSignature.IndividualSignature(latestRemoteSig) => false //  latestRemoteSig == commitSig.signature
-      case psig: ChannelSpendSignature.PartialSignatureWithNonce =>
-        val fundingKey = channelKeys.fundingKey(latest.fundingTxIndex)
-        val fundingTxId = if (!this.params.channelFeatures.hasFeature(Features.DualFunding) && localCommitIndex == 0 && latest.fundingTxIndex == 0) {
-          TxId(ByteVector32.Zeroes)
-        } else latest.fundingTxId
-        val localNonce = NonceGenerator.verificationNonce(fundingTxId, fundingKey, localCommitIndex)
-        val commitKeys = LocalCommitmentKeys(params, channelKeys, latest.localCommit.index)
-        val (commitTx, _) = Commitment.makeLocalTxs(params, commitKeys, latest.localCommit.index, fundingKey, latest.remoteFundingPubKey, latest.localCommit.input, latest.localCommit.spec)
-        val result = commitTx.checkRemotePartialSignature(fundingKey.publicKey, latest.remoteFundingPubKey, psig, localNonce.publicNonce)
-        false // TODO: is this valid ?
-    }
-    params.channelFeatures.hasFeature(Features.DualFunding) && isLatestSig
-  }
+  def ignoreRetransmittedCommitSig(channelKeys: ChannelKeys, commitSig: CommitSig): Boolean = false
 
   def localFundingSigs(fundingTxId: TxId): Option[TxSignatures] = {
     all.find(_.fundingTxId == fundingTxId).flatMap(_.localFundingStatus.localSigs_opt)

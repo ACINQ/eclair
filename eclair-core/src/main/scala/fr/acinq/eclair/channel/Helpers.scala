@@ -399,6 +399,7 @@ object Helpers {
                            localFundingKey: PrivateKey, remoteFundingPubKey: PublicKey,
                            localCommitKeys: LocalCommitmentKeys, remoteCommitKeys: RemoteCommitmentKeys): Either[ChannelException, (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx)] = {
       makeCommitTxs(params,
+        params.commitmentFormat,
         fundingAmount = localFundingAmount + remoteFundingAmount,
         toLocal = localFundingAmount.toMilliSatoshi - localPushAmount + remotePushAmount,
         toRemote = remoteFundingAmount.toMilliSatoshi + localPushAmount - remotePushAmount,
@@ -418,6 +419,7 @@ object Helpers {
      * outputs. This function should only be used when commitments are synchronized (local and remote htlcs match).
      */
     def makeCommitTxs(params: ChannelParams,
+                      commitmentFormat: CommitmentFormat,
                       fundingAmount: Satoshi,
                       toLocal: MilliSatoshi, toRemote: MilliSatoshi,
                       localHtlcs: Set[DirectedHtlc],
@@ -442,9 +444,9 @@ object Helpers {
         }
       }
 
-      val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, localFundingKey.publicKey, remoteFundingPubKey, params.commitmentFormat)
-      val (localCommitTx, _) = Commitment.makeLocalTxs(params, localCommitKeys, localCommitmentIndex, localFundingKey, remoteFundingPubKey, commitmentInput, localSpec)
-      val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, remoteCommitKeys, remoteCommitmentIndex, localFundingKey, remoteFundingPubKey, commitmentInput, remoteSpec)
+      val commitmentInput = makeFundingInputInfo(fundingTxId, fundingTxOutputIndex, fundingAmount, localFundingKey.publicKey, remoteFundingPubKey, commitmentFormat)
+      val (localCommitTx, _) = Commitment.makeLocalTxs(params, commitmentFormat, localCommitKeys, localCommitmentIndex, localFundingKey, remoteFundingPubKey, commitmentInput, localSpec)
+      val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, commitmentFormat, remoteCommitKeys, remoteCommitmentIndex, localFundingKey, remoteFundingPubKey, commitmentInput, remoteSpec)
       val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
       Right(localSpec, localCommitTx, remoteSpec, remoteCommitTx, sortedHtlcTxs)
     }
