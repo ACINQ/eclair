@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.scalacompat.{Btc, BtcAmount, MilliBtc, Satoshi, btc2satoshi, millibtc2satoshi}
+import fr.acinq.bitcoin.scalacompat.{Btc, BtcAmount, BtcDouble, MilliBtc, Satoshi, btc2satoshi, millibtc2satoshi}
 
 /**
  * Created by t-bast on 22/08/2019.
@@ -59,6 +59,8 @@ case class MilliSatoshi(private val underlying: Long) extends Ordered[MilliSatos
 }
 
 object MilliSatoshi {
+
+  val MaxMoney: MilliSatoshi = toMilliSatoshi(21e6.btc)
 
   private def satoshi2millisatoshi(input: Satoshi): MilliSatoshi = MilliSatoshi(input.toLong * 1000L)
 

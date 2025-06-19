@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Btc, BtcDouble, MilliBtc, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Btc, MilliBtc, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Invoice
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
@@ -381,7 +381,7 @@ object Graph {
         val neighborEdges = {
           val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
           // the resulting set must have only one element per shortChannelId; we prioritize extra edges
-          g.getIncomingEdgesOf(current.key).collect{case e: GraphEdge if !extraNeighbors.exists(_.desc.shortChannelId == e.desc.shortChannelId) => e} ++ extraNeighbors
+          g.getIncomingEdgesOf(current.key).collect { case e: GraphEdge if !extraNeighbors.exists(_.desc.shortChannelId == e.desc.shortChannelId) => e } ++ extraNeighbors
         }
         neighborEdges.foreach { edge =>
           val neighbor = edge.desc.a
@@ -512,15 +512,15 @@ object Graph {
   object RoutingHeuristics {
 
     // Number of blocks in one year
-    val BLOCK_TIME_ONE_YEAR = 365 * 24 * 6
+    val BLOCK_TIME_ONE_YEAR: Int = 365 * 24 * 6
 
     // Low/High bound for channel capacity
-    val CAPACITY_CHANNEL_LOW = MilliBtc(1).toMilliSatoshi
-    val CAPACITY_CHANNEL_HIGH = Btc(1).toMilliSatoshi
+    val CAPACITY_CHANNEL_LOW: MilliSatoshi = MilliBtc(1).toMilliSatoshi
+    val CAPACITY_CHANNEL_HIGH: MilliSatoshi = Btc(1).toMilliSatoshi
 
     // Low/High bound for CLTV channel value
-    val CLTV_LOW = 9
-    val CLTV_HIGH = 2016
+    val CLTV_LOW: Int = 9
+    val CLTV_HIGH: Int = 2016
 
     /**
      * Normalize the given value between (0, 1). If the @param value is outside the min/max window we flatten it to something very close to the
@@ -571,12 +571,11 @@ object Graph {
       )
 
       def apply(e: Invoice.ExtraEdge): GraphEdge = {
-        val maxBtc = 21e6.btc
         GraphEdge(
           desc = ChannelDesc(e.shortChannelId, e.sourceNodeId, e.targetNodeId),
           params = HopRelayParams.FromHint(e),
           // Routing hints don't include the channel's capacity, so we assume it's big enough.
-          capacity = maxBtc.toSatoshi,
+          capacity = MilliSatoshi.MaxMoney.truncateToSatoshi,
           balance_opt = None,
         )
       }
@@ -648,9 +647,9 @@ object Graph {
        * Update the shortChannelId and capacity of edges corresponding to the given channel-desc,
        * both edges (corresponding to both directions) are updated.
        *
-       * @param desc the channel description for the channel to update
+       * @param desc              the channel description for the channel to update
        * @param newShortChannelId the new shortChannelId for this channel
-       * @param newCapacity the new capacity of the channel
+       * @param newCapacity       the new capacity of the channel
        * @return a new graph with updated vertexes
        */
       def updateChannel(desc: ChannelDesc, newShortChannelId: RealShortChannelId, newCapacity: Satoshi): DirectedGraph = {
@@ -697,8 +696,6 @@ object Graph {
         val channels = getIncomingEdgesOf(key).map(_.desc)
         DirectedGraph(removeChannels(channels).vertices - key)
       }
-
-      def removeVertices(nodeIds: Iterable[PublicKey]): DirectedGraph = nodeIds.foldLeft(this)((acc, nodeId) => acc.removeVertex(nodeId))
 
       /**
        * Adds a new vertex to the graph, starting with no edges.

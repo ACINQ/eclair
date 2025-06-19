@@ -314,12 +314,12 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     // first try
     val fwd1 = expectFwdAdd(register, channelIds(realScid2), outgoingAmount, outgoingExpiry, 7)
     // channel returns an error
-    fwd1.message.replyTo ! RES_ADD_FAILED(fwd1.message, HtlcValueTooHighInFlight(channelIds(realScid2), 1000000000 msat, 1516977616 msat), Some(u2.channelUpdate))
+    fwd1.message.replyTo ! RES_ADD_FAILED(fwd1.message, HtlcValueTooHighInFlight(channelIds(realScid2), UInt64(1_000_000_000), 1_516_977_616 msat), Some(u2.channelUpdate))
 
     // second try
     val fwd2 = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, 7)
     // failure again
-    fwd1.message.replyTo ! RES_ADD_FAILED(fwd2.message, HtlcValueTooHighInFlight(channelIds(realScid1), 1000000000 msat, 1516977616 msat), Some(u1.channelUpdate))
+    fwd1.message.replyTo ! RES_ADD_FAILED(fwd2.message, HtlcValueTooHighInFlight(channelIds(realScid1), UInt64(1_000_000_000), 1_516_977_616 msat), Some(u1.channelUpdate))
 
     // the relayer should give up
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(u1.channelUpdate))), None, commit = true))
@@ -528,7 +528,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       TestCase(ExpiryTooSmall(channelId1, CltvExpiry(100), CltvExpiry(0), BlockHeight(0)), u.channelUpdate, ExpiryTooSoon(Some(u.channelUpdate))),
       TestCase(ExpiryTooBig(channelId1, CltvExpiry(100), CltvExpiry(200), BlockHeight(0)), u.channelUpdate, ExpiryTooFar()),
       TestCase(TooManyAcceptedHtlcs(channelId1, 10), u.channelUpdate, TemporaryChannelFailure(Some(u.channelUpdate))),
-      TestCase(HtlcValueTooHighInFlight(channelId1, 250_000_000 msat, 300_000_000 msat), u.channelUpdate, TemporaryChannelFailure(Some(u.channelUpdate))),
+      TestCase(HtlcValueTooHighInFlight(channelId1, UInt64(250_000_000), 300_000_000 msat), u.channelUpdate, TemporaryChannelFailure(Some(u.channelUpdate))),
       TestCase(InsufficientFunds(channelId1, r.amountToForward, 100 sat, 0 sat, 0 sat), u.channelUpdate, TemporaryChannelFailure(Some(u.channelUpdate))),
       TestCase(FeerateTooDifferent(channelId1, FeeratePerKw(1000 sat), FeeratePerKw(300 sat)), u.channelUpdate, TemporaryChannelFailure(Some(u.channelUpdate))),
       TestCase(ChannelUnavailable(channelId1), u_disabled.channelUpdate, ChannelDisabled(u_disabled.channelUpdate.messageFlags, u_disabled.channelUpdate.channelFlags, Some(u_disabled.channelUpdate)))
@@ -584,7 +584,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       cmd3.replyTo ! RES_ADD_FAILED(cmd3, TooManyAcceptedHtlcs(randomBytes32(), 42), Some(channelUpdates(ShortChannelId(12345)).channelUpdate))
       // select 4th-to-best channel: same capacity but higher balance
       val cmd4 = expectFwdAdd(register, channelUpdates(ShortChannelId(11111)).channelId, r.amountToForward, r.outgoingCltv, 5).message
-      cmd4.replyTo ! RES_ADD_FAILED(cmd4, HtlcValueTooHighInFlight(randomBytes32(), 100000000 msat, 100000000 msat), Some(channelUpdates(ShortChannelId(11111)).channelUpdate))
+      cmd4.replyTo ! RES_ADD_FAILED(cmd4, HtlcValueTooHighInFlight(randomBytes32(), UInt64(100_000_000), 100_000_000 msat), Some(channelUpdates(ShortChannelId(11111)).channelUpdate))
       // all the suitable channels have been tried
       expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(channelUpdates(ShortChannelId(12345)).channelUpdate))), None, commit = true))
     }
