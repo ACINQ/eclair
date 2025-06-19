@@ -1614,6 +1614,11 @@ object Transactions {
   }
 
   /**
+   * Default public key used for fee estimation
+   */
+  val PlaceHolderPubKey: PublicKey = PrivateKey(ByteVector32.One).publicKey
+
+  /**
    * This default sig takes 72B when encoded in DER (incl. 1B for the trailing sig hash), it is used for fee estimation
    * It is 72 bytes because our signatures are normalized (low-s) and will take up 72 bytes at most in DER format
    */
