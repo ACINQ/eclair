@@ -328,6 +328,22 @@ object Helpers {
     }
   }
 
+  def channelUpdate(nodeParams: NodeParams, shortChannelId: ShortChannelId, commitments: Commitments, relayFees: RelayFees, enable: Boolean): ChannelUpdate = {
+    Announcements.makeChannelUpdate(
+      chainHash = nodeParams.chainHash,
+      nodeSecret = nodeParams.privateKey,
+      remoteNodeId = commitments.remoteNodeId,
+      shortChannelId = shortChannelId,
+      cltvExpiryDelta = nodeParams.channelConf.expiryDelta,
+      htlcMinimumMsat = commitments.latest.remoteCommitParams.htlcMinimum,
+      feeBaseMsat = relayFees.feeBase,
+      feeProportionalMillionths = relayFees.feeProportionalMillionths,
+      htlcMaximumMsat = maxHtlcAmount(nodeParams, commitments),
+      isPrivate = !commitments.announceChannel,
+      enable = enable,
+    )
+  }
+
   /**
    * Compute the delay until we need to refresh the channel_update for our channel not to be considered stale by
    * other nodes.

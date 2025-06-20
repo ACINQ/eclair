@@ -25,7 +25,6 @@ import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFunde
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
-import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReady, ChannelReadyTlv, TlvStream}
 import fr.acinq.eclair.{RealShortChannelId, ShortChannelId}
 
@@ -138,7 +137,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     val scidForChannelUpdate = Helpers.scidForChannelUpdate(channelAnnouncement_opt = None, aliases1.localAlias)
     log.info("using shortChannelId={} for initial channel_update", scidForChannelUpdate)
     val relayFees = getRelayFees(nodeParams, remoteNodeId, commitments.announceChannel)
-    val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams, remoteNodeId, scidForChannelUpdate, commitments.channelParams, relayFees, Helpers.maxHtlcAmount(nodeParams, commitments), enable = true)
+    val initialChannelUpdate = Helpers.channelUpdate(nodeParams, scidForChannelUpdate, commitments, relayFees, enable = true)
     // We need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network.
     context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
     val commitments1 = commitments.copy(
