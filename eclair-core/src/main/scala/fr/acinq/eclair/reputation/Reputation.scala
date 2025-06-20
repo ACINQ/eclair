@@ -23,15 +23,16 @@ import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
 
 /**
+ * Reputation score per endorsement level.
  *
- * @param weight           How much fees we would have collected in the past if all payments had succeeded (exponential moving average).
+ * @param weight           How much fees we would have collected in the past if all HTLCs had succeeded (exponential moving average).
  * @param score            How much fees we have collected in the past (exponential moving average).
- * @param lastSettlementAt Timestamp of the last recorded payment settlement.
+ * @param lastSettlementAt Timestamp of the last recorded HTLC settlement.
  */
 case class PastScore(weight: Double, score: Double, lastSettlementAt: TimestampMilli)
 
-/** We're relaying that payment and are waiting for it to settle. */
-case class PendingPayment(fee: MilliSatoshi, endorsement: Int, startedAt: TimestampMilli) {
+/** We're relaying that HTLC and are waiting for it to settle. */
+case class PendingHtlc(fee: MilliSatoshi, endorsement: Int, startedAt: TimestampMilli) {
   def weight(now: TimestampMilli, minDuration: FiniteDuration, multiplier: Double): Double = {
     val duration = now - startedAt
     fee.toLong.toDouble * (duration / minDuration).max(multiplier)
@@ -43,12 +44,13 @@ case class HtlcId(channelId: ByteVector32, id: Long)
 /**
  * Local reputation for a given node.
  *
- * @param pending           Set of pending payments (payments may contain multiple HTLCs when using trampoline).
+ * @param pastScores        Scores from past HTLCs for each endorsement level.
+ * @param pending           Set of pending HTLCs.
  * @param halfLife          Half life for the exponential moving average.
- * @param maxRelayDuration  Duration after which payments are penalized for staying pending too long.
- * @param pendingMultiplier How much to penalize pending payments.
+ * @param maxRelayDuration  Duration after which HTLCs are penalized for staying pending too long.
+ * @param pendingMultiplier How much to penalize pending HTLCs.
  */
-case class Reputation(pastScores: Array[PastScore], pending: mutable.Map[HtlcId, PendingPayment], halfLife: FiniteDuration, maxRelayDuration: FiniteDuration, pendingMultiplier: Double) {
+case class Reputation(pastScores: Array[PastScore], pending: mutable.Map[HtlcId, PendingHtlc], halfLife: FiniteDuration, maxRelayDuration: FiniteDuration, pendingMultiplier: Double) {
   private def decay(now: TimestampMilli, lastSettlementAt: TimestampMilli): Double = scala.math.pow(0.5, (now - lastSettlementAt) / halfLife)
 
   /**
@@ -88,10 +90,10 @@ case class Reputation(pastScores: Array[PastScore], pending: mutable.Map[HtlcId,
    * Register a pending relay.
    */
   def attempt(htlcId: HtlcId, fee: MilliSatoshi, endorsement: Int, now: TimestampMilli = TimestampMilli.now()): Unit =
-    pending(htlcId) = PendingPayment(fee, endorsement, now)
+    pending(htlcId) = PendingHtlc(fee, endorsement, now)
 
   /**
-   * When a payment is settled, we record whether it succeeded and how long it took.
+   * When a HTLC is settled, we record whether it succeeded and how long it took.
    */
   def record(htlcId: HtlcId, isSuccess: Boolean, now: TimestampMilli = TimestampMilli.now()): Unit =
     pending.remove(htlcId).foreach(p => {

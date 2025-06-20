@@ -530,12 +530,12 @@ case class Commitment(fundingTxIndex: Long,
     // Jamming protection
     // Must be the last checks so that they can be ignored for shadow deployment.
     for ((amountMsat, i) <- outgoingHtlcs.toSeq.map(_.amountMsat).sorted.zipWithIndex) {
-      if ((amountMsat.toLong < 1) || (math.log(amountMsat.toLong.toDouble) * maxAcceptedHtlcs / math.log(params.localParams.maxHtlcValueInFlightMsat.toLong.toDouble / maxAcceptedHtlcs) < i)) {
+      if ((amountMsat.toLong < 1) || (math.log(amountMsat.toLong.toDouble) * maxAcceptedHtlcs / math.log(params.localParams.maxHtlcValueInFlightMsat.toBigInt.toDouble / maxAcceptedHtlcs) < i)) {
         return Left(TooManySmallHtlcs(params.channelId, number = i + 1, below = amountMsat))
       }
     }
-    val occupancy = (outgoingHtlcs.size.toDouble / maxAcceptedHtlcs).max(htlcValueInFlight.toLong.toDouble / allowedHtlcValueInFlight.toLong.toDouble)
-    if (confidence + 0.05 < occupancy) {
+    val occupancy = (outgoingHtlcs.size.toDouble / maxAcceptedHtlcs).max(htlcValueInFlight.toLong.toDouble / allowedHtlcValueInFlight.toBigInt.toDouble)
+    if (confidence + 0.1 < occupancy) { // We add a 10% tolerance to enable payments from nodes without history and to account for the fact that even at the highest endorsement level we still expect a confidence of less than 93.75%.
       return Left(ConfidenceTooLow(params.channelId, confidence, occupancy))
     }
 
