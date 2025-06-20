@@ -18,6 +18,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.ActorRef
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter._
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
@@ -38,7 +39,7 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.payment.send.{ClearRecipient, PaymentLifecycle, Recipient}
-import fr.acinq.eclair.reputation.Reputation
+import fr.acinq.eclair.reputation.{Reputation, ReputationRecorder}
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelAnnouncement, channelHopFromUpdate}
 import fr.acinq.eclair.router.Graph.PaymentWeightRatios
@@ -93,7 +94,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val nodeParams = TestConstants.Alice.nodeParams.copy(nodeKeyManager = testNodeKeyManager, channelKeyManager = testChannelKeyManager)
     val cfg = SendPaymentConfig(id, parentId, Some(defaultExternalId), defaultPaymentHash, invoice.nodeId, Upstream.Local(id), Some(invoice), None, storeInDb, publishEvent, recordMetrics)
     val (routerForwarder, register, sender, monitor, eventListener, metricsListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
-    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, cfg, routerForwarder.ref, register.ref, None))
+    val reputationRecorder = system.spawnAnonymous(Behaviors.receiveMessage[ReputationRecorder.GetConfidence](getConfidence => {
+      assert(getConfidence.upstream.isInstanceOf[Upstream.Local])
+      assert(getConfidence.downstream == b)
+      getConfidence.replyTo ! ReputationRecorder.Confidence(1.0, Reputation.maxEndorsement)
+      Behaviors.same
+    }))
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, cfg, routerForwarder.ref, register.ref, Some(reputationRecorder)))
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])

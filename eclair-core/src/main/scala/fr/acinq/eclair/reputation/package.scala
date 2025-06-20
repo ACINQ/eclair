@@ -18,6 +18,6 @@ package fr.acinq.eclair
 
 package object reputation {
   implicit class EndorsementDouble(private val c: Double) extends AnyVal {
-    def toEndorsement: Int = (c * 7.999).toInt
+    def toEndorsement: Int = (c * Reputation.endorsementLevels).toInt
   }
 }

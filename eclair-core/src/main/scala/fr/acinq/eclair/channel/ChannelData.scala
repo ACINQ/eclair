@@ -147,12 +147,16 @@ case class INPUT_RESTORED(data: PersistentChannelData)
 sealed trait Upstream { def amountIn: MilliSatoshi }
 object Upstream {
   /** We haven't restarted and have full information about the upstream parent(s). */
-  sealed trait Hot extends Upstream
+  sealed trait Hot extends Upstream {
+    def show: String
+  }
   object Hot {
     /** Our node is forwarding a single incoming HTLC. */
     case class Channel(add: UpdateAddHtlc, receivedAt: TimestampMilli, receivedFrom: PublicKey) extends Hot {
       override val amountIn: MilliSatoshi = add.amountMsat
       val expiryIn: CltvExpiry = add.cltvExpiry
+
+      override def show: String = s"Channel(receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, endorsement=${add.endorsement})"
     }
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
     case class Trampoline(received: List[Channel]) extends Hot {
@@ -160,6 +164,8 @@ object Upstream {
       // We must use the lowest expiry of the incoming HTLC set.
       val expiryIn: CltvExpiry = received.map(_.add.cltvExpiry).min
       val receivedAt: TimestampMilli = received.map(_.receivedAt).max
+
+      override def show: String = s"Trampoline(${received.map(_.show).mkString(",")})"
     }
   }
 
@@ -183,7 +189,11 @@ object Upstream {
   }
 
   /** Our node is the origin of the payment: there are no matching upstream HTLCs. */
-  case class Local(id: UUID) extends Hot with Cold { override val amountIn: MilliSatoshi = 0 msat }
+  case class Local(id: UUID) extends Hot with Cold {
+    override val amountIn: MilliSatoshi = 0 msat
+
+    override def show: String = toString
+  }
 }
 
 /**

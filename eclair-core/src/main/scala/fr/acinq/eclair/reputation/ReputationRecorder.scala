@@ -17,7 +17,7 @@
 package fr.acinq.eclair.reputation
 
 import akka.actor.typed.eventstream.EventStream
-import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
@@ -37,7 +37,10 @@ object ReputationRecorder {
   private case class WrappedOutgoingHtlcFulfilled(fulfilled: OutgoingHtlcFulfilled) extends Command
   // @formatter:on
 
-  /** Confidence that the outgoing HTLC will succeed. */
+  /**
+   * @param confidence  Confidence that the outgoing HTLC will succeed (takes into account both upstream and downstream reputation).
+   * @param endorsement Endorsement level to set for the outgoing HTLC (takes into account upstream reputation only).
+   */
   case class Confidence(confidence: Double, endorsement: Int)
 
   def apply(config: Reputation.Config): Behavior[Command] =
@@ -45,13 +48,20 @@ object ReputationRecorder {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcAdded))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcFailed))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcFulfilled))
-      new ReputationRecorder(config, context).run()
+      new ReputationRecorder(config).run()
     })
 
-  case class PendingHtlc(add: UpdateAddHtlc, remoteNodeId: PublicKey, upstream: Upstream.Hot)
+  /**
+   * A pending outgoing HTLC.
+   *
+   * @param add        UpdateAddHtlc that contains an id for the HTLC and an endorsement value.
+   * @param upstream   The incoming node or nodes.
+   * @param downstream The outgoing node.
+   */
+  case class PendingHtlc(add: UpdateAddHtlc, upstream: Upstream.Hot, downstream: PublicKey)
 }
 
-class ReputationRecorder(config: Reputation.Config, context: ActorContext[ReputationRecorder.Command]) {
+class ReputationRecorder(config: Reputation.Config) {
   private val incomingReputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty
   private val outgoingReputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty
   private val pending: mutable.Map[HtlcId, PendingHtlc] = mutable.HashMap.empty
@@ -112,13 +122,17 @@ class ReputationRecorder(config: Reputation.Config, context: ActorContext[Reputa
           case channel: Hot.Channel =>
             incomingReputation(channel.receivedFrom).attempt(htlcId, fee, channel.add.endorsement)
           case trampoline: Hot.Trampoline =>
-            trampoline.received.foreach(channel =>
-              incomingReputation(channel.receivedFrom).attempt(htlcId, fee * channel.amountIn.toLong / trampoline.amountIn.toLong, channel.add.endorsement)
-            )
+            trampoline.received
+              .groupMapReduce(_.receivedFrom)(r => (r.add.amountMsat, r.add.endorsement)) {
+                case ((amount1, endorsement1), (amount2, endorsement2)) => (amount1 + amount2, endorsement1 min endorsement2)
+              }
+              .foreach { case (nodeId, (amount, endorsement)) =>
+                incomingReputation(nodeId).attempt(htlcId, fee * amount.toLong / trampoline.amountIn.toLong, endorsement)
+              }
           case _: Upstream.Local => ()
         }
         outgoingReputation(remoteNodeId).attempt(htlcId, fee, add.endorsement)
-        pending(htlcId) = PendingHtlc(add, remoteNodeId, upstream)
+        pending(htlcId) = PendingHtlc(add, upstream, remoteNodeId)
         Behaviors.same
 
       case WrappedOutgoingHtlcFailed(OutgoingHtlcFailed(fail)) =>
@@ -136,7 +150,7 @@ class ReputationRecorder(config: Reputation.Config, context: ActorContext[Reputa
               )
             case _: Upstream.Local => ()
           }
-          outgoingReputation(p.remoteNodeId).record(htlcId, isSuccess = false)
+          outgoingReputation(p.downstream).record(htlcId, isSuccess = false)
         })
         Behaviors.same
 
@@ -152,7 +166,7 @@ class ReputationRecorder(config: Reputation.Config, context: ActorContext[Reputa
               )
             case _: Upstream.Local => ()
           }
-          outgoingReputation(p.remoteNodeId).record(htlcId, isSuccess = true)
+          outgoingReputation(p.downstream).record(htlcId, isSuccess = true)
         })
         Behaviors.same
     }

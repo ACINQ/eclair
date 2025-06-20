@@ -537,7 +537,7 @@ case class Commitment(fundingTxIndex: Long,
       }
     }
     val occupancy = (outgoingHtlcs.size.toDouble / maxAcceptedHtlcs).max(htlcValueInFlight.toLong.toDouble / allowedHtlcValueInFlight.toBigInt.toDouble)
-    if (confidence + 0.05 < occupancy) {
+    if (confidence + 0.1 < occupancy) { // We add a 10% tolerance to enable payments from nodes without history and to account for the fact that even at the highest endorsement level we still expect a confidence of less than 93.75%.
       return Left(ConfidenceTooLow(params.channelId, confidence, occupancy))
     }
 
