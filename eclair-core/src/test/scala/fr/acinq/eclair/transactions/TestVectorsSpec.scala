@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelFeatures
-import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions.Transactions._
@@ -144,8 +143,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   val fundingAmount = fundingTx.txOut(0).amount
   logger.info(s"# funding-tx: $fundingTx}")
 
-  val fundingScript = Funding.makeFundingScript(Local.funding_pubkey, Remote.funding_pubkey, commitmentFormat).asInstanceOf[RedeemInfo.SegwitV0]
-  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey, commitmentFormat)
+  val fundingScript = makeFundingScript(Local.funding_pubkey, Remote.funding_pubkey, commitmentFormat).asInstanceOf[RedeemInfo.SegwitV0]
+  val commitmentInput = makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey, commitmentFormat)
 
   val obscured_tx_number = Transactions.obscuredCommitTxNumber(42, localIsChannelOpener = true, Local.payment_basepoint, Remote.payment_basepoint)
   assert(obscured_tx_number == (0x2bb038521914L ^ 42L))

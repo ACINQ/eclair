@@ -8,11 +8,6 @@
       "localParams" : {
         "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
         "fundingKeyPath" : [ 2566431519, 2591595317, 1320214673, 2312083324, 3942626068, 2510065287, 1961707336, 236707474, 2147483648 ],
-        "dustLimit" : 1000,
-        "maxHtlcValueInFlightMsat" : 1000000000,
-        "htlcMinimum" : 1000,
-        "toRemoteDelay" : 144,
-        "maxAcceptedHtlcs" : 30,
         "isChannelOpener" : false,
         "paysCommitTxFees" : false,
         "initFeatures" : {
@@ -37,11 +32,6 @@
       },
       "remoteParams" : {
         "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
-        "dustLimit" : 1100,
-        "maxHtlcValueInFlightMsat" : 500000000,
-        "htlcMinimum" : 0,
-        "toRemoteDelay" : 144,
-        "maxAcceptedHtlcs" : 100,
         "revocationBasepoint" : "038039cb4b63c81052cf0893e27f7be58a5808453dffd44c662b1a75aebb1fc74e",
         "paymentBasepoint" : "0394e61db71e79c20f2ef131e99121996c7ae04330c4c50dae6bccc5afcf493661",
         "delayedPaymentBasepoint" : "029a15b644f2800a507565666956446c05ef8dd7b60023852607c97471d233d62e",
@@ -88,17 +78,22 @@
     },
     "active" : [ {
       "fundingTxIndex" : 0,
-      "fundingTx" : {
-        "outPoint" : "e0052c9a6cebcf139248732fcc7c563b022c2ae2d665a670f09389e4ff514393:0",
-        "amountSatoshis" : 1500000
-      },
+      "fundingInput" : "e0052c9a6cebcf139248732fcc7c563b022c2ae2d665a670f09389e4ff514393:0",
+      "fundingAmount" : 1500000,
       "localFunding" : {
         "status" : "confirmed",
-        "txid" : "e0052c9a6cebcf139248732fcc7c563b022c2ae2d665a670f09389e4ff514393",
         "shortChannelId" : "400000x42x0"
       },
       "remoteFunding" : {
         "status" : "not-locked"
+      },
+      "commitmentFormat" : "anchor_outputs",
+      "localCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 1000000000,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
       },
       "localCommit" : {
         "index" : 0,
@@ -109,14 +104,17 @@
           "toRemote" : 1000000000
         },
         "txId" : "800a5eab3f585d54f19d6e574b611d94fa7414af651e17104310bf004ccd5cd6",
-        "input" : {
-          "outPoint" : "e0052c9a6cebcf139248732fcc7c563b022c2ae2d665a670f09389e4ff514393:0",
-          "amountSatoshis" : 1500000
-        },
         "remoteSig" : {
           "sig" : "c70d3fc3e720cc4fd1a2e07b97d454392ecfbe27c0ef2eed401538466924f6c24accb834eed784536fe5d30656eb8308a8b0f48bdba2ccc9812ce49a12b9dd80"
         },
         "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 500000000,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 144
       },
       "remoteCommit" : {
         "index" : 0,

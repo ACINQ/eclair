@@ -511,7 +511,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       val normal = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc, origins)
       // NB: this isn't actually a revoked commit tx, but we don't check that here, if the channel says it's a revoked
       // commit we accept it as such, so it simplifies the test.
-      val revokedCommitTx = Transaction(2, Seq(TxIn(normal.commitments.latest.localCommit.input.outPoint, Nil, 0)), Seq(TxOut(4500 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
+      val revokedCommitTx = Transaction(2, Seq(TxIn(normal.commitments.latest.fundingInput, Nil, 0)), Seq(TxOut(4500 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
       val rcp = RevokedCommitPublished(revokedCommitTx, Some(OutPoint(revokedCommitTx, 0)), None, Set.empty, Set.empty, Map(revokedCommitTx.txIn.head.outPoint -> revokedCommitTx))
       DATA_CLOSING(normal.commitments, BlockHeight(0), Script.write(Script.pay2wpkh(randomKey().publicKey)), mutualCloseProposed = Nil, revokedCommitPublished = List(rcp))
     }

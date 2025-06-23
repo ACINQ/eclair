@@ -17,7 +17,7 @@
 package fr.acinq.eclair.reputation
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.channel.{ChannelJammingException, ChannelParams, ConfidenceTooLow, TooManySmallHtlcs}
+import fr.acinq.eclair.channel.{ChannelJammingException, Commitment, ConfidenceTooLow, TooManySmallHtlcs}
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{MilliSatoshi, TimestampMilli}
 
@@ -128,27 +128,27 @@ object Reputation {
     def fromEndorsement(endorsement: Int): Score = Score((endorsement + 0.5) / 8)
   }
 
-  def checkChannelOccupancy(outgoingHtlcs: Seq[UpdateAddHtlc], params: ChannelParams, confidence: Double): Either[ChannelJammingException, Unit] = {
-    val maxAcceptedHtlcs = Seq(params.localCommitParams.maxAcceptedHtlcs, params.remoteCommitParams.maxAcceptedHtlcs).min
+  def checkChannelOccupancy(channelId: ByteVector32, outgoingHtlcs: Seq[UpdateAddHtlc], commitment: Commitment, confidence: Double): Either[ChannelJammingException, Unit] = {
+    val maxAcceptedHtlcs = Seq(commitment.localCommitParams.maxAcceptedHtlcs, commitment.remoteCommitParams.maxAcceptedHtlcs).min
 
     for ((amountMsat, i) <- outgoingHtlcs.map(_.amountMsat).sorted.zipWithIndex) {
       // We want to allow some small HTLCs but still keep slots for larger ones.
       // We never want to reject HTLCs of size above `maxHtlcAmount / maxAcceptedHtlcs` as too small because we want to allow filling all the slots with HTLCs of equal sizes.
       // We use exponentially spaced thresholds in between.
-      if (amountMsat.toLong < 1 || amountMsat.toLong.toDouble < math.pow(params.maxHtlcValueInFlight.toLong.toDouble / maxAcceptedHtlcs, i / maxAcceptedHtlcs)) {
-        return Left(TooManySmallHtlcs(params.channelId, number = i + 1, below = amountMsat))
+      if (amountMsat.toLong < 1 || amountMsat.toLong.toDouble < math.pow(commitment.maxHtlcValueInFlight.toLong.toDouble / maxAcceptedHtlcs, i / maxAcceptedHtlcs)) {
+        return Left(TooManySmallHtlcs(channelId, number = i + 1, below = amountMsat))
       }
     }
 
     val htlcValueInFlight = outgoingHtlcs.map(_.amountMsat).sum
     val slotsOccupancy = outgoingHtlcs.size.toDouble / maxAcceptedHtlcs
-    val valueOccupancy = htlcValueInFlight.toLong.toDouble / params.maxHtlcValueInFlight.toLong.toDouble
+    val valueOccupancy = htlcValueInFlight.toLong.toDouble / commitment.maxHtlcValueInFlight.toLong.toDouble
     val occupancy = slotsOccupancy max valueOccupancy
     // Because there are only 8 endorsement levels, the highest endorsement corresponds to a confidence between 87.5% and 100%.
     // So even for well-behaved peers setting the highest endorsement we still expect a confidence of less than 93.75%.
     // To compensate for that we add a tolerance of 10% that's also useful for nodes without history.
     if (confidence + 0.1 < occupancy) {
-      return Left(ConfidenceTooLow(params.channelId, confidence, occupancy))
+      return Left(ConfidenceTooLow(channelId, confidence, occupancy))
     }
 
     Right(())
