@@ -358,7 +358,7 @@ object Helpers {
     }
     for (balanceThreshold <- nodeParams.channelConf.balanceThresholds) {
       if (commitments.availableBalanceForSend <= balanceThreshold.available) {
-        return balanceThreshold.maxHtlcAmount.toMilliSatoshi.max(commitments.params.remoteParams.htlcMinimum).min(commitments.params.maxHtlcAmount)
+        return balanceThreshold.maxHtlcAmount.toMilliSatoshi.max(commitments.params.remoteParams.htlcMinimum.max(commitments.params.localParams.htlcMinimum)).min(commitments.params.maxHtlcAmount)
       }
     }
     commitments.params.maxHtlcAmount
