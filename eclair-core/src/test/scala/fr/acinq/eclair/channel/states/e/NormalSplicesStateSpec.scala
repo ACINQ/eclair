@@ -300,11 +300,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     TestHtlcs(Seq(adda1, adda2), Seq(addb1, addb2))
   }
 
-  def spliceOutFee(f: FixtureParam, capacity: Satoshi): Satoshi = {
+  def spliceOutFee(f: FixtureParam, capacity: Satoshi, signedTx_opt: Option[Transaction] = None): Satoshi = {
     import f._
 
     // When we only splice-out, the fees are paid by deducing them from the next funding amount.
-    val fundingTx = alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.localFundingStatus.signedTx_opt.get
+    val fundingTx = signedTx_opt.getOrElse(alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.localFundingStatus.signedTx_opt.get)
     val feerate = alice.nodeParams.onChainFeeConf.getFundingFeerate(alice.nodeParams.currentBitcoinCoreFeerates)
     val expectedMiningFee = Transactions.weight2fee(feerate, fundingTx.weight())
     val actualMiningFee = capacity - alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.latest.capacity
@@ -2476,7 +2476,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
-  test("disconnect before channel update and tx_signatures are received") { f=>
+  test("disconnect before channel update and tx_signatures are received") { f =>
     import f._
     // Disconnection with both sides sending tx_signatures and channel updates
     // alice                    bob
@@ -2654,7 +2654,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
     addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN(None)
-    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>  // Bob doesn't receive Alice's commit_sig
+    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch => // Bob doesn't receive Alice's commit_sig
       assert(batch.batchSize == 2)
     }
     alice2bob.expectNoMessage(100 millis)
@@ -2735,7 +2735,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishAlice.nextRemoteRevocationNumber == 0)
-    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishBob.nextRemoteRevocationNumber == 0)
 
     // Bob must retransmit his commit_sigs first.
@@ -2802,12 +2802,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishAlice.nextRemoteRevocationNumber == 1)
-    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishBob.nextRemoteRevocationNumber == 0)
 
     // Bob must retransmit his commit_sigs first.
     alice2bob.expectNoMessage(100 millis)
-    inside(bob2alice.expectMsgType[CommitSigBatch] ) { batch =>
+    inside(bob2alice.expectMsgType[CommitSigBatch]) { batch =>
       assert(batch.batchSize == 2)
       bob2alice.forward(alice)
     }
@@ -3075,7 +3075,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectNoMessage(100 millis)
     awaitCond(bob.stateName == CLOSED)
 
-    checkPostSpliceState(f, spliceOutFee(f, capacity = 1_900_000.sat))
+    checkPostSpliceState(f, spliceOutFee(f, capacity = 1_900_000.sat, signedTx_opt = Some(fundingTx2)))
     assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[LocalClose]))
     assert(Helpers.Closing.isClosed(bob.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RemoteClose]))
   }
@@ -3440,7 +3440,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("put back watches after restart") { f =>
     import f._
 
-    val fundingTx0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
+    val fundingTxId0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingTxId
 
     val fundingTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 10_000_000 msat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
     checkWatchConfirmed(f, fundingTx1)
@@ -3473,7 +3473,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectMsgType[SetChannelId]
     alice2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
     alice2blockchain.expectWatchFundingConfirmed(fundingTx1.txid)
-    alice2blockchain.expectWatchFundingSpent(fundingTx0.txid)
+    alice2blockchain.expectWatchFundingSpent(fundingTxId0)
     alice2blockchain.expectNoMessage(100 millis)
 
     val bob2 = TestFSMRef(new Channel(bobNodeParams, bobKeys, wallet, aliceNodeParams.nodeId, bob2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer)
@@ -3481,7 +3481,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectMsgType[SetChannelId]
     bob2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
     bob2blockchain.expectWatchFundingSpent(fundingTx1.txid)
-    bob2blockchain.expectWatchFundingSpent(fundingTx0.txid)
+    bob2blockchain.expectWatchFundingSpent(fundingTxId0)
     bob2blockchain.expectNoMessage(100 millis)
   }
 
@@ -3558,12 +3558,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val aliceCommitments1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     aliceCommitments1.active.foreach { c =>
       val commitTx = c.fullySignedLocalCommitTx(aliceCommitments1.channelParams, alice.underlyingActor.channelKeys)
-      Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(commitTx, Map(c.fundingInput -> c.commitInput(alice.underlyingActor.channelKeys).txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     val bobCommitments1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     bobCommitments1.active.foreach { c =>
       val commitTx = c.fullySignedLocalCommitTx(bobCommitments1.channelParams, bob.underlyingActor.channelKeys)
-      Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(commitTx, Map(c.fundingInput -> c.commitInput(bob.underlyingActor.channelKeys).txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
     // alice fulfills that HTLC in both commitments
@@ -3572,12 +3572,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val aliceCommitments2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     aliceCommitments2.active.foreach { c =>
       val commitTx = c.fullySignedLocalCommitTx(aliceCommitments2.channelParams, alice.underlyingActor.channelKeys)
-      Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(commitTx, Map(c.fundingInput -> c.commitInput(alice.underlyingActor.channelKeys).txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     val bobCommitments2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     bobCommitments2.active.foreach { c =>
       val commitTx = c.fullySignedLocalCommitTx(bobCommitments2.channelParams, bob.underlyingActor.channelKeys)
-      Transaction.correctlySpends(commitTx, Map(c.commitInput.outPoint -> c.commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(commitTx, Map(c.fundingInput -> c.commitInput(bob.underlyingActor.channelKeys).txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
     resolveHtlcs(f, htlcs)
