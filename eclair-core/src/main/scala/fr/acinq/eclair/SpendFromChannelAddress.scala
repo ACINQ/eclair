@@ -41,7 +41,7 @@ trait SpendFromChannelAddress {
       inputTx <- appKit.wallet.getTransaction(outPoint.txid)
       channelKeys = appKit.nodeParams.channelKeyManager.channelKeys(ChannelConfig.standard, fundingKeyPath)
       localFundingKey = channelKeys.fundingKey(fundingTxIndex)
-      inputInfo = InputInfo(outPoint, inputTx.txOut(outPoint.index.toInt), ByteVector.empty)
+      inputInfo = InputInfo(outPoint, inputTx.txOut(outPoint.index.toInt))
       // classify as splice, doesn't really matter
       tx = Transactions.SpliceTx(inputInfo, unsignedTx)
       localSig = tx.sign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)

@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
@@ -58,8 +58,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     val bobParams = Bob.nodeParams
     val aliceChannelParams = Alice.channelParams
     val bobChannelParams = Bob.channelParams
-    val aliceCommitParams = aliceChannelParams.proposedCommitParams
-    val bobCommitParams = bobChannelParams.proposedCommitParams
+    val commitParams = ProposedCommitParams(1000 sat, 1 msat, UInt64.MaxValue, 30, CltvExpiryDelta(720))
     val channelFlags = ChannelFlags(announceChannel = false)
     val alicePeer = TestProbe()
     val bobPeer = TestProbe()
@@ -82,9 +81,9 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       aliceRegister ! alice
       bobRegister ! bob
       // no announcements
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, aliceChannelParams, aliceCommitParams, pipe, bobInit, channelFlags, ChannelConfig.standard, ChannelTypes.Standard(), replyTo = system.deadLetters)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, aliceChannelParams, commitParams, pipe, bobInit, channelFlags, ChannelConfig.standard, ChannelTypes.Standard(), replyTo = system.deadLetters)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobChannelParams, bobCommitParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard())
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobChannelParams, commitParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard())
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]

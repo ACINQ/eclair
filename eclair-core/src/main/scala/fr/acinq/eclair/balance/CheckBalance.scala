@@ -176,8 +176,8 @@ object CheckBalance {
       case d: DATA_SHUTDOWN => this.copy(shutdown = this.shutdown.addChannelBalance(d.commitments))
       // If one of our closing transactions is in the mempool or recently confirmed, and thus included in our on-chain
       // balance, we ignore this channel in our off-chain balance to avoid counting it twice.
-      case d: DATA_NEGOTIATING if recentlySpentInputs.contains(d.commitments.latest.commitInput.outPoint) => this
-      case d: DATA_NEGOTIATING_SIMPLE if recentlySpentInputs.contains(d.commitments.latest.commitInput.outPoint) => this
+      case d: DATA_NEGOTIATING if recentlySpentInputs.contains(d.commitments.latest.fundingInput) => this
+      case d: DATA_NEGOTIATING_SIMPLE if recentlySpentInputs.contains(d.commitments.latest.fundingInput) => this
       // Otherwise, that means the closing transactions aren't in the mempool yet, so we include our off-chain balance.
       case d: DATA_NEGOTIATING => this.copy(negotiating = this.negotiating.addChannelBalance(d.commitments))
       case d: DATA_NEGOTIATING_SIMPLE => this.copy(negotiating = this.negotiating.addChannelBalance(d.commitments))

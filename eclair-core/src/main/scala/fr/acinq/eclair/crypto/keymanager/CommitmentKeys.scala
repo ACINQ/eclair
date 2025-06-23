@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto.keymanager
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.channel.ChannelParams
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 
 /**
  * Created by t-bast on 10/04/2025.
@@ -67,14 +67,14 @@ case class LocalCommitmentKeys(ourDelayedPaymentKey: PrivateKey,
 }
 
 object LocalCommitmentKeys {
-  def apply(params: ChannelParams, channelKeys: ChannelKeys, localCommitIndex: Long): LocalCommitmentKeys = {
+  def apply(params: ChannelParams, channelKeys: ChannelKeys, localCommitIndex: Long, commitmentFormat: CommitmentFormat): LocalCommitmentKeys = {
     val localPerCommitmentPoint = channelKeys.commitmentPoint(localCommitIndex)
     LocalCommitmentKeys(
       ourDelayedPaymentKey = channelKeys.delayedPaymentKey(localPerCommitmentPoint),
-      theirPaymentPublicKey = params.commitmentFormat match {
+      theirPaymentPublicKey = commitmentFormat match {
         case DefaultCommitmentFormat if params.channelFeatures.hasFeature(Features.StaticRemoteKey) => params.remoteParams.paymentBasepoint
         case DefaultCommitmentFormat => ChannelKeys.remotePerCommitmentPublicKey(params.remoteParams.paymentBasepoint, localPerCommitmentPoint)
-        case _: AnchorOutputsCommitmentFormat  | _: SimpleTaprootChannelCommitmentFormat => params.remoteParams.paymentBasepoint
+        case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => params.remoteParams.paymentBasepoint
       },
       ourPaymentBasePoint = params.localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
       ourHtlcKey = channelKeys.htlcKey(localPerCommitmentPoint),
@@ -116,11 +116,11 @@ case class RemoteCommitmentKeys(ourPaymentKey: Either[PublicKey, PrivateKey],
 }
 
 object RemoteCommitmentKeys {
-  def apply(params: ChannelParams, channelKeys: ChannelKeys, remotePerCommitmentPoint: PublicKey): RemoteCommitmentKeys = {
+  def apply(params: ChannelParams, channelKeys: ChannelKeys, remotePerCommitmentPoint: PublicKey, commitmentFormat: CommitmentFormat): RemoteCommitmentKeys = {
     RemoteCommitmentKeys(
       ourPaymentKey = params.localParams.walletStaticPaymentBasepoint match {
         case Some(walletPublicKey) => Left(walletPublicKey)
-        case None => params.commitmentFormat match {
+        case None => commitmentFormat match {
           // Note that if we're using option_static_remotekey, a walletStaticPaymentBasepoint will be provided.
           case DefaultCommitmentFormat => Right(channelKeys.paymentKey(remotePerCommitmentPoint))
           case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Right(channelKeys.paymentBaseSecret)

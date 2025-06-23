@@ -44,7 +44,7 @@ trait CommonFundingHandlers extends CommonHandlers {
    */
   def watchFundingSpent(commitment: Commitment, additionalKnownSpendingTxs: Set[TxId], delay_opt: Option[FiniteDuration]): Unit = {
     val knownSpendingTxs = commitment.commitTxIds.txIds ++ additionalKnownSpendingTxs
-    val watch = WatchFundingSpent(self, commitment.commitInput.outPoint.txid, commitment.commitInput.outPoint.index.toInt, knownSpendingTxs)
+    val watch = WatchFundingSpent(self, commitment.fundingInput.txid, commitment.fundingInput.index.toInt, knownSpendingTxs)
     delay_opt match {
       case Some(delay) => context.system.scheduler.scheduleOnce(delay, blockchain.toClassic, watch)
       case None => blockchain ! watch
@@ -84,8 +84,8 @@ trait CommonFundingHandlers extends CommonHandlers {
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
     d.commitments.all.find(_.fundingTxId == w.tx.txid) match {
       case Some(c) =>
-        val scid = RealShortChannelId(w.blockHeight, w.txIndex, c.commitInput.outPoint.index.toInt)
-        val fundingStatus = ConfirmedFundingTx(w.tx, scid, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
+        val scid = RealShortChannelId(w.blockHeight, w.txIndex, c.fundingInput.index.toInt)
+        val fundingStatus = ConfirmedFundingTx(w.tx.txOut(c.fundingInput.index.toInt), scid, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
         // When a splice transaction confirms, it double-spends all the commitment transactions that only applied to the
         // previous funding transaction. Our peer cannot publish the corresponding revoked commitments anymore, so we can
         // clean-up the htlc data that we were storing for the matching penalty transactions.
@@ -149,7 +149,7 @@ trait CommonFundingHandlers extends CommonHandlers {
       remoteNextCommitInfo = Right(channelReady.nextPerCommitmentPoint)
     )
     peer ! ChannelReadyForPayments(self, remoteNodeId, commitments.channelId, fundingTxIndex = 0)
-    DATA_NORMAL(commitments1, aliases1, None, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
+    DATA_NORMAL(commitments1, aliases1, None, initialChannelUpdate, SpliceStatus.NoSplice, None, None, None)
   }
 
   def delayEarlyAnnouncementSigs(remoteAnnSigs: AnnouncementSignatures): Unit = {

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.internal.channel.version0
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxId, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxId, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -95,7 +95,7 @@ private[channel] object ChannelTypes0 {
    * the raw transaction. It provides more information for auditing but is not used for business logic, so we can safely
    * put dummy values in the migration.
    */
-  def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), ByteVector.empty), tx, None)
+  def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil)), tx, None)
 
   case class HtlcTxAndSigs(txinfo: UnsignedHtlcTx, localSig: ByteVector64, remoteSig: ByteVector64)
 
@@ -104,11 +104,11 @@ private[channel] object ChannelTypes0 {
   // Before version3, we stored fully signed local transactions (commit tx and htlc txs). It meant that someone gaining
   // access to the database could publish revoked commit txs, so we changed that to only store remote signatures.
   case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs) {
-    def migrate(remoteFundingPubKey: PublicKey): channel.LocalCommit = {
+    def migrate(remoteFundingPubKey: PublicKey): (channel.LocalCommit, InputInfo) = {
       val remoteSig = extractRemoteSig(publishableTxs.commitTx, remoteFundingPubKey)
       val unsignedCommitTx = publishableTxs.commitTx.copy(tx = removeWitnesses(publishableTxs.commitTx.tx))
       val htlcRemoteSigs = publishableTxs.htlcTxsAndSigs.map(_.remoteSig)
-      channel.LocalCommit(index, spec, unsignedCommitTx.tx.txid, unsignedCommitTx.input, remoteSig, htlcRemoteSigs)
+      (channel.LocalCommit(index, spec, unsignedCommitTx.tx.txid, remoteSig, htlcRemoteSigs), unsignedCommitTx.input)
     }
 
     private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): ChannelSpendSignature.IndividualSignature = {
@@ -161,6 +161,31 @@ private[channel] object ChannelTypes0 {
     val ANCHOR_OUTPUTS = STATIC_REMOTEKEY | fromBit(USE_ANCHOR_OUTPUTS_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY + ANCHOR_OUTPUTS
   }
 
+  case class LocalParams(nodeId: PublicKey,
+                         fundingKeyPath: DeterministicWallet.KeyPath,
+                         dustLimit: Satoshi,
+                         maxHtlcValueInFlightMsat: UInt64,
+                         initialRequestedChannelReserve_opt: Option[Satoshi],
+                         htlcMinimum: MilliSatoshi,
+                         toSelfDelay: CltvExpiryDelta,
+                         maxAcceptedHtlcs: Int,
+                         isChannelOpener: Boolean,
+                         paysCommitTxFees: Boolean,
+                         upfrontShutdownScript_opt: Option[ByteVector],
+                         walletStaticPaymentBasepoint: Option[PublicKey],
+                         initFeatures: Features[InitFeature]) {
+    def migrate(): channel.LocalChannelParams = channel.LocalChannelParams(
+      nodeId = nodeId,
+      fundingKeyPath = fundingKeyPath,
+      initialRequestedChannelReserve_opt = initialRequestedChannelReserve_opt,
+      isChannelOpener = isChannelOpener,
+      paysCommitTxFees = paysCommitTxFees,
+      upfrontShutdownScript_opt = upfrontShutdownScript_opt,
+      walletStaticPaymentBasepoint = walletStaticPaymentBasepoint,
+      initFeatures = initFeatures,
+    )
+  }
+
   case class RemoteParams(nodeId: PublicKey,
                           dustLimit: Satoshi,
                           maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
@@ -177,12 +202,7 @@ private[channel] object ChannelTypes0 {
                           upfrontShutdownScript_opt: Option[ByteVector]) {
     def migrate(): channel.RemoteChannelParams = channel.RemoteChannelParams(
       nodeId = nodeId,
-      dustLimit = dustLimit,
-      maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat,
       initialRequestedChannelReserve_opt = requestedChannelReserve_opt,
-      htlcMinimum = htlcMinimum,
-      toRemoteDelay = toRemoteDelay,
-      maxAcceptedHtlcs = maxAcceptedHtlcs,
       revocationBasepoint = revocationBasepoint,
       paymentBasepoint = paymentBasepoint,
       delayedPaymentBasepoint = delayedPaymentBasepoint,
@@ -195,7 +215,7 @@ private[channel] object ChannelTypes0 {
   case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long)
 
   case class Commitments(channelVersion: ChannelVersion,
-                         localParams: LocalChannelParams, remoteParams: RemoteParams,
+                         localParams: LocalParams, remoteParams: RemoteParams,
                          channelFlags: ChannelFlags,
                          localCommit: LocalCommit, remoteCommit: RemoteCommit,
                          localChanges: LocalChanges, remoteChanges: RemoteChanges,
@@ -217,18 +237,29 @@ private[channel] object ChannelTypes0 {
       } else {
         ChannelFeatures()
       }
+      val (localCommit1, commitInput) = localCommit.migrate(remoteParams.fundingPubKey)
+      val localCommitParams = CommitParams(localParams.dustLimit, localParams.htlcMinimum, localParams.maxHtlcValueInFlightMsat, localParams.maxAcceptedHtlcs, remoteParams.toRemoteDelay)
+      val remoteCommitParams = CommitParams(remoteParams.dustLimit, remoteParams.htlcMinimum, remoteParams.maxHtlcValueInFlightMsat, remoteParams.maxAcceptedHtlcs, localParams.toSelfDelay)
       val commitment = Commitment(
         fundingTxIndex = 0,
         firstRemoteCommitIndex = 0,
+        fundingInput = commitInput.outPoint,
+        fundingAmount = commitInput.txOut.amount,
         remoteFundingPubKey = remoteParams.fundingPubKey,
         // We set an empty funding tx, even if it may be confirmed already (and the channel fully operational). We could
         // have set a specific Unknown status, but it would have forced us to keep it forever. We will retrieve the
         // funding tx when the channel is instantiated, and update the status (possibly immediately if it was confirmed).
-        LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked,
-        localCommit.migrate(remoteParams.fundingPubKey), remoteCommit, remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit))
+        localFundingStatus = LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None),
+        remoteFundingStatus = RemoteFundingStatus.Locked,
+        commitmentFormat = channelFeatures.commitmentFormat,
+        localCommitParams = localCommitParams,
+        localCommit = localCommit1,
+        remoteCommitParams = remoteCommitParams,
+        remoteCommit = remoteCommit,
+        nextRemoteCommit_opt = remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit))
       )
       channel.Commitments(
-        ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams.migrate(), channelFlags),
+        ChannelParams(channelId, channelConfig, channelFeatures, localParams.migrate(), remoteParams.migrate(), channelFlags),
         CommitmentChanges(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId),
         Seq(commitment),
         inactive = Nil,

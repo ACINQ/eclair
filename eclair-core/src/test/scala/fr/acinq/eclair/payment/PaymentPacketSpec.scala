@@ -35,7 +35,6 @@ import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelHopFromUpdate}
 import fr.acinq.eclair.router.BlindedRouteCreation
 import fr.acinq.eclair.router.Router.{NodeHop, Route}
-import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
 import fr.acinq.eclair.wire.protocol._
@@ -745,23 +744,23 @@ object PaymentPacketSpec {
 
   def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat, channelFeatures: ChannelFeatures = ChannelFeatures(), announcement_opt: Option[ChannelAnnouncement] = None): Commitments = {
     val channelReserve = testCapacity * 0.01
-    val localChannelParams = LocalChannelParams(null, null, null, UInt64.MaxValue, Some(channelReserve), null, null, 0, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
-    val remoteChannelParams = RemoteChannelParams(randomKey().publicKey, null, UInt64.MaxValue, Some(channelReserve), null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, None)
+    val localChannelParams = LocalChannelParams(null, null, Some(channelReserve), isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
+    val remoteChannelParams = RemoteChannelParams(randomKey().publicKey, Some(channelReserve), null, null, null, null, null, None)
+    val commitParams = CommitParams(546 sat, 1 msat, UInt64.MaxValue, 30, CltvExpiryDelta(720))
     val fundingTx = Transaction(2, Nil, Seq(TxOut(testCapacity, Nil)), 0)
-    val commitInput = InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, ByteVector.empty)
-    val localCommit = LocalCommit(0, null, randomTxId(), commitInput, IndividualSignature(ByteVector64.Zeroes), Nil)
+    val localCommit = LocalCommit(0, null, randomTxId(), IndividualSignature(ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, null, randomTxId(), randomKey().publicKey)
     val localChanges = LocalChanges(Nil, Nil, Nil)
     val remoteChanges = RemoteChanges(Nil, Nil, Nil)
     val localFundingStatus = announcement_opt match {
-      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(fundingTx, ann.shortChannelId, None, None)
+      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(fundingTx.txOut.head, ann.shortChannelId, None, None)
       case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
     }
     val channelFlags = ChannelFlags(announceChannel = announcement_opt.nonEmpty)
     new Commitments(
       ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localChannelParams, remoteChannelParams, channelFlags),
       CommitmentChanges(localChanges, remoteChanges, 0, 0),
-      List(Commitment(0, 0, null, localFundingStatus, RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+      List(Commitment(0, 0, OutPoint(fundingTx, 0), testCapacity, randomKey().publicKey, localFundingStatus, RemoteFundingStatus.Locked, channelFeatures.commitmentFormat, commitParams, localCommit, commitParams, remoteCommit, None)),
       inactive = Nil,
       Right(randomKey().publicKey),
       ShaChain.init,

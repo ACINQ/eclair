@@ -92,7 +92,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
 
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
-    val closingTxInput = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].commitments.latest.commitInput.outPoint
+    val closingTxInput = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].commitments.latest.fundingInput
     val expected = MainAndHtlcBalance(toLocal = 0 sat, htlcs = 0 sat)
     assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE]), recentlySpentInputs = Set(closingTxInput)).negotiating == expected)
   }
