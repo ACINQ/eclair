@@ -22,7 +22,7 @@ import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{BtcDouble, ByteVector32, Satoshi, SatoshiLong, Script}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.blockchain.OnChainPubkeyCache
 import fr.acinq.eclair.channel._
@@ -31,7 +31,7 @@ import fr.acinq.eclair.io.Peer.{OpenChannelResponse, SpawnChannelNonInitiator}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{Error, LiquidityAds, NodeAddress}
-import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, Features, InitFeature, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, InterceptOpenChannelResponse, Logs, MilliSatoshi, NodeParams, RejectOpenChannel, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, Features, InitFeature, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, InterceptOpenChannelResponse, Logs, MilliSatoshi, NodeParams, RejectOpenChannel, UInt64}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -72,7 +72,7 @@ object OpenChannelInterceptor {
 
   /** DefaultParams are a subset of ChannelData.LocalParams that can be modified by an InterceptOpenChannelPlugin */
   case class DefaultParams(dustLimit: Satoshi,
-                           maxHtlcValueInFlightMsat: MilliSatoshi,
+                           maxHtlcValueInFlightMsat: UInt64,
                            htlcMinimum: MilliSatoshi,
                            toSelfDelay: CltvExpiryDelta,
                            maxAcceptedHtlcs: Int)
@@ -84,24 +84,12 @@ object OpenChannelInterceptor {
       }
     }
 
-  private def computeMaxHtlcValueInFlight(nodeParams: NodeParams, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): MilliSatoshi = {
-    if (unlimitedMaxHtlcValueInFlight) {
-      // We don't want to impose limits on the amount in flight, typically to allow fully emptying the channel.
-      21e6.btc.toMilliSatoshi
-    } else {
-      // NB: when we're the initiator, we don't know yet if the remote peer will contribute to the funding amount, so
-      // the percentage-based value may be underestimated. That's ok, this is a security parameter so it makes sense to
-      // base it on the amount that we're contributing instead of the total funding amount.
-      nodeParams.channelConf.maxHtlcValueInFlightMsat.min(fundingAmount * nodeParams.channelConf.maxHtlcValueInFlightPercent / 100)
-    }
-  }
-
   def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], walletStaticPaymentBasepoint_opt: Option[PublicKey], isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
       nodeParams.channelKeyManager.newFundingKeyPath(isChannelOpener),
       dustLimit = nodeParams.channelConf.dustLimit,
-      maxHtlcValueInFlightMsat = computeMaxHtlcValueInFlight(nodeParams, fundingAmount, unlimitedMaxHtlcValueInFlight),
+      maxHtlcValueInFlightMsat = nodeParams.channelConf.maxHtlcValueInFlight(fundingAmount, unlimitedMaxHtlcValueInFlight),
       initialRequestedChannelReserve_opt = if (dualFunded) None else Some((fundingAmount * nodeParams.channelConf.reserveToFundingRatio).max(nodeParams.channelConf.dustLimit)), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimum = nodeParams.channelConf.htlcMinimum,
       toSelfDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay
@@ -216,7 +204,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
           case Some(requestFunding) if Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.OnTheFlyFunding) && localParams.paysCommitTxFees =>
             val addFunding = LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.liquidityAdsConfig.rates_opt)
             // Now that we know how much we'll contribute to the funding transaction, we update the maxHtlcValueInFlight.
-            val maxHtlcValueInFlight = localParams.maxHtlcValueInFlightMsat.max(computeMaxHtlcValueInFlight(nodeParams, request.fundingAmount + addFunding.fundingAmount, unlimitedMaxHtlcValueInFlight = false))
+            val maxHtlcValueInFlight = Seq(localParams.maxHtlcValueInFlightMsat, nodeParams.channelConf.maxHtlcValueInFlight(request.fundingAmount + addFunding.fundingAmount, unlimited = false)).max
             val localParams1 = localParams.copy(maxHtlcValueInFlightMsat = maxHtlcValueInFlight)
             val accept = SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, Some(addFunding), localParams1, request.peerConnection.toClassic)
             checkNoExistingChannel(request, accept)
