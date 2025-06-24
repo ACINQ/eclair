@@ -278,7 +278,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                   Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
                   // We don't bother decrypting the downstream failure to forward a more meaningful error upstream, it's
                   // very likely that it won't be actionable anyway because of our node restart.
-                  PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true))
+                  val failure = FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure())
+                  PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FAIL_HTLC(htlcId, failure, None, commit = true))
                 }
             }
           }
