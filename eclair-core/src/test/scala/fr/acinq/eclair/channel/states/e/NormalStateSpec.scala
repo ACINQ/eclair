@@ -937,7 +937,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
     inside(bobListener.expectMsgType[LocalChannelUpdate]) { lcu =>
-      assert(lcu.channelUpdate.htlcMaximumMsat == 0.msat)
+      assert(lcu.commitments.params.localParams.htlcMinimum == 1000.msat)
+      assert(lcu.commitments.params.remoteParams.htlcMinimum == 0.msat)
+      assert(lcu.channelUpdate.htlcMaximumMsat == 1000.msat)
       assert(lcu.channelUpdate.shortChannelId.isInstanceOf[RealShortChannelId])
       assert(lcu.channelUpdate.channelFlags.isEnabled)
     }
@@ -960,7 +962,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     aliceListener.expectNoMessage(100 millis)
     bobListener.expectNoMessage(100 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 500_000_000.msat)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 0.msat)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 1000.msat)
 
     // Alice sends more funds, reaching Bob's third balance bucket and causing him to update his htlc_maximum_msat.
     val (p2, htlc2) = addHtlc(2_000_000 msat, alice, bob, alice2bob, bob2alice)
@@ -981,8 +983,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 989_500_000.msat)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 10_500_000.msat)
-    assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.htlcMaximumMsat == 0.msat)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 0.msat)
+    assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.htlcMaximumMsat == 1000.msat)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 1000.msat)
     aliceListener.expectNoMessage(100 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.htlcMaximumMsat == 500_000_000.msat)
 
