@@ -185,7 +185,7 @@ class PaymentOnionSpec extends AnyFunSuite {
       PublicKey(hex"0232882c4982576e00f0d6bd4998f5b3e92d47ecc8fbad5b6a5e7521819d891d9e"),
       Seq(RouteBlinding.BlindedHop(PublicKey(hex"03823aa560d631e9d7b686be4a9227e577009afb5173023b458a6a6aff056ac980"), hex""))
     )
-    val path = PaymentBlindedRoute(blindedRoute, OfferTypes.PaymentInfo(1000 msat, 678, CltvExpiryDelta(82), 300 msat, 4000000 msat, Features.empty))
+    val path = PaymentBlindedRoute(blindedRoute, OfferTypes.PaymentInfo(1000 msat, 678, CltvExpiryDelta(82), 300 msat, 4000000 msat, ByteVector.empty))
     val expected = TlvStream[OnionPaymentPayloadTlv](AmountToForward(341 msat), OutgoingCltv(CltvExpiry(826483)), OutgoingBlindedPaths(Seq(path)), InvoiceFeatures(features))
     val bin = hex"82 02020155 04030c9c73 fe0001023103020000 fe000102366a0100000000000001d40232882c4982576e00f0d6bd4998f5b3e92d47ecc8fbad5b6a5e7521819d891d9e0103823aa560d631e9d7b686be4a9227e577009afb5173023b458a6a6aff056ac9800000000003e8000002a60052000000000000012c00000000003d09000000"
 

@@ -83,7 +83,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     lazy val handlerWithKeySend = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams.copy(features = featuresWithKeySend), register.ref, offerManager.ref))
     lazy val handlerWithRouteBlinding = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams.copy(features = featuresWithRouteBlinding), register.ref, offerManager.ref))
 
-    def createEmptyReceivingRoute(pathId: ByteVector): Seq[ReceivingRoute] = Seq(ReceivingRoute(Nil, pathId, CltvExpiryDelta(144), PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 1_000_000_000 msat, Features.empty)))
+    def createEmptyReceivingRoute(pathId: ByteVector): Seq[ReceivingRoute] = Seq(ReceivingRoute(Nil, pathId, CltvExpiryDelta(144), PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 1_000_000_000 msat, ByteVector.empty)))
   }
 
   override def withFixture(test: OneArgTest): Outcome = {
@@ -279,7 +279,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val receivingRoutes = Seq(
       ReceivingRoute(hops1, randomBytes32(), CltvExpiryDelta(100), aggregatePaymentInfo(amount, hops1, nodeParams.channelConf.minFinalExpiryDelta)),
       ReceivingRoute(hops2, randomBytes32(), CltvExpiryDelta(50), aggregatePaymentInfo(amount, hops2, nodeParams.channelConf.minFinalExpiryDelta)),
-      ReceivingRoute(Nil, randomBytes32(), CltvExpiryDelta(250), PaymentInfo(0 msat, 0, nodeParams.channelConf.minFinalExpiryDelta, 0 msat, amount, Features.empty)),
+      ReceivingRoute(Nil, randomBytes32(), CltvExpiryDelta(250), PaymentInfo(0 msat, 0, nodeParams.channelConf.minFinalExpiryDelta, 0 msat, amount, ByteVector.empty)),
     )
     sender.send(handlerWithRouteBlinding, ReceiveOfferPayment(sender.ref, privKey, invoiceReq, receivingRoutes, randomBytes32()))
     val invoice = sender.expectMsgType[Bolt12Invoice]
@@ -291,13 +291,13 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(invoice.blindedPaths.length == 3)
     assert(invoice.blindedPaths(0).route.blindedNodeIds.length == 4)
     assert(invoice.blindedPaths(0).route.firstNodeId == EncodedNodeId(a))
-    assert(invoice.blindedPaths(0).paymentInfo == PaymentInfo(1950 msat, 0, CltvExpiryDelta(193), 1 msat, 25_000 msat, Features.empty))
+    assert(invoice.blindedPaths(0).paymentInfo == PaymentInfo(1950 msat, 0, CltvExpiryDelta(193), 1 msat, 25_000 msat, ByteVector.empty))
     assert(invoice.blindedPaths(1).route.blindedNodeIds.length == 4)
     assert(invoice.blindedPaths(1).route.firstNodeId == EncodedNodeId(c))
-    assert(invoice.blindedPaths(1).paymentInfo == PaymentInfo(400 msat, 0, CltvExpiryDelta(183), 1 msat, 25_000 msat, Features.empty))
+    assert(invoice.blindedPaths(1).paymentInfo == PaymentInfo(400 msat, 0, CltvExpiryDelta(183), 1 msat, 25_000 msat, ByteVector.empty))
     assert(invoice.blindedPaths(2).route.blindedNodeIds.length == 1)
     assert(invoice.blindedPaths(2).route.firstNodeId == EncodedNodeId(d))
-    assert(invoice.blindedPaths(2).paymentInfo == PaymentInfo(0 msat, 0, CltvExpiryDelta(18), 0 msat, 25_000 msat, Features.empty))
+    assert(invoice.blindedPaths(2).paymentInfo == PaymentInfo(0 msat, 0, CltvExpiryDelta(18), 0 msat, 25_000 msat, ByteVector.empty))
     // Offer invoices shouldn't be stored in the DB until we receive a payment for it.
     assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).isEmpty)
     // Check that all non-final encrypted payloads for blinded routes have the same length.

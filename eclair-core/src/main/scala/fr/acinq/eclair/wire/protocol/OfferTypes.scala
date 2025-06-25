@@ -87,7 +87,7 @@ object OfferTypes {
   /**
    * Features supported to pay the offer.
    */
-  case class OfferFeatures(features: Features[Feature]) extends OfferTlv
+  case class OfferFeatures(features: ByteVector) extends OfferTlv
 
   /**
    * Time after which the offer is no longer valid.
@@ -136,7 +136,7 @@ object OfferTypes {
   /**
    * Features supported by the sender to pay the offer.
    */
-  case class InvoiceRequestFeatures(features: Features[Feature]) extends InvoiceRequestTlv
+  case class InvoiceRequestFeatures(features: ByteVector) extends InvoiceRequestTlv
 
   /**
    * Number of items to purchase. Only use if the offer supports purchasing multiple items at once.
@@ -164,7 +164,7 @@ object OfferTypes {
                          cltvExpiryDelta: CltvExpiryDelta,
                          minHtlc: MilliSatoshi,
                          maxHtlc: MilliSatoshi,
-                         allowedFeatures: Features[Feature]) {
+                         allowedFeatures: ByteVector) {
     def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(feeBase, feeProportionalMillionths, amount)
   }
 
@@ -203,7 +203,7 @@ object OfferTypes {
   /**
    * Features supported to pay the invoice.
    */
-  case class InvoiceFeatures(features: Features[Feature]) extends InvoiceTlv
+  case class InvoiceFeatures(features: ByteVector) extends InvoiceTlv
 
   /**
    * Public key of the invoice recipient.
@@ -241,7 +241,7 @@ object OfferTypes {
     val metadata: Option[ByteVector] = records.get[OfferMetadata].map(_.data)
     val amount: Option[MilliSatoshi] = if (records.get[OfferCurrency].isEmpty) records.get[OfferAmount].map(_.amount.msat) else None
     val description: Option[String] = records.get[OfferDescription].map(_.description)
-    val features: Features[Bolt12Feature] = records.get[OfferFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
+    val features: Features[Bolt12Feature] = records.get[OfferFeatures].map(f => Features(f.features).bolt12Features()).getOrElse(Features.empty)
     val expiry: Option[TimestampSecond] = records.get[OfferAbsoluteExpiry].map(_.absoluteExpiry)
     private val paths: Option[Seq[BlindedPath]] = records.get[OfferPaths].map(_.paths.map(BlindedPath))
     val issuer: Option[String] = records.get[OfferIssuer].map(_.issuer)
@@ -282,7 +282,7 @@ object OfferTypes {
         if (chain != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(chain))) else None,
         amount_opt.map(_.toLong).map(OfferAmount),
         description_opt.map(OfferDescription),
-        if (!features.isEmpty) Some(OfferFeatures(features.unscoped())) else None,
+        if (!features.isEmpty) Some(OfferFeatures(features.unscoped().toByteVector)) else None,
         Some(OfferNodeId(nodeId)),
       ).flatten ++ additionalTlvs
       Offer(TlvStream(tlvs, customTlvs))
@@ -300,7 +300,7 @@ object OfferTypes {
         if (chain != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(chain))) else None,
         amount_opt.map(_.toLong).map(OfferAmount),
         description_opt.map(OfferDescription),
-        if (!features.isEmpty) Some(OfferFeatures(features.unscoped())) else None,
+        if (!features.isEmpty) Some(OfferFeatures(features.unscoped().toByteVector)) else None,
         Some(OfferPaths(paths))
       ).flatten ++ additionalTlvs
       Offer(TlvStream(tlvs, customTlvs))
@@ -347,7 +347,7 @@ object OfferTypes {
     val metadata: ByteVector = records.get[InvoiceRequestMetadata].get.data
     val chain: BlockHash = records.get[InvoiceRequestChain].map(_.hash).getOrElse(Block.LivenetGenesisBlock.hash)
     private val amount_opt: Option[MilliSatoshi] = records.get[InvoiceRequestAmount].map(_.amount)
-    val features: Features[Bolt12Feature] = records.get[InvoiceRequestFeatures].map(_.features.bolt12Features()).getOrElse(Features.empty)
+    val features: Features[Bolt12Feature] = records.get[InvoiceRequestFeatures].map(f => Features(f.features).bolt12Features()).getOrElse(Features.empty)
     val quantity_opt: Option[Long] = records.get[InvoiceRequestQuantity].map(_.quantity)
     val quantity: Long = quantity_opt.getOrElse(1)
     private val baseInvoiceAmount_opt = offer.amount.map(_ * quantity)
@@ -408,7 +408,7 @@ object OfferTypes {
         Some(InvoiceRequestChain(chain)),
         Some(InvoiceRequestAmount(amount)),
         if (offer.quantityMax.nonEmpty) Some(InvoiceRequestQuantity(quantity)) else None,
-        if (!features.isEmpty) Some(InvoiceRequestFeatures(features.unscoped())) else None,
+        if (!features.isEmpty) Some(InvoiceRequestFeatures(features.unscoped().toByteVector)) else None,
         Some(InvoiceRequestPayerId(payerKey.publicKey)),
       ).flatten ++ additionalTlvs
       val signature = signSchnorr(signatureTag, rootHash(TlvStream(tlvs, offer.records.unknown ++ customTlvs), OfferCodecs.invoiceRequestTlvCodec), payerKey)

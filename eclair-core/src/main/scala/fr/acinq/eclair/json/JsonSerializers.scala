@@ -502,7 +502,7 @@ object OfferSerializer extends ConvertClassSerializer[Offer](o => {
     nodeId = o.records.get[OfferTypes.OfferNodeId].map(_.publicKey),
     paths = o.records.get[OfferTypes.OfferPaths].map(_.paths.map(p => BlindedRouteJson(p.firstNodeId, p.blindedHops.length))),
     quantityMax = o.records.get[OfferTypes.OfferQuantityMax].map(_.max),
-    features = o.records.get[OfferTypes.OfferFeatures].map(_.features),
+    features = o.records.get[OfferTypes.OfferFeatures].map(f => Features(f.features)),
     metadata = o.records.get[OfferTypes.OfferMetadata].map(_.data.toHex),
     unknownTlvs = if (o.records.unknown.isEmpty) {
       None

@@ -218,7 +218,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val offer = Offer(None, Some("Bolt12 r0cks"), recipientKey.publicKey, features, Block.RegtestGenesisBlock.hash)
     val invoiceRequest = InvoiceRequest(offer, amount_bc, 1, features, randomKey(), Block.RegtestGenesisBlock.hash)
     val blindedRoute = BlindedRouteCreation.createBlindedRouteFromHops(Nil, c, hex"deadbeef", 1 msat, CltvExpiry(500_000)).route
-    val paymentInfo = PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 1 msat, amount_bc, Features.empty)
+    val paymentInfo = PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 1 msat, amount_bc, ByteVector.empty)
     val invoice = Bolt12Invoice(invoiceRequest, paymentPreimage, recipientKey, 300 seconds, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
     val resolvedPaths = invoice.blindedPaths.map(path => {
       val introductionNodeId = path.route.firstNodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey
@@ -503,7 +503,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
       // We send the wrong blinded payload to the introduction node.
       val tmpBlindedRoute = BlindedRouteCreation.createBlindedRouteFromHops(Seq(channelHopFromUpdate(b, c, channelUpdate_bc)), c, hex"deadbeef", 1 msat, CltvExpiry(500_000)).route
       val blindedRoute = tmpBlindedRoute.copy(blindedHops = tmpBlindedRoute.blindedHops.reverse)
-      val paymentInfo = OfferTypes.PaymentInfo(fee_b, 0, channelUpdate_bc.cltvExpiryDelta, 0 msat, amount_bc, Features.empty)
+      val paymentInfo = OfferTypes.PaymentInfo(fee_b, 0, channelUpdate_bc.cltvExpiryDelta, 0 msat, amount_bc, ByteVector.empty)
       val invoice = Bolt12Invoice(invoiceRequest, paymentPreimage, priv_c.privateKey, 300 seconds, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
       val resolvedPaths = invoice.blindedPaths.map(path => {
         val introductionNodeId = path.route.firstNodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey
