@@ -118,8 +118,8 @@ private class BalanceActor(context: ActorContext[Command],
                 .foreach(utxo => log.info("- utxo={} amount={}", utxo.outPoint, utxo.amount))
               // Off-chain metrics:
               log.info("off-chain diff={}", balance.offChain.total - previousBalance.offChain.total)
-              val offChainBalancesBefore = previousBalance.channels.view.mapValues(channel => OffChainBalance().addChannelBalance(channel).total)
-              val offChainBalancesAfter = balance.channels.view.mapValues(channel => OffChainBalance().addChannelBalance(channel).total)
+              val offChainBalancesBefore = previousBalance.channels.view.mapValues(channel => OffChainBalance().addChannelBalance(channel, previousBalance.onChain.recentlySpentInputs).total)
+              val offChainBalancesAfter = balance.channels.view.mapValues(channel => OffChainBalance().addChannelBalance(channel, balance.onChain.recentlySpentInputs).total)
               offChainBalancesAfter
                 .map { case (channelId, balanceAfter) => (channelId, balanceAfter - offChainBalancesBefore.getOrElse(channelId, Btc(0))) }
                 .filter { case (_, balanceDiff) => balanceDiff > 0.sat }
