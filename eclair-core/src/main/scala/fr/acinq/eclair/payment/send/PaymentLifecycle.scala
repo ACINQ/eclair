@@ -103,8 +103,16 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
       val p = PartialPayment(id, d.request.amount, d.cmd.amount - d.request.amount, htlc.channelId, Some(d.route.fullRoute))
       val remainingAttribution_opt = fulfill match {
-        case HtlcResult.RemoteFulfill(fulfill) =>
-          fulfill.attribution_opt.flatMap(Sphinx.Attribution.fulfillHoldTimes(_, d.sharedSecrets).remaining_opt)
+        case HtlcResult.RemoteFulfill(updateFulfill) =>
+          updateFulfill.attribution_opt match {
+            case Some(attribution) =>
+              val Sphinx.Attribution.UnwrappedAttribution(holdTimes, remaining_opt) = Sphinx.Attribution.fulfillHoldTimes(attribution, d.sharedSecrets)
+              if (holdTimes.nonEmpty) {
+                context.system.eventStream.publish(Router.ReportedHoldTimes(holdTimes))
+              }
+              remaining_opt
+            case None => None
+          }
         case _: HtlcResult.OnChainFulfill => None
       }
       myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, remainingAttribution_opt)))
@@ -170,6 +178,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   private def handleRemoteFail(d: WaitingForComplete, fail: UpdateFailHtlc) = {
     import d._
     val htlcFailure = Sphinx.FailurePacket.decrypt(fail.reason, fail.attribution_opt, sharedSecrets)
+    if (htlcFailure.holdTimes.nonEmpty) {
+      context.system.eventStream.publish(Router.ReportedHoldTimes(htlcFailure.holdTimes))
+    }
     ((htlcFailure.failure match {
       case success@Right(e) =>
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(RemoteFailure(request.amount, Nil, e))).increment()

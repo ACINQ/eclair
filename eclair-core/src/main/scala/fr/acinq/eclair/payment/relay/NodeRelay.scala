@@ -247,7 +247,7 @@ class NodeRelay private(nodeParams: NodeParams,
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
         // Note that we don't treat this as a trampoline failure, which would be encrypted for the payer.
         // This is a failure of the previous trampoline node who didn't send a valid MPP payment.
-        parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, p.receivedAt, Some(FailureReason.LocalFailure(failure))) }
+        parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, p.receivedAt, p.receivedAt, Some(FailureReason.LocalFailure(failure))) }
         stopping()
       case WrappedMultiPartPaymentSucceeded(MultiPartPaymentFSM.MultiPartPaymentSucceeded(_, parts)) =>
         context.log.info("completed incoming multi-part payment with parts={} paidAmount={}", parts.size, parts.map(_.amount).sum)
@@ -520,12 +520,12 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def rejectExtraHtlc(add: UpdateAddHtlc, htlcReceivedAt: TimestampMilli): Unit = {
     context.log.warn("rejecting extra htlc #{} from channel {}", add.id, add.channelId)
-    rejectHtlc(add.id, add.channelId, add.amountMsat, htlcReceivedAt)
+    rejectHtlc(add.id, add.channelId, add.amountMsat, htlcReceivedAt, htlcReceivedAt)
   }
 
-  private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, htlcReceivedAt: TimestampMilli, failure_opt: Option[FailureReason] = None): Unit = {
+  private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, htlcReceivedAt: TimestampMilli, paymentReceivedAt: TimestampMilli, failure_opt: Option[FailureReason] = None): Unit = {
     val failure = failure_opt.getOrElse(FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(amount, nodeParams.currentBlockHeight)))
-    val cmd = CMD_FAIL_HTLC(htlcId, failure, Some(htlcReceivedAt), commit = true)
+    val cmd = CMD_FAIL_HTLC(htlcId, failure, Some(htlcReceivedAt), Some(paymentReceivedAt), commit = true)
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
   }
 
@@ -546,11 +546,11 @@ class NodeRelay private(nodeParams: NodeParams,
           failure
         }
     }
-    upstream.received.foreach(r => rejectHtlc(r.add.id, r.add.channelId, upstream.amountIn, r.receivedAt, Some(failure1)))
+    upstream.received.foreach(r => rejectHtlc(r.add.id, r.add.channelId, upstream.amountIn, r.receivedAt, upstream.receivedAt, Some(failure1)))
   }
 
   private def fulfillPayment(upstream: Upstream.Hot.Trampoline, paymentPreimage: ByteVector32, downstreamAttribution_opt: Option[ByteVector]): Unit = upstream.received.foreach(r => {
-    val cmd = CMD_FULFILL_HTLC(r.add.id, paymentPreimage, downstreamAttribution_opt, Some(r.receivedAt), commit = true)
+    val cmd = CMD_FULFILL_HTLC(r.add.id, paymentPreimage, downstreamAttribution_opt, Some(r.receivedAt), Some(upstream.receivedAt), commit = true)
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, r.add.channelId, cmd)
   })
 

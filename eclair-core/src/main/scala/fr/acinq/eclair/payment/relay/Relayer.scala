@@ -84,7 +84,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
               // We are the introduction point of a blinded path: we add a non-negligible delay to make it look like it
               // could come from a downstream node.
               val delay = Some(500.millis + Random.nextLong(1500).millis)
-              CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(InvalidOnionBlinding(badOnion.onionHash)), Some(TimestampMilli.now()), delay, commit = true)
+              CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(InvalidOnionBlinding(badOnion.onionHash)), Some(TimestampMilli.now()), None, delay, commit = true)
             case _ =>
               CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)
           }

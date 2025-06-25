@@ -1231,7 +1231,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(failureDetails_c.holdTimes == Seq(HoldTime(200 millis, d), HoldTime(0 millis, e)))
     assert(failureDetails_c.failure.isLeft)
     val Sphinx.CannotDecryptFailurePacket(unwrapped_c, attribution_c) = failureDetails_c.failure.left.toOption.get
-    val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_c.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(add_c.id, FailureReason.EncryptedDownstreamFailure(unwrapped_c, attribution_c), Some(TimestampMilli(250))), add_c, now = TimestampMilli(600))
+    val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_c.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(add_c.id, FailureReason.EncryptedDownstreamFailure(unwrapped_c, attribution_c), Some(TimestampMilli(250)), Some(TimestampMilli(300))), add_c, now = TimestampMilli(600))
     // b decrypts the failure with the outer onion secrets *and* trampoline onion secrets
     val failureDetails_b = Sphinx.FailurePacket.decrypt(fail_b.reason, fail_b.attribution_opt, payment.onion.sharedSecrets)
     assert(failureDetails_b.holdTimes == Seq(HoldTime(300 millis, c)))
@@ -1357,7 +1357,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     // Carol cannot decrypt the failure, so she forwards it to Bob.
     val failureForBob = {
       val Left(Sphinx.CannotDecryptFailurePacket(unwrapped, attribution)) = Sphinx.FailurePacket.decrypt(failureForCarol.reason, failureForCarol.attribution_opt, sharedSecretsCarol).failure
-      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(priv_c.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(failureForCarol.id, FailureReason.EncryptedDownstreamFailure(unwrapped, attribution), Some(failedAt - 400.millis)), htlcForCarol, failedAt + 100.millis)
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(priv_c.privateKey, useAttributableFailures = true, CMD_FAIL_HTLC(failureForCarol.id, FailureReason.EncryptedDownstreamFailure(unwrapped, attribution), Some(failedAt - 400.millis), Some(failedAt - 350.millis)), htlcForCarol, failedAt + 100.millis)
       fail
     }
 
@@ -1369,7 +1369,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     // Alice is able to decrypt the failure using the outer onion and trampoline onion shared secrets.
     val Sphinx.HtlcFailure(holdTimes, Right(decrypted)) = Sphinx.FailurePacket.decrypt(failureForAlice.reason, failureForAlice.attribution_opt, sharedSecretsAlice ++ trampolineOnion.sharedSecrets)
-    assert(holdTimes == List(Sphinx.HoldTime(700 millis, b), Sphinx.HoldTime(500 millis, c), Sphinx.HoldTime(500 millis, c)))
+    assert(holdTimes == List(Sphinx.HoldTime(700 millis, b), Sphinx.HoldTime(500 millis, c), Sphinx.HoldTime(400 millis, c)))
     assert(decrypted.failureMessage == failure)
     assert(decrypted.originNode == path.route.blindedNodeIds.last)
   }
@@ -1466,7 +1466,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
       assert(sharedSecretsCarol.map(_.secret) == Seq(ByteVector32.fromValidHex("ba32b1206434f6ded793257f34e497d4ba67f66e026a108860cc65dd9a6c8989"), ByteVector32.fromValidHex("e79cf33c343ca26b7048f029ad3c70f0dae0e3061eef960b5677696ffd297f54")))
       val Left(Sphinx.CannotDecryptFailurePacket(unwrapped, attribution_opt)) = Sphinx.FailurePacket.decrypt(failureForCarol.reason, failureForCarol.attribution_opt, sharedSecretsCarol).failure
       assert(unwrapped == hex"af2704cc847cc1e1bd33242f6a123a5139015910d813c18f9c7cfda520519cabaa2bfcdb3e43e30adefd8471e095949ab5d39e1b3b875f48f8162c9740fa837ca72404a0eccaca2b521a46cb5d6cc0d1dcc8a15670efe05d8ba8b22f08b2315b796dbd713b55b7ed639f5fbeff3b0dcb87cd36b44b56530fcb2c752a98497241611ff09c03b6853a7eae890723899057bf3ab77d1638a287178c370305f54ade00af7e5c4fbb838aed9ac86c24fd70c5f716e5cdefdf8c3037bc85b467251b0644a01f3c428744ed09263dd07b6671960775425f9025f290af6e0a53cc16976107ba13200b13703fa5f09c5b4edca19853e9528feef13b4e62633c97e4f417c9a098c2ce7125c29c3196cd92b5240d31ecf2d22197cd26aa005c88598d0ab9fd5ea0e77e")
-      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(priv, useAttributableFailures = true, CMD_FAIL_HTLC(failureForCarol.id, FailureReason.EncryptedDownstreamFailure(unwrapped, attribution_opt), Some(failedAt - 320.millis)), htlcForCarol, failedAt + 20.millis)
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(priv, useAttributableFailures = true, CMD_FAIL_HTLC(failureForCarol.id, FailureReason.EncryptedDownstreamFailure(unwrapped, attribution_opt), Some(failedAt - 320.millis), Some(failedAt - 270.millis)), htlcForCarol, failedAt + 20.millis)
       assert(fail.reason == hex"d3ab773d52436535f3f85a1204afc975319b28e7ab953c6ee81d61aa0fc77885abea0f0cbb44a6729b4916f490994dcb180d6cb0fdfe2c50ee0f96ef4d24f82fdb488817e7d099362351df2ded93992d175d1fbcf04ffc1c3f4d1e797c81c652f4f648a03950ed43002b75f23c734de26a33060320a436214f7c2fe71eb3e34c0eabe9eada713b667e882a99667bf6327353447dbd0115c5e0ca74524fb6c4eb2839c7db82804644306f534878c163b0e7f2398592ba3b7155d1db259447c56de0420bb81d9a0a33150e4316818cd66b5d74fb3327e769b83c865aea6e77493bf0a977417b8a52328b5927aec7bd14764a7a304ef15b5349ceb606ada2babc45c1f1b5ed0b9e3b2181a61611b93a6f40f360e508d3a42dcacf690bda01da0086f603c382")
       fail
     }
@@ -1486,7 +1486,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(trampolineFailure == hex"1ecb52bae42f744559016d17fb74c65e0a252ee89e4fbcd977a6f9b89dda92d5169dca498cde6fd2b33108433ec4243e95f90be7286e4d8ac011fd572c1a5e2e534a374ae2cdad3906e9eafe73be334d40b4796a77b5550742e759590ad4f2af5d32d701a1bc87101b87eed4460bc288970fc905faa3b122fb2f93e5e430f8744da9918e93db0ae9987abb5fbe5740127d0ce48e022e85a988ba84e5390bc3f3e4026b841109489a21d0e7050815fd069d50ff1222a48708badffa2904de8786d00200e59c2f0f6a7f38a1ac2d11cbf1eded8414de55ba516af6c43c339ad02d363b60f91258d2596f6cc329666e825cc830996b4e0726ab85e69bfc52e6e7f91b8fbfb2a3e3b69cf20677138e6aaeb262a463ca9448b27eeacafbe52bee5bca0796ef69")
     assert(trampolineOnionForCarol.sharedSecrets.map(_.secret) == Seq(ByteVector32.fromValidHex("cf4ca0186dc2c2ea3f8e5b0999418151a6c61339ee09fef4c4804cd2c60fb359"), ByteVector32.fromValidHex("7bd32e41e242e1bb33e9bbfbff62b51249332a7c86d814dd4c8945b9c3bc9950")))
     val Sphinx.HtlcFailure(trampolineHoldTimes, Right(f)) = Sphinx.FailurePacket.decrypt(trampolineFailure, trampolineAttribution, trampolineOnionForCarol.sharedSecrets)
-    assert(trampolineHoldTimes == List(Sphinx.HoldTime(300 millis, carol), Sphinx.HoldTime(0 millis, eve)))
+    assert(trampolineHoldTimes == List(Sphinx.HoldTime(200 millis, carol), Sphinx.HoldTime(0 millis, eve)))
     assert(f.originNode == eve)
     assert(f.failureMessage == IncorrectOrUnknownPaymentDetails(100_000_000 msat, BlockHeight(800_000)))
   }
@@ -1652,7 +1652,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val failureForBob = {
       val carolPriv = PrivateKey(hex"4343434343434343434343434343434343434343434343434343434343434343")
       val add = UpdateAddHtlc(randomBytes32(), 1, 150_005_000 msat, paymentHash, CltvExpiry(800_100), onionForCarol, None, 1.0, None)
-      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(carolPriv, useAttributableFailures = true, CMD_FAIL_HTLC(add.id, FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure()), Some(failedAt - 130.millis)), add, failedAt + 15.millis)
+      val Right(fail: UpdateFailHtlc) = buildHtlcFailure(carolPriv, useAttributableFailures = true, CMD_FAIL_HTLC(add.id, FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure()), Some(failedAt - 130.millis), Some(failedAt - 110.millis)), add, failedAt + 15.millis)
       assert(fail.reason == hex"7b5d085fc545742096fabdcc1d37a1c62b88080f3c6ab8f4abd4f0fbd35639e36625db968c12816c072f374d79e5c642a6419aa13c12abb69537581ad0afe96f41cc2789d91b25ce04d46fffbeeb6ef639f44f9a2188f21a64cb836167267b54b5b3611ab77efd5f052f76295966c41d0b6d8a1c0fce72eece41e67156e649de0c849d96be186f5d57790409f918b45cd052d3bd3972cd4f0edc990ac13d5d54ecf2667888e989bf5a034b32a0693d01a0d9465007d5395343cc1a61129bcf0cbb67eff959f73350853c039219a9e356999389c1604f7728e3d66a239ddf1cf12b12f6a6d6810065955c8128c43e85d8290f499f420f308cc1a8ae3acb4a1aa268dbfeb3b17c17ca50b8fadce5f38e1519881bd29ac2823043f35891de23e156e40ac0b2")
       fail
     }

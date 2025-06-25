@@ -269,7 +269,7 @@ class ChannelRelay private(nodeParams: NodeParams,
               cmd match {
                 // However, when the failure comes from us, we don't want to leak the unannounced channel by revealing
                 // its channel_update: in that case, we always return a temporary node failure instead.
-                case cmd@CMD_FAIL_HTLC(_, FailureReason.LocalFailure(_: Update), _, _, _, _) => cmd.copy(reason = FailureReason.LocalFailure(TemporaryNodeFailure()))
+                case cmd@CMD_FAIL_HTLC(_, FailureReason.LocalFailure(_: Update), _, _, _, _, _) => cmd.copy(reason = FailureReason.LocalFailure(TemporaryNodeFailure()))
                 case _ => cmd
               }
             case None =>
@@ -346,7 +346,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           channel.channelUpdate,
           relayResult match {
             case _: RelaySuccess => "success"
-            case RelayFailure(CMD_FAIL_HTLC(_, FailureReason.LocalFailure(failureReason), _, _, _, _)) => failureReason
+            case RelayFailure(CMD_FAIL_HTLC(_, FailureReason.LocalFailure(failureReason), _, _, _, _, _)) => failureReason
             case other => other
           })
         (channel, relayResult)
@@ -434,7 +434,7 @@ class ChannelRelay private(nodeParams: NodeParams,
   }
 
   private def makeCmdFailHtlc(originHtlcId: Long, failure: FailureMessage, delay_opt: Option[FiniteDuration] = None): CMD_FAIL_HTLC =
-    CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(failure), Some(upstream.receivedAt), delay_opt, commit = true)
+    CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(failure), Some(upstream.receivedAt), None, delay_opt, commit = true)
 
   private def recordRelayDuration(isSuccess: Boolean): Unit =
     Metrics.RelayedPaymentDuration
