@@ -28,7 +28,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
@@ -830,4 +830,6 @@ object Router {
 
   /** We have tried to relay this amount from this channel and it failed. */
   case class ChannelCouldNotRelay(amount: MilliSatoshi, hop: ChannelHop)
+
+  case class ReportedHoldTimes(holdTimes: Seq[Sphinx.HoldTime])
 }
