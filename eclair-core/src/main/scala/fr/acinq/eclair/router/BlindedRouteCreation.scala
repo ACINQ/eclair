@@ -28,7 +28,7 @@ object BlindedRouteCreation {
 
   /** Compute aggregated fees and expiry for a given route. */
   def aggregatePaymentInfo(amount: MilliSatoshi, hops: Seq[ChannelHop], minFinalCltvExpiryDelta: CltvExpiryDelta): PaymentInfo = {
-    val zeroPaymentInfo = PaymentInfo(0 msat, 0, minFinalCltvExpiryDelta, 0 msat, amount, Features.empty)
+    val zeroPaymentInfo = PaymentInfo(0 msat, 0, minFinalCltvExpiryDelta, 0 msat, amount, ByteVector.empty)
     hops.foldRight(zeroPaymentInfo) {
       case (channel, payInfo) =>
         val newFeeBase = MilliSatoshi((channel.params.relayFees.feeBase.toLong * 1_000_000 + payInfo.feeBase.toLong * (1_000_000 + channel.params.relayFees.feeProportionalMillionths) + 1_000_000 - 1) / 1_000_000)

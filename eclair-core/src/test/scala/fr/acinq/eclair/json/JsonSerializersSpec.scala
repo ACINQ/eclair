@@ -355,7 +355,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
       OfferTypes.OfferCurrency(Currency.getInstance("EUR")),
       OfferTypes.OfferAmount(86205),
       OfferTypes.OfferDescription("offer with a lot of fields in it"),
-      OfferTypes.OfferFeatures(Features(Features.ProvideStorage -> FeatureSupport.Mandatory)),
+      OfferTypes.OfferFeatures(Features(Features.ProvideStorage -> FeatureSupport.Mandatory).toByteVector),
       OfferTypes.OfferAbsoluteExpiry(TimestampSecond(3600)),
       OfferTypes.OfferPaths(Seq(Sphinx.RouteBlinding.BlindedRoute(EncodedNodeId.WithPublicKey.Plain(PublicKey(hex"022812e3a3760ac989b8749ee9fc70fd12e4d7f3cad5e3e2bf572e9e4eaaa7b7d9")), PublicKey(hex"028a2b20b2debdfd97de08f6e2374f2946116492f358b78acf9eac05f6fdac632d"), Seq(Sphinx.RouteBlinding.BlindedHop(PublicKey(hex"031b27d9e97dbb0ef87c48bb0231c96c6bca1ee54b0e0cfe869ad2388ce247719f"), hex"def5"))))),
       OfferTypes.OfferIssuer("bob@bobcorp.com"),

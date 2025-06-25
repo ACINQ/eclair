@@ -288,7 +288,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val offer = Offer(None, Some("Bolt12 r0cks"), e, features, Block.RegtestGenesisBlock.hash)
     val invoiceRequest = InvoiceRequest(offer, finalAmount, 1, features, payerKey, Block.RegtestGenesisBlock.hash)
     val blindedRoute = BlindedRouteCreation.createBlindedRouteFromHops(Nil, e, hex"2a2a2a2a", 1 msat, CltvExpiry(500_000)).route
-    val paymentInfo = OfferTypes.PaymentInfo(1_000 msat, 0, CltvExpiryDelta(24), 0 msat, finalAmount, Features.empty)
+    val paymentInfo = OfferTypes.PaymentInfo(1_000 msat, 0, CltvExpiryDelta(24), 0 msat, finalAmount, ByteVector.empty)
     Bolt12Invoice(invoiceRequest, paymentPreimage, priv_e.privateKey, 300 seconds, features, Seq(PaymentBlindedRoute(blindedRoute, paymentInfo)))
   }
 

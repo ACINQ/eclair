@@ -45,7 +45,7 @@ object OfferCodecs {
 
   private val offerDescription: Codec[OfferDescription] = tlvField(utf8)
 
-  private val offerFeatures: Codec[OfferFeatures] = tlvField(featuresCodec)
+  private val offerFeatures: Codec[OfferFeatures] = tlvField(bytes)
 
   private val offerAbsoluteExpiry: Codec[OfferAbsoluteExpiry] = tlvField(tu64overflow.as[TimestampSecond])
 
@@ -104,7 +104,7 @@ object OfferCodecs {
 
   private val invoiceRequestAmount: Codec[InvoiceRequestAmount] = tlvField(tmillisatoshi)
 
-  private val invoiceRequestFeatures: Codec[InvoiceRequestFeatures] = tlvField(featuresCodec)
+  private val invoiceRequestFeatures: Codec[InvoiceRequestFeatures] = tlvField(bytes)
 
   private val invoiceRequestQuantity: Codec[InvoiceRequestQuantity] = tlvField(tu64overflow)
 
@@ -146,7 +146,7 @@ object OfferCodecs {
       ("cltv_expiry_delta" | cltvExpiryDelta) ::
       ("htlc_minimum_msat" | millisatoshi) ::
       ("htlc_maximum_msat" | millisatoshi) ::
-      ("features" | lengthPrefixedFeaturesCodec)).as[PaymentInfo]
+      ("features" | variableSizeBytes(uint16, bytes))).as[PaymentInfo]
 
   private val invoiceBlindedPay: Codec[InvoiceBlindedPay] = tlvField(list(paymentInfo).xmap[Seq[PaymentInfo]](_.toSeq, _.toList))
 
@@ -162,7 +162,7 @@ object OfferCodecs {
 
   private val invoiceFallbacks: Codec[InvoiceFallbacks] = tlvField(list(fallbackAddress).xmap[Seq[FallbackAddress]](_.toSeq, _.toList))
 
-  private val invoiceFeatures: Codec[InvoiceFeatures] = tlvField(featuresCodec)
+  private val invoiceFeatures: Codec[InvoiceFeatures] = tlvField(bytes)
 
   private val invoiceNodeId: Codec[InvoiceNodeId] = tlvField(publicKey)
 
