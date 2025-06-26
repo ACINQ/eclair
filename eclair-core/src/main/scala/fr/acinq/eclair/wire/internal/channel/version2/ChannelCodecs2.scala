@@ -53,7 +53,7 @@ private[channel] object ChannelCodecs2 {
 
     val channelVersionCodec: Codec[ChannelTypes0.ChannelVersion] = bits(ChannelTypes0.ChannelVersion.LENGTH_BITS).as[ChannelTypes0.ChannelVersion]
 
-    def localParamsCodec(channelVersion: ChannelTypes0.ChannelVersion): Codec[LocalParams] = (
+    def localParamsCodec(channelVersion: ChannelTypes0.ChannelVersion): Codec[LocalChannelParams] = (
       ("nodeId" | publicKey) ::
         ("channelPath" | keyPathCodec) ::
         ("dustLimit" | satoshi) ::
@@ -65,7 +65,7 @@ private[channel] object ChannelCodecs2 {
         ("isChannelOpener" | bool) :: ("paysCommitTxFees" | bool) :: ignore(6) ::
         ("upfrontShutdownScript_opt" | lengthDelimited(bytes).map(Option(_)).decodeOnly) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
-        ("features" | combinedFeaturesCodec)).as[LocalParams]
+        ("features" | combinedFeaturesCodec)).as[LocalChannelParams]
 
     val remoteParamsCodec: Codec[ChannelTypes0.RemoteParams] = (
       ("nodeId" | publicKey) ::
@@ -336,7 +336,7 @@ private[channel] object ChannelCodecs2 {
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).map {
       case commitments :: fundingTx_opt :: waitingSince :: mutualCloseProposed :: mutualClosePublished :: localCommitPublished :: remoteCommitPublished :: nextRemoteCommitPublished :: futureRemoteCommitPublished :: revokedCommitPublished :: HNil =>
         val commitments1 = ChannelTypes0.setFundingStatus(commitments, SingleFundedUnconfirmedFundingTx(fundingTx_opt))
-        DATA_CLOSING(commitments1, waitingSince, commitments1.params.localParams.upfrontShutdownScript_opt.get, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
+        DATA_CLOSING(commitments1, waitingSince, commitments1.localChannelParams.upfrontShutdownScript_opt.get, mutualCloseProposed, mutualClosePublished, localCommitPublished, remoteCommitPublished, nextRemoteCommitPublished, futureRemoteCommitPublished, revokedCommitPublished)
     }.decodeOnly
 
     val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_06_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (

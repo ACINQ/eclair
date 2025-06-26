@@ -53,7 +53,7 @@ private[channel] object ChannelCodecs4 {
       (cf: ChannelFeatures) => Features(cf.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector // we encode features as mandatory, by convention
     )
 
-    def localParamsCodec(channelFeatures: ChannelFeatures): Codec[LocalParams] = (
+    def localParamsCodec(channelFeatures: ChannelFeatures): Codec[LocalChannelParams] = (
       ("nodeId" | publicKey) ::
         ("channelPath" | keyPathCodec) ::
         ("dustLimit" | satoshi) ::
@@ -66,9 +66,9 @@ private[channel] object ChannelCodecs4 {
         ("isChannelOpener" | bool) :: ("paysCommitTxFees" | bool) :: ignore(6) ::
         ("upfrontShutdownScript_opt" | optional(bool8, lengthDelimited(bytes))) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelFeatures.paysDirectlyToWallet), publicKey)) ::
-        ("features" | combinedFeaturesCodec)).as[LocalParams]
+        ("features" | combinedFeaturesCodec)).as[LocalChannelParams]
 
-    def remoteParamsCodec(channelFeatures: ChannelFeatures): Codec[RemoteParams] = (
+    def remoteParamsCodec(channelFeatures: ChannelFeatures): Codec[RemoteChannelParams] = (
       ("nodeId" | publicKey) ::
         ("dustLimit" | satoshi) ::
         ("maxHtlcValueInFlightMsat" | uint64) ::
@@ -81,7 +81,7 @@ private[channel] object ChannelCodecs4 {
         ("delayedPaymentBasepoint" | publicKey) ::
         ("htlcBasepoint" | publicKey) ::
         ("features" | combinedFeaturesCodec) ::
-        ("shutdownScript" | optional(bool8, lengthDelimited(bytes)))).as[RemoteParams]
+        ("shutdownScript" | optional(bool8, lengthDelimited(bytes)))).as[RemoteChannelParams]
 
     def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
 
@@ -549,7 +549,7 @@ private[channel] object ChannelCodecs4 {
      * The resulting htlc set size is thus between 1,4 MB and 64 MB, which can be pretty large.
      * To avoid writing that htlc set multiple times to disk, we encode it separately.
      */
-    case class EncodedCommitments(params: ChannelParams,
+    case class EncodedCommitments(channelParams: ChannelParams,
                                   changes: CommitmentChanges,
                                   // The direction we use is from our local point of view.
                                   htlcs: Set[DirectedHtlc],
@@ -561,7 +561,7 @@ private[channel] object ChannelCodecs4 {
                                   remoteChannelData_opt: Option[ByteVector]) {
       def toCommitments: Commitments = {
         Commitments(
-          params = params,
+          channelParams = channelParams,
           changes = changes,
           active = active,
           inactive = inactive,
@@ -583,7 +583,7 @@ private[channel] object ChannelCodecs4 {
           commitmentsSet.flatMap(_.remoteCommit.spec.htlcs.map(_.opposite)) ++
           commitmentsSet.flatMap(_.nextRemoteCommit_opt.toList.flatMap(_.commit.spec.htlcs.map(_.opposite)))
         EncodedCommitments(
-          params = commitments.params,
+          channelParams = commitments.channelParams,
           changes = commitments.changes,
           htlcs = htlcs,
           active = commitments.active.toList,

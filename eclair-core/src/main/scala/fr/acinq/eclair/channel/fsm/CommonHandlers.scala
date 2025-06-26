@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.fsm
 
 import akka.actor.FSM
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.{Features, MilliSatoshiLong}
+import fr.acinq.eclair.Features
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -110,10 +110,10 @@ trait CommonHandlers {
     case d: DATA_NEGOTIATING_SIMPLE => d.localScriptPubKey
     case d: DATA_CLOSING => d.finalScriptPubKey
     case d =>
-      val allowAnySegwit = Features.canUseFeature(data.commitments.params.localParams.initFeatures, data.commitments.params.remoteParams.initFeatures, Features.ShutdownAnySegwit)
-      d.commitments.params.localParams.upfrontShutdownScript_opt match {
+      val allowAnySegwit = Features.canUseFeature(data.commitments.localChannelParams.initFeatures, data.commitments.remoteChannelParams.initFeatures, Features.ShutdownAnySegwit)
+      d.commitments.localChannelParams.upfrontShutdownScript_opt match {
         case Some(upfrontShutdownScript) =>
-          if (data.commitments.params.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+          if (data.commitments.channelParams.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
             // we have a shutdown script, and the option_upfront_shutdown_script is enabled: we have to use it
             upfrontShutdownScript
           } else {

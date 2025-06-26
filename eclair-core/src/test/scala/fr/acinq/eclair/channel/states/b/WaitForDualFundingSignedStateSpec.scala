@@ -16,9 +16,8 @@
 
 package fr.acinq.eclair.channel.states.b
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, SatoshiLong, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, SatoshiLong, TxId}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchPublished, WatchPublishedTriggered}
@@ -29,7 +28,6 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTrans
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.{LiquidityPurchaseSigned, OpenChannelResponse}
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -45,25 +43,17 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     val wallet = new SingleKeyOnChainWallet()
     val setup = init(wallet_opt = Some(wallet), tags = test.tags)
     import setup._
-    val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags(announceChannel = false)
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
-    val aliceInit = Init(aliceParams.initFeatures)
-    val bobInit = Init(bobParams.initFeatures)
-    val bobContribution = if (channelType.features.contains(Features.ZeroConf)) None else Some(LiquidityAds.AddFunding(TestConstants.nonInitiatorFundingSatoshis, Some(TestConstants.defaultLiquidityRates)))
+    val channelParams = computeChannelParams(setup, test.tags)
+    val bobContribution = if (channelParams.channelType.features.contains(Features.ZeroConf)) None else Some(LiquidityAds.AddFunding(TestConstants.nonInitiatorFundingSatoshis, Some(TestConstants.defaultLiquidityRates)))
     val requestFunding_opt = if (test.tags.contains(ChannelStateTestsTags.LiquidityAds)) Some(LiquidityAds.RequestFunding(TestConstants.nonInitiatorFundingSatoshis, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)) else None
     val (initiatorPushAmount, nonInitiatorPushAmount) = if (test.tags.contains("both_push_amount")) (Some(TestConstants.initiatorPushAmount), Some(TestConstants.nonInitiatorPushAmount)) else (None, None)
-    val commitFeerate = channelType.commitmentFormat match {
-      case Transactions.DefaultCommitmentFormat => TestConstants.feeratePerKw
-      case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat => TestConstants.anchorOutputsFeeratePerKw
-    }
     val aliceListener = TestProbe()
     val bobListener = TestProbe()
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[ChannelAborted])
       bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ChannelAborted])
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, commitFeerate, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, initiatorPushAmount, requireConfirmedInputs = false, requestFunding_opt, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, bobContribution, dualFunded = true, nonInitiatorPushAmount, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! channelParams.initChannelAlice(TestConstants.fundingSatoshis, dualFunded = true, requestFunding_opt = requestFunding_opt, pushAmount_opt = initiatorPushAmount)
+      bob ! channelParams.initChannelBob(bobContribution, dualFunded = true, pushAmount_opt = nonInitiatorPushAmount)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId] // temporary channel id
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId] // temporary channel id
       alice2bob.expectMsgType[OpenDualFundedChannel]
@@ -115,7 +105,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     bob2alice.expectMsgType[TxSignatures]
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(bobData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
+    assert(bobData.commitments.channelParams.channelFeatures.hasFeature(Features.DualFunding))
     assert(bobData.latestFundingTx.sharedTx.isInstanceOf[PartiallySignedSharedTransaction])
     val fundingTxId = bobData.latestFundingTx.sharedTx.asInstanceOf[PartiallySignedSharedTransaction].txId
     assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTxId)
@@ -127,7 +117,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     alice2bob.expectMsgType[TxSignatures]
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(aliceData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
+    assert(aliceData.commitments.channelParams.channelFeatures.hasFeature(Features.DualFunding))
     assert(aliceData.latestFundingTx.sharedTx.isInstanceOf[FullySignedSharedTransaction])
     assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
   }
@@ -147,7 +137,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     bob2alice.expectMsgType[TxSignatures]
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(bobData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
+    assert(bobData.commitments.channelParams.channelFeatures.hasFeature(Features.DualFunding))
     assert(bobData.latestFundingTx.sharedTx.isInstanceOf[PartiallySignedSharedTransaction])
     val fundingTxId = bobData.latestFundingTx.sharedTx.asInstanceOf[PartiallySignedSharedTransaction].tx.buildUnsignedTx().txid
     assert(bob2blockchain.expectMsgType[WatchPublished].txId == fundingTxId)
@@ -160,7 +150,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     alice2bob.expectMsgType[TxSignatures]
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
-    assert(aliceData.commitments.params.channelFeatures.hasFeature(Features.DualFunding))
+    assert(aliceData.commitments.channelParams.channelFeatures.hasFeature(Features.DualFunding))
     assert(aliceData.latestFundingTx.sharedTx.isInstanceOf[FullySignedSharedTransaction])
     assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
   }

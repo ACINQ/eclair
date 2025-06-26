@@ -1,7 +1,7 @@
 {
   "type" : "DATA_WAIT_FOR_DUAL_FUNDING_READY",
   "commitments" : {
-    "params" : {
+    "channelParams" : {
       "channelId" : "ae58e31828b115b8a900a9d20b060ef2b2da2fcfe18991aff34168579d246b54",
       "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
       "channelFeatures" : [ "option_static_remotekey", "option_anchors_zero_fee_htlc_tx", "option_dual_fund" ],
@@ -11,7 +11,7 @@
         "dustLimit" : 1100,
         "maxHtlcValueInFlightMsat" : 500000000,
         "htlcMinimum" : 0,
-        "toSelfDelay" : 144,
+        "toRemoteDelay" : 144,
         "maxAcceptedHtlcs" : 100,
         "isChannelOpener" : true,
         "paysCommitTxFees" : true,
@@ -41,7 +41,7 @@
         "dustLimit" : 1000,
         "maxHtlcValueInFlightMsat" : 1000000000,
         "htlcMinimum" : 1000,
-        "toSelfDelay" : 144,
+        "toRemoteDelay" : 144,
         "maxAcceptedHtlcs" : 30,
         "revocationBasepoint" : "031a9b266c6a1f5d05f6f2b040b0eea59819c2fb5715945628541c58c2605e5c42",
         "paymentBasepoint" : "02cb3e21fe0825663cfa1d8a8accc93dedbdb906b0ec4b779bb41b0f030b38fd33",

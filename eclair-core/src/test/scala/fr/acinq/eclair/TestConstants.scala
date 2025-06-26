@@ -257,7 +257,7 @@ object TestConstants {
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
-    def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
+    def channelParams: LocalChannelParams = OpenChannelInterceptor.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
       None,
@@ -326,8 +326,8 @@ object TestConstants {
         maxChannelSpentRescanBlocks = 144,
         htlcMinimum = 1000 msat,
         minDepth = 3,
-        toRemoteDelay = CltvExpiryDelta(144),
-        maxToLocalDelay = CltvExpiryDelta(1000),
+        toRemoteDelay = CltvExpiryDelta(720),
+        maxToLocalDelay = CltvExpiryDelta(2016),
         reserveToFundingRatio = 0.01, // note: not used (overridden below)
         maxReserveToFundingRatio = 0.05,
         unhandledExceptionStrategy = UnhandledExceptionStrategy.LocalClose,
@@ -447,7 +447,7 @@ object TestConstants {
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
-    def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
+    def channelParams: LocalChannelParams = OpenChannelInterceptor.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
       None,

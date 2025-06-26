@@ -744,8 +744,8 @@ object PaymentPacketSpec {
 
   def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat, channelFeatures: ChannelFeatures = ChannelFeatures(), announcement_opt: Option[ChannelAnnouncement] = None): Commitments = {
     val channelReserve = testCapacity * 0.01
-    val localParams = LocalParams(null, null, null, UInt64.MaxValue, Some(channelReserve), null, null, 0, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
-    val remoteParams = RemoteParams(randomKey().publicKey, null, UInt64.MaxValue, Some(channelReserve), null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, None)
+    val localChannelParams = LocalChannelParams(null, null, null, UInt64.MaxValue, Some(channelReserve), null, null, 0, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
+    val remoteChannelParams = RemoteChannelParams(randomKey().publicKey, null, UInt64.MaxValue, Some(channelReserve), null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, None)
     val fundingTx = Transaction(2, Nil, Seq(TxOut(testCapacity, Nil)), 0)
     val commitInput = InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, ByteVector.empty)
     val localCommit = LocalCommit(0, null, randomTxId(), commitInput, IndividualSignature(ByteVector64.Zeroes), Nil)
@@ -758,7 +758,7 @@ object PaymentPacketSpec {
     }
     val channelFlags = ChannelFlags(announceChannel = announcement_opt.nonEmpty)
     new Commitments(
-      ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParams, remoteParams, channelFlags),
+      ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localChannelParams, remoteChannelParams, channelFlags),
       CommitmentChanges(localChanges, remoteChanges, 0, 0),
       List(Commitment(0, 0, null, localFundingStatus, RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
       inactive = Nil,

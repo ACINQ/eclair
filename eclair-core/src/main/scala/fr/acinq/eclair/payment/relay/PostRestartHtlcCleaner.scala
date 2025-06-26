@@ -30,6 +30,7 @@ import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, Pa
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CustomCommitmentsPlugin, Feature, Features, Logs, MilliSatoshiLong, NodeParams, TimestampMilli}
+import kamon.metric.{Gauge, Metric}
 
 import scala.concurrent.Promise
 import scala.util.Try
@@ -306,7 +307,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
 object PostRestartHtlcCleaner {
 
-  def props(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new PostRestartHtlcCleaner(nodeParams, register, initialized))
+  def props(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None): Props = Props(new PostRestartHtlcCleaner(nodeParams, register, initialized))
 
   case class Init(channels: Seq[PersistentChannelData])
 
@@ -320,10 +321,10 @@ object PostRestartHtlcCleaner {
     val Hint = "hint"
 
     private val pending = Kamon.gauge("payment.broken-htlcs.pending", "Broken HTLCs because of a node restart")
-    val PendingNotRelayed = pending.withTag(Relayed, value = false)
-    val PendingRelayedOut = pending.withTag(Relayed, value = true)
-    val Resolved = Kamon.gauge("payment.broken-htlcs.resolved", "Broken HTLCs resolved after a node restart")
-    val Unhandled = Kamon.gauge("payment.broken-htlcs.unhandled", "Broken HTLCs that we don't know how to handle")
+    val PendingNotRelayed: Gauge = pending.withTag(Relayed, value = false)
+    val PendingRelayedOut: Gauge = pending.withTag(Relayed, value = true)
+    val Resolved: Metric.Gauge = Kamon.gauge("payment.broken-htlcs.resolved", "Broken HTLCs resolved after a node restart")
+    val Unhandled: Metric.Gauge = Kamon.gauge("payment.broken-htlcs.unhandled", "Broken HTLCs that we don't know how to handle")
 
   }
 
@@ -427,8 +428,7 @@ object PostRestartHtlcCleaner {
               case Some(_: Closing.MutualClose) => Set.empty
               case None => Set.empty
             }
-            val params = d.commitments.params
-            val channelKeys = nodeParams.channelKeyManager.channelKeys(params.channelConfig, params.localParams.fundingKeyPath)
+            val channelKeys = nodeParams.channelKeyManager.channelKeys(d.commitments.channelParams.channelConfig, d.commitments.localChannelParams.fundingKeyPath)
             val timedOutHtlcs: Set[Long] = (closingType_opt match {
               case Some(c: Closing.LocalClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.localCommit, tx))
               case Some(c: Closing.RemoteClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.remoteCommit, tx))

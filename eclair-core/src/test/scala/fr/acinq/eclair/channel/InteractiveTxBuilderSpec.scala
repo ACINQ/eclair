@@ -95,9 +95,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   case class FixtureParams(fundingParamsA: InteractiveTxParams,
                            nodeParamsA: NodeParams,
                            channelParamsA: ChannelParams,
+                           commitParamsA: CommitParams,
                            fundingParamsB: InteractiveTxParams,
                            nodeParamsB: NodeParams,
                            channelParamsB: ChannelParams,
+                           commitParamsB: CommitParams,
                            channelFeatures: ChannelFeatures) {
     val channelId: ByteVector32 = fundingParamsA.channelId
     val commitFeerate: FeeratePerKw = TestConstants.anchorOutputsFeeratePerKw
@@ -217,16 +219,18 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   private def createFixtureParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false), nonInitiatorPaysCommitTxFees: Boolean = false): FixtureParams = {
     val channelFeatures = ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), announceChannel = true)
     val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(features = Features(channelFeatures.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport])))
-    val localParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, None, isChannelOpener = true, paysCommitTxFees = !nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountA, unlimitedMaxHtlcValueInFlight = false)
-    val localParamsB = makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), None, None, isChannelOpener = false, paysCommitTxFees = nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountB, unlimitedMaxHtlcValueInFlight = false)
-    val channelKeysA = nodeParamsA.channelKeyManager.channelKeys(ChannelConfig.standard, localParamsA.fundingKeyPath)
-    val channelKeysB = nodeParamsB.channelKeyManager.channelKeys(ChannelConfig.standard, localParamsB.fundingKeyPath)
+    val localChannelParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, None, isChannelOpener = true, paysCommitTxFees = !nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountA, unlimitedMaxHtlcValueInFlight = false)
+    val commitParamsA = CommitParams(nodeParamsA.channelConf.dustLimit, nodeParamsA.channelConf.htlcMinimum, nodeParamsA.channelConf.maxHtlcValueInFlight(fundingAmountA + fundingAmountB, unlimited = false), nodeParamsA.channelConf.maxAcceptedHtlcs, nodeParamsB.channelConf.toRemoteDelay)
+    val localChannelParamsB = makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), None, None, isChannelOpener = false, paysCommitTxFees = nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountB, unlimitedMaxHtlcValueInFlight = false)
+    val commitParamsB = CommitParams(nodeParamsB.channelConf.dustLimit, nodeParamsB.channelConf.htlcMinimum, nodeParamsB.channelConf.maxHtlcValueInFlight(fundingAmountA + fundingAmountB, unlimited = false), nodeParamsB.channelConf.maxAcceptedHtlcs, nodeParamsA.channelConf.toRemoteDelay)
+    val channelKeysA = nodeParamsA.channelKeyManager.channelKeys(ChannelConfig.standard, localChannelParamsA.fundingKeyPath)
+    val channelKeysB = nodeParamsB.channelKeyManager.channelKeys(ChannelConfig.standard, localChannelParamsB.fundingKeyPath)
 
-    val Seq(remoteParamsA, remoteParamsB) = Seq((nodeParamsA, localParamsA, channelKeysA), (nodeParamsB, localParamsB, channelKeysB)).map {
+    val Seq(remoteChannelParamsA, remoteChannelParamsB) = Seq((nodeParamsA, localChannelParamsA, channelKeysA), (nodeParamsB, localChannelParamsB, channelKeysB)).map {
       case (nodeParams, localParams, channelKeys) =>
-        RemoteParams(
+        RemoteChannelParams(
           nodeParams.nodeId,
-          localParams.dustLimit, localParams.maxHtlcValueInFlightMsat, None, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs,
+          localParams.dustLimit, localParams.maxHtlcValueInFlightMsat, None, localParams.htlcMinimum, nodeParams.channelConf.toRemoteDelay, localParams.maxAcceptedHtlcs,
           channelKeys.revocationBasePoint,
           localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
           channelKeys.delayedPaymentBasePoint,
@@ -240,10 +244,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val fundingPubKeyB = channelKeysB.fundingKey(fundingTxIndex = 0).publicKey
     val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, None, fundingPubKeyB, Nil, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
     val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, None, fundingPubKeyA, Nil, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
-    val channelParamsA = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParamsA, remoteParamsB, ChannelFlags(announceChannel = true))
-    val channelParamsB = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localParamsB, remoteParamsA, ChannelFlags(announceChannel = true))
+    val channelParamsA = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localChannelParamsA, remoteChannelParamsB, ChannelFlags(announceChannel = true))
+    val channelParamsB = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localChannelParamsB, remoteChannelParamsA, ChannelFlags(announceChannel = true))
 
-    FixtureParams(fundingParamsA, nodeParamsA, channelParamsA, fundingParamsB, nodeParamsB, channelParamsB, channelFeatures)
+    FixtureParams(fundingParamsA, nodeParamsA, channelParamsA, commitParamsA, fundingParamsB, nodeParamsB, channelParamsB, commitParamsB, channelFeatures)
   }
 
   case class Fixture(alice: ActorRef[InteractiveTxBuilder.Command],

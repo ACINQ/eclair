@@ -147,11 +147,11 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-    assert(dataC.commitments.params.commitmentFormat == commitmentFormat)
+    assert(dataC.commitments.latest.commitmentFormat == commitmentFormat)
     val Right(finalAddressC) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, nodes("C").wallet.getReceivePublicKeyScript(renew = false))
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-    assert(dataF.commitments.params.commitmentFormat == commitmentFormat)
+    assert(dataF.commitments.latest.commitmentFormat == commitmentFormat)
     val Right(finalAddressF) = addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, nodes("F").wallet.getReceivePublicKeyScript(renew = false))
     ForceCloseFixture(sender, paymentSender, stateListenerC, stateListenerF, paymentId, htlc, preimage, minerAddress, finalAddressC, finalAddressF)
   }
@@ -400,9 +400,9 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMessage(1 second)
-    assert(commitmentsF.params.commitmentFormat == commitmentFormat)
+    assert(commitmentsF.latest.commitmentFormat == commitmentFormat)
     // we prepare the revoked transactions F will publish
-    val channelKeysF = nodes("F").nodeParams.channelKeyManager.channelKeys(commitmentsF.params.channelConfig, commitmentsF.params.localParams.fundingKeyPath)
+    val channelKeysF = nodes("F").nodeParams.channelKeyManager.channelKeys(commitmentsF.channelParams.channelConfig, commitmentsF.localChannelParams.fundingKeyPath)
     val commitmentKeysF = commitmentsF.latest.localKeys(channelKeysF)
     val revokedCommitTx = commitmentsF.latest.fullySignedLocalCommitTx(channelKeysF)
     // in this commitment, both parties should have a main output, there are four pending htlcs and anchor outputs if applicable
@@ -556,7 +556,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
         val stateEvent = eventListener.expectMsgType[ChannelStateChanged](max = 60 seconds)
         if (stateEvent.currentState == NORMAL) {
           assert(stateEvent.commitments_opt.nonEmpty)
-          assert(stateEvent.commitments_opt.get.params.commitmentFormat == expectedCommitmentFormat)
+          assert(stateEvent.commitments_opt.get.latest.commitmentFormat == expectedCommitmentFormat)
           count = count + 1
         }
       }
@@ -577,7 +577,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     sender.send(nodes("F").register, Register.Forward(sender.ref.toTyped[Any], channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val initialStateDataF = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
-    assert(initialStateDataF.commitments.params.commitmentFormat == expectedCommitmentFormat)
+    assert(initialStateDataF.commitments.latest.commitmentFormat == expectedCommitmentFormat)
     val initialCommitmentIndex = initialStateDataF.commitments.localCommitIndex
 
     val toRemoteAddress = {
@@ -679,7 +679,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
 class AnchorOutputChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
 
-  override val commitmentFormat = Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat
+  override val commitmentFormat: AnchorOutputsCommitmentFormat = Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat
 
   test("start eclair nodes") {
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29750, "eclair.api.port" -> 28093).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
@@ -719,7 +719,7 @@ class AnchorOutputChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
 
 class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
 
-  override val commitmentFormat = Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
+  override val commitmentFormat: AnchorOutputsCommitmentFormat = Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
 
   test("start eclair nodes") {
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29760, "eclair.api.port" -> 28096).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))

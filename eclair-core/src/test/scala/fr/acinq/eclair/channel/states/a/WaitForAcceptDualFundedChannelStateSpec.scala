@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.channel.states.a
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
@@ -26,7 +25,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelTlv, Error, Init, LiquidityAds, OpenDualFundedChannel}
+import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelTlv, Error, LiquidityAds, OpenDualFundedChannel}
 import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes64}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -49,11 +48,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     val setup = init(nodeParamsB = bobNodeParams, tags = test.tags)
     import setup._
 
-    val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags(announceChannel = false)
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
-    val aliceInit = Init(aliceParams.initFeatures)
-    val bobInit = Init(bobParams.initFeatures)
+    val channelParams = computeChannelParams(setup, test.tags)
     val nonInitiatorContribution = if (test.tags.contains(ChannelStateTestsTags.LiquidityAds)) Some(LiquidityAds.AddFunding(TestConstants.nonInitiatorFundingSatoshis, Some(TestConstants.defaultLiquidityRates))) else None
     val requestFunds_opt = if (test.tags.contains(ChannelStateTestsTags.LiquidityAds)) {
       Some(LiquidityAds.RequestFunding(TestConstants.nonInitiatorFundingSatoshis, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance))
@@ -64,8 +59,8 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     val listener = TestProbe()
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, None, requireConfirmedInputs = false, requestFunds_opt, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorContribution, dualFunded = true, nonInitiatorPushAmount, requireConfirmedInputs = test.tags.contains(bobRequiresConfirmedInputs), bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! channelParams.initChannelAlice(TestConstants.fundingSatoshis, dualFunded = true, requestFunding_opt = requestFunds_opt)
+      bob ! channelParams.initChannelBob(nonInitiatorContribution, dualFunded = true, pushAmount_opt = nonInitiatorPushAmount, requireConfirmedInputs = test.tags.contains(bobRequiresConfirmedInputs))
       val open = alice2bob.expectMsgType[OpenDualFundedChannel]
       alice2bob.forward(bob, open)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL)

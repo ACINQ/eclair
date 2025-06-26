@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel.states.c
 
-import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, actorRefAdapter}
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.ScriptFlags
@@ -34,7 +34,6 @@ import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorTx, ClaimRemoteAnchorTx}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
@@ -69,15 +68,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ChannelAborted])
     bob.underlying.system.eventStream.subscribe(bobListener.ref, classOf[ChannelClosed])
 
-    val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags(announceChannel = false)
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
-    val commitFeerate = channelType.commitmentFormat match {
-      case Transactions.DefaultCommitmentFormat => TestConstants.feeratePerKw
-      case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat => TestConstants.anchorOutputsFeeratePerKw
-    }
-    val aliceInit = Init(aliceParams.initFeatures)
-    val bobInit = Init(bobParams.initFeatures)
+    val channelParams = computeChannelParams(setup, test.tags)
     val (requestFunding_opt, bobContribution) = if (test.tags.contains(noFundingContribution)) {
       (None, None)
     } else if (test.tags.contains(liquidityPurchase)) {
@@ -90,8 +81,8 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     }
     val (initiatorPushAmount, nonInitiatorPushAmount) = if (test.tags.contains(bothPushAmount)) (Some(TestConstants.initiatorPushAmount), Some(TestConstants.nonInitiatorPushAmount)) else (None, None)
     within(30 seconds) {
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, commitFeerate, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, initiatorPushAmount, requireConfirmedInputs = false, requestFunding_opt, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, bobContribution, dualFunded = true, nonInitiatorPushAmount, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! channelParams.initChannelAlice(TestConstants.fundingSatoshis, dualFunded = true, pushAmount_opt = initiatorPushAmount, requestFunding_opt = requestFunding_opt)
+      bob ! channelParams.initChannelBob(bobContribution, dualFunded = true, pushAmount_opt = nonInitiatorPushAmount)
       alice2blockchain.expectMsgType[SetChannelId] // temporary channel id
       bob2blockchain.expectMsgType[SetChannelId] // temporary channel id
       alice2bob.expectMsgType[OpenDualFundedChannel]

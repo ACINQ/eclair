@@ -251,28 +251,27 @@ object ChannelCodecsSpec {
   val seed: ByteVector32 = ByteVector32(ByteVector.fill(32)(1))
   val nodeKeyManager: NodeKeyManager = LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
   val channelKeyManager: ChannelKeyManager = LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
-  val localParams: LocalParams = LocalParams(
+  val localChannelParams: LocalChannelParams = LocalChannelParams(
     nodeKeyManager.nodeId,
     fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
     dustLimit = Satoshi(546),
     maxHtlcValueInFlightMsat = UInt64(50_000_000),
     initialRequestedChannelReserve_opt = Some(10000 sat),
     htlcMinimum = 10000 msat,
-    toSelfDelay = CltvExpiryDelta(144),
+    toRemoteDelay = CltvExpiryDelta(144),
     maxAcceptedHtlcs = 50,
     upfrontShutdownScript_opt = None,
     walletStaticPaymentBasepoint = None,
     isChannelOpener = true,
     paysCommitTxFees = true,
     initFeatures = Features.empty)
-
-  val remoteParams: RemoteParams = RemoteParams(
+  val remoteChannelParams: RemoteChannelParams = RemoteChannelParams(
     nodeId = randomKey().publicKey,
     dustLimit = 546 sat,
     maxHtlcValueInFlightMsat = UInt64(5000000),
     initialRequestedChannelReserve_opt = Some(10000 sat),
     htlcMinimum = 5000 msat,
-    toSelfDelay = CltvExpiryDelta(144),
+    toRemoteDelay = CltvExpiryDelta(144),
     maxAcceptedHtlcs = 50,
     revocationBasepoint = PrivateKey(ByteVector.fill(32)(2)).publicKey,
     paymentBasepoint = PrivateKey(ByteVector.fill(32)(3)).publicKey,
@@ -310,7 +309,7 @@ object ChannelCodecsSpec {
     val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
     val fundingAmount = fundingTx.txOut.head.amount
     val fundingTxIndex = 0
-    val localFundingPubKey = channelKeyManager.channelKeys(ChannelConfig.standard, localParams.fundingKeyPath).fundingKey(fundingTxIndex = 0).publicKey
+    val localFundingPubKey = channelKeyManager.channelKeys(ChannelConfig.standard, localChannelParams.fundingKeyPath).fundingKey(fundingTxIndex = 0).publicKey
     val remoteFundingPubKey = PrivateKey(ByteVector32(ByteVector.fill(32)(1)) :+ 1.toByte).publicKey
     val commitmentInput = Funding.makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, localFundingPubKey, remoteFundingPubKey, DefaultCommitmentFormat)
     val remoteSig = ByteVector64(hex"2148d2d4aac8c793eb82d31bcf22d4db707b9fd7eee1b89b4b1444c9e19ab7172bab8c3d997d29163fa0cb255c75afb8ade13617ad1350c1515e9be4a222a04d")
@@ -319,7 +318,7 @@ object ChannelCodecsSpec {
     val channelId = htlcs.headOption.map(_.add.channelId).getOrElse(ByteVector32.Zeroes)
     val channelFlags = ChannelFlags(announceChannel = true)
     val commitments = Commitments(
-      ChannelParams(channelId, ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, channelFlags),
+      ChannelParams(channelId, ChannelConfig.standard, ChannelFeatures(), localChannelParams, remoteChannelParams, channelFlags),
       CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 32, remoteNextHtlcId = 4),
       Seq(Commitment(fundingTxIndex, 0, remoteFundingPubKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.NotLocked, localCommit, remoteCommit, None)),
       remoteNextCommitInfo = Right(randomKey().publicKey),

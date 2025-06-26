@@ -31,7 +31,7 @@ import fr.acinq.eclair.io.Peer.{OpenChannelResponse, SpawnChannelNonInitiator}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{Error, LiquidityAds, NodeAddress}
-import fr.acinq.eclair.{AcceptOpenChannel, CltvExpiryDelta, Features, InitFeature, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, InterceptOpenChannelResponse, Logs, MilliSatoshi, NodeParams, RejectOpenChannel, UInt64}
+import fr.acinq.eclair.{AcceptOpenChannel, Features, InitFeature, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, InterceptOpenChannelResponse, Logs, NodeParams, RejectOpenChannel}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -70,13 +70,6 @@ object OpenChannelInterceptor {
   private case object PluginTimeout extends QueryPluginCommands
   // @formatter:on
 
-  /** DefaultParams are a subset of ChannelData.LocalParams that can be modified by an InterceptOpenChannelPlugin */
-  case class DefaultParams(dustLimit: Satoshi,
-                           maxHtlcValueInFlightMsat: UInt64,
-                           htlcMinimum: MilliSatoshi,
-                           toSelfDelay: CltvExpiryDelta,
-                           maxAcceptedHtlcs: Int)
-
   def apply(peer: ActorRef[Any], nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainPubkeyCache, pendingChannelsRateLimiter: ActorRef[PendingChannelsRateLimiter.Command], pluginTimeout: FiniteDuration = 1 minute): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
@@ -84,15 +77,15 @@ object OpenChannelInterceptor {
       }
     }
 
-  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], walletStaticPaymentBasepoint_opt: Option[PublicKey], isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalParams = {
-    LocalParams(
+  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], walletStaticPaymentBasepoint_opt: Option[PublicKey], isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, unlimitedMaxHtlcValueInFlight: Boolean): LocalChannelParams = {
+    LocalChannelParams(
       nodeParams.nodeId,
       nodeParams.channelKeyManager.newFundingKeyPath(isChannelOpener),
       dustLimit = nodeParams.channelConf.dustLimit,
       maxHtlcValueInFlightMsat = nodeParams.channelConf.maxHtlcValueInFlight(fundingAmount, unlimitedMaxHtlcValueInFlight),
       initialRequestedChannelReserve_opt = if (dualFunded) None else Some((fundingAmount * nodeParams.channelConf.reserveToFundingRatio).max(nodeParams.channelConf.dustLimit)), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimum = nodeParams.channelConf.htlcMinimum,
-      toSelfDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay
+      toRemoteDelay = nodeParams.channelConf.toRemoteDelay, // we choose their delay
       maxAcceptedHtlcs = nodeParams.channelConf.maxAcceptedHtlcs,
       isChannelOpener = isChannelOpener,
       paysCommitTxFees = paysCommitTxFees,
@@ -179,7 +172,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     }
   }
 
-  private def checkRateLimits(request: OpenChannelNonInitiator, channelType: SupportedChannelType, localParams: LocalParams): Behavior[Command] = {
+  private def checkRateLimits(request: OpenChannelNonInitiator, channelType: SupportedChannelType, localParams: LocalChannelParams): Behavior[Command] = {
     val adapter = context.messageAdapter[PendingChannelsRateLimiter.Response](PendingChannelsRateLimiterResponse)
     pendingChannelsRateLimiter ! AddOrRejectChannel(adapter, request.remoteNodeId, request.temporaryChannelId)
     receiveCommandMessage[CheckRateLimitsCommands](context, "checkRateLimits") {
@@ -196,7 +189,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
    * If an external plugin was configured, we forward the channel request for further analysis. Otherwise, we accept
    * the channel and honor the optional liquidity request only for on-the-fly funding where we enforce a single channel.
    */
-  private def checkLiquidityAdsRequest(request: OpenChannelNonInitiator, channelType: SupportedChannelType, localParams: LocalParams): Behavior[Command] = {
+  private def checkLiquidityAdsRequest(request: OpenChannelNonInitiator, channelType: SupportedChannelType, localParams: LocalChannelParams): Behavior[Command] = {
     nodeParams.pluginOpenChannelInterceptor match {
       case Some(plugin) => queryPlugin(plugin, request, localParams, ChannelConfig.standard, channelType)
       case None =>
@@ -235,16 +228,14 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     }
   }
 
-  private def queryPlugin(plugin: InterceptOpenChannelPlugin, request: OpenChannelInterceptor.OpenChannelNonInitiator, localParams: LocalParams, channelConfig: ChannelConfig, channelType: SupportedChannelType): Behavior[Command] =
+  private def queryPlugin(plugin: InterceptOpenChannelPlugin, request: OpenChannelInterceptor.OpenChannelNonInitiator, localParams: LocalChannelParams, channelConfig: ChannelConfig, channelType: SupportedChannelType): Behavior[Command] =
     Behaviors.withTimers { timers =>
       timers.startSingleTimer(PluginTimeout, pluginTimeout)
       val pluginResponseAdapter = context.messageAdapter[InterceptOpenChannelResponse](PluginOpenChannelResponse)
-      val defaultParams = DefaultParams(localParams.dustLimit, localParams.maxHtlcValueInFlightMsat, localParams.htlcMinimum, localParams.toSelfDelay, localParams.maxAcceptedHtlcs)
-      plugin.openChannelInterceptor ! InterceptOpenChannelReceived(pluginResponseAdapter, request, defaultParams)
+      plugin.openChannelInterceptor ! InterceptOpenChannelReceived(pluginResponseAdapter, request)
       receiveCommandMessage[QueryPluginCommands](context, "queryPlugin") {
         case PluginOpenChannelResponse(pluginResponse: AcceptOpenChannel) =>
-          val localParams1 = updateLocalParams(localParams, pluginResponse.defaultParams)
-          peer ! SpawnChannelNonInitiator(request.open, channelConfig, channelType, pluginResponse.addFunding_opt, localParams1, request.peerConnection.toClassic)
+          peer ! SpawnChannelNonInitiator(request.open, channelConfig, channelType, pluginResponse.addFunding_opt, localParams, request.peerConnection.toClassic)
           timers.cancel(PluginTimeout)
           waitForRequest()
         case PluginOpenChannelResponse(pluginResponse: RejectOpenChannel) =>
@@ -311,7 +302,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     }
   }
 
-  private def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript: Boolean, channelType: SupportedChannelType, isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, disableMaxHtlcValueInFlight: Boolean): LocalParams = {
+  private def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript: Boolean, channelType: SupportedChannelType, isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi, disableMaxHtlcValueInFlight: Boolean): LocalChannelParams = {
     makeChannelParams(
       nodeParams, initFeatures,
       // Note that if our bitcoin node is configured to use taproot, this will generate a taproot script.
@@ -325,16 +316,6 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       dualFunded = dualFunded,
       fundingAmount,
       disableMaxHtlcValueInFlight
-    )
-  }
-
-  private def updateLocalParams(localParams: LocalParams, defaultParams: DefaultParams): LocalParams = {
-    localParams.copy(
-      dustLimit = defaultParams.dustLimit,
-      maxHtlcValueInFlightMsat = defaultParams.maxHtlcValueInFlightMsat,
-      htlcMinimum = defaultParams.htlcMinimum,
-      toSelfDelay = defaultParams.toSelfDelay,
-      maxAcceptedHtlcs = defaultParams.maxAcceptedHtlcs
     )
   }
 

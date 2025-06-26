@@ -122,8 +122,8 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val probe = TestProbe()(system)
     val dummyPublicKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101").publicKey
     val dummyBytes32 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
-    val localParams = LocalParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, UInt64(Long.MaxValue), Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
-    val remoteParams = RemoteParams(dummyPublicKey, 546 sat, UInt64.MaxValue, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
+    val localChannelParams = LocalChannelParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, UInt64(Long.MaxValue), Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
+    val remoteChannelParams = RemoteChannelParams(dummyPublicKey, 546 sat, UInt64.MaxValue, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
     val commitmentInput = Funding.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey, DefaultCommitmentFormat)
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), TxId(dummyBytes32), commitmentInput, IndividualSignature(ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 50_000_000 msat, 100_000_000 msat), TxId(dummyBytes32), dummyPublicKey)
@@ -134,7 +134,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
       NORMAL,
       DATA_NORMAL(
         Commitments(
-          ChannelParams(dummyBytes32, ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = true)),
+          ChannelParams(dummyBytes32, ChannelConfig.standard, ChannelFeatures(), localChannelParams, remoteChannelParams, ChannelFlags(announceChannel = true)),
           CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
           List(Commitment(0, 0, dummyPublicKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
           inactive = Nil,
@@ -156,7 +156,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         | "data": {
         |   "type": "DATA_NORMAL",
         |   "commitments": {
-        |     "params": {
+        |     "channelParams": {
         |       "channelId": "0202020202020202020202020202020202020202020202020202020202020202",
         |       "channelConfig": ["funding_pubkey_based_channel_keypath"],
         |       "channelFeatures": [],
@@ -167,7 +167,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "maxHtlcValueInFlightMsat": 9223372036854775807,
         |         "initialRequestedChannelReserve_opt": 1000,
         |         "htlcMinimum": 1,
-        |         "toSelfDelay": 144,
+        |         "toRemoteDelay": 144,
         |         "maxAcceptedHtlcs": 50,
         |         "isChannelOpener": true,
         |         "paysCommitTxFees" : true,
@@ -179,7 +179,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "maxHtlcValueInFlightMsat": 18446744073709551615,
         |         "initialRequestedChannelReserve_opt": 1000,
         |         "htlcMinimum": 1,
-        |         "toSelfDelay": 144,
+        |         "toRemoteDelay": 144,
         |         "maxAcceptedHtlcs": 50,
         |         "revocationBasepoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
         |         "paymentBasepoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",

@@ -49,7 +49,7 @@ private[channel] object ChannelTypes3 {
   case class Commitments(channelId: ByteVector32,
                          channelConfig: ChannelConfig,
                          channelFeatures: ChannelFeatures,
-                         localParams: LocalParams, remoteParams: ChannelTypes0.RemoteParams,
+                         localParams: LocalChannelParams, remoteParams: ChannelTypes0.RemoteParams,
                          channelFlags: ChannelFlags,
                          localCommit: ChannelTypes3.LocalCommit, remoteCommit: RemoteCommit,
                          localChanges: LocalChanges, remoteChanges: RemoteChanges,

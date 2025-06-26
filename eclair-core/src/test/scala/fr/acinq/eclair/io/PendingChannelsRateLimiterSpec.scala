@@ -18,6 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.eventstream.EventStream.Publish
+import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxId, TxOut}
@@ -50,16 +51,16 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
   val channelIdAtLimit2: ByteVector32 = ByteVector32(hex"0999999990000000000000000000000000000000000000000000000000000000")
 
   // This peer is whitelisted and starts tests with pending channels at the rate-limit (which should be ignored because it is whitelisted).
-  val peerOnWhitelistAtLimit = randomKey().publicKey
+  val peerOnWhitelistAtLimit: PublicKey = randomKey().publicKey
   // The following two peers start tests already at their rate-limit.
   val peerAtLimit1: PublicKey = randomKey().publicKey
   val peerAtLimit2: PublicKey = randomKey().publicKey
-  val peersAtLimit = Seq(peerAtLimit1, peerAtLimit2)
+  val peersAtLimit: Seq[PublicKey] = Seq(peerAtLimit1, peerAtLimit2)
   // The following two peers start tests with one available slot before reaching the rate-limit.
   val peerBelowLimit1: PublicKey = randomKey().publicKey
   val peerBelowLimit2: PublicKey = randomKey().publicKey
-  val peersBelowLimit = Seq(peerBelowLimit1, peerBelowLimit2)
-  val publicPeers = Seq(peerOnWhitelistAtLimit, peerAtLimit1, peerAtLimit2, peerBelowLimit1, peerBelowLimit2)
+  val peersBelowLimit: Seq[PublicKey] = Seq(peerBelowLimit1, peerBelowLimit2)
+  val publicPeers: Seq[PublicKey] = Seq(peerOnWhitelistAtLimit, peerAtLimit1, peerAtLimit2, peerBelowLimit1, peerBelowLimit2)
   // This peer has one pending private channel.
   val privatePeer1: PublicKey = randomKey().publicKey
   // This peer has one private channel that isn't pending.
@@ -114,8 +115,9 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
 
   def commitments(remoteNodeId: PublicKey, channelId: ByteVector32, isOpener: Boolean = false): Commitments = {
     val ann = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(42), TestConstants.Alice.nodeParams.nodeId, remoteNodeId, randomKey().publicKey, randomKey().publicKey, randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64())
-    val commitments = CommitmentsSpec.makeCommitments(500_000 msat, 400_000 msat, TestConstants.Alice.nodeParams.nodeId, remoteNodeId, announcement_opt = Some(ann))
-    commitments.copy(params = commitments.params.copy(channelId = channelId, localParams = commitments.params.localParams.copy(isChannelOpener = isOpener)))
+    CommitmentsSpec.makeCommitments(500_000 msat, 400_000 msat, TestConstants.Alice.nodeParams.nodeId, remoteNodeId, announcement_opt = Some(ann))
+      .modify(_.channelParams.channelId).setTo(channelId)
+      .modify(_.channelParams.localParams.isChannelOpener).setTo(isOpener)
   }
 
   def processRestoredChannels(f: FixtureParam, restoredChannels: Seq[PersistentChannelData]): Unit = {

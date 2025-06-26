@@ -165,7 +165,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     def makeChannelData(htlcMinimum: MilliSatoshi = 1 msat, localChanges: LocalChanges = LocalChanges(Nil, Nil, Nil)): DATA_NORMAL = {
       val commitments = CommitmentsSpec.makeCommitments(500_000_000 msat, 500_000_000 msat, nodeParams.nodeId, remoteNodeId, announcement_opt = None)
-        .modify(_.params.remoteParams.htlcMinimum).setTo(htlcMinimum)
+        .modify(_.channelParams.remoteParams.htlcMinimum).setTo(htlcMinimum)
         .modify(_.changes.localChanges).setTo(localChanges)
       DATA_NORMAL(commitments, ShortIdAliases(Alias(42), None), None, null, None, None, None, SpliceStatus.NoSplice)
     }
@@ -563,8 +563,8 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     peerConnection.send(peer, open)
     rateLimiter.expectMsgType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
-    assert(!init.localParams.isChannelOpener)
-    assert(init.localParams.paysCommitTxFees)
+    assert(!init.localChannelParams.isChannelOpener)
+    assert(init.localChannelParams.paysCommitTxFees)
     assert(init.fundingContribution_opt.contains(LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.liquidityAdsConfig.rates_opt)))
 
     // The preimage was provided, so we fulfill upstream HTLCs.
@@ -616,8 +616,8 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     peerConnection.send(peer, open3)
     rateLimiter.expectMsgType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
-    assert(!init.localParams.isChannelOpener)
-    assert(init.localParams.paysCommitTxFees)
+    assert(!init.localChannelParams.isChannelOpener)
+    assert(init.localChannelParams.paysCommitTxFees)
     assert(init.fundingContribution_opt.contains(LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.liquidityAdsConfig.rates_opt)))
     assert(channel.expectMsgType[OpenDualFundedChannel].useFeeCredit_opt.contains(3_000_000 msat))
 

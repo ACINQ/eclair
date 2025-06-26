@@ -16,14 +16,13 @@
 
 package fr.acinq.eclair.channel.states.a
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
-import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelTlv, Error, Init, LiquidityAds, OpenDualFundedChannel}
+import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelTlv, Error, LiquidityAds, OpenDualFundedChannel}
 import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -49,17 +48,13 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ChannelIdAssigned])
     bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ChannelAborted])
 
-    val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags(announceChannel = false)
     val pushAmount = if (test.tags.contains(ChannelStateTestsTags.NoPushAmount)) None else Some(TestConstants.initiatorPushAmount)
     val nonInitiatorContribution = if (test.tags.contains(ChannelStateTestsTags.LiquidityAds)) Some(LiquidityAds.AddFunding(TestConstants.nonInitiatorFundingSatoshis, Some(TestConstants.defaultLiquidityRates))) else None
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
-    val aliceInit = Init(aliceParams.initFeatures)
-    val bobInit = Init(bobParams.initFeatures)
+    val channelParams = computeChannelParams(setup, test.tags)
     val requireConfirmedInputs = test.tags.contains(aliceRequiresConfirmedInputs)
     within(30 seconds) {
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = true, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, pushAmount, requireConfirmedInputs, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, nonInitiatorContribution, dualFunded = true, None, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! channelParams.initChannelAlice(TestConstants.fundingSatoshis, dualFunded = true, requireConfirmedInputs = requireConfirmedInputs, pushAmount_opt = pushAmount)
+      bob ! channelParams.initChannelBob(nonInitiatorContribution, dualFunded = true)
       awaitCond(bob.stateName == WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL)
       withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, aliceListener, bobListener)))
     }
@@ -188,10 +183,10 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
   test("recv OpenDualFundedChannel (to_self_delay too high)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenDualFundedChannel]
-    val delayTooHigh = Alice.nodeParams.channelConf.maxToLocalDelay + 1
+    val delayTooHigh = Bob.nodeParams.channelConf.maxToLocalDelay + 1
     bob ! open.copy(toSelfDelay = delayTooHigh)
     val error = bob2alice.expectMsgType[Error]
-    assert(error == Error(open.temporaryChannelId, ToSelfDelayTooHigh(open.temporaryChannelId, delayTooHigh, Alice.nodeParams.channelConf.maxToLocalDelay).getMessage))
+    assert(error == Error(open.temporaryChannelId, ToSelfDelayTooHigh(open.temporaryChannelId, delayTooHigh, Bob.nodeParams.channelConf.maxToLocalDelay).getMessage))
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }

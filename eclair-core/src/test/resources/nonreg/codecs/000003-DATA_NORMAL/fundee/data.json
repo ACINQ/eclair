@@ -1,7 +1,7 @@
 {
   "type" : "DATA_NORMAL",
   "commitments" : {
-    "params" : {
+    "channelParams" : {
       "channelId" : "07738f22c16a24795bcaebc6e09016af61902dd66bbaf64e6e5db50b0c45d63c",
       "channelConfig" : [ ],
       "channelFeatures" : [ ],
@@ -12,7 +12,7 @@
         "maxHtlcValueInFlightMsat" : 5000000000,
         "initialRequestedChannelReserve_opt" : 167772,
         "htlcMinimum" : 1,
-        "toSelfDelay" : 720,
+        "toRemoteDelay" : 720,
         "maxAcceptedHtlcs" : 30,
         "isChannelOpener" : false,
         "paysCommitTxFees" : false,
@@ -32,7 +32,7 @@
         "maxHtlcValueInFlightMsat" : 16609443000,
         "initialRequestedChannelReserve_opt" : 167772,
         "htlcMinimum" : 1000,
-        "toSelfDelay" : 2016,
+        "toRemoteDelay" : 2016,
         "maxAcceptedHtlcs" : 483,
         "revocationBasepoint" : "02635ac9eedf5f219afbc4d125e37b5705f73c05deca71b05fe84096a691e055c1",
         "paymentBasepoint" : "034a711d28e8ed3ad389ec14ec75c199b6a45140c503bcc88110e3524e52ffbfb1",

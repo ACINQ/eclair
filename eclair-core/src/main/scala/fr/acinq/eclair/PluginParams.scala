@@ -20,7 +20,7 @@ import akka.actor.typed.ActorRef
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.channel.Origin
-import fr.acinq.eclair.io.OpenChannelInterceptor.{DefaultParams, OpenChannelNonInitiator}
+import fr.acinq.eclair.io.OpenChannelInterceptor.OpenChannelNonInitiator
 import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.IncomingHtlc
 import fr.acinq.eclair.wire.protocol.{Error, LiquidityAds}
 
@@ -61,13 +61,13 @@ trait CustomCommitmentsPlugin extends PluginParams {
 
 // @formatter:off
 trait InterceptOpenChannelCommand
-case class InterceptOpenChannelReceived(replyTo: ActorRef[InterceptOpenChannelResponse], openChannelNonInitiator: OpenChannelNonInitiator, defaultParams: DefaultParams) extends InterceptOpenChannelCommand {
+case class InterceptOpenChannelReceived(replyTo: ActorRef[InterceptOpenChannelResponse], openChannelNonInitiator: OpenChannelNonInitiator) extends InterceptOpenChannelCommand {
   val remoteFundingAmount: Satoshi = openChannelNonInitiator.open.fold(_.fundingSatoshis, _.fundingAmount)
   val temporaryChannelId: ByteVector32 = openChannelNonInitiator.open.fold(_.temporaryChannelId, _.temporaryChannelId)
 }
 
 sealed trait InterceptOpenChannelResponse
-case class AcceptOpenChannel(temporaryChannelId: ByteVector32, defaultParams: DefaultParams, addFunding_opt: Option[LiquidityAds.AddFunding]) extends InterceptOpenChannelResponse
+case class AcceptOpenChannel(temporaryChannelId: ByteVector32, addFunding_opt: Option[LiquidityAds.AddFunding]) extends InterceptOpenChannelResponse
 case class RejectOpenChannel(temporaryChannelId: ByteVector32, error: Error) extends InterceptOpenChannelResponse
 // @formatter:on
 

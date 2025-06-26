@@ -55,6 +55,10 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     val pipe = system.actorOf(Props(new FuzzyPipe(fuzzy)))
     val aliceParams = Alice.nodeParams
     val bobParams = Bob.nodeParams
+    val aliceChannelParams = Alice.channelParams
+    val bobChannelParams = Bob.channelParams
+    val aliceCommitParams = aliceChannelParams.proposedCommitParams
+    val bobCommitParams = bobChannelParams.proposedCommitParams
     val channelFlags = ChannelFlags(announceChannel = false)
     val alicePeer = TestProbe()
     val bobPeer = TestProbe()
@@ -72,14 +76,14 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(aliceParams, Alice.channelKeys(), wallet, bobParams.nodeId, alice2blockchain.ref, aliceRelayer, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(bobParams, Bob.channelKeys(), wallet, aliceParams.nodeId, bob2blockchain.ref, bobRelayer, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     within(30 seconds) {
-      val aliceInit = Init(Alice.channelParams.initFeatures)
-      val bobInit = Init(Bob.channelParams.initFeatures)
+      val aliceInit = Init(aliceChannelParams.initFeatures)
+      val bobInit = Init(bobChannelParams.initFeatures)
       aliceRegister ! alice
       bobRegister ! bob
       // no announcements
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, Alice.channelParams, pipe, bobInit, channelFlags, ChannelConfig.standard, ChannelTypes.Standard(), replyTo = system.deadLetters)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, aliceChannelParams, aliceCommitParams, pipe, bobInit, channelFlags, ChannelConfig.standard, ChannelTypes.Standard(), replyTo = system.deadLetters)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, Bob.channelParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard())
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobChannelParams, bobCommitParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard())
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
