@@ -47,49 +47,27 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
   require(tags.collect { case _: Bolt11Invoice.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case Bolt11Invoice.Description(_) | Bolt11Invoice.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
   require(tags.collect { case _: Bolt11Invoice.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag")
+  require(Features.validateFeatureGraph(features).isEmpty, Features.validateFeatureGraph(features).map(_.message))
 
-  {
-    val featuresErr = Features.validateFeatureGraph(features)
-    require(featuresErr.isEmpty, featuresErr.map(_.message))
-  }
-  if (features.hasFeature(Features.PaymentSecret)) {
-    require(tags.collect { case _: Bolt11Invoice.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag when feature bit is set")
-  }
+  lazy val paymentHash: ByteVector32 = tags.collectFirst { case p: Bolt11Invoice.PaymentHash => p.hash }.get
+  lazy val paymentSecret: ByteVector32 = tags.collectFirst { case p: Bolt11Invoice.PaymentSecret => p.secret }.get
 
-  /**
-   * @return the payment hash
-   */
-  lazy val paymentHash = tags.collectFirst { case p: Bolt11Invoice.PaymentHash => p.hash }.get
-
-  /**
-   * @return the payment secret
-   */
-  lazy val paymentSecret = tags.collectFirst { case p: Bolt11Invoice.PaymentSecret => p.secret }.get
-
-  /**
-   * @return the description of the payment, or its hash
-   */
+  /** Description of the payment, or its hash. */
   lazy val description: Either[String, ByteVector32] = tags.collectFirst {
     case Bolt11Invoice.Description(d) => Left(d)
     case Bolt11Invoice.DescriptionHash(h) => Right(h)
   }.get
 
-  /**
-   * @return metadata about the payment (see option_payment_metadata).
-   */
+  /** Metadata about the payment (see option_payment_metadata). */
   lazy val paymentMetadata: Option[ByteVector] = tags.collectFirst { case m: Bolt11Invoice.PaymentMetadata => m.data }
 
-  /**
-   * @return the fallback address if any. It could be a script address, pubkey address, ..
-   */
+  /** Fallback on-chain address (if any). It could be a script address, pubkey address, etc. */
   def fallbackAddress(): Option[String] = tags.collectFirst { case f: Bolt11Invoice.FallbackAddress => Bolt11Invoice.FallbackAddress.toAddress(f, prefix) }
 
   lazy val routingInfo: Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfo => t.path }
-
   lazy val extraEdges: Seq[Invoice.ExtraEdge] = routingInfo.flatMap(path => toExtraEdges(path, nodeId))
 
   lazy val relativeExpiry: FiniteDuration = FiniteDuration(tags.collectFirst { case expiry: Bolt11Invoice.Expiry => expiry.toLong }.getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
-
   lazy val minFinalCltvExpiryDelta: CltvExpiryDelta = tags.collectFirst { case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta }.getOrElse(DEFAULT_MIN_CLTV_EXPIRY_DELTA)
 
   override lazy val features: Features[InvoiceFeature] = tags.collectFirst { case f: InvoiceFeatures => f.features.invoiceFeatures() }.getOrElse(Features.empty)
@@ -172,7 +150,7 @@ object Bolt11Invoice {
         // We want to keep invoices as small as possible, so we explicitly remove unknown features.
         Some(InvoiceFeatures(features.copy(unknown = Set.empty).unscoped()))
       ).flatten
-      val routingInfoTags = extraHops.map(RoutingInfo)
+      val routingInfoTags = extraHops.filter(_.nonEmpty).map(RoutingInfo)
       defaultTags ++ routingInfoTags
     }
     Bolt11Invoice(
@@ -269,7 +247,7 @@ object Bolt11Invoice {
       Try(fromBase58Address(address)).orElse(Try(fromBech32Address(address))).get
     }
 
-    def fromBase58Address(address: String): FallbackAddress = {
+    private def fromBase58Address(address: String): FallbackAddress = {
       val (prefix, hash) = {
         val decoded = Base58Check.decode(address)
         (decoded.getFirst.byteValue(), ByteVector.view(decoded.getSecond))
@@ -282,7 +260,7 @@ object Bolt11Invoice {
       }
     }
 
-    def fromBech32Address(address: String): FallbackAddress = {
+    private def fromBech32Address(address: String): FallbackAddress = {
       val (_, version, hash) = {
         val decoded = Bech32.decodeWitnessAddress(address)
         (decoded.getFirst, decoded.getSecond, ByteVector.view(decoded.getThird))
@@ -345,12 +323,16 @@ object Bolt11Invoice {
    *
    * @param path one or more entries containing extra routing information for a private route
    */
-  case class RoutingInfo(path: List[ExtraHop]) extends TaggedField
+  case class RoutingInfo(path: List[ExtraHop]) extends TaggedField {
+    require(path.nonEmpty, "routing hint must contain one or more entries")
+  }
 
   /**
    * Expiry Date
    */
   case class Expiry(bin: BitVector) extends TaggedField {
+    require(bin.size <= 64, "invoice expiry must be smaller than 2^64")
+
     def toLong: Long = bin.toLong(signed = false)
   }
 
@@ -365,7 +347,9 @@ object Bolt11Invoice {
    * Min final CLTV expiry
    */
   case class MinFinalCltvExpiry(bin: BitVector) extends TaggedField {
-    def toCltvExpiryDelta = CltvExpiryDelta(bin.toInt(signed = false))
+    require(bin.size <= 32, "invoice min_final_cltv_expiry_delta must be smaller than 2^32")
+
+    def toCltvExpiryDelta: CltvExpiryDelta = CltvExpiryDelta(bin.toInt(signed = false))
   }
 
   object MinFinalCltvExpiry {
@@ -397,7 +381,7 @@ object Bolt11Invoice {
         ("cltv_expiry_delta" | cltvExpiryDelta)
       ).as[ExtraHop]
 
-    val extraHopsLengthCodec = Codec[Int](
+    private val extraHopsLengthCodec = Codec[Int](
       (_: Int) => Attempt.successful(BitVector.empty), // we don't encode the length
       (wire: BitVector) => Attempt.successful(DecodeResult(wire.size.toInt / 408, wire)) // we infer the number of items by the size of the data
     )
@@ -407,7 +391,7 @@ object Bolt11Invoice {
       (wire: BitVector) => (limitedSizeBits(wire.size - wire.size % 8, valueCodec) ~ constant(BitVector.fill(wire.size % 8)(high = false))).map(_._1).decode(wire) // the 'constant' codec ensures that padding is zero
     )
 
-    val dataLengthCodec: Codec[Long] = uint(10).xmap(_ * 5, s => (s / 5 + (if (s % 5 == 0) 0 else 1)).toInt)
+    private val dataLengthCodec: Codec[Long] = uint(10).xmap(_ * 5, s => (s / 5 + (if (s % 5 == 0) 0 else 1)).toInt)
 
     def dataCodec[A](valueCodec: Codec[A], expectedLength: Option[Long] = None): Codec[A] = paddedVarAlignedBits(
       dataLengthCodec.narrow(l => if (expectedLength.getOrElse(l) == l) Attempt.successful(l) else Attempt.failure(Err(s"invalid length $l")), l => l),
@@ -457,7 +441,7 @@ object Bolt11Invoice {
       .typecase(30, dataCodec(bits).as[UnknownTag30])
       .typecase(31, dataCodec(bits).as[UnknownTag31])
 
-    def fixedSizeTrailingCodec[A](codec: Codec[A], size: Int): Codec[A] = Codec[A](
+    private def fixedSizeTrailingCodec[A](codec: Codec[A], size: Int): Codec[A] = Codec[A](
       (data: A) => codec.encode(data),
       (wire: BitVector) => {
         val (head, tail) = wire.splitAt(wire.size - size)
@@ -515,12 +499,12 @@ object Bolt11Invoice {
   }
 
   // char -> 5 bits value
-  val charToint5: Map[Char, BitVector] = Bech32.alphabet.zipWithIndex.toMap.view.mapValues(BitVector.fromInt(_, size = 5, ordering = ByteOrdering.BigEndian)).toMap
+  private val charToint5: Map[Char, BitVector] = Bech32.alphabet.zipWithIndex.toMap.view.mapValues(BitVector.fromInt(_, size = 5, ordering = ByteOrdering.BigEndian)).toMap
 
   // TODO: could be optimized by preallocating the resulting buffer
   def string2Bits(data: String): BitVector = data.map(charToint5).foldLeft(BitVector.empty)(_ ++ _)
 
-  val eight2fiveCodec: Codec[List[java.lang.Byte]] = list(ubyte(5).xmap[java.lang.Byte](b => b, b => b))
+  private val eight2fiveCodec: Codec[List[java.lang.Byte]] = list(ubyte(5).xmap[java.lang.Byte](b => b, b => b))
 
   /**
    * @param input bech32-encoded invoice

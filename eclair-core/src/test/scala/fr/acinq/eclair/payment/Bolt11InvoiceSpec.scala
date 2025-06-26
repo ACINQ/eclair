@@ -37,9 +37,9 @@ import scala.util.Success
 
 class Bolt11InvoiceSpec extends AnyFunSuite {
 
-  val priv = PrivateKey(hex"e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734")
-  val pub = priv.publicKey
-  val nodeId = pub
+  val priv: PrivateKey = PrivateKey(hex"e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734")
+  val pub: PublicKey = priv.publicKey
+  val nodeId: PublicKey = pub
   assert(nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
 
   // Copy of Bolt11Invoice.apply that doesn't strip unknown features
@@ -408,6 +408,10 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       "lnbc20m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqs9qrsgq7ea976txfraylvgzuxs8kgcw23ezlrszfnh8r6qtfpr6cxga50aj6txm9rxrydzd06dfeawfk6swupvz4erwnyutnjq7x39ymw6j38gp49qdkj",
       // Invalid signature public key recovery id.
       "lnbc1qqqqpqqnp4qqqlftcw9qqqqqqqqqqqqygh9qpp5qpp5s7zxqqqqcqpjpqqygh9qpp5s7zxqqqqcqpjpqqlqqqqqqqqqqqqcqqpqqqqqqqqqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqlqqqcqpjptfqptfqptfqpqqqqqqqqqqqqqqqqqqq8ddm0a",
+      // Empty routing hint field.
+      "lnbc1p5q54jjpp5fe0dhqdt4m97psq0fv3wjlk95cclnatvuvq49xtnc8rzrp0dysusdqqcqzzsxqrrs0fppqy6uew5229e67r9xzzm9mjyfwseclstdgsp5rnanj9x5rnanj9xnq28hhgd6c7yxlmh6lta047h6lqqqqqqqqqqqrqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6qqqqqqqqqqqqqqqqqqq9kvnknh7ug5mttnqqqqqqqqq8849gwfhvnp9rqpe0cy97",
+      // Invalid min_final_expiry_delta_blocks.
+      "lnbc1p5q54jjpp5fe0dhqdt4m97psq0fv3wjlk95cclnatvuvq49xtnc8rzrp0d5susdqqcqg3vrywwwjsppqy6uew5229e67rzxzzm9mjyfwseclstdgsp5rnanj9xnq28hhgd6c7yxlmh6lta047h6lqqqqqqqqqqqrqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9kvnknh7ug5mttn2yu5ha6m98cpda2rtwu08849gwfhvnp9rqpqqqqqqqqqg58lts",
     )
     for (ref <- refs) {
       assert(Bolt11Invoice.fromString(ref).isFailure)
