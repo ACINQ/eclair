@@ -400,12 +400,12 @@ object UpdateAddHtlc {
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
             pathKey_opt: Option[PublicKey],
-            confidence: Double,
+            endorsement: Int,
             fundingFee_opt: Option[LiquidityAds.FundingFee]): UpdateAddHtlc = {
     val tlvs = Set(
       pathKey_opt.map(UpdateAddHtlcTlv.PathKey),
       fundingFee_opt.map(UpdateAddHtlcTlv.FundingFeeTlv),
-      Some(UpdateAddHtlcTlv.Endorsement((confidence * 7.999).toInt)),
+      Some(UpdateAddHtlcTlv.Endorsement(endorsement)),
     ).flatten[UpdateAddHtlcTlv]
     UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, TlvStream(tlvs))
   }
