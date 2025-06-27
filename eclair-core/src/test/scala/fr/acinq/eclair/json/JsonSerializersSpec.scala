@@ -383,7 +383,8 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         deeplyConfirmed = Map(OutPoint(TxId.fromValidHex("9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3) -> Btc(1.4)),
         recentlyConfirmed = Map(OutPoint(TxId.fromValidHex("4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2"), 5) -> Btc(0.7)),
         unconfirmed = Map(OutPoint(TxId.fromValidHex("345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 1) -> Btc(0.05)),
-        utxos = Seq.empty
+        utxos = Seq.empty,
+        recentlySpentInputs = Set.empty,
       ),
       offChain = CheckBalance.OffChainBalance(
         normal = MainAndHtlcBalance(
