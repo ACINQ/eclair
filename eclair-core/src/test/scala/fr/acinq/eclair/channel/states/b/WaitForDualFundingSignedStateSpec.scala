@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.states.b
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{ByteVector64, SatoshiLong, TxId}
 import fr.acinq.eclair.TestUtils.randomTxId
-import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
+import fr.acinq.eclair.blockchain.{NewTransaction, SingleKeyOnChainWallet}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchPublished, WatchPublishedTriggered}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
@@ -127,6 +127,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
 
     val listener = TestProbe()
     alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+    alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[NewTransaction])
 
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
@@ -146,6 +147,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     // Alice receives Bob's signatures and sends her own signatures.
     bob2alice.forward(alice)
     assert(listener.expectMsgType[TransactionPublished].tx.txid == fundingTxId)
+    assert(listener.expectMsgType[NewTransaction].tx.txid == fundingTxId)
     assert(alice2blockchain.expectMsgType[WatchPublished].txId == fundingTxId)
     alice2bob.expectMsgType[TxSignatures]
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)

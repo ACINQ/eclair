@@ -24,9 +24,9 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.NumericSatoshi.abs
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.{NewTransaction, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel.Helpers.Closing.{LocalClose, RemoteClose, RevokedClose}
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
@@ -361,7 +361,13 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(initialState.commitments.latest.localCommit.spec.toLocal == 800_000_000.msat)
     assert(initialState.commitments.latest.localCommit.spec.toRemote == 700_000_000.msat)
 
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    val listener = TestProbe()
+    alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+    alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[NewTransaction])
+
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
+    assert(listener.expectMsgType[TransactionPublished].tx == spliceTx)
+    assert(listener.expectMsgType[NewTransaction].tx == spliceTx)
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.capacity == 2_000_000.sat)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 1_300_000_000.msat)
@@ -2476,7 +2482,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
-  test("disconnect before channel update and tx_signatures are received") { f=>
+  test("disconnect before channel update and tx_signatures are received") { f =>
     import f._
     // Disconnection with both sides sending tx_signatures and channel updates
     // alice                    bob
@@ -2654,7 +2660,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus == SpliceStatus.NoSplice)
     addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN(None)
-    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch =>  // Bob doesn't receive Alice's commit_sig
+    inside(alice2bob.expectMsgType[CommitSigBatch]) { batch => // Bob doesn't receive Alice's commit_sig
       assert(batch.batchSize == 2)
     }
     alice2bob.expectNoMessage(100 millis)
@@ -2735,7 +2741,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishAlice.nextRemoteRevocationNumber == 0)
-    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishBob.nextRemoteRevocationNumber == 0)
 
     // Bob must retransmit his commit_sigs first.
@@ -2802,12 +2808,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishAlice.nextRemoteRevocationNumber == 1)
-    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty  )
+    assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishBob.nextRemoteRevocationNumber == 0)
 
     // Bob must retransmit his commit_sigs first.
     alice2bob.expectNoMessage(100 millis)
-    inside(bob2alice.expectMsgType[CommitSigBatch] ) { batch =>
+    inside(bob2alice.expectMsgType[CommitSigBatch]) { batch =>
       assert(batch.batchSize == 2)
       bob2alice.forward(alice)
     }
