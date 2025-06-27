@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CMD_FULFILL_HTLC, CannotExtractSharedSecret, Origin}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.router.Router.Route
@@ -384,7 +384,7 @@ object OutgoingPaymentPacket {
         Right(UpdateFailMalformedHtlc(add.channelId, add.id, failure.onionHash, failure.code))
       case None =>
         // If the htlcReceivedAt was lost (because the node restarted), we use a hold time of 0 which should be ignored by the payer.
-        val holdTime = cmd.htlcReceivedAt_opt.map(now - _).getOrElse(0 millisecond)
+        val holdTime = cmd.attribution_opt.map(now - _.htlcReceivedAt).getOrElse(0 millisecond)
         buildHtlcFailure(nodeSecret, useAttributableFailures, cmd.reason, add, holdTime).map {
           case (encryptedReason, tlvs) => UpdateFailHtlc(add.channelId, cmd.id, encryptedReason, tlvs)
         }
@@ -397,8 +397,8 @@ object OutgoingPaymentPacket {
       extractSharedSecret(nodeSecret, add) match {
         case Left(_) => TlvStream.empty
         case Right(sharedSecret) =>
-          val holdTime = cmd.htlcReceivedAt_opt.map(now - _).getOrElse(0 millisecond)
-          TlvStream(UpdateFulfillHtlcTlv.AttributionData(Sphinx.Attribution.create(cmd.downstreamAttribution_opt, None, holdTime, sharedSecret)))
+          val holdTime = cmd.attribution_opt.map(now - _.htlcReceivedAt).getOrElse(0 millisecond)
+          TlvStream(UpdateFulfillHtlcTlv.AttributionData(Sphinx.Attribution.create(cmd.attribution_opt.flatMap(_.downstreamAttribution_opt), None, holdTime, sharedSecret)))
       }
     } else {
       TlvStream.empty

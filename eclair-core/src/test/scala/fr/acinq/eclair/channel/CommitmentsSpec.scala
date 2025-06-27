@@ -116,7 +116,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc4.availableBalanceForSend == b)
     assert(bc4.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val cmdFulfill = CMD_FULFILL_HTLC(0, payment_preimage, None, None)
+    val cmdFulfill = CMD_FULFILL_HTLC(0, payment_preimage, None)
     val Right((bc5, fulfill)) = bc4.sendFulfill(cmdFulfill, bob.underlyingActor.nodeParams.privateKey, useAttributionData = false)
     assert(bc5.availableBalanceForSend == b + p) // as soon as we have the fulfill, the balance increases
     assert(bc5.availableBalanceForReceive == a - p - htlcOutputFee)
@@ -319,7 +319,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac8.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
     assert(ac8.availableBalanceForReceive == b - p3)
 
-    val cmdFulfill1 = CMD_FULFILL_HTLC(0, payment_preimage1, None, None)
+    val cmdFulfill1 = CMD_FULFILL_HTLC(0, payment_preimage1, None)
     val Right((bc8, fulfill1)) = bc7.sendFulfill(cmdFulfill1, bob.underlyingActor.nodeParams.privateKey, useAttributionData = false)
     assert(bc8.availableBalanceForSend == b + p1 - p3) // as soon as we have the fulfill, the balance increases
     assert(bc8.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
@@ -329,7 +329,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc9.availableBalanceForSend == b + p1 - p3)
     assert(bc9.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // a's balance won't return to previous before she acknowledges the fail
 
-    val cmdFulfill3 = CMD_FULFILL_HTLC(0, payment_preimage3, None, None)
+    val cmdFulfill3 = CMD_FULFILL_HTLC(0, payment_preimage3, None)
     val Right((ac9, fulfill3)) = ac8.sendFulfill(cmdFulfill3, alice.underlyingActor.nodeParams.privateKey, useAttributionData = false)
     assert(ac9.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3) // as soon as we have the fulfill, the balance increases
     assert(ac9.availableBalanceForReceive == b - p3)

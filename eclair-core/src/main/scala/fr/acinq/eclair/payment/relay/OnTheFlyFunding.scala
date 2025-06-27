@@ -100,7 +100,8 @@ object OnTheFlyFunding {
         // That's because we are directly connected to the wallet: the blinded path doesn't contain any other public nodes,
         // so we don't need to protect against probing. This allows us to return a more meaningful failure to the payer.
         val failure = failure_opt.getOrElse(FailureReason.LocalFailure(UnknownNextPeer()))
-        Seq(u.add.channelId -> CMD_FAIL_HTLC(u.add.id, failure, Some(u.receivedAt), commit = true))
+        val attribution = FailureAttributionData(htlcReceivedAt = u.receivedAt, trampolineReceivedAt_opt = None)
+        Seq(u.add.channelId -> CMD_FAIL_HTLC(u.add.id, failure, Some(attribution), commit = true))
       case u: Upstream.Hot.Trampoline =>
         val failure = failure_opt match {
           case Some(f) => f match {
@@ -118,14 +119,20 @@ object OnTheFlyFunding {
           }
           case None => FailureReason.LocalFailure(UnknownNextPeer())
         }
-        u.received.map(_.add).map(add => add.channelId -> CMD_FAIL_HTLC(add.id, failure, Some(u.receivedAt), commit = true))
+        u.received.map(c => {
+          val attribution = FailureAttributionData(htlcReceivedAt = c.receivedAt, trampolineReceivedAt_opt = Some(u.receivedAt))
+          c.add.channelId -> CMD_FAIL_HTLC(c.add.id, failure, Some(attribution), commit = true)
+        })
     }
 
     /** Create commands to fulfill all upstream HTLCs. */
     def createFulfillCommands(preimage: ByteVector32): Seq[(ByteVector32, CMD_FULFILL_HTLC)] = upstream match {
       case _: Upstream.Local => Nil
-      case u: Upstream.Hot.Channel => Seq(u.add.channelId -> CMD_FULFILL_HTLC(u.add.id, preimage, None, Some(u.receivedAt), commit = true))
-      case u: Upstream.Hot.Trampoline => u.received.map(_.add).map(add => add.channelId -> CMD_FULFILL_HTLC(add.id, preimage, None, Some(u.receivedAt), commit = true))
+      case u: Upstream.Hot.Channel => Seq(u.add.channelId -> CMD_FULFILL_HTLC(u.add.id, preimage, Some(FulfillAttributionData(htlcReceivedAt = u.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = None)), commit = true))
+      case u: Upstream.Hot.Trampoline => u.received.map(c => {
+        val attribution = FulfillAttributionData(htlcReceivedAt = c.receivedAt, trampolineReceivedAt_opt = Some(u.receivedAt), downstreamAttribution_opt = None)
+        c.add.channelId -> CMD_FULFILL_HTLC(c.add.id, preimage, Some(attribution), commit = true)
+      })
     }
   }
 
