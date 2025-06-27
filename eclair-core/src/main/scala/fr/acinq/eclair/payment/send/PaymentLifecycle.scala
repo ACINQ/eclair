@@ -17,9 +17,8 @@
 package fr.acinq.eclair.payment.send
 
 import akka.actor.typed.scaladsl.adapter._
-import akka.actor.{ActorRef, FSM, Props, Status}
+import akka.actor.{ActorRef, FSM, Props}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
@@ -106,11 +105,11 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         case HtlcResult.RemoteFulfill(updateFulfill) =>
           updateFulfill.attribution_opt match {
             case Some(attribution) =>
-              val Sphinx.Attribution.UnwrappedAttribution(holdTimes, remaining_opt) = Sphinx.Attribution.fulfillHoldTimes(attribution, d.sharedSecrets)
-              if (holdTimes.nonEmpty) {
-                context.system.eventStream.publish(Router.ReportedHoldTimes(holdTimes))
+              val unwrapped = Sphinx.Attribution.unwrap(attribution, d.sharedSecrets)
+              if (unwrapped.holdTimes.nonEmpty) {
+                context.system.eventStream.publish(Router.ReportedHoldTimes(unwrapped.holdTimes))
               }
-              remaining_opt
+              unwrapped.remaining_opt
             case None => None
           }
         case _: HtlcResult.OnChainFulfill => None
