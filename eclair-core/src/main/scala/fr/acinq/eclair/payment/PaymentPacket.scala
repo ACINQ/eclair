@@ -378,7 +378,7 @@ object OutgoingPaymentPacket {
     }
   }
 
-  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: FailureReason, add: UpdateAddHtlc, holdTime: FiniteDuration): Either[CannotExtractSharedSecret, (ByteVector, Option[ByteVector])] = {
+  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: FailureReason, add: UpdateAddHtlc, holdTime: FiniteDuration, trampolineHoldTime: FiniteDuration): Either[CannotExtractSharedSecret, (ByteVector, Option[ByteVector])] = {
     extractSharedSecret(nodeSecret, add).map(ss => {
       reason match {
         case FailureReason.EncryptedDownstreamFailure(packet, previousAttribution_opt) =>
@@ -387,9 +387,9 @@ object OutgoingPaymentPacket {
               // If we are unable to decrypt the downstream failure and the payment is using trampoline, the failure is
               // intended for the payer. We encrypt it with the trampoline secret first and then the outer secret.
               val trampolinePacket = Sphinx.FailurePacket.wrap(packet, trampolineOnionSecret)
-              val attributionInner = Sphinx.Attribution.create(previousAttribution_opt, Some(packet), holdTime, trampolineOnionSecret)
-              val attributionOuter = Sphinx.Attribution.create(Some(attributionInner), Some(trampolinePacket), holdTime, ss.outerOnionSecret)
-              (Sphinx.FailurePacket.wrap(trampolinePacket, ss.outerOnionSecret), Some(attributionOuter))
+              val trampolineAttribution = Sphinx.Attribution.create(previousAttribution_opt, Some(packet), trampolineHoldTime, trampolineOnionSecret)
+              val outerAttribution = Sphinx.Attribution.create(Some(trampolineAttribution), Some(trampolinePacket), holdTime, ss.outerOnionSecret)
+              (Sphinx.FailurePacket.wrap(trampolinePacket, ss.outerOnionSecret), Some(outerAttribution))
             case Some(trampolineOnionSecret) =>
               // When we're inside a blinded path, we don't report our attribution data.
               val trampolinePacket = Sphinx.FailurePacket.wrap(packet, trampolineOnionSecret)
@@ -409,9 +409,9 @@ object OutgoingPaymentPacket {
             case Some(trampolineOnionSecret) if !ss.blinded =>
               val packet = Sphinx.FailurePacket.create(trampolineOnionSecret, failure)
               val trampolinePacket = Sphinx.FailurePacket.wrap(packet, trampolineOnionSecret)
-              val attributionInner = Sphinx.Attribution.create(previousAttribution_opt = None, Some(packet), holdTime, trampolineOnionSecret)
-              val attributionOuter = Sphinx.Attribution.create(Some(attributionInner), Some(trampolinePacket), holdTime, ss.outerOnionSecret)
-              (Sphinx.FailurePacket.wrap(trampolinePacket, ss.outerOnionSecret), Some(attributionOuter))
+              val trampolineAttribution = Sphinx.Attribution.create(previousAttribution_opt = None, Some(packet), trampolineHoldTime, trampolineOnionSecret)
+              val outerAttribution = Sphinx.Attribution.create(Some(trampolineAttribution), Some(trampolinePacket), holdTime, ss.outerOnionSecret)
+              (Sphinx.FailurePacket.wrap(trampolinePacket, ss.outerOnionSecret), Some(outerAttribution))
             case Some(trampolineOnionSecret) =>
               val packet = Sphinx.FailurePacket.create(trampolineOnionSecret, failure)
               val trampolinePacket = Sphinx.FailurePacket.wrap(packet, trampolineOnionSecret)
@@ -465,8 +465,9 @@ object OutgoingPaymentPacket {
         Right(UpdateFailMalformedHtlc(add.channelId, add.id, failure.onionHash, failure.code))
       case None =>
         // If the htlcReceivedAt was lost (because the node restarted), we use a hold time of 0 which should be ignored by the payer.
+        val trampolineHoldTime = cmd.trampolinePaymentReceivedAt_opt.map(now - _).getOrElse(0 millisecond)
         val holdTime = cmd.htlcReceivedAt_opt.map(now - _).getOrElse(0 millisecond)
-        buildHtlcFailure(nodeSecret, cmd.reason, add, holdTime).map {
+        buildHtlcFailure(nodeSecret, cmd.reason, add, holdTime, trampolineHoldTime).map {
           case (encryptedReason, attributionData_opt) =>
             val tlvs: Set[UpdateFailHtlcTlv] = Set(
               if (useAttributableFailures) attributionData_opt.map(UpdateFailHtlcTlv.AttributionData(_)) else None
@@ -480,13 +481,16 @@ object OutgoingPaymentPacket {
     // If we are part of a blinded route, we must not populate attribution data.
     val attributionData_opt = add.pathKey_opt match {
       case None if useAttributionData =>
+        val trampolineHoldTime = cmd.trampolinePaymentReceivedAt_opt.map(now - _).getOrElse(0 millisecond)
+        val holdTime = cmd.htlcReceivedAt_opt.map(now - _).getOrElse(0 millisecond)
         extractSharedSecret(nodeSecret, add) match {
-          case Right(sharedSecret) =>
-            // Note that we use the outer shared secret: we report our hold time to the previous trampoline node, not
-            // necessarily to the payer.
-            val holdTime = cmd.htlcReceivedAt_opt.map(now - _).getOrElse(0 millisecond)
-            Some(Sphinx.Attribution.create(cmd.downstreamAttribution_opt, None, holdTime, sharedSecret.outerOnionSecret))
-          case Left(_) => None
+          case Right(HtlcSharedSecrets(outerOnionSecret, None, _)) =>
+            Some(Sphinx.Attribution.create(cmd.downstreamAttribution_opt, None, holdTime, outerOnionSecret))
+          case Right(HtlcSharedSecrets(outerOnionSecret, Some(trampolineOnionSecret), blinded)) if !blinded =>
+            val trampolineAttribution = Sphinx.Attribution.create(cmd.downstreamAttribution_opt, None, trampolineHoldTime, trampolineOnionSecret)
+            val outerAttribution = Sphinx.Attribution.create(Some(trampolineAttribution), None, holdTime, outerOnionSecret)
+            Some(outerAttribution)
+          case _ => None
         }
       case _ => None
     }

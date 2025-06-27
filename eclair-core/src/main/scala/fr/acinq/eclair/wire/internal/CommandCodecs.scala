@@ -47,6 +47,7 @@ object CommandCodecs {
         }
       )) ::
       ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
+      ("trampolinePaymentReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
@@ -56,6 +57,7 @@ object CommandCodecs {
       ("r" | bytes32) ::
       ("downstreamAttribution_opt" | optional(bool8, bytes(Sphinx.Attribution.totalLength))) ::
       ("htlcReceivedAt_opt" | optional(bool8, uint64overflow.as[TimestampMilli])) ::
+      ("trampolinePaymentReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
 
@@ -63,6 +65,7 @@ object CommandCodecs {
     (("id" | int64) ::
       ("r" | bytes32) ::
       ("downstreamAttribution_opt" | provide(Option.empty[ByteVector])) ::
+      ("trampolinePaymentReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
       ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
@@ -82,6 +85,7 @@ object CommandCodecs {
         }
       )) ::
       ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
+      ("trampolinePaymentReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
@@ -91,6 +95,7 @@ object CommandCodecs {
     (("id" | int64) ::
       ("reason" | failureReasonCodec) ::
       ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
+      ("trampolinePaymentReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
@@ -100,6 +105,7 @@ object CommandCodecs {
     (("id" | int64) ::
       ("reason" | failureReasonCodec) ::
       ("htlcReceivedAt_opt" | optional(bool8, uint64overflow.as[TimestampMilli])) ::
+      ("trampolinePaymentReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::

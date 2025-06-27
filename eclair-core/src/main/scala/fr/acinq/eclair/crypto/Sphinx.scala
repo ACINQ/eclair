@@ -335,16 +335,16 @@ object Sphinx extends Logging {
      * @return failure message if the origin of the packet could be identified and the packet decrypted, the unwrapped
      *         failure packet otherwise.
      */
-    def decrypt(packet: ByteVector, attribution_opt: Option[ByteVector], sharedSecrets: Seq[SharedSecret], hopIndex: Int = 0): HtlcFailure = {
+    def decrypt(packet: ByteVector, attribution_opt: Option[ByteVector], sharedSecrets: Seq[SharedSecret]): HtlcFailure = {
       sharedSecrets match {
         case Nil => HtlcFailure(Nil, Left(CannotDecryptFailurePacket(packet, attribution_opt)))
         case ss :: tail =>
           val packet1 = wrap(packet, ss.secret)
-          val attribution1_opt = attribution_opt.flatMap(Attribution.unwrap(_, packet1, ss.secret, hopIndex))
+          val attribution1_opt = attribution_opt.flatMap(Attribution.unwrap(_, packet1, ss.secret, sharedSecrets.length))
           val um = generateKey("um", ss.secret)
           val HtlcFailure(downstreamHoldTimes, failure) = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).decode(packet1.toBitVector) match {
             case Attempt.Successful(value) => HtlcFailure(Nil, Right(DecryptedFailurePacket(ss.remoteNodeId, value.value)))
-            case _ => decrypt(packet1, attribution1_opt.map(_._2), tail, hopIndex + 1)
+            case _ => decrypt(packet1, attribution1_opt.map(_._2), tail)
           }
           HtlcFailure(attribution1_opt.map(n => HoldTime(n._1, ss.remoteNodeId) +: downstreamHoldTimes).getOrElse(Nil), failure)
       }
@@ -390,11 +390,11 @@ object Sphinx extends Logging {
       }))
 
     /**
-     * Computes the HMACs for the node that is `minNumHop` hops away from us. Hence we only compute `maxNumHops - minNumHop` HMACs.
+     * Computes the HMACs for the node that is `maxNumHops - remainingHops` hops away from us. Hence we only compute `remainingHops` HMACs.
      * HMACs are truncated to 4 bytes to save space. An attacker has only one try to guess the HMAC so 4 bytes should be enough.
      */
-    private def computeHmacs(mac: Mac32, failurePacket: ByteVector, holdTimes: ByteVector, hmacs: Seq[Seq[ByteVector]], minNumHop: Int): Seq[ByteVector] = {
-      (minNumHop until maxNumHops).map(i => {
+    private def computeHmacs(mac: Mac32, failurePacket: ByteVector, holdTimes: ByteVector, hmacs: Seq[Seq[ByteVector]], remainingHops: Int): Seq[ByteVector] = {
+      ((maxNumHops - remainingHops) until maxNumHops).map(i => {
         val y = maxNumHops - i
         mac.mac(failurePacket ++
           holdTimes.take(y * holdTimeLength) ++
@@ -412,7 +412,7 @@ object Sphinx extends Logging {
       val previousHmacs = getHmacs(previousAttribution).dropRight(1).map(_.drop(1))
       val mac = Hmac256(generateKey("um", sharedSecret))
       val holdTimes = uint32.encode(holdTime.toMillis / 100).require.bytes ++ previousAttribution.take((maxNumHops - 1) * holdTimeLength)
-      val hmacs = computeHmacs(mac, failurePacket_opt.getOrElse(ByteVector.empty), holdTimes, previousHmacs, 0) +: previousHmacs
+      val hmacs = computeHmacs(mac, failurePacket_opt.getOrElse(ByteVector.empty), holdTimes, previousHmacs, maxNumHops) +: previousHmacs
       cipher(holdTimes ++ ByteVector.concat(hmacs.map(ByteVector.concat(_))), sharedSecret)
     }
 
@@ -420,12 +420,12 @@ object Sphinx extends Logging {
      * Unwrap one hop of attribution data
      * @return a pair with the hold time for this hop and the attribution data for the next hop, or None if the attribution data was invalid
      */
-    def unwrap(encrypted: ByteVector, failurePacket: ByteVector, sharedSecret: ByteVector32, minNumHop: Int): Option[(FiniteDuration, ByteVector)] = {
+    def unwrap(encrypted: ByteVector, failurePacket: ByteVector, sharedSecret: ByteVector32, remainingHops: Int): Option[(FiniteDuration, ByteVector)] = {
       val bytes = cipher(encrypted, sharedSecret)
       val holdTime = (uint32.decode(bytes.take(holdTimeLength).bits).require.value * 100).milliseconds
       val hmacs = getHmacs(bytes)
       val mac = Hmac256(generateKey("um", sharedSecret))
-      if (computeHmacs(mac, failurePacket, bytes.take(maxNumHops * holdTimeLength), hmacs.drop(1), minNumHop) == hmacs.head.drop(minNumHop)) {
+      if (computeHmacs(mac, failurePacket, bytes.take(maxNumHops * holdTimeLength), hmacs.drop(1), remainingHops) == hmacs.head.drop(maxNumHops - remainingHops)) {
         val unwrapped = bytes.slice(holdTimeLength, maxNumHops * holdTimeLength) ++ ByteVector.low(holdTimeLength) ++ ByteVector.concat((hmacs.drop(1) :+ Seq()).map(s => ByteVector.low(hmacLength) ++ ByteVector.concat(s)))
         Some(holdTime, unwrapped)
       } else {
@@ -438,13 +438,13 @@ object Sphinx extends Logging {
     /**
      * Decrypt the hold times from the attribution data of a fulfilled HTLC
      */
-    def fulfillHoldTimes(attribution: ByteVector, sharedSecrets: Seq[SharedSecret], hopIndex: Int = 0): UnwrappedAttribution = {
+    def fulfillHoldTimes(attribution: ByteVector, sharedSecrets: Seq[SharedSecret]): UnwrappedAttribution = {
       sharedSecrets match {
         case Nil => UnwrappedAttribution(Nil, Some(attribution))
         case ss :: tail =>
-          unwrap(attribution, ByteVector.empty, ss.secret, hopIndex) match {
+          unwrap(attribution, ByteVector.empty, ss.secret, sharedSecrets.length) match {
             case Some((holdTime, nextAttribution)) =>
-              val UnwrappedAttribution(holdTimes, remaining_opt) = fulfillHoldTimes(nextAttribution, tail, hopIndex + 1)
+              val UnwrappedAttribution(holdTimes, remaining_opt) = fulfillHoldTimes(nextAttribution, tail)
               UnwrappedAttribution(HoldTime(holdTime, ss.remoteNodeId) :: holdTimes, remaining_opt)
             case None => UnwrappedAttribution(Nil, None)
           }
