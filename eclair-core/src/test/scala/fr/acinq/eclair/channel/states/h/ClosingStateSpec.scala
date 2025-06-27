@@ -286,7 +286,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // actual test starts here
     val sender = TestProbe()
-    val c = CMD_FULFILL_HTLC(42, randomBytes32(), None, None, replyTo_opt = Some(sender.ref))
+    val c = CMD_FULFILL_HTLC(42, randomBytes32(), None, replyTo_opt = Some(sender.ref))
     alice ! c
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(alice), 42)))
   }
@@ -385,7 +385,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // Bob has the preimage for those HTLCs, but Alice force-closes before receiving it.
-    bob ! CMD_FULFILL_HTLC(htlc1.id, preimage, None, None)
+    bob ! CMD_FULFILL_HTLC(htlc1.id, preimage, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc] // ignored
     val (lcp, closingTxs) = localClose(alice, alice2blockchain, htlcTimeoutCount = 2)
     assert(lcp.htlcOutputs.size == 2)
@@ -439,7 +439,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // Bob has the preimage for those HTLCs, but he force-closes before Alice receives it.
-    bob ! CMD_FULFILL_HTLC(htlc1.id, preimage, None, None)
+    bob ! CMD_FULFILL_HTLC(htlc1.id, preimage, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc] // ignored
     val (rcp, closingTxs) = localClose(bob, bob2blockchain, htlcSuccessCount = 2)
 
@@ -494,7 +494,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // At that point, the HTLCs are not in Alice's commitment anymore.
     // But Bob has not revoked his commitment yet that contains them.
     bob.setState(NORMAL, bobStateWithHtlc)
-    bob ! CMD_FULFILL_HTLC(htlc1.id, preimage, None, None)
+    bob ! CMD_FULFILL_HTLC(htlc1.id, preimage, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc] // ignored
 
     // Bob claims the htlc outputs from his previous commit tx using its preimage.
@@ -583,7 +583,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Bob doesn't have the preimage yet for any of those HTLCs.
     assert(closingTxs.htlcTxs.isEmpty)
     // Bob receives the preimage for the first two HTLCs.
-    bob ! CMD_FULFILL_HTLC(htlc1.id, preimage, None, None)
+    bob ! CMD_FULFILL_HTLC(htlc1.id, preimage, None)
     val htlcSuccessTxs = aliceStateWithoutHtlcs.commitments.latest.commitmentFormat match {
       case DefaultCommitmentFormat => (0 until 2).map(_ => bob2blockchain.expectFinalTxPublished("htlc-success").tx)
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
@@ -881,7 +881,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(aliceCommitTx.txOut.size == 3) // 2 main outputs + 1 htlc
 
     // alice fulfills the HTLC but bob doesn't receive the signature
-    alice ! CMD_FULFILL_HTLC(htlc.id, r, None, None, commit = true)
+    alice ! CMD_FULFILL_HTLC(htlc.id, r, None, commit = true)
     alice2bob.expectMsgType[UpdateFulfillHtlc]
     alice2bob.forward(bob)
     inside(bob2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.Fulfill]]) { settled =>
@@ -952,7 +952,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice.stateName == CLOSING)
 
     // Alice receives the preimage for the first HTLC from downstream; she can now claim the corresponding HTLC output.
-    alice ! CMD_FULFILL_HTLC(htlc1.id, r1, None, None, commit = true)
+    alice ! CMD_FULFILL_HTLC(htlc1.id, r1, None, commit = true)
     val htlcSuccess = alice2blockchain.expectReplaceableTxPublished[HtlcSuccessTx](ConfirmationTarget.Absolute(htlc1.cltvExpiry.blockHeight))
     assert(htlcSuccess.preimage == r1)
     Transaction.correctlySpends(htlcSuccess.sign(), closingState.commitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -1080,7 +1080,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectNoMessage(100 millis)
 
     // Alice receives the preimage for the incoming HTLC.
-    alice ! CMD_FULFILL_HTLC(incomingHtlc.id, preimage, None, None, commit = true)
+    alice ! CMD_FULFILL_HTLC(incomingHtlc.id, preimage, None, commit = true)
     val htlcSuccess = alice2blockchain.expectReplaceableTxPublished[HtlcSuccessTx]
     assert(htlcSuccess.preimage == preimage)
     alice2blockchain.expectNoMessage(100 millis)
@@ -1118,7 +1118,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectWatchOutputsSpent(htlcDelayedTxs.map(_.input))
 
     // We replay the HTLC fulfillment: nothing happens since we already published a 3rd-stage transaction.
-    alice ! CMD_FULFILL_HTLC(incomingHtlc.id, preimage, None, None, commit = true)
+    alice ! CMD_FULFILL_HTLC(incomingHtlc.id, preimage, None, commit = true)
     alice2blockchain.expectNoMessage(100 millis)
 
     // The remaining transactions confirm.
@@ -1143,14 +1143,14 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     addHtlc(40_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(alice, bob, alice2bob, bob2alice)
     // Bob has the preimage for 2 of the 3 HTLCs he received.
-    bob ! CMD_FULFILL_HTLC(htlc1a.id, r1a, None, None)
+    bob ! CMD_FULFILL_HTLC(htlc1a.id, r1a, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
-    bob ! CMD_FULFILL_HTLC(htlc2a.id, r2a, None, None)
+    bob ! CMD_FULFILL_HTLC(htlc2a.id, r2a, None)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     // Alice has the preimage for 2 of the 3 HTLCs she received.
-    alice ! CMD_FULFILL_HTLC(htlc1b.id, r1b, None, None)
+    alice ! CMD_FULFILL_HTLC(htlc1b.id, r1b, None)
     alice2bob.expectMsgType[UpdateFulfillHtlc]
-    alice ! CMD_FULFILL_HTLC(htlc2b.id, r2b, None, None)
+    alice ! CMD_FULFILL_HTLC(htlc2b.id, r2b, None)
     alice2bob.expectMsgType[UpdateFulfillHtlc]
 
     // Alice force-closes.
@@ -1522,7 +1522,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(closingTxs.htlcTxs.isEmpty) // we don't have the preimage to claim the htlc-success yet
 
     // Alice receives the preimage for the first HTLC from downstream; she can now claim the corresponding HTLC output.
-    alice ! CMD_FULFILL_HTLC(htlc1.id, r1, None, None, commit = true)
+    alice ! CMD_FULFILL_HTLC(htlc1.id, r1, None, commit = true)
     val htlcSuccess = alice2blockchain.expectReplaceableTxPublished[ClaimHtlcSuccessTx](ConfirmationTarget.Absolute(htlc1.cltvExpiry.blockHeight))
     assert(htlcSuccess.preimage == r1)
     Transaction.correctlySpends(htlcSuccess.sign(), bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -1708,7 +1708,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val htlcTimeoutTx = closingTxs.htlcTimeoutTxs.head
 
     // Alice receives the preimage for the first HTLC from downstream; she can now claim the corresponding HTLC output.
-    alice ! CMD_FULFILL_HTLC(htlc1.id, r1, None, None, commit = true)
+    alice ! CMD_FULFILL_HTLC(htlc1.id, r1, None, commit = true)
     val htlcSuccess = alice2blockchain.expectReplaceableTxPublished[ClaimHtlcSuccessTx](ConfirmationTarget.Absolute(htlc1.cltvExpiry.blockHeight))
     assert(htlcSuccess.preimage == r1)
     Transaction.correctlySpends(htlcSuccess.sign(), bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

@@ -73,7 +73,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
         case Right(r: IncomingPaymentPacket.NodeRelayPacket) =>
           if (!nodeParams.enableTrampolinePayment) {
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=trampoline disabled")
-            PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(RequiredNodeFeatureMissing()), Some(r.receivedAt), commit = true))
+            val attribution = FailureAttributionData(htlcReceivedAt = r.receivedAt, trampolineReceivedAt_opt = None)
+            PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(RequiredNodeFeatureMissing()), Some(attribution), commit = true))
           } else {
             nodeRelayer ! NodeRelayer.Relay(r, originNode)
           }
@@ -84,7 +85,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
               // We are the introduction point of a blinded path: we add a non-negligible delay to make it look like it
               // could come from a downstream node.
               val delay = Some(500.millis + Random.nextLong(1500).millis)
-              CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(InvalidOnionBlinding(badOnion.onionHash)), Some(TimestampMilli.now()), delay, commit = true)
+              val attribution = FailureAttributionData(htlcReceivedAt = TimestampMilli.now(), trampolineReceivedAt_opt = None)
+              CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(InvalidOnionBlinding(badOnion.onionHash)), Some(attribution), delay, commit = true)
             case _ =>
               CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)
           }
@@ -92,7 +94,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
         case Left(failure) =>
           log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=$failure")
-          val cmdFail = CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(failure), Some(TimestampMilli.now()), commit = true)
+          val attribution = FailureAttributionData(htlcReceivedAt = TimestampMilli.now(), trampolineReceivedAt_opt = None)
+          val cmdFail = CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(failure), Some(attribution), commit = true)
           PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
       }
 

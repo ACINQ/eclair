@@ -98,12 +98,13 @@ object ChannelRelay {
   }
 
   def translateRelayFailure(originHtlcId: Long, fail: HtlcResult.Fail, htlcReceivedAt_opt: Option[TimestampMilli]): CMD_FAIL_HTLC = {
+    val attribution_opt = htlcReceivedAt_opt.map(receivedAt => FailureAttributionData(htlcReceivedAt = receivedAt, trampolineReceivedAt_opt = None))
     fail match {
-      case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(originHtlcId, FailureReason.EncryptedDownstreamFailure(f.fail.reason, f.fail.attribution_opt), htlcReceivedAt_opt, commit = true)
-      case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(createBadOnionFailure(f.fail.onionHash, f.fail.failureCode)), htlcReceivedAt_opt, commit = true)
-      case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(PermanentChannelFailure()), htlcReceivedAt_opt, commit = true)
-      case HtlcResult.ChannelFailureBeforeSigned => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(PermanentChannelFailure()), htlcReceivedAt_opt, commit = true)
-      case f: HtlcResult.DisconnectedBeforeSigned => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(TemporaryChannelFailure(Some(f.channelUpdate))), htlcReceivedAt_opt, commit = true)
+      case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(originHtlcId, FailureReason.EncryptedDownstreamFailure(f.fail.reason, f.fail.attribution_opt), attribution_opt, commit = true)
+      case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(createBadOnionFailure(f.fail.onionHash, f.fail.failureCode)), attribution_opt, commit = true)
+      case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(PermanentChannelFailure()), attribution_opt, commit = true)
+      case HtlcResult.ChannelFailureBeforeSigned => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(PermanentChannelFailure()), attribution_opt, commit = true)
+      case f: HtlcResult.DisconnectedBeforeSigned => CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(TemporaryChannelFailure(Some(f.channelUpdate))), attribution_opt, commit = true)
     }
   }
 
@@ -226,7 +227,8 @@ class ChannelRelay private(nodeParams: NodeParams,
           case HtlcResult.RemoteFulfill(fulfill) => fulfill.attribution_opt
           case HtlcResult.OnChainFulfill(_) => None
         }
-        val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, downstreamAttribution_opt, Some(upstream.receivedAt), commit = true)
+        val attribution = FulfillAttributionData(htlcReceivedAt = upstream.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = downstreamAttribution_opt)
+        val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, Some(attribution), commit = true)
         context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(upstream.amountIn, htlc.amountMsat, htlc.paymentHash, upstream.add.channelId, htlc.channelId, upstream.receivedAt, r.receivedAt))
         recordRelayDuration(isSuccess = true)
         safeSendAndStop(upstream.add.channelId, cmd)
@@ -433,8 +435,10 @@ class ChannelRelay private(nodeParams: NodeParams,
     featureOk && liquidityIssue && relayParamsOk
   }
 
-  private def makeCmdFailHtlc(originHtlcId: Long, failure: FailureMessage, delay_opt: Option[FiniteDuration] = None): CMD_FAIL_HTLC =
-    CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(failure), Some(upstream.receivedAt), delay_opt, commit = true)
+  private def makeCmdFailHtlc(originHtlcId: Long, failure: FailureMessage, delay_opt: Option[FiniteDuration] = None): CMD_FAIL_HTLC = {
+    val attribution = FailureAttributionData(htlcReceivedAt = upstream.receivedAt, trampolineReceivedAt_opt = None)
+    CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(failure), Some(attribution), delay_opt, commit = true)
+  }
 
   private def recordRelayDuration(isSuccess: Boolean): Unit =
     Metrics.RelayedPaymentDuration

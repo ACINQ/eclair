@@ -513,7 +513,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   }
 
   def fulfillHtlc(id: Long, preimage: ByteVector32, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
-    s ! CMD_FULFILL_HTLC(id, preimage, None, None)
+    s ! CMD_FULFILL_HTLC(id, preimage, None)
     val fulfill = s2r.expectMsgType[UpdateFulfillHtlc]
     s2r.forward(r)
     eventually(assert(r.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.changes.remoteChanges.proposed.contains(fulfill)))

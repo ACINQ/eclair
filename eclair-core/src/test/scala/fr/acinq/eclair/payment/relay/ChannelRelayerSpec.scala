@@ -88,7 +88,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
   def expectFwdFail(register: TestProbe[Any], channelId: ByteVector32, cmd: CMD_FAIL_HTLC): Register.Forward[CMD_FAIL_HTLC] = {
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
-    assert(fwd.message.copy(htlcReceivedAt_opt = None) == cmd.copy(htlcReceivedAt_opt = None))
+    assert(fwd.message.copy(attribution_opt = None) == cmd.copy(attribution_opt = None))
     assert(fwd.channelId == channelId)
     fwd
   }

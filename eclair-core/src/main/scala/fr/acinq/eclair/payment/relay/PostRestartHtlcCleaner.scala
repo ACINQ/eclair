@@ -118,7 +118,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                 Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = false).increment()
                 if (e.currentState != CLOSED) {
                   log.info(s"fulfilling broken htlc=$htlc")
-                  channel ! CMD_FULFILL_HTLC(htlc.id, preimage, None, None, commit = true)
+                  channel ! CMD_FULFILL_HTLC(htlc.id, preimage, None, commit = true)
                 } else {
                   log.info(s"got preimage but upstream channel is closed for htlc=$htlc")
                 }
@@ -208,7 +208,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
           if (relayedOut != Set((fulfilledHtlc.channelId, fulfilledHtlc.id))) {
             log.error(s"unexpected channel relay downstream HTLCs: expected (${fulfilledHtlc.channelId},${fulfilledHtlc.id}), found $relayedOut")
           }
-          PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, originChannelId, CMD_FULFILL_HTLC(originHtlcId, paymentPreimage, None, None, commit = true))
+          PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, originChannelId, CMD_FULFILL_HTLC(originHtlcId, paymentPreimage, None, commit = true))
           // We don't know when we received this HTLC so we just pretend that we received it just now.
           context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, fulfilledHtlc.amountMsat, fulfilledHtlc.paymentHash, originChannelId, fulfilledHtlc.channelId, TimestampMilli.now(), TimestampMilli.now()))
           Metrics.PendingRelayedOut.decrement()
@@ -219,7 +219,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
             log.info(s"received preimage for paymentHash=${fulfilledHtlc.paymentHash}: fulfilling ${originHtlcs.length} HTLCs upstream")
             originHtlcs.foreach { case Upstream.Cold.Channel(channelId, htlcId, _) =>
               Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = true).increment()
-              PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, None, None, commit = true))
+              PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, None, commit = true))
             }
           }
           val relayedOut1 = relayedOut diff Set((fulfilledHtlc.channelId, fulfilledHtlc.id))

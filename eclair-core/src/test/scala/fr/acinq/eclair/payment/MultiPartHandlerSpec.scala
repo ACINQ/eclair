@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{KeySend, _}
 import fr.acinq.eclair.TestConstants.Alice
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, FailureAttributionData, FulfillAttributionData, Register}
 import fr.acinq.eclair.db.{IncomingBlindedPayment, IncomingPaymentStatus, IncomingStandardPayment, PaymentType}
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.PaymentReceived.PartialPayment
@@ -563,8 +563,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val commands = f.register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: f.register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: Nil
     assert(commands.toSet == Set(
-      Register.Forward(null, ByteVector32.One, CMD_FAIL_HTLC(0, FailureReason.LocalFailure(PaymentTimeout()), Some(receivedAt1), commit = true)),
-      Register.Forward(null, ByteVector32.One, CMD_FAIL_HTLC(1, FailureReason.LocalFailure(PaymentTimeout()), Some(receivedAt2), commit = true))
+      Register.Forward(null, ByteVector32.One, CMD_FAIL_HTLC(0, FailureReason.LocalFailure(PaymentTimeout()), Some(FailureAttributionData(receivedAt1, None)), commit = true)),
+      Register.Forward(null, ByteVector32.One, CMD_FAIL_HTLC(1, FailureReason.LocalFailure(PaymentTimeout()), Some(FailureAttributionData(receivedAt2, None)), commit = true))
     ))
     awaitCond({
       f.sender.send(handler, GetPendingPayments)
@@ -574,7 +574,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // Extraneous HTLCs should be failed.
     val receivedAt3 = receivedAt1 + 2.millis
     f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(pr1.paymentHash, HtlcPart(1000 msat, UpdateAddHtlc(ByteVector32.One, 42, 200 msat, pr1.paymentHash, add1.cltvExpiry, add1.onionRoutingPacket, None, 1.0, None), receivedAt3), Some(PaymentTimeout())))
-    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FAIL_HTLC(42, FailureReason.LocalFailure(PaymentTimeout()), Some(receivedAt3), commit = true)))
+    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FAIL_HTLC(42, FailureReason.LocalFailure(PaymentTimeout()), Some(FailureAttributionData(receivedAt3, None)), commit = true)))
 
     // The payment should still be pending in DB.
     val Some(incomingPayment) = nodeParams.db.payments.getIncomingPayment(pr1.paymentHash)
@@ -601,9 +601,9 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add3, FinalPayload.Standard.createPayload(add3.amountMsat, 1000 msat, add3.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata), receivedAt3))
 
     f.register.expectMsgAllOf(
-      Register.Forward(null, add2.channelId, CMD_FAIL_HTLC(add2.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)), Some(receivedAt2), commit = true)),
-      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, None, Some(receivedAt1), commit = true)),
-      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(add3.id, preimage, None, Some(receivedAt3), commit = true))
+      Register.Forward(null, add2.channelId, CMD_FAIL_HTLC(add2.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)), Some(FailureAttributionData(receivedAt2, None)), commit = true)),
+      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, Some(FulfillAttributionData(receivedAt1, None, None)), commit = true)),
+      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(add3.id, preimage, Some(FulfillAttributionData(receivedAt3, None, None)), commit = true))
     )
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
@@ -619,7 +619,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // Extraneous HTLCs should be fulfilled.
     val receivedAt4 = receivedAt1 + 3.millis
     f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(invoice.paymentHash, HtlcPart(1000 msat, UpdateAddHtlc(ByteVector32.One, 44, 200 msat, invoice.paymentHash, add1.cltvExpiry, add1.onionRoutingPacket, None, 1.0, None), receivedAt4), None))
-    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FULFILL_HTLC(44, preimage, None, Some(receivedAt4), commit = true)))
+    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FULFILL_HTLC(44, preimage, Some(FulfillAttributionData(receivedAt4, None, None)), commit = true)))
     assert(f.eventListener.expectMsgType[PaymentReceived].amount == 200.msat)
     val received2 = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(received2.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount == 1200.msat)
@@ -644,8 +644,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add2, FinalPayload.Standard.createPayload(add2.amountMsat, 1500 msat, add2.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata), receivedAt2))
 
     f.register.expectMsgAllOf(
-      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, None, Some(receivedAt1), commit = true)),
-      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(add2.id, preimage, None, Some(receivedAt2), commit = true))
+      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, Some(FulfillAttributionData(receivedAt1, None, None)), commit = true)),
+      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(add2.id, preimage, Some(FulfillAttributionData(receivedAt2, None, None)), commit = true))
     )
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
@@ -668,7 +668,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val add1 = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket, None, 1.0, None)
     val receivedAt1 = TimestampMilli.now()
     f.sender.send(handler, IncomingPaymentPacket.FinalPacket(add1, FinalPayload.Standard.createPayload(add1.amountMsat, 1000 msat, add1.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata), receivedAt1))
-    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FAIL_HTLC(0, FailureReason.LocalFailure(PaymentTimeout()), Some(receivedAt1), commit = true)))
+    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FAIL_HTLC(0, FailureReason.LocalFailure(PaymentTimeout()), Some(FailureAttributionData(receivedAt1, None)), commit = true)))
     awaitCond({
       f.sender.send(handler, GetPendingPayments)
       f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
@@ -683,8 +683,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     // the fulfill are not necessarily in the same order as the commands
     f.register.expectMsgAllOf(
-      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(2, preimage, None, Some(receivedAt2), commit = true)),
-      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(5, preimage, None, Some(receivedAt3), commit = true))
+      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(2, preimage, Some(FulfillAttributionData(receivedAt2, None, None)), commit = true)),
+      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(5, preimage, Some(FulfillAttributionData(receivedAt3, None, None)), commit = true))
     )
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
@@ -757,7 +757,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val receivedAt = TimestampMilli.now()
     sender.send(handlerWithMpp, IncomingPaymentPacket.FinalPacket(add, payload, receivedAt))
 
-    f.register.expectMsg(Register.Forward(null, add.channelId, CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(42000 msat, nodeParams.currentBlockHeight)), Some(receivedAt), commit = true)))
+    f.register.expectMsg(Register.Forward(null, add.channelId, CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(42000 msat, nodeParams.currentBlockHeight)), Some(FailureAttributionData(receivedAt, None)), commit = true)))
     assert(nodeParams.db.payments.getIncomingPayment(paymentHash).isEmpty)
   }
 
