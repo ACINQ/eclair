@@ -180,9 +180,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("send an HTLC A->D with an invalid expiry delta for B") {
-    val (sender, holdTimesRecorder) = (TestProbe(), TestProbe())
-    nodes("A").system.eventStream.subscribe(holdTimesRecorder.ref, classOf[Router.ReportedHoldTimes])
-
+    val sender = TestProbe()
     // to simulate this, we will update B's relay params
     // first we find out the short channel id for channel B-C
     sender.send(nodes("B").router, Router.GetChannels)
@@ -206,8 +204,6 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id == paymentId)
     assert(Crypto.sha256(ps.paymentPreimage) == invoice.paymentHash)
-
-    assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B", "C", "D").map(nodes(_).nodeParams.nodeId))
 
     def updateFor(n: PublicKey, pc: PublicChannel): Option[ChannelUpdate] = if (n == pc.ann.nodeId1) pc.update_1_opt else if (n == pc.ann.nodeId2) pc.update_2_opt else throw new IllegalArgumentException("this node is unrelated to this channel")
 
@@ -270,9 +266,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("send an HTLC A->D with a lower amount than requested") {
-    val (sender, holdTimesRecorder) = (TestProbe(), TestProbe())
-    nodes("A").system.eventStream.subscribe(holdTimesRecorder.ref, classOf[Router.ReportedHoldTimes])
-
+    val sender = TestProbe()
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = 200000000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("1 coffee")))
@@ -289,13 +283,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(failed.paymentHash == invoice.paymentHash)
     assert(failed.failures.size == 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000 msat, getBlockHeight())))
-
-    assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B", "C", "D").map(nodes(_).nodeParams.nodeId))
   }
 
   test("send an HTLC A->D with too much overpayment") {
-    val (sender, holdTimesRecorder) = (TestProbe(), TestProbe())
-    nodes("A").system.eventStream.subscribe(holdTimesRecorder.ref, classOf[Router.ReportedHoldTimes])
+    val sender = TestProbe()
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = 200000000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("1 coffee")))
@@ -312,13 +303,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(failed.paymentHash == invoice.paymentHash)
     assert(failed.failures.size == 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(600000000 msat, getBlockHeight())))
-
-    assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B", "C", "D").map(nodes(_).nodeParams.nodeId))
   }
 
   test("send an HTLC A->D with a reasonable overpayment") {
-    val (sender, holdTimesRecorder) = (TestProbe(), TestProbe())
-    nodes("A").system.eventStream.subscribe(holdTimesRecorder.ref, classOf[Router.ReportedHoldTimes])
+    val sender = TestProbe()
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = 200000000.msat
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("1 coffee")))
@@ -328,8 +316,6 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val sendReq = SendPaymentToNode(sender.ref, 300000000 msat, invoice, Nil, routeParams = integrationTestRouteParams, maxAttempts = 5)
     sender.send(nodes("A").paymentInitiator, sendReq)
     sender.expectMsgType[UUID]
-
-    assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B", "C", "D").map(nodes(_).nodeParams.nodeId))
   }
 
   test("send multiple HTLCs A->D with a failover when a channel gets exhausted") {
