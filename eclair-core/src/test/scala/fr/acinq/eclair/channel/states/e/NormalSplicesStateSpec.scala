@@ -59,8 +59,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
+  val extraTags: Set[String] = Set.empty
+
   override def withFixture(test: OneArgTest): Outcome = {
-    val tags = test.tags + ChannelStateTestsTags.DualFunding
+    val tags = test.tags + ChannelStateTestsTags.DualFunding ++ extraTags
     val setup = init(tags = tags)
     import setup._
     reachNormal(setup, tags)
@@ -353,7 +355,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(finalState.commitments.latest.localCommit.spec.toRemote == 700_000_000.msat - settledHtlcs)
   }
 
-  test("recv CMD_SPLICE (splice-in)") { f =>
+  test("recv CMD_SPLICE (splice-in)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -625,7 +627,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(commitment.localCommit.spec.toLocal == 650_000_000.msat)
     assert(commitment.localChannelReserve == 15_000.sat)
     val commitFees = Transactions.commitTxTotalCost(commitment.remoteCommitParams.dustLimit, commitment.remoteCommit.spec, commitment.commitmentFormat)
-    assert(commitFees > 20_000.sat)
+    commitment.channelParams.channelFeatures.commitmentFormat match {
+      case _: SimpleTaprootChannelCommitmentFormat => assert(commitFees > 7_000.sat)
+      case _ => assert(commitFees > 20_000.sat)
+    }
 
     val sender = TestProbe()
     val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(630_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None)
@@ -1053,6 +1058,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   test("recv TxAbort (after CommitSig)") { f =>
     import f._
+
+    assume(!this.extraTags.contains(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy) && !this.extraTags.contains(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee))
 
     val sender = TestProbe()
     alice ! CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = None, requestFunding_opt = None)
@@ -3004,6 +3011,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("force-close with multiple splices (simple)") { f =>
     import f._
 
+    assume(extraTags.isEmpty)
+
     val htlcs = setupHtlcs(f)
 
     val fundingTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
@@ -3779,5 +3788,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(finalState.commitments.latest.localCommit.spec.toLocal == 805_000_000.msat)
     assert(finalState.commitments.latest.localCommit.spec.toRemote == 695_000_000.msat)
   }
+}
 
+class NormalSplicesStateWithTaprootChannelsSpec extends NormalSplicesStateSpec {
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)
 }

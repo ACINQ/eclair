@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire.internal.channel.version5
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.Musig2Input
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions.{ClosingTx, ClosingTxs, InputInfo}
@@ -124,8 +125,15 @@ private[channel] object ChannelCodecs5 {
         ("fundingTxIndex" | uint32) ::
         ("remoteFundingPubkey" | publicKey)).as[InteractiveTxBuilder.Multisig2of2Input]
 
+    private val musig2InputCodec: Codec[Musig2Input] = (
+      ("info" | inputInfoCodec) ::
+        ("fundingTxIndex" | uint32) ::
+        ("remoteFundingPubkey" | publicKey) ::
+        ("commitIndex" | uint32)).as[InteractiveTxBuilder.Musig2Input]
+
     private val sharedFundingInputCodec: Codec[InteractiveTxBuilder.SharedFundingInput] = discriminated[InteractiveTxBuilder.SharedFundingInput].by(uint16)
       .typecase(0x01, multisig2of2InputCodec)
+      .typecase(0x02, musig2InputCodec)
 
     private val requireConfirmedInputsCodec: Codec[InteractiveTxBuilder.RequireConfirmedInputs] = (("forLocal" | bool8) :: ("forRemote" | bool8)).as[InteractiveTxBuilder.RequireConfirmedInputs]
 
