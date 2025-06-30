@@ -715,7 +715,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             case PostRevocationAction.RejectHtlc(add) =>
               log.debug("rejecting incoming htlc {}", add)
               // NB: we don't set commit = true, we will sign all updates at once afterwards.
-              self ! CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(d.channelUpdate))), Some(TimestampMilli.now()), commit = true)
+              val attribution = FailureAttributionData(htlcReceivedAt = TimestampMilli.now(), trampolineReceivedAt_opt = None)
+              self ! CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(d.channelUpdate))), Some(attribution), commit = true)
             case PostRevocationAction.RelayFailure(result) =>
               log.debug("forwarding {} to relayer", result)
               relayer ! result
@@ -1660,11 +1661,13 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             case PostRevocationAction.RelayHtlc(add) =>
               // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
               log.debug("closing in progress: failing {}", add)
-              self ! CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(PermanentChannelFailure()), Some(TimestampMilli.now()), commit = true)
+              val attribution = FailureAttributionData(htlcReceivedAt = TimestampMilli.now(), trampolineReceivedAt_opt = None)
+              self ! CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(PermanentChannelFailure()), Some(attribution), commit = true)
             case PostRevocationAction.RejectHtlc(add) =>
               // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
               log.debug("closing in progress: rejecting {}", add)
-              self ! CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(PermanentChannelFailure()), Some(TimestampMilli.now()), commit = true)
+              val attribution = FailureAttributionData(htlcReceivedAt = TimestampMilli.now(), trampolineReceivedAt_opt = None)
+              self ! CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(PermanentChannelFailure()), Some(attribution), commit = true)
             case PostRevocationAction.RelayFailure(result) =>
               log.debug("forwarding {} to relayer", result)
               relayer ! result

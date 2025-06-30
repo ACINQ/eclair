@@ -221,9 +221,12 @@ final case class CMD_ADD_HTLC(replyTo: ActorRef,
                               origin: Origin.Hot,
                               commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
 
+case class FailureAttributionData(htlcReceivedAt: TimestampMilli, trampolineReceivedAt_opt: Option[TimestampMilli])
+case class FulfillAttributionData(htlcReceivedAt: TimestampMilli, trampolineReceivedAt_opt: Option[TimestampMilli], downstreamAttribution_opt: Option[ByteVector])
+
 sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent { def id: Long }
-final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, downstreamAttribution_opt: Option[ByteVector], htlcReceivedAt_opt: Option[TimestampMilli], commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
-final case class CMD_FAIL_HTLC(id: Long, reason: FailureReason, htlcReceivedAt_opt: Option[TimestampMilli], delay_opt: Option[FiniteDuration] = None, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
+final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, attribution_opt: Option[FulfillAttributionData], commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
+final case class CMD_FAIL_HTLC(id: Long, reason: FailureReason, attribution_opt: Option[FailureAttributionData], delay_opt: Option[FiniteDuration] = None, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
 final case class CMD_SIGN(replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandWhenQuiescent

@@ -24,8 +24,8 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs._
 import fr.acinq.eclair.wire.protocol._
 import scodec.Codec
-import scodec.bits.ByteVector
 import scodec.codecs._
+import shapeless.{::, HNil}
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -45,24 +45,39 @@ object CommandCodecs {
           case FailureReason.LocalFailure(f) => Right(f)
         }
       )) ::
-      ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
+      ("attribution_opt" | provide(Option.empty[FailureAttributionData])) ::
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
 
-  private val cmdFulfillCodec: Codec[CMD_FULFILL_HTLC] =
+  private val cmdFulfillWithPartialAttributionCodec: Codec[CMD_FULFILL_HTLC] =
     (("id" | int64) ::
       ("r" | bytes32) ::
       ("downstreamAttribution_opt" | optional(bool8, bytes(Sphinx.Attribution.totalLength))) ::
       ("htlcReceivedAt_opt" | optional(bool8, uint64overflow.as[TimestampMilli])) ::
       ("commit" | provide(false)) ::
-      ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
+      ("replyTo_opt" | provide(Option.empty[ActorRef]))).map {
+      case id :: r :: downstreamAttribution_opt :: htlcReceivedAt_opt :: commit :: replyTo_opt :: HNil =>
+        val attribution_opt = htlcReceivedAt_opt.map(receivedAt => FulfillAttributionData(receivedAt, None, downstreamAttribution_opt))
+        CMD_FULFILL_HTLC(id, r, attribution_opt, commit, replyTo_opt)
+    }.decodeOnly
 
-  private val cmdFulfillCodecWithoutAttribution: Codec[CMD_FULFILL_HTLC] =
+  private val cmdFulfillWithoutAttributionCodec: Codec[CMD_FULFILL_HTLC] =
     (("id" | int64) ::
       ("r" | bytes32) ::
-      ("downstreamAttribution_opt" | provide(Option.empty[ByteVector])) ::
-      ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
+      ("attribution_opt" | provide(Option.empty[FulfillAttributionData])) ::
+      ("commit" | provide(false)) ::
+      ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
+
+  private val fulfillAttributionCodec: Codec[FulfillAttributionData] =
+    (("htlcReceivedAt" | uint64overflow.as[TimestampMilli]) ::
+      ("trampolineReceivedAt_opt" | optional(bool8, uint64overflow.as[TimestampMilli])) ::
+      ("downstreamAttribution_opt" | optional(bool8, bytes(Sphinx.Attribution.totalLength)))).as[FulfillAttributionData]
+
+  private val cmdFullfillCodec: Codec[CMD_FULFILL_HTLC] =
+    (("id" | int64) ::
+      ("r" | bytes32) ::
+      ("attribution_opt" | optional(bool8, fulfillAttributionCodec)) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
 
@@ -79,25 +94,42 @@ object CommandCodecs {
           case FailureReason.LocalFailure(f) => Right(f)
         }
       )) ::
-      ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
+      ("attribution_opt" | provide(Option.empty[FailureAttributionData])) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
 
-  private val cmdFailWithoutHoldTimeCodec: Codec[CMD_FAIL_HTLC] =
+  private val cmdFailWithoutAttributionCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
       ("reason" | failureReasonCodec) ::
-      ("htlcReceivedAt_opt" | provide(Option.empty[TimestampMilli])) ::
+      ("attribution_opt" | provide(Option.empty[FailureAttributionData])) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
+
+  private val cmdFailWithPartialAttributionCodec: Codec[CMD_FAIL_HTLC] =
+    (("id" | int64) ::
+      ("reason" | failureReasonCodec) ::
+      ("htlcReceivedAt_opt" | optional(bool8, uint64overflow.as[TimestampMilli])) ::
+      // No need to delay commands after a restart, we've been offline which already created a random delay.
+      ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
+      ("commit" | provide(false)) ::
+      ("replyTo_opt" | provide(Option.empty[ActorRef]))).map {
+      case id :: reason :: htlcReceivedAt_opt :: delay_opt :: commit :: replyTo_opt :: HNil =>
+        val attribution_opt = htlcReceivedAt_opt.map(receivedAt => FailureAttributionData(receivedAt, None))
+        CMD_FAIL_HTLC(id, reason, attribution_opt, delay_opt, commit, replyTo_opt)
+    }.decodeOnly
+
+  private val failureAttributionCodec: Codec[FailureAttributionData] =
+    (("htlcReceivedAt" | uint64overflow.as[TimestampMilli]) ::
+      ("trampolineReceivedAt_opt" | optional(bool8, uint64overflow.as[TimestampMilli]))).as[FailureAttributionData]
 
   private val cmdFailCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
       ("reason" | failureReasonCodec) ::
-      ("htlcReceivedAt_opt" | optional(bool8, uint64overflow.as[TimestampMilli])) ::
+      ("attribution_opt" | optional(bool8, failureAttributionCodec)) ::
       // No need to delay commands after a restart, we've been offline which already created a random delay.
       ("delay_opt" | provide(Option.empty[FiniteDuration])) ::
       ("commit" | provide(false)) ::
@@ -112,12 +144,14 @@ object CommandCodecs {
 
   val cmdCodec: Codec[HtlcSettlementCommand] = discriminated[HtlcSettlementCommand].by(uint16)
     // NB: order matters!
-    .typecase(5, cmdFailCodec)
-    .typecase(4, cmdFailWithoutHoldTimeCodec)
+    .typecase(8, cmdFullfillCodec)
+    .typecase(7, cmdFailCodec)
+    .typecase(6, cmdFulfillWithPartialAttributionCodec)
+    .typecase(5, cmdFailWithPartialAttributionCodec)
+    .typecase(4, cmdFailWithoutAttributionCodec)
     .typecase(3, cmdFailEitherCodec)
     .typecase(2, cmdFailMalformedCodec)
     .typecase(1, cmdFailWithoutLengthCodec)
-    .typecase(6, cmdFulfillCodec)
-    .typecase(0, cmdFulfillCodecWithoutAttribution)
+    .typecase(0, cmdFulfillWithoutAttributionCodec)
 
 }
