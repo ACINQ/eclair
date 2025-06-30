@@ -48,7 +48,10 @@ trait Channel {
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
-    ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true)
+    ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
+    ChannelTypes.SimpleTaprootChannelsStaging(),
+    ChannelTypes.SimpleTaprootChannelsStaging(scidAlias = true),
+    ChannelTypes.SimpleTaprootChannelsStaging(scidAlias = true, zeroConf = true)
   ).map(ct => ct.toString -> ct).toMap // we use the toString method as name in the api
 
   val open: Route = postRequest("open") { implicit t =>
@@ -77,16 +80,16 @@ trait Channel {
 
   val spliceIn: Route = postRequest("splicein") { implicit f =>
     formFields(channelIdFormParam, "amountIn".as[Satoshi], "pushMsat".as[MilliSatoshi].?) {
-      (channelId, amountIn, pushMsat_opt) => complete(eclairApi.spliceIn(channelId, amountIn, pushMsat_opt))
+      (channelId, amountIn, pushMsat_opt) => complete(eclairApi.spliceIn(channelId, amountIn, pushMsat_opt, None))
     }
   }
 
   val spliceOut: Route = postRequest("spliceout") { implicit f =>
     formFields(channelIdFormParam, "amountOut".as[Satoshi], "scriptPubKey".as[ByteVector](bytesUnmarshaller)) {
-      (channelId, amountOut, scriptPubKey) => complete(eclairApi.spliceOut(channelId, amountOut, Left(scriptPubKey)))
+      (channelId, amountOut, scriptPubKey) => complete(eclairApi.spliceOut(channelId, amountOut, Left(scriptPubKey), None))
     } ~
       formFields(channelIdFormParam, "amountOut".as[Satoshi], "address".as[String]) {
-        (channelId, amountOut, address) => complete(eclairApi.spliceOut(channelId, amountOut, Right(address)))
+        (channelId, amountOut, address) => complete(eclairApi.spliceOut(channelId, amountOut, Right(address), None))
       }
   }
 

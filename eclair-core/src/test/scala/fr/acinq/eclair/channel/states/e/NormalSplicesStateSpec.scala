@@ -43,6 +43,7 @@ import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -60,8 +61,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
+  val extraTags: Set[String] = Set.empty
+  val spliceChannelType_opt: Option[ChannelType] = None
+
   override def withFixture(test: OneArgTest): Outcome = {
-    val tags = test.tags + ChannelStateTestsTags.DualFunding
+    val tags = test.tags + ChannelStateTestsTags.DualFunding ++ extraTags
     val setup = init(tags = tags)
     import setup._
     reachNormal(setup, tags)
@@ -76,7 +80,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   private def initiateSpliceWithoutSigs(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut], sendTxComplete: Boolean): TestProbe = {
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt, spliceOut_opt, None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt, spliceOut_opt, None, this.spliceChannelType_opt)
     s ! cmd
     exchangeStfu(s, r, s2r, r2s)
     s2r.expectMsgType[SpliceInit]
@@ -354,7 +358,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(finalState.commitments.latest.localCommit.spec.toRemote == 700_000_000.msat - settledHtlcs)
   }
 
-  test("recv CMD_SPLICE (splice-in)") { f =>
+  test("recv CMD_SPLICE (splice-in)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -409,7 +413,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val sender = TestProbe()
     val fundingRequest = LiquidityAds.RequestFunding(400_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)
-    val cmd = CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest))
+    val cmd = CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest), this.spliceChannelType_opt)
     alice ! cmd
 
     exchangeStfu(alice, bob, alice2bob, bob2alice)
@@ -458,7 +462,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val sender = TestProbe()
     val fundingRequest = LiquidityAds.RequestFunding(400_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)
-    val cmd = CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest))
+    val cmd = CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest), this.spliceChannelType_opt)
     alice ! cmd
 
     exchangeStfu(alice, bob, alice2bob, bob2alice)
@@ -485,7 +489,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val sender = TestProbe()
     val fundingRequest = LiquidityAds.RequestFunding(5_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)
-    val cmd = CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest))
+    val cmd = CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest), this.spliceChannelType_opt)
     alice ! cmd
 
     exchangeStfu(alice, bob, alice2bob, bob2alice)
@@ -502,7 +506,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val sender = TestProbe()
     val fundingRequest = LiquidityAds.RequestFunding(100_000 sat, LiquidityAds.FundingRate(10_000 sat, 200_000 sat, 0, 0, 0 sat, 0 sat), LiquidityAds.PaymentDetails.FromChannelBalance)
-    val cmd = CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest))
+    val cmd = CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest), this.spliceChannelType_opt)
     alice ! cmd
 
     exchangeStfu(alice, bob, alice2bob, bob2alice)
@@ -521,7 +525,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // Alice requests a lot of funding, but she doesn't have enough balance to pay the corresponding fee.
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 800_000_000.msat)
     val fundingRequest = LiquidityAds.RequestFunding(5_000_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)
-    val cmd = CMD_SPLICE(sender.ref, None, Some(SpliceOut(750_000 sat, defaultSpliceOutScriptPubKey)), Some(fundingRequest))
+    val cmd = CMD_SPLICE(sender.ref, None, Some(SpliceOut(750_000 sat, defaultSpliceOutScriptPubKey)), Some(fundingRequest), this.spliceChannelType_opt)
     alice ! cmd
 
     exchangeStfu(alice, bob, alice2bob, bob2alice)
@@ -609,7 +613,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(commitFees < 15_000.sat)
 
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(760_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(760_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None, this.spliceChannelType_opt)
     alice ! cmd
     exchangeStfu(f)
     sender.expectMsgType[RES_FAILURE[_, _]]
@@ -626,10 +630,13 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(commitment.localCommit.spec.toLocal == 650_000_000.msat)
     assert(commitment.localChannelReserve == 15_000.sat)
     val commitFees = Transactions.commitTxTotalCost(commitment.remoteCommitParams.dustLimit, commitment.remoteCommit.spec, commitment.commitmentFormat)
-    assert(commitFees > 20_000.sat)
+    commitment.commitmentFormat match {
+      case _: SimpleTaprootChannelCommitmentFormat | _: AnchorOutputsCommitmentFormat => assert(commitFees > 7_000.sat)
+      case DefaultCommitmentFormat => assert(commitFees > 20_000.sat)
+    }
 
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(630_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(630_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None, this.spliceChannelType_opt)
     alice ! cmd
     exchangeStfu(f)
     sender.expectMsgType[RES_FAILURE[_, _]]
@@ -639,7 +646,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
 
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = None, requestFunding_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = None, requestFunding_opt = None, this.spliceChannelType_opt)
     alice ! cmd
     exchangeStfu(f)
     // we tweak the feerate
@@ -660,7 +667,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val sender = TestProbe()
     val bobBalance = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal
-    alice ! CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(100_000 sat)), spliceOut_opt = None, requestFunding_opt = None)
+    alice ! CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(100_000 sat)), spliceOut_opt = None, requestFunding_opt = None, this.spliceChannelType_opt)
     exchangeStfu(f)
     val spliceInit = alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob, spliceInit)
@@ -713,7 +720,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     initiateRbf(f, FeeratePerKw(15_000 sat), sInputsCount = 2, sOutputsCount = 1)
 
     val probe = TestProbe()
-    alice ! CMD_SPLICE(probe.ref, Some(SpliceIn(250_000 sat)), None, None)
+    alice ! CMD_SPLICE(probe.ref, Some(SpliceIn(250_000 sat)), None, None, this.spliceChannelType_opt)
     assert(probe.expectMsgType[RES_FAILURE[_, ChannelException]].t.isInstanceOf[InvalidSpliceWithUnconfirmedTx])
 
     bob2alice.forward(alice, Stfu(alice.stateData.channelId, initiator = true))
@@ -731,7 +738,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // We allow initiating such splice...
     val probe = TestProbe()
-    alice ! CMD_SPLICE(probe.ref, Some(SpliceIn(250_000 sat)), None, None)
+    alice ! CMD_SPLICE(probe.ref, Some(SpliceIn(250_000 sat)), None, None, this.spliceChannelType_opt)
     alice2bob.expectMsgType[Stfu]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[Stfu]
@@ -824,7 +831,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // Alice initiates a splice-in with a liquidity purchase.
     val sender = TestProbe()
     val fundingRequest = LiquidityAds.RequestFunding(400_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)
-    alice ! CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest))
+    alice ! CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest), this.spliceChannelType_opt)
     exchangeStfu(alice, bob, alice2bob, bob2alice)
     inside(alice2bob.expectMsgType[SpliceInit]) { msg =>
       assert(msg.fundingContribution == 500_000.sat)
@@ -995,7 +1002,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
 
     val sender = TestProbe()
-    alice ! CMD_SPLICE(sender.ref, spliceIn_opt = None, spliceOut_opt = Some(SpliceOut(50_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None)
+    alice ! CMD_SPLICE(sender.ref, spliceIn_opt = None, spliceOut_opt = Some(SpliceOut(50_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None, this.spliceChannelType_opt)
     exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
@@ -1020,7 +1027,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
 
     val sender = TestProbe()
-    alice ! CMD_SPLICE(sender.ref, spliceIn_opt = None, spliceOut_opt = Some(SpliceOut(50_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None)
+    alice ! CMD_SPLICE(sender.ref, spliceIn_opt = None, spliceOut_opt = Some(SpliceOut(50_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None, this.spliceChannelType_opt)
     exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
@@ -1055,8 +1062,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("recv TxAbort (after CommitSig)") { f =>
     import f._
 
+    assume(!this.extraTags.contains(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy) && !this.extraTags.contains(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee) && this.spliceChannelType_opt.isEmpty)
+
     val sender = TestProbe()
-    alice ! CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = None, requestFunding_opt = None)
+    alice ! CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = None, requestFunding_opt = None, this.spliceChannelType_opt)
     exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
     alice2bob.forward(bob)
@@ -1518,7 +1527,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitAssert(assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.all.size == 1))
   }
 
-  test("recv CMD_ADD_HTLC with multiple commitments") { f =>
+  test("recv CMD_ADD_HTLC with multiple commitments", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     val sender = TestProbe()
@@ -1573,7 +1582,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("recv CMD_ADD_HTLC while a splice is requested") { f =>
     import f._
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None, this.spliceChannelType_opt)
     alice ! cmd
     exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
@@ -1585,7 +1594,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("recv CMD_ADD_HTLC while a splice is in progress") { f =>
     import f._
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None, this.spliceChannelType_opt)
     alice ! cmd
     exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
@@ -1601,7 +1610,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("recv UpdateAddHtlc while a splice is in progress") { f =>
     import f._
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None, this.spliceChannelType_opt)
     alice ! cmd
     exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
@@ -1771,7 +1780,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
 
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None, this.spliceChannelType_opt)
     alice ! cmd
     exchangeStfu(f)
     alice2bob.expectMsgType[SpliceInit]
@@ -2694,7 +2703,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectNoMessage(100 millis)
   }
 
-  test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update; revoke_and_ack not received") { f =>
+  test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update; revoke_and_ack not received", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
     // alice                    bob
     //   |         ...           |
@@ -3005,6 +3014,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("force-close with multiple splices (simple)") { f =>
     import f._
 
+    assume(extraTags.isEmpty)
+
     val htlcs = setupHtlcs(f)
 
     val fundingTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
@@ -3125,7 +3136,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // Bob publishes his commit tx for the first splice transaction (which double-spends the second splice transaction).
     val bobCommitments = bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments
     val previousCommitment = bobCommitments.active.find(_.fundingTxIndex == 1).get
-    val bobCommitTx1 = previousCommitment.fullySignedLocalCommitTx(bobCommitments.channelParams, bob.underlyingActor.channelKeys)
+    val bobCommitTx1 = previousCommitment.fullySignedLocalCommitTx(bobCommitments.channelParams, bob.underlyingActor.channelKeys).toTry.get
     val bobHtlcTxs = previousCommitment.htlcTxs(bobCommitments.channelParams, bob.underlyingActor.channelKeys).map(_._1)
     Transaction.correctlySpends(bobCommitTx1, Seq(fundingTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
@@ -3564,12 +3575,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     crossSign(bob, alice, bob2alice, alice2bob)
     val aliceCommitments1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     aliceCommitments1.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments1.channelParams, alice.underlyingActor.channelKeys)
+      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments1.channelParams, alice.underlyingActor.channelKeys).toTry.get
       Transaction.correctlySpends(commitTx, Map(c.fundingInput -> c.commitInput(alice.underlyingActor.channelKeys).txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     val bobCommitments1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     bobCommitments1.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(bobCommitments1.channelParams, bob.underlyingActor.channelKeys)
+      val commitTx = c.fullySignedLocalCommitTx(bobCommitments1.channelParams, bob.underlyingActor.channelKeys).toTry.get
       Transaction.correctlySpends(commitTx, Map(c.fundingInput -> c.commitInput(bob.underlyingActor.channelKeys).txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
@@ -3578,12 +3589,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     crossSign(alice, bob, alice2bob, bob2alice)
     val aliceCommitments2 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     aliceCommitments2.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments2.channelParams, alice.underlyingActor.channelKeys)
+      val commitTx = c.fullySignedLocalCommitTx(aliceCommitments2.channelParams, alice.underlyingActor.channelKeys).toTry.get
       Transaction.correctlySpends(commitTx, Map(c.fundingInput -> c.commitInput(alice.underlyingActor.channelKeys).txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     val bobCommitments2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     bobCommitments2.active.foreach { c =>
-      val commitTx = c.fullySignedLocalCommitTx(bobCommitments2.channelParams, bob.underlyingActor.channelKeys)
+      val commitTx = c.fullySignedLocalCommitTx(bobCommitments2.channelParams, bob.underlyingActor.channelKeys).toTry.get
       Transaction.correctlySpends(commitTx, Map(c.fundingInput -> c.commitInput(bob.underlyingActor.channelKeys).txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
 
@@ -3780,5 +3791,24 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(finalState.commitments.latest.localCommit.spec.toLocal == 805_000_000.msat)
     assert(finalState.commitments.latest.localCommit.spec.toRemote == 695_000_000.msat)
   }
+}
 
+// test taproot channels
+class NormalSplicesStateWithTaprootChannelsSpec extends NormalSplicesStateSpec {
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee)
+}
+
+class NormalSplicesStateWithLegacyTaprootChannelsSpec extends NormalSplicesStateSpec {
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)
+}
+
+// test migration from anchor outputs to taproot channels during splices
+class NormalSplicesStateUpgradeToLegacyTaprootChannelsSpec extends NormalSplicesStateSpec {
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.AnchorOutputs)
+  override val spliceChannelType_opt: Option[ChannelType] = Some(ChannelTypes.SimpleTaprootChannelsStagingLegacy(scidAlias = false, zeroConf = false))
+}
+
+class NormalSplicesStateUpgradeToTaprootChannelsSpec extends NormalSplicesStateSpec {
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.AnchorOutputs)
+  override val spliceChannelType_opt: Option[ChannelType] = Some(ChannelTypes.SimpleTaprootChannelsStaging(scidAlias = false, zeroConf = false))
 }

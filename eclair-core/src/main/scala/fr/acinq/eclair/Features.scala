@@ -341,6 +341,16 @@ object Features {
     val mandatory = 154
   }
 
+  case object SimpleTaprootChannelsPhoenix extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot_phoenix_tweaked"
+    val mandatory = 564
+  }
+
+  case object SimpleTaprootChannelsStaging extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot_staging"
+    val mandatory = 180
+  }
+
   /**
    * Activate this feature to provide on-the-fly funding to remote nodes, as specified in bLIP 36: https://github.com/lightning/blips/blob/master/blip-0036.md.
    * TODO: add NodeFeature once bLIP is merged.
@@ -384,6 +394,8 @@ object Features {
     ZeroConf,
     KeySend,
     SimpleClose,
+    SimpleTaprootChannelsPhoenix,
+    SimpleTaprootChannelsStaging,
     WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
@@ -403,6 +415,8 @@ object Features {
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
     SimpleClose -> (ShutdownAnySegwit :: Nil),
+    SimpleTaprootChannelsPhoenix -> (ChannelType :: SimpleClose :: Nil),
+    SimpleTaprootChannelsStaging -> (ChannelType :: SimpleClose :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
     OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)

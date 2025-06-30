@@ -43,7 +43,7 @@ import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryNodeFailure, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, Warning}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, CommitSigTlv, Error, FailureMessageCodecs, FailureReason, PermanentChannelFailure, RevokeAndAck, RevokeAndAckTlv, Shutdown, TemporaryNodeFailure, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, Warning}
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -1054,7 +1054,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteChanges.signed.size == 1)
   }
 
-  test("recv CommitSig (one htlc sent)") { f =>
+  test("recv CommitSig (one htlc sent)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
 
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1103,6 +1103,33 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("recv CommitSig (multiple htlcs in both directions) (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+    import f._
+
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
+    addHtlc(1100000 msat, alice, bob, alice2bob, bob2alice) // a->b (trimmed to dust)
+    addHtlc(999999 msat, bob, alice, bob2alice, alice2bob) // b->a (dust)
+    addHtlc(10000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
+    addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob) // b->a (regular)
+    addHtlc(999999 msat, alice, bob, alice2bob, bob2alice) // a->b (dust)
+    addHtlc(1100000 msat, bob, alice, bob2alice, alice2bob) // b->a (trimmed to dust)
+
+    alice ! CMD_SIGN()
+    val aliceCommitSig = alice2bob.expectMsgType[CommitSig]
+    assert(aliceCommitSig.htlcSignatures.length == 2)
+    alice2bob.forward(bob, aliceCommitSig)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+
+    // actual test begins
+    val bobCommitSig = bob2alice.expectMsgType[CommitSig]
+    assert(bobCommitSig.htlcSignatures.length == 3)
+    bob2alice.forward(alice, bobCommitSig)
+
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.index == 1)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.htlcRemoteSigs.size == 3)
+  }
+
+  test("recv CommitSig (multiple htlcs in both directions) (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
 
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
@@ -1248,6 +1275,46 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2blockchain.expectWatchTxConfirmed(tx.txid)
   }
 
+  test("recv CommitSig (simple taproot channels, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+    import f._
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val tx = bob.signCommitTx()
+
+    // actual test begins
+    alice ! CMD_SIGN()
+    val commitSig = alice2bob.expectMsgType[CommitSig]
+    val commitSigWithMissingNonce = commitSig.copy(tlvStream = commitSig.tlvStream.copy(records = commitSig.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.PartialSignatureWithNonceTlv])))
+    bob ! commitSigWithMissingNonce
+    val error = bob2alice.expectMsgType[Error]
+    assert(new String(error.data.toArray).startsWith("invalid commitment signature"))
+    awaitCond(bob.stateName == CLOSING)
+    bob2blockchain.expectFinalTxPublished(tx.txid)
+    bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    bob2blockchain.expectFinalTxPublished("local-main-delayed")
+    bob2blockchain.expectWatchTxConfirmed(tx.txid)
+  }
+
+  test("recv CommitSig (simple taproot channels, invalid partial signature)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+    import f._
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val tx = bob.signCommitTx()
+
+    // actual test begins
+    alice ! CMD_SIGN()
+    val commitSig = alice2bob.expectMsgType[CommitSig]
+    val Some(psig) = commitSig.partialSignature_opt
+    val invalidPsig = psig.copy(partialSig = psig.partialSig.reverse)
+    val commitSigWithInvalidPsig = commitSig.copy(tlvStream = TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(invalidPsig)))
+    bob ! commitSigWithInvalidPsig
+    val error = bob2alice.expectMsgType[Error]
+    assert(new String(error.data.toArray).startsWith("invalid commitment signature"))
+    awaitCond(bob.stateName == CLOSING)
+    bob2blockchain.expectFinalTxPublished(tx.txid)
+    bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    bob2blockchain.expectFinalTxPublished("local-main-delayed")
+    bob2blockchain.expectWatchTxConfirmed(tx.txid)
+  }
+
   test("recv CommitSig (bad htlc sig count)") { f =>
     import f._
 
@@ -1376,7 +1443,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectMsgType[CommitSig]
   }
 
-  test("recv RevokeAndAck (invalid preimage)") { f =>
+  test("recv RevokeAndAck (invalid revocation)") { f =>
     import f._
     val tx = alice.signCommitTx()
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1393,6 +1460,29 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId == alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
     alice2blockchain.expectFinalTxPublished(tx.txid)
+    alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    alice2blockchain.expectWatchTxConfirmed(tx.txid)
+  }
+
+  test("recv RevokeAndAck (simple taproot channels, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+    import f._
+    val tx = alice.signCommitTx()
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+
+    alice ! CMD_SIGN()
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+
+    // actual test begins
+    val revokeAndAck = bob2alice.expectMsgType[RevokeAndAck]
+    val revokeAndAckWithMissingNonce = revokeAndAck.copy(tlvStream = revokeAndAck.tlvStream.copy(records = revokeAndAck.tlvStream.records.filterNot(tlv => tlv.isInstanceOf[RevokeAndAckTlv.NextLocalNoncesTlv] || tlv.isInstanceOf[RevokeAndAckTlv.NextLocalNonceTlv])))
+    alice ! revokeAndAckWithMissingNonce
+    alice2bob.expectMsgType[Error]
+    awaitCond(alice.stateName == CLOSING)
+    // channel should be advertised as down
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId == alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    alice2blockchain.expectFinalTxPublished(tx.txid)
+    alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     alice2blockchain.expectFinalTxPublished("local-main-delayed")
     alice2blockchain.expectWatchTxConfirmed(tx.txid)
   }

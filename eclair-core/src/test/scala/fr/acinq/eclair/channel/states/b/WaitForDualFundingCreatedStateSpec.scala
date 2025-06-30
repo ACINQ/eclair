@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelReestablish, CommitSig, Error, Init, LiquidityAds, OpenDualFundedChannel, TxAbort, TxAckRbf, TxAddInput, TxAddOutput, TxComplete, TxInitRbf, Warning}
+import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelReestablish, CommitSig, Error, Init, LiquidityAds, OpenDualFundedChannel, TxAbort, TxAckRbf, TxAddInput, TxAddOutput, TxComplete, TxCompleteTlv, TxInitRbf, Warning}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, UInt64, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -38,11 +38,14 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, wallet: SingleKeyOnChainWallet, aliceListener: TestProbe, bobListener: TestProbe)
 
+  val extraTags: Set[String] = Set.empty
+
   override def withFixture(test: OneArgTest): Outcome = {
     val wallet = new SingleKeyOnChainWallet()
-    val setup = init(wallet_opt = Some(wallet), tags = test.tags)
+    val tags = test.tags ++ extraTags
+    val setup = init(wallet_opt = Some(wallet), tags = tags)
     import setup._
-    val channelParams = computeChannelParams(setup, test.tags)
+    val channelParams = computeChannelParams(setup, tags)
     val aliceListener = TestProbe()
     val bobListener = TestProbe()
     within(30 seconds) {
@@ -256,4 +259,30 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     aliceOpenReplyTo.expectMsg(OpenChannelResponse.TimedOut)
   }
 
+}
+
+class WaitForDualFundingCreatedStateWithTaprootChannelsSpec extends WaitForDualFundingCreatedStateSpec {
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)
+
+  test("tx_complete is missing nonces", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    bob2alice.expectNoMessage(100 millis)
+    alice2bob.expectMsgType[TxAddInput]
+    alice2bob.expectNoMessage(100 millis)
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddInput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddOutput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    val txComplete = bob2alice.expectMsgType[TxComplete]
+    assert(txComplete.nonces_opt.isDefined)
+    bob2alice.forward(alice, txComplete.copy(tlvStream = txComplete.tlvStream.copy(records = txComplete.tlvStream.records.filterNot(_.isInstanceOf[TxCompleteTlv.Nonces]))))
+    aliceListener.expectMsgType[ChannelAborted]
+    awaitCond(alice.stateName == CLOSED)
+  }
 }

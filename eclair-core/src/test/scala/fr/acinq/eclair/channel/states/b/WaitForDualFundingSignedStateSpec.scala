@@ -39,14 +39,18 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
 
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alicePeer: TestProbe, bobPeer: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, wallet: SingleKeyOnChainWallet, aliceListener: TestProbe, bobListener: TestProbe)
 
+  val extraTags: Set[String] = Set.empty
+
   override def withFixture(test: OneArgTest): Outcome = {
     val wallet = new SingleKeyOnChainWallet()
-    val setup = init(wallet_opt = Some(wallet), tags = test.tags)
+    val tags = test.tags ++ extraTags
+    val setup = init(wallet_opt = Some(wallet), tags = tags)
     import setup._
-    val channelParams = computeChannelParams(setup, test.tags)
+
+    val channelParams = computeChannelParams(setup, tags)
     val bobContribution = if (channelParams.channelType.features.contains(Features.ZeroConf)) None else Some(LiquidityAds.AddFunding(TestConstants.nonInitiatorFundingSatoshis, Some(TestConstants.defaultLiquidityRates)))
-    val requestFunding_opt = if (test.tags.contains(ChannelStateTestsTags.LiquidityAds)) Some(LiquidityAds.RequestFunding(TestConstants.nonInitiatorFundingSatoshis, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)) else None
-    val (initiatorPushAmount, nonInitiatorPushAmount) = if (test.tags.contains("both_push_amount")) (Some(TestConstants.initiatorPushAmount), Some(TestConstants.nonInitiatorPushAmount)) else (None, None)
+    val requestFunding_opt = if (tags.contains(ChannelStateTestsTags.LiquidityAds)) Some(LiquidityAds.RequestFunding(TestConstants.nonInitiatorFundingSatoshis, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)) else None
+    val (initiatorPushAmount, nonInitiatorPushAmount) = if (tags.contains("both_push_amount")) (Some(TestConstants.initiatorPushAmount), Some(TestConstants.nonInitiatorPushAmount)) else (None, None)
     val aliceListener = TestProbe()
     val bobListener = TestProbe()
     within(30 seconds) {
@@ -157,7 +161,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
   }
 
-  test("complete interactive-tx protocol (with push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag("both_push_amount")) { f =>
+  def `complete interactive-tx protocol (with push amount)`(f: FixtureParam): Unit = {
     import f._
 
     val listener = TestProbe()
@@ -187,6 +191,10 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(aliceData.commitments.latest.localCommit.spec.toLocal == expectedBalanceAlice)
     assert(aliceData.commitments.latest.localCommit.spec.toRemote == expectedBalanceBob)
+  }
+
+  test("complete interactive-tx protocol (with push amount)", Tag(ChannelStateTestsTags.DualFunding), Tag("both_push_amount")) { f =>
+    `complete interactive-tx protocol (with push amount)`(f)
   }
 
   test("complete interactive-tx protocol (with liquidity ads)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.LiquidityAds)) { f =>
@@ -233,13 +241,21 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     val bobCommitSig = bob2alice.expectMsgType[CommitSig]
     val aliceCommitSig = alice2bob.expectMsgType[CommitSig]
 
-    bob2alice.forward(alice, bobCommitSig.copy(signature = ByteVector64.Zeroes))
+    val invalidBobCommitSig = bobCommitSig.sigOrPartialSig match {
+      case _: ChannelSpendSignature.IndividualSignature => bobCommitSig.copy(signature = ByteVector64.Zeroes)
+      case psig: ChannelSpendSignature.PartialSignatureWithNonce => bobCommitSig.copy(tlvStream = TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(psig.copy(partialSig = psig.partialSig.reverse))))
+    }
+    bob2alice.forward(alice, invalidBobCommitSig)
     alice2bob.expectMsgType[Error]
     awaitCond(wallet.rolledback.length == 1)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
 
-    alice2bob.forward(bob, aliceCommitSig.copy(signature = ByteVector64.Zeroes))
+    val invalidAliceCommitSig = aliceCommitSig.sigOrPartialSig match {
+      case _: ChannelSpendSignature.IndividualSignature => bobCommitSig.copy(signature = ByteVector64.Zeroes)
+      case psig: ChannelSpendSignature.PartialSignatureWithNonce => bobCommitSig.copy(tlvStream = TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(psig.copy(partialSig = psig.partialSig.reverse))))
+    }
+    alice2bob.forward(bob, invalidAliceCommitSig)
     bob2alice.expectMsgType[Error]
     awaitCond(wallet.rolledback.length == 2)
     bobListener.expectMsgType[ChannelAborted]
@@ -353,7 +369,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     assert(wallet.rolledback.isEmpty)
   }
 
-  test("recv INPUT_DISCONNECTED (commit_sig not received)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  test("recv INPUT_DISCONNECTED (commit_sig not received)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
 
     val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
@@ -388,7 +404,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     reconnect(f, fundingTxId, aliceExpectsCommitSig = false, bobExpectsCommitSig = true)
   }
 
-  test("recv INPUT_DISCONNECTED (commit_sig received by Bob)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  test("recv INPUT_DISCONNECTED (commit_sig received by Bob)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
 
     val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
@@ -407,7 +423,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     reconnect(f, fundingTxId, aliceExpectsCommitSig = true, bobExpectsCommitSig = false)
   }
 
-  test("recv INPUT_DISCONNECTED (commit_sig received by Bob, zero-conf)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv INPUT_DISCONNECTED (commit_sig received by Bob, zero-conf)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee)) { f =>
     import f._
 
     alice2bob.expectMsgType[CommitSig]
@@ -603,4 +619,8 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     assert(listener.expectMsgType[TransactionPublished].tx.txid == fundingTxId)
   }
 
+}
+
+class WaitForDualFundingSignedStateWithTaprootChannelsSpec extends WaitForDualFundingSignedStateSpec {
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)
 }

@@ -18,13 +18,13 @@ package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong, TxId}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
-import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, LegacySimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, OpenChannel, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -105,6 +105,28 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].commitmentFormat == DefaultCommitmentFormat)
+  }
+
+  test("recv OpenChannel (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    assert(open.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsStagingLegacy()))
+    alice2bob.forward(bob)
+    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].commitmentFormat == LegacySimpleTaprootChannelCommitmentFormat)
+    assert(open.nexLocalNonce_opt.isDefined)
+  }
+
+  test("recv OpenChannel (simple taproot channels, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    assert(open.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsStagingLegacy()))
+    assert(open.nexLocalNonce_opt.isDefined)
+    alice2bob.forward(bob, open.copy(tlvStream = open.tlvStream.copy(records = open.tlvStream.records.filterNot(_.isInstanceOf[ChannelTlv.NextLocalNonceTlv]))))
+    val error = bob2alice.expectMsgType[Error]
+    assert(error == Error(open.temporaryChannelId, MissingNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes)).getMessage))
+    listener.expectMsgType[ChannelAborted]
+    awaitCond(bob.stateName == CLOSED)
   }
 
   test("recv OpenChannel (invalid chain)") { f =>
