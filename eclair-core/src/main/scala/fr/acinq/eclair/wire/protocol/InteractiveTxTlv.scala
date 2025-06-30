@@ -16,12 +16,14 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector64, TxId}
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes64, txIdAsHash, varint}
+import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
-import scodec.codecs.discriminated
+import scodec.codecs.{bitsRemaining, discriminated, optional}
 
 /**
  * Created by t-bast on 08/04/2022.
@@ -60,7 +62,22 @@ object TxRemoveOutputTlv {
 sealed trait TxCompleteTlv extends Tlv
 
 object TxCompleteTlv {
-  val txCompleteTlvCodec: Codec[TlvStream[TxCompleteTlv]] = tlvStream(discriminated[TxCompleteTlv].by(varint))
+  /**
+   * Musig2 nonces exchanged during an interactive tx session
+   *
+   * @param remoteNonce      a verification nonce for the session commitment transaction
+   * @param nextRemoteNonce  a verification nonce that will be added to the channel's nonce map once the session completes
+   * @param fundingNonce_opt an optional nonce to spend the session's shared input
+   */
+  case class Nonces(remoteNonce: IndividualNonce, nextRemoteNonce: IndividualNonce, fundingNonce_opt: Option[IndividualNonce]) extends TxCompleteTlv
+
+  object Nonces {
+    val codec: Codec[Nonces] = (publicNonce :: publicNonce :: optional(bitsRemaining, publicNonce)).as[Nonces]
+  }
+
+  val txCompleteTlvCodec: Codec[TlvStream[TxCompleteTlv]] = tlvStream(discriminated[TxCompleteTlv].by(varint)
+    .typecase(UInt64(4), tlvField[Nonces, Nonces](Nonces.codec))
+  )
 }
 
 sealed trait TxSignaturesTlv extends Tlv
@@ -69,7 +86,14 @@ object TxSignaturesTlv {
   /** When doing a splice, each peer must provide their signature for the previous 2-of-2 funding output. */
   case class PreviousFundingTxSig(sig: ByteVector64) extends TxSignaturesTlv
 
+  case class PreviousFundingTxPartialSig(partialSigWithNonce: PartialSignatureWithNonce) extends TxSignaturesTlv
+
+  object PreviousFundingTxPartialSig {
+    val codec: Codec[PreviousFundingTxPartialSig] = tlvField(partialSignatureWithNonce)
+  }
+
   val txSignaturesTlvCodec: Codec[TlvStream[TxSignaturesTlv]] = tlvStream(discriminated[TxSignaturesTlv].by(varint)
+    .typecase(UInt64(2), PreviousFundingTxPartialSig.codec)
     .typecase(UInt64(601), tlvField(bytes64.as[PreviousFundingTxSig]))
   )
 }

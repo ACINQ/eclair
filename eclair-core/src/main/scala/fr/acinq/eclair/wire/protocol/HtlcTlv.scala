@@ -16,9 +16,12 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.TxId
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tu16}
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -94,7 +97,14 @@ object CommitSigTlv {
     val codec: Codec[BatchTlv] = tlvField(tu16)
   }
 
+  case class PartialSignatureWithNonceTlv(partialSigWithNonce: PartialSignatureWithNonce) extends CommitSigTlv
+
+  object PartialSignatureWithNonceTlv {
+    val codec: Codec[PartialSignatureWithNonceTlv] = tlvField(partialSignatureWithNonce)
+  }
+
   val commitSigTlvCodec: Codec[TlvStream[CommitSigTlv]] = tlvStream(discriminated[CommitSigTlv].by(varint)
+    .typecase(UInt64(2), PartialSignatureWithNonceTlv.codec)
     .typecase(UInt64(0x47010005), BatchTlv.codec)
   )
 
@@ -103,5 +113,20 @@ object CommitSigTlv {
 sealed trait RevokeAndAckTlv extends Tlv
 
 object RevokeAndAckTlv {
-  val revokeAndAckTlvCodec: Codec[TlvStream[RevokeAndAckTlv]] = tlvStream(discriminated[RevokeAndAckTlv].by(varint))
+  case class NextLocalNoncesTlv(nonces: Seq[(TxId, IndividualNonce)]) extends RevokeAndAckTlv
+
+  object NextLocalNoncesTlv {
+    val codec: Codec[NextLocalNoncesTlv] = tlvField(list(txId ~ publicNonce).xmap[Seq[(TxId, IndividualNonce)]](_.toSeq, _.toList))
+  }
+
+  case class NextLocalNonceTlv(nonce: IndividualNonce) extends RevokeAndAckTlv
+
+  object NextLocalNonceTlv {
+    val codec: Codec[NextLocalNonceTlv] = tlvField(publicNonce)
+  }
+
+  val revokeAndAckTlvCodec: Codec[TlvStream[RevokeAndAckTlv]] = tlvStream(discriminated[RevokeAndAckTlv].by(varint)
+    .typecase(UInt64(4), NextLocalNonceTlv.codec)
+    .typecase(UInt64(6), NextLocalNoncesTlv.codec)
+  )
 }

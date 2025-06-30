@@ -153,4 +153,9 @@ case class ForbiddenDuringQuiescence               (override val channelId: Byte
 case class ConcurrentRemoteSplice                  (override val channelId: ByteVector32) extends ChannelException(channelId, "splice attempt canceled, remote initiated splice before us")
 case class TooManySmallHtlcs                       (override val channelId: ByteVector32, number: Long, below: MilliSatoshi) extends ChannelJammingException(channelId, s"too many small htlcs: $number HTLCs below $below")
 case class ConfidenceTooLow                        (override val channelId: ByteVector32, confidence: Double, occupancy: Double) extends ChannelJammingException(channelId, s"confidence too low: confidence=$confidence occupancy=$occupancy")
+case class MissingNonce                            (override val channelId: ByteVector32, fundingTxId: TxId) extends ChannelException(channelId, s"next nonce for funding tx $fundingTxId is missing")
+case class InvalidNonce                            (override val channelId: ByteVector32, fundingTxId: TxId) extends ChannelException(channelId, s"next nonce for funding tx $fundingTxId is not valid")
+case class MissingFundingNonce                     (override val channelId: ByteVector32) extends ChannelException(channelId, "missing funding nonce")
+case class InvalidFundingNonce                     (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid funding nonce")
+case class MissingShutdownNonce                    (override val channelId: ByteVector32) extends ChannelException(channelId, "missing shutdown nonce")
 // @formatter:on

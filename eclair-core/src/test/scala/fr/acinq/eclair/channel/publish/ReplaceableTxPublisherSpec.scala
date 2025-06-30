@@ -189,7 +189,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     import f._
 
     val commitment = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
-    val commitTx = commitment.fullySignedLocalCommitTx(alice.underlyingActor.channelKeys)
+    val commitTx = commitment.fullySignedLocalCommitTx(alice.underlyingActor.channelKeys).toTry.get
     val commitFee = commitment.capacity - commitTx.txOut.map(_.amount).sum
     probe.send(alice, CMD_FORCECLOSE(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
@@ -207,7 +207,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   def remoteCloseChannelWithoutHtlcs(f: Fixture, overrideCommitTarget: BlockHeight): (Transaction, PublishReplaceableTx) = {
     import f._
 
-    val commitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+    val commitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys).toTry.get
     wallet.publishTransaction(commitTx).pipeTo(probe.ref)
     probe.expectMsg(commitTx.txid)
     probe.send(alice, WatchFundingSpentTriggered(commitTx))
@@ -310,7 +310,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+      val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys).toTry.get
       assert(remoteCommit.txOut.length == 4) // 2 main outputs + 2 anchor outputs
       val (_, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 12)
       wallet.publishTransaction(remoteCommit).pipeTo(probe.ref)
@@ -340,7 +340,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.nonEmpty)
       val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.get.commit.txId
 
-      val nextRemoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+      val nextRemoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys).toTry.get
       assert(nextRemoteCommit.txid == nextRemoteCommitTxId)
       assert(nextRemoteCommit.txOut.length == 5) // 2 main outputs + 2 anchor outputs + 1 htlc
       val (_, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 12)
@@ -360,7 +360,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+      val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys).toTry.get
       val (_, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 12)
       wallet.publishTransaction(remoteCommit).pipeTo(probe.ref)
       probe.expectMsg(remoteCommit.txid)
@@ -377,7 +377,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+      val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys).toTry.get
       assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.commitTxFeerate == FeeratePerKw(2500 sat))
 
       // We lower the feerate to make it easy to replace our commit tx by theirs in the mempool.
@@ -609,7 +609,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val commitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+      val commitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys).toTry.get
       // Note that we don't publish the remote commit, to simulate the case where the watch triggers but the remote commit is then evicted from our mempool.
       probe.send(alice, WatchFundingSpentTriggered(commitTx))
       val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
@@ -969,7 +969,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(htlcTimeout.txInfo.isInstanceOf[HtlcTimeoutTx])
 
       // The remote commit tx has a few confirmations, but isn't deeply confirmed yet.
-      val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+      val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys).toTry.get
       wallet.publishTransaction(remoteCommitTx).pipeTo(probe.ref)
       probe.expectMsg(remoteCommitTx.txid)
       generateBlocks(2)
@@ -1039,7 +1039,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(htlcTimeout.txInfo.isInstanceOf[HtlcTimeoutTx])
 
       // Ensure remote commit tx confirms.
-      val nextRemoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+      val nextRemoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys).toTry.get
       assert(nextRemoteCommitTx.txid == nextRemoteCommitTxId)
       assert(nextRemoteCommitTx.txOut.length == 6) // 2 main outputs + 2 anchor outputs + 2 htlcs
       wallet.publishTransaction(nextRemoteCommitTx).pipeTo(probe.ref)
@@ -1070,7 +1070,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     // Force-close channel and verify txs sent to watcher.
     val commitment = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
-    val commitTx = commitment.fullySignedLocalCommitTx(alice.underlyingActor.channelKeys)
+    val commitTx = commitment.fullySignedLocalCommitTx(alice.underlyingActor.channelKeys).toTry.get
     val commitFee = commitment.capacity - commitTx.txOut.map(_.amount).sum
     assert(commitTx.txOut.size == 6)
     probe.send(alice, CMD_FORCECLOSE(probe.ref))
@@ -1525,8 +1525,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
 
       // Force-close channel.
-      val localCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(alice.underlyingActor.channelKeys)
-      val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+      val localCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(alice.underlyingActor.channelKeys).toTry.get
+      val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys).toTry.get
       assert(remoteCommitTx.txOut.size == 6)
       probe.send(alice, WatchFundingSpentTriggered(remoteCommitTx))
       alice2blockchain.expectMsgType[PublishReplaceableTx] // claim anchor
@@ -1600,7 +1600,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
 
     // Force-close channel and verify txs sent to watcher.
-    val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys)
+    val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.channelKeys).toTry.get
     bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => assert(remoteCommitTx.txOut.size == 4)
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => assert(remoteCommitTx.txOut.size == 6)

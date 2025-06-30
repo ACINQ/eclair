@@ -196,7 +196,7 @@ trait ErrorHandlers extends CommonHandlers {
     }
   }
 
-  def spendLocalCurrent(d: ChannelDataWithCommitments) = {
+  def spendLocalCurrent(d: ChannelDataWithCommitments): FSM.State[ChannelState, ChannelData] = {
     val outdatedCommitment = d match {
       case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.isDefined => true
@@ -210,7 +210,11 @@ trait ErrorHandlers extends CommonHandlers {
       val commitment = d.commitments.latest
       log.error(s"force-closing with fundingIndex=${commitment.fundingTxIndex}")
       context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"force-closing channel ${d.channelId} with fundingIndex=${commitment.fundingTxIndex}"))
-      val commitTx = commitment.fullySignedLocalCommitTx(channelKeys)
+      val commitTx = commitment.fullySignedLocalCommitTx(channelKeys) match {
+        case Right(signedTx) => signedTx
+        case Left(channelException: ChannelException) =>
+          return handleLocalError(channelException, d, None)
+      }
       val (localCommitPublished, closingTxs) = Closing.LocalClose.claimCommitTxOutputs(channelKeys, commitment, commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
       val nextData = d match {
         case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))

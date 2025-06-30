@@ -242,6 +242,7 @@ object Scripts {
   /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
   def extractPreimageFromHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
     case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
+    case ScriptWitness(Seq(_, sig, paymentPreimage, _, _)) if sig.size == 64 && paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
   }
 
   /** Extract payment preimages from a (potentially batched) 2nd-stage HTLC transaction's witnesses. */
@@ -257,6 +258,7 @@ object Scripts {
   /** Extract the payment preimage from from a fulfilled offered htlc. */
   def extractPreimageFromClaimHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
     case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
+    case ScriptWitness(Seq(sig, paymentPreimage, _, _)) if sig.size == 64 && paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
   }
 
   /** Extract payment preimages from a (potentially batched) claim HTLC transaction's witnesses. */
