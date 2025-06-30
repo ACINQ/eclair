@@ -28,12 +28,13 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
+import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
-import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.{NonceGenerator, Sphinx}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.payment.relay.Relayer._
@@ -43,7 +44,7 @@ import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryNodeFailure, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, Warning}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelReestablishTlv, ChannelUpdate, ClosingSigned, CommitSig, CommitSigTlv, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, RevokeAndAckTlv, Shutdown, TemporaryNodeFailure, TlvStream, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, Warning}
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -1054,7 +1055,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteChanges.signed.size == 1)
   }
 
-  test("recv CommitSig (one htlc sent)") { f =>
+  test("recv CommitSig (one htlc sent)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
 
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1102,7 +1103,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.htlcRemoteSigs.size == 5)
   }
 
-  test("recv CommitSig (multiple htlcs in both directions) (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+  def testRecvCommitSigMultipleHtlcs(f: FixtureParam): Unit = {
     import f._
 
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
@@ -1129,7 +1130,15 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.htlcRemoteSigs.size == 3)
   }
 
-  test("recv CommitSig (multiple htlcs in both directions) (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv CommitSig (multiple htlcs in both directions) (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+    testRecvCommitSigMultipleHtlcs(f)
+  }
+
+  test("recv CommitSig (multiple htlcs in both directions) (phoenix taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
+    testRecvCommitSigMultipleHtlcs(f)
+  }
+
+  def testRecvCommitSigMultipleHtlcZeroFees(f: FixtureParam): Unit = {
     import f._
 
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
@@ -1154,6 +1163,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.index == 1)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.htlcRemoteSigs.size == 5)
+  }
+
+  test("recv CommitSig (multiple htlcs in both directions) (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testRecvCommitSigMultipleHtlcZeroFees(f)
+  }
+
+  test("recv CommitSig (multiple htlcs in both directions) (taproot zero fee htlc txs)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testRecvCommitSigMultipleHtlcZeroFees(f)
   }
 
   test("recv CommitSig (multiple htlcs in both directions) (without fundingTxId tlv)") { f =>
@@ -1222,7 +1239,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val tx = bob.signCommitTx()
     // signature is invalid but it doesn't matter
-    bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
+    bob ! CommitSig(ByteVector32.Zeroes, IndividualSignature(ByteVector64.Zeroes), Nil)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("cannot sign when there are no changes"))
     awaitCond(bob.stateName == CLOSING)
@@ -1239,11 +1256,51 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val tx = bob.signCommitTx()
 
     // actual test begins
-    bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
+    bob ! CommitSig(ByteVector32.Zeroes, IndividualSignature(ByteVector64.Zeroes), Nil)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid commitment signature"))
     awaitCond(bob.stateName == CLOSING)
     bob2blockchain.expectFinalTxPublished(tx.txid)
+    bob2blockchain.expectFinalTxPublished("local-main-delayed")
+    bob2blockchain.expectWatchTxConfirmed(tx.txid)
+  }
+
+  test("recv CommitSig (simple taproot channels, missing partial signature)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val tx = bob.signCommitTx()
+
+    // actual test begins
+    alice ! CMD_SIGN()
+    val commitSig = alice2bob.expectMsgType[CommitSig]
+    val commitSigMissingPartialSig = commitSig.copy(tlvStream = commitSig.tlvStream.copy(records = commitSig.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.PartialSignatureWithNonceTlv])))
+    bob ! commitSigMissingPartialSig
+    val error = bob2alice.expectMsgType[Error]
+    assert(new String(error.data.toArray).startsWith("invalid commitment signature"))
+    awaitCond(bob.stateName == CLOSING)
+    bob2blockchain.expectFinalTxPublished(tx.txid)
+    bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    bob2blockchain.expectFinalTxPublished("local-main-delayed")
+    bob2blockchain.expectWatchTxConfirmed(tx.txid)
+  }
+
+  test("recv CommitSig (simple taproot channels, invalid partial signature)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val tx = bob.signCommitTx()
+
+    // actual test begins
+    alice ! CMD_SIGN()
+    val commitSig = alice2bob.expectMsgType[CommitSig]
+    val Some(psig) = commitSig.partialSignature_opt
+    val invalidPsig = CommitSigTlv.PartialSignatureWithNonceTlv(psig.copy(partialSig = psig.partialSig.reverse))
+    val commitSigWithInvalidPsig = commitSig.copy(tlvStream = commitSig.tlvStream.copy(records = commitSig.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.PartialSignatureWithNonceTlv]) + invalidPsig))
+    bob ! commitSigWithInvalidPsig
+    val error = bob2alice.expectMsgType[Error]
+    assert(new String(error.data.toArray).startsWith("invalid commitment signature"))
+    awaitCond(bob.stateName == CLOSING)
+    bob2blockchain.expectFinalTxPublished(tx.txid)
+    bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     bob2blockchain.expectFinalTxPublished("local-main-delayed")
     bob2blockchain.expectWatchTxConfirmed(tx.txid)
   }
@@ -1277,7 +1334,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val commitSig = alice2bob.expectMsgType[CommitSig]
 
     // actual test begins
-    val badCommitSig = commitSig.copy(htlcSignatures = commitSig.signature :: Nil)
+    val badCommitSig = commitSig.copy(htlcSignatures = commitSig.signature.sig :: Nil)
     bob ! badCommitSig
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid htlc signature"))
@@ -1376,7 +1433,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectMsgType[CommitSig]
   }
 
-  test("recv RevokeAndAck (invalid preimage)") { f =>
+  test("recv RevokeAndAck (invalid revocation)") { f =>
     import f._
     val tx = alice.signCommitTx()
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1395,6 +1452,61 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectFinalTxPublished(tx.txid)
     alice2blockchain.expectFinalTxPublished("local-main-delayed")
     alice2blockchain.expectWatchTxConfirmed(tx.txid)
+  }
+
+  test("recv RevokeAndAck (simple taproot channels, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    val tx = alice.signCommitTx()
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+
+    alice ! CMD_SIGN()
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+
+    // actual test begins
+    val revokeAndAck = bob2alice.expectMsgType[RevokeAndAck]
+    val revokeAndAckWithMissingNonce = revokeAndAck.copy(tlvStream = revokeAndAck.tlvStream.copy(records = revokeAndAck.tlvStream.records.filterNot(tlv => tlv.isInstanceOf[RevokeAndAckTlv.NextLocalNoncesTlv])))
+    alice ! revokeAndAckWithMissingNonce
+    alice2bob.expectMsgType[Error]
+    awaitCond(alice.stateName == CLOSING)
+    // channel should be advertised as down
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId == alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    alice2blockchain.expectFinalTxPublished(tx.txid)
+    alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    alice2blockchain.expectWatchTxConfirmed(tx.txid)
+  }
+
+  test("recv RevokeAndAck (simple taproot channels, invalid nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    // Alice sends an HTLC to Bob.
+    val (r, add) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    alice ! CMD_SIGN()
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    // Bob responds with an invalid nonce for its *next* commitment.
+    val revokeAndAck = bob2alice.expectMsgType[RevokeAndAck]
+    val bobInvalidNonces = RevokeAndAckTlv.NextLocalNoncesTlv(revokeAndAck.nextCommitNonces.map { case (txId, _) => txId -> NonceGenerator.signingNonce(randomKey().publicKey, randomKey().publicKey, txId).publicNonce }.toSeq)
+    val revokeAndAckWithInvalidNonce = revokeAndAck.copy(tlvStream = revokeAndAck.tlvStream.copy(records = revokeAndAck.tlvStream.records.filterNot(tlv => tlv.isInstanceOf[RevokeAndAckTlv.NextLocalNoncesTlv]) + bobInvalidNonces))
+    bob2alice.forward(alice, revokeAndAckWithInvalidNonce)
+    // This applies to the *next* commitment, there is no issue when finalizing the *current* commitment.
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    // Bob will force-close when receiving Alice's next commit_sig.
+    val commitTx = bob.signCommitTx()
+    fulfillHtlc(add.id, r, bob, alice, bob2alice, alice2bob)
+    bob ! CMD_SIGN()
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[Error]
+    awaitCond(bob.stateName == CLOSING)
+    bob2blockchain.expectFinalTxPublished(commitTx.txid)
   }
 
   test("recv RevokeAndAck (over max dust htlc exposure)") { f =>
@@ -1642,6 +1754,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     testRevokeAndAckHtlcStaticRemoteKey _
   }
 
+  test("recv RevokeAndAck (one htlc sent, option_simple_taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) {
+    testRevokeAndAckHtlcStaticRemoteKey _
+  }
+
   test("recv RevocationTimeout") { f =>
     import f._
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1683,6 +1799,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("recv CMD_FULFILL_HTLC (anchors_zero_fee_htlc_tx)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) {
+    testReceiveCmdFulfillHtlc _
+  }
+
+  test("recv CMD_FULFILL_HTLC (option_simple_taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) {
     testReceiveCmdFulfillHtlc _
   }
 
@@ -1774,6 +1894,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     testUpdateFulfillHtlc _
   }
 
+  test("recv UpdateFulfillHtlc (option_simple_taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) {
+    testUpdateFulfillHtlc _
+  }
+
   test("recv UpdateFulfillHtlc (sender has not signed htlc)") { f =>
     import f._
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1852,6 +1976,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("recv CMD_FAIL_HTLC (anchors_zero_fee_htlc_tx)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) {
+    testCmdFailHtlc _
+  }
+
+  test("recv CMD_FAIL_HTLC (option_simple_taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) {
     testCmdFailHtlc _
   }
 
@@ -1985,6 +2113,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     testUpdateFailHtlc _
   }
 
+  test("recv UpdateFailHtlc (option_simple_taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) {
+    testUpdateFailHtlc _
+  }
+
   test("recv UpdateFailMalformedHtlc") { f =>
     import f._
 
@@ -2085,6 +2217,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("recv CMD_UPDATE_FEE (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) {
+    testCmdUpdateFee _
+  }
+
+  test("recv CMD_UPDATE_FEE (simple taproot channel)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) {
     testCmdUpdateFee _
   }
 
@@ -2488,6 +2624,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("recv CMD_CLOSE (no pending htlcs) (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testCmdClose(f, None)
+  }
+
+  test("recv CMD_CLOSE (no pending htlcs) (simple taproot channel)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     testCmdClose(f, None)
   }
 
@@ -3506,6 +3646,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     testErrorAnchorOutputsWithHtlcs(f)
   }
 
+  test("recv Error (simple taproot channel)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testErrorAnchorOutputsWithHtlcs(f)
+  }
+
   test("recv Error (anchor outputs zero fee htlc txs, fee-bumping for commit txs without htlcs disabled)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs)) { f =>
     // We should ignore the disable flag since there are htlcs in the commitment (funds at risk).
     testErrorAnchorOutputsWithHtlcs(f)
@@ -3534,6 +3678,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("recv Error (anchor outputs zero fee htlc txs without htlcs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testErrorAnchorOutputsWithoutHtlcs(f, commitFeeBumpDisabled = false)
+  }
+
+  test("recv Error (simple taproot channel without htlcs)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     testErrorAnchorOutputsWithoutHtlcs(f, commitFeeBumpDisabled = false)
   }
 
@@ -3736,6 +3884,80 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(addSettled2.result.isInstanceOf[HtlcResult.DisconnectedBeforeSigned])
     assert(!channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
     awaitCond(alice.stateName == OFFLINE)
+  }
+
+  test("recv INPUT_DISCONNECTED (with pending htlcs, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+
+    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+
+    // Alice sends an HTLC to Bob.
+    val (ra1, htlcA1) = addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
+    // Bob sends an HTLC to Alice.
+    val (rb, htlcB) = addHtlc(25_000_000 msat, bob, alice, bob2alice, alice2bob)
+    bob ! CMD_SIGN()
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    val revA1 = alice2bob.expectMsgType[RevokeAndAck] // not received by Bob
+    alice2bob.expectMsgType[CommitSig] // not received by Bob
+    val (_, htlcA2) = addHtlc(10_000_000 msat, alice, bob, alice2bob, bob2alice) // not signed by either Alice or Bob
+
+    alice ! INPUT_DISCONNECTED
+    val addSettledA = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult]]
+    assert(addSettledA.htlc == htlcA2)
+    assert(addSettledA.result.isInstanceOf[HtlcResult.DisconnectedBeforeSigned])
+    alice2relayer.expectNoMessage(100 millis)
+    awaitCond(alice.stateName == OFFLINE)
+    bob ! INPUT_DISCONNECTED
+    bob2relayer.expectNoMessage(100 millis)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // Alice and Bob finish signing the HTLCs on reconnection.
+    val aliceInit = Init(alice.underlyingActor.nodeParams.features.initFeatures())
+    val bobInit = Init(bob.underlyingActor.nodeParams.features.initFeatures())
+    alice ! INPUT_RECONNECTED(bob, aliceInit, bobInit)
+    bob ! INPUT_RECONNECTED(alice, bobInit, aliceInit)
+    assert(alice2bob.expectMsgType[ChannelReestablish].nextCommitNonces == revA1.nextCommitNonces)
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.forward(alice)
+    assert(alice2bob.expectMsgType[RevokeAndAck].nextCommitNonces == revA1.nextCommitNonces)
+    alice2bob.forward(bob)
+    assert(alice2bob.expectMsgType[UpdateAddHtlc].paymentHash == htlcA1.paymentHash)
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+
+    // Alice and Bob fulfill the pending HTLCs.
+    fulfillHtlc(htlcA1.id, ra1, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlcB.id, rb, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+  }
+
+  test("recv INPUT_DISCONNECTED (missing nonces, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    bob ! INPUT_DISCONNECTED
+    awaitCond(bob.stateName == OFFLINE)
+
+    val aliceInit = Init(alice.underlyingActor.nodeParams.features.initFeatures())
+    val bobInit = Init(bob.underlyingActor.nodeParams.features.initFeatures())
+    alice ! INPUT_RECONNECTED(bob, aliceInit, bobInit)
+    bob ! INPUT_RECONNECTED(alice, bobInit, aliceInit)
+    val channelReestablish = alice2bob.expectMsgType[ChannelReestablish]
+    assert(channelReestablish.nextCommitNonces.size == 1)
+    bob2alice.expectMsgType[ChannelReestablish]
+    alice2bob.forward(bob, channelReestablish.copy(tlvStream = TlvStream(channelReestablish.tlvStream.records.filterNot(_.isInstanceOf[ChannelReestablishTlv.NextLocalNoncesTlv]))))
+    bob2alice.expectMsgType[Error]
   }
 
   test("recv INPUT_DISCONNECTED (public channel)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>

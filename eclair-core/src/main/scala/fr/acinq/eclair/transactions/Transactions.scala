@@ -27,6 +27,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature
 import fr.acinq.eclair.channel.ChannelSpendSignature._
+import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts.Taproot.NUMS_POINT
@@ -191,8 +192,9 @@ object Transactions {
     override val claimHtlcPenaltyWeight = 396
   }
 
-  case object LegacySimpleTaprootChannelCommitmentFormat extends SimpleTaprootChannelCommitmentFormat {
-    override def toString: String = "unsafe_simple_taproot"
+  /** For Phoenix users we sign HTLC transactions with the same feerate as the commit tx to allow broadcasting without wallet inputs. */
+  case object PhoenixSimpleTaprootChannelCommitmentFormat extends SimpleTaprootChannelCommitmentFormat {
+    override def toString: String = "simple_taproot_phoenix"
   }
 
   case object ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat extends SimpleTaprootChannelCommitmentFormat {
@@ -362,6 +364,10 @@ object Transactions {
     override val desc: String = "commit-tx"
 
     def sign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey): ChannelSpendSignature.IndividualSignature = sign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
+
+    def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, localNonce: LocalNonce, publicNonces: Seq[IndividualNonce]): Either[Throwable, ChannelSpendSignature.PartialSignatureWithNonce] = partialSign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty, localNonce, publicNonces)
+
+    def aggregateSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: PartialSignatureWithNonce, remoteSig: PartialSignatureWithNonce): Either[Throwable, Transaction] = aggregateSigs(localFundingPubkey, remoteFundingPubkey, localSig, remoteSig, extraUtxos = Map.empty)
   }
 
   /** This transaction collaboratively spends the channel funding output (mutual-close). */
@@ -370,6 +376,10 @@ object Transactions {
     val toLocalOutput_opt: Option[TxOut] = toLocalOutputIndex_opt.map(i => tx.txOut(i.toInt))
 
     def sign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey): ChannelSpendSignature.IndividualSignature = sign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
+
+    def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, localNonce: LocalNonce, publicNonces: Seq[IndividualNonce]): Either[Throwable, ChannelSpendSignature.PartialSignatureWithNonce] = partialSign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty, localNonce, publicNonces)
+
+    def aggregateSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: PartialSignatureWithNonce, remoteSig: PartialSignatureWithNonce): Either[Throwable, Transaction] = aggregateSigs(localFundingPubkey, remoteFundingPubkey, localSig, remoteSig, extraUtxos = Map.empty)
   }
 
   object ClosingTx {
@@ -1536,6 +1546,21 @@ object Transactions {
     case class PaidByThem(fee: Satoshi) extends SimpleClosingTxFee
   }
   // @formatter:on
+
+  /**
+   * When sending [[fr.acinq.eclair.wire.protocol.ClosingComplete]], we use a different nonce for each closing transaction we create.
+   * We generate nonces for all variants of the closing transaction for simplicity, even though we never use them all.
+   */
+  case class CloserNonces(localAndRemote: LocalNonce, localOnly: LocalNonce, remoteOnly: LocalNonce)
+
+  object CloserNonces {
+    /** Generate a set of random signing nonces for our closing transactions. */
+    def generate(localFundingKey: PublicKey, remoteFundingKey: PublicKey, fundingTxId: TxId): CloserNonces = CloserNonces(
+      NonceGenerator.signingNonce(localFundingKey, remoteFundingKey, fundingTxId),
+      NonceGenerator.signingNonce(localFundingKey, remoteFundingKey, fundingTxId),
+      NonceGenerator.signingNonce(localFundingKey, remoteFundingKey, fundingTxId),
+    )
+  }
 
   /** Each closing attempt can result in multiple potential closing transactions, depending on which outputs are included. */
   case class ClosingTxs(localAndRemote_opt: Option[ClosingTx], localOnly_opt: Option[ClosingTx], remoteOnly_opt: Option[ClosingTx]) {

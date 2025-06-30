@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, LegacySimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions._
 
 // @formatter:off
 sealed trait ConfirmationPriority extends Ordered[ConfirmationPriority] {
@@ -76,8 +76,8 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
 
   def isProposedFeerateTooHigh(commitmentFormat: CommitmentFormat, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
     commitmentFormat match {
-      case Transactions.DefaultCommitmentFormat  => networkFeerate * ratioHigh < proposedFeerate
-      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat | LegacySimpleTaprootChannelCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat => networkFeerate * ratioHigh < proposedFeerate
+      case Transactions.DefaultCommitmentFormat => networkFeerate * ratioHigh < proposedFeerate
+      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat | PhoenixSimpleTaprootChannelCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat => networkFeerate * ratioHigh < proposedFeerate
     }
   }
 
@@ -85,7 +85,7 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
     commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => proposedFeerate < networkFeerate * ratioLow
       // When using anchor outputs, we allow low feerates: fees will be set with CPFP and RBF at broadcast time.
-      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat | LegacySimpleTaprootChannelCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat => false
+      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | UnsafeLegacyAnchorOutputsCommitmentFormat | PhoenixSimpleTaprootChannelCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat => false
     }
   }
 }
@@ -122,7 +122,7 @@ case class OnChainFeeConf(feeTargets: FeeTargets,
 
     commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => networkFeerate
-      case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat=>
+      case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat =>
         val targetFeerate = networkFeerate.min(feerateToleranceFor(remoteNodeId).anchorOutputMaxCommitFeerate)
         // We make sure the feerate is always greater than the propagation threshold.
         targetFeerate.max(networkMinFee * 1.25)

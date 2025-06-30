@@ -99,6 +99,9 @@ object ChannelStateTestsTags {
   val SimpleClose = "option_simple_close"
   /** If set, disable option_splice for one node. */
   val DisableSplice = "disable_splice"
+  /** If set, channels will use taproot. */
+  val OptionSimpleTaprootPhoenix = "option_simple_taproot_phoenix"
+  val OptionSimpleTaproot = "option_simple_taproot"
 }
 
 trait ChannelStateTestsBase extends Assertions with Eventually {
@@ -264,6 +267,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.SimpleClose))(_.updated(Features.SimpleClose, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix))(_.updated(Features.SimpleTaprootChannelsPhoenix, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaproot))(_.updated(Features.SimpleTaprootChannelsStaging, FeatureSupport.Optional))
     )
     val nodeParamsB1 = nodeParamsB.copy(features = nodeParamsB.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableWumbo))(_.removed(Features.Wumbo))
@@ -277,6 +282,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.SimpleClose))(_.updated(Features.SimpleClose, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableSplice))(_.removed(Features.SplicePrototype))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix))(_.updated(Features.SimpleTaprootChannelsPhoenix, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaproot))(_.updated(Features.SimpleTaprootChannelsStaging, FeatureSupport.Optional))
     )
     (nodeParamsA1, nodeParamsB1)
   }
@@ -290,8 +297,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, announceChannel = channelFlags.announceChannel)
 
     // those features can only be enabled with AnchorOutputsZeroFeeHtlcTxs, this is to prevent incompatible test configurations
-    if (tags.contains(ChannelStateTestsTags.ZeroConf)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), "invalid test configuration")
-    if (tags.contains(ChannelStateTestsTags.ScidAlias)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), "invalid test configuration")
+    if (tags.contains(ChannelStateTestsTags.ZeroConf)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs) || tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix) || tags.contains(ChannelStateTestsTags.OptionSimpleTaproot), "invalid test configuration")
+    if (tags.contains(ChannelStateTestsTags.ScidAlias)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs) || tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix) || tags.contains(ChannelStateTestsTags.OptionSimpleTaproot), "invalid test configuration")
 
     implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
     val aliceChannelParams = Alice.channelParams

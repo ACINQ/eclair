@@ -430,6 +430,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     extractPreimageFromClaimHtlcSuccess(f)
   }
 
+  test("recv WatchOutputSpentTriggered (extract preimage from Claim-HTLC-success tx, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    extractPreimageFromClaimHtlcSuccess(f)
+  }
+
   private def extractPreimageFromHtlcSuccess(f: FixtureParam): Unit = {
     import f._
 
@@ -467,6 +471,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchOutputSpentTriggered (extract preimage from HTLC-success tx, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    extractPreimageFromHtlcSuccess(f)
+  }
+
+  test("recv WatchOutputSpentTriggered (extract preimage from HTLC-success tx, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     extractPreimageFromHtlcSuccess(f)
   }
 
@@ -552,6 +560,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchOutputSpentTriggered (extract preimage for removed HTLC, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    extractPreimageFromRemovedHtlc(f)
+  }
+
+  test("recv WatchOutputSpentTriggered (extract preimage for removed HTLC, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     extractPreimageFromRemovedHtlc(f)
   }
 
@@ -648,6 +660,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     extractPreimageFromNextHtlcs(f)
   }
 
+  test("recv WatchOutputSpentTriggered (extract preimage for next batch of HTLCs, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    extractPreimageFromNextHtlcs(f)
+  }
+
   test("recv CMD_BUMP_FORCE_CLOSE_FEE (local commit)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
@@ -728,6 +744,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv WatchTxConfirmedTriggered (local commit, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
     testLocalCommitTxConfirmed(f, UnsafeLegacyAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv WatchTxConfirmedTriggered (local commit, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
+    testLocalCommitTxConfirmed(f, PhoenixSimpleTaprootChannelCommitmentFormat)
   }
 
   test("recv WatchTxConfirmedTriggered (local commit with multiple htlcs for the same payment)") { f =>
@@ -1500,6 +1520,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     testRemoteCommitTxWithHtlcsConfirmed(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
   }
 
+  test("recv WatchTxConfirmedTriggered (remote commit with multiple htlcs for the same payment, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testRemoteCommitTxWithHtlcsConfirmed(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  }
+
   test("recv WatchTxConfirmedTriggered (remote commit) followed by htlc settlement", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     // Bob sends 2 HTLCs to Alice that will be settled during the force-close: one will be fulfilled, the other will be failed.
@@ -1666,6 +1690,25 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv WatchTxConfirmedTriggered (next remote commit, anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val (bobCommitTx, closingTxs, htlcs) = testNextRemoteCommitTxConfirmed(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, bobCommitTx)
+    closingTxs.mainTx_opt.foreach(tx => alice ! WatchTxConfirmedTriggered(BlockHeight(45), 0, tx))
+    alice2relayer.expectNoMessage(100 millis)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(201), 0, closingTxs.htlcTimeoutTxs(0))
+    val forwardedFail1 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(100 millis)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(202), 0, closingTxs.htlcTimeoutTxs(1))
+    val forwardedFail2 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    alice2relayer.expectNoMessage(100 millis)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(203), 1, closingTxs.htlcTimeoutTxs(2))
+    val forwardedFail3 = alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].htlc
+    assert(Set(forwardedFail1, forwardedFail2, forwardedFail3) == htlcs)
+    alice2relayer.expectNoMessage(100 millis)
+    awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv WatchTxConfirmedTriggered (next remote commit, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    val (bobCommitTx, closingTxs, htlcs) = testNextRemoteCommitTxConfirmed(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
     alice ! WatchTxConfirmedTriggered(BlockHeight(42), 0, bobCommitTx)
     closingTxs.mainTx_opt.foreach(tx => alice ! WatchTxConfirmedTriggered(BlockHeight(45), 0, tx))
     alice2relayer.expectNoMessage(100 millis)
@@ -1859,6 +1902,23 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
+  test("recv WatchTxConfirmedTriggered (future remote commit, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+    // alice is able to claim its main output
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    Transaction.correctlySpends(mainTx.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
+    alice2blockchain.expectWatchOutputSpent(mainTx.input)
+    alice2blockchain.expectNoMessage(100 millis) // alice ignores the htlc-timeout
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].futureRemoteCommitPublished.isDefined)
+
+    // actual test starts here
+    alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, bobCommitTx)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, mainTx.tx)
+    awaitCond(alice.stateName == CLOSED)
+  }
+
   test("recv INPUT_RESTORED (future remote commit)") { f =>
     import f._
     val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, DefaultCommitmentFormat)
@@ -2016,9 +2076,13 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     testFundingSpentRevokedTx(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
   }
 
-  test("recv WatchFundingSpentTriggered (multiple revoked tx)") { f =>
+  test("recv WatchFundingSpentTriggered (one revoked tx, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testFundingSpentRevokedTx(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  }
+
+  test("recv WatchFundingSpentTriggered (multiple revoked tx)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
     import f._
-    val revokedCloseFixture = prepareRevokedClose(f, DefaultCommitmentFormat)
+    val revokedCloseFixture = prepareRevokedClose(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
     assert(revokedCloseFixture.bobRevokedTxs.map(_.commitTx.txid).toSet.size == revokedCloseFixture.bobRevokedTxs.size) // all commit txs are distinct
 
     def broadcastBobRevokedTx(revokedTx: Transaction, htlcCount: Int, revokedCount: Int): RevokedCloseTxs = {
@@ -2028,14 +2092,15 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.last.commitTx == revokedTx)
 
       // alice publishes penalty txs
+      val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
       val mainPenalty = alice2blockchain.expectFinalTxPublished("main-penalty")
       val htlcPenaltyTxs = (1 to htlcCount).map(_ => alice2blockchain.expectFinalTxPublished("htlc-penalty"))
-      (mainPenalty.tx +: htlcPenaltyTxs.map(_.tx)).foreach(tx => Transaction.correctlySpends(tx, revokedTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+      (mainTx.tx +: mainPenalty.tx +: htlcPenaltyTxs.map(_.tx)).foreach(tx => Transaction.correctlySpends(tx, revokedTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
       alice2blockchain.expectWatchTxConfirmed(revokedTx.txid)
-      alice2blockchain.expectWatchOutputsSpent(mainPenalty.input +: htlcPenaltyTxs.map(_.input))
+      alice2blockchain.expectWatchOutputsSpent(mainTx.input +: mainPenalty.input +: htlcPenaltyTxs.map(_.input))
       alice2blockchain.expectNoMessage(100 millis)
 
-      RevokedCloseTxs(None, mainPenalty.tx, htlcPenaltyTxs.map(_.tx))
+      RevokedCloseTxs(Some(mainTx.tx), mainPenalty.tx, htlcPenaltyTxs.map(_.tx))
     }
 
     // bob publishes a first revoked tx (no htlc in that commitment)
@@ -2048,6 +2113,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob's second revoked tx confirms: once all penalty txs are confirmed, alice can move to the closed state
     // NB: if multiple txs confirm in the same block, we may receive the events in any order
     alice ! WatchTxConfirmedTriggered(BlockHeight(100), 1, closingTxs.mainPenaltyTx)
+    alice ! WatchTxConfirmedTriggered(BlockHeight(100), 2, closingTxs.mainTx_opt.get)
     alice ! WatchTxConfirmedTriggered(BlockHeight(100), 3, revokedCloseFixture.bobRevokedTxs(1).commitTx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(115), 0, closingTxs.htlcPenaltyTxs(0))
     assert(alice.stateName == CLOSING)
@@ -2090,6 +2156,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv INPUT_RESTORED (one revoked tx, anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     testInputRestoredRevokedTx(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv INPUT_RESTORED (one revoked tx, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testInputRestoredRevokedTx(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
   def testRevokedHtlcTxConfirmed(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
@@ -2187,7 +2257,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     testRevokedHtlcTxConfirmed(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
   }
 
-  test("recv WatchTxConfirmedTriggered (revoked aggregated htlc tx)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv WatchTxConfirmedTriggered (revoked htlc-success tx, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testRevokedHtlcTxConfirmed(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  }
+
+  def testRevokedAggregatedHtlcTxConfirmed(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
     import f._
 
     // bob publishes one of his revoked txs
@@ -2195,7 +2269,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobRevokedCommit = revokedCloseFixture.bobRevokedTxs(2)
     alice ! WatchFundingSpentTriggered(bobRevokedCommit.commitTx)
     awaitCond(alice.stateData.isInstanceOf[DATA_CLOSING])
-    assert(alice.commitments.latest.commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    assert(alice.commitments.latest.commitmentFormat == commitmentFormat)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
     val rvk = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head
     assert(rvk.commitTx == bobRevokedCommit.commitTx)
@@ -2254,7 +2328,15 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectNoMessage(100 millis)
   }
 
-  test("recv INPUT_RESTORED (revoked htlc transactions confirmed)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv WatchTxConfirmedTriggered (revoked aggregated htlc tx)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testRevokedAggregatedHtlcTxConfirmed(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv WatchTxConfirmedTriggered (revoked aggregated htlc tx, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testRevokedAggregatedHtlcTxConfirmed(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  }
+
+  def testInputRestoredRevokedHtlcTxConfirmed(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
     import f._
 
     // Bob publishes one of his revoked txs.
@@ -2264,6 +2346,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val commitTx = bobRevokedCommit.commitTx
     alice ! WatchFundingSpentTriggered(commitTx)
     awaitCond(alice.stateData.isInstanceOf[DATA_CLOSING])
+    assert(alice.commitments.latest.commitmentFormat == commitmentFormat)
 
     // Alice publishes the penalty txs and watches outputs.
     val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
@@ -2359,6 +2442,14 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
+  test("recv INPUT_RESTORED (revoked htlc transactions confirmed)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testInputRestoredRevokedHtlcTxConfirmed(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv INPUT_RESTORED (revoked htlc transactions confirmed, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testInputRestoredRevokedHtlcTxConfirmed(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  }
+
   private def testRevokedTxConfirmed(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
     import f._
     assert(alice.commitments.latest.commitmentFormat == commitmentFormat)
@@ -2418,6 +2509,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv WatchTxConfirmedTriggered (revoked commit tx, pending htlcs, anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     testRevokedTxConfirmed(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv WatchTxConfirmedTriggered (revoked commit tx, pending htlcs, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testRevokedTxConfirmed(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
   test("recv ChannelReestablish") { f =>

@@ -154,4 +154,9 @@ case class ConcurrentRemoteSplice                  (override val channelId: Byte
 case class TooManySmallHtlcs                       (override val channelId: ByteVector32, number: Long, below: MilliSatoshi) extends ChannelJammingException(channelId, s"too many small htlcs: $number HTLCs below $below")
 case class IncomingConfidenceTooLow                (override val channelId: ByteVector32, confidence: Double, occupancy: Double) extends ChannelJammingException(channelId, s"incoming confidence too low: confidence=$confidence occupancy=$occupancy")
 case class OutgoingConfidenceTooLow                (override val channelId: ByteVector32, confidence: Double, occupancy: Double) extends ChannelJammingException(channelId, s"outgoing confidence too low: confidence=$confidence occupancy=$occupancy")
+case class MissingCommitNonce                      (override val channelId: ByteVector32, fundingTxId: TxId, commitmentNumber: Long) extends ChannelException(channelId, s"commit nonce for funding tx $fundingTxId and commitmentNumber=$commitmentNumber is missing")
+case class InvalidCommitNonce                      (override val channelId: ByteVector32, fundingTxId: TxId, commitmentNumber: Long) extends ChannelException(channelId, s"commit nonce for funding tx $fundingTxId and commitmentNumber=$commitmentNumber is not valid")
+case class MissingFundingNonce                     (override val channelId: ByteVector32, fundingTxId: TxId) extends ChannelException(channelId, s"funding nonce for funding tx $fundingTxId is missing")
+case class InvalidFundingNonce                     (override val channelId: ByteVector32, fundingTxId: TxId) extends ChannelException(channelId, s"funding nonce for funding tx $fundingTxId is not valid")
+case class MissingClosingNonce                     (override val channelId: ByteVector32) extends ChannelException(channelId, "closing nonce is missing")
 // @formatter:on
