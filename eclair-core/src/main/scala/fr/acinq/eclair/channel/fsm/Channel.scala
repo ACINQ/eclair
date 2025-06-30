@@ -1113,10 +1113,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceWithUnconfirmedTx(d.channelId, d.commitments.latest.fundingTxId).getMessage)
           } else {
             val parentCommitment = d.commitments.latest.commitment
-            val commitmentFormat = parentCommitment.commitmentFormat
             val localFundingPubKey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey
-            val fundingScript = Transactions.makeFundingScript(localFundingPubKey, msg.fundingPubKey, commitmentFormat).pubkeyScript
-            val sharedInput = d.commitments.latest.commitmentFormat match {
+            val fundingScript = Transactions.makeFundingScript(localFundingPubKey, msg.fundingPubKey, parentCommitment.commitmentFormat).pubkeyScript
+            val sharedInput = parentCommitment.commitmentFormat match {
               case _: SimpleTaprootChannelCommitmentFormat => Musig2Input(channelKeys, parentCommitment)
               case _ => Multisig2of2Input(channelKeys, parentCommitment)
             }
@@ -1132,8 +1131,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   pushAmount = 0.msat,
                   requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
                   willFund_opt = willFund_opt.map(_.willFund),
-                  feeCreditUsed_opt = msg.useFeeCredit_opt
+                  feeCreditUsed_opt = msg.useFeeCredit_opt,
+                  commitmentFormat_opt = msg.commitmentFormat_opt
                 )
+                val commitmentFormat = msg.commitmentFormat_opt.getOrElse(parentCommitment.commitmentFormat)
                 val fundingParams = InteractiveTxParams(
                   channelId = d.channelId,
                   isInitiator = false,
@@ -1182,11 +1183,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
           val parentCommitment = d.commitments.latest.commitment
-          val commitmentFormat = parentCommitment.commitmentFormat
-          val sharedInput = d.commitments.latest.commitmentFormat match {
-            case _: SimpleTaprootChannelCommitmentFormat => Musig2Input(channelKeys, parentCommitment)
-            case _ => Multisig2of2Input(channelKeys, parentCommitment)
-          }
+          val sharedInput = SharedFundingInput(channelKeys, parentCommitment)
+          val nextCommitmentFormat = msg.commitmentFormat_opt.getOrElse(parentCommitment.commitmentFormat)
           val fundingParams = InteractiveTxParams(
             channelId = d.channelId,
             isInitiator = true,
@@ -1195,13 +1193,13 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             sharedInput_opt = Some(sharedInput),
             remoteFundingPubKey = msg.fundingPubKey,
             localOutputs = cmd.spliceOutputs,
-            commitmentFormat = commitmentFormat,
+            commitmentFormat = nextCommitmentFormat,
             lockTime = spliceInit.lockTime,
             dustLimit = parentCommitment.localCommitParams.dustLimit.max(parentCommitment.remoteCommitParams.dustLimit),
             targetFeerate = spliceInit.feerate,
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceInit.requireConfirmedInputs)
           )
-          val fundingScript = Transactions.makeFundingScript(spliceInit.fundingPubKey, msg.fundingPubKey, commitmentFormat).pubkeyScript
+          val fundingScript = Transactions.makeFundingScript(spliceInit.fundingPubKey, msg.fundingPubKey, parentCommitment.commitmentFormat).pubkeyScript
           LiquidityAds.validateRemoteFunding(spliceInit.requestFunding_opt, remoteNodeId, d.channelId, fundingScript, msg.fundingContribution, spliceInit.feerate, isChannelCreation = false, msg.willFund_opt) match {
             case Left(t) =>
               log.info("rejecting splice attempt: invalid liquidity ads response ({})", t.getMessage)
@@ -3484,7 +3482,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         fundingPubKey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey,
         pushAmount = cmd.pushAmount,
         requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
-        requestFunding_opt = cmd.requestFunding_opt
+        requestFunding_opt = cmd.requestFunding_opt,
+        commitmentFormat_opt = cmd.commitmentFormat_opt
       )
       Right(spliceInit)
     }
