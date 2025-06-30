@@ -110,6 +110,13 @@ object InteractiveTxBuilder {
     // @formatter:on
   }
 
+  object SharedFundingInput {
+    def apply(channelKeys: ChannelKeys, commitment: Commitment): SharedFundingInput = commitment.commitmentFormat match {
+      case _: SimpleTaprootChannelCommitmentFormat => Musig2Input(channelKeys, commitment)
+      case _ => Multisig2of2Input(channelKeys, commitment)
+    }
+  }
+
   case class Multisig2of2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
     override val weight: Int = 388
 
@@ -482,7 +489,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   private val log = context.log
   private val localFundingKey: PrivateKey = channelKeys.fundingKey(purpose.fundingTxIndex)
-  private val fundingPubkeyScript: ByteVector = Transactions.makeFundingScript(localFundingKey.publicKey, fundingParams.remoteFundingPubKey, channelParams.channelFeatures.commitmentFormat).pubkeyScript
+  private val fundingPubkeyScript: ByteVector = Transactions.makeFundingScript(localFundingKey.publicKey, fundingParams.remoteFundingPubKey, fundingParams.commitmentFormat).pubkeyScript
   private val remoteNodeId = channelParams.remoteParams.nodeId
   private val previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction] = purpose match {
     case rbf: FundingTxRbf => rbf.previousTransactions
@@ -563,12 +570,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         val next = session.copy(toSend = tail, localOutputs = session.localOutputs :+ addOutput, txCompleteSent = None)
         receive(next)
       case Nil =>
-        val txComplete = channelParams.channelFeatures.commitmentFormat match {
+        val txComplete = fundingParams.commitmentFormat match {
           case _: SimpleTaprootChannelCommitmentFormat =>
             // funding nonces are used to sign shared inputs (funding transactions), are randomized and are local to this interactive session
             val fundingNonce_opt = (session.remoteInputs ++ session.localInputs).sortBy(_.serialId).collectFirst {
-              case i: Input.Shared => session.secretNonces.get(i.serialId).map(_.publicNonce).getOrElse(throw new RuntimeException("missing secret nonce"))
-            }
+              case i: Input.Shared => session.secretNonces.get(i.serialId).map(_.publicNonce) //.getOrElse(throw new RuntimeException("missing secret nonce"))
+            }.flatten
             // commit nonces are used to sign commit transactions and are sent to our peer. Once this session complete the last one we've received becomes "their next remote nonce"
             validateTx(session).map(_.buildUnsignedTx().txid).map { fundingTxId =>
               TxComplete(fundingParams.channelId,
