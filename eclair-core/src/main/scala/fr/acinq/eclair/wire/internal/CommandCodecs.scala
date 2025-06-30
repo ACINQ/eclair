@@ -50,7 +50,7 @@ object CommandCodecs {
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
 
-  private val cmdFulfillCodecWithPartialAttribution: Codec[CMD_FULFILL_HTLC] =
+  private val cmdFulfillWithPartialAttributionCodec: Codec[CMD_FULFILL_HTLC] =
     (("id" | int64) ::
       ("r" | bytes32) ::
       ("downstreamAttribution_opt" | optional(bool8, bytes(Sphinx.Attribution.totalLength))) ::
@@ -62,7 +62,7 @@ object CommandCodecs {
         CMD_FULFILL_HTLC(id, r, attribution_opt, commit, replyTo_opt)
     }.decodeOnly
 
-  private val cmdFulfillCodecWithoutAttribution: Codec[CMD_FULFILL_HTLC] =
+  private val cmdFulfillWithoutAttributionCodec: Codec[CMD_FULFILL_HTLC] =
     (("id" | int64) ::
       ("r" | bytes32) ::
       ("attribution_opt" | provide(Option.empty[FulfillAttributionData])) ::
@@ -100,7 +100,7 @@ object CommandCodecs {
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
 
-  private val cmdFailWithoutHoldTimeCodec: Codec[CMD_FAIL_HTLC] =
+  private val cmdFailWithoutAttributionCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
       ("reason" | failureReasonCodec) ::
       ("attribution_opt" | provide(Option.empty[FailureAttributionData])) ::
@@ -109,7 +109,7 @@ object CommandCodecs {
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
 
-  private val cmdFailWithHoldTimeCodec: Codec[CMD_FAIL_HTLC] =
+  private val cmdFailWithPartialAttributionCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
       ("reason" | failureReasonCodec) ::
       ("htlcReceivedAt_opt" | optional(bool8, uint64overflow.as[TimestampMilli])) ::
@@ -146,12 +146,12 @@ object CommandCodecs {
     // NB: order matters!
     .typecase(8, cmdFullfillCodec)
     .typecase(7, cmdFailCodec)
-    .typecase(6, cmdFulfillCodecWithPartialAttribution)
-    .typecase(5, cmdFailWithHoldTimeCodec)
-    .typecase(4, cmdFailWithoutHoldTimeCodec)
+    .typecase(6, cmdFulfillWithPartialAttributionCodec)
+    .typecase(5, cmdFailWithPartialAttributionCodec)
+    .typecase(4, cmdFailWithoutAttributionCodec)
     .typecase(3, cmdFailEitherCodec)
     .typecase(2, cmdFailMalformedCodec)
     .typecase(1, cmdFailWithoutLengthCodec)
-    .typecase(0, cmdFulfillCodecWithoutAttribution)
+    .typecase(0, cmdFulfillWithoutAttributionCodec)
 
 }
