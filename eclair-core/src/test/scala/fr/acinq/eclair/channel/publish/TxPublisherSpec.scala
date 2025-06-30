@@ -112,7 +112,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val confirmBefore = ConfirmationTarget.Absolute(nodeParams.currentBlockHeight + 12)
     val input = OutPoint(randomTxId(), 3)
-    val anchorTx = ClaimLocalAnchorTx(fundingKey, localCommitKeys, InputInfo(input, TxOut(25_000 sat, Nil), ByteVector.empty), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val anchorTx = ClaimLocalAnchorTx(fundingKey, localCommitKeys, InputInfo(input, TxOut(25_000 sat, Nil)), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val cmd = PublishReplaceableTx(anchorTx, null, null, confirmBefore)
     txPublisher ! cmd
     val child = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
@@ -125,7 +125,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val confirmBefore = nodeParams.currentBlockHeight + 12
     val input = OutPoint(randomTxId(), 3)
-    val anchorTx = ClaimLocalAnchorTx(fundingKey, localCommitKeys, InputInfo(input, TxOut(25_000 sat, Nil), ByteVector.empty), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val anchorTx = ClaimLocalAnchorTx(fundingKey, localCommitKeys, InputInfo(input, TxOut(25_000 sat, Nil)), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val cmd = PublishReplaceableTx(anchorTx, null, null, ConfirmationTarget.Priority(ConfirmationPriority.Medium))
     txPublisher ! cmd
     val child = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
@@ -183,7 +183,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val attempt2 = factory.expectMsgType[FinalTxPublisherSpawned].actor
     attempt2.expectMsgType[FinalTxPublisher.Publish]
 
-    val anchorTx = ClaimLocalAnchorTx(fundingKey, localCommitKeys, InputInfo(input, TxOut(25_000 sat, Nil), ByteVector.empty), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val anchorTx = ClaimLocalAnchorTx(fundingKey, localCommitKeys, InputInfo(input, TxOut(25_000 sat, Nil)), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val cmd3 = PublishReplaceableTx(anchorTx, null, null, ConfirmationTarget.Absolute(nodeParams.currentBlockHeight))
     txPublisher ! cmd3
     val attempt3 = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
@@ -206,7 +206,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val attempt1 = factory.expectMsgType[FinalTxPublisherSpawned]
     attempt1.actor.expectMsgType[FinalTxPublisher.Publish]
 
-    val anchorTx = ClaimRemoteAnchorTx(fundingKey, remoteCommitKeys, InputInfo(input, TxOut(25_000 sat, Nil), ByteVector.empty), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val anchorTx = ClaimRemoteAnchorTx(fundingKey, remoteCommitKeys, InputInfo(input, TxOut(25_000 sat, Nil)), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val cmd2 = PublishReplaceableTx(anchorTx, null, null, ConfirmationTarget.Absolute(nodeParams.currentBlockHeight))
     txPublisher ! cmd2
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
@@ -248,7 +248,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val input = OutPoint(randomTxId(), 7)
     val preimage = randomBytes32()
     val remoteSig = randomBytes64()
-    val htlcTx = HtlcSuccessTx(localCommitKeys, InputInfo(input, TxOut(25_000 sat, Nil), ByteVector.empty), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), 3, expiry, preimage, remoteSig, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val htlcTx = HtlcSuccessTx(localCommitKeys, InputInfo(input, TxOut(25_000 sat, Nil)), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), 3, expiry, preimage, remoteSig, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val cmd = PublishReplaceableTx(htlcTx, null, null, ConfirmationTarget.Absolute(expiry.blockHeight))
     txPublisher ! cmd
     val attempt1 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
@@ -314,7 +314,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val input = OutPoint(randomTxId(), 7)
     val paymentHash = randomBytes32()
     val remoteSig = randomBytes64()
-    val htlcTx = HtlcTimeoutTx(localCommitKeys, InputInfo(input, TxOut(25_000 sat, Nil), ByteVector.empty), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, CltvExpiry(nodeParams.currentBlockHeight), remoteSig, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val htlcTx = HtlcTimeoutTx(localCommitKeys, InputInfo(input, TxOut(25_000 sat, Nil)), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, CltvExpiry(nodeParams.currentBlockHeight), remoteSig, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val cmd = PublishReplaceableTx(htlcTx, null, null, ConfirmationTarget.Absolute(nodeParams.currentBlockHeight))
     txPublisher ! cmd
     val attempt1 = factory.expectMsgType[ReplaceableTxPublisherSpawned]

@@ -223,7 +223,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     // The anchor outputs commitment format costs more fees for the funder (bigger commit tx + cost of anchor outputs)
-    assert(initialState.commitments.availableBalanceForSend < initialState.commitments.modify(_.channelParams.channelFeatures).setTo(ChannelFeatures()).availableBalanceForSend)
+    assert(initialState.commitments.availableBalanceForSend < initialState.commitments.modify(_.active).apply(_.map(_.modify(_.commitmentFormat).setTo(DefaultCommitmentFormat))).availableBalanceForSend)
     val add = CMD_ADD_HTLC(sender.ref, initialState.commitments.availableBalanceForSend + 1.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender.ref))
     alice ! add
 
@@ -936,8 +936,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
     inside(bobListener.expectMsgType[LocalChannelUpdate]) { lcu =>
-      assert(lcu.commitments.channelParams.localCommitParams.htlcMinimum == 1000.msat)
-      assert(lcu.commitments.channelParams.remoteCommitParams.htlcMinimum == 0.msat)
+      assert(lcu.commitments.latest.localCommitParams.htlcMinimum == 1000.msat)
+      assert(lcu.commitments.latest.remoteCommitParams.htlcMinimum == 0.msat)
       assert(lcu.channelUpdate.htlcMaximumMsat == 1000.msat)
       assert(lcu.channelUpdate.shortChannelId.isInstanceOf[RealShortChannelId])
       assert(lcu.channelUpdate.channelFlags.isEnabled)
@@ -1047,7 +1047,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteChanges.signed.size == 1)
   }
 
-  test("recv CommitSig (one htlc sent)") { f =>
+  test("recv CommitSig (one htlc sent)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
 
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1096,6 +1096,33 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("recv CommitSig (multiple htlcs in both directions) (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+    import f._
+
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
+    addHtlc(1100000 msat, alice, bob, alice2bob, bob2alice) // a->b (trimmed to dust)
+    addHtlc(999999 msat, bob, alice, bob2alice, alice2bob) // b->a (dust)
+    addHtlc(10000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
+    addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob) // b->a (regular)
+    addHtlc(999999 msat, alice, bob, alice2bob, bob2alice) // a->b (dust)
+    addHtlc(1100000 msat, bob, alice, bob2alice, alice2bob) // b->a (trimmed to dust)
+
+    alice ! CMD_SIGN()
+    val aliceCommitSig = alice2bob.expectMsgType[CommitSig]
+    assert(aliceCommitSig.htlcSignatures.length == 2)
+    alice2bob.forward(bob, aliceCommitSig)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+
+    // actual test begins
+    val bobCommitSig = bob2alice.expectMsgType[CommitSig]
+    assert(bobCommitSig.htlcSignatures.length == 3)
+    bob2alice.forward(alice, bobCommitSig)
+
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.index == 1)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.htlcRemoteSigs.size == 3)
+  }
+
+  test("recv CommitSig (multiple htlcs in both directions) (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
 
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
@@ -3571,7 +3598,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val fundingTx = aliceState.commitments.latest.localFundingStatus.signedTx_opt.get
     val (blockHeight, txIndex) = (BlockHeight(400_000), 42)
     alice ! WatchFundingConfirmedTriggered(blockHeight, txIndex, fundingTx)
-    val realShortChannelId = RealShortChannelId(blockHeight, txIndex, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.commitInput.outPoint.index.toInt)
+    val realShortChannelId = RealShortChannelId(blockHeight, txIndex, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingInput.index.toInt)
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
     assert(annSigsA.shortChannelId == realShortChannelId)
     // Alice updates her internal state wih the real scid.

@@ -98,6 +98,9 @@ object ChannelStateTestsTags {
   val SimpleClose = "option_simple_close"
   /** If set, disable option_splice for one node. */
   val DisableSplice = "disable_splice"
+  /** If set, channels weill use option_simple_taproot_staging */
+  val OptionSimpleTaprootStagingLegacy = "option_simple_taproot_staging_legacy"
+  val OptionSimpleTaprootStagingZeroFee = "option_simple_taproot_staging_zerofee"
 }
 
 trait ChannelStateTestsBase extends Assertions with Eventually {
@@ -263,6 +266,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.SimpleClose))(_.updated(Features.SimpleClose, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy))(_.updated(Features.SimpleTaprootStagingLegacy, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee))(_.updated(Features.SimpleTaprootStagingZeroFeeHtlc, FeatureSupport.Optional))
     )
     val nodeParamsB1 = nodeParamsB.copy(features = nodeParamsB.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableWumbo))(_.removed(Features.Wumbo))
@@ -276,6 +281,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.SimpleClose))(_.updated(Features.SimpleClose, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableSplice))(_.removed(Features.SplicePrototype))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy))(_.updated(Features.SimpleTaprootStagingLegacy, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee))(_.updated(Features.SimpleTaprootStagingZeroFeeHtlc, FeatureSupport.Optional))
     )
     (nodeParamsA1, nodeParamsB1)
   }
@@ -296,22 +303,22 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val aliceChannelParams = Alice.channelParams
       .modify(_.initFeatures).setTo(aliceInitFeatures)
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))
-      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
-      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150_000_000))
-      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(5000 sat)
-      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
       .modify(_.initialRequestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
       .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))))
+    val aliceCommitParams = CommitParams(nodeParamsA.channelConf.dustLimit, nodeParamsA.channelConf.htlcMinimum, nodeParamsA.channelConf.maxHtlcValueInFlight(TestConstants.fundingSatoshis, unlimited = false), nodeParamsA.channelConf.maxAcceptedHtlcs, nodeParamsB.channelConf.toRemoteDelay)
+      .modify(_.maxHtlcValueInFlight).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
+      .modify(_.maxHtlcValueInFlight).setToIf(tags.contains(ChannelStateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150_000_000))
+      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(5000 sat)
+      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
     val bobChannelParams = Bob.channelParams
       .modify(_.initFeatures).setTo(bobInitFeatures)
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))
-      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
-      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
-      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
       .modify(_.initialRequestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
       .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))))
-    val aliceCommitParams = CommitParams(aliceChannelParams.dustLimit, aliceChannelParams.htlcMinimum, aliceChannelParams.maxHtlcValueInFlightMsat, aliceChannelParams.maxAcceptedHtlcs, bobChannelParams.toRemoteDelay)
-    val bobCommitParams = CommitParams(bobChannelParams.dustLimit, bobChannelParams.htlcMinimum, bobChannelParams.maxHtlcValueInFlightMsat, bobChannelParams.maxAcceptedHtlcs, aliceChannelParams.toRemoteDelay)
+    val bobCommitParams = CommitParams(nodeParamsB.channelConf.dustLimit, nodeParamsB.channelConf.htlcMinimum, nodeParamsB.channelConf.maxHtlcValueInFlight(TestConstants.fundingSatoshis, unlimited = false), nodeParamsB.channelConf.maxAcceptedHtlcs, nodeParamsA.channelConf.toRemoteDelay)
+      .modify(_.maxHtlcValueInFlight).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
+      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
+      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
 
     ChannelParamsFixture(aliceChannelParams, aliceCommitParams, aliceInitFeatures, bobChannelParams, bobCommitParams, bobInitFeatures, channelType, alice2bob, bob2alice, aliceOpenReplyTo)
   }
@@ -639,7 +646,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     val commitTx = s2blockchain.expectFinalTxPublished("commit-tx").tx
     assert(commitTx.txid == closingState.commitments.latest.localCommit.txId)
-    val commitInput = closingState.commitments.latest.commitInput
+    val commitInput = closingState.commitments.latest.commitInput(s.underlyingActor.channelKeys)
     Transaction.correctlySpends(commitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     val publishedAnchorTx_opt = closingState.commitments.latest.commitmentFormat match {
       case DefaultCommitmentFormat => None

@@ -344,6 +344,16 @@ object Features {
     val mandatory = 154
   }
 
+  case object SimpleTaprootStagingLegacy extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot_staging_legacy"
+    val mandatory = 182
+  }
+
+  case object SimpleTaprootStagingZeroFeeHtlc extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot_staging_zero_fee"
+    val mandatory = 184
+  }
+
   /**
    * Activate this feature to provide on-the-fly funding to remote nodes, as specified in bLIP 36: https://github.com/lightning/blips/blob/master/blip-0036.md.
    * TODO: add NodeFeature once bLIP is merged.
@@ -387,6 +397,8 @@ object Features {
     ZeroConf,
     KeySend,
     SimpleClose,
+    SimpleTaprootStagingLegacy,
+    SimpleTaprootStagingZeroFeeHtlc,
     WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
@@ -406,6 +418,8 @@ object Features {
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
     SimpleClose -> (ShutdownAnySegwit :: Nil),
+    SimpleTaprootStagingLegacy -> (ChannelType :: SimpleClose :: Nil),
+    SimpleTaprootStagingZeroFeeHtlc -> (ChannelType :: SimpleClose :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
     OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)

@@ -134,14 +134,13 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     val currentChannels = Seq(
       Peer.ChannelInfo(TestProbe().ref, SHUTDOWN, DATA_SHUTDOWN(commitments(isOpener = true), Shutdown(randomBytes32(), ByteVector.empty), Shutdown(randomBytes32(), ByteVector.empty), CloseStatus.Initiator(None))),
       Peer.ChannelInfo(TestProbe().ref, NEGOTIATING, DATA_NEGOTIATING(commitments(), Shutdown(randomBytes32(), ByteVector.empty), Shutdown(randomBytes32(), ByteVector.empty), List(Nil), None)),
-      Peer.ChannelInfo(TestProbe().ref, CLOSING, DATA_CLOSING(commitments(), BlockHeight(0), ByteVector.empty, Nil, ClosingTx(InputInfo(OutPoint(TxId(randomBytes32()), 5), TxOut(100_000 sat, Nil), ByteVector.empty), Transaction(2, Nil, Nil, 0), None) :: Nil)),
+      Peer.ChannelInfo(TestProbe().ref, CLOSING, DATA_CLOSING(commitments(), BlockHeight(0), ByteVector.empty, Nil, ClosingTx(InputInfo(OutPoint(TxId(randomBytes32()), 5), TxOut(100_000 sat, Nil)), Transaction(2, Nil, Nil, 0), None) :: Nil)),
       Peer.ChannelInfo(TestProbe().ref, WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments(), ChannelReestablish(randomBytes32(), 0, 0, randomKey(), randomKey().publicKey))),
     )
     peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, currentChannels)
     val result = peer.expectMessageType[SpawnChannelNonInitiator]
     assert(!result.localParams.isChannelOpener)
     assert(result.localParams.paysCommitTxFees)
-    assert(result.localParams.maxHtlcValueInFlightMsat == UInt64(500_000_000))
     assert(result.addFunding_opt.map(_.fundingAmount).contains(250_000 sat))
     assert(result.addFunding_opt.flatMap(_.rates_opt).contains(TestConstants.defaultLiquidityRates))
   }
@@ -155,7 +154,6 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     openChannelInterceptor ! openChannelInitiator
     val result = peer.expectMessageType[SpawnChannelInitiator]
     assert(result.cmd == openChannelInitiator.open)
-    assert(result.localParams.maxHtlcValueInFlightMsat == UInt64(450_000_000))
   }
 
   test("continue channel open if no interceptor plugin registered and pending channels rate limiter accepts it") { f =>
