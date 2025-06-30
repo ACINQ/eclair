@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Satoshi, Transaction, TxHash, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel.{ChannelFlags, ShortIdAliases}
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, UnspecifiedShortChannelId}
@@ -162,6 +163,8 @@ object CommonCodecs {
     (pub: IndividualNonce) => bytes(Secp256k1.MUSIG2_PUBLIC_NONCE_SIZE).encode(ByteVector.view(pub.toByteArray)),
     (wire: BitVector) => bytes(Secp256k1.MUSIG2_PUBLIC_NONCE_SIZE).decode(wire).map(_.map(b => new IndividualNonce(b.toArray)))
   )
+
+  val partialSignatureWithNonce: Codec[PartialSignatureWithNonce] = (bytes32 :: publicNonce).as[PartialSignatureWithNonce]
 
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
 
