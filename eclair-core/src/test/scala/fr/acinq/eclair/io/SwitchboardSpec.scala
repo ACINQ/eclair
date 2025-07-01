@@ -166,7 +166,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
   def dummyDataNormal(remoteNodeId: PublicKey, capacity: Satoshi): DATA_NORMAL = {
     val data = ChannelCodecsSpec.normal
       .modify(_.commitments.channelParams.remoteParams.nodeId).setTo(remoteNodeId)
-      .modify(_.commitments.active).apply(_.map(_.modify(_.localCommit.input.txOut.amount).setTo(capacity)))
+      .modify(_.commitments.active).apply(_.map(_.modify(_.fundingAmount).setTo(capacity)))
     assert(data.remoteNodeId == remoteNodeId)
     assert(data.commitments.capacity == capacity)
     data
