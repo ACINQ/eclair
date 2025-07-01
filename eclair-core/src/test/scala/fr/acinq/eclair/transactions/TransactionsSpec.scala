@@ -286,8 +286,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       commitTxFeerate = feeratePerKw,
       toLocal = 400.millibtc.toMilliSatoshi,
       toRemote = 300.millibtc.toMilliSatoshi)
-    val (secretLocalNonce, publicLocalNonce) = Musig2.generateNonce(randomBytes32(), localFundingPriv, Seq(localFundingPriv.publicKey))
-    val (secretRemoteNonce, publicRemoteNonce) = Musig2.generateNonce(randomBytes32(), remoteFundingPriv, Seq(remoteFundingPriv.publicKey))
+    val (secretLocalNonce, publicLocalNonce) = Musig2.generateNonce(randomBytes32(), Left(localFundingPriv), Seq(localFundingPriv.publicKey), None, None)
+    val (secretRemoteNonce, publicRemoteNonce) = Musig2.generateNonce(randomBytes32(), Left(remoteFundingPriv), Seq(remoteFundingPriv.publicKey), None, None)
     val publicNonces = Seq(publicLocalNonce, publicRemoteNonce)
 
     val (commitTx, commitTxOutputs, htlcTimeoutTxs, htlcSuccessTxs) = {
