@@ -923,7 +923,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         val tlvs: TlvStream[CommitSigTlv] = fundingParams.commitmentFormat match {
           case _: SimpleTaprootChannelCommitmentFormat =>
             val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey)
-            val Some(remoteNonce) = session.txCompleteReceived.flatMap(_.nonces).map(_.remoteNonce)
+            val Some(remoteNonce) = session.txCompleteReceived.flatMap(_.nonces_opt).map(_.remoteNonce)
             val Right(psig) = remoteCommitTx.partialSign(localFundingKey, fundingParams.remoteFundingPubKey, Map.empty, localNonce, Seq(localNonce.publicNonce, remoteNonce))
             log.debug(s"signCommitTx: creating partial signature $psig for commit tx ${remoteCommitTx.tx.txid} with local nonce ${localNonce.publicNonce} remote nonce $remoteNonce")
             TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(psig))
@@ -977,7 +977,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         )
         // the last nonce they've sent becomes their "next remote nonce"
         val fundingTxId = validateTx(session).map(_.buildUnsignedTx().txid).getOrElse(throw new RuntimeException("invalid signing session"))
-        val theirNextRemoteNonce = session.txCompleteReceived.flatMap(_.nonces).map(n => fundingTxId -> n.nextRemoteNonce)
+        val theirNextRemoteNonce = session.txCompleteReceived.flatMap(_.nonces_opt).map(n => fundingTxId -> n.nextRemoteNonce)
         replyTo ! Succeeded(signingSession, commitSig, liquidityPurchase_opt, theirNextRemoteNonce)
         Behaviors.stopped
       case WalletFailure(t) =>
@@ -1010,7 +1010,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         val fundingKey = channelKeys.fundingKey(i.fundingTxIndex)
         val inputIndex = tx.txIn.indexWhere(_.outPoint == i.info.outPoint)
         // there should be one remote nonce for each shared input ordered by serial id
-        val Some(remoteNonce) = session.txCompleteReceived.flatMap(_.nonces).flatMap(_.fundingNonce_opt)
+        val Some(remoteNonce) = session.txCompleteReceived.flatMap(_.nonces_opt).flatMap(_.fundingNonce_opt)
         val Right(psig) = Musig2.signTaprootInput(fundingKey, tx, inputIndex, unsignedTx.spentOutputs, Scripts.sort(Seq(fundingKey.publicKey, i.remoteFundingPubkey)), localNonce.secretNonce, Seq(localNonce.publicNonce, remoteNonce), None)
         val check = Musig2.verifyTaprootSignature(psig, localNonce.publicNonce, fundingKey.publicKey, tx, inputIndex, unsignedTx.spentOutputs, Scripts.sort(Seq(fundingKey.publicKey, i.remoteFundingPubkey)), Seq(localNonce.publicNonce, remoteNonce), None)
         log.debug(s"signFundingTx: check = $check")

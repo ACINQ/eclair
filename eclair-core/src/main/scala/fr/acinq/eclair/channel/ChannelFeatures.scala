@@ -31,11 +31,11 @@ import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeatur
 case class ChannelFeatures(features: Set[PermanentChannelFeature]) {
 
   /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
-  val paysDirectlyToWallet: Boolean = hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs) && !hasFeature(Features.AnchorOutputsZeroFeeHtlcTx) && !hasFeature(Features.SimpleTaprootStagingLegacy) && !hasFeature(Features.SimpleTaprootStagingZeroFeeHtlc)
+  val paysDirectlyToWallet: Boolean = hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs) && !hasFeature(Features.AnchorOutputsZeroFeeHtlcTx) && !hasFeature(Features.SimpleTaprootChannelsPhoenix) && !hasFeature(Features.SimpleTaprootChannelsStaging)
   /** Legacy option_anchor_outputs is used for Phoenix, because Phoenix doesn't have an on-chain wallet to pay for fees. */
-  val commitmentFormat: CommitmentFormat = if (hasFeature(Features.SimpleTaprootStagingLegacy)) {
+  val commitmentFormat: CommitmentFormat = if (hasFeature(Features.SimpleTaprootChannelsPhoenix)) {
     LegacySimpleTaprootChannelCommitmentFormat
-  } else if (hasFeature(Features.SimpleTaprootStagingZeroFeeHtlc)) {
+  } else if (hasFeature(Features.SimpleTaprootChannelsStaging)) {
     ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
   } else if (hasFeature(Features.AnchorOutputs)) {
     UnsafeLegacyAnchorOutputsCommitmentFormat
@@ -138,7 +138,7 @@ object ChannelTypes {
     override def features: Set[ChannelTypeFeature] = Set(
       if (scidAlias) Some(Features.ScidAlias) else None,
       if (zeroConf) Some(Features.ZeroConf) else None,
-      Some(Features.SimpleTaprootStagingLegacy),
+      Some(Features.SimpleTaprootChannelsPhoenix),
     ).flatten
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = LegacySimpleTaprootChannelCommitmentFormat
@@ -149,7 +149,7 @@ object ChannelTypes {
     override def features: Set[ChannelTypeFeature] = Set(
       if (scidAlias) Some(Features.ScidAlias) else None,
       if (zeroConf) Some(Features.ZeroConf) else None,
-      Some(Features.SimpleTaprootStagingZeroFeeHtlc),
+      Some(Features.SimpleTaprootChannelsStaging),
     ).flatten
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
@@ -200,9 +200,9 @@ object ChannelTypes {
 
     val scidAlias = canUse(Features.ScidAlias) && !announceChannel // alias feature is incompatible with public channel
     val zeroConf = canUse(Features.ZeroConf)
-    if (canUse(Features.SimpleTaprootStagingZeroFeeHtlc)) {
+    if (canUse(Features.SimpleTaprootChannelsStaging)) {
       SimpleTaprootChannelsStagingZeroFee(scidAlias, zeroConf)
-    } else if (canUse(Features.SimpleTaprootStagingLegacy)) {
+    } else if (canUse(Features.SimpleTaprootChannelsPhoenix)) {
       SimpleTaprootChannelsStagingLegacy(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
       AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)

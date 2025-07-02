@@ -133,7 +133,7 @@ object Helpers {
     }
 
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
-    if ((channelFeatures.hasFeature(Features.SimpleTaprootStagingLegacy) || channelFeatures.hasFeature(Features.SimpleTaprootStagingZeroFeeHtlc)) && open.nexLocalNonce_opt.isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
+    if ((channelFeatures.hasFeature(Features.SimpleTaprootChannelsPhoenix) || channelFeatures.hasFeature(Features.SimpleTaprootChannelsStaging)) && open.nexLocalNonce_opt.isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
     val localFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelFeatures.commitmentFormat, open.fundingSatoshis)
@@ -144,6 +144,8 @@ object Helpers {
 
     val reserveToFundingRatio = open.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.channelConf.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.channelConf.maxReserveToFundingRatio))
+
+    if (channelType.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && open.nexLocalNonce_opt.isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
 
     extractShutdownScript(open.temporaryChannelId, localFeatures, remoteFeatures, open.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
@@ -241,7 +243,7 @@ object Helpers {
     if (reserveToFundingRatio > nodeParams.channelConf.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.channelConf.maxReserveToFundingRatio))
 
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
-    if ((channelFeatures.hasFeature(Features.SimpleTaprootStagingLegacy) || channelFeatures.hasFeature(Features.SimpleTaprootStagingZeroFeeHtlc)) && accept.nexLocalNonce_opt.isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
+    if (channelType.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && accept.nexLocalNonce_opt.isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
     extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
 
@@ -759,17 +761,21 @@ object Helpers {
 
         val tlvs = commitment.commitmentFormat match {
           case _: SimpleTaprootChannelCommitmentFormat =>
-            def partialSign(tx: ClosingTx) = {
-              val Right(psig) = tx.partialSign(localFundingKey, commitment.remoteFundingPubKey, Map.empty, localClosingNonce_opt.get, Seq(localClosingNonce_opt.get.publicNonce, remoteClosingNonce_opt.get))
-              psig.partialSig
+            try {
+              def partialSign(tx: ClosingTx) = {
+                val Right(psig) = tx.partialSign(localFundingKey, commitment.remoteFundingPubKey, Map.empty, localClosingNonce_opt.get, Seq(localClosingNonce_opt.get.publicNonce, remoteClosingNonce_opt.get))
+                psig.partialSig
+              }
+
+              TlvStream(Set(
+                closingTxs.localAndRemote_opt.map(tx => ClosingTlv.CloserAndCloseeOutputsPartialSignature(partialSign(tx))),
+                closingTxs.localOnly_opt.map(tx => ClosingTlv.CloserOutputOnlyPartialSignature(partialSign(tx))),
+                closingTxs.remoteOnly_opt.map(tx => ClosingTlv.CloseeOutputOnlyPartialSignature(partialSign(tx))),
+              ).flatten[ClosingTlv])
             }
-
-            TlvStream(Set(
-              closingTxs.localAndRemote_opt.map(tx => ClosingTlv.CloserAndCloseeOutputsPartialSignature(partialSign(tx))),
-              closingTxs.localOnly_opt.map(tx => ClosingTlv.CloserOutputOnlyPartialSignature(partialSign(tx))),
-              closingTxs.remoteOnly_opt.map(tx => ClosingTlv.CloseeOutputOnlyPartialSignature(partialSign(tx))),
-            ).flatten[ClosingTlv])
-
+            catch {
+              case _: Throwable => return Left(CannotGenerateClosingTx(commitment.channelId))
+            }
           case _ => TlvStream(Set(
             closingTxs.localAndRemote_opt.map(tx => ClosingTlv.CloserAndCloseeOutputs(tx.sign(localFundingKey, commitment.remoteFundingPubKey).sig)),
             closingTxs.localOnly_opt.map(tx => ClosingTlv.CloserOutputOnly(tx.sign(localFundingKey, commitment.remoteFundingPubKey).sig)),

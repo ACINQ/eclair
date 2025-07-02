@@ -17,7 +17,6 @@ object NonceGenerator extends Logging {
    */
   def verificationNonce(fundingTxId: TxId, fundingPrivKey: PrivateKey, index: Long): LocalNonce = {
     val nonces = Musig2.generateNonceWithCounter(index, fundingPrivKey, Seq(fundingPrivKey.publicKey), None, Some(fundingTxId.value))
-    logger.debug(s"verification nonce for fundingTxId = $fundingTxId fundingPrivKey = ${fundingPrivKey.publicKey} index = $index is $nonces")
     LocalNonce(nonces._1, nonces._2)
   }
 

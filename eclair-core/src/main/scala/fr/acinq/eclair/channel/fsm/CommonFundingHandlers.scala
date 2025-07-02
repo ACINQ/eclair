@@ -160,7 +160,7 @@ trait CommonFundingHandlers extends CommonHandlers {
       },
       remoteNextCommitInfo = Right(channelReady.nextPerCommitmentPoint)
     )
-    setRemoteNextLocalNonces("received ChannelReady", channelReady.nexLocalNonce_opt.map(n => commitments.latest.fundingTxId -> n).toMap) // TODO: this is wrong, there should be a different nonce for each commitment
+    setRemoteNextLocalNonces("received ChannelReady", channelReady.nexLocalNonce_opt.map(n => commitments.latest.fundingTxId -> n).toMap)
     peer ! ChannelReadyForPayments(self, remoteNodeId, commitments.channelId, fundingTxIndex = 0)
     DATA_NORMAL(commitments1, aliases1, None, initialChannelUpdate, SpliceStatus.NoSplice, None, None, None)
   }

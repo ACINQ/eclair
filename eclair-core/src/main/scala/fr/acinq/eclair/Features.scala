@@ -344,14 +344,14 @@ object Features {
     val mandatory = 154
   }
 
-  case object SimpleTaprootStagingLegacy extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
-    val rfcName = "option_simple_taproot_staging_legacy"
-    val mandatory = 182
+  case object SimpleTaprootChannelsPhoenix extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot_phoenix_tweaked"
+    val mandatory = 564
   }
 
-  case object SimpleTaprootStagingZeroFeeHtlc extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
-    val rfcName = "option_simple_taproot_staging_zero_fee"
-    val mandatory = 184
+  case object SimpleTaprootChannelsStaging extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot_staging"
+    val mandatory = 180
   }
 
   /**
@@ -397,8 +397,8 @@ object Features {
     ZeroConf,
     KeySend,
     SimpleClose,
-    SimpleTaprootStagingLegacy,
-    SimpleTaprootStagingZeroFeeHtlc,
+    SimpleTaprootChannelsPhoenix,
+    SimpleTaprootChannelsStaging,
     WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
@@ -418,8 +418,8 @@ object Features {
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
     SimpleClose -> (ShutdownAnySegwit :: Nil),
-    SimpleTaprootStagingLegacy -> (ChannelType :: SimpleClose :: Nil),
-    SimpleTaprootStagingZeroFeeHtlc -> (ChannelType :: SimpleClose :: Nil),
+    SimpleTaprootChannelsPhoenix -> (ChannelType :: SimpleClose :: Nil),
+    SimpleTaprootChannelsStaging -> (ChannelType :: SimpleClose :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
     OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)

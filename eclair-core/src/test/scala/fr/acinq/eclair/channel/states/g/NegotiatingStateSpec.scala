@@ -489,14 +489,14 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     aliceClose(f)
     val aliceClosingComplete = alice2bob.expectMsgType[ClosingComplete]
     assert(aliceClosingComplete.fees > 0.sat)
-    assert(aliceClosingComplete.closerAndCloseeOutputsSigOrPartialSig_opt.nonEmpty)
-    assert(aliceClosingComplete.closerOutputOnlySigOrPartialSig_opt.nonEmpty)
-    assert(aliceClosingComplete.closeeOutputOnlySigOrPartialSig_opt.isEmpty)
+    assert(aliceClosingComplete.closerAndCloseeOutputsSig_opt.orElse(aliceClosingComplete.closerAndCloseeOutputsPartialSig_opt).nonEmpty)
+    assert(aliceClosingComplete.closerOutputOnlySig_opt.orElse(aliceClosingComplete.closerOutputOnlyPartialSig_opt).nonEmpty)
+    assert(aliceClosingComplete.closeeOutputOnlySig_opt.orElse(aliceClosingComplete.closeeOutputOnlyPartialSig_opt).isEmpty)
     val bobClosingComplete = bob2alice.expectMsgType[ClosingComplete]
     assert(bobClosingComplete.fees > 0.sat)
-    assert(bobClosingComplete.closerAndCloseeOutputsSigOrPartialSig_opt.nonEmpty)
-    assert(bobClosingComplete.closerOutputOnlySigOrPartialSig_opt.nonEmpty)
-    assert(bobClosingComplete.closeeOutputOnlySigOrPartialSig_opt.isEmpty)
+    assert(bobClosingComplete.closerAndCloseeOutputsSig_opt.orElse(bobClosingComplete.closerAndCloseeOutputsPartialSig_opt).nonEmpty)
+    assert(bobClosingComplete.closerOutputOnlySig_opt.orElse(bobClosingComplete.closerOutputOnlyPartialSig_opt).nonEmpty)
+    assert(bobClosingComplete.closeeOutputOnlySig_opt.orElse(bobClosingComplete.closeeOutputOnlyPartialSig_opt).isEmpty)
 
     alice2bob.forward(bob, aliceClosingComplete)
     val bobClosingSig = bob2alice.expectMsgType[ClosingSig]

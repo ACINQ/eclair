@@ -221,7 +221,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
   import Channel._
 
-  // remote nonces, one for each active commitment, with the same ordering
   var remoteNextLocalNonces: Map[TxId, IndividualNonce] = Map.empty
 
   // used in the closing workflow
@@ -1115,10 +1114,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             val parentCommitment = d.commitments.latest.commitment
             val localFundingPubKey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey
             val fundingScript = Transactions.makeFundingScript(localFundingPubKey, msg.fundingPubKey, parentCommitment.commitmentFormat).pubkeyScript
-            val sharedInput = parentCommitment.commitmentFormat match {
-              case _: SimpleTaprootChannelCommitmentFormat => Musig2Input(channelKeys, parentCommitment)
-              case _ => Multisig2of2Input(channelKeys, parentCommitment)
-            }
+            val sharedInput = SharedFundingInput(channelKeys, parentCommitment)
             LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = false, msg.requestFunding_opt, nodeParams.liquidityAdsConfig.rates_opt, msg.useFeeCredit_opt) match {
               case Left(t) =>
                 log.warning("rejecting splice request with invalid liquidity ads: {}", t.getMessage)
@@ -1150,7 +1146,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceAck.requireConfirmedInputs)
                 )
                 val sessionId = randomBytes32()
-                log.debug("spawning InteractiveTxBuilder with remoteNextLocalNonces {}", remoteNextLocalNonces)
                 val txBuilder = context.spawnAnonymous(InteractiveTxBuilder(
                   sessionId,
                   nodeParams, fundingParams,
@@ -1183,14 +1178,13 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
           val parentCommitment = d.commitments.latest.commitment
-          val sharedInput = SharedFundingInput(channelKeys, parentCommitment)
           val nextCommitmentFormat = msg.commitmentFormat_opt.getOrElse(parentCommitment.commitmentFormat)
           val fundingParams = InteractiveTxParams(
             channelId = d.channelId,
             isInitiator = true,
             localContribution = spliceInit.fundingContribution,
             remoteContribution = msg.fundingContribution,
-            sharedInput_opt = Some(sharedInput),
+            sharedInput_opt = Some(SharedFundingInput(channelKeys, parentCommitment)),
             remoteFundingPubKey = msg.fundingPubKey,
             localOutputs = cmd.spliceOutputs,
             commitmentFormat = nextCommitmentFormat,
@@ -1264,16 +1258,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   val fundingContribution = willFund_opt.map(_.purchase.amount).getOrElse(rbf.latestFundingTx.fundingParams.localContribution)
                   log.info("accepting rbf with remote.in.amount={} local.in.amount={}", msg.fundingContribution, fundingContribution)
                   val txAckRbf = TxAckRbf(d.channelId, fundingContribution, rbf.latestFundingTx.fundingParams.requireConfirmedInputs.forRemote, willFund_opt.map(_.willFund))
-                  val sharedInput = rbf.parentCommitment.commitmentFormat match {
-                    case _: SimpleTaprootChannelCommitmentFormat => Musig2Input(channelKeys, rbf.parentCommitment)
-                    case _ => Multisig2of2Input(channelKeys, rbf.parentCommitment)
-                  }
                   val fundingParams = InteractiveTxParams(
                     channelId = d.channelId,
                     isInitiator = false,
                     localContribution = fundingContribution,
                     remoteContribution = msg.fundingContribution,
-                    sharedInput_opt = Some(sharedInput),
+                    sharedInput_opt = Some(SharedFundingInput(channelKeys, rbf.parentCommitment)),
                     remoteFundingPubKey = rbf.latestFundingTx.fundingParams.remoteFundingPubKey,
                     localOutputs = rbf.latestFundingTx.fundingParams.localOutputs,
                     commitmentFormat = rbf.latestFundingTx.fundingParams.commitmentFormat,
@@ -1325,16 +1315,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, t.getMessage)
                 case Right(liquidityPurchase_opt) =>
                   log.info("our peer accepted our rbf request and will contribute {} to the funding transaction", msg.fundingContribution)
-                  val sharedInput = rbf.parentCommitment.commitmentFormat match {
-                    case _: SimpleTaprootChannelCommitmentFormat => Musig2Input(channelKeys, rbf.parentCommitment)
-                    case _ => Multisig2of2Input(channelKeys, rbf.parentCommitment)
-                  }
                   val fundingParams = InteractiveTxParams(
                     channelId = d.channelId,
                     isInitiator = true,
                     localContribution = txInitRbf.fundingContribution,
                     remoteContribution = msg.fundingContribution,
-                    sharedInput_opt = Some(sharedInput),
+                    sharedInput_opt = Some(SharedFundingInput(channelKeys, rbf.parentCommitment)),
                     remoteFundingPubKey = rbf.latestFundingTx.fundingParams.remoteFundingPubKey,
                     localOutputs = rbf.latestFundingTx.fundingParams.localOutputs,
                     commitmentFormat = rbf.latestFundingTx.fundingParams.commitmentFormat,
@@ -3452,10 +3438,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   private def initiateSplice(cmd: CMD_SPLICE, d: DATA_NORMAL): Either[ChannelException, SpliceInit] = {
     val parentCommitment = d.commitments.latest.commitment
     val targetFeerate = nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing)
-    val sharedInput = parentCommitment.commitmentFormat match {
-      case _: SimpleTaprootChannelCommitmentFormat => Musig2Input(channelKeys, parentCommitment)
-      case _ => Multisig2of2Input(channelKeys, parentCommitment)
-    }
+    val sharedInput = SharedFundingInput(channelKeys, parentCommitment)
     val fundingContribution = InteractiveTxFunder.computeSpliceContribution(
       isInitiator = true,
       sharedInput = sharedInput,

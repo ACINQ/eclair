@@ -95,11 +95,11 @@ object ChannelTlv {
    */
   case class UseFeeCredit(amount: MilliSatoshi) extends OpenDualFundedChannelTlv with SpliceInitTlv
 
-  case class NextLocalNonceTlv(nonce: IndividualNonce) extends OpenChannelTlv with AcceptChannelTlv with ChannelReadyTlv with ChannelReestablishTlv
+  case class NextLocalNonceTlv(nonce: IndividualNonce) extends OpenChannelTlv with AcceptChannelTlv with ChannelReadyTlv
 
   val nextLocalNonceTlvCodec: Codec[NextLocalNonceTlv] = tlvField(publicNonce)
 
-  case class NextLocalNoncesTlv(nonces: Seq[(TxId, IndividualNonce)]) extends OpenChannelTlv with AcceptChannelTlv with ChannelReadyTlv with ChannelReestablishTlv
+  case class NextLocalNoncesTlv(nonces: Seq[(TxId, IndividualNonce)]) extends ChannelReestablishTlv
 
   val nextLocalNoncesTlvCodec: Codec[NextLocalNoncesTlv] = tlvField(list(txId ~ publicNonce).xmap[Seq[(TxId, IndividualNonce)]](_.toSeq, _.toList))
 }
@@ -266,6 +266,11 @@ object ChannelReestablishTlv {
   case class YourLastFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
   case class MyCurrentFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
 
+  /**
+   * When disconnected during an interactive tx session, we'll include a verification nonce for our *current* commitment (using the
+   * session's commitment index) which our peer may need to re-send a commit sig for our current commit tx
+   *
+   */
   case class CurrentCommitNonceTlv(nonce: IndividualNonce) extends ChannelReestablishTlv
 
   object NextFundingTlv {
@@ -319,13 +324,8 @@ object ClosingSignedTlv {
 
   private val feeRange: Codec[FeeRange] = tlvField(("min_fee_satoshis" | satoshi) :: ("max_fee_satoshis" | satoshi))
 
-  case class PartialSignature(partialSignature: ByteVector32) extends ClosingSignedTlv
-
-  private val partialSignature: Codec[PartialSignature] = tlvField(bytes32)
-
   val closingSignedTlvCodec: Codec[TlvStream[ClosingSignedTlv]] = tlvStream(discriminated[ClosingSignedTlv].by(varint)
     .typecase(UInt64(1), feeRange)
-    .typecase(UInt64(6), partialSignature)
   )
 
 }

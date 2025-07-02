@@ -132,9 +132,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
           val localShutdownScript = d.initFundee.localChannelParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
           val localNonce = d.initFundee.channelType.commitmentFormat match {
-            case _: SimpleTaprootChannelCommitmentFormat =>
-              require(open.nexLocalNonce_opt.isDefined, "missing next local nonce")
-              Some(NonceGenerator.verificationNonce(TxId(ByteVector32.Zeroes), channelKeys.fundingKey(fundingTxIndex = 0), 0).publicNonce)
+            case _: SimpleTaprootChannelCommitmentFormat => Some(NonceGenerator.verificationNonce(TxId(ByteVector32.Zeroes), channelKeys.fundingKey(fundingTxIndex = 0), 0).publicNonce)
             case _ => None
           }
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
@@ -288,11 +286,12 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
           // check remote signature validity
           val isRemoveSigValid = fc.sigOrPartialSig match {
-            case psig: ChannelSpendSignature.PartialSignatureWithNonce =>
+            case psig: ChannelSpendSignature.PartialSignatureWithNonce if d.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
               val localNonce = NonceGenerator.verificationNonce(TxId(ByteVector32.Zeroes), fundingKey, 0)
               localCommitTx.checkRemotePartialSignature(fundingKey.publicKey, d.remoteFundingPubKey, psig, localNonce.publicNonce)
-            case sig: ChannelSpendSignature.IndividualSignature =>
+            case sig: ChannelSpendSignature.IndividualSignature if !d.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
               localCommitTx.checkRemoteSig(fundingKey.publicKey, d.remoteFundingPubKey, sig)
+            case _ => false
           }
           isRemoveSigValid match {
             case false => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, fundingTxId, commitmentNumber = 0, localCommitTx.tx), d, None)
@@ -352,11 +351,12 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       val fundingPubkey = channelKeys.fundingKey(fundingTxIndex = 0).publicKey
 
       val isRemoveSigValid = fundingSigned.sigOrPartialSig match {
-        case psig: ChannelSpendSignature.PartialSignatureWithNonce =>
+        case psig: ChannelSpendSignature.PartialSignatureWithNonce if d.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
           val localNonce = NonceGenerator.verificationNonce(TxId(ByteVector32.Zeroes), channelKeys.fundingKey(fundingTxIndex = 0), 0)
           d.localCommitTx.checkRemotePartialSignature(fundingPubkey, d.remoteFundingPubKey, psig, localNonce.publicNonce)
-        case sig: ChannelSpendSignature.IndividualSignature =>
+        case sig: ChannelSpendSignature.IndividualSignature if !d.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
           d.localCommitTx.checkRemoteSig(fundingPubkey, d.remoteFundingPubKey, sig)
+        case _ => false
       }
 
       isRemoveSigValid match {

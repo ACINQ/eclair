@@ -62,6 +62,13 @@ object TxRemoveOutputTlv {
 sealed trait TxCompleteTlv extends Tlv
 
 object TxCompleteTlv {
+  /**
+   * Musig2 nonces exchanged during an interactive tx session
+   *
+   * @param remoteNonce      a verification nonce for the session commitment transaction
+   * @param nextRemoteNonce  a verification nonce that will be added to the channel's nonce map once the session completes
+   * @param fundingNonce_opt an optional nonce to spend the session's shared input
+   */
   case class Nonces(remoteNonce: IndividualNonce, nextRemoteNonce: IndividualNonce, fundingNonce_opt: Option[IndividualNonce]) extends TxCompleteTlv
 
   object Nonces {
