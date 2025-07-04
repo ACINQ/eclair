@@ -149,4 +149,6 @@ object Reputation {
 
     Right(())
   }
+
+  def toEndorsement(confidence: Double): Int = (confidence * endorsementLevels).toInt
 }

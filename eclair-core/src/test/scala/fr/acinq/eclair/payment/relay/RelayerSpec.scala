@@ -48,7 +48,13 @@ import scala.concurrent.duration.DurationInt
 
 class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(nodeParams: NodeParams, relayer: akka.actor.ActorRef, router: TestProbe[Any], register: TestProbe[Any], childActors: ChildActors, paymentHandler: TestProbe[Any], reputationRecorder: TestProbe[ReputationRecorder.Command])
+  case class FixtureParam(nodeParams: NodeParams, relayer: akka.actor.ActorRef, router: TestProbe[Any], register: TestProbe[Any], childActors: ChildActors, paymentHandler: TestProbe[Any], reputationRecorder: TestProbe[ReputationRecorder.Command]) {
+    def receiveConfidence(confidence: Double, endorsement: Int): Unit = {
+      val getConfidence = reputationRecorder.expectMessageType[ReputationRecorder.GetConfidence]
+      assert(getConfidence.upstream.asInstanceOf[Upstream.Hot.Channel].receivedFrom == TestConstants.Alice.nodeParams.nodeId)
+      getConfidence.replyTo ! Reputation.Score(confidence, endorsement)
+    }
+  }
 
   override def withFixture(test: OneArgTest): Outcome = {
     // we are node B in the route A -> B -> C -> ....
@@ -69,14 +75,6 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     relayer ! GetChildActors(probe.ref.toClassic)
     val childActors = probe.expectMessageType[ChildActors]
     withFixture(test.toNoArgTest(FixtureParam(nodeParams, relayer, router, register, childActors, paymentHandler, reputationRecorder)))
-  }
-
-  def setConfidence(f: FixtureParam)(confidence: Double, endorsement: Int): Unit = {
-    import f._
-
-    val getConfidence = reputationRecorder.expectMessageType[ReputationRecorder.GetConfidence]
-    assert(getConfidence.upstream.asInstanceOf[Upstream.Hot.Channel].receivedFrom == TestConstants.Alice.nodeParams.nodeId)
-    getConfidence.replyTo ! Reputation.Score(confidence, endorsement)
   }
 
   val channelId_ab = randomBytes32()
@@ -104,7 +102,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(randomBytes32(), 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None, Reputation.maxEndorsement, None)
     relayer ! RelayForward(add_ab, priv_a.publicKey)
-    setConfidence(f)(0.3, 6)
+    receiveConfidence(0.3, 6)
     register.expectMessageType[Register.Forward[CMD_ADD_HTLC]]
   }
 

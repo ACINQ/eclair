@@ -107,6 +107,8 @@ case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType
 
 case class OutgoingHtlcAdded(add: UpdateAddHtlc, remoteNodeId: PublicKey, upstream: Upstream.Hot, fee: MilliSatoshi)
 
-case class OutgoingHtlcFailed(fail: HtlcFailureMessage)
+sealed trait OutgoingHtlcSettled
 
-case class OutgoingHtlcFulfilled(fulfill: UpdateFulfillHtlc)
+case class OutgoingHtlcFailed(fail: HtlcFailureMessage) extends OutgoingHtlcSettled
+
+case class OutgoingHtlcFulfilled(fulfill: UpdateFulfillHtlc) extends OutgoingHtlcSettled

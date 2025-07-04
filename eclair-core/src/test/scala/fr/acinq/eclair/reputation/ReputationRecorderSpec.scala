@@ -19,6 +19,7 @@ package fr.acinq.eclair.reputation
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
+import akka.testkit.TestKit.awaitCond
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.{OutgoingHtlcAdded, OutgoingHtlcFailed, OutgoingHtlcFulfilled, Upstream}
@@ -59,27 +60,23 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
 
     val remoteNodeId = randomKey().publicKey
 
-    val listener = TestProbe[Any]()
-    testKit.system.eventStream ! EventStream.Subscribe(listener.ref)
-    testKit.system.eventStream ! EventStream.Subscribe(listener.ref)
-    testKit.system.eventStream ! EventStream.Subscribe(listener.ref)
-
     val upstream1 = makeChannelUpstream(originNode, 7)
     reputationRecorder ! GetConfidence(replyTo.ref, upstream1, remoteNodeId, 2000 msat)
     assert(replyTo.expectMessageType[Reputation.Score].confidence == 0)
     val added1 = makeOutgoingHtlcAdded(upstream1, remoteNodeId, 2000 msat)
     testKit.system.eventStream ! EventStream.Publish(added1)
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added1.add))
-    listener.expectMessageType[OutgoingHtlcAdded]
-    listener.expectMessageType[OutgoingHtlcFulfilled]
     val upstream2 = makeChannelUpstream(originNode, 7)
-    reputationRecorder ! GetConfidence(replyTo.ref, upstream2, remoteNodeId, 1000 msat)
-    assert(replyTo.expectMessageType[Reputation.Score].confidence === (2.0 / 4) +- 0.001)
+    awaitCond({
+      reputationRecorder ! GetConfidence(replyTo.ref, upstream2, remoteNodeId, 1000 msat)
+      replyTo.expectMessageType[Reputation.Score].confidence === (2.0 / 4) +- 0.001
+    }, max = 60 seconds)
     val added2 = makeOutgoingHtlcAdded(upstream2, remoteNodeId, 1000 msat)
     testKit.system.eventStream ! EventStream.Publish(added2)
-    listener.expectMessageType[OutgoingHtlcAdded]
-    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 7), remoteNodeId, 3000 msat)
-    assert(replyTo.expectMessageType[Reputation.Score].confidence === (2.0 / 10) +- 0.001)
+    awaitCond({
+      reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 7), remoteNodeId, 3000 msat)
+      replyTo.expectMessageType[Reputation.Score].confidence === (2.0 / 10) +- 0.001
+    }, max = 60 seconds)
     val upstream3 = makeChannelUpstream(originNode, 7)
     reputationRecorder ! GetConfidence(replyTo.ref, upstream3, remoteNodeId, 1000 msat)
     assert(replyTo.expectMessageType[Reputation.Score].confidence === (2.0 / 6) +- 0.001)
@@ -87,12 +84,11 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     testKit.system.eventStream ! EventStream.Publish(added3)
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added3.add))
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFailed(added2.add))
-    listener.expectMessageType[OutgoingHtlcAdded]
-    listener.expectMessageType[OutgoingHtlcFulfilled]
-    listener.expectMessageType[OutgoingHtlcFailed]
     // Not endorsed
-    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 0), remoteNodeId, 1000 msat)
-    assert(replyTo.expectMessageType[Reputation.Score].confidence == 0)
+    awaitCond({
+      reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 0), remoteNodeId, 1000 msat)
+      replyTo.expectMessageType[Reputation.Score].confidence == 0
+    }, max = 60 seconds)
     // Different origin node
     reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(randomKey().publicKey, 7), remoteNodeId, 1000 msat)
     assert(replyTo.expectMessageType[Reputation.Score].confidence == 0)
@@ -106,11 +102,6 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
 
     val remoteNodeId = randomKey().publicKey
 
-    val listener = TestProbe[Any]()
-    testKit.system.eventStream ! EventStream.Subscribe(listener.ref)
-    testKit.system.eventStream ! EventStream.Subscribe(listener.ref)
-    testKit.system.eventStream ! EventStream.Subscribe(listener.ref)
-
     val (a, b, c) = (randomKey().publicKey, randomKey().publicKey, randomKey().publicKey)
 
     val upstream1 = Upstream.Hot.Trampoline(makeChannelUpstream(a, 7, 20000 msat) :: makeChannelUpstream(b, 7, 40000 msat) :: makeChannelUpstream(c, 0, 10000 msat) :: makeChannelUpstream(c, 2, 20000 msat) :: makeChannelUpstream(c, 2, 30000 msat) :: Nil)
@@ -119,27 +110,27 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     val added1 = makeOutgoingHtlcAdded(upstream1, remoteNodeId, 6000 msat)
     testKit.system.eventStream ! EventStream.Publish(added1)
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added1.add))
-    listener.expectMessageType[OutgoingHtlcAdded]
-    listener.expectMessageType[OutgoingHtlcFulfilled]
     val upstream2 = Upstream.Hot.Trampoline(makeChannelUpstream(a, 7, 10000 msat) :: makeChannelUpstream(c, 0, 10000 msat) :: Nil)
-    reputationRecorder ! GetConfidence(replyTo.ref, upstream2, remoteNodeId, 2000 msat)
-    assert(replyTo.expectMessageType[Reputation.Score].confidence === (1.0 / 3) +- 0.001)
+    awaitCond({
+      reputationRecorder ! GetConfidence(replyTo.ref, upstream2, remoteNodeId, 2000 msat)
+      replyTo.expectMessageType[Reputation.Score].confidence === (1.0 / 3) +- 0.001
+    }, max = 60 seconds)
     val added2 = makeOutgoingHtlcAdded(upstream2, remoteNodeId, 2000 msat)
     testKit.system.eventStream ! EventStream.Publish(added2)
-    listener.expectMessageType[OutgoingHtlcAdded]
     val upstream3 = Upstream.Hot.Trampoline(makeChannelUpstream(a, 0, 10000 msat) :: makeChannelUpstream(b, 7, 15000 msat) :: makeChannelUpstream(b, 7, 5000 msat) :: Nil)
-    reputationRecorder ! GetConfidence(replyTo.ref, upstream3, remoteNodeId, 3000 msat)
-    assert(replyTo.expectMessageType[Reputation.Score].confidence == 0)
+    awaitCond({
+      reputationRecorder ! GetConfidence(replyTo.ref, upstream3, remoteNodeId, 3000 msat)
+      replyTo.expectMessageType[Reputation.Score].confidence == 0
+    }, max = 60 seconds)
     val added3 = makeOutgoingHtlcAdded(upstream3, remoteNodeId, 3000 msat)
     testKit.system.eventStream ! EventStream.Publish(added3)
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFailed(added2.add))
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added3.add))
-    listener.expectMessageType[OutgoingHtlcAdded]
-    listener.expectMessageType[OutgoingHtlcFailed]
-    listener.expectMessageType[OutgoingHtlcFulfilled]
 
-    reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(a, 7), remoteNodeId, 1000 msat)
-    assert(replyTo.expectMessageType[Reputation.Score].confidence === (2.0 / 4) +- 0.001)
+    awaitCond({
+      reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(a, 7), remoteNodeId, 1000 msat)
+      replyTo.expectMessageType[Reputation.Score].confidence === (2.0 / 4) +- 0.001
+    }, max = 60 seconds)
     reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(a, 0), remoteNodeId, 1000 msat)
     assert(replyTo.expectMessageType[Reputation.Score].confidence === (1.0 / 3) +- 0.001)
     reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(b, 7), remoteNodeId, 1000 msat)

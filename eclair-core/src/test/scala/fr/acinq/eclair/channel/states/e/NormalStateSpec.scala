@@ -916,6 +916,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CMD_SIGN (going above balance threshold)", Tag(ChannelStateTestsTags.NoPushAmount), Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip), Tag(ChannelStateTestsTags.AdaptMaxHtlcAmount)) { f =>
     import f._
 
+    val listener = TestProbe()
+    systemA.eventStream.subscribe(listener.ref, classOf[OutgoingHtlcAdded])
+    systemA.eventStream.subscribe(listener.ref, classOf[OutgoingHtlcFulfilled])
+
     val aliceListener = TestProbe()
     alice.underlying.system.eventStream.subscribe(aliceListener.ref, classOf[LocalChannelUpdate])
     val bobListener = TestProbe()
@@ -954,8 +958,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 1_000_000_000.msat)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 0.msat)
     val (p1, htlc1) = addHtlc(10_000_000 msat, alice, bob, alice2bob, bob2alice)
+    listener.expectMsgType[OutgoingHtlcAdded]
     crossSign(alice, bob, alice2bob, bob2alice)
     fulfillHtlc(htlc1.id, p1, bob, alice, bob2alice, alice2bob)
+    listener.expectMsgType[OutgoingHtlcFulfilled]
     crossSign(bob, alice, bob2alice, alice2bob)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 990_000_000.msat)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.toLocal == 10_000_000.msat)
@@ -1533,11 +1539,17 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv RevokeAndAck (forward UpdateFailHtlc)") { f =>
     import f._
+    val listener = TestProbe()
+    systemA.eventStream.subscribe(listener.ref, classOf[OutgoingHtlcAdded])
+    systemA.eventStream.subscribe(listener.ref, classOf[OutgoingHtlcFailed])
+
     val (_, htlc) = addHtlc(150000000 msat, alice, bob, alice2bob, bob2alice)
+    listener.expectMsgType[OutgoingHtlcAdded]
     crossSign(alice, bob, alice2bob, bob2alice)
     bob ! CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(PermanentChannelFailure()), None)
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     bob2alice.forward(alice)
+    listener.expectMsgType[OutgoingHtlcFailed]
     bob ! CMD_SIGN()
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)

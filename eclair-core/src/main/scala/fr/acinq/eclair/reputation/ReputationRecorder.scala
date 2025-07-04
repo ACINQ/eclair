@@ -22,7 +22,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.Upstream.Hot
-import fr.acinq.eclair.channel.{OutgoingHtlcAdded, OutgoingHtlcFailed, OutgoingHtlcFulfilled, Upstream}
+import fr.acinq.eclair.channel.{OutgoingHtlcAdded, OutgoingHtlcFailed, OutgoingHtlcFulfilled, OutgoingHtlcSettled, Upstream}
 import fr.acinq.eclair.reputation.ReputationRecorder._
 import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc}
 
@@ -33,15 +33,13 @@ object ReputationRecorder {
   sealed trait Command
   case class GetConfidence(replyTo: ActorRef[Reputation.Score], upstream: Upstream.Hot, downstream: PublicKey, fee: MilliSatoshi) extends Command
   private case class WrappedOutgoingHtlcAdded(added: OutgoingHtlcAdded) extends Command
-  private case class WrappedOutgoingHtlcFailed(failed: OutgoingHtlcFailed) extends Command
-  private case class WrappedOutgoingHtlcFulfilled(fulfilled: OutgoingHtlcFulfilled) extends Command
+  private case class WrappedOutgoingHtlcSettled(settled: OutgoingHtlcSettled) extends Command
   // @formatter:on
 
   def apply(config: Reputation.Config): Behavior[Command] =
     Behaviors.setup(context => {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcAdded))
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcFailed))
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcFulfilled))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcSettled))
       new ReputationRecorder(config).run()
     })
 
@@ -68,7 +66,7 @@ class ReputationRecorder(config: Reputation.Config) {
 
       case GetConfidence(replyTo, upstream: Upstream.Hot.Channel, downstream, fee) =>
         val incomingConfidence = incomingReputations.get(upstream.receivedFrom).map(_.getConfidence(fee, upstream.add.endorsement)).getOrElse(0.0)
-        val endorsement = incomingConfidence.toEndorsement
+        val endorsement = Reputation.toEndorsement(incomingConfidence)
         val outgoingConfidence = outgoingReputations.get(downstream).map(_.getConfidence(fee, endorsement)).getOrElse(0.0)
         replyTo ! Reputation.Score(incomingConfidence min outgoingConfidence, endorsement)
         Behaviors.same
@@ -85,7 +83,7 @@ class ReputationRecorder(config: Reputation.Config) {
                 incomingReputations.get(nodeId).map(_.getConfidence(fee, endorsement)).getOrElse(0.0)
             }
             .min
-        val endorsement = incomingConfidence.toEndorsement
+        val endorsement = Reputation.toEndorsement(incomingConfidence)
         val outgoingConfidence = outgoingReputations.get(downstream).map(_.getConfidence(totalFee, endorsement)).getOrElse(0.0)
         replyTo ! Reputation.Score(incomingConfidence min outgoingConfidence, endorsement)
         Behaviors.same
@@ -109,38 +107,27 @@ class ReputationRecorder(config: Reputation.Config) {
         pending(htlcId) = PendingHtlc(add, upstream, remoteNodeId)
         Behaviors.same
 
-      case WrappedOutgoingHtlcFailed(OutgoingHtlcFailed(fail)) =>
-        val htlcId = fail match {
-          case UpdateFailHtlc(channelId, id, _, _) => HtlcId(channelId, id)
-          case UpdateFailMalformedHtlc(channelId, id, _, _, _) => HtlcId(channelId, id)
+      case WrappedOutgoingHtlcSettled(settled) =>
+        val htlcId = settled match {
+          case OutgoingHtlcFailed(UpdateFailHtlc(channelId, id, _, _)) => HtlcId(channelId, id)
+          case OutgoingHtlcFailed(UpdateFailMalformedHtlc(channelId, id, _, _, _)) => HtlcId(channelId, id)
+          case OutgoingHtlcFulfilled(fulfill) => HtlcId(fulfill.channelId, fulfill.id)
+        }
+        val isSuccess = settled match {
+          case _: OutgoingHtlcFailed => false
+          case _: OutgoingHtlcFulfilled => true
         }
         pending.remove(htlcId).foreach(p => {
           p.upstream match {
             case Hot.Channel(_, _, receivedFrom) =>
-              incomingReputations(receivedFrom) = incomingReputations(receivedFrom).settlePendingHtlc(htlcId, isSuccess = false)
+              incomingReputations(receivedFrom) = incomingReputations(receivedFrom).settlePendingHtlc(htlcId, isSuccess)
             case Hot.Trampoline(received) =>
               received.foreach(channel =>
-                incomingReputations(channel.receivedFrom) = incomingReputations(channel.receivedFrom).settlePendingHtlc(htlcId, isSuccess = false)
+                incomingReputations(channel.receivedFrom) = incomingReputations(channel.receivedFrom).settlePendingHtlc(htlcId, isSuccess)
               )
             case _: Upstream.Local => ()
           }
-          outgoingReputations(p.downstream) = outgoingReputations(p.downstream).settlePendingHtlc(htlcId, isSuccess = false)
-        })
-        Behaviors.same
-
-      case WrappedOutgoingHtlcFulfilled(OutgoingHtlcFulfilled(fulfill)) =>
-        val htlcId = HtlcId(fulfill.channelId, fulfill.id)
-        pending.remove(htlcId).foreach(p => {
-          p.upstream match {
-            case channel: Hot.Channel =>
-              incomingReputations(channel.receivedFrom) = incomingReputations(channel.receivedFrom).settlePendingHtlc(htlcId, isSuccess = true)
-            case trampoline: Hot.Trampoline =>
-              trampoline.received.foreach(channel =>
-                incomingReputations(channel.receivedFrom) = incomingReputations(channel.receivedFrom).settlePendingHtlc(htlcId, isSuccess = true)
-              )
-            case _: Upstream.Local => ()
-          }
-          outgoingReputations(p.downstream) = outgoingReputations(p.downstream).settlePendingHtlc(htlcId, isSuccess = true)
+          outgoingReputations(p.downstream) = outgoingReputations(p.downstream).settlePendingHtlc(htlcId, isSuccess)
         })
         Behaviors.same
     }
