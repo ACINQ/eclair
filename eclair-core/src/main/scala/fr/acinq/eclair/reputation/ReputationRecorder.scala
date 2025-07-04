@@ -56,29 +56,9 @@ object ReputationRecorder {
 }
 
 class ReputationRecorder(config: Reputation.Config) {
-  private val incomingReputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty
-  private val outgoingReputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty
+  private val incomingReputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty.withDefaultValue(Reputation.init(config))
+  private val outgoingReputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty.withDefaultValue(Reputation.init(config))
   private val pending: mutable.Map[HtlcId, PendingHtlc] = mutable.HashMap.empty
-
-  private def incomingReputation(nodeId: PublicKey): Reputation = {
-    incomingReputations.get(nodeId) match {
-      case Some(reputation) => reputation
-      case None =>
-        val reputation = Reputation.init(config)
-        incomingReputations(nodeId) = reputation
-        reputation
-    }
-  }
-
-  private def outgoingReputation(nodeId: PublicKey): Reputation = {
-    outgoingReputations.get(nodeId) match {
-      case Some(reputation) => reputation
-      case None =>
-        val reputation = Reputation.init(config)
-        outgoingReputations(nodeId) = reputation
-        reputation
-    }
-  }
 
   def run(): Behavior[Command] =
     Behaviors.receiveMessage {
@@ -114,18 +94,18 @@ class ReputationRecorder(config: Reputation.Config) {
         val htlcId = HtlcId(add.channelId, add.id)
         upstream match {
           case channel: Hot.Channel =>
-            incomingReputation(channel.receivedFrom).attempt(htlcId, fee, channel.add.endorsement)
+            incomingReputations(channel.receivedFrom) = incomingReputations(channel.receivedFrom).addPendingHtlc(htlcId, fee, channel.add.endorsement)
           case trampoline: Hot.Trampoline =>
             trampoline.received
               .groupMapReduce(_.receivedFrom)(r => (r.add.amountMsat, r.add.endorsement)) {
                 case ((amount1, endorsement1), (amount2, endorsement2)) => (amount1 + amount2, endorsement1 min endorsement2)
               }
               .foreach { case (nodeId, (amount, endorsement)) =>
-                incomingReputation(nodeId).attempt(htlcId, fee * amount.toLong / trampoline.amountIn.toLong, endorsement)
+                incomingReputations(nodeId) = incomingReputations(nodeId).addPendingHtlc(htlcId, fee * amount.toLong / trampoline.amountIn.toLong, endorsement)
               }
           case _: Upstream.Local => ()
         }
-        outgoingReputation(remoteNodeId).attempt(htlcId, fee, add.endorsement)
+        outgoingReputations(remoteNodeId) = outgoingReputations(remoteNodeId).addPendingHtlc(htlcId, fee, add.endorsement)
         pending(htlcId) = PendingHtlc(add, upstream, remoteNodeId)
         Behaviors.same
 
@@ -137,14 +117,14 @@ class ReputationRecorder(config: Reputation.Config) {
         pending.remove(htlcId).foreach(p => {
           p.upstream match {
             case Hot.Channel(_, _, receivedFrom) =>
-              incomingReputation(receivedFrom).record(htlcId, isSuccess = false)
+              incomingReputations(receivedFrom) = incomingReputations(receivedFrom).settlePendingHtlc(htlcId, isSuccess = false)
             case Hot.Trampoline(received) =>
               received.foreach(channel =>
-                incomingReputation(channel.receivedFrom).record(htlcId, isSuccess = false)
+                incomingReputations(channel.receivedFrom) = incomingReputations(channel.receivedFrom).settlePendingHtlc(htlcId, isSuccess = false)
               )
             case _: Upstream.Local => ()
           }
-          outgoingReputation(p.downstream).record(htlcId, isSuccess = false)
+          outgoingReputations(p.downstream) = outgoingReputations(p.downstream).settlePendingHtlc(htlcId, isSuccess = false)
         })
         Behaviors.same
 
@@ -153,14 +133,14 @@ class ReputationRecorder(config: Reputation.Config) {
         pending.remove(htlcId).foreach(p => {
           p.upstream match {
             case channel: Hot.Channel =>
-              incomingReputation(channel.receivedFrom).record(htlcId, isSuccess = true)
+              incomingReputations(channel.receivedFrom) = incomingReputations(channel.receivedFrom).settlePendingHtlc(htlcId, isSuccess = true)
             case trampoline: Hot.Trampoline =>
               trampoline.received.foreach(channel =>
-                incomingReputation(channel.receivedFrom).record(htlcId, isSuccess = true)
+                incomingReputations(channel.receivedFrom) = incomingReputations(channel.receivedFrom).settlePendingHtlc(htlcId, isSuccess = true)
               )
             case _: Upstream.Local => ()
           }
-          outgoingReputation(p.downstream).record(htlcId, isSuccess = true)
+          outgoingReputations(p.downstream) = outgoingReputations(p.downstream).settlePendingHtlc(htlcId, isSuccess = true)
         })
         Behaviors.same
     }
