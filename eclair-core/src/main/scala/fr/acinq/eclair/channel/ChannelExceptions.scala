@@ -34,6 +34,7 @@ case class RemoteError(e: protocol.Error) extends ChannelError
 // @formatter:on
 
 class ChannelException(val channelId: ByteVector32, message: String) extends RuntimeException(message)
+class ChannelJammingException(override val channelId: ByteVector32, message: String) extends ChannelException(channelId, message)
 
 // @formatter:off
 case class InvalidChainHash                        (override val channelId: ByteVector32, local: BlockHash, remote: BlockHash) extends ChannelException(channelId, s"invalid chainHash (local=$local remote=$remote)")
@@ -150,4 +151,6 @@ case class CommandUnavailableInThisState           (override val channelId: Byte
 case class ForbiddenDuringSplice                   (override val channelId: ByteVector32, command: String) extends ChannelException(channelId, s"cannot process $command while splicing")
 case class ForbiddenDuringQuiescence               (override val channelId: ByteVector32, command: String) extends ChannelException(channelId, s"cannot process $command while quiescent")
 case class ConcurrentRemoteSplice                  (override val channelId: ByteVector32) extends ChannelException(channelId, "splice attempt canceled, remote initiated splice before us")
+case class TooManySmallHtlcs                       (override val channelId: ByteVector32, number: Long, below: MilliSatoshi) extends ChannelJammingException(channelId, s"too many small htlcs: $number HTLCs below $below")
+case class ConfidenceTooLow                        (override val channelId: ByteVector32, confidence: Double, occupancy: Double) extends ChannelJammingException(channelId, s"confidence too low: confidence=$confidence occupancy=$occupancy")
 // @formatter:on

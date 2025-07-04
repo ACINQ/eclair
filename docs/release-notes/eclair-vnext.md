@@ -25,6 +25,33 @@ Attribution data also provides hold times from payment relayers, both for fulfil
 Support is enabled by default.
 It can be disabled by setting `eclair.features.option_attribution_data = disabled`.
 
+### Local reputation and HTLC endorsement
+
+To protect against jamming attacks, eclair gives a reputation to its neighbors and uses it to decide if a HTLC should be relayed given how congested the outgoing channel is.
+The reputation is basically how much this node paid us in fees divided by how much they should have paid us for the liquidity and slots that they blocked.
+The reputation is per incoming node and endorsement level.
+The confidence that the HTLC will be fulfilled is transmitted to the next node using the endorsement TLV of the `update_add_htlc` message.
+Note that HTLCs that are considered dangerous are still relayed: this is the first phase of a network-wide experimentation aimed at collecting data.
+
+To configure, edit `eclair.conf`:
+
+```eclair.conf
+// We assign reputations to our peers to prioritize payments during congestion.
+// The reputation is computed as fees paid divided by what should have been paid if all payments were successful.
+eclair.relay.peer-reputation {
+    // Set this parameter to false to disable the reputation algorithm and simply relay the incoming endorsement
+    // value, as described by https://github.com/lightning/blips/blob/master/blip-0004.md,
+    enabled = true
+    // Reputation decays with the following half life to emphasize recent behavior.
+    half-life = 15 days
+    // Payments that stay pending for longer than this get penalized
+    max-relay-duration = 12 seconds
+    // Pending payments are counted as failed, and because they could potentially stay pending for a very long time,
+    // the following multiplier is applied.
+    pending-multiplier = 200 // A pending payment counts as two hundred failed ones.
+}
+```
+
 ### API changes
 
 - `listoffers` now returns more details about each offer.
