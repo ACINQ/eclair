@@ -11,6 +11,7 @@ import fr.acinq.eclair.channel.fsm.Channel.ChannelConf
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -511,8 +512,7 @@ case class Commitment(fundingTxIndex: Long,
     if (allowedHtlcValueInFlight < htlcValueInFlight) {
       return Left(HtlcValueTooHighInFlight(params.channelId, maximum = allowedHtlcValueInFlight, actual = htlcValueInFlight))
     }
-    val maxAcceptedHtlcs = Seq(params.localCommitParams.maxAcceptedHtlcs, params.remoteCommitParams.maxAcceptedHtlcs).min
-    if (maxAcceptedHtlcs < outgoingHtlcs.size) {
+    if (Seq(params.localCommitParams.maxAcceptedHtlcs, params.remoteCommitParams.maxAcceptedHtlcs).min < outgoingHtlcs.size) {
       return Left(TooManyAcceptedHtlcs(params.channelId, maximum = Seq(params.localCommitParams.maxAcceptedHtlcs, params.remoteCommitParams.maxAcceptedHtlcs).min))
     }
 
@@ -531,17 +531,7 @@ case class Commitment(fundingTxIndex: Long,
 
     // Jamming protection
     // Must be the last checks so that they can be ignored for shadow deployment.
-    for ((amountMsat, i) <- outgoingHtlcs.toSeq.map(_.amountMsat).sorted.zipWithIndex) {
-      if ((amountMsat.toLong < 1) || (math.log(amountMsat.toLong.toDouble) * maxAcceptedHtlcs / math.log(params.localParams.maxHtlcValueInFlightMsat.toBigInt.toDouble / maxAcceptedHtlcs) < i)) {
-        return Left(TooManySmallHtlcs(params.channelId, number = i + 1, below = amountMsat))
-      }
-    }
-    val occupancy = (outgoingHtlcs.size.toDouble / maxAcceptedHtlcs).max(htlcValueInFlight.toLong.toDouble / allowedHtlcValueInFlight.toBigInt.toDouble)
-    if (confidence + 0.1 < occupancy) { // We add a 10% tolerance to enable payments from nodes without history and to account for the fact that even at the highest endorsement level we still expect a confidence of less than 93.75%.
-      return Left(ConfidenceTooLow(params.channelId, confidence, occupancy))
-    }
-
-    Right(())
+    Reputation.checkChannelOccupancy(outgoingHtlcs.toSeq, params, confidence)
   }
 
   def canReceiveAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
@@ -912,12 +902,12 @@ case class Commitments(channelParams: ChannelParams,
       return Left(HtlcValueTooSmall(channelId, minimum = htlcMinimum, actual = cmd.amount))
     }
 
-    val add = UpdateAddHtlc(channelId, changes.localNextHtlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.endorsement, cmd.fundingFee_opt)
+    val add = UpdateAddHtlc(channelId, changes.localNextHtlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.reputationScore.endorsement, cmd.fundingFee_opt)
     // we increment the local htlc index and add an entry to the origins map
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
     // we verify that this htlc is allowed in every active commitment
-    val canSendAdds = active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feerates, feeConf, cmd.confidence))
+    val canSendAdds = active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feerates, feeConf, cmd.reputationScore.confidence))
     val result = canSendAdds.collectFirst { case Left(f) if !f.isInstanceOf[ChannelJammingException] => // We ignore jamming protection. TODO: enable jamming protection
         Metrics.dropHtlc(f, Tags.Directions.Outgoing)
         Left(f)

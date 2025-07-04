@@ -148,7 +148,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     // initiator should reject commands that change the commitment once it became quiescent
     val sender1, sender2, sender3 = TestProbe()
     val cmds = Seq(
-      CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, Reputation.maxEndorsement, None, localOrigin(sender1.ref)),
+      CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.maxScore, None, localOrigin(sender1.ref)),
       CMD_UPDATE_FEE(FeeratePerKw(100 sat), replyTo_opt = Some(sender2.ref)),
       CMD_CLOSE(sender3.ref, None, None)
     )
@@ -164,7 +164,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     // both should reject commands that change the commitment while quiescent
     val sender1, sender2, sender3 = TestProbe()
     val cmds = Seq(
-      CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, Reputation.maxEndorsement, None, localOrigin(sender1.ref)),
+      CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.maxScore, None, localOrigin(sender1.ref)),
       CMD_UPDATE_FEE(FeeratePerKw(100 sat), replyTo_opt = Some(sender2.ref)),
       CMD_CLOSE(sender3.ref, None, None)
     )

@@ -48,7 +48,7 @@ eclair.relay.peer-reputation {
     max-relay-duration = 12 seconds
     // Pending payments are counted as failed, and because they could potentially stay pending for a very long time,
     // the following multiplier is applied.
-    pending-multiplier = 200 // A pending payment counts as a thousand failed ones.
+    pending-multiplier = 200 // A pending payment counts as two hundred failed ones.
 }
 ```
 

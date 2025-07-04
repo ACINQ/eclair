@@ -24,6 +24,7 @@ import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.reputation.{Reputation, ReputationRecorder}
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureReason, FundingCreated, FundingSigned, HtlcFailureMessage, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
@@ -147,16 +148,14 @@ case class INPUT_RESTORED(data: PersistentChannelData)
 sealed trait Upstream { def amountIn: MilliSatoshi }
 object Upstream {
   /** We haven't restarted and have full information about the upstream parent(s). */
-  sealed trait Hot extends Upstream {
-    def show: String
-  }
+  sealed trait Hot extends Upstream
   object Hot {
     /** Our node is forwarding a single incoming HTLC. */
     case class Channel(add: UpdateAddHtlc, receivedAt: TimestampMilli, receivedFrom: PublicKey) extends Hot {
       override val amountIn: MilliSatoshi = add.amountMsat
       val expiryIn: CltvExpiry = add.cltvExpiry
 
-      override def show: String = s"Channel(receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, endorsement=${add.endorsement})"
+      override def toString: String = s"Channel(amountIn=$amountIn, receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, endorsement=${add.endorsement})"
     }
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
     case class Trampoline(received: List[Channel]) extends Hot {
@@ -165,7 +164,7 @@ object Upstream {
       val expiryIn: CltvExpiry = received.map(_.add.cltvExpiry).min
       val receivedAt: TimestampMilli = received.map(_.receivedAt).max
 
-      override def show: String = s"Trampoline(${received.map(_.show).mkString(",")})"
+      override def toString: String = s"Trampoline(${received.map(_.toString).mkString(",")})"
     }
   }
 
@@ -189,11 +188,7 @@ object Upstream {
   }
 
   /** Our node is the origin of the payment: there are no matching upstream HTLCs. */
-  case class Local(id: UUID) extends Hot with Cold {
-    override val amountIn: MilliSatoshi = 0 msat
-
-    override def show: String = toString
-  }
+  case class Local(id: UUID) extends Hot with Cold { override val amountIn: MilliSatoshi = 0 msat }
 }
 
 /**
@@ -226,8 +221,7 @@ final case class CMD_ADD_HTLC(replyTo: ActorRef,
                               cltvExpiry: CltvExpiry,
                               onion: OnionRoutingPacket,
                               nextPathKey_opt: Option[PublicKey],
-                              confidence: Double,
-                              endorsement: Int,
+                              reputationScore: Reputation.Score,
                               fundingFee_opt: Option[LiquidityAds.FundingFee],
                               origin: Origin.Hot,
                               commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
@@ -268,10 +262,6 @@ final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, 
 final case class CMD_GET_CHANNEL_STATE(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GET_CHANNEL_DATA(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GET_CHANNEL_INFO(replyTo: akka.actor.typed.ActorRef[RES_GET_CHANNEL_INFO]) extends Command
-
-case class OutgoingHtlcAdded(add: UpdateAddHtlc, remoteNodeId: PublicKey, upstream: Upstream.Hot, fee: MilliSatoshi)
-case class OutgoingHtlcFailed(fail: HtlcFailureMessage)
-case class OutgoingHtlcFulfilled(fulfill: UpdateFulfillHtlc)
 
 /*
        88888888b.  8888888888  .d8888b.  88888888b.    ,ad8888ba,   888b      88  .d8888b.  8888888888  .d8888b.

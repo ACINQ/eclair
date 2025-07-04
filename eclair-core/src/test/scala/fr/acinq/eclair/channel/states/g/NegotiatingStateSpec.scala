@@ -134,7 +134,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     aliceClose(f)
     alice2bob.expectMsgType[ClosingSigned]
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(sender.ref, 5000000000L msat, randomBytes32(), CltvExpiry(300000), TestConstants.emptyOnionPacket, None, 1.0, Reputation.maxEndorsement, None, localOrigin(sender.ref))
+    val add = CMD_ADD_HTLC(sender.ref, 5000000000L msat, randomBytes32(), CltvExpiry(300000), TestConstants.emptyOnionPacket, None, Reputation.maxScore, None, localOrigin(sender.ref))
     alice ! add
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(RES_ADD_FAILED(add, error, None))

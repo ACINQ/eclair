@@ -84,7 +84,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             case Hot.Trampoline(received) => received.map(_.add.endorsement).min
             case Upstream.Local(_) => Reputation.maxEndorsement
           }
-          self ! ReputationRecorder.Confidence(1.0, endorsement)
+          self ! Reputation.Score(1.0, endorsement)
       }
       goto(WAITING_FOR_CONFIDENCE) using WaitingForConfidence(request, failures, ignore, route)
 
@@ -94,8 +94,8 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   }
 
   when(WAITING_FOR_CONFIDENCE) {
-    case Event(ReputationRecorder.Confidence(confidence, endorsement), WaitingForConfidence(request, failures, ignore, route)) =>
-      OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(self, cfg.upstream), paymentHash, route, request.recipient, confidence, endorsement) match {
+    case Event(score: Reputation.Score, WaitingForConfidence(request, failures, ignore, route)) =>
+      OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(self, cfg.upstream), paymentHash, route, request.recipient, score) match {
         case Right(payment) =>
           register ! Register.ForwardShortId(self.toTyped[Register.ForwardShortIdFailure[CMD_ADD_HTLC]], payment.outgoingChannel, payment.cmd)
           goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(request, payment.cmd, failures, payment.sharedSecrets, ignore, route)

@@ -97,7 +97,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val reputationRecorder = system.spawnAnonymous(Behaviors.receiveMessage[ReputationRecorder.GetConfidence](getConfidence => {
       assert(getConfidence.upstream.isInstanceOf[Upstream.Local])
       assert(getConfidence.downstream == b)
-      getConfidence.replyTo ! ReputationRecorder.Confidence(1.0, Reputation.maxEndorsement)
+      getConfidence.replyTo ! Reputation.maxScore
       Behaviors.same
     }))
     val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, cfg, routerForwarder.ref, register.ref, Some(reputationRecorder)))

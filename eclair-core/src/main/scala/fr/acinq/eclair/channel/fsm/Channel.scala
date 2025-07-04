@@ -516,7 +516,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
           val relayFee = nodeFee(d.channelUpdate.relayFees, add.amountMsat)
           context.system.eventStream.publish(OutgoingHtlcAdded(add, remoteNodeId, c.origin.upstream, relayFee))
-          log.info("OutgoingHtlcAdded: channelId={}, id={}, endorsement={}, remoteNodeId={}, upstream={}, fee={}", Array(add.channelId.toHex, add.id, add.endorsement, remoteNodeId.toHex, c.origin.upstream.show, relayFee))
+          log.info("OutgoingHtlcAdded: channelId={}, id={}, endorsement={}, remoteNodeId={}, upstream={}, fee={}", Array(add.channelId.toHex, add.id, add.endorsement, remoteNodeId.toHex, c.origin.upstream.toString, relayFee))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending add
         case Left(cause) => handleAddHtlcCommandError(c, cause, Some(d.channelUpdate))
       }

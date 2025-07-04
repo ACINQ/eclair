@@ -35,7 +35,7 @@ import fr.acinq.eclair.io.{Peer, PeerReadyManager, Switchboard}
 import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentPacketSpec}
-import fr.acinq.eclair.reputation.ReputationRecorder
+import fr.acinq.eclair.reputation.{Reputation, ReputationRecorder}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.BlindedRouteData.PaymentRelayData
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
@@ -101,7 +101,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     inside(fwd.message) { case add: CMD_ADD_HTLC =>
       assert(add.amount == outAmount)
       assert(add.cltvExpiry == outExpiry)
-      assert(add.endorsement == outEndorsement)
+      assert(add.reputationScore.endorsement == outEndorsement)
     }
     assert(fwd.channelId == channelId)
     fwd
@@ -112,7 +112,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val getConfidence = reputationRecorder.expectMessageType[ReputationRecorder.GetConfidence]
     assert(getConfidence.upstream.asInstanceOf[Upstream.Hot.Channel].receivedFrom == TestConstants.Alice.nodeParams.nodeId)
-    getConfidence.replyTo ! ReputationRecorder.Confidence(confidence, endorsement)
+    getConfidence.replyTo ! Reputation.Score(confidence, endorsement)
   }
 
   def basicRelayTest(f: FixtureParam)(relayPayloadScid: ShortChannelId, lcu: LocalChannelUpdate, success: Boolean): Unit = {

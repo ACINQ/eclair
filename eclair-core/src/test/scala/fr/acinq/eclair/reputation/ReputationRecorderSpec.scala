@@ -33,11 +33,11 @@ import scala.concurrent.duration.DurationInt
 class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
   val originNode: PublicKey = randomKey().publicKey
 
-  case class FixtureParam(config: Reputation.Config, reputationRecorder: ActorRef[Command], replyTo: TestProbe[Confidence])
+  case class FixtureParam(config: Reputation.Config, reputationRecorder: ActorRef[Command], replyTo: TestProbe[Reputation.Score])
 
   override def withFixture(test: OneArgTest): Outcome = {
     val config = Reputation.Config(enabled = true, 1 day, 10 seconds, 2)
-    val replyTo = TestProbe[Confidence]("confidence")
+    val replyTo = TestProbe[Reputation.Score]("confidence")
     val reputationRecorder = testKit.spawn(ReputationRecorder(config))
     withFixture(test.toNoArgTest(FixtureParam(config, reputationRecorder.ref, replyTo)))
   }
@@ -66,7 +66,7 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
 
     val upstream1 = makeChannelUpstream(originNode, 7)
     reputationRecorder ! GetConfidence(replyTo.ref, upstream1, remoteNodeId, 2000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence == 0)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence == 0)
     val added1 = makeOutgoingHtlcAdded(upstream1, remoteNodeId, 2000 msat)
     testKit.system.eventStream ! EventStream.Publish(added1)
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added1.add))
@@ -74,15 +74,15 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     listener.expectMessageType[OutgoingHtlcFulfilled]
     val upstream2 = makeChannelUpstream(originNode, 7)
     reputationRecorder ! GetConfidence(replyTo.ref, upstream2, remoteNodeId, 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence === (2.0 / 4) +- 0.001)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence === (2.0 / 4) +- 0.001)
     val added2 = makeOutgoingHtlcAdded(upstream2, remoteNodeId, 1000 msat)
     testKit.system.eventStream ! EventStream.Publish(added2)
     listener.expectMessageType[OutgoingHtlcAdded]
     reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 7), remoteNodeId, 3000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence === (2.0 / 10) +- 0.001)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence === (2.0 / 10) +- 0.001)
     val upstream3 = makeChannelUpstream(originNode, 7)
     reputationRecorder ! GetConfidence(replyTo.ref, upstream3, remoteNodeId, 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence === (2.0 / 6) +- 0.001)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence === (2.0 / 6) +- 0.001)
     val added3 = makeOutgoingHtlcAdded(upstream3, remoteNodeId, 1000 msat)
     testKit.system.eventStream ! EventStream.Publish(added3)
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added3.add))
@@ -92,13 +92,13 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     listener.expectMessageType[OutgoingHtlcFailed]
     // Not endorsed
     reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 0), remoteNodeId, 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence == 0)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence == 0)
     // Different origin node
     reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(randomKey().publicKey, 7), remoteNodeId, 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence == 0)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence == 0)
     // Very large HTLC
     reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 7), remoteNodeId, 100000000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence === 0.0 +- 0.001)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence === 0.0 +- 0.001)
   }
 
   test("trampoline relay") { f =>
@@ -115,7 +115,7 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
 
     val upstream1 = Upstream.Hot.Trampoline(makeChannelUpstream(a, 7, 20000 msat) :: makeChannelUpstream(b, 7, 40000 msat) :: makeChannelUpstream(c, 0, 10000 msat) :: makeChannelUpstream(c, 2, 20000 msat) :: makeChannelUpstream(c, 2, 30000 msat) :: Nil)
     reputationRecorder ! GetConfidence(replyTo.ref, upstream1, remoteNodeId, 12000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence == 0)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence == 0)
     val added1 = makeOutgoingHtlcAdded(upstream1, remoteNodeId, 6000 msat)
     testKit.system.eventStream ! EventStream.Publish(added1)
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added1.add))
@@ -123,13 +123,13 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     listener.expectMessageType[OutgoingHtlcFulfilled]
     val upstream2 = Upstream.Hot.Trampoline(makeChannelUpstream(a, 7, 10000 msat) :: makeChannelUpstream(c, 0, 10000 msat) :: Nil)
     reputationRecorder ! GetConfidence(replyTo.ref, upstream2, remoteNodeId, 2000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence === (1.0 / 3) +- 0.001)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence === (1.0 / 3) +- 0.001)
     val added2 = makeOutgoingHtlcAdded(upstream2, remoteNodeId, 2000 msat)
     testKit.system.eventStream ! EventStream.Publish(added2)
     listener.expectMessageType[OutgoingHtlcAdded]
     val upstream3 = Upstream.Hot.Trampoline(makeChannelUpstream(a, 0, 10000 msat) :: makeChannelUpstream(b, 7, 15000 msat) :: makeChannelUpstream(b, 7, 5000 msat) :: Nil)
     reputationRecorder ! GetConfidence(replyTo.ref, upstream3, remoteNodeId, 3000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence == 0)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence == 0)
     val added3 = makeOutgoingHtlcAdded(upstream3, remoteNodeId, 3000 msat)
     testKit.system.eventStream ! EventStream.Publish(added3)
     testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFailed(added2.add))
@@ -139,14 +139,14 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     listener.expectMessageType[OutgoingHtlcFulfilled]
 
     reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(a, 7), remoteNodeId, 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence === (2.0 / 4) +- 0.001)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence === (2.0 / 4) +- 0.001)
     reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(a, 0), remoteNodeId, 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence === (1.0 / 3) +- 0.001)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence === (1.0 / 3) +- 0.001)
     reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(b, 7), remoteNodeId, 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence === (4.0 / 6) +- 0.001)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence === (4.0 / 6) +- 0.001)
     reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(b, 0), remoteNodeId, 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence == 0.0)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence == 0.0)
     reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(c, 0), remoteNodeId, 1000 msat)
-    assert(replyTo.expectMessageType[Confidence].confidence === (3.0 / 5) +- 0.001)
+    assert(replyTo.expectMessageType[Reputation.Score].confidence === (3.0 / 5) +- 0.001)
   }
 }

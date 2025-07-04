@@ -31,17 +31,11 @@ import scala.collection.mutable
 object ReputationRecorder {
   // @formatter:off
   sealed trait Command
-  case class GetConfidence(replyTo: ActorRef[Confidence], upstream: Upstream.Hot, downstream: PublicKey, fee: MilliSatoshi) extends Command
+  case class GetConfidence(replyTo: ActorRef[Reputation.Score], upstream: Upstream.Hot, downstream: PublicKey, fee: MilliSatoshi) extends Command
   private case class WrappedOutgoingHtlcAdded(added: OutgoingHtlcAdded) extends Command
   private case class WrappedOutgoingHtlcFailed(failed: OutgoingHtlcFailed) extends Command
   private case class WrappedOutgoingHtlcFulfilled(fulfilled: OutgoingHtlcFulfilled) extends Command
   // @formatter:on
-
-  /**
-   * @param confidence  Confidence that the outgoing HTLC will succeed (takes into account both upstream and downstream reputation).
-   * @param endorsement Endorsement level to set for the outgoing HTLC (takes into account upstream reputation only).
-   */
-  case class Confidence(confidence: Double, endorsement: Int)
 
   def apply(config: Reputation.Config): Behavior[Command] =
     Behaviors.setup(context => {
@@ -89,14 +83,14 @@ class ReputationRecorder(config: Reputation.Config) {
   def run(): Behavior[Command] =
     Behaviors.receiveMessage {
       case GetConfidence(replyTo, _: Upstream.Local, _, _) =>
-        replyTo ! Confidence(1.0, Reputation.maxEndorsement)
+        replyTo ! Reputation.Score(1.0, Reputation.maxEndorsement)
         Behaviors.same
 
       case GetConfidence(replyTo, upstream: Upstream.Hot.Channel, downstream, fee) =>
         val incomingConfidence = incomingReputations.get(upstream.receivedFrom).map(_.getConfidence(fee, upstream.add.endorsement)).getOrElse(0.0)
         val endorsement = incomingConfidence.toEndorsement
         val outgoingConfidence = outgoingReputations.get(downstream).map(_.getConfidence(fee, endorsement)).getOrElse(0.0)
-        replyTo ! Confidence(incomingConfidence min outgoingConfidence, endorsement)
+        replyTo ! Reputation.Score(incomingConfidence min outgoingConfidence, endorsement)
         Behaviors.same
 
       case GetConfidence(replyTo, upstream: Upstream.Hot.Trampoline, downstream, totalFee) =>
@@ -113,7 +107,7 @@ class ReputationRecorder(config: Reputation.Config) {
             .min
         val endorsement = incomingConfidence.toEndorsement
         val outgoingConfidence = outgoingReputations.get(downstream).map(_.getConfidence(totalFee, endorsement)).getOrElse(0.0)
-        replyTo ! Confidence(incomingConfidence min outgoingConfidence, endorsement)
+        replyTo ! Reputation.Score(incomingConfidence min outgoingConfidence, endorsement)
         Behaviors.same
 
       case WrappedOutgoingHtlcAdded(OutgoingHtlcAdded(add, remoteNodeId, upstream, fee)) =>
