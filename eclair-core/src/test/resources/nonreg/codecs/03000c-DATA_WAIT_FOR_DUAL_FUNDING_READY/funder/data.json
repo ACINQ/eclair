@@ -80,6 +80,7 @@
       "remoteFunding" : {
         "status" : "locked"
       },
+      "commitmentFormat" : "anchor_outputs",
       "localCommitParams" : {
         "dustLimit" : 1100,
         "htlcMinimum" : 0,

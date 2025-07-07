@@ -115,6 +115,8 @@ object Transactions {
     override val htlcOfferedPenaltyWeight = 572
     override val htlcReceivedPenaltyWeight = 577
     override val claimHtlcPenaltyWeight = 484
+
+    override def toString: String = "legacy"
   }
 
   /**
@@ -149,13 +151,17 @@ object Transactions {
    * Don't use this commitment format unless you know what you're doing!
    * See https://lists.linuxfoundation.org/pipermail/lightning-dev/2020-September/002796.html for details.
    */
-  case object UnsafeLegacyAnchorOutputsCommitmentFormat extends AnchorOutputsCommitmentFormat
+  case object UnsafeLegacyAnchorOutputsCommitmentFormat extends AnchorOutputsCommitmentFormat {
+    override def toString: String = "unsafe_anchor_outputs"
+  }
 
   /**
    * This commitment format removes the fees from the pre-signed 2nd-stage htlc transactions to fix the fee inflating
    * attack against [[UnsafeLegacyAnchorOutputsCommitmentFormat]].
    */
-  case object ZeroFeeHtlcTxAnchorOutputsCommitmentFormat extends AnchorOutputsCommitmentFormat
+  case object ZeroFeeHtlcTxAnchorOutputsCommitmentFormat extends AnchorOutputsCommitmentFormat {
+    override def toString: String = "anchor_outputs"
+  }
 
   sealed trait TaprootCommitmentFormat extends CommitmentFormat
 
@@ -180,9 +186,13 @@ object Transactions {
     override val claimHtlcPenaltyWeight = 396
   }
 
-  case object LegacySimpleTaprootChannelCommitmentFormat extends SimpleTaprootChannelCommitmentFormat
+  case object LegacySimpleTaprootChannelCommitmentFormat extends SimpleTaprootChannelCommitmentFormat {
+    override def toString: String = "unsafe_simple_taproot"
+  }
 
-  case object ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat extends SimpleTaprootChannelCommitmentFormat
+  case object ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat extends SimpleTaprootChannelCommitmentFormat {
+    override def toString: String = "simple_taproot"
+  }
 
   case class InputInfo(outPoint: OutPoint, txOut: TxOut)
 

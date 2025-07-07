@@ -65,6 +65,7 @@
       "remoteFunding" : {
         "status" : "locked"
       },
+      "commitmentFormat" : "legacy",
       "localCommitParams" : {
         "dustLimit" : 546,
         "htlcMinimum" : 1,

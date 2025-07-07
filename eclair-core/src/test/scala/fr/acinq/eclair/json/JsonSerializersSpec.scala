@@ -196,6 +196,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "fundingAmount": 150000,
         |         "localFunding": { "status":"unconfirmed" },
         |         "remoteFunding": { "status":"locked" },
+        |         "commitmentFormat": "legacy",
         |         "localCommitParams": {
         |           "dustLimit": 546,
         |           "htlcMinimum": 1,

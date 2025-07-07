@@ -85,6 +85,7 @@
       "remoteFunding" : {
         "status" : "not-locked"
       },
+      "commitmentFormat" : "legacy",
       "localCommitParams" : {
         "dustLimit" : 1000,
         "htlcMinimum" : 1000,
@@ -135,6 +136,7 @@
       "remoteFunding" : {
         "status" : "not-locked"
       },
+      "commitmentFormat" : "legacy",
       "localCommitParams" : {
         "dustLimit" : 1000,
         "htlcMinimum" : 1000,
@@ -185,6 +187,7 @@
       "remoteFunding" : {
         "status" : "not-locked"
       },
+      "commitmentFormat" : "legacy",
       "localCommitParams" : {
         "dustLimit" : 1000,
         "htlcMinimum" : 1000,
