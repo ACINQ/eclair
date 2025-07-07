@@ -19,9 +19,8 @@ package fr.acinq.eclair.reputation
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.channel.{ChannelJammingException, ChannelParams, ConfidenceTooLow, TooManySmallHtlcs}
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{MilliSatoshi, TimestampMilli, UInt64}
+import fr.acinq.eclair.{MilliSatoshi, TimestampMilli}
 
-import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
 
 /**
@@ -128,7 +127,7 @@ object Reputation {
     val maxAcceptedHtlcs = Seq(params.localCommitParams.maxAcceptedHtlcs, params.remoteCommitParams.maxAcceptedHtlcs).min
 
     for ((amountMsat, i) <- outgoingHtlcs.map(_.amountMsat).sorted.zipWithIndex) {
-      // We want to allow some many small HTLCs but still keep slots for larger ones.
+      // We want to allow some small HTLCs but still keep slots for larger ones.
       // We never want to reject HTLCs of size above `maxHtlcAmount / maxAcceptedHtlcs` as too small because we want to allow filling all the slots with HTLCs of equal sizes.
       // We use exponentially spaced thresholds in between.
       if (amountMsat.toLong < 1 || amountMsat.toLong.toDouble < math.pow(params.maxHtlcAmount.toLong.toDouble / maxAcceptedHtlcs, i / maxAcceptedHtlcs)) {

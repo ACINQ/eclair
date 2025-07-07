@@ -907,23 +907,26 @@ case class Commitments(channelParams: ChannelParams,
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
     // we verify that this htlc is allowed in every active commitment
-    val canSendAdds = active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feerates, feeConf, cmd.reputationScore.confidence))
-    val result = canSendAdds.collectFirst { case Left(f) if !f.isInstanceOf[ChannelJammingException] => // We ignore jamming protection. TODO: enable jamming protection
-        Metrics.dropHtlc(f, Tags.Directions.Outgoing)
-        Left(f)
-      }.getOrElse(Right(copy(changes = changes1, originChannels = originChannels1), add))
-    // Jamming protection is disabled but we still log which HTLCs would be dropped if it was enabled.
-    if (result.isRight) {
-      canSendAdds.collectFirst {
-        case Left(f: TooManySmallHtlcs) =>
-          log.info("TooManySmallHtlcs: {} outgoing HTLCs are below {}}", f.number, f.below)
-          Metrics.dropHtlc(f, Tags.Directions.Outgoing)
-        case Left(f: ConfidenceTooLow) =>
-          log.info("ConfidenceTooLow: confidence is {}% while channel is {}% full", (100 * f.confidence).toInt, (100 * f.occupancy).toInt)
-          Metrics.dropHtlc(f, Tags.Directions.Outgoing)
+    val failures = active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feerates, feeConf, cmd.reputationScore.confidence)).collect { case Left(f) => f }
+    if (failures.isEmpty) {
+      Right(copy(changes = changes1, originChannels = originChannels1), add)
+    } else if (failures.forall(_.isInstanceOf[ChannelJammingException])) {
+      // We ignore jamming protection for now, but we log which HTLCs would be dropped if it was enabled.
+      val failure = failures.collectFirst { case f: ChannelJammingException => f }.get
+      Metrics.dropHtlc(failure, Tags.Directions.Outgoing)
+      failure match {
+        case f: TooManySmallHtlcs => log.info("TooManySmallHtlcs: {} outgoing HTLCs are below {}", f.number, f.below)
+        case f: ConfidenceTooLow => log.info("ConfidenceTooLow: confidence is {}% while channel is {}% full", (100 * f.confidence).toInt, (100 * f.occupancy).toInt)
+        case _ => ()
       }
+      Right(copy(changes = changes1, originChannels = originChannels1), add)
+    } else {
+      // In most cases, the same failure will be returned for every commitment. Even if that's not the case, we can only
+      // send a single failure message to our peer, so we use the one that applies to the most recent active commitment.
+      val failure = failures.filterNot(_.isInstanceOf[ChannelJammingException]).head
+      Metrics.dropHtlc(failure, Tags.Directions.Outgoing)
+      Left(failure)
     }
-    result
   }
 
   def receiveAdd(add: UpdateAddHtlc, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Commitments] = {
