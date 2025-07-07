@@ -9,7 +9,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.using
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx, ClaimLocalAnchorTx, ClaimRemoteAnchorTx}
+import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx, ClaimRemoteAnchorTx}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck}
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
@@ -45,7 +45,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       toLocal = (TestConstants.fundingSatoshis - TestConstants.initiatorPushAmount - 30_000_000.msat).truncateToSatoshi,
       htlcs = 0 sat, // outgoing HTLCs are considered paid
     )
-    assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NORMAL])).normal == expected1)
+    assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NORMAL]), recentlySpentInputs = Set.empty).normal == expected1)
 
     // We add 3 identical incoming htlcs Bob -> Alice.
     addHtlc(20_000_000 msat, bob, alice, bob2alice, alice2bob)
@@ -53,7 +53,12 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     addHtlc(20_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     val expected2 = expected1.copy(htlcs = 60_000 sat)
-    assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NORMAL])).normal == expected2)
+    assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NORMAL]), recentlySpentInputs = Set.empty).normal == expected2)
+
+    // We add our balance to an existing off-chain balance.
+    val previous = OffChainBalance(normal = MainAndHtlcBalance(toLocal = 100_000 sat, htlcs = 25_000 sat))
+    val expected3 = expected2.copy(toLocal = expected2.toLocal + 100_000.sat, htlcs = 85_000 sat)
+    assert(previous.addChannelBalance(alice.stateData.asInstanceOf[DATA_NORMAL], recentlySpentInputs = Set.empty).normal == expected3)
   }
 
   test("take in-flight signed fulfills into account") { f =>
@@ -69,7 +74,27 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       toLocal = TestConstants.initiatorPushAmount.truncateToSatoshi,
       htlcs = htlc.amountMsat.truncateToSatoshi
     )
-    assert(CheckBalance.computeOffChainBalance(Seq(bob.stateData.asInstanceOf[DATA_NORMAL])).normal == expected)
+    assert(CheckBalance.computeOffChainBalance(Seq(bob.stateData.asInstanceOf[DATA_NORMAL]), recentlySpentInputs = Set.empty).normal == expected)
+  }
+
+  test("channel closing with unpublished closing tx", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+    import f._
+
+    mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+    val expected = MainAndHtlcBalance(
+      toLocal = (TestConstants.fundingSatoshis - TestConstants.initiatorPushAmount).truncateToSatoshi,
+      htlcs = 0 sat,
+    )
+    assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE]), recentlySpentInputs = Set.empty).negotiating == expected)
+  }
+
+  test("channel closing with published closing tx", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+    import f._
+
+    mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+    val closingTxInput = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].commitments.latest.commitInput.outPoint
+    val expected = MainAndHtlcBalance(toLocal = 0 sat, htlcs = 0 sat)
+    assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE]), recentlySpentInputs = Set(closingTxInput)).negotiating == expected)
   }
 
   test("channel closed with remote commit tx", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -107,14 +132,22 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     )
     // We add our main balance and the amount of the incoming HTLCs.
     val expected1 = balance.copy(closing = MainAndHtlcBalance(toLocal = 50_000_000.sat + mainAmount, htlcs = 100_000.sat + 50_000.sat + 55_000.sat))
-    val balance1 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING])
+    val balance1 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = Set.empty)
     assert(balance1 == expected1)
+    // When our transactions are in the mempool or recently confirmed, we stop including them in our off-chain balance.
+    val expected2 = balance.copy(closing = MainAndHtlcBalance(toLocal = 50_000_000.sat, htlcs = 100_000.sat + 50_000.sat + 55_000.sat))
+    val balance2 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = Set(claimMain.input))
+    assert(balance2 == expected2)
+    val htlcOutpoint = claimHtlcTxs.collectFirst { case tx: ClaimHtlcSuccessTx if tx.htlcId == htlcb.id => tx.input.outPoint }.get
+    val expected3 = balance.copy(closing = MainAndHtlcBalance(toLocal = 50_000_000.sat, htlcs = 100_000.sat + 55_000.sat))
+    val balance3 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = Set(claimMain.input, htlcOutpoint))
+    assert(balance3 == expected3)
     // When our HTLC transaction confirms, we stop including it in our off-chain balance: it appears in our on-chain balance.
     alice ! WatchTxConfirmedTriggered(BlockHeight(601_000), 2, claimHtlcTxs.collectFirst { case tx: ClaimHtlcSuccessTx => tx }.get.tx)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.irrevocablySpent.size == 2)
-    val expected2 = balance.copy(closing = MainAndHtlcBalance(toLocal = 50_000_000.sat + mainAmount, htlcs = 100_000.sat + 55_000.sat))
-    val balance2 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING])
-    assert(balance2 == expected2)
+    val expected4 = balance.copy(closing = MainAndHtlcBalance(toLocal = 50_000_000.sat + mainAmount, htlcs = 100_000.sat + 55_000.sat))
+    val balance4 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = Set.empty)
+    assert(balance4 == expected4)
   }
 
   test("channel closed with next remote commit tx", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -154,8 +187,12 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     )
     // We add our main balance and the amount of the remaining incoming HTLC.
     val expected1 = balance.copy(closing = MainAndHtlcBalance(toLocal = 20_000_000.sat + mainAmount, htlcs = 50_000.sat))
-    val balance1 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING])
+    val balance1 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = Set.empty)
     assert(balance1 == expected1)
+    // We deduplicate our main balance with our on-chain balance.
+    val expected2 = balance.copy(closing = MainAndHtlcBalance(toLocal = 20_000_000.sat, htlcs = 50_000.sat))
+    val balance2 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = Set(claimMain.input))
+    assert(balance2 == expected2)
   }
 
   test("channel closed with local commit tx") { f =>
@@ -188,8 +225,12 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     )
     // We add our main balance and the amount of the incoming HTLCs.
     val expected1 = balance.copy(closing = MainAndHtlcBalance(toLocal = 250_000.sat + mainBalance, htlcs = 50_000.sat + 35_000.sat + 30_000.sat + 25_000.sat))
-    val balance1 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING])
+    val balance1 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = Set.empty)
     assert(balance1 == expected1)
+    // If our main transaction is published, we don't include it.
+    val expected1b = balance.copy(closing = MainAndHtlcBalance(toLocal = 250_000.sat, htlcs = 50_000.sat + 35_000.sat + 30_000.sat + 25_000.sat))
+    val balance1b = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = mainTx.txIn.map(_.outPoint).toSet)
+    assert(balance1b == expected1b)
 
     // The incoming HTLCs for which Alice has the preimage confirm: we keep including them until the 3rd-stage transaction confirms.
     assert(localClosingTxs.htlcSuccessTxs.size == 2)
@@ -200,7 +241,8 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       htlcDelayedTx
     })
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.exists(_.htlcDelayedOutputs.size == 2))
-    assert(balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING]) == expected1)
+    assert(balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = Set.empty) == expected1)
+    assert(balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = mainTx.txIn.map(_.outPoint).toSet) == expected1b)
 
     // Bob claims the remaining incoming HTLC using his HTLC-timeout transaction: we remove it from our balance.
     val (remoteCommitPublished, remoteClosingTxs) = remoteClose(localCommitPublished.commitTx, bob, bob2blockchain, htlcTimeoutCount = 3)
@@ -211,21 +253,26 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchTxConfirmedTriggered(BlockHeight(760_010), 0, bobHtlcTimeoutTx)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.exists(_.irrevocablySpent.contains(bobHtlcTimeoutTx.txIn.head.outPoint)))
     val expected2 = balance.copy(closing = MainAndHtlcBalance(toLocal = 250_000.sat + mainBalance, htlcs = 50_000.sat + 30_000.sat + 25_000.sat))
-    val balance2 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING])
+    val balance2 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = Set.empty)
     assert(balance2 == expected2)
+
+    // Alice's 3rd-stage transactions are published in our mempool: we stop including them in our off-chain balance, they will appear in our on-chain balance.
+    val expected3 = balance.copy(closing = MainAndHtlcBalance(toLocal = 250_000.sat + mainBalance, htlcs = 50_000.sat))
+    val balance3 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = htlcDelayedTxs.map(_.input).toSet)
+    assert(balance3 == expected3)
 
     // Alice's 3rd-stage transactions confirm: we stop including them in our off-chain balance, they will appear in our on-chain balance.
     htlcDelayedTxs.foreach(txInfo => alice ! WatchTxConfirmedTriggered(BlockHeight(765_000), 3, txInfo.tx))
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.exists(lcp => htlcDelayedTxs.map(_.input).forall(o => lcp.irrevocablySpent.contains(o))))
-    val expected3 = balance.copy(closing = MainAndHtlcBalance(toLocal = 250_000.sat + mainBalance, htlcs = 50_000.sat))
-    val balance3 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING])
-    assert(balance3 == expected3)
+    val expected4 = balance.copy(closing = MainAndHtlcBalance(toLocal = 250_000.sat + mainBalance, htlcs = 50_000.sat))
+    val balance4 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = Set.empty)
+    assert(balance4 == expected4)
 
     // Alice's main transaction confirms: we stop including it in our off-chain balance, it will appear in our on-chain balance.
     alice ! WatchTxConfirmedTriggered(BlockHeight(765_100), 2, mainTx)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.exists(_.irrevocablySpent.contains(mainTx.txIn.head.outPoint)))
-    val balance4 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING])
-    assert(balance4 == balance)
+    val balance5 = balance.addChannelBalance(alice.stateData.asInstanceOf[DATA_CLOSING], recentlySpentInputs = Set.empty)
+    assert(balance5 == balance)
   }
 
   ignore("compute from eclair.sqlite") { _ =>
@@ -237,7 +284,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
         .mapCodec(channelDataCodec)
     }
-    val res = CheckBalance.computeOffChainBalance(channels)
+    val res = CheckBalance.computeOffChainBalance(channels, recentlySpentInputs = Set.empty)
     println(res)
     println(res.total)
   }
