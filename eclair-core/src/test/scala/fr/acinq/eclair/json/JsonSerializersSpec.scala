@@ -25,7 +25,6 @@ import fr.acinq.eclair.balance.CheckBalance
 import fr.acinq.eclair.balance.CheckBalance.{GlobalBalance, MainAndHtlcBalance}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
-import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.OfferData
@@ -33,7 +32,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.{Invoice, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc}
+import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc, Transactions}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs
 import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferTlv}
 import fr.acinq.eclair.wire.protocol._
@@ -122,10 +121,12 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val probe = TestProbe()(system)
     val dummyPublicKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101").publicKey
     val dummyBytes32 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
-    val localChannelParams = LocalChannelParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, UInt64(Long.MaxValue), Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
-    val remoteChannelParams = RemoteChannelParams(dummyPublicKey, 546 sat, UInt64.MaxValue, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
-    val commitmentInput = Funding.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey, DefaultCommitmentFormat)
-    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), TxId(dummyBytes32), commitmentInput, IndividualSignature(ByteVector64.Zeroes), Nil)
+    val localChannelParams = LocalChannelParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), Some(1000 sat), isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
+    val localCommitParams = CommitParams(546 sat, 1 msat, UInt64(Long.MaxValue), 50, CltvExpiryDelta(144))
+    val remoteChannelParams = RemoteChannelParams(dummyPublicKey, Some(1000 sat), dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
+    val remoteCommitParams = CommitParams(546 sat, 1 msat, UInt64.MaxValue, 50, CltvExpiryDelta(144))
+    val commitmentInput = Transactions.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey, DefaultCommitmentFormat)
+    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), TxId(dummyBytes32), IndividualSignature(ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 50_000_000 msat, 100_000_000 msat), TxId(dummyBytes32), dummyPublicKey)
     val channelInfo = RES_GET_CHANNEL_INFO(
       PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"),
@@ -136,7 +137,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         Commitments(
           ChannelParams(dummyBytes32, ChannelConfig.standard, ChannelFeatures(), localChannelParams, remoteChannelParams, ChannelFlags(announceChannel = true)),
           CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
-          List(Commitment(0, 0, dummyPublicKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+          List(Commitment(0, 0, commitmentInput.outPoint, 150_000 sat, dummyPublicKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, DefaultCommitmentFormat, localCommitParams, localCommit, remoteCommitParams, remoteCommit, None)),
           inactive = Nil,
           Right(dummyPublicKey),
           ShaChain.init,
@@ -145,7 +146,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         ShortIdAliases(Alias(42), None),
         None,
         ChannelUpdate(ByteVector64(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 100 msat, 0, 2_000_000 msat),
-        None, None, None, SpliceStatus.NoSplice
+        SpliceStatus.NoSplice, None, None, None
       )
     )
     val expected =
@@ -163,24 +164,14 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |       "localParams": {
         |         "nodeId": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
         |         "fundingKeyPath": [42],
-        |         "dustLimit": 546,
-        |         "maxHtlcValueInFlightMsat": 9223372036854775807,
         |         "initialRequestedChannelReserve_opt": 1000,
-        |         "htlcMinimum": 1,
-        |         "toRemoteDelay": 144,
-        |         "maxAcceptedHtlcs": 50,
         |         "isChannelOpener": true,
         |         "paysCommitTxFees" : true,
         |         "initFeatures": { "activated": {}, "unknown": [] }
         |       },
         |       "remoteParams": {
         |         "nodeId": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
-        |         "dustLimit": 546,
-        |         "maxHtlcValueInFlightMsat": 18446744073709551615,
         |         "initialRequestedChannelReserve_opt": 1000,
-        |         "htlcMinimum": 1,
-        |         "toRemoteDelay": 144,
-        |         "maxAcceptedHtlcs": 50,
         |         "revocationBasepoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
         |         "paymentBasepoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
         |         "delayedPaymentBasepoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
@@ -201,21 +192,33 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |     "active": [
         |       {
         |         "fundingTxIndex": 0,
-        |         "fundingTx": { "outPoint": "0202020202020202020202020202020202020202020202020202020202020202:0", "amountSatoshis": 150000 },
+        |         "fundingInput": "0202020202020202020202020202020202020202020202020202020202020202:0",
+        |         "fundingAmount": 150000,
         |         "localFunding": { "status":"unconfirmed" },
         |         "remoteFunding": { "status":"locked" },
+        |         "commitmentFormat": "legacy",
+        |         "localCommitParams": {
+        |           "dustLimit": 546,
+        |           "htlcMinimum": 1,
+        |           "maxHtlcValueInFlight": 9223372036854775807,
+        |           "maxAcceptedHtlcs": 50,
+        |           "toSelfDelay": 144
+        |         },
         |         "localCommit": {
         |           "index": 0,
         |           "spec": { "htlcs": [], "commitTxFeerate": 2500, "toLocal": 100000000, "toRemote": 50000000 },
         |           "txId": "0202020202020202020202020202020202020202020202020202020202020202",
-        |           "input": {
-        |             "outPoint":"0202020202020202020202020202020202020202020202020202020202020202:0",
-        |             "amountSatoshis": 150000
-        |           },
         |           "remoteSig": {
         |             "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
         |           },
         |           "htlcRemoteSigs": []
+        |         },
+        |         "remoteCommitParams": {
+        |           "dustLimit": 546,
+        |           "htlcMinimum": 1,
+        |           "maxHtlcValueInFlight": 18446744073709551615,
+        |           "maxAcceptedHtlcs": 50,
+        |           "toSelfDelay": 144
         |         },
         |         "remoteCommit": {
         |           "index": 0,
@@ -296,7 +299,6 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val inputInfo = InputInfo(
       outPoint = OutPoint(TxHash.fromValidHex("345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 42),
       txOut = TxOut(456651 sat, hex"3c7a66997c681a3de1bae56438abeee4fc50a16554725a430ade1dc8db6bdd76704d45c6151c4051d710cf487e63"),
-      unusedRedeemScript = ByteVector.empty,
     )
     JsonSerializers.serialization.write(inputInfo)(JsonSerializers.formats) shouldBe """{"outPoint":"9f0b9c0ce92c175ca4e78acfd13a718099c73818b6d3140cfe6f04ec052b5b34:42","amountSatoshis":456651}"""
   }
@@ -412,7 +414,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
 
   test("TransactionWithInputInfo serializer") {
     // the input info is ignored when serializing to JSON
-    val dummyInputInfo = InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(Satoshi(0), Nil), ByteVector.empty)
+    val dummyInputInfo = InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(Satoshi(0), Nil))
 
     val htlcSuccessTx = Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800")
     val htlcSuccessTxInfo = UnsignedHtlcSuccessTx(dummyInputInfo, htlcSuccessTx, ByteVector32.One, 3, CltvExpiry(1105), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)

@@ -265,8 +265,7 @@ object TestConstants {
       isChannelOpener = true,
       paysCommitTxFees = true,
       dualFunded = false,
-      fundingSatoshis,
-      unlimitedMaxHtlcValueInFlight = false,
+      fundingSatoshis
     ).copy(
       fundingKeyPath = fundingKeyPath,
       initialRequestedChannelReserve_opt = Some(10_000 sat) // Bob will need to keep that much satoshis in his balance
@@ -455,8 +454,7 @@ object TestConstants {
       isChannelOpener = false,
       paysCommitTxFees = false,
       dualFunded = false,
-      fundingSatoshis,
-      unlimitedMaxHtlcValueInFlight = false,
+      fundingSatoshis
     ).copy(
       fundingKeyPath = fundingKeyPath,
       initialRequestedChannelReserve_opt = Some(20_000 sat) // Alice will need to keep that much satoshis in her balance

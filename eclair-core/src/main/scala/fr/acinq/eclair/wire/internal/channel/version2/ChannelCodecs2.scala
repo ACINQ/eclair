@@ -53,7 +53,7 @@ private[channel] object ChannelCodecs2 {
 
     val channelVersionCodec: Codec[ChannelTypes0.ChannelVersion] = bits(ChannelTypes0.ChannelVersion.LENGTH_BITS).as[ChannelTypes0.ChannelVersion]
 
-    def localParamsCodec(channelVersion: ChannelTypes0.ChannelVersion): Codec[LocalChannelParams] = (
+    def localParamsCodec(channelVersion: ChannelTypes0.ChannelVersion): Codec[ChannelTypes0.LocalParams] = (
       ("nodeId" | publicKey) ::
         ("channelPath" | keyPathCodec) ::
         ("dustLimit" | satoshi) ::
@@ -65,7 +65,7 @@ private[channel] object ChannelCodecs2 {
         ("isChannelOpener" | bool) :: ("paysCommitTxFees" | bool) :: ignore(6) ::
         ("upfrontShutdownScript_opt" | lengthDelimited(bytes).map(Option(_)).decodeOnly) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
-        ("features" | combinedFeaturesCodec)).as[LocalChannelParams]
+        ("features" | combinedFeaturesCodec)).as[ChannelTypes0.LocalParams]
 
     val remoteParamsCodec: Codec[ChannelTypes0.RemoteParams] = (
       ("nodeId" | publicKey) ::
@@ -105,7 +105,7 @@ private[channel] object ChannelCodecs2 {
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
         ("redeemScript" | lengthDelimited(bytes))).map {
-      case outpoint :: txOut :: _ :: HNil => InputInfo(outpoint, txOut, ByteVector.empty)
+      case outpoint :: txOut :: _ :: HNil => InputInfo(outpoint, txOut)
     }.decodeOnly
 
     val outputInfoCodec: Codec[Long] = (
@@ -307,7 +307,7 @@ private[channel] object ChannelCodecs2 {
         ("closeStatus" | provide(Option.empty[CloseStatus]))).map {
       case commitments :: shortChannelId :: _ :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closeStatus :: HNil =>
         val aliases = ShortIdAliases(localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None)
-        DATA_NORMAL(commitments, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closeStatus, SpliceStatus.NoSplice)
+        DATA_NORMAL(commitments, aliases, channelAnnouncement, channelUpdate, SpliceStatus.NoSplice, localShutdown, remoteShutdown, closeStatus)
     }.decodeOnly
 
     val DATA_SHUTDOWN_03_Codec: Codec[DATA_SHUTDOWN] = (
