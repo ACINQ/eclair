@@ -31,8 +31,8 @@ import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.reputation.ReputationRecorder.GetConfidence
-import fr.acinq.eclair.reputation.{Reputation, ReputationRecorder}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol._

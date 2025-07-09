@@ -16,8 +16,7 @@
 
 package fr.acinq.eclair.payment.relay
 
-import akka.actor.ActorRef
-import akka.actor.typed
+import akka.actor.{ActorRef, typed}
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
@@ -32,7 +31,7 @@ import fr.acinq.eclair.io.{Peer, PeerReadyNotifier}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.{OutgoingChannel, OutgoingChannelParams}
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
-import fr.acinq.eclair.reputation.{Reputation, ReputationRecorder}
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.reputation.ReputationRecorder.GetConfidence
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
