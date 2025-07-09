@@ -133,7 +133,7 @@ object Helpers {
     }
 
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
-    if ((channelFeatures.hasFeature(Features.SimpleTaprootChannelsPhoenix) || channelFeatures.hasFeature(Features.SimpleTaprootChannelsStaging)) && open.nexLocalNonce_opt.isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
+    if ((channelFeatures.hasFeature(Features.SimpleTaprootChannelsPhoenix) || channelFeatures.hasFeature(Features.SimpleTaprootChannelsStaging)) && open.nexLocalNonce_opt.isEmpty) return Left(MissingNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes)))
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
     val localFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelFeatures.commitmentFormat, open.fundingSatoshis)
@@ -145,7 +145,7 @@ object Helpers {
     val reserveToFundingRatio = open.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.channelConf.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.channelConf.maxReserveToFundingRatio))
 
-    if (channelType.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && open.nexLocalNonce_opt.isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
+    if (channelType.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && open.nexLocalNonce_opt.isEmpty) return Left(MissingNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes)))
 
     extractShutdownScript(open.temporaryChannelId, localFeatures, remoteFeatures, open.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
@@ -243,7 +243,7 @@ object Helpers {
     if (reserveToFundingRatio > nodeParams.channelConf.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.channelConf.maxReserveToFundingRatio))
 
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
-    if (channelType.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && accept.nexLocalNonce_opt.isEmpty) return Left(MissingNextLocalNonce(open.temporaryChannelId))
+    if (channelType.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && accept.nexLocalNonce_opt.isEmpty) return Left(MissingNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes)))
     extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
 
