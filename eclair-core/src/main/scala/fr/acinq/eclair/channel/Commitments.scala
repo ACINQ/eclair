@@ -907,7 +907,7 @@ case class Commitments(channelParams: ChannelParams,
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
     // we verify that this htlc is allowed in every active commitment
-    val failures = active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feerates, feeConf, cmd.reputationScore.confidence)).collect { case Left(f) => f }
+    val failures = active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feerates, feeConf, cmd.reputationScore.incomingConfidence)).collect { case Left(f) => f }
     if (failures.isEmpty) {
       Right(copy(changes = changes1, originChannels = originChannels1), add)
     } else if (failures.forall(_.isInstanceOf[ChannelJammingException])) {

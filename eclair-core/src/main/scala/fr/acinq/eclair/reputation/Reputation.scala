@@ -116,12 +116,17 @@ object Reputation {
   def init(config: Config): Reputation = Reputation(Map.empty.withDefaultValue(PastScore(0.0, 0.0, TimestampMilli.min)), Map.empty, config.halfLife, config.maxRelayDuration, config.pendingMultiplier)
 
   /**
-   * @param confidence  Confidence that the outgoing HTLC will succeed (takes into account both upstream and downstream reputation).
-   * @param endorsement Endorsement level to set for the outgoing HTLC (takes into account upstream reputation only).
+   * @param incomingConfidence Confidence that the outgoing HTLC will succeed given the reputation of the incoming peer
    */
-  case class Score(confidence: Double, endorsement: Int)
+  case class Score(incomingConfidence: Double) {
+    val endorsement = toEndorsement(incomingConfidence)
+  }
 
-  val maxScore = Score(1.0, maxEndorsement)
+  case object Score {
+    val max = Score(1.0)
+
+    def fromEndorsement(endorsement: Int): Score = Score((endorsement + 0.5) / 8)
+  }
 
   def checkChannelOccupancy(outgoingHtlcs: Seq[UpdateAddHtlc], params: ChannelParams, confidence: Double): Either[ChannelJammingException, Unit] = {
     val maxAcceptedHtlcs = Seq(params.localCommitParams.maxAcceptedHtlcs, params.remoteCommitParams.maxAcceptedHtlcs).min
@@ -149,5 +154,5 @@ object Reputation {
     Right(())
   }
 
-  def toEndorsement(confidence: Double): Int = (confidence * endorsementLevels).toInt
+  def toEndorsement(confidence: Double): Int = (confidence * endorsementLevels).toInt.min(maxEndorsement)
 }

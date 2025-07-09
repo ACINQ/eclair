@@ -31,7 +31,7 @@ import scala.collection.mutable
 object ReputationRecorder {
   // @formatter:off
   sealed trait Command
-  case class GetConfidence(replyTo: ActorRef[Reputation.Score], upstream: Upstream.Hot, downstream: PublicKey, fee: MilliSatoshi) extends Command
+  case class GetConfidence(replyTo: ActorRef[Reputation.Score], upstream: Upstream.Hot, fee: MilliSatoshi) extends Command
   private case class WrappedOutgoingHtlcAdded(added: OutgoingHtlcAdded) extends Command
   private case class WrappedOutgoingHtlcSettled(settled: OutgoingHtlcSettled) extends Command
   // @formatter:on
@@ -55,23 +55,20 @@ object ReputationRecorder {
 
 class ReputationRecorder(config: Reputation.Config) {
   private val incomingReputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty.withDefaultValue(Reputation.init(config))
-  private val outgoingReputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty.withDefaultValue(Reputation.init(config))
   private val pending: mutable.Map[HtlcId, PendingHtlc] = mutable.HashMap.empty
 
   def run(): Behavior[Command] =
     Behaviors.receiveMessage {
-      case GetConfidence(replyTo, _: Upstream.Local, _, _) =>
-        replyTo ! Reputation.Score(1.0, Reputation.maxEndorsement)
+      case GetConfidence(replyTo, _: Upstream.Local, _) =>
+        replyTo ! Reputation.Score.max
         Behaviors.same
 
-      case GetConfidence(replyTo, upstream: Upstream.Hot.Channel, downstream, fee) =>
+      case GetConfidence(replyTo, upstream: Upstream.Hot.Channel, fee) =>
         val incomingConfidence = incomingReputations.get(upstream.receivedFrom).map(_.getConfidence(fee, upstream.add.endorsement)).getOrElse(0.0)
-        val endorsement = Reputation.toEndorsement(incomingConfidence)
-        val outgoingConfidence = outgoingReputations.get(downstream).map(_.getConfidence(fee, endorsement)).getOrElse(0.0)
-        replyTo ! Reputation.Score(incomingConfidence min outgoingConfidence, endorsement)
+        replyTo ! Reputation.Score(incomingConfidence)
         Behaviors.same
 
-      case GetConfidence(replyTo, upstream: Upstream.Hot.Trampoline, downstream, totalFee) =>
+      case GetConfidence(replyTo, upstream: Upstream.Hot.Trampoline, totalFee) =>
         val incomingConfidence =
           upstream.received
             .groupMapReduce(_.receivedFrom)(r => (r.add.amountMsat, r.add.endorsement)) {
@@ -83,9 +80,7 @@ class ReputationRecorder(config: Reputation.Config) {
                 incomingReputations.get(nodeId).map(_.getConfidence(fee, endorsement)).getOrElse(0.0)
             }
             .min
-        val endorsement = Reputation.toEndorsement(incomingConfidence)
-        val outgoingConfidence = outgoingReputations.get(downstream).map(_.getConfidence(totalFee, endorsement)).getOrElse(0.0)
-        replyTo ! Reputation.Score(incomingConfidence min outgoingConfidence, endorsement)
+        replyTo ! Reputation.Score(incomingConfidence)
         Behaviors.same
 
       case WrappedOutgoingHtlcAdded(OutgoingHtlcAdded(add, remoteNodeId, upstream, fee)) =>
@@ -103,7 +98,6 @@ class ReputationRecorder(config: Reputation.Config) {
               }
           case _: Upstream.Local => ()
         }
-        outgoingReputations(remoteNodeId) = outgoingReputations(remoteNodeId).addPendingHtlc(htlcId, fee, add.endorsement)
         pending(htlcId) = PendingHtlc(add, upstream, remoteNodeId)
         Behaviors.same
 
@@ -127,7 +121,6 @@ class ReputationRecorder(config: Reputation.Config) {
               )
             case _: Upstream.Local => ()
           }
-          outgoingReputations(p.downstream) = outgoingReputations(p.downstream).settlePendingHtlc(htlcId, isSuccess)
         })
         Behaviors.same
     }

@@ -63,7 +63,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       // alice sends an HTLC to bob
       val h1 = Crypto.sha256(r1)
       val recipient1 = SpontaneousRecipient(TestConstants.Bob.nodeParams.nodeId, 300_000_000 msat, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), r1)
-      val Right(cmd1) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(sender.ref), h1, makeSingleHopRoute(recipient1.totalAmount, recipient1.nodeId), recipient1, Reputation.maxScore).map(_.cmd.copy(commit = false))
+      val Right(cmd1) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(sender.ref), h1, makeSingleHopRoute(recipient1.totalAmount, recipient1.nodeId), recipient1, Reputation.Score.max).map(_.cmd.copy(commit = false))
       alice ! cmd1
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -72,7 +72,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       // alice sends another HTLC to bob
       val h2 = Crypto.sha256(r2)
       val recipient2 = SpontaneousRecipient(TestConstants.Bob.nodeParams.nodeId, 200_000_000 msat, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), r2)
-      val Right(cmd2) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(sender.ref), h2, makeSingleHopRoute(recipient2.totalAmount, recipient2.nodeId), recipient2, Reputation.maxScore).map(_.cmd.copy(commit = false))
+      val Right(cmd2) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(sender.ref), h2, makeSingleHopRoute(recipient2.totalAmount, recipient2.nodeId), recipient2, Reputation.Score.max).map(_.cmd.copy(commit = false))
       alice ! cmd2
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -144,7 +144,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_ADD_HTLC") { f =>
     import f._
     val sender = TestProbe()
-    val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, None, Reputation.maxScore, None, localOrigin(sender.ref))
+    val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, None, Reputation.Score.max, None, localOrigin(sender.ref))
     alice ! add
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(RES_ADD_FAILED(add, error, None))

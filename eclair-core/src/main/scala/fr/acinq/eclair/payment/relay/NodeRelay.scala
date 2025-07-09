@@ -421,7 +421,7 @@ class NodeRelay private(nodeParams: NodeParams,
       case r: BlindedRecipient => r.blindedHops.headOption
     }
     val dummyRoute = Route(amountOut, Seq(dummyHop), finalHop_opt)
-    OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(ActorRef.noSender, upstream), paymentHash, dummyRoute, recipient, Reputation.maxScore) match {
+    OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(ActorRef.noSender, upstream), paymentHash, dummyRoute, recipient, Reputation.Score.max) match {
       case Left(f) =>
         context.log.warn("could not create payment onion for on-the-fly funding: {}", f.getMessage)
         rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))

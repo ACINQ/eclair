@@ -110,7 +110,7 @@ object TrampolinePaymentLifecycle {
     def start(amount: MilliSatoshi, channelInfo: Peer.ChannelInfo, expiry: CltvExpiry, trampolinePaymentSecret: ByteVector32, attemptNumber: Int): Behavior[PartHandler.Command] = {
       val origin = Origin.Hot(htlcSettledAdapter.toClassic, Upstream.Local(cmd.paymentId))
       val outgoing = buildOutgoingPayment(cmd.trampolineNodeId, cmd.invoice, amount, expiry, Some(trampolinePaymentSecret), attemptNumber)
-      val add = CMD_ADD_HTLC(addHtlcAdapter.toClassic, outgoing.trampolineAmount, paymentHash, outgoing.trampolineExpiry, outgoing.onion.packet, None, Reputation.maxScore, None, origin, commit = true)
+      val add = CMD_ADD_HTLC(addHtlcAdapter.toClassic, outgoing.trampolineAmount, paymentHash, outgoing.trampolineExpiry, outgoing.onion.packet, None, Reputation.Score.max, None, origin, commit = true)
       channelInfo.channel ! add
       val channelId = channelInfo.data.asInstanceOf[DATA_NORMAL].channelId
       val part = PartialPayment(cmd.paymentId, amount, computeFees(amount, attemptNumber), channelId, None)
