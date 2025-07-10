@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.OnChainPubkeyCache
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
-import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.crypto.{NonceGenerator, ShaChain}
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
@@ -737,7 +737,7 @@ object Helpers {
       }
 
       /** We are the closer: we sign closing transactions for which we pay the fees. */
-      def makeSimpleClosingTx(currentBlockHeight: BlockHeight, channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerate: FeeratePerKw, localClosingNonce_opt: Option[LocalNonce] = None, remoteClosingNonce_opt: Option[IndividualNonce] = None): Either[ChannelException, (ClosingTxs, ClosingComplete)] = {
+      def makeSimpleClosingTx(currentBlockHeight: BlockHeight, channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerate: FeeratePerKw, remoteClosingNonce_opt: Option[IndividualNonce] = None): Either[ChannelException, (ClosingTxs, ClosingComplete)] = {
         // We must convert the feerate to a fee: we must build dummy transactions to compute their weight.
         val commitInput = commitment.commitInput(channelKeys)
         val closingFee = {
@@ -761,10 +761,13 @@ object Helpers {
 
         val tlvs = commitment.commitmentFormat match {
           case _: SimpleTaprootChannelCommitmentFormat =>
+            if (remoteClosingNonce_opt.isEmpty) return Left(MissingShutdownNonce(commitment.channelId))
             try {
-              def partialSign(tx: ClosingTx) = {
-                val Right(psig) = tx.partialSign(localFundingKey, commitment.remoteFundingPubKey, Map.empty, localClosingNonce_opt.get, Seq(localClosingNonce_opt.get.publicNonce, remoteClosingNonce_opt.get))
-                psig.partialSig
+              // generate a partial signature to send to our peer, using a random signing nonce and their closing nonce
+              def partialSign(tx: ClosingTx): ChannelSpendSignature.PartialSignatureWithNonce = {
+                val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey)
+                val Right(psig) = tx.partialSign(localFundingKey, commitment.remoteFundingPubKey, Map.empty, localNonce, Seq(localNonce.publicNonce, remoteClosingNonce_opt.get))
+                psig
               }
 
               TlvStream(Set(
@@ -793,7 +796,7 @@ object Helpers {
        * Callers should ignore failures: since the protocol is fully asynchronous, failures here simply mean that they
        * are not using our latest script (race condition between our closing_complete and theirs).
        */
-      def signSimpleClosingTx(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, closingComplete: ClosingComplete, localNonce_opt: Option[LocalNonce], remoteNonce_opt: Option[IndividualNonce]): Either[ChannelException, (ClosingTx, ClosingSig)] = {
+      def signSimpleClosingTx(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, closingComplete: ClosingComplete, localClosingNonce_opt: Option[LocalNonce], remoteClosingNonce_opt: Option[IndividualNonce]): Either[ChannelException, (ClosingTx, ClosingSig)] = {
         val closingFee = SimpleClosingTxFee.PaidByThem(closingComplete.fees)
         val closingTxs = Transactions.makeSimpleClosingTxs(commitment.commitInput(channelKeys), commitment.localCommit.spec, closingFee, closingComplete.lockTime, localScriptPubkey, remoteScriptPubkey)
         // If our output isn't dust, they must provide a signature for a transaction that includes it.
@@ -816,13 +819,18 @@ object Helpers {
             closingTxsWithSigs.headOption match {
               case Some((closingTx, remoteSig, sigToTlv)) =>
                 val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
+                val localNonceForThem = NonceGenerator.signingNonce(localFundingKey.publicKey)
                 (for {
-                  localSig <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, Map.empty, localNonce_opt.get, Seq(localNonce_opt.get.publicNonce, remoteNonce_opt.get))
-                  tx <- closingTx.aggregateSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, ChannelSpendSignature.PartialSignatureWithNonce(remoteSig, remoteNonce_opt.get), Map.empty)
-                } yield (closingTx.copy(tx = tx), localSig.partialSig)) match {
+                  // generate a local partial signature for us, to aggregate with the partial signature in they sent us in tx_complete. We use our closing nonce (the one we sent to our peer in our Shutdown message)
+                  localSigForUs <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, Map.empty, localClosingNonce_opt.get, Seq(localClosingNonce_opt.get.publicNonce, remoteSig.nonce))
+                  tx <- closingTx.aggregateSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSigForUs, remoteSig, Map.empty)
+                  // generate a local partial signature for them, using a random signing nonce and the closing nonce they sent in their Shutdown message
+                  localSigForThem <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, Map.empty, localNonceForThem, Seq(localNonceForThem.publicNonce, remoteClosingNonce_opt.get))
+                } yield (closingTx.copy(tx = tx), localSigForThem)) match {
                   case Right((signedClosingTx, localSig)) if signedClosingTx.validate(Map.empty) =>
                     Right(signedClosingTx, ClosingSig(commitment.channelId, remoteScriptPubkey, localScriptPubkey, closingComplete.fees, closingComplete.lockTime, TlvStream(sigToTlv(localSig))))
-                  case _ => Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
+                  case _ =>
+                    Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
                 }
               case None => Left(MissingCloseSignature(commitment.channelId))
             }
@@ -874,12 +882,12 @@ object Helpers {
               case Some((closingTx, remoteSig)) =>
                 val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
                 (for {
-                  localSig <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, Map.empty, localNonce_opt.get, Seq(localNonce_opt.get.publicNonce, remoteNonce_opt.get))
-                  tx <- closingTx.aggregateSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, ChannelSpendSignature.PartialSignatureWithNonce(remoteSig, remoteNonce_opt.get), Map.empty)
+                  localSig <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, Map.empty, localNonce_opt.get, Seq(localNonce_opt.get.publicNonce, remoteSig.nonce))
+                  tx <- closingTx.aggregateSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig, Map.empty)
                   signedClosingTx = closingTx.copy(tx = tx)
                   _ = signedClosingTx.validate(Map.empty)
                 } yield signedClosingTx) match {
-                  case Left(e) => Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
+                  case Left(_) => Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
                   case Right(signedClosing) => Right(signedClosing)
                 }
               case None => Left(MissingCloseSignature(commitment.channelId))

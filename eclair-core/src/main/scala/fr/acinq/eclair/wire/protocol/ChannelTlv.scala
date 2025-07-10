@@ -343,21 +343,21 @@ object ClosingTlv {
   case class CloserAndCloseeOutputs(sig: ByteVector64) extends ClosingTlv
 
   /** Signature for a closing transaction containing only the closer's output. */
-  case class CloserOutputOnlyPartialSignature(partialSignature: ByteVector32) extends ClosingTlv
+  case class CloserOutputOnlyPartialSignature(partialSignature: PartialSignatureWithNonce) extends ClosingTlv
 
   /** Signature for a closing transaction containing only the closee's output. */
-  case class CloseeOutputOnlyPartialSignature(partialSignature: ByteVector32) extends ClosingTlv
+  case class CloseeOutputOnlyPartialSignature(partialSignature: PartialSignatureWithNonce) extends ClosingTlv
 
   /** Signature for a closing transaction containing the closer and closee's outputs. */
-  case class CloserAndCloseeOutputsPartialSignature(partialSignature: ByteVector32) extends ClosingTlv
+  case class CloserAndCloseeOutputsPartialSignature(partialSignature: PartialSignatureWithNonce) extends ClosingTlv
 
   val closingTlvCodec: Codec[TlvStream[ClosingTlv]] = tlvStream(discriminated[ClosingTlv].by(varint)
     .typecase(UInt64(1), tlvField(bytes64.as[CloserOutputOnly]))
     .typecase(UInt64(2), tlvField(bytes64.as[CloseeOutputOnly]))
     .typecase(UInt64(3), tlvField(bytes64.as[CloserAndCloseeOutputs]))
-    .typecase(UInt64(4), tlvField(bytes32.as[CloserOutputOnlyPartialSignature]))
-    .typecase(UInt64(5), tlvField(bytes32.as[CloseeOutputOnlyPartialSignature]))
-    .typecase(UInt64(6), tlvField(bytes32.as[CloserAndCloseeOutputsPartialSignature]))
+    .typecase(UInt64(4), tlvField(partialSignatureWithNonce.as[CloserOutputOnlyPartialSignature]))
+    .typecase(UInt64(5), tlvField(partialSignatureWithNonce.as[CloseeOutputOnlyPartialSignature]))
+    .typecase(UInt64(6), tlvField(partialSignatureWithNonce.as[CloserAndCloseeOutputsPartialSignature]))
   )
 
 }
