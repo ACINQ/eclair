@@ -296,7 +296,9 @@
 3d3d9753f36e88039e63f8757bfe643830d69443e168c4ecdaf5f47a2c1d94ce  org/apache/maven/maven-builder-support/3.8.6/maven-builder-support-3.8.6.jar
 3d6fdeb72b2967f1fa2784134fb832d08d8d6e879b7ace7712f2c7281994fc1e  org/apache/maven/maven-model/3.0/maven-model-3.0.pom
 3d8b64316e38439de6e0f14131e6d7d58d74e924f03d313b3cd8292a966aa010  com/fasterxml/jackson/core/jackson-core/2.12.6/jackson-core-2.12.6.pom
+3dbcf204f2f43a80a98a502ed612d4a3e90de32c77319b822227c965b1362cfd  fr/acinq/bitcoin/bitcoin-kmp-jvm/0.24.0/bitcoin-kmp-jvm-0.24.0.jar
 3e395d6fbc43c09a3774cac8694ce527398305ea3fd5492d80e25af27d382a9c  org/codehaus/mojo/mojo-parent/34/mojo-parent-34.pom
+3e45bb9e16e1e7d81c1d806e4babd1f07f24f743d1116276235eb6a639b96d55  fr/acinq/bitcoin-lib_2.13/0.40/bitcoin-lib_2.13-0.40.jar
 3e48e181d5efa33edb06aaa14b9af5ed2a7582e87963f87602cfdad8fa659bb4  org/codehaus/plexus/plexus-containers/1.0-alpha-20/plexus-containers-1.0-alpha-20.pom
 3e49037174820bbd0df63420a977255886398954c2a06291fa61f727ac35b377  org/apache/apache/29/apache-29.pom
 3e65dece4bd244bfb28c305a34160e7eb3811a34b31e6ff7684242dbd0d6cfdb  com/googlecode/javaewah/JavaEWAH/1.1.7/JavaEWAH-1.1.7.pom
@@ -463,6 +465,7 @@
 65f383685c8aa802b4d1b5735e13ac86137ceadd141d76cfe854323b3329a45d  org/scalatest/scalatest-matchers-core_2.13/3.2.16/scalatest-matchers-core_2.13-3.2.16.pom
 6627123a5e0c5ea2bc977b732b3a3b7e3f1380bd7557456ccb65aeb62da0a44c  org/apache/maven/doxia/doxia-module-xhtml/1.0/doxia-module-xhtml-1.0.pom
 664561bc6cbc608c712054aa15336f454ab296af45da9570379bba4071f66c85  com/amazonaws/aws-java-sdk-core/1.12.504/aws-java-sdk-core-1.12.504.jar
+667cf507777650f9880167d65d6c8a2fbc5a48771ec476e52dd7dc67c49ca537  fr/acinq/bitcoin-lib_2.13/0.40/bitcoin-lib_2.13-0.40.pom
 66b538bfef8d29e0c1fa2f744a385301d31c9e81e7c36cd95f8da6f4c87b4bcf  com/amazonaws/aws-java-sdk-pom/1.12.504/aws-java-sdk-pom-1.12.504.pom
 66d4f819a062a51a1d5627bffc23fac55d1677f0e0a1feba144aabdd670a64bb  net/java/dev/jna/jna/5.13.0/jna-5.13.0.jar
 66dcefa127254524b9370594cc90c611ae8490e094d28534d1c840f1889d8a61  org/apache/maven/maven-settings/3.8.6/maven-settings-3.8.6.jar
@@ -484,6 +487,7 @@
 6a58eb24291600f75ce0fe369b73fe6700f575ace4b664724d3cd0a6b85b63ee  org/apache/maven/shared/maven-shared-components/15/maven-shared-components-15.pom
 6a80b1821e5d6956cf78ec4c0ce3c640c7f1141edd4885fae3e0b060797cca01  org/slf4j/slf4j-api/1.7.9/slf4j-api-1.7.9.pom
 6abdbcd5020cbeeb748e63ad6ec18ea99b3ccd631d504e2be3975d14510ca664  pl/project13/maven/git-commit-id-plugin-parent/4.9.10/git-commit-id-plugin-parent-4.9.10.pom
+6ae317397fbeb68b10d42216063921de8430d2129eadf5c4244a73858a1097a2  fr/acinq/bitcoin/bitcoin-kmp-jvm/0.24.0/bitcoin-kmp-jvm-0.24.0.pom
 6aecfd5459728a595601cfa07258d131972ffc39b492eb48bdd596577a2f244a  org/apache/commons/commons-compress/1.21/commons-compress-1.21.jar
 6b374ad2606f738c037e68b060f9b0d4c658ceefd7ac55ef15f7b6c584bf3aa0  org/scalatest/scalatest-diagrams_2.13/3.2.16/scalatest-diagrams_2.13-3.2.16.jar
 6b87237de8c2e1740cf80627c7f3ce3e15de1930bb250c55a1eca94fa3e014df  org/codehaus/codehaus-parent/4/codehaus-parent-4.pom

@@ -602,8 +602,8 @@ object OriginSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
-case class CommitmentJson(fundingTxIndex: Long, fundingTx: InputInfo, localFunding: LocalFundingStatus, remoteFunding: RemoteFundingStatus, localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit: Option[RemoteCommit])
-object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => CommitmentJson(c.fundingTxIndex, c.commitInput, c.localFundingStatus, c.remoteFundingStatus, c.localCommit, c.remoteCommit, c.nextRemoteCommit_opt.map(_.commit)))
+case class CommitmentJson(fundingTxIndex: Long, fundingInput: OutPoint, fundingAmount: Satoshi, localFunding: LocalFundingStatus, remoteFunding: RemoteFundingStatus, commitmentFormat: String, localCommitParams: CommitParams, localCommit: LocalCommit, remoteCommitParams: CommitParams, remoteCommit: RemoteCommit, nextRemoteCommit: Option[RemoteCommit])
+object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => CommitmentJson(c.fundingTxIndex, c.fundingInput, c.fundingAmount, c.localFundingStatus, c.remoteFundingStatus, c.commitmentFormat.toString, c.localCommitParams, c.localCommit, c.remoteCommitParams, c.remoteCommit, c.nextRemoteCommit_opt.map(_.commit)))
 // @formatter:on
 
 // @formatter:off
