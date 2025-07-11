@@ -38,7 +38,7 @@ object NodeRelayer {
 
   // @formatter:off
   sealed trait Command
-  case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket, originNode: PublicKey) extends Command
+  case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket, originNode: PublicKey, incomingChannelOccupancy: Double) extends Command
   case class RelayComplete(childHandler: ActorRef[NodeRelay.Command], paymentHash: ByteVector32, paymentSecret: ByteVector32) extends Command
   private[relay] case class GetPendingPayments(replyTo: akka.actor.ActorRef) extends Command
   // @formatter:on
@@ -61,20 +61,20 @@ object NodeRelayer {
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
         Behaviors.receiveMessage {
-          case Relay(nodeRelayPacket, originNode) =>
+          case Relay(nodeRelayPacket, originNode, incomingChannelOccupancy) =>
             val htlcIn = nodeRelayPacket.add
             val childKey = PaymentKey(htlcIn.paymentHash, nodeRelayPacket.outerPayload.paymentSecret)
             children.get(childKey) match {
               case Some(handler) =>
                 context.log.debug("forwarding incoming htlc #{} from channel {} to existing handler", htlcIn.id, htlcIn.channelId)
-                handler ! NodeRelay.Relay(nodeRelayPacket, originNode)
+                handler ! NodeRelay.Relay(nodeRelayPacket, originNode, incomingChannelOccupancy)
                 Behaviors.same
               case None =>
                 val relayId = UUID.randomUUID()
                 context.log.debug(s"spawning a new handler with relayId=$relayId")
                 val handler = context.spawn(NodeRelay.apply(nodeParams, context.self, register, relayId, nodeRelayPacket, outgoingPaymentFactory, router), relayId.toString)
                 context.log.debug("forwarding incoming htlc #{} from channel {} to new handler", htlcIn.id, htlcIn.channelId)
-                handler ! NodeRelay.Relay(nodeRelayPacket, originNode)
+                handler ! NodeRelay.Relay(nodeRelayPacket, originNode, incomingChannelOccupancy)
                 apply(nodeParams, register, outgoingPaymentFactory, router, children + (childKey -> handler))
             }
           case RelayComplete(childHandler, paymentHash, paymentSecret) =>

@@ -63,21 +63,21 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
   def receive: Receive = {
     case init: PostRestartHtlcCleaner.Init => postRestartCleaner forward init
-    case RelayForward(add, originNode) =>
+    case RelayForward(add, originNode, incomingChannelOccupancy) =>
       log.debug(s"received forwarding request for htlc #${add.id} from channelId=${add.channelId}")
       IncomingPaymentPacket.decrypt(add, nodeParams.privateKey, nodeParams.features) match {
         case Right(p: IncomingPaymentPacket.FinalPacket) =>
           log.debug(s"forwarding htlc #${add.id} to payment-handler")
           paymentHandler forward p
         case Right(r: IncomingPaymentPacket.ChannelRelayPacket) =>
-          channelRelayer ! ChannelRelayer.Relay(r, originNode)
+          channelRelayer ! ChannelRelayer.Relay(r, originNode, incomingChannelOccupancy)
         case Right(r: IncomingPaymentPacket.NodeRelayPacket) =>
           if (!nodeParams.enableTrampolinePayment) {
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=trampoline disabled")
             val attribution = FailureAttributionData(htlcReceivedAt = r.receivedAt, trampolineReceivedAt_opt = None)
             PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(RequiredNodeFeatureMissing()), Some(attribution), commit = true))
           } else {
-            nodeRelayer ! NodeRelayer.Relay(r, originNode)
+            nodeRelayer ! NodeRelayer.Relay(r, originNode, incomingChannelOccupancy)
           }
         case Left(badOnion: BadOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
@@ -117,7 +117,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
   override def mdc(currentMessage: Any): MDC = {
     val paymentHash_opt = currentMessage match {
-      case RelayForward(add, _) => Some(add.paymentHash)
+      case RelayForward(add, _, _) => Some(add.paymentHash)
       case addFailed: RES_ADD_FAILED[_] => Some(addFailed.c.paymentHash)
       case addCompleted: RES_ADD_SETTLED[_, _] => Some(addCompleted.htlc.paymentHash)
       case _ => None
@@ -156,7 +156,7 @@ object Relayer extends Logging {
     }
   }
 
-  case class RelayForward(add: UpdateAddHtlc, originNode: PublicKey)
+  case class RelayForward(add: UpdateAddHtlc, originNode: PublicKey, incomingChannelOccupancy: Double)
   case class ChannelBalance(remoteNodeId: PublicKey, realScid: Option[RealShortChannelId], aliases: ShortIdAliases, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean, isEnabled: Boolean)
 
   sealed trait OutgoingChannelParams {

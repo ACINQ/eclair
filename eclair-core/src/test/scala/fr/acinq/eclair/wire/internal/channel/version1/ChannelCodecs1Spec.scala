@@ -130,7 +130,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     assert(originCodec.decodeValue(originCodec.encode(localCold).require).require == localCold)
 
     val add = UpdateAddHtlc(randomBytes32(), 4324, 11000000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
-    val relayedHot = Origin.Hot(replyTo, Upstream.Hot.Channel(add, TimestampMilli(0), randomKey().publicKey))
+    val relayedHot = Origin.Hot(replyTo, Upstream.Hot.Channel(add, TimestampMilli(0), randomKey().publicKey, 0.12))
     val relayedCold = Origin.Cold(Upstream.Cold.Channel(add.channelId, add.id, add.amountMsat))
     assert(originCodec.decodeValue(originCodec.encode(relayedHot).require).require == relayedCold)
     assert(originCodec.decodeValue(originCodec.encode(relayedCold).require).require == relayedCold)
@@ -140,7 +140,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       UpdateAddHtlc(randomBytes32(), 1L, 2000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None),
       UpdateAddHtlc(randomBytes32(), 2L, 3000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None),
     )
-    val trampolineRelayedHot = Origin.Hot(replyTo, Upstream.Hot.Trampoline(adds.map(add => Upstream.Hot.Channel(add, TimestampMilli(0), randomKey().publicKey)).toList))
+    val trampolineRelayedHot = Origin.Hot(replyTo, Upstream.Hot.Trampoline(adds.map(add => Upstream.Hot.Channel(add, TimestampMilli(0), randomKey().publicKey, 0.38)).toList))
     // We didn't encode the incoming HTLC amount.
     val trampolineRelayed = Origin.Cold(Upstream.Cold.Trampoline(adds.map(add => Upstream.Cold.Channel(add.channelId, add.id, 0 msat)).toList))
     assert(originCodec.decodeValue(originCodec.encode(trampolineRelayedHot).require).require == trampolineRelayed)

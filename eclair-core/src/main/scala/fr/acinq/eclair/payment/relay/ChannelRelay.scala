@@ -68,17 +68,18 @@ object ChannelRelay {
             channels: Map[ByteVector32, Relayer.OutgoingChannel],
             originNode: PublicKey,
             relayId: UUID,
-            r: IncomingPaymentPacket.ChannelRelayPacket): Behavior[Command] =
+            r: IncomingPaymentPacket.ChannelRelayPacket,
+            incomingChannelOccupancy: Double): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
         parentPaymentId_opt = Some(relayId), // for a channel relay, parent payment id = relay id
         paymentHash_opt = Some(r.add.paymentHash),
         nodeAlias_opt = Some(nodeParams.alias))) {
-        val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), r.receivedAt, originNode)
+        val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), r.receivedAt, originNode, incomingChannelOccupancy)
         reputationRecorder_opt match {
           case Some(reputationRecorder) =>
-            reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), upstream, r.relayFeeMsat)
+            reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), upstream, channels.values.headOption.map(_.nextNodeId), r.relayFeeMsat)
           case None =>
             context.self ! WrappedReputationScore(Reputation.Score.fromEndorsement(r.add.endorsement))
         }

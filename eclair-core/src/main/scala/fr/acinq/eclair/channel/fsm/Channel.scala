@@ -720,7 +720,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           actions.foreach {
             case PostRevocationAction.RelayHtlc(add) =>
               log.debug("forwarding incoming htlc {} to relayer", add)
-              relayer ! Relayer.RelayForward(add, remoteNodeId)
+              relayer ! Relayer.RelayForward(add, remoteNodeId, commitments1.incomingOccupancy)
             case PostRevocationAction.RejectHtlc(add) =>
               log.debug("rejecting incoming htlc {}", add)
               // NB: we don't set commit = true, we will sign all updates at once afterwards.

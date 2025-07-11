@@ -43,7 +43,7 @@ object ChannelRelayer {
   // @formatter:off
   sealed trait Command
   case class GetOutgoingChannels(replyTo: ActorRef, getOutgoingChannels: Relayer.GetOutgoingChannels) extends Command
-  case class Relay(channelRelayPacket: IncomingPaymentPacket.ChannelRelayPacket, originNode: PublicKey) extends Command
+  case class Relay(channelRelayPacket: IncomingPaymentPacket.ChannelRelayPacket, originNode: PublicKey, incomingChannelOccupancy: Double) extends Command
   private[payment] case class WrappedLocalChannelUpdate(localChannelUpdate: LocalChannelUpdate) extends Command
   private[payment] case class WrappedLocalChannelDown(localChannelDown: LocalChannelDown) extends Command
   private[payment] case class WrappedAvailableBalanceChanged(availableBalanceChanged: AvailableBalanceChanged) extends Command
@@ -70,7 +70,7 @@ object ChannelRelayer {
       context.system.eventStream ! EventStream.Publish(SubscriptionsComplete(this.getClass))
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), nodeAlias_opt = Some(nodeParams.alias)), mdc) {
         Behaviors.receiveMessage {
-          case Relay(channelRelayPacket, originNode) =>
+          case Relay(channelRelayPacket, originNode, incomingChannelOccupancy) =>
             val relayId = UUID.randomUUID()
             val nextNodeId_opt: Option[PublicKey] = channelRelayPacket.payload.outgoing match {
               case Left(outgoingNodeId) => Some(outgoingNodeId.publicKey)
@@ -84,7 +84,7 @@ object ChannelRelayer {
               case None => Map.empty
             }
             context.log.debug(s"spawning a new handler with relayId=$relayId to nextNodeId={} with channels={}", nextNodeId_opt.getOrElse(""), nextChannels.keys.mkString(","))
-            context.spawn(ChannelRelay.apply(nodeParams, register, reputationRecorder_opt, nextChannels, originNode, relayId, channelRelayPacket), name = relayId.toString)
+            context.spawn(ChannelRelay.apply(nodeParams, register, reputationRecorder_opt, nextChannels, originNode, relayId, channelRelayPacket, incomingChannelOccupancy), name = relayId.toString)
             Behaviors.same
 
           case GetOutgoingChannels(replyTo, Relayer.GetOutgoingChannels(enabledOnly)) =>

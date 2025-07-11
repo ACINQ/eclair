@@ -152,5 +152,6 @@ case class ForbiddenDuringSplice                   (override val channelId: Byte
 case class ForbiddenDuringQuiescence               (override val channelId: ByteVector32, command: String) extends ChannelException(channelId, s"cannot process $command while quiescent")
 case class ConcurrentRemoteSplice                  (override val channelId: ByteVector32) extends ChannelException(channelId, "splice attempt canceled, remote initiated splice before us")
 case class TooManySmallHtlcs                       (override val channelId: ByteVector32, number: Long, below: MilliSatoshi) extends ChannelJammingException(channelId, s"too many small htlcs: $number HTLCs below $below")
-case class ConfidenceTooLow                        (override val channelId: ByteVector32, confidence: Double, occupancy: Double) extends ChannelJammingException(channelId, s"confidence too low: confidence=$confidence occupancy=$occupancy")
+case class IncomingConfidenceTooLow                (override val channelId: ByteVector32, confidence: Double, occupancy: Double) extends ChannelJammingException(channelId, s"incoming confidence too low: confidence=$confidence occupancy=$occupancy")
+case class OutgoingConfidenceTooLow                (override val channelId: ByteVector32, confidence: Double, occupancy: Double) extends ChannelJammingException(channelId, s"outgoing confidence too low: confidence=$confidence occupancy=$occupancy")
 // @formatter:on
