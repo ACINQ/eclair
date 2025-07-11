@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.send.Recipient
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Router.Route
 import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{InvoiceRoutingInfo, OutgoingBlindedPaths}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
@@ -338,12 +339,12 @@ object OutgoingPaymentPacket {
   }
 
   /** Build the command to add an HTLC for the given recipient using the provided route. */
-  def buildOutgoingPayment(origin: Origin.Hot, paymentHash: ByteVector32, route: Route, recipient: Recipient, confidence: Double): Either[OutgoingPaymentError, OutgoingPaymentPacket] = {
+  def buildOutgoingPayment(origin: Origin.Hot, paymentHash: ByteVector32, route: Route, recipient: Recipient, reputationScore: Reputation.Score): Either[OutgoingPaymentError, OutgoingPaymentPacket] = {
     for {
       payment <- recipient.buildPayloads(paymentHash, route)
       onion <- buildOnion(payment.payloads, paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)) // BOLT 2 requires that associatedData == paymentHash
     } yield {
-      val cmd = CMD_ADD_HTLC(origin.replyTo, payment.amount, paymentHash, payment.expiry, onion.packet, payment.outerPathKey_opt, confidence, fundingFee_opt = None, origin, commit = true)
+      val cmd = CMD_ADD_HTLC(origin.replyTo, payment.amount, paymentHash, payment.expiry, onion.packet, payment.outerPathKey_opt, reputationScore, fundingFee_opt = None, origin, commit = true)
       OutgoingPaymentPacket(cmd, route.hops.head.shortChannelId, onion.sharedSecrets)
     }
   }

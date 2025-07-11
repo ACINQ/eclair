@@ -37,6 +37,8 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived,
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.payment.send._
+import fr.acinq.eclair.reputation.Reputation
+import fr.acinq.eclair.reputation.ReputationRecorder.GetConfidence
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, Route, RouteParams}
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
@@ -74,14 +76,14 @@ object NodeRelay {
     def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], cfg: SendPaymentConfig, multiPart: Boolean): ActorRef
   }
 
-  case class SimpleOutgoingPaymentFactory(nodeParams: NodeParams, router: ActorRef, register: ActorRef) extends OutgoingPaymentFactory {
+  case class SimpleOutgoingPaymentFactory(nodeParams: NodeParams, router: ActorRef, register: ActorRef, reputationRecorder_opt: Option[typed.ActorRef[GetConfidence]]) extends OutgoingPaymentFactory {
     val paymentFactory: PaymentInitiator.SimplePaymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
 
     override def spawnOutgoingPayFSM(context: ActorContext[Command], cfg: SendPaymentConfig, multiPart: Boolean): ActorRef = {
       if (multiPart) {
         context.toClassic.actorOf(MultiPartPaymentLifecycle.props(nodeParams, cfg, publishPreimage = true, router, paymentFactory))
       } else {
-        context.toClassic.actorOf(PaymentLifecycle.props(nodeParams, cfg, router, register))
+        context.toClassic.actorOf(PaymentLifecycle.props(nodeParams, cfg, router, register, reputationRecorder_opt))
       }
     }
   }
@@ -336,10 +338,9 @@ class NodeRelay private(nodeParams: NodeParams,
     val amountOut = outgoingAmount(upstream, payloadOut)
     val expiryOut = outgoingExpiry(upstream, payloadOut)
     context.log.debug("relaying trampoline payment (amountIn={} expiryIn={} amountOut={} expiryOut={} isWallet={})", upstream.amountIn, upstream.expiryIn, amountOut, expiryOut, walletNodeId_opt.isDefined)
-    val confidence = (upstream.received.map(_.add.endorsement).min + 0.5) / 8
     // We only make one try when it's a direct payment to a wallet.
     val maxPaymentAttempts = if (walletNodeId_opt.isDefined) 1 else nodeParams.maxPaymentAttempts
-    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, recipient.nodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, confidence)
+    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, recipient.nodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, amountOut, expiryOut)
     // If the next node is using trampoline, we assume that they support MPP.
     val useMultiPart = recipient.features.hasFeature(Features.BasicMultiPartPayment) || packetOut_opt.nonEmpty
@@ -420,7 +421,7 @@ class NodeRelay private(nodeParams: NodeParams,
       case r: BlindedRecipient => r.blindedHops.headOption
     }
     val dummyRoute = Route(amountOut, Seq(dummyHop), finalHop_opt)
-    OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(ActorRef.noSender, upstream), paymentHash, dummyRoute, recipient, 1.0) match {
+    OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(ActorRef.noSender, upstream), paymentHash, dummyRoute, recipient, Reputation.Score.max) match {
       case Left(f) =>
         context.log.warn("could not create payment onion for on-the-fly funding: {}", f.getMessage)
         rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))

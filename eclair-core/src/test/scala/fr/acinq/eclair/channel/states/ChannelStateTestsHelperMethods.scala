@@ -35,6 +35,7 @@ import fr.acinq.eclair.channel.publish._
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.payment.{Invoice, OutgoingPaymentPacket}
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, Route}
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions
@@ -476,7 +477,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val paymentHash = Crypto.sha256(paymentPreimage)
     val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight)
     val recipient = SpontaneousRecipient(destination, amount, expiry, paymentPreimage)
-    val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(replyTo, upstream), paymentHash, makeSingleHopRoute(amount, destination), recipient, 1.0)
+    val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(replyTo, upstream), paymentHash, makeSingleHopRoute(amount, destination), recipient, Reputation.Score.max)
     (paymentPreimage, payment.cmd.copy(commit = false))
   }
 

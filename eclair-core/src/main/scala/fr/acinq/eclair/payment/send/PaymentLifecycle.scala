@@ -17,10 +17,11 @@
 package fr.acinq.eclair.payment.send
 
 import akka.actor.typed.scaladsl.adapter._
-import akka.actor.{ActorRef, FSM, Props}
+import akka.actor.{ActorRef, FSM, Props, typed}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.Upstream.Hot
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
@@ -30,6 +31,8 @@ import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
+import fr.acinq.eclair.reputation.Reputation
+import fr.acinq.eclair.reputation.ReputationRecorder.GetConfidence
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol._
@@ -40,7 +43,7 @@ import java.util.concurrent.TimeUnit
  * Created by PM on 26/08/2016.
  */
 
-class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef) extends FSMDiagnosticActorLogging[PaymentLifecycle.State, PaymentLifecycle.Data] {
+class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef, reputationRecorder_opt: Option[typed.ActorRef[GetConfidence]]) extends FSMDiagnosticActorLogging[PaymentLifecycle.State, PaymentLifecycle.Data] {
 
   private val id = cfg.id
   private val paymentHash = cfg.paymentHash
@@ -73,7 +76,26 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(route +: _), WaitingForRoute(request, failures, ignore)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${request.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
-      OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(self, cfg.upstream), paymentHash, route, request.recipient, cfg.confidence) match {
+      reputationRecorder_opt match {
+        case Some(reputationRecorder) => reputationRecorder ! GetConfidence(self, cfg.upstream, route.hops.head.fee(request.amount))
+        case None =>
+          val endorsement = cfg.upstream match {
+            case Hot.Channel(add, _, _) => add.endorsement
+            case Hot.Trampoline(received) => received.map(_.add.endorsement).min
+            case Upstream.Local(_) => Reputation.maxEndorsement
+          }
+          self ! Reputation.Score.fromEndorsement(endorsement)
+      }
+      goto(WAITING_FOR_CONFIDENCE) using WaitingForConfidence(request, failures, ignore, route)
+
+    case Event(PaymentRouteNotFound(t), WaitingForRoute(request, failures, _)) =>
+      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(request.amount, Nil, t))).increment()
+      myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(request.amount, Nil, t))))
+  }
+
+  when(WAITING_FOR_CONFIDENCE) {
+    case Event(score: Reputation.Score, WaitingForConfidence(request, failures, ignore, route)) =>
+      OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(self, cfg.upstream), paymentHash, route, request.recipient, score) match {
         case Right(payment) =>
           register ! Register.ForwardShortId(self.toTyped[Register.ForwardShortIdFailure[CMD_ADD_HTLC]], payment.outgoingChannel, payment.cmd)
           goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(request, payment.cmd, failures, payment.sharedSecrets, ignore, route)
@@ -82,10 +104,6 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(request.amount, route.fullRoute, error))).increment()
           myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(request.amount, route.fullRoute, error))))
       }
-
-    case Event(PaymentRouteNotFound(t), WaitingForRoute(request, failures, _)) =>
-      Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(request.amount, Nil, t))).increment()
-      myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(request.amount, Nil, t))))
   }
 
   when(WAITING_FOR_PAYMENT_COMPLETE) {
@@ -446,7 +464,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
 object PaymentLifecycle {
 
-  def props(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef) = Props(new PaymentLifecycle(nodeParams, cfg, router, register))
+  def props(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef, reputationRecorder_opt: Option[typed.ActorRef[GetConfidence]]) = Props(new PaymentLifecycle(nodeParams, cfg, router, register, reputationRecorder_opt))
 
   sealed trait SendPayment {
     // @formatter:off
@@ -492,6 +510,7 @@ object PaymentLifecycle {
   sealed trait Data
   case object WaitingForRequest extends Data
   case class WaitingForRoute(request: SendPayment, failures: Seq[PaymentFailure], ignore: Ignore) extends Data
+  case class WaitingForConfidence(request: SendPayment, failures: Seq[PaymentFailure], ignore: Ignore, route: Route) extends Data
   case class WaitingForComplete(request: SendPayment, cmd: CMD_ADD_HTLC, failures: Seq[PaymentFailure], sharedSecrets: Seq[Sphinx.SharedSecret], ignore: Ignore, route: Route) extends Data {
     val recipient = request.recipient
   }
@@ -499,6 +518,7 @@ object PaymentLifecycle {
   sealed trait State
   case object WAITING_FOR_REQUEST extends State
   case object WAITING_FOR_ROUTE extends State
+  case object WAITING_FOR_CONFIDENCE extends State
   case object WAITING_FOR_PAYMENT_COMPLETE extends State
 
   /** custom exceptions to handle corner cases */

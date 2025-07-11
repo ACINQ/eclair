@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, MilliSatoshiLong, TestConstants, ToMilliSatoshiConversion, randomBytes32}
@@ -26,7 +27,7 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 class DustExposureSpec extends AnyFunSuiteLike {
 
   def createHtlc(id: Long, amount: MilliSatoshi): UpdateAddHtlc = {
-    UpdateAddHtlc(ByteVector32.Zeroes, id, amount, randomBytes32(), CltvExpiry(500), TestConstants.emptyOnionPacket, None, 1.0, None)
+    UpdateAddHtlc(ByteVector32.Zeroes, id, amount, randomBytes32(), CltvExpiry(500), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
   }
 
   test("compute dust exposure") {

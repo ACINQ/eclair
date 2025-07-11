@@ -24,6 +24,7 @@ import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureReason, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
@@ -153,6 +154,8 @@ object Upstream {
     case class Channel(add: UpdateAddHtlc, receivedAt: TimestampMilli, receivedFrom: PublicKey) extends Hot {
       override val amountIn: MilliSatoshi = add.amountMsat
       val expiryIn: CltvExpiry = add.cltvExpiry
+
+      override def toString: String = s"Channel(amountIn=$amountIn, receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, endorsement=${add.endorsement})"
     }
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
     case class Trampoline(received: List[Channel]) extends Hot {
@@ -160,6 +163,8 @@ object Upstream {
       // We must use the lowest expiry of the incoming HTLC set.
       val expiryIn: CltvExpiry = received.map(_.add.cltvExpiry).min
       val receivedAt: TimestampMilli = received.map(_.receivedAt).max
+
+      override def toString: String = s"Trampoline(${received.map(_.toString).mkString(",")})"
     }
   }
 
@@ -216,7 +221,7 @@ final case class CMD_ADD_HTLC(replyTo: ActorRef,
                               cltvExpiry: CltvExpiry,
                               onion: OnionRoutingPacket,
                               nextPathKey_opt: Option[PublicKey],
-                              confidence: Double,
+                              reputationScore: Reputation.Score,
                               fundingFee_opt: Option[LiquidityAds.FundingFee],
                               origin: Origin.Hot,
                               commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent

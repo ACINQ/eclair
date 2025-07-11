@@ -28,6 +28,7 @@ import fr.acinq.eclair.payment.offer.{DefaultOfferHandler, OfferManager}
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.{ChannelRelayer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
+import fr.acinq.eclair.reputation.ReputationRecorder
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases}
@@ -97,7 +98,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val offerManager = system.spawn(OfferManager(nodeParams, 1 minute), "offer-manager")
     val defaultOfferHandler = system.spawn(DefaultOfferHandler(nodeParams, router), "default-offer-handler")
     val paymentHandler = system.actorOf(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler")
-    val relayer = system.actorOf(Relayer.props(nodeParams, router, register, paymentHandler), "relayer")
+    val relayer = system.actorOf(Relayer.props(nodeParams, router, register, paymentHandler, None), "relayer")
     val txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, bitcoinClient)
     val channelFactory = Peer.SimpleChannelFactory(nodeParams, watcherTyped, relayer, wallet, txPublisherFactory)
     val pendingChannelsRateLimiter = system.spawnAnonymous(Behaviors.supervise(PendingChannelsRateLimiter(nodeParams, router.toTyped, Seq())).onFailure(typed.SupervisorStrategy.resume))
