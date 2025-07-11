@@ -39,7 +39,7 @@ case class ChannelParams(channelId: ByteVector32,
   val remoteCommitParams: CommitParams = CommitParams(remoteParams.dustLimit, remoteParams.htlcMinimum, remoteParams.maxHtlcValueInFlightMsat, remoteParams.maxAcceptedHtlcs, localParams.toRemoteDelay)
 
   // We can safely cast to millisatoshis since we verify that it's less than a valid millisatoshi amount.
-  val maxHtlcAmount: MilliSatoshi = Seq(localParams.maxHtlcValueInFlightMsat, remoteParams.maxHtlcValueInFlightMsat, UInt64(MilliSatoshi.MaxMoney.toLong)).min.toBigInt.toLong.msat
+  val maxHtlcValueInFlight: MilliSatoshi = Seq(localParams.maxHtlcValueInFlightMsat, remoteParams.maxHtlcValueInFlightMsat, UInt64(MilliSatoshi.MaxMoney.toLong)).min.toBigInt.toLong.msat
 
   // If we've set the 0-conf feature bit for this peer, we will always use 0-conf with them.
   val zeroConf: Boolean = localParams.initFeatures.hasFeature(Features.ZeroConf)
@@ -508,7 +508,7 @@ case class Commitment(fundingTxIndex: Long,
     // We apply local *and* remote restrictions, to ensure both peers are happy with the resulting number of HTLCs.
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
     val htlcValueInFlight = outgoingHtlcs.toSeq.map(_.amountMsat).sum
-    val allowedHtlcValueInFlight = UInt64(params.maxHtlcAmount.toLong)
+    val allowedHtlcValueInFlight = UInt64(params.maxHtlcValueInFlight.toLong)
     if (allowedHtlcValueInFlight < htlcValueInFlight) {
       return Left(HtlcValueTooHighInFlight(params.channelId, maximum = allowedHtlcValueInFlight, actual = htlcValueInFlight))
     }

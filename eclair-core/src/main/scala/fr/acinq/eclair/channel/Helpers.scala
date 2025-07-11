@@ -368,17 +368,17 @@ object Helpers {
   def maxHtlcAmount(nodeParams: NodeParams, commitments: Commitments): MilliSatoshi = {
     if (!commitments.announceChannel) {
       // The channel is private, let's not change the channel update needlessly.
-      return commitments.channelParams.maxHtlcAmount
+      return commitments.channelParams.maxHtlcValueInFlight
     }
     for (balanceThreshold <- nodeParams.channelConf.balanceThresholds) {
       if (commitments.availableBalanceForSend <= balanceThreshold.available) {
         // Our maximum HTLC amount must always be greater than htlc_minimum_msat.
         val allowedHtlcAmount = Seq(balanceThreshold.maxHtlcAmount.toMilliSatoshi, commitments.channelParams.localCommitParams.htlcMinimum, commitments.channelParams.remoteCommitParams.htlcMinimum).max
         // But it cannot exceed the channel's max_htlc_value_in_flight_msat.
-        return allowedHtlcAmount.min(commitments.channelParams.maxHtlcAmount)
+        return allowedHtlcAmount.min(commitments.channelParams.maxHtlcValueInFlight)
       }
     }
-    commitments.channelParams.maxHtlcAmount
+    commitments.channelParams.maxHtlcValueInFlight
   }
 
   def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): RelayFees = {

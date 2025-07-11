@@ -135,14 +135,14 @@ object Reputation {
       // We want to allow some small HTLCs but still keep slots for larger ones.
       // We never want to reject HTLCs of size above `maxHtlcAmount / maxAcceptedHtlcs` as too small because we want to allow filling all the slots with HTLCs of equal sizes.
       // We use exponentially spaced thresholds in between.
-      if (amountMsat.toLong < 1 || amountMsat.toLong.toDouble < math.pow(params.maxHtlcAmount.toLong.toDouble / maxAcceptedHtlcs, i / maxAcceptedHtlcs)) {
+      if (amountMsat.toLong < 1 || amountMsat.toLong.toDouble < math.pow(params.maxHtlcValueInFlight.toLong.toDouble / maxAcceptedHtlcs, i / maxAcceptedHtlcs)) {
         return Left(TooManySmallHtlcs(params.channelId, number = i + 1, below = amountMsat))
       }
     }
 
     val htlcValueInFlight = outgoingHtlcs.map(_.amountMsat).sum
     val slotsOccupancy = outgoingHtlcs.size.toDouble / maxAcceptedHtlcs
-    val valueOccupancy = htlcValueInFlight.toLong.toDouble / params.maxHtlcAmount.toLong.toDouble
+    val valueOccupancy = htlcValueInFlight.toLong.toDouble / params.maxHtlcValueInFlight.toLong.toDouble
     val occupancy = slotsOccupancy max valueOccupancy
     // Because there are only 8 endorsement levels, the highest endorsement corresponds to a confidence between 87.5% and 100%.
     // So even for well-behaved peers setting the highest endorsement we still expect a confidence of less than 93.75%.
