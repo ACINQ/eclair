@@ -101,10 +101,11 @@ class ChannelCodecs4Spec extends AnyFunSuite {
       ),
       createdAt = BlockHeight(1000),
       fundingParams = InteractiveTxParams(channelId = channelId, isInitiator = true, localContribution = 100.sat, remoteContribution = 200.sat,
-        sharedInput_opt = Some(InteractiveTxBuilder.Multisig2of2Input(
+        sharedInput_opt = Some(InteractiveTxBuilder.SharedFundingInput(
           InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(1000.sat, Script.pay2wsh(script))),
           0,
-          PrivateKey(ByteVector.fromValidHex("02" * 32)).publicKey
+          PrivateKey(ByteVector.fromValidHex("02" * 32)).publicKey,
+          ZeroFeeHtlcTxAnchorOutputsCommitmentFormat,
         )),
         remoteFundingPubKey = PrivateKey(ByteVector.fromValidHex("01" * 32)).publicKey,
         localOutputs = Nil,

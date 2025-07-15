@@ -58,6 +58,8 @@ object Transactions {
 
   sealed trait CommitmentFormat {
     // @formatter:off
+    /** Weight of a fully signed channel output, when spent by a [[ChannelSpendTransaction]]. */
+    def fundingInputWeight: Int
     /** Weight of a fully signed [[CommitTx]] transaction without any HTLCs. */
     def commitWeight: Int
     /** Weight of a fully signed [[ClaimLocalAnchorTx]] or [[ClaimRemoteAnchorTx]] input. */
@@ -93,7 +95,9 @@ object Transactions {
     // @formatter:on
   }
 
-  sealed trait SegwitV0CommitmentFormat extends CommitmentFormat
+  sealed trait SegwitV0CommitmentFormat extends CommitmentFormat {
+    override val fundingInputWeight = 384
+  }
 
   /**
    * Commitment format as defined in the v1.0 specification (https://github.com/lightningnetwork/lightning-rfc/tree/v1.0).
@@ -168,6 +172,7 @@ object Transactions {
   sealed trait SimpleTaprootChannelCommitmentFormat extends TaprootCommitmentFormat {
     // weights for taproot transactions are deterministic since signatures are encoded as 64 bytes and
     // not in variable length DER format (around 72 bytes)
+    override val fundingInputWeight = 230
     override val commitWeight = 960
     override val anchorInputWeight = 230
     override val htlcOutputWeight = 172
