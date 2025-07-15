@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.balance
 
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, OutPoint, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{BlockId, Btc, ByteVector32, KotlinUtils, OutPoint, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.Utxo
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -26,6 +26,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc.incoming
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 object CheckBalance {
 
@@ -236,19 +237,51 @@ object CheckBalance {
    * immediately but will only be correctly accounted for in our on-chain balance after being deeply confirmed. Those
    * cases can be detected by looking at the unconfirmed and recently confirmed on-chain balance.
    */
-  private def computeOnChainBalance(bitcoinClient: BitcoinCoreClient, minDepth: Int)(implicit ec: ExecutionContext): Future[DetailedOnChainBalance] = for {
+  def computeOnChainBalance(bitcoinClient: BitcoinCoreClient, minDepth: Int)(implicit ec: ExecutionContext): Future[DetailedOnChainBalance] = for {
     utxos <- bitcoinClient.listUnspent()
-    recentlySpentInputs <- getRecentlySpentInputs(bitcoinClient, utxos, minDepth)
-    detailed = utxos.foldLeft(DetailedOnChainBalance(utxos = utxos, recentlySpentInputs = recentlySpentInputs)) {
+    unconfirmedRecentlySpentInputs <- getUnconfirmedRecentlySpentInputs(bitcoinClient, utxos)
+    confirmedRecentlySpentInputs <- getConfirmedRecentlySpentInputs(bitcoinClient, minDepth)
+    detailed = utxos.foldLeft(DetailedOnChainBalance(utxos = utxos, recentlySpentInputs = unconfirmedRecentlySpentInputs ++ confirmedRecentlySpentInputs)) {
       case (total, utxo) if utxo.confirmations == 0 => total.copy(unconfirmed = total.unconfirmed + (utxo.outPoint -> utxo.amount))
       case (total, utxo) if utxo.confirmations < minDepth => total.copy(recentlyConfirmed = total.recentlyConfirmed + (utxo.outPoint -> utxo.amount))
       case (total, utxo) => total.copy(deeplyConfirmed = total.deeplyConfirmed + (utxo.outPoint -> utxo.amount))
     }
   } yield detailed
 
-  private def getRecentlySpentInputs(bitcoinClient: BitcoinCoreClient, utxos: Seq[Utxo], minDepth: Int)(implicit ec: ExecutionContext): Future[Set[OutPoint]] = {
-    val nonDeeplyConfirmedTxs = utxos.filter(_.confirmations < minDepth).map(_.txid).toSet
-    Future.sequence(nonDeeplyConfirmedTxs.map(txId => bitcoinClient.getTransaction(txId).map(Some(_)).recover { case _ => None })).map(_.flatten.flatMap(_.txIn.map(_.outPoint)))
+  /**
+   * We list utxos that were spent by our unconfirmed transactions: they will be included in our on-chain balance, and
+   * thus need to be ignored from our off-chain balance.
+   */
+  private def getUnconfirmedRecentlySpentInputs(bitcoinClient: BitcoinCoreClient, utxos: Seq[Utxo])(implicit ec: ExecutionContext): Future[Set[OutPoint]] = {
+    val unconfirmedTxs = utxos.filter(_.confirmations == 0).map(_.txid).toSet
+    Future.sequence(unconfirmedTxs.map(txId => bitcoinClient.getTransaction(txId).map(Some(_)).recover { case _ => None })).map(_.flatten.flatMap(_.txIn.map(_.outPoint)))
+  }
+
+  /**
+   * We list utxos that were spent in recent blocks, up to min-depth: those utxos will be included in our on-chain
+   * balance if they belong to us, and thus need to be ignored from our off-chain balance.
+   *
+   * Note that since we may spend our inputs before they reach min-depth (e.g. to fund unrelated channels), some of
+   * those utxos don't appear in our on-chain balance, which is fine since we already spent them! In that case, they
+   * must not be counted in our off-chain balance either, since we've used them already. This is why we cannot rely
+   * only on listUnspent to deduplicate utxos between on-chain and off-chain balances.
+   */
+  private def getConfirmedRecentlySpentInputs(bitcoinClient: BitcoinCoreClient, minDepth: Int)(implicit ec: ExecutionContext): Future[Set[OutPoint]] = for {
+    currentBlockHeight <- bitcoinClient.getBlockHeight()
+    currentBlockId <- bitcoinClient.getBlockId(currentBlockHeight.toInt)
+    // We look one block past our min-depth in case there's a race with a new block.
+    spentInputs <- scanPastBlocks(bitcoinClient, currentBlockId, Set.empty, remaining = minDepth + 1)
+  } yield spentInputs
+
+  private def scanPastBlocks(bitcoinClient: BitcoinCoreClient, blockId: BlockId, spentInputs: Set[OutPoint], remaining: Int)(implicit ec: ExecutionContext): Future[Set[OutPoint]] = {
+    bitcoinClient.getBlock(blockId).flatMap(block => {
+      val spentInputs1 = spentInputs ++ block.tx.asScala.flatMap(_.txIn.asScala.map(_.outPoint)).map(KotlinUtils.kmp2scala).toSet
+      if (remaining > 0) {
+        scanPastBlocks(bitcoinClient, BlockId(KotlinUtils.kmp2scala(block.header.hashPreviousBlock)), spentInputs1, remaining - 1)
+      } else {
+        Future.successful(spentInputs1)
+      }
+    })
   }
 
   case class GlobalBalance(onChain: DetailedOnChainBalance, offChain: OffChainBalance, channels: Map[ByteVector32, PersistentChannelData]) {
