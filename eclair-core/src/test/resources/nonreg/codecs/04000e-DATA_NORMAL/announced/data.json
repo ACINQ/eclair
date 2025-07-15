@@ -4,7 +4,7 @@
     "channelParams" : {
       "channelId" : "c380aa11700db0a6d797dfd0be8aecfadad9397e4975f0fa8c9d10db71feac38",
       "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
-      "channelFeatures" : [ "option_static_remotekey" ],
+      "channelFeatures" : [ ],
       "localParams" : {
         "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
         "fundingKeyPath" : [ 1057736322, 487845715, 3068040012, 2828312867, 3790939166, 2388092911, 4276180524, 217832603, 2147483649 ],

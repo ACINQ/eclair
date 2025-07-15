@@ -31,7 +31,7 @@ import fr.acinq.eclair.wire.internal.channel.version2.ChannelTypes2
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.UpdateMessage
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, PermanentChannelFeature}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, InitFeature, MilliSatoshiLong}
 import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
@@ -61,17 +61,17 @@ private[channel] object ChannelCodecs3 {
     })
 
     /** We use the same encoding as init features, even if we don't need the distinction between mandatory and optional */
-    val channelFeaturesCodec: Codec[ChannelFeatures] = lengthDelimited(bytes).xmap(
-      (b: ByteVector) => ChannelFeatures(Features(b).activated.keySet.collect { case f: PermanentChannelFeature => f }), // we make no difference between mandatory/optional, both are considered activated
-      (cf: ChannelFeatures) => Features(cf.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector // we encode features as mandatory, by convention
+    val channelFeaturesCodec: Codec[ChannelTypes3.ChannelFeatures] = lengthDelimited(bytes).xmap(
+      (b: ByteVector) => ChannelTypes3.ChannelFeatures(Features(b).activated.keySet.collect { case f: InitFeature => f }), // we make no difference between mandatory/optional, both are considered activated
+      (cf: ChannelTypes3.ChannelFeatures) => Features(cf.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector // we encode features as mandatory, by convention
     )
 
-    def localParamsCodec(channelFeatures: ChannelFeatures): Codec[ChannelTypes0.LocalParams] = (
+    def localParamsCodec(channelFeatures: ChannelTypes3.ChannelFeatures): Codec[ChannelTypes0.LocalParams] = (
       ("nodeId" | publicKey) ::
         ("channelPath" | keyPathCodec) ::
         ("dustLimit" | satoshi) ::
         ("maxHtlcValueInFlightMsat" | uint64) ::
-        ("channelReserve" | conditional(!channelFeatures.hasFeature(Features.DualFunding), satoshi)) ::
+        ("channelReserve" | conditional(!channelFeatures.features.contains(Features.DualFunding), satoshi)) ::
         ("htlcMinimum" | millisatoshi) ::
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::
@@ -80,11 +80,11 @@ private[channel] object ChannelCodecs3 {
         ("walletStaticPaymentBasepoint" | optional(provide(channelFeatures.paysDirectlyToWallet), publicKey)) ::
         ("features" | combinedFeaturesCodec)).as[ChannelTypes0.LocalParams]
 
-    def remoteParamsCodec(channelFeatures: ChannelFeatures): Codec[ChannelTypes0.RemoteParams] = (
+    def remoteParamsCodec(channelFeatures: ChannelTypes3.ChannelFeatures): Codec[ChannelTypes0.RemoteParams] = (
       ("nodeId" | publicKey) ::
         ("dustLimit" | satoshi) ::
         ("maxHtlcValueInFlightMsat" | uint64) ::
-        ("channelReserve" | conditional(!channelFeatures.hasFeature(Features.DualFunding), satoshi)) ::
+        ("channelReserve" | conditional(!channelFeatures.features.contains(Features.DualFunding), satoshi)) ::
         ("htlcMinimum" | millisatoshi) ::
         ("toSelfDelay" | cltvExpiryDelta) ::
         ("maxAcceptedHtlcs" | uint16) ::

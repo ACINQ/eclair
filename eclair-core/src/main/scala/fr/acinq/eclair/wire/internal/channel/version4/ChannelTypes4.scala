@@ -25,6 +25,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo}
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0
+import fr.acinq.eclair.wire.internal.channel.version3.ChannelTypes3
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, LiquidityAds, Shutdown, TxSignatures}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, RealShortChannelId, UInt64, channel}
 import scodec.bits.ByteVector
@@ -62,10 +63,10 @@ private[channel] object ChannelTypes4 {
 
   case class ChannelParams(channelId: ByteVector32,
                            channelConfig: channel.ChannelConfig,
-                           channelFeatures: channel.ChannelFeatures,
+                           channelFeatures: ChannelTypes3.ChannelFeatures,
                            localParams: ChannelTypes0.LocalParams, remoteParams: RemoteParams,
                            channelFlags: channel.ChannelFlags) {
-    def migrate(): channel.ChannelParams = channel.ChannelParams(channelId, channelConfig, channelFeatures, localParams.migrate(), remoteParams.migrate(), channelFlags)
+    def migrate(): channel.ChannelParams = channel.ChannelParams(channelId, channelConfig, channelFeatures.migrate(), localParams.migrate(), remoteParams.migrate(), channelFlags)
 
     def localCommitParams(): channel.CommitParams = channel.CommitParams(localParams.dustLimit, localParams.htlcMinimum, localParams.maxHtlcValueInFlightMsat, localParams.maxAcceptedHtlcs, remoteParams.toSelfDelay)
 
