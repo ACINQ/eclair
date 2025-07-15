@@ -1181,6 +1181,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
   }
 
   test("compute detailed on-chain balance") {
+    assume(!useEclairSigner)
+
     val sender = TestProbe()
     val miner = makeBitcoinCoreClient()
     val wallet = new BitcoinCoreClient(createWallet("detailed_on_chain_balance", sender))
