@@ -557,6 +557,7 @@ final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_CHANNEL_INI
   val channelId: ByteVector32 = initFunder.temporaryChannelId
 }
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(channelParams: ChannelParams,
+                                                channelType: SupportedChannelType,
                                                 localCommitParams: CommitParams,
                                                 remoteCommitParams: CommitParams,
                                                 fundingAmount: Satoshi,
@@ -566,9 +567,10 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(channelParams: ChannelParams,
                                                 remoteFirstPerCommitmentPoint: PublicKey,
                                                 replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) extends TransientChannelData {
   val channelId: ByteVector32 = channelParams.channelId
-  val commitmentFormat: CommitmentFormat = channelParams.channelFeatures.commitmentFormat
+  val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 }
 final case class DATA_WAIT_FOR_FUNDING_CREATED(channelParams: ChannelParams,
+                                               channelType: SupportedChannelType,
                                                localCommitParams: CommitParams,
                                                remoteCommitParams: CommitParams,
                                                fundingAmount: Satoshi,
@@ -577,9 +579,10 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(channelParams: ChannelParams,
                                                remoteFundingPubKey: PublicKey,
                                                remoteFirstPerCommitmentPoint: PublicKey) extends TransientChannelData {
   val channelId: ByteVector32 = channelParams.channelId
-  val commitmentFormat: CommitmentFormat = channelParams.channelFeatures.commitmentFormat
+  val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 }
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelParams: ChannelParams,
+                                              channelType: SupportedChannelType,
                                               localCommitParams: CommitParams,
                                               remoteCommitParams: CommitParams,
                                               remoteFundingPubKey: PublicKey,
@@ -591,7 +594,7 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelParams: ChannelParams,
                                               lastSent: FundingCreated,
                                               replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) extends TransientChannelData {
   val channelId: ByteVector32 = channelParams.channelId
-  val commitmentFormat: CommitmentFormat = channelParams.channelFeatures.commitmentFormat
+  val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 }
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm

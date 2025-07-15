@@ -25,7 +25,6 @@ case class ChannelParams(channelId: ByteVector32,
                          channelFeatures: ChannelFeatures,
                          localParams: LocalChannelParams, remoteParams: RemoteChannelParams,
                          channelFlags: ChannelFlags) {
-  require(channelFeatures.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (channel features: $channelFeatures")
   require(channelFeatures.hasFeature(Features.DualFunding) == localParams.initialRequestedChannelReserve_opt.isEmpty, "custom local channel reserve is incompatible with dual-funded channels")
   require(channelFeatures.hasFeature(Features.DualFunding) == remoteParams.initialRequestedChannelReserve_opt.isEmpty, "custom remote channel reserve is incompatible with dual-funded channels")
 

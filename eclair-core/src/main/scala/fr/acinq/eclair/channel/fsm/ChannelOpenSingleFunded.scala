@@ -142,7 +142,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
               ChannelTlv.ChannelTypeTlv(d.initFundee.channelType)
             ))
-          goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(channelParams, localCommitParams, remoteCommitParams, open.fundingSatoshis, open.pushMsat, open.feeratePerKw, open.fundingPubkey, open.firstPerCommitmentPoint) sending accept
+          goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(channelParams, d.initFundee.channelType, localCommitParams, remoteCommitParams, open.fundingSatoshis, open.pushMsat, open.feeratePerKw, open.fundingPubkey, open.firstPerCommitmentPoint) sending accept
       }
 
     case Event(c: CloseCommand, d) => handleFastClose(c, d.channelId)
@@ -175,7 +175,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val channelParams = ChannelParams(d.initFunder.temporaryChannelId, d.initFunder.channelConfig, channelFeatures, d.initFunder.localChannelParams, remoteChannelParams, d.lastSent.channelFlags)
           val localCommitParams = CommitParams(d.initFunder.proposedCommitParams.localDustLimit, d.initFunder.proposedCommitParams.localHtlcMinimum, d.initFunder.proposedCommitParams.localMaxHtlcValueInFlight, d.initFunder.proposedCommitParams.localMaxAcceptedHtlcs, accept.toSelfDelay)
           val remoteCommitParams = CommitParams(accept.dustLimitSatoshis, accept.htlcMinimumMsat, accept.maxHtlcValueInFlightMsat, accept.maxAcceptedHtlcs, d.initFunder.proposedCommitParams.toRemoteDelay)
-          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(channelParams, localCommitParams, remoteCommitParams, d.initFunder.fundingAmount, d.initFunder.pushAmount_opt.getOrElse(0 msat), d.initFunder.commitTxFeerate, accept.fundingPubkey, accept.firstPerCommitmentPoint, d.initFunder.replyTo)
+          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(channelParams, d.initFunder.channelType, localCommitParams, remoteCommitParams, d.initFunder.fundingAmount, d.initFunder.pushAmount_opt.getOrElse(0 msat), d.initFunder.commitTxFeerate, accept.fundingPubkey, accept.firstPerCommitmentPoint, d.initFunder.replyTo)
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
@@ -224,7 +224,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           txPublisher ! SetChannelId(remoteNodeId, channelId)
           context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
           // NB: we don't send a ChannelSignatureSent for the first commit
-          goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelParams1, d.localCommitParams, d.remoteCommitParams, d.remoteFundingPubKey, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, fundingCreated, d.replyTo) sending fundingCreated
+          goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelParams1, d.channelType, d.localCommitParams, d.remoteCommitParams, d.remoteFundingPubKey, fundingTx, fundingTxFee, localSpec, localCommitTx, remoteCommit, fundingCreated, d.replyTo) sending fundingCreated
       }
 
     case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>

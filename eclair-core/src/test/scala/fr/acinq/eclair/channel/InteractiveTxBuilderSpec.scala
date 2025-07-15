@@ -217,7 +217,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   private def createFixtureParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false), nonInitiatorPaysCommitTxFees: Boolean = false): FixtureParams = {
-    val channelFeatures = ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), announceChannel = true)
+    val channelType = ChannelTypes.AnchorOutputsZeroFeeHtlcTx()
+    val channelFeatures = ChannelFeatures(channelType, Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), announceChannel = true)
     val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(features = Features(channelFeatures.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport])))
     val localChannelParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, None, isChannelOpener = true, paysCommitTxFees = !nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountA)
     val commitParamsA = CommitParams(nodeParamsA.channelConf.dustLimit, nodeParamsA.channelConf.htlcMinimum, nodeParamsA.channelConf.maxHtlcValueInFlight(fundingAmountA + fundingAmountB, unlimited = false), nodeParamsA.channelConf.maxAcceptedHtlcs, nodeParamsB.channelConf.toRemoteDelay)
@@ -242,8 +243,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val channelId = randomBytes32()
     val fundingPubKeyA = channelKeysA.fundingKey(fundingTxIndex = 0).publicKey
     val fundingPubKeyB = channelKeysB.fundingKey(fundingTxIndex = 0).publicKey
-    val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, None, fundingPubKeyB, Nil, channelFeatures.commitmentFormat, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
-    val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, None, fundingPubKeyA, Nil, channelFeatures.commitmentFormat, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
+    val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, None, fundingPubKeyB, Nil, channelType.commitmentFormat, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
+    val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, None, fundingPubKeyA, Nil, channelType.commitmentFormat, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
     val channelParamsA = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localChannelParamsA, remoteChannelParamsB, ChannelFlags(announceChannel = true))
     val channelParamsB = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localChannelParamsB, remoteChannelParamsA, ChannelFlags(announceChannel = true))
 

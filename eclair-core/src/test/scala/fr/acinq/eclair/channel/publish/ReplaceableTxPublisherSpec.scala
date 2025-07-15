@@ -1616,7 +1616,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       case Transactions.DefaultCommitmentFormat => None
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx])
     }
-    val mainTx_opt = if (!bob.stateData.asInstanceOf[DATA_NORMAL].commitments.channelParams.channelFeatures.paysDirectlyToWallet) Some(alice2blockchain.expectFinalTxPublished("remote-main-delayed")) else None
+    val mainTx_opt = if (bob.stateData.asInstanceOf[DATA_NORMAL].commitments.channelParams.localParams.walletStaticPaymentBasepoint.isEmpty) Some(alice2blockchain.expectFinalTxPublished("remote-main-delayed")) else None
     val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(claimHtlcSuccess.txInfo.isInstanceOf[ClaimHtlcSuccessTx])
     val claimHtlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))

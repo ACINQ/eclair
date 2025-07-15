@@ -230,12 +230,10 @@ private[channel] object ChannelTypes0 {
       } else {
         ChannelConfig()
       }
-      val channelFeatures = if (channelVersion.hasAnchorOutputs) {
-        ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
-      } else if (channelVersion.hasStaticRemotekey) {
-        ChannelFeatures(Features.StaticRemoteKey)
+      val commitmentFormat = if (channelVersion.hasAnchorOutputs) {
+        UnsafeLegacyAnchorOutputsCommitmentFormat
       } else {
-        ChannelFeatures()
+        DefaultCommitmentFormat
       }
       val (localCommit1, commitInput) = localCommit.migrate(remoteParams.fundingPubKey)
       val localCommitParams = CommitParams(localParams.dustLimit, localParams.htlcMinimum, localParams.maxHtlcValueInFlightMsat, localParams.maxAcceptedHtlcs, remoteParams.toRemoteDelay)
@@ -251,7 +249,7 @@ private[channel] object ChannelTypes0 {
         // funding tx when the channel is instantiated, and update the status (possibly immediately if it was confirmed).
         localFundingStatus = LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None),
         remoteFundingStatus = RemoteFundingStatus.Locked,
-        commitmentFormat = channelFeatures.commitmentFormat,
+        commitmentFormat = commitmentFormat,
         localCommitParams = localCommitParams,
         localCommit = localCommit1,
         remoteCommitParams = remoteCommitParams,
@@ -259,7 +257,7 @@ private[channel] object ChannelTypes0 {
         nextRemoteCommit_opt = remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit))
       )
       channel.Commitments(
-        ChannelParams(channelId, channelConfig, channelFeatures, localParams.migrate(), remoteParams.migrate(), channelFlags),
+        ChannelParams(channelId, channelConfig, ChannelFeatures(), localParams.migrate(), remoteParams.migrate(), channelFlags),
         CommitmentChanges(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId),
         Seq(commitment),
         inactive = Nil,

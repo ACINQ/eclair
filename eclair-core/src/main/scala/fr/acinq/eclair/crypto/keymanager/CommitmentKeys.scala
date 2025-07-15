@@ -72,7 +72,7 @@ object LocalCommitmentKeys {
     LocalCommitmentKeys(
       ourDelayedPaymentKey = channelKeys.delayedPaymentKey(localPerCommitmentPoint),
       theirPaymentPublicKey = commitmentFormat match {
-        case DefaultCommitmentFormat if params.channelFeatures.hasFeature(Features.StaticRemoteKey) => params.remoteParams.paymentBasepoint
+        case DefaultCommitmentFormat if params.localParams.walletStaticPaymentBasepoint.nonEmpty => params.remoteParams.paymentBasepoint
         case DefaultCommitmentFormat => ChannelKeys.remotePerCommitmentPublicKey(params.remoteParams.paymentBasepoint, localPerCommitmentPoint)
         case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => params.remoteParams.paymentBasepoint
       },

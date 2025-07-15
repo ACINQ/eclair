@@ -35,6 +35,7 @@ import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelHopFromUpdate}
 import fr.acinq.eclair.router.BlindedRouteCreation
 import fr.acinq.eclair.router.Router.{NodeHop, Route}
+import fr.acinq.eclair.transactions.Transactions.DefaultCommitmentFormat
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
 import fr.acinq.eclair.wire.protocol._
@@ -757,10 +758,11 @@ object PaymentPacketSpec {
       case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
     }
     val channelFlags = ChannelFlags(announceChannel = announcement_opt.nonEmpty)
+    val commitmentFormat = DefaultCommitmentFormat
     new Commitments(
       ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localChannelParams, remoteChannelParams, channelFlags),
       CommitmentChanges(localChanges, remoteChanges, 0, 0),
-      List(Commitment(0, 0, OutPoint(fundingTx, 0), testCapacity, randomKey().publicKey, localFundingStatus, RemoteFundingStatus.Locked, channelFeatures.commitmentFormat, commitParams, localCommit, commitParams, remoteCommit, None)),
+      List(Commitment(0, 0, OutPoint(fundingTx, 0), testCapacity, randomKey().publicKey, localFundingStatus, RemoteFundingStatus.Locked, commitmentFormat, commitParams, localCommit, commitParams, remoteCommit, None)),
       inactive = Nil,
       Right(randomKey().publicKey),
       ShaChain.init,

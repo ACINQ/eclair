@@ -18,16 +18,32 @@ package fr.acinq.eclair.wire.internal.channel.version3
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64}
-import fr.acinq.eclair.channel
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, UnsignedHtlcTx}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0
 import fr.acinq.eclair.wire.protocol.CommitSig
+import fr.acinq.eclair.{Features, InitFeature, PermanentChannelFeature, channel}
 
 private[channel] object ChannelTypes3 {
+
+  // We previously stored channel type features inside our channel features.
+  case class ChannelFeatures(features: Set[InitFeature]) {
+    val paysDirectlyToWallet: Boolean = features.contains(Features.StaticRemoteKey) && !features.contains(Features.AnchorOutputs) && !features.contains(Features.AnchorOutputsZeroFeeHtlcTx)
+
+    /** Legacy option_anchor_outputs is used for Phoenix, because Phoenix doesn't have an on-chain wallet to pay for fees. */
+    val commitmentFormat: CommitmentFormat = if (features.contains(Features.AnchorOutputs)) {
+      UnsafeLegacyAnchorOutputsCommitmentFormat
+    } else if (features.contains(Features.AnchorOutputsZeroFeeHtlcTx)) {
+      ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
+    } else {
+      DefaultCommitmentFormat
+    }
+
+    def migrate(): channel.ChannelFeatures = channel.ChannelFeatures(features.collect { case f: PermanentChannelFeature => f })
+  }
 
   case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long)
 
@@ -77,7 +93,7 @@ private[channel] object ChannelTypes3 {
         remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit))
       )
       channel.Commitments(
-        ChannelParams(channelId, channelConfig, channelFeatures, localParams.migrate(), remoteParams.migrate(), channelFlags),
+        ChannelParams(channelId, channelConfig, channelFeatures.migrate(), localParams.migrate(), remoteParams.migrate(), channelFlags),
         CommitmentChanges(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId),
         active = Seq(commitment),
         inactive = Nil,
