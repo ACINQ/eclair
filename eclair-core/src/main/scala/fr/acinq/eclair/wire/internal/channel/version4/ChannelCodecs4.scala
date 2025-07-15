@@ -277,12 +277,12 @@ private[channel] object ChannelCodecs4 {
 
     val spentMapCodec: Codec[Map[OutPoint, Transaction]] = mapCodec(outPointCodec, txCodec)
 
-    private val multisig2of2InputCodec: Codec[InteractiveTxBuilder.Multisig2of2Input] = (
+    private val multisig2of2InputCodec: Codec[ChannelTypes4.Multisig2of2Input] = (
       ("info" | inputInfoCodec) ::
         ("fundingTxIndex" | uint32) ::
-        ("remoteFundingPubkey" | publicKey)).as[InteractiveTxBuilder.Multisig2of2Input]
+        ("remoteFundingPubkey" | publicKey)).as[ChannelTypes4.Multisig2of2Input]
 
-    private val sharedFundingInputCodec: Codec[InteractiveTxBuilder.SharedFundingInput] = discriminated[InteractiveTxBuilder.SharedFundingInput].by(uint16)
+    private val sharedFundingInputCodec: Codec[ChannelTypes4.Multisig2of2Input] = discriminated[ChannelTypes4.Multisig2of2Input].by(uint16)
       .typecase(0x01, multisig2of2InputCodec)
 
     private val requireConfirmedInputsCodec: Codec[InteractiveTxBuilder.RequireConfirmedInputs] = (("forLocal" | bool8) :: ("forRemote" | bool8)).as[InteractiveTxBuilder.RequireConfirmedInputs]

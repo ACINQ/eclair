@@ -72,12 +72,16 @@ private[channel] object ChannelTypes4 {
     def remoteCommitParams(): channel.CommitParams = channel.CommitParams(remoteParams.dustLimit, remoteParams.htlcMinimum, remoteParams.maxHtlcValueInFlightMsat, remoteParams.maxAcceptedHtlcs, localParams.toSelfDelay)
   }
 
+  case class Multisig2of2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) {
+    def migrate(commitmentFormat: CommitmentFormat): InteractiveTxBuilder.SharedFundingInput = InteractiveTxBuilder.SharedFundingInput(info, fundingTxIndex, remoteFundingPubkey, commitmentFormat)
+  }
+
   // We added the commitment format when moving to channel codecs v5.
   case class InteractiveTxParams(channelId: ByteVector32,
                                  isInitiator: Boolean,
                                  localContribution: Satoshi,
                                  remoteContribution: Satoshi,
-                                 sharedInput_opt: Option[InteractiveTxBuilder.SharedFundingInput],
+                                 sharedInput_opt: Option[Multisig2of2Input],
                                  remoteFundingPubKey: PublicKey,
                                  localOutputs: List[TxOut],
                                  lockTime: Long,
@@ -89,7 +93,7 @@ private[channel] object ChannelTypes4 {
       isInitiator = isInitiator,
       localContribution = localContribution,
       remoteContribution = remoteContribution,
-      sharedInput_opt = sharedInput_opt,
+      sharedInput_opt = sharedInput_opt.map(_.migrate(commitmentFormat)),
       remoteFundingPubKey = remoteFundingPubKey,
       localOutputs = localOutputs,
       commitmentFormat = commitmentFormat,

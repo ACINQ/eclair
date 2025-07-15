@@ -315,6 +315,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           commitTx
       }
       commitTx.correctlySpends(Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      // We check the expected weight of the commit input:
+      val commitInputWeight = commitTx.copy(txIn = Seq(commitTx.txIn.head, commitTx.txIn.head)).weight() - commitTx.weight()
+      checkExpectedWeight(commitInputWeight, commitmentFormat.fundingInputWeight, commitmentFormat)
       val htlcTxs = makeHtlcTxs(commitTx, outputs, commitmentFormat)
       val expiries = htlcTxs.map(tx => tx.htlcId -> tx.htlcExpiry.toLong).toMap
       val htlcSuccessTxs = htlcTxs.collect { case tx: UnsignedHtlcSuccessTx => tx }

@@ -101,15 +101,8 @@ object InteractiveTxBuilder {
   case class RequireConfirmedInputs(forLocal: Boolean, forRemote: Boolean)
 
   /** An input that is already shared between participants (e.g. the current funding output when doing a splice). */
-  sealed trait SharedFundingInput {
-    // @formatter:off
-    def info: InputInfo
-    def weight: Int
-    // @formatter:on
-  }
-
-  case class Multisig2of2Input(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey) extends SharedFundingInput {
-    override val weight: Int = 388
+  case class SharedFundingInput(info: InputInfo, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, commitmentFormat: CommitmentFormat) {
+    val weight: Int = commitmentFormat.fundingInputWeight
 
     def sign(channelKeys: ChannelKeys, tx: Transaction, spentUtxos: Map[OutPoint, TxOut]): ChannelSpendSignature.IndividualSignature = {
       val localFundingKey = channelKeys.fundingKey(fundingTxIndex)
@@ -117,11 +110,12 @@ object InteractiveTxBuilder {
     }
   }
 
-  object Multisig2of2Input {
-    def apply(channelKeys: ChannelKeys, commitment: Commitment): Multisig2of2Input = Multisig2of2Input(
+  object SharedFundingInput {
+    def apply(channelKeys: ChannelKeys, commitment: Commitment): SharedFundingInput = SharedFundingInput(
       info = commitment.commitInput(channelKeys),
       fundingTxIndex = commitment.fundingTxIndex,
-      remoteFundingPubkey = commitment.remoteFundingPubKey
+      remoteFundingPubkey = commitment.remoteFundingPubKey,
+      commitmentFormat = commitment.commitmentFormat,
     )
   }
 
@@ -928,9 +922,10 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
     val tx = unsignedTx.buildUnsignedTx()
-    val sharedSig_opt = fundingParams.sharedInput_opt.collect {
-      case i: Multisig2of2Input => i.sign(channelKeys, tx, unsignedTx.inputDetails).sig
-    }
+    val sharedSig_opt = fundingParams.sharedInput_opt.map(i => i.commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => i.sign(channelKeys, tx, unsignedTx.inputDetails).sig
+      case _: SimpleTaprootChannelCommitmentFormat => ???
+    })
     if (unsignedTx.localInputs.isEmpty) {
       context.self ! SignTransactionResult(PartiallySignedSharedTransaction(unsignedTx, TxSignatures(fundingParams.channelId, tx, Nil, sharedSig_opt)))
     } else {
@@ -1054,18 +1049,19 @@ object InteractiveTxSigningSession {
       log.info("invalid tx_signatures: witness count mismatch (expected={}, got={})", partiallySignedTx.tx.remoteInputs.length, remoteSigs.witnesses.length)
       return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
     }
-    val sharedSigs_opt = fundingParams.sharedInput_opt match {
-      case Some(sharedInput: Multisig2of2Input) =>
-        (partiallySignedTx.localSigs.previousFundingTxSig_opt, remoteSigs.previousFundingTxSig_opt) match {
+    val sharedSigs_opt = fundingParams.sharedInput_opt.map(sharedInput => {
+      sharedInput.commitmentFormat match {
+        case _: SegwitV0CommitmentFormat => (partiallySignedTx.localSigs.previousFundingTxSig_opt, remoteSigs.previousFundingTxSig_opt) match {
           case (Some(localSig), Some(remoteSig)) =>
             val localFundingPubkey = channelKeys.fundingKey(sharedInput.fundingTxIndex).publicKey
-            Some(Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, sharedInput.remoteFundingPubkey))
+            Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, sharedInput.remoteFundingPubkey)
           case _ =>
             log.info("invalid tx_signatures: missing shared input signatures")
             return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
         }
-      case None => None
-    }
+        case _: SimpleTaprootChannelCommitmentFormat => ???
+      }
+    })
     val txWithSigs = FullySignedSharedTransaction(partiallySignedTx.tx, partiallySignedTx.localSigs, remoteSigs, sharedSigs_opt)
     if (remoteSigs.txId != txWithSigs.signedTx.txid) {
       log.info("invalid tx_signatures: txId mismatch (expected={}, got={})", txWithSigs.signedTx.txid, remoteSigs.txId)
