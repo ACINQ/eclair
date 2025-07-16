@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.balance
 
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, OutPoint, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{BlockId, Btc, ByteVector32, KotlinUtils, OutPoint, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.Utxo
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -26,6 +26,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc.incoming
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 object CheckBalance {
 
@@ -60,16 +61,16 @@ object CheckBalance {
       // We take the last commitment into account: it's the most likely to (eventually) confirm.
       MainAndHtlcBalance(
         toLocal = this.toLocal + mainBalance(commitments.latest.localCommit),
-        htlcs = commitments.latest.localCommit.spec.htlcs.collect(incoming).sumAmount
+        htlcs = this.htlcs + commitments.latest.localCommit.spec.htlcs.collect(incoming).sumAmount
       )
     }
 
     /** Add our balance for a confirmed local close. */
-    def addLocalClose(lcp: LocalCommitPublished): MainAndHtlcBalance = {
-      // If our main transaction isn't deeply confirmed yet, we count it in our off-chain balance.
-      // Once it confirms, it will be included in our on-chain balance, so we ignore it in our off-chain balance.
+    def addLocalClose(lcp: LocalCommitPublished, recentlySpentInputs: Set[OutPoint]): MainAndHtlcBalance = {
+      // If our main transaction isn't confirmed or in the mempool yet, we count it in our off-chain balance.
+      // Once it confirms or appears in the mempool, it will be included in our on-chain balance, so we ignore it in our off-chain balance.
       val additionalToLocal = lcp.localOutput_opt match {
-        case Some(outpoint) if !lcp.irrevocablySpent.contains(outpoint) => lcp.commitTx.txOut(outpoint.index.toInt).amount
+        case Some(outpoint) if !lcp.irrevocablySpent.contains(outpoint) && !recentlySpentInputs.contains(outpoint) => lcp.commitTx.txOut(outpoint.index.toInt).amount
         case _ => 0 sat
       }
       val additionalHtlcs = lcp.htlcOutputs.map { outpoint =>
@@ -81,9 +82,9 @@ object CheckBalance {
             val delayedHtlcOutpoint = OutPoint(spendingTx.txid, 0)
             val htlcSpentByUs = lcp.htlcDelayedOutputs.contains(delayedHtlcOutpoint)
             // If our 3rd-stage transaction isn't confirmed yet, we should count it in our off-chain balance.
-            // Once confirmed, we should ignore it since it will appear in our on-chain balance.
+            // Once confirmed or seen in the mempool, we should ignore it since it will appear in our on-chain balance.
             val htlcDelayedPending = !lcp.irrevocablySpent.contains(delayedHtlcOutpoint)
-            if (htlcSpentByUs && htlcDelayedPending) htlcAmount else 0 sat
+            if (htlcSpentByUs && htlcDelayedPending && !recentlySpentInputs.contains(delayedHtlcOutpoint)) htlcAmount else 0 sat
           case None =>
             // We assume that HTLCs will be fulfilled, so we only count incoming HTLCs in our off-chain balance.
             if (lcp.incomingHtlcs.contains(outpoint)) htlcAmount else 0 sat
@@ -93,34 +94,34 @@ object CheckBalance {
     }
 
     /** Add our balance for a confirmed remote close. */
-    def addRemoteClose(rcp: RemoteCommitPublished): MainAndHtlcBalance = {
-      // If our main transaction isn't deeply confirmed yet, we count it in our off-chain balance.
-      // Once it confirms, it will be included in our on-chain balance, so we ignore it in our off-chain balance.
+    def addRemoteClose(rcp: RemoteCommitPublished, recentlySpentInputs: Set[OutPoint]): MainAndHtlcBalance = {
+      // If our main transaction isn't confirmed or in the mempool yet, we count it in our off-chain balance.
+      // Once it confirms or appears in the mempool, it will be included in our on-chain balance, so we ignore it in our off-chain balance.
       val additionalToLocal = rcp.localOutput_opt match {
-        case Some(outpoint) if !rcp.irrevocablySpent.contains(outpoint) => rcp.commitTx.txOut(outpoint.index.toInt).amount
+        case Some(outpoint) if !rcp.irrevocablySpent.contains(outpoint) && !recentlySpentInputs.contains(outpoint) => rcp.commitTx.txOut(outpoint.index.toInt).amount
         case _ => 0 sat
       }
       // If HTLC transactions are confirmed, they will appear in our on-chain balance if we were the one to claim them.
       // We only need to include incoming HTLCs that haven't been claimed yet (since we assume that they will be fulfilled).
       // Note that it is their commitment, so incoming/outgoing are inverted.
       val additionalHtlcs = rcp.incomingHtlcs.keys.map {
-        case outpoint if !rcp.irrevocablySpent.contains(outpoint) => rcp.commitTx.txOut(outpoint.index.toInt).amount
+        case outpoint if !rcp.irrevocablySpent.contains(outpoint) && !recentlySpentInputs.contains(outpoint) => rcp.commitTx.txOut(outpoint.index.toInt).amount
         case _ => 0 sat
       }.sum
       MainAndHtlcBalance(toLocal = toLocal + additionalToLocal, htlcs = htlcs + additionalHtlcs)
     }
 
     /** Add our balance for a confirmed revoked close. */
-    def addRevokedClose(rvk: RevokedCommitPublished): MainAndHtlcBalance = {
-      // If our main transaction isn't deeply confirmed yet, we count it in our off-chain balance.
-      // Once it confirms, it will be included in our on-chain balance, so we ignore it in our off-chain balance.
+    def addRevokedClose(rvk: RevokedCommitPublished, recentlySpentInputs: Set[OutPoint]): MainAndHtlcBalance = {
+      // If our main transaction isn't confirmed or in the mempool yet, we count it in our off-chain balance.
+      // Once it confirms or appears in the mempool, it will be included in our on-chain balance, so we ignore it in our off-chain balance.
       // We do the same thing for our main penalty transaction claiming their main output.
       val additionalToLocal = rvk.localOutput_opt match {
-        case Some(outpoint) if !rvk.irrevocablySpent.contains(outpoint) => rvk.commitTx.txOut(outpoint.index.toInt).amount
+        case Some(outpoint) if !rvk.irrevocablySpent.contains(outpoint) && !recentlySpentInputs.contains(outpoint) => rvk.commitTx.txOut(outpoint.index.toInt).amount
         case _ => 0 sat
       }
       val additionalToRemote = rvk.remoteOutput_opt match {
-        case Some(outpoint) if !rvk.irrevocablySpent.contains(outpoint) => rvk.commitTx.txOut(outpoint.index.toInt).amount
+        case Some(outpoint) if !rvk.irrevocablySpent.contains(outpoint) && !recentlySpentInputs.contains(outpoint) => rvk.commitTx.txOut(outpoint.index.toInt).amount
         case _ => 0 sat
       }
       val additionalHtlcs = rvk.htlcOutputs.map(htlcOutpoint => {
@@ -138,14 +139,15 @@ object CheckBalance {
                 val htlcDelayedPending = !rvk.irrevocablySpent.contains(delayedHtlcOutpoint)
                 // Note that if the HTLC output was spent by us, it should appear in our on-chain balance, so we don't
                 // count it here.
-                if (htlcSpentByThem && htlcDelayedPending) htlcAmount else 0 sat
+                if (htlcSpentByThem && htlcDelayedPending && !recentlySpentInputs.contains(delayedHtlcOutpoint)) htlcAmount else 0 sat
               case None =>
                 // This should never happen unless our data is corrupted.
                 0 sat
             }
-          case None =>
-            // We assume that our penalty transaction will confirm before their HTLC transaction.
-            htlcAmount
+          // We ignore this HTLC if it's already included in our on-chain balance.
+          case None if recentlySpentInputs.contains(htlcOutpoint) => 0 sat
+          // We assume that our penalty transaction will confirm before their HTLC transaction.
+          case None => htlcAmount
         }
       }).sum
       MainAndHtlcBalance(toLocal = toLocal + additionalToLocal + additionalToRemote, htlcs = htlcs + additionalHtlcs)
@@ -164,7 +166,7 @@ object CheckBalance {
                              waitForPublishFutureCommitment: Btc = 0.sat) {
     val total: Btc = waitForFundingConfirmed + waitForChannelReady + normal.total + shutdown.total + negotiating.total + closing.total + waitForPublishFutureCommitment
 
-    def addChannelBalance(channel: PersistentChannelData): OffChainBalance = channel match {
+    def addChannelBalance(channel: PersistentChannelData, recentlySpentInputs: Set[OutPoint]): OffChainBalance = channel match {
       case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => this.copy(waitForFundingConfirmed = this.waitForFundingConfirmed + mainBalance(d.commitments.latest.localCommit))
       case d: DATA_WAIT_FOR_CHANNEL_READY => this.copy(waitForChannelReady = this.waitForChannelReady + mainBalance(d.commitments.latest.localCommit))
       case _: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED => this // we ignore our balance from unsigned commitments
@@ -172,6 +174,11 @@ object CheckBalance {
       case d: DATA_WAIT_FOR_DUAL_FUNDING_READY => this.copy(waitForChannelReady = this.waitForChannelReady + mainBalance(d.commitments.latest.localCommit))
       case d: DATA_NORMAL => this.copy(normal = this.normal.addChannelBalance(d.commitments))
       case d: DATA_SHUTDOWN => this.copy(shutdown = this.shutdown.addChannelBalance(d.commitments))
+      // If one of our closing transactions is in the mempool or recently confirmed, and thus included in our on-chain
+      // balance, we ignore this channel in our off-chain balance to avoid counting it twice.
+      case d: DATA_NEGOTIATING if recentlySpentInputs.contains(d.commitments.latest.commitInput.outPoint) => this
+      case d: DATA_NEGOTIATING_SIMPLE if recentlySpentInputs.contains(d.commitments.latest.commitInput.outPoint) => this
+      // Otherwise, that means the closing transactions aren't in the mempool yet, so we include our off-chain balance.
       case d: DATA_NEGOTIATING => this.copy(negotiating = this.negotiating.addChannelBalance(d.commitments))
       case d: DATA_NEGOTIATING_SIMPLE => this.copy(negotiating = this.negotiating.addChannelBalance(d.commitments))
       case d: DATA_CLOSING =>
@@ -180,10 +187,10 @@ object CheckBalance {
           // We can ignore it as our channel balance should appear in our on-chain balance.
           case Some(_: MutualClose) => this
           // A commitment transaction is confirmed: we compute the channel balance that we expect to get back on-chain.
-          case Some(c: LocalClose) => this.copy(closing = this.closing.addLocalClose(c.localCommitPublished))
-          case Some(c: CurrentRemoteClose) => this.copy(closing = this.closing.addRemoteClose(c.remoteCommitPublished))
-          case Some(c: NextRemoteClose) => this.copy(closing = this.closing.addRemoteClose(c.remoteCommitPublished))
-          case Some(c: RevokedClose) => this.copy(closing = this.closing.addRevokedClose(c.revokedCommitPublished))
+          case Some(c: LocalClose) => this.copy(closing = this.closing.addLocalClose(c.localCommitPublished, recentlySpentInputs))
+          case Some(c: CurrentRemoteClose) => this.copy(closing = this.closing.addRemoteClose(c.remoteCommitPublished, recentlySpentInputs))
+          case Some(c: NextRemoteClose) => this.copy(closing = this.closing.addRemoteClose(c.remoteCommitPublished, recentlySpentInputs))
+          case Some(c: RevokedClose) => this.copy(closing = this.closing.addRevokedClose(c.revokedCommitPublished, recentlySpentInputs))
           // In the recovery case, we can only claim our main output, HTLC outputs are lost.
           // Once our main transaction confirms, the channel will transition to the CLOSED state and our channel funds
           // will appear in our on-chain balance (minus on-chain fees).
@@ -210,11 +217,11 @@ object CheckBalance {
    * take on-chain fees into account. Once closing transactions confirm, we ignore the corresponding channel amounts,
    * the final amounts are included in our on-chain balance, which takes into account the on-chain fees paid.
    */
-  def computeOffChainBalance(channels: Iterable[PersistentChannelData]): OffChainBalance = {
-    channels.foldLeft(OffChainBalance()) { case (balance, channel) => balance.addChannelBalance(channel) }
+  def computeOffChainBalance(channels: Iterable[PersistentChannelData], recentlySpentInputs: Set[OutPoint]): OffChainBalance = {
+    channels.foldLeft(OffChainBalance()) { case (balance, channel) => balance.addChannelBalance(channel, recentlySpentInputs) }
   }
 
-  case class DetailedOnChainBalance(deeplyConfirmed: Map[OutPoint, Btc] = Map.empty, recentlyConfirmed: Map[OutPoint, Btc] = Map.empty, unconfirmed: Map[OutPoint, Btc] = Map.empty, utxos: Seq[Utxo]) {
+  case class DetailedOnChainBalance(deeplyConfirmed: Map[OutPoint, Btc] = Map.empty, recentlyConfirmed: Map[OutPoint, Btc] = Map.empty, unconfirmed: Map[OutPoint, Btc] = Map.empty, utxos: Seq[Utxo], recentlySpentInputs: Set[OutPoint]) {
     val totalDeeplyConfirmed: Btc = deeplyConfirmed.values.map(_.toSatoshi).sum
     val totalRecentlyConfirmed: Btc = recentlyConfirmed.values.map(_.toSatoshi).sum
     val totalUnconfirmed: Btc = unconfirmed.values.map(_.toSatoshi).sum
@@ -229,18 +236,53 @@ object CheckBalance {
    * Note that this may create temporary glitches when doing 0-conf splices, which will appear in the off-chain balance
    * immediately but will only be correctly accounted for in our on-chain balance after being deeply confirmed. Those
    * cases can be detected by looking at the unconfirmed and recently confirmed on-chain balance.
-   *
-   * During force-close, closing transactions that haven't reached min-depth are counted in our off-chain balance and
-   * should thus be ignored from our on-chain balance, where they will be tracked as unconfirmed or recently confirmed.
    */
-  private def computeOnChainBalance(bitcoinClient: BitcoinCoreClient, minDepth: Int)(implicit ec: ExecutionContext): Future[DetailedOnChainBalance] = for {
+  def computeOnChainBalance(bitcoinClient: BitcoinCoreClient, minDepth: Int)(implicit ec: ExecutionContext): Future[DetailedOnChainBalance] = for {
     utxos <- bitcoinClient.listUnspent()
-    detailed = utxos.foldLeft(DetailedOnChainBalance(utxos = utxos)) {
+    unconfirmedRecentlySpentInputs <- getUnconfirmedRecentlySpentInputs(bitcoinClient, utxos)
+    confirmedRecentlySpentInputs <- getConfirmedRecentlySpentInputs(bitcoinClient, minDepth)
+    detailed = utxos.foldLeft(DetailedOnChainBalance(utxos = utxos, recentlySpentInputs = unconfirmedRecentlySpentInputs ++ confirmedRecentlySpentInputs)) {
       case (total, utxo) if utxo.confirmations == 0 => total.copy(unconfirmed = total.unconfirmed + (utxo.outPoint -> utxo.amount))
       case (total, utxo) if utxo.confirmations < minDepth => total.copy(recentlyConfirmed = total.recentlyConfirmed + (utxo.outPoint -> utxo.amount))
       case (total, utxo) => total.copy(deeplyConfirmed = total.deeplyConfirmed + (utxo.outPoint -> utxo.amount))
     }
   } yield detailed
+
+  /**
+   * We list utxos that were spent by our unconfirmed transactions: they will be included in our on-chain balance, and
+   * thus need to be ignored from our off-chain balance.
+   */
+  private def getUnconfirmedRecentlySpentInputs(bitcoinClient: BitcoinCoreClient, utxos: Seq[Utxo])(implicit ec: ExecutionContext): Future[Set[OutPoint]] = {
+    val unconfirmedTxs = utxos.filter(_.confirmations == 0).map(_.txid).toSet
+    Future.sequence(unconfirmedTxs.map(txId => bitcoinClient.getTransaction(txId).map(Some(_)).recover { case _ => None })).map(_.flatten.flatMap(_.txIn.map(_.outPoint)))
+  }
+
+  /**
+   * We list utxos that were spent in recent blocks, up to min-depth: those utxos will be included in our on-chain
+   * balance if they belong to us, and thus need to be ignored from our off-chain balance.
+   *
+   * Note that since we may spend our inputs before they reach min-depth (e.g. to fund unrelated channels), some of
+   * those utxos don't appear in our on-chain balance, which is fine since we already spent them! In that case, they
+   * must not be counted in our off-chain balance either, since we've used them already. This is why we cannot rely
+   * only on listUnspent to deduplicate utxos between on-chain and off-chain balances.
+   */
+  private def getConfirmedRecentlySpentInputs(bitcoinClient: BitcoinCoreClient, minDepth: Int)(implicit ec: ExecutionContext): Future[Set[OutPoint]] = for {
+    currentBlockHeight <- bitcoinClient.getBlockHeight()
+    currentBlockId <- bitcoinClient.getBlockId(currentBlockHeight.toInt)
+    // We look one block past our min-depth in case there's a race with a new block.
+    spentInputs <- scanPastBlocks(bitcoinClient, currentBlockId, Set.empty, remaining = minDepth + 1)
+  } yield spentInputs
+
+  private def scanPastBlocks(bitcoinClient: BitcoinCoreClient, blockId: BlockId, spentInputs: Set[OutPoint], remaining: Int)(implicit ec: ExecutionContext): Future[Set[OutPoint]] = {
+    bitcoinClient.getBlock(blockId).flatMap(block => {
+      val spentInputs1 = spentInputs ++ block.tx.asScala.flatMap(_.txIn.asScala.map(_.outPoint)).map(KotlinUtils.kmp2scala).toSet
+      if (remaining > 0) {
+        scanPastBlocks(bitcoinClient, BlockId(KotlinUtils.kmp2scala(block.header.hashPreviousBlock)), spentInputs1, remaining - 1)
+      } else {
+        Future.successful(spentInputs1)
+      }
+    })
+  }
 
   case class GlobalBalance(onChain: DetailedOnChainBalance, offChain: OffChainBalance, channels: Map[ByteVector32, PersistentChannelData]) {
     val total: Btc = onChain.total + offChain.total
@@ -248,7 +290,7 @@ object CheckBalance {
 
   def computeGlobalBalance(channels: Map[ByteVector32, PersistentChannelData], bitcoinClient: BitcoinCoreClient, minDepth: Int)(implicit ec: ExecutionContext): Future[GlobalBalance] = for {
     onChain <- CheckBalance.computeOnChainBalance(bitcoinClient, minDepth)
-    offChain = CheckBalance.computeOffChainBalance(channels.values)
+    offChain = CheckBalance.computeOffChainBalance(channels.values, onChain.recentlySpentInputs)
   } yield GlobalBalance(onChain, offChain, channels)
 
 }
