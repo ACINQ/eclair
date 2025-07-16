@@ -19,40 +19,10 @@ package fr.acinq.eclair.channel
 import fr.acinq.eclair.FeatureSupport._
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
-import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.{Feature, Features, InitFeature, TestKitBaseClass}
+import fr.acinq.eclair.{Features, InitFeature, PermanentChannelFeature, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsBase {
-
-  test("channel features determines commitment format") {
-    val standardChannel = ChannelFeatures()
-    val staticRemoteKeyChannel = ChannelFeatures(Features.StaticRemoteKey)
-    val anchorOutputsChannel = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
-    val anchorOutputsZeroFeeHtlcsChannel = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
-
-    assert(!standardChannel.hasFeature(Features.StaticRemoteKey))
-    assert(!standardChannel.hasFeature(Features.AnchorOutputs))
-    assert(standardChannel.commitmentFormat == Transactions.DefaultCommitmentFormat)
-    assert(!standardChannel.paysDirectlyToWallet)
-
-    assert(staticRemoteKeyChannel.hasFeature(Features.StaticRemoteKey))
-    assert(!staticRemoteKeyChannel.hasFeature(Features.AnchorOutputs))
-    assert(staticRemoteKeyChannel.commitmentFormat == Transactions.DefaultCommitmentFormat)
-    assert(staticRemoteKeyChannel.paysDirectlyToWallet)
-
-    assert(anchorOutputsChannel.hasFeature(Features.StaticRemoteKey))
-    assert(anchorOutputsChannel.hasFeature(Features.AnchorOutputs))
-    assert(!anchorOutputsChannel.hasFeature(Features.AnchorOutputsZeroFeeHtlcTx))
-    assert(anchorOutputsChannel.commitmentFormat == Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat)
-    assert(!anchorOutputsChannel.paysDirectlyToWallet)
-
-    assert(anchorOutputsZeroFeeHtlcsChannel.hasFeature(Features.StaticRemoteKey))
-    assert(anchorOutputsZeroFeeHtlcsChannel.hasFeature(Features.AnchorOutputsZeroFeeHtlcTx))
-    assert(!anchorOutputsZeroFeeHtlcsChannel.hasFeature(Features.AnchorOutputs))
-    assert(anchorOutputsZeroFeeHtlcsChannel.commitmentFormat == Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
-    assert(!anchorOutputsZeroFeeHtlcsChannel.paysDirectlyToWallet)
-  }
 
   test("pick channel type based on local and remote features") {
     case class TestCase(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean, expectedChannelType: ChannelType)
@@ -123,22 +93,22 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
   }
 
   test("enrich channel type with optional permanent channel features") {
-    case class TestCase(channelType: SupportedChannelType, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean, expected: Set[Feature])
+    case class TestCase(channelType: SupportedChannelType, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean, expected: Set[PermanentChannelFeature])
     val testCases = Seq(
       TestCase(ChannelTypes.Standard(), Features(UpfrontShutdownScript -> Optional), Features.empty, announceChannel = true, Set.empty),
       TestCase(ChannelTypes.Standard(), Features(UpfrontShutdownScript -> Optional), Features(UpfrontShutdownScript -> Optional), announceChannel = true, Set(UpfrontShutdownScript)),
       TestCase(ChannelTypes.Standard(), Features(UpfrontShutdownScript -> Mandatory), Features(UpfrontShutdownScript -> Optional), announceChannel = true, Set(UpfrontShutdownScript)),
-      TestCase(ChannelTypes.StaticRemoteKey(), Features(UpfrontShutdownScript -> Optional), Features.empty, announceChannel = true, Set(StaticRemoteKey)),
-      TestCase(ChannelTypes.StaticRemoteKey(), Features(UpfrontShutdownScript -> Optional), Features(UpfrontShutdownScript -> Optional), announceChannel = true, Set(StaticRemoteKey, UpfrontShutdownScript)),
-      TestCase(ChannelTypes.AnchorOutputs(), Features.empty, Features(UpfrontShutdownScript -> Optional), announceChannel = true, Set(StaticRemoteKey, AnchorOutputs)),
-      TestCase(ChannelTypes.AnchorOutputs(), Features(UpfrontShutdownScript -> Optional), Features(UpfrontShutdownScript -> Mandatory), announceChannel = true, Set(StaticRemoteKey, AnchorOutputs, UpfrontShutdownScript)),
-      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features.empty, Features(UpfrontShutdownScript -> Optional), announceChannel = true, Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx)),
-      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features(ScidAlias -> Optional, ZeroConf -> Optional), Features(ScidAlias -> Optional, ZeroConf -> Optional), announceChannel = true, Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, ZeroConf)),
-      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features(ScidAlias -> Optional, ZeroConf -> Optional), Features(ScidAlias -> Optional, ZeroConf -> Optional), announceChannel = false, Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, ScidAlias, ZeroConf)),
-      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true), Features.empty, Features(UpfrontShutdownScript -> Optional), announceChannel = false, Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, ScidAlias)),
-      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true), Features.empty, Features(UpfrontShutdownScript -> Optional), announceChannel = false, Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, ScidAlias, ZeroConf)),
-      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features(UpfrontShutdownScript -> Optional), Features(UpfrontShutdownScript -> Mandatory), announceChannel = true, Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, UpfrontShutdownScript)),
-      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features(DualFunding -> Optional, UpfrontShutdownScript -> Optional), Features(DualFunding -> Optional, UpfrontShutdownScript -> Optional), announceChannel = true, Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, UpfrontShutdownScript, DualFunding)),
+      TestCase(ChannelTypes.StaticRemoteKey(), Features(UpfrontShutdownScript -> Optional), Features.empty, announceChannel = true, Set.empty),
+      TestCase(ChannelTypes.StaticRemoteKey(), Features(UpfrontShutdownScript -> Optional), Features(UpfrontShutdownScript -> Optional), announceChannel = true, Set(UpfrontShutdownScript)),
+      TestCase(ChannelTypes.AnchorOutputs(), Features.empty, Features(UpfrontShutdownScript -> Optional), announceChannel = true, Set.empty),
+      TestCase(ChannelTypes.AnchorOutputs(), Features(UpfrontShutdownScript -> Optional), Features(UpfrontShutdownScript -> Mandatory), announceChannel = true, Set(UpfrontShutdownScript)),
+      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features.empty, Features(UpfrontShutdownScript -> Optional), announceChannel = true, Set.empty),
+      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features(ScidAlias -> Optional, ZeroConf -> Optional), Features(ScidAlias -> Optional, ZeroConf -> Optional), announceChannel = true, Set(ZeroConf)),
+      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features(ScidAlias -> Optional, ZeroConf -> Optional), Features(ScidAlias -> Optional, ZeroConf -> Optional), announceChannel = false, Set(ScidAlias, ZeroConf)),
+      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true), Features.empty, Features(UpfrontShutdownScript -> Optional), announceChannel = false, Set(ScidAlias)),
+      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true), Features.empty, Features(UpfrontShutdownScript -> Optional), announceChannel = false, Set(ScidAlias, ZeroConf)),
+      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features(UpfrontShutdownScript -> Optional), Features(UpfrontShutdownScript -> Mandatory), announceChannel = true, Set(UpfrontShutdownScript)),
+      TestCase(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features(DualFunding -> Optional, UpfrontShutdownScript -> Optional), Features(DualFunding -> Optional, UpfrontShutdownScript -> Optional), announceChannel = true, Set(UpfrontShutdownScript, DualFunding)),
     )
     testCases.foreach(t => assert(ChannelFeatures(t.channelType, t.localFeatures, t.remoteFeatures, t.announceChannel).features == t.expected, s"channelType=${t.channelType} localFeatures=${t.localFeatures} remoteFeatures=${t.remoteFeatures}"))
   }
