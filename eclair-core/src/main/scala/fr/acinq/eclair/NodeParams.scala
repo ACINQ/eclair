@@ -647,7 +647,6 @@ object NodeParams extends Logging {
           enabled = config.getBoolean("relay.peer-reputation.enabled"),
           halfLife = FiniteDuration(config.getDuration("relay.peer-reputation.half-life").getSeconds, TimeUnit.SECONDS),
           maxRelayDuration = FiniteDuration(config.getDuration("relay.peer-reputation.max-relay-duration").getSeconds, TimeUnit.SECONDS),
-          pendingMultiplier = config.getDouble("relay.peer-reputation.pending-multiplier"),
         ),
       ),
       db = database,
