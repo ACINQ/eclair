@@ -43,12 +43,9 @@ eclair.relay.peer-reputation {
     // value, as described by https://github.com/lightning/blips/blob/master/blip-0004.md,
     enabled = true
     // Reputation decays with the following half life to emphasize recent behavior.
-    half-life = 15 days
+    half-life = 30 days
     // Payments that stay pending for longer than this get penalized
-    max-relay-duration = 12 seconds
-    // Pending payments are counted as failed, and because they could potentially stay pending for a very long time,
-    // the following multiplier is applied.
-    pending-multiplier = 200 // A pending payment counts as two hundred failed ones.
+    max-relay-duration = 5 minutes
 }
 ```
 
