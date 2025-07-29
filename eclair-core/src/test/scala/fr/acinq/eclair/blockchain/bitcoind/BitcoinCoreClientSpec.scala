@@ -42,7 +42,6 @@ import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, Formats}
 import org.scalatest.BeforeAndAfterAll
-import org.scalatest.Inside.inside
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -1192,54 +1191,59 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     // We receive an unconfirmed transaction.
     miner.sendToAddress(address, 200_000 sat, 1).pipeTo(sender.ref)
     val txId1 = sender.expectMsgType[TxId]
-    CheckBalance.computeOnChainBalance(wallet, minDepth = 2).pipeTo(sender.ref)
-    inside(sender.expectMsgType[CheckBalance.DetailedOnChainBalance]) { balance =>
+    awaitAssert({
+      CheckBalance.computeOnChainBalance(wallet, minDepth = 2).pipeTo(sender.ref)
+      val balance = sender.expectMsgType[CheckBalance.DetailedOnChainBalance]
       assert(balance.deeplyConfirmed.isEmpty && balance.recentlyConfirmed.isEmpty)
       assert(balance.unconfirmed.keySet.map(_.txid) == Set(txId1))
       assert(balance.totalUnconfirmed.toSatoshi == 200_000.sat)
       assert(!balance.recentlySpentInputs.map(_.txid).contains(txId1))
-    }
+    })
 
     // Our received transaction confirms.
     generateBlocks(1)
-    CheckBalance.computeOnChainBalance(wallet, minDepth = 2).pipeTo(sender.ref)
-    inside(sender.expectMsgType[CheckBalance.DetailedOnChainBalance]) { balance =>
+    awaitAssert({
+      CheckBalance.computeOnChainBalance(wallet, minDepth = 2).pipeTo(sender.ref)
+      val balance = sender.expectMsgType[CheckBalance.DetailedOnChainBalance]
       assert(balance.deeplyConfirmed.isEmpty && balance.unconfirmed.isEmpty)
       assert(balance.recentlyConfirmed.keySet.map(_.txid) == Set(txId1))
       assert(balance.totalRecentlyConfirmed.toSatoshi == 200_000.sat)
       assert(!balance.recentlySpentInputs.map(_.txid).contains(txId1))
-    }
+    })
 
     // We spend our received transaction before it deeply confirms.
     wallet.sendToAddress(address, 150_000 sat, 1).pipeTo(sender.ref)
     val txId2 = sender.expectMsgType[TxId]
-    CheckBalance.computeOnChainBalance(wallet, minDepth = 2).pipeTo(sender.ref)
-    inside(sender.expectMsgType[CheckBalance.DetailedOnChainBalance]) { balance =>
+    awaitAssert({
+      CheckBalance.computeOnChainBalance(wallet, minDepth = 2).pipeTo(sender.ref)
+      val balance = sender.expectMsgType[CheckBalance.DetailedOnChainBalance]
       assert(balance.deeplyConfirmed.isEmpty && balance.recentlyConfirmed.isEmpty)
       assert(balance.unconfirmed.keySet.map(_.txid) == Set(txId2))
       assert(190_000.sat < balance.totalUnconfirmed.toSatoshi && balance.totalUnconfirmed.toSatoshi < 200_000.sat)
       assert(balance.recentlySpentInputs.map(_.txid).contains(txId1))
-    }
+    })
 
     // Our transaction deeply confirms.
     generateBlocks(2)
-    CheckBalance.computeOnChainBalance(wallet, minDepth = 2).pipeTo(sender.ref)
-    inside(sender.expectMsgType[CheckBalance.DetailedOnChainBalance]) { balance =>
+    awaitAssert({
+      CheckBalance.computeOnChainBalance(wallet, minDepth = 2).pipeTo(sender.ref)
+      val balance = sender.expectMsgType[CheckBalance.DetailedOnChainBalance]
       assert(balance.recentlyConfirmed.isEmpty && balance.unconfirmed.isEmpty)
       assert(balance.deeplyConfirmed.keySet.map(_.txid) == Set(txId2))
       assert(190_000.sat < balance.totalDeeplyConfirmed.toSatoshi && balance.totalDeeplyConfirmed.toSatoshi < 200_000.sat)
       assert(balance.recentlySpentInputs.map(_.txid).contains(txId1))
-    }
+    })
 
     // With more confirmations, the input isn't included in our recently spent inputs, but stays in our balance.
     generateBlocks(3)
-    CheckBalance.computeOnChainBalance(wallet, minDepth = 2).pipeTo(sender.ref)
-    inside(sender.expectMsgType[CheckBalance.DetailedOnChainBalance]) { balance =>
+    awaitAssert({
+      CheckBalance.computeOnChainBalance(wallet, minDepth = 2).pipeTo(sender.ref)
+      val balance = sender.expectMsgType[CheckBalance.DetailedOnChainBalance]
       assert(balance.recentlyConfirmed.isEmpty && balance.unconfirmed.isEmpty)
       assert(balance.deeplyConfirmed.keySet.map(_.txid) == Set(txId2))
       assert(190_000.sat < balance.totalDeeplyConfirmed.toSatoshi && balance.totalDeeplyConfirmed.toSatoshi < 200_000.sat)
       assert(!balance.recentlySpentInputs.map(_.txid).contains(txId1))
-    }
+    })
   }
 
   test("get mempool transaction") {
