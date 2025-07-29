@@ -951,16 +951,6 @@ case class Commitments(channelParams: ChannelParams,
       .getOrElse(Right(copy(changes = changes1)))
   }
 
-  def incomingOccupancy: Double = {
-    active.map(commitment => {
-      val incomingHtlcs = commitment.localCommit.spec.htlcs.collect(DirectedHtlc.incoming)
-      val slotsOccupancy = incomingHtlcs.size.toDouble / (channelParams.localCommitParams.maxAcceptedHtlcs min channelParams.remoteCommitParams.maxAcceptedHtlcs)
-      val htlcValueInFlight = incomingHtlcs.toSeq.map(_.amountMsat).sum
-      val valueOccupancy = htlcValueInFlight.toLong.toDouble / channelParams.maxHtlcValueInFlight.toLong.toDouble
-      slotsOccupancy max valueOccupancy
-    }).max
-  }
-
   def sendFulfill(cmd: CMD_FULFILL_HTLC, nodeSecret: PrivateKey, useAttributionData: Boolean): Either[ChannelException, (Commitments, UpdateFulfillHtlc)] =
     getIncomingHtlcCrossSigned(cmd.id) match {
       case Some(htlc) if CommitmentChanges.alreadyProposed(changes.localChanges.proposed, htlc.id) =>

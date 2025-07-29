@@ -47,6 +47,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.LiquidityPurchaseSigned
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSettlingOnChain}
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.ClosingTx
 import fr.acinq.eclair.transactions._
@@ -720,7 +721,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           actions.foreach {
             case PostRevocationAction.RelayHtlc(add) =>
               log.debug("forwarding incoming htlc {} to relayer", add)
-              relayer ! Relayer.RelayForward(add, remoteNodeId, commitments1.incomingOccupancy)
+              relayer ! Relayer.RelayForward(add, remoteNodeId, Reputation.incomingOccupancy(commitments1))
             case PostRevocationAction.RejectHtlc(add) =>
               log.debug("rejecting incoming htlc {}", add)
               // NB: we don't set commit = true, we will sign all updates at once afterwards.

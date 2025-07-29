@@ -17,7 +17,8 @@
 package fr.acinq.eclair.reputation
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.channel.{ChannelJammingException, ChannelParams, IncomingConfidenceTooLow, OutgoingConfidenceTooLow, TooManySmallHtlcs}
+import fr.acinq.eclair.channel.{ChannelJammingException, ChannelParams, Commitments, IncomingConfidenceTooLow, OutgoingConfidenceTooLow, TooManySmallHtlcs}
+import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{MilliSatoshi, TimestampMilli}
 
@@ -162,4 +163,14 @@ object Reputation {
   }
 
   def toEndorsement(confidence: Double): Int = (confidence * endorsementLevels).toInt.min(maxEndorsement)
+
+  def incomingOccupancy(commitments: Commitments): Double = {
+    commitments.active.map(commitment => {
+      val incomingHtlcs = commitment.localCommit.spec.htlcs.collect(DirectedHtlc.incoming)
+      val slotsOccupancy = incomingHtlcs.size.toDouble / (commitments.channelParams.localCommitParams.maxAcceptedHtlcs min commitments.channelParams.remoteCommitParams.maxAcceptedHtlcs)
+      val htlcValueInFlight = incomingHtlcs.toSeq.map(_.amountMsat).sum
+      val valueOccupancy = htlcValueInFlight.toLong.toDouble / commitments.channelParams.maxHtlcValueInFlight.toLong.toDouble
+      slotsOccupancy max valueOccupancy
+    }).max
+  }
 }

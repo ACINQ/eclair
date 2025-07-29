@@ -149,6 +149,9 @@ sealed trait Upstream { def amountIn: MilliSatoshi }
 object Upstream {
   /** We haven't restarted and have full information about the upstream parent(s). */
   sealed trait Hot extends Upstream {
+    /**
+     * Occupancy of the incoming channel (both slot and value occupancy combined) that will be compared to the outgoing confidence.
+     */
     def incomingChannelOccupancy: Double
   }
   object Hot {
