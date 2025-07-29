@@ -363,13 +363,17 @@ object OnTheFlyFunding {
     import scodec.codecs._
 
     private val upstreamLocal: Codec[Upstream.Local] = uuid.as[Upstream.Local]
-    private val upstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey).as[Upstream.Hot.Channel]
+    private val upstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: double).as[Upstream.Hot.Channel]
     private val upstreamTrampoline: Codec[Upstream.Hot.Trampoline] = listOfN(uint16, upstreamChannel).as[Upstream.Hot.Trampoline]
+    private val legacyUpstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: provide(0.0)).as[Upstream.Hot.Channel]
+    private val legacyUpstreamTrampoline: Codec[Upstream.Hot.Trampoline] = listOfN(uint16, legacyUpstreamChannel).as[Upstream.Hot.Trampoline]
 
     val upstream: Codec[Upstream.Hot] = discriminated[Upstream.Hot].by(uint16)
       .typecase(0x00, upstreamLocal)
-      .typecase(0x01, upstreamChannel)
-      .typecase(0x02, upstreamTrampoline)
+      .typecase(0x03, upstreamChannel)
+      .typecase(0x04, upstreamTrampoline)
+      .typecase(0x01, legacyUpstreamChannel)
+      .typecase(0x02, legacyUpstreamTrampoline)
 
     val proposal: Codec[Proposal] = (
       ("willAddHtlc" | lengthDelimited(willAddHtlcCodec)) ::

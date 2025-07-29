@@ -58,7 +58,7 @@ object NodeRelay {
 
   // @formatter:off
   sealed trait Command
-  case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket, originNode: PublicKey) extends Command
+  case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket, originNode: PublicKey, incomingChannelOccupancy: Double) extends Command
   case object Stop extends Command
   private case class WrappedMultiPartExtraPaymentReceived(mppExtraReceived: MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]) extends Command
   private case class WrappedMultiPartPaymentFailed(mppFailed: MultiPartPaymentFSM.MultiPartPaymentFailed) extends Command
@@ -223,11 +223,11 @@ class NodeRelay private(nodeParams: NodeParams,
    */
   private def receiving(htlcs: Queue[Upstream.Hot.Channel], nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket], handler: ActorRef): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case Relay(packet: IncomingPaymentPacket.NodeRelayPacket, originNode) =>
+      case Relay(packet: IncomingPaymentPacket.NodeRelayPacket, originNode, incomingChannelOccupancy) =>
         require(packet.outerPayload.paymentSecret == paymentSecret, "payment secret mismatch")
         context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", packet.add.id, packet.add.channelId)
         handler ! MultiPartPaymentFSM.HtlcPart(packet.outerPayload.totalAmount, packet.add, packet.receivedAt)
-        receiving(htlcs :+ Upstream.Hot.Channel(packet.add.removeUnknownTlvs(), packet.receivedAt, originNode), nextPayload, nextPacket_opt, handler)
+        receiving(htlcs :+ Upstream.Hot.Channel(packet.add.removeUnknownTlvs(), packet.receivedAt, originNode, incomingChannelOccupancy), nextPayload, nextPacket_opt, handler)
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
@@ -465,7 +465,7 @@ class NodeRelay private(nodeParams: NodeParams,
   }
 
   private def rejectExtraHtlcPartialFunction: PartialFunction[Command, Behavior[Command]] = {
-    case Relay(nodeRelayPacket, _) =>
+    case Relay(nodeRelayPacket, _, _) =>
       rejectExtraHtlc(nodeRelayPacket.add, nodeRelayPacket.receivedAt)
       Behaviors.same
     // NB: this message would be sent from the payment FSM which we stopped before going to this state, but all this is asynchronous.

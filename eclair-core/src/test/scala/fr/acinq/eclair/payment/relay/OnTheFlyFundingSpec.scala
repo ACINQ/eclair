@@ -1237,7 +1237,7 @@ object OnTheFlyFundingSpec {
   def upstreamChannel(amountIn: MilliSatoshi, expiryIn: CltvExpiry, paymentHash: ByteVector32 = randomBytes32(), blinded: Boolean = false): Upstream.Hot.Channel = {
     val pathKey = if (blinded) Some(randomKey().publicKey) else None
     val add = UpdateAddHtlc(randomBytes32(), randomHtlcId(), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, pathKey, Reputation.maxEndorsement, None)
-    Upstream.Hot.Channel(add, TimestampMilli.now(), randomKey().publicKey)
+    Upstream.Hot.Channel(add, TimestampMilli.now(), randomKey().publicKey, 0.01)
   }
 
   def createWillAdd(amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, pathKey_opt: Option[PublicKey] = None): WillAddHtlc = {

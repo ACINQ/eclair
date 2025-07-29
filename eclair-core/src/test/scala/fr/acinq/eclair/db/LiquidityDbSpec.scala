@@ -71,10 +71,10 @@ class LiquidityDbSpec extends AnyFunSuite {
       val paymentHash1 = randomBytes32()
       val paymentHash2 = randomBytes32()
       val upstream = Seq(
-        Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 7, 25_000_000 msat, paymentHash1, CltvExpiry(750_000), randomOnion(), None, Reputation.maxEndorsement, None), TimestampMilli(0), randomKey().publicKey),
-        Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 0, 1 msat, paymentHash1, CltvExpiry(750_000), randomOnion(), Some(randomKey().publicKey), Reputation.maxEndorsement, None), TimestampMilli.now(), randomKey().publicKey),
-        Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 561, 100_000_000 msat, paymentHash2, CltvExpiry(799_999), randomOnion(), None, Reputation.maxEndorsement, None), TimestampMilli.now(), randomKey().publicKey),
-        Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 1105, 100_000_000 msat, paymentHash2, CltvExpiry(799_999), randomOnion(), None, Reputation.maxEndorsement, None), TimestampMilli.now(), randomKey().publicKey),
+        Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 7, 25_000_000 msat, paymentHash1, CltvExpiry(750_000), randomOnion(), None, Reputation.maxEndorsement, None), TimestampMilli(0), randomKey().publicKey, 0.1),
+        Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 0, 1 msat, paymentHash1, CltvExpiry(750_000), randomOnion(), Some(randomKey().publicKey), Reputation.maxEndorsement, None), TimestampMilli.now(), randomKey().publicKey, 0.1),
+        Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 561, 100_000_000 msat, paymentHash2, CltvExpiry(799_999), randomOnion(), None, Reputation.maxEndorsement, None), TimestampMilli.now(), randomKey().publicKey, 0.1),
+        Upstream.Hot.Channel(UpdateAddHtlc(randomBytes32(), 1105, 100_000_000 msat, paymentHash2, CltvExpiry(799_999), randomOnion(), None, Reputation.maxEndorsement, None), TimestampMilli.now(), randomKey().publicKey, 0.1),
       )
       val pendingAlice = Seq(
         OnTheFlyFunding.Pending(

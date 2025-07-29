@@ -453,7 +453,7 @@ case class Commitment(fundingTxIndex: Long,
     localCommit.spec.htlcs.collect(DirectedHtlc.incoming).filter(nearlyExpired)
   }
 
-  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf, confidence: Double): Either[ChannelException, Unit] = {
+  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf, reputationScore: Reputation.Score): Either[ChannelException, Unit] = {
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
     // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
@@ -531,7 +531,7 @@ case class Commitment(fundingTxIndex: Long,
 
     // Jamming protection
     // Must be the last checks so that they can be ignored for shadow deployment.
-    Reputation.checkChannelOccupancy(outgoingHtlcs.toSeq, params, confidence)
+    reputationScore.checkOutgoingChannelOccupancy(outgoingHtlcs.toSeq, params)
   }
 
   def canReceiveAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
@@ -907,7 +907,10 @@ case class Commitments(channelParams: ChannelParams,
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
     // we verify that this htlc is allowed in every active commitment
-    val failures = active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feerates, feeConf, cmd.reputationScore.incomingConfidence)).collect { case Left(f) => f }
+    val failures =
+      (active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feerates, feeConf, cmd.reputationScore))
+        :+ cmd.reputationScore.checkIncomingChannelOccupancy(cmd.origin.upstream.incomingChannelOccupancy, channelId))
+      .collect { case Left(f) => f }
     if (failures.isEmpty) {
       Right(copy(changes = changes1, originChannels = originChannels1), add)
     } else if (failures.forall(_.isInstanceOf[ChannelJammingException])) {
@@ -916,7 +919,8 @@ case class Commitments(channelParams: ChannelParams,
       Metrics.dropHtlc(failure, Tags.Directions.Outgoing)
       failure match {
         case f: TooManySmallHtlcs => log.info("TooManySmallHtlcs: {} outgoing HTLCs are below {}", f.number, f.below)
-        case f: ConfidenceTooLow => log.info("ConfidenceTooLow: confidence is {}% while channel is {}% full", (100 * f.confidence).toInt, (100 * f.occupancy).toInt)
+        case f: IncomingConfidenceTooLow => log.info("IncomingConfidenceTooLow: confidence is {}% while channel is {}% full", (100 * f.confidence).toInt, (100 * f.occupancy).toInt)
+        case f: OutgoingConfidenceTooLow => log.info("OutgoingConfidenceTooLow: confidence is {}% while channel is {}% full", (100 * f.confidence).toInt, (100 * f.occupancy).toInt)
         case _ => ()
       }
       Right(copy(changes = changes1, originChannels = originChannels1), add)
