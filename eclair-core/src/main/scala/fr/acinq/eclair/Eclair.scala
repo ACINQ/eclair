@@ -47,6 +47,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.{ClearRecipient, OfferPayment, PaymentIdentifier}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.transactions.Transactions.CommitmentFormat
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
@@ -96,9 +97,9 @@ trait Eclair {
 
   def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]]
 
-  def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
+  def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[ChannelType])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
 
-  def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
+  def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String], channelType_opt: Option[ChannelType])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
 
   def rbfSplice(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]]
 
@@ -260,15 +261,15 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     )
   }
 
-  override def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
+  override def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[ChannelType])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
     val spliceIn = SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))
     sendToChannelTyped(
       channel = Left(channelId),
-      cmdBuilder = CMD_SPLICE(_, spliceIn_opt = Some(spliceIn), spliceOut_opt = None, requestFunding_opt = None)
+      cmdBuilder = CMD_SPLICE(_, spliceIn_opt = Some(spliceIn), spliceOut_opt = None, requestFunding_opt = None, channelType_opt = channelType_opt)
     )
   }
 
-  override def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
+  override def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String], channelType_opt: Option[ChannelType])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
     val script = scriptOrAddress match {
       case Left(script) => script
       case Right(address) => addressToPublicKeyScript(this.appKit.nodeParams.chainHash, address) match {
@@ -279,7 +280,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     val spliceOut = SpliceOut(amount = amountOut, scriptPubKey = script)
     sendToChannelTyped(
       channel = Left(channelId),
-      cmdBuilder = CMD_SPLICE(_, spliceIn_opt = None, spliceOut_opt = Some(spliceOut), requestFunding_opt = None)
+      cmdBuilder = CMD_SPLICE(_, spliceIn_opt = None, spliceOut_opt = Some(spliceOut), requestFunding_opt = None, channelType_opt = channelType_opt)
     )
   }
 

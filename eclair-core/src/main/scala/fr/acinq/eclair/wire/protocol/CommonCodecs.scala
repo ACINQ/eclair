@@ -20,8 +20,10 @@ import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Satoshi, Transaction, TxHash, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel.{ChannelFlags, ShortIdAliases}
 import fr.acinq.eclair.crypto.Mac32
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, LegacySimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, UnspecifiedShortChannelId}
 import fr.acinq.secp256k1.Secp256k1
 import org.apache.commons.codec.binary.Base32
@@ -163,6 +165,8 @@ object CommonCodecs {
     (wire: BitVector) => bytes(Secp256k1.MUSIG2_PUBLIC_NONCE_SIZE).decode(wire).map(_.map(b => new IndividualNonce(b.toArray)))
   )
 
+  val partialSignatureWithNonce: Codec[PartialSignatureWithNonce] = (bytes32 :: publicNonce).as[PartialSignatureWithNonce]
+
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
 
   val txCodec: Codec[Transaction] = bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d))
@@ -195,6 +199,13 @@ object CommonCodecs {
   val lengthPrefixedFeaturesCodec: Codec[Features[Feature]] = variableSizeBytes(uint16, featuresCodec)
 
   val initFeaturesCodec: Codec[Features[InitFeature]] = lengthPrefixedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())
+
+  val commitmentFormatCodec: Codec[CommitmentFormat] = discriminated[CommitmentFormat].by(uint8)
+    .typecase(0x01, provide(DefaultCommitmentFormat))
+    .typecase(0x02, provide(UnsafeLegacyAnchorOutputsCommitmentFormat))
+    .typecase(0x03, provide(ZeroFeeHtlcTxAnchorOutputsCommitmentFormat))
+    .typecase(0x04, provide(LegacySimpleTaprootChannelCommitmentFormat))
+    .typecase(0x05, provide(ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat))
 
   /** Returns the same codec, that catches all exceptions when decoding. */
   def catchAllCodec[T](codec: Codec[T]): Codec[T] = Codec[T](

@@ -233,7 +233,7 @@ object LightningMessageCodecs {
       ("closeeScriptPubKey" | varsizebinarydata) ::
       ("fees" | satoshi) ::
       ("lockTime" | uint32) ::
-      ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingComplete]
+      ("tlvStream" | ClosingCompleteTlv.closingCompleteTlvCodec)).as[ClosingComplete]
 
   val closingSigCodec: Codec[ClosingSig] = (
     ("channelId" | bytes32) ::
@@ -241,7 +241,7 @@ object LightningMessageCodecs {
       ("closeeScriptPubKey" | varsizebinarydata) ::
       ("fees" | satoshi) ::
       ("lockTime" | uint32) ::
-      ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingSig]
+      ("tlvStream" | ClosingSigTlv.closingSigTlvCodec)).as[ClosingSig]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::

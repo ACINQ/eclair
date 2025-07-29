@@ -24,8 +24,11 @@ import fr.acinq.eclair.channel.Helpers.getRelayFees
 import fr.acinq.eclair.channel.LocalFundingStatus.{ConfirmedFundingTx, DualFundedUnconfirmedFundingTx, SingleFundedUnconfirmedFundingTx}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
+import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReady, ChannelReadyTlv, TlvStream}
+import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{RealShortChannelId, ShortChannelId}
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -44,7 +47,7 @@ trait CommonFundingHandlers extends CommonHandlers {
    */
   def watchFundingSpent(commitment: Commitment, additionalKnownSpendingTxs: Set[TxId], delay_opt: Option[FiniteDuration]): Unit = {
     val knownSpendingTxs = commitment.commitTxIds.txIds ++ additionalKnownSpendingTxs
-    val watch = WatchFundingSpent(self, commitment.commitInput.outPoint.txid, commitment.commitInput.outPoint.index.toInt, knownSpendingTxs)
+    val watch = WatchFundingSpent(self, commitment.fundingInput.txid, commitment.fundingInput.index.toInt, knownSpendingTxs)
     delay_opt match {
       case Some(delay) => context.system.scheduler.scheduleOnce(delay, blockchain.toClassic, watch)
       case None => blockchain ! watch
@@ -73,9 +76,12 @@ trait CommonFundingHandlers extends CommonHandlers {
       case _: SingleFundedUnconfirmedFundingTx =>
         // in the single-funding case, as fundee, it is the first time we see the full funding tx, we must verify that it is
         // valid (it pays the correct amount to the correct script). We also check as funder even if it's not really useful
-        Try(Transaction.correctlySpends(d.commitments.latest.fullySignedLocalCommitTx(channelKeys), Seq(w.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)) match {
-          case Success(_) => ()
-          case Failure(t) =>
+        d.commitments.latest.fullySignedLocalCommitTx(channelKeys).map(signedTx => Try(Transaction.correctlySpends(signedTx, Seq(w.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))) match {
+          case Right(Success(_)) => ()
+          case Right(Failure(t)) =>
+            log.error(t, s"rejecting channel with invalid funding tx: ${w.tx.bin}")
+            throw InvalidFundingTx(d.channelId)
+          case Left(t) =>
             log.error(t, s"rejecting channel with invalid funding tx: ${w.tx.bin}")
             throw InvalidFundingTx(d.channelId)
         }
@@ -84,8 +90,8 @@ trait CommonFundingHandlers extends CommonHandlers {
     context.system.eventStream.publish(TransactionConfirmed(d.channelId, remoteNodeId, w.tx))
     d.commitments.all.find(_.fundingTxId == w.tx.txid) match {
       case Some(c) =>
-        val scid = RealShortChannelId(w.blockHeight, w.txIndex, c.commitInput.outPoint.index.toInt)
-        val fundingStatus = ConfirmedFundingTx(w.tx, scid, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
+        val scid = RealShortChannelId(w.blockHeight, w.txIndex, c.fundingInput.index.toInt)
+        val fundingStatus = ConfirmedFundingTx(w.tx.txOut(c.fundingInput.index.toInt), scid, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
         // When a splice transaction confirms, it double-spends all the commitment transactions that only applied to the
         // previous funding transaction. Our peer cannot publish the corresponding revoked commitments anymore, so we can
         // clean-up the htlc data that we were storing for the matching penalty transactions.
@@ -121,10 +127,19 @@ trait CommonFundingHandlers extends CommonHandlers {
     aliases
   }
 
-  def createChannelReady(aliases: ShortIdAliases, params: ChannelParams): ChannelReady = {
+  def createChannelReady(aliases: ShortIdAliases, commitments: Commitments): ChannelReady = {
+    val params = commitments.channelParams
     val nextPerCommitmentPoint = channelKeys.commitmentPoint(1)
+    val nextLocalNonce_opt = commitments.latest.commitmentFormat match {
+      case _: SimpleTaprootChannelCommitmentFormat =>
+        val localFundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
+        val nextLocalNonce = NonceGenerator.verificationNonce(commitments.latest.fundingTxId, localFundingKey, 1).publicNonce
+        Some(ChannelTlv.NextLocalNonceTlv(nextLocalNonce))
+      case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
+        None
+    }
     // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
-    ChannelReady(params.channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(aliases.localAlias)))
+    ChannelReady(params.channelId, nextPerCommitmentPoint, TlvStream(Set(Some(ChannelReadyTlv.ShortChannelIdTlv(aliases.localAlias)), nextLocalNonce_opt).flatten[ChannelReadyTlv]))
   }
 
   def receiveChannelReady(aliases: ShortIdAliases, channelReady: ChannelReady, commitments: Commitments): DATA_NORMAL = {
@@ -148,8 +163,9 @@ trait CommonFundingHandlers extends CommonHandlers {
       },
       remoteNextCommitInfo = Right(channelReady.nextPerCommitmentPoint)
     )
+    setRemoteNextLocalNonces("received ChannelReady", channelReady.nexLocalNonce_opt.map(n => commitments.latest.fundingTxId -> n).toMap)
     peer ! ChannelReadyForPayments(self, remoteNodeId, commitments.channelId, fundingTxIndex = 0)
-    DATA_NORMAL(commitments1, aliases1, None, initialChannelUpdate, None, None, None, SpliceStatus.NoSplice)
+    DATA_NORMAL(commitments1, aliases1, None, initialChannelUpdate, SpliceStatus.NoSplice, None, None, None)
   }
 
   def delayEarlyAnnouncementSigs(remoteAnnSigs: AnnouncementSignatures): Unit = {

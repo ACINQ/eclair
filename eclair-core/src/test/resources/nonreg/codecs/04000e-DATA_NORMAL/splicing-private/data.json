@@ -4,15 +4,10 @@
     "channelParams" : {
       "channelId" : "9c5655e99c1ef6d219eb093ca9f29e642167b4c776928df11c73e2293086b749",
       "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
-      "channelFeatures" : [ "option_static_remotekey", "option_dual_fund" ],
+      "channelFeatures" : [ "option_dual_fund" ],
       "localParams" : {
         "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
         "fundingKeyPath" : [ 2707154742, 1913609705, 398200054, 2009144985, 2117492679, 302300795, 2676284185, 1690699462, 2147483648 ],
-        "dustLimit" : 1000,
-        "maxHtlcValueInFlightMsat" : 9223372036854775807,
-        "htlcMinimum" : 1000,
-        "toRemoteDelay" : 144,
-        "maxAcceptedHtlcs" : 30,
         "isChannelOpener" : false,
         "paysCommitTxFees" : false,
         "walletStaticPaymentBasepoint" : "038bff1253b7b8e40532508a53d31b95b295df31edf0d067d734479a680bd395de",
@@ -37,11 +32,6 @@
       },
       "remoteParams" : {
         "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
-        "dustLimit" : 1100,
-        "maxHtlcValueInFlightMsat" : 9223372036854775807,
-        "htlcMinimum" : 0,
-        "toRemoteDelay" : 144,
-        "maxAcceptedHtlcs" : 100,
         "revocationBasepoint" : "02fab0332aecd8006f4937b220ea073b0e814a21e36f4d21de9bb3e5165c3ffa02",
         "paymentBasepoint" : "038bff1253b7b8e40532508a53d31b95b295df31edf0d067d734479a680bd395de",
         "delayedPaymentBasepoint" : "023a5359a4e12c66e5b6a1847161f837695ab6e7591e67cb5b1da82706b491ea12",
@@ -86,16 +76,22 @@
     },
     "active" : [ {
       "fundingTxIndex" : 2,
-      "fundingTx" : {
-        "outPoint" : "8883382b78ace90653166f985e331d0e0a759a5215cd0598ab5d1f72330d3101:0",
-        "amountSatoshis" : 2500000
-      },
+      "fundingInput" : "8883382b78ace90653166f985e331d0e0a759a5215cd0598ab5d1f72330d3101:0",
+      "fundingAmount" : 2500000,
       "localFunding" : {
         "status" : "unconfirmed",
         "txid" : "8883382b78ace90653166f985e331d0e0a759a5215cd0598ab5d1f72330d3101"
       },
       "remoteFunding" : {
         "status" : "not-locked"
+      },
+      "commitmentFormat" : "legacy",
+      "localCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 9223372036854775807,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
       },
       "localCommit" : {
         "index" : 0,
@@ -106,14 +102,17 @@
           "toRemote" : 1800000000
         },
         "txId" : "ec1fdbdffd12f20851f33319fb3ab6ecb8528a34a9a2c76e53aaf91cf4a18da4",
-        "input" : {
-          "outPoint" : "8883382b78ace90653166f985e331d0e0a759a5215cd0598ab5d1f72330d3101:0",
-          "amountSatoshis" : 2500000
-        },
         "remoteSig" : {
           "sig" : "52ea4ba9421f4b4ad8a9a1e3041a940b13751504faf7d79338d73bbc1187fb551d9340de809849d6d7dcd745b813e01c07809cb8eacc57a211990b0c021d4c45"
         },
         "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 9223372036854775807,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 144
       },
       "remoteCommit" : {
         "index" : 0,
@@ -128,17 +127,22 @@
       }
     }, {
       "fundingTxIndex" : 1,
-      "fundingTx" : {
-        "outPoint" : "91556cf5881038eb239cac05123f0be1daface928690e5f33ae1cc653f3d3005:0",
-        "amountSatoshis" : 2000000
-      },
+      "fundingInput" : "91556cf5881038eb239cac05123f0be1daface928690e5f33ae1cc653f3d3005:0",
+      "fundingAmount" : 2000000,
       "localFunding" : {
         "status" : "confirmed",
-        "txid" : "91556cf5881038eb239cac05123f0be1daface928690e5f33ae1cc653f3d3005",
         "shortChannelId" : "0x0x0"
       },
       "remoteFunding" : {
         "status" : "not-locked"
+      },
+      "commitmentFormat" : "legacy",
+      "localCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 9223372036854775807,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
       },
       "localCommit" : {
         "index" : 0,
@@ -149,14 +153,17 @@
           "toRemote" : 1300000000
         },
         "txId" : "27f7218158a68f5bb23c9d8a280f85bfca32d7636529e1db2ba23172241161f4",
-        "input" : {
-          "outPoint" : "91556cf5881038eb239cac05123f0be1daface928690e5f33ae1cc653f3d3005:0",
-          "amountSatoshis" : 2000000
-        },
         "remoteSig" : {
           "sig" : "32a246840dd67eb72b59fc170303c508c77ee8666ac6be36abced02bf79dbfbe114cdd4e56600ae6e3573e6e10d3517ddc857fbd89c00e2cbcdf5186c6592f26"
         },
         "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 9223372036854775807,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 144
       },
       "remoteCommit" : {
         "index" : 0,
@@ -171,17 +178,22 @@
       }
     }, {
       "fundingTxIndex" : 0,
-      "fundingTx" : {
-        "outPoint" : "421298cf7c9a9d12d35fd68231986b43f6fe90e4b499fff4bc3e36d52d2d215f:2",
-        "amountSatoshis" : 1500000
-      },
+      "fundingInput" : "421298cf7c9a9d12d35fd68231986b43f6fe90e4b499fff4bc3e36d52d2d215f:2",
+      "fundingAmount" : 1500000,
       "localFunding" : {
         "status" : "confirmed",
-        "txid" : "421298cf7c9a9d12d35fd68231986b43f6fe90e4b499fff4bc3e36d52d2d215f",
         "shortChannelId" : "400000x42x2"
       },
       "remoteFunding" : {
         "status" : "not-locked"
+      },
+      "commitmentFormat" : "legacy",
+      "localCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 9223372036854775807,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
       },
       "localCommit" : {
         "index" : 0,
@@ -192,14 +204,17 @@
           "toRemote" : 800000000
         },
         "txId" : "381ee5a54f127b776114b197b2695c39f2d9b81cb967628a32e12766cdf8f1b5",
-        "input" : {
-          "outPoint" : "421298cf7c9a9d12d35fd68231986b43f6fe90e4b499fff4bc3e36d52d2d215f:2",
-          "amountSatoshis" : 1500000
-        },
         "remoteSig" : {
           "sig" : "47f525be7304ef4fa4d868eccfa2389fe1d8f058d08305b0f1792cebbd14ec7b6b43f98d0f3aa22e60d7ef024785f3576d0c1d74b666c7c5d2da88c7e7f7bd18"
         },
         "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 9223372036854775807,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 144
       },
       "remoteCommit" : {
         "index" : 0,

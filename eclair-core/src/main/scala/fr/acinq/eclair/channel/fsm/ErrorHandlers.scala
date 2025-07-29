@@ -196,7 +196,7 @@ trait ErrorHandlers extends CommonHandlers {
     }
   }
 
-  def spendLocalCurrent(d: ChannelDataWithCommitments) = {
+  def spendLocalCurrent(d: ChannelDataWithCommitments): FSM.State[ChannelState, ChannelData] = {
     val outdatedCommitment = d match {
       case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.isDefined => true
@@ -210,7 +210,11 @@ trait ErrorHandlers extends CommonHandlers {
       val commitment = d.commitments.latest
       log.error(s"force-closing with fundingIndex=${commitment.fundingTxIndex}")
       context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"force-closing channel ${d.channelId} with fundingIndex=${commitment.fundingTxIndex}"))
-      val commitTx = commitment.fullySignedLocalCommitTx(channelKeys)
+      val commitTx = commitment.fullySignedLocalCommitTx(channelKeys) match {
+        case Right(signedTx) => signedTx
+        case Left(channelException: ChannelException) =>
+          return handleLocalError(channelException, d, None)
+      }
       val (localCommitPublished, closingTxs) = Closing.LocalClose.claimCommitTxOutputs(channelKeys, commitment, commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
       val nextData = d match {
         case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
@@ -224,7 +228,7 @@ trait ErrorHandlers extends CommonHandlers {
 
   /** Publish 2nd-stage transactions for our local commitment. */
   def doPublish(lcp: LocalCommitPublished, txs: Closing.LocalClose.SecondStageTransactions, commitment: FullCommitment): Unit = {
-    val publishCommitTx = PublishFinalTx(lcp.commitTx, commitment.commitInput.outPoint, "commit-tx", Closing.commitTxFee(commitment.commitInput, lcp.commitTx, commitment.localChannelParams.paysCommitTxFees), None)
+    val publishCommitTx = PublishFinalTx(lcp.commitTx, commitment.fundingInput, "commit-tx", Closing.commitTxFee(commitment.commitInput(channelKeys), lcp.commitTx, commitment.localChannelParams.paysCommitTxFees), None)
     val publishAnchorTx_opt = txs.anchorTx_opt match {
       case Some(anchorTx) if !lcp.isConfirmed =>
         val confirmationTarget = Closing.confirmationTarget(commitment.localCommit, commitment.localCommitParams.dustLimit, commitment.commitmentFormat, nodeParams.onChainFeeConf)
@@ -265,7 +269,7 @@ trait ErrorHandlers extends CommonHandlers {
     log.warning(s"they published their current commit in txid=${commitTx.txid}")
     require(commitTx.txid == commitments.remoteCommit.txId, "txid mismatch")
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
-    context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitments.commitInput, commitTx, d.commitments.localChannelParams.paysCommitTxFees), "remote-commit"))
+    context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitments.commitInput(channelKeys), commitTx, d.commitments.localChannelParams.paysCommitTxFees), "remote-commit"))
     val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitments, commitments.remoteCommit, commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
@@ -284,7 +288,7 @@ trait ErrorHandlers extends CommonHandlers {
     require(commitTx.txid == remoteCommit.txId, "txid mismatch")
 
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
-    context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitment.commitInput, commitTx, d.commitments.localChannelParams.paysCommitTxFees), "next-remote-commit"))
+    context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitment.commitInput(channelKeys), commitTx, d.commitments.localChannelParams.paysCommitTxFees), "next-remote-commit"))
     val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
@@ -332,9 +336,13 @@ trait ErrorHandlers extends CommonHandlers {
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
     Closing.RevokedClose.getRemotePerCommitmentSecret(d.commitments.channelParams, channelKeys, d.commitments.remotePerCommitmentSecrets, tx) match {
       case Some((commitmentNumber, remotePerCommitmentSecret)) =>
-        val (revokedCommitPublished, closingTxs) = Closing.RevokedClose.claimCommitTxOutputs(d.commitments.channelParams, channelKeys, tx, commitmentNumber, remotePerCommitmentSecret, nodeParams.db.channels, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
+        // TODO: once we allow changing the commitment format or to_self_delay during a splice, those values may be incorrect.
+        val toSelfDelay = commitment.remoteCommitParams.toSelfDelay
+        val commitmentFormat = commitment.commitmentFormat
+        val dustLimit = commitment.localCommitParams.dustLimit
+        val (revokedCommitPublished, closingTxs) = Closing.RevokedClose.claimCommitTxOutputs(d.commitments.channelParams, channelKeys, tx, commitmentNumber, remotePerCommitmentSecret, toSelfDelay, commitmentFormat, nodeParams.db.channels, dustLimit, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
         log.warning("txid={} was a revoked commitment, publishing the penalty tx", tx.txid)
-        context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(commitment.commitInput, tx, d.commitments.localChannelParams.paysCommitTxFees), "revoked-commit"))
+        context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(commitment.commitInput(channelKeys), tx, d.commitments.localChannelParams.paysCommitTxFees), "revoked-commit"))
         val exc = FundingTxSpent(d.channelId, tx.txid)
         val error = Error(d.channelId, exc.getMessage)
         val nextData = d match {
@@ -348,10 +356,10 @@ trait ErrorHandlers extends CommonHandlers {
       case None => d match {
         case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT =>
           log.warning("they published a future commit (because we asked them to) in txid={}", tx.txid)
-          context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(d.commitments.latest.commitInput, tx, d.commitments.latest.localChannelParams.paysCommitTxFees), "future-remote-commit"))
+          context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(d.commitments.latest.commitInput(channelKeys), tx, d.commitments.localChannelParams.paysCommitTxFees), "future-remote-commit"))
           val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
           val commitKeys = d.commitments.latest.remoteKeys(channelKeys, remotePerCommitmentPoint)
-          val mainTx_opt = Closing.RemoteClose.claimMainOutput(d.commitments.channelParams, commitKeys, tx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
+          val mainTx_opt = Closing.RemoteClose.claimMainOutput(commitKeys, tx, d.commitments.latest.localCommitParams.dustLimit, d.commitments.latest.commitmentFormat, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
           mainTx_opt.foreach(tx => log.warning("publishing our recovery transaction: tx={}", tx.toString))
           val remoteCommitPublished = RemoteCommitPublished(
             commitTx = tx,

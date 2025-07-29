@@ -301,7 +301,7 @@ object OnTheFlyFunding {
 
     private def relay(data: DATA_NORMAL): Behavior[Command] = {
       context.log.debug("relaying {} on-the-fly HTLCs that have been funded", cmd.proposed.size)
-      val htlcMinimum = data.commitments.channelParams.remoteCommitParams.htlcMinimum
+      val htlcMinimum = data.commitments.latest.remoteCommitParams.htlcMinimum
       val cmdAdapter = context.messageAdapter[CommandResponse[CMD_ADD_HTLC]](WrappedCommandResponse)
       val htlcSettledAdapter = context.messageAdapter[RES_ADD_SETTLED[Origin.Hot, HtlcResult]](WrappedHtlcSettled)
       cmd.proposed.foldLeft(cmd.status.remainingFees) {

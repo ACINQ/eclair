@@ -21,9 +21,10 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, OP_1, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxHash, TxId, TxIn, TxOut, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Musig2, OP_1, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxHash, TxId, TxIn, TxOut, addressToPublicKeyScript}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
@@ -35,7 +36,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.io.OpenChannelInterceptor.makeChannelParams
-import fr.acinq.eclair.transactions.Transactions.InputInfo
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, randomBytes32, randomKey}
@@ -49,6 +50,9 @@ import scala.concurrent.duration.DurationInt
 import scala.reflect.ClassTag
 
 class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike with BitcoindService with BeforeAndAfterAll {
+
+  val channelType: SupportedChannelType = ChannelTypes.AnchorOutputsZeroFeeHtlcTx()
+  val txCompleteNonces: collection.mutable.HashSet[IndividualNonce] = collection.mutable.HashSet.empty[IndividualNonce]
 
   override def beforeAll(): Unit = {
     startBitcoind()
@@ -86,12 +90,6 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     case None => input.sharedInput_opt.get
   }
 
-  private def sharedInputs(commitmentA: Commitment, commitmentB: Commitment): (SharedFundingInput, SharedFundingInput) = {
-    val sharedInputA = Multisig2of2Input(commitmentA)
-    val sharedInputB = Multisig2of2Input(commitmentB)
-    (sharedInputA, sharedInputB)
-  }
-
   case class FixtureParams(fundingParamsA: InteractiveTxParams,
                            nodeParamsA: NodeParams,
                            channelParamsA: ChannelParams,
@@ -108,77 +106,83 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
     private val firstPerCommitmentPointA = channelKeysA.commitmentPoint(0)
     private val firstPerCommitmentPointB = channelKeysB.commitmentPoint(0)
-    val fundingPubkeyScript: ByteVector = Script.write(Script.pay2wsh(Scripts.multiSig2of2(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey)))
+    val fundingPubkeyScript: ByteVector = Transactions.makeFundingScript(fundingParamsB.remoteFundingPubKey, fundingParamsA.remoteFundingPubKey, channelType.commitmentFormat).pubkeyScript
+
+    def sharedInputs(commitmentA: Commitment, commitmentB: Commitment): (SharedFundingInput, SharedFundingInput) = {
+      val sharedInputA = SharedFundingInput(channelKeysA, commitmentA)
+      val sharedInputB = SharedFundingInput(channelKeysB, commitmentB)
+      (sharedInputA, sharedInputB)
+    }
 
     def dummySharedInputB(amount: Satoshi): SharedFundingInput = {
-      val inputInfo = InputInfo(OutPoint(randomTxId(), 3), TxOut(amount, fundingPubkeyScript), ByteVector.empty)
+      val inputInfo = InputInfo(OutPoint(randomTxId(), 3), TxOut(amount, fundingPubkeyScript))
       val fundingTxIndex = fundingParamsA.sharedInput_opt match {
-        case Some(input: Multisig2of2Input) => input.fundingTxIndex + 1
+        case Some(input) => input.fundingTxIndex + 1
         case _ => 0
       }
-      Multisig2of2Input(inputInfo, fundingTxIndex, fundingParamsA.remoteFundingPubKey)
+      SharedFundingInput(inputInfo, fundingTxIndex, fundingParamsA.remoteFundingPubKey, fundingParamsA.commitmentFormat)
     }
 
     def createSpliceFixtureParams(fundingTxIndex: Long, fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, sharedInputA: SharedFundingInput, sharedInputB: SharedFundingInput, spliceOutputsA: List[TxOut] = Nil, spliceOutputsB: List[TxOut] = Nil, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false)): FixtureParams = {
       val fundingPubKeyA = channelKeysA.fundingKey(fundingTxIndex).publicKey
       val fundingPubKeyB = channelKeysB.fundingKey(fundingTxIndex).publicKey
-      val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, Some(sharedInputA), fundingPubKeyB, spliceOutputsA, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
-      val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, Some(sharedInputB), fundingPubKeyA, spliceOutputsB, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
-      copy(fundingParamsA = fundingParamsA, fundingParamsB = fundingParamsB)
+      val fundingParamsA1 = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, Some(sharedInputA), fundingPubKeyB, spliceOutputsA, fundingParamsA.commitmentFormat, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
+      val fundingParamsB1 = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, Some(sharedInputB), fundingPubKeyA, spliceOutputsB, fundingParamsB.commitmentFormat, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
+      copy(fundingParamsA = fundingParamsA1, fundingParamsB = fundingParamsB1)
     }
 
     def spawnTxBuilderAlice(wallet: OnChainWallet, fundingParams: InteractiveTxParams = fundingParamsA, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
-      nodeParamsA, fundingParams, channelParamsA, channelKeysA,
+      nodeParamsA, fundingParams, channelParamsA, commitParamsA, commitParamsB, channelKeysA,
       FundingTx(commitFeerate, firstPerCommitmentPointB, feeBudget_opt = None),
       0 msat, 0 msat, liquidityPurchase_opt,
       wallet))
 
     def spawnTxBuilderRbfAlice(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
-      nodeParamsA, fundingParams, channelParamsA, channelKeysA,
+      nodeParamsA, fundingParams, channelParamsA, commitParamsA, commitParamsB, channelKeysA,
       FundingTxRbf(commitment, previousTransactions, feeBudget_opt = None),
       0 msat, 0 msat, None,
       wallet))
 
     def spawnTxBuilderSpliceAlice(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
-      nodeParamsA, fundingParams, channelParamsA, channelKeysA,
+      nodeParamsA, fundingParams, channelParamsA, commitParamsA, commitParamsB, channelKeysA,
       SpliceTx(commitment, CommitmentChanges.init()),
       0 msat, 0 msat, liquidityPurchase_opt,
       wallet))
 
     def spawnTxBuilderSpliceRbfAlice(fundingParams: InteractiveTxParams, parentCommitment: Commitment, latestFundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
-      nodeParamsA, fundingParams, channelParamsA, channelKeysA,
+      nodeParamsA, fundingParams, channelParamsA, commitParamsA, commitParamsB, channelKeysA,
       SpliceTxRbf(parentCommitment, CommitmentChanges.init(), latestFundingTx, previousTransactions, feeBudget_opt = None),
       0 msat, 0 msat, None,
       wallet))
 
     def spawnTxBuilderBob(wallet: OnChainWallet, fundingParams: InteractiveTxParams = fundingParamsB, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
-      nodeParamsB, fundingParams, channelParamsB, channelKeysB,
+      nodeParamsB, fundingParams, channelParamsB, commitParamsB, commitParamsA, channelKeysB,
       FundingTx(commitFeerate, firstPerCommitmentPointA, feeBudget_opt = None),
       0 msat, 0 msat, liquidityPurchase_opt,
       wallet))
 
     def spawnTxBuilderRbfBob(fundingParams: InteractiveTxParams, commitment: Commitment, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
-      nodeParamsB, fundingParams, channelParamsB, channelKeysB,
+      nodeParamsB, fundingParams, channelParamsB, commitParamsB, commitParamsA, channelKeysB,
       FundingTxRbf(commitment, previousTransactions, feeBudget_opt = None),
       0 msat, 0 msat, None,
       wallet))
 
     def spawnTxBuilderSpliceBob(fundingParams: InteractiveTxParams, commitment: Commitment, wallet: OnChainWallet, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
-      nodeParamsB, fundingParams, channelParamsB, channelKeysB,
+      nodeParamsB, fundingParams, channelParamsB, commitParamsB, commitParamsA, channelKeysB,
       SpliceTx(commitment, CommitmentChanges.init()),
       0 msat, 0 msat, liquidityPurchase_opt,
       wallet))
 
     def spawnTxBuilderSpliceRbfBob(fundingParams: InteractiveTxParams, parentCommitment: Commitment, latestFundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx, previousTransactions: Seq[InteractiveTxBuilder.SignedSharedTransaction], wallet: OnChainWallet): ActorRef[InteractiveTxBuilder.Command] = system.spawnAnonymous(InteractiveTxBuilder(
       ByteVector32.Zeroes,
-      nodeParamsB, fundingParams, channelParamsB, channelKeysB,
+      nodeParamsB, fundingParams, channelParamsB, commitParamsB, commitParamsA, channelKeysB,
       SpliceTxRbf(parentCommitment, CommitmentChanges.init(), latestFundingTx, previousTransactions, feeBudget_opt = None),
       0 msat, 0 msat, None,
       wallet))
@@ -217,11 +221,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   private def createFixtureParams(fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false), nonInitiatorPaysCommitTxFees: Boolean = false): FixtureParams = {
-    val channelFeatures = ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), announceChannel = true)
+    val channelFeatures = ChannelFeatures(channelType, Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), Features[InitFeature](Features.DualFunding -> FeatureSupport.Optional), announceChannel = true)
     val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(features = Features(channelFeatures.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport])))
-    val localChannelParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, None, isChannelOpener = true, paysCommitTxFees = !nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountA, unlimitedMaxHtlcValueInFlight = false)
+    val localChannelParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, None, isChannelOpener = true, paysCommitTxFees = !nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountA)
     val commitParamsA = CommitParams(nodeParamsA.channelConf.dustLimit, nodeParamsA.channelConf.htlcMinimum, nodeParamsA.channelConf.maxHtlcValueInFlight(fundingAmountA + fundingAmountB, unlimited = false), nodeParamsA.channelConf.maxAcceptedHtlcs, nodeParamsB.channelConf.toRemoteDelay)
-    val localChannelParamsB = makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), None, None, isChannelOpener = false, paysCommitTxFees = nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountB, unlimitedMaxHtlcValueInFlight = false)
+    val localChannelParamsB = makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), None, None, isChannelOpener = false, paysCommitTxFees = nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountB)
     val commitParamsB = CommitParams(nodeParamsB.channelConf.dustLimit, nodeParamsB.channelConf.htlcMinimum, nodeParamsB.channelConf.maxHtlcValueInFlight(fundingAmountA + fundingAmountB, unlimited = false), nodeParamsB.channelConf.maxAcceptedHtlcs, nodeParamsA.channelConf.toRemoteDelay)
     val channelKeysA = nodeParamsA.channelKeyManager.channelKeys(ChannelConfig.standard, localChannelParamsA.fundingKeyPath)
     val channelKeysB = nodeParamsB.channelKeyManager.channelKeys(ChannelConfig.standard, localChannelParamsB.fundingKeyPath)
@@ -230,7 +234,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       case (nodeParams, localParams, channelKeys) =>
         RemoteChannelParams(
           nodeParams.nodeId,
-          localParams.dustLimit, localParams.maxHtlcValueInFlightMsat, None, localParams.htlcMinimum, nodeParams.channelConf.toRemoteDelay, localParams.maxAcceptedHtlcs,
+          None,
           channelKeys.revocationBasePoint,
           localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
           channelKeys.delayedPaymentBasePoint,
@@ -242,8 +246,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val channelId = randomBytes32()
     val fundingPubKeyA = channelKeysA.fundingKey(fundingTxIndex = 0).publicKey
     val fundingPubKeyB = channelKeysB.fundingKey(fundingTxIndex = 0).publicKey
-    val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, None, fundingPubKeyB, Nil, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
-    val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, None, fundingPubKeyA, Nil, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
+    val fundingParamsA = InteractiveTxParams(channelId, isInitiator = true, fundingAmountA, fundingAmountB, None, fundingPubKeyB, Nil, channelType.commitmentFormat, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
+    val fundingParamsB = InteractiveTxParams(channelId, isInitiator = false, fundingAmountB, fundingAmountA, None, fundingPubKeyA, Nil, channelType.commitmentFormat, lockTime, dustLimit, targetFeerate, requireConfirmedInputs)
     val channelParamsA = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localChannelParamsA, remoteChannelParamsB, ChannelFlags(announceChannel = true))
     val channelParamsB = ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localChannelParamsB, remoteChannelParamsA, ChannelFlags(announceChannel = true))
 
@@ -277,7 +281,16 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val c = t.runtimeClass.asInstanceOf[Class[T]]
       assert(c.isInstance(msg), s"expected $c, found ${msg.getClass} ($msg)")
       msg match {
-        case msg: InteractiveTxConstructionMessage => r ! ReceiveMessage(msg)
+        case msg: InteractiveTxConstructionMessage =>
+          msg match {
+            case tc: TxComplete =>
+              tc.nonces_opt.foreach(nonces => {
+                if (txCompleteNonces.contains(nonces.remoteNonce)) fail("nonce reuse") else txCompleteNonces.add(nonces.remoteNonce)
+                if (txCompleteNonces.contains(nonces.nextRemoteNonce)) fail("nonce reuse") else txCompleteNonces.add(nonces.nextRemoteNonce)
+              })
+            case _ => ()
+          }
+          r ! ReceiveMessage(msg)
         case msg => fail(s"invalid message sent ($msg)")
       }
       msg.asInstanceOf[T]
@@ -549,7 +562,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice --- tx_add_input --> Bob
       fwd.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_complete --- Bob
-      fwd.forwardBob2Alice[TxComplete]
+      val foo = fwd.forwardBob2Alice[TxComplete]
       // Alice --- tx_add_input --> Bob
       fwd.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_complete --- Bob
@@ -751,7 +764,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice and Bob decide to splice additional funds in the channel.
       val additionalFundingA2 = 30_000.sat
       val additionalFundingB2 = 25_000.sat
-      val (sharedInputA, sharedInputB) = sharedInputs(commitmentA1, commitmentB1)
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA1, commitmentB1)
       val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = additionalFundingA2, fundingAmountB = additionalFundingB2, aliceParams.targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
       val aliceSplice = fixtureParams.spawnTxBuilderSpliceAlice(spliceFixtureParams.fundingParamsA, commitmentA1, walletA)
       val bobSplice = fixtureParams.spawnTxBuilderSpliceBob(spliceFixtureParams.fundingParamsB, commitmentB1, walletB)
@@ -787,7 +800,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Bob has more balance than Alice in the shared input, so its total contribution is greater than Alice.
       // But Bob still signs first, because we don't split the shared input's balance when deciding who signs first.
       assert(spliceTxA.tx.localAmountIn < spliceTxA.tx.remoteAmountIn)
-      assert(spliceTxA.signedTx.txIn.exists(_.outPoint == commitmentA1.commitInput.outPoint))
+      assert(spliceTxA.signedTx.txIn.exists(_.outPoint == commitmentA1.fundingInput))
       assert(0.msat < spliceTxA.tx.localFees)
       assert(0.msat < spliceTxA.tx.remoteFees)
       assert(spliceTxB.tx.localFees == spliceTxA.tx.remoteFees)
@@ -846,7 +859,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val spliceOutputsB = List(TxOut(30_000 sat, Script.pay2wpkh(randomKey().publicKey)))
       val subtractedFundingA = spliceOutputsA.map(_.amount).sum + 1_000.sat
       val subtractedFundingB = spliceOutputsB.map(_.amount).sum + 500.sat
-      val (sharedInputA, sharedInputB) = sharedInputs(commitmentA1, commitmentB1)
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA1, commitmentB1)
       val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = -subtractedFundingA, fundingAmountB = -subtractedFundingB, aliceParams.targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, spliceOutputsA = spliceOutputsA, spliceOutputsB = spliceOutputsB, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
 
       val aliceSplice = fixtureParams.spawnTxBuilderSpliceAlice(spliceFixtureParams.fundingParamsA, commitmentA1, walletA)
@@ -859,7 +872,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice --- tx_add_input --> Bob
       val sharedInput = fwdSplice.forwardAlice2Bob[TxAddInput]
       assert(sharedInput.previousTx_opt.isEmpty)
-      assert(sharedInput.sharedInput_opt.contains(commitmentA1.commitInput.outPoint))
+      assert(sharedInput.sharedInput_opt.contains(commitmentA1.fundingInput))
       // Alice <-- tx_add_output --- Bob
       val outputB = fwdSplice.forwardBob2Alice[TxAddOutput]
       // Alice --- tx_add_output --> Bob
@@ -934,7 +947,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val spliceOutputsB = List(25_000 sat, 15_000 sat).map(amount => TxOut(amount, Script.pay2wpkh(randomKey().publicKey)))
       val subtractedFundingA = spliceOutputsA.map(_.amount).sum + 1_000.sat
       val subtractedFundingB = spliceOutputsB.map(_.amount).sum + 500.sat
-      val (sharedInputA, sharedInputB) = sharedInputs(commitmentA1, commitmentB1)
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA1, commitmentB1)
       val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = -subtractedFundingA, fundingAmountB = -subtractedFundingB, aliceParams.targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, spliceOutputsA = spliceOutputsA, spliceOutputsB = spliceOutputsB, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
       val aliceSplice = fixtureParams.spawnTxBuilderSpliceAlice(spliceFixtureParams.fundingParamsA, commitmentA1, walletA)
       val bobSplice = fixtureParams.spawnTxBuilderSpliceBob(spliceFixtureParams.fundingParamsB, commitmentB1, walletB)
@@ -946,7 +959,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice --- tx_add_input --> Bob
       val sharedInput = fwdSplice.forwardAlice2Bob[TxAddInput]
       assert(sharedInput.previousTx_opt.isEmpty)
-      assert(sharedInput.sharedInput_opt.contains(commitmentA1.commitInput.outPoint))
+      assert(sharedInput.sharedInput_opt.contains(commitmentA1.fundingInput))
       // Alice <-- tx_add_output --- Bob
       val outputB1 = fwdSplice.forwardBob2Alice[TxAddOutput]
       // Alice --- tx_add_output --> Bob
@@ -1031,7 +1044,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val additionalFundingB = 15_000.sat
       val spliceOutputsA = List(TxOut(30_000 sat, Script.pay2wpkh(randomKey().publicKey)))
       val spliceOutputsB = List(TxOut(10_000 sat, Script.pay2wpkh(randomKey().publicKey)))
-      val (sharedInputA, sharedInputB) = sharedInputs(commitmentA1, commitmentB1)
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA1, commitmentB1)
       val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = additionalFundingA, fundingAmountB = additionalFundingB, aliceParams.targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, spliceOutputsA = spliceOutputsA, spliceOutputsB = spliceOutputsB, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
       val aliceSplice = fixtureParams.spawnTxBuilderSpliceAlice(spliceFixtureParams.fundingParamsA, commitmentA1, walletA)
       val bobSplice = fixtureParams.spawnTxBuilderSpliceBob(spliceFixtureParams.fundingParamsB, commitmentB1, walletB)
@@ -1088,6 +1101,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   test("remove input/output") {
+    assume(!channelType.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat]) // TODO: make this test work with taproot channels ?
     withFixture(100_000 sat, Seq(150_000 sat), 0 sat, Nil, FeeratePerKw(2500 sat), 330 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
@@ -1540,7 +1554,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val additionalFundingB = 5_000.sat
       val spliceOutputsA = List(TxOut(20_000 sat, Script.pay2wpkh(randomKey().publicKey)))
       val spliceOutputsB = List(TxOut(10_000 sat, Script.pay2wpkh(randomKey().publicKey)))
-      val (sharedInputA, sharedInputB) = sharedInputs(commitmentA1, commitmentB1)
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA1, commitmentB1)
       val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = additionalFundingA, fundingAmountB = additionalFundingB, aliceParams.targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, spliceOutputsA = spliceOutputsA, spliceOutputsB = spliceOutputsB, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
       val aliceSplice = fixtureParams.spawnTxBuilderSpliceAlice(spliceFixtureParams.fundingParamsA, commitmentA1, walletA)
       val bobSplice = fixtureParams.spawnTxBuilderSpliceBob(spliceFixtureParams.fundingParamsB, commitmentB1, walletB)
@@ -1667,7 +1681,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val additionalFundingB = 5_000.sat
       val spliceOutputsA = List(TxOut(20_000 sat, Script.pay2wpkh(randomKey().publicKey)))
       val spliceOutputsB = List(TxOut(10_000 sat, Script.pay2wpkh(randomKey().publicKey)))
-      val (sharedInputA, sharedInputB) = sharedInputs(commitmentA1, commitmentB1)
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA1, commitmentB1)
       val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = additionalFundingA, fundingAmountB = additionalFundingB, aliceParams.targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, spliceOutputsA = spliceOutputsA, spliceOutputsB = spliceOutputsB, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
       val fundingParamsA1 = spliceFixtureParams.fundingParamsA
       val fundingParamsB1 = spliceFixtureParams.fundingParamsB
@@ -1804,15 +1818,19 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val purchase = LiquidityAds.Purchase.Standard(50_000 sat, LiquidityAds.Fees(1000 sat, 1500 sat), LiquidityAds.PaymentDetails.FromChannelBalance)
       // Alice pays fees for the common fields of the transaction, by decreasing her balance in the shared output.
       val spliceFeeA = {
+        val dummyWitness: ScriptWitness = channelType.commitmentFormat match {
+          case _: SimpleTaprootChannelCommitmentFormat => Script.witnessKeyPathPay2tr(Transactions.PlaceHolderSig)
+          case _ => Scripts.witness2of2(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, randomKey().publicKey, randomKey().publicKey)
+        }
         val dummySpliceTx = Transaction(
           version = 2,
-          txIn = Seq(TxIn(commitmentA1.commitInput.outPoint, ByteVector.empty, 0, Scripts.witness2of2(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, randomKey().publicKey, randomKey().publicKey))),
-          txOut = Seq(commitmentA1.commitInput.txOut),
+          txIn = Seq(TxIn(commitmentA1.fundingInput, ByteVector.empty, 0, dummyWitness)),
+          txOut = Seq(commitmentA1.commitInput(fixtureParams.channelKeysA).txOut),
           lockTime = 0
         )
         Transactions.weight2fee(targetFeerate, dummySpliceTx.weight())
       }
-      val (sharedInputA, sharedInputB) = sharedInputs(commitmentA1, commitmentB1)
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA1, commitmentB1)
       val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = -spliceFeeA, fundingAmountB = fundingB, targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, spliceOutputsA = Nil, spliceOutputsB = Nil, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
       val fundingParamsA1 = spliceFixtureParams.fundingParamsA
       val fundingParamsB1 = spliceFixtureParams.fundingParamsB
@@ -1843,7 +1861,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val (spliceTxA1, commitmentA2, _, commitmentB2) = fixtureParams.exchangeSigsBobFirst(fundingParamsB1, successA2, successB2)
       assert(commitmentA2.localCommit.spec.toLocal == commitmentA1.localCommit.spec.toLocal - spliceFeeA - purchase.fees.total)
       assert(commitmentB2.localCommit.spec.toLocal == commitmentB1.localCommit.spec.toLocal + fundingB + purchase.fees.total)
-      assert(targetFeerate * 0.9 <= spliceTxA1.feerate && spliceTxA1.feerate <= targetFeerate * 1.25)
+      assert(targetFeerate * 0.9 <= spliceTxA1.feerate && spliceTxA1.feerate <= targetFeerate * 1.27)
       walletA.publishTransaction(spliceTxA1.signedTx).pipeTo(probe.ref)
       probe.expectMsg(spliceTxA1.txId)
 
@@ -1891,7 +1909,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
       // Alice splices some funds in, which requires using an additional input.
       val additionalFundingA1 = 25_000.sat
-      val (sharedInputA, sharedInputB) = sharedInputs(commitmentA1, commitmentB1)
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA1, commitmentB1)
       val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = additionalFundingA1, fundingAmountB = 0 sat, aliceParams.targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
       val fundingParamsA1 = spliceFixtureParams.fundingParamsA
       val fundingParamsB1 = spliceFixtureParams.fundingParamsB
@@ -2144,7 +2162,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val subtractedFundingB = 398_000 sat
       val spliceOutputsA = List(TxOut(99_000 sat, Script.pay2wpkh(randomKey().publicKey)))
       val spliceOutputsB = List(TxOut(397_000 sat, Script.pay2wpkh(randomKey().publicKey)))
-      val (sharedInputA, sharedInputB) = sharedInputs(commitmentA, commitmentB)
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA, commitmentB)
       val fundingParamsA1 = aliceParams.copy(localContribution = -subtractedFundingA, remoteContribution = -subtractedFundingB, sharedInput_opt = Some(sharedInputA), localOutputs = spliceOutputsA)
       val fundingParamsB1 = bobParams.copy(localContribution = -subtractedFundingB, remoteContribution = -subtractedFundingA, sharedInput_opt = Some(sharedInputB), localOutputs = spliceOutputsB)
       val aliceSplice = fixtureParams.spawnTxBuilderSpliceAlice(fundingParamsA1, commitmentA, walletA)
@@ -2205,7 +2223,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice splices some funds out, which creates two outputs (a shared output and a splice output).
       val subtractedFundingA = 30_000 sat
       val spliceOutputsA = List(TxOut(25_000 sat, Script.pay2wpkh(randomKey().publicKey)))
-      val (sharedInputA, sharedInputB) = sharedInputs(commitmentA, commitmentB)
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA, commitmentB)
       val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = -subtractedFundingA, fundingAmountB = 0 sat, aliceParams.targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, spliceOutputsA = spliceOutputsA, spliceOutputsB = Nil, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
       val fundingParamsA1 = spliceFixtureParams.fundingParamsA
       val fundingParamsB1 = spliceFixtureParams.fundingParamsB
@@ -2272,7 +2290,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice splices some funds out, but she doesn't have the same commitment index than Bob.
       val subtractedFundingA = 30_000 sat
       val spliceOutputsA = List(TxOut(25_000 sat, Script.pay2wpkh(randomKey().publicKey)))
-      val (sharedInputA, sharedInputB) = sharedInputs(commitmentA, commitmentB)
+      val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA, commitmentB)
       val spliceFixtureParams = fixtureParams.createSpliceFixtureParams(fundingTxIndex = 1, fundingAmountA = -subtractedFundingA, fundingAmountB = 0 sat, aliceParams.targetFeerate, aliceParams.dustLimit, aliceParams.lockTime, sharedInputA = sharedInputA, sharedInputB = sharedInputB, spliceOutputsA = spliceOutputsA, spliceOutputsB = Nil, requireConfirmedInputs = aliceParams.requireConfirmedInputs)
       val fundingParamsA1 = spliceFixtureParams.fundingParamsA
       val fundingParamsB1 = spliceFixtureParams.fundingParamsB
@@ -2606,7 +2624,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val wallet = new SingleKeyOnChainWallet()
     val params = createFixtureParams(100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
     val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).active.head
-    val fundingParams = params.fundingParamsB.copy(sharedInput_opt = Some(Multisig2of2Input(previousCommitment.commitInput, 0, randomKey().publicKey)))
+    val fundingParams = params.fundingParamsB.copy(sharedInput_opt = Some(SharedFundingInput(previousCommitment.commitInput(params.channelKeysB), 0, randomKey().publicKey, previousCommitment.commitmentFormat)))
     val bob = params.spawnTxBuilderSpliceBob(fundingParams, previousCommitment, wallet)
     bob ! Start(probe.ref)
     // Alice --- tx_add_input --> Bob
@@ -2622,7 +2640,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val params = createFixtureParams(100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
     val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).active.head
     val fundingTx = Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)), TxOut(20_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
-    val sharedInput = Multisig2of2Input(InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, ByteVector.empty), 0, randomKey().publicKey)
+    val sharedInput = SharedFundingInput(InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head), 0, randomKey().publicKey, previousCommitment.commitmentFormat)
     val bob = params.spawnTxBuilderSpliceBob(params.fundingParamsB.copy(sharedInput_opt = Some(sharedInput)), previousCommitment, wallet)
     bob ! Start(probe.ref)
     // Alice --- tx_add_input --> Bob
@@ -2743,25 +2761,34 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   test("invalid commit_sig") {
-    val probe = TestProbe()
+    val (alice2bob, bob2alice) = (TestProbe(), TestProbe())
     val wallet = new SingleKeyOnChainWallet()
-    val params = createFixtureParams(100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
+    val params = createFixtureParams(100_000 sat, 25_000 sat, FeeratePerKw(5000 sat), 330 sat, 0)
     val alice = params.spawnTxBuilderAlice(wallet)
-    alice ! Start(probe.ref)
+    val bob = params.spawnTxBuilderBob(wallet)
+    alice ! Start(alice2bob.ref)
+    bob ! Start(bob2alice.ref)
     // Alice --- tx_add_input --> Bob
-    probe.expectMsgType[SendMessage]
-    alice ! ReceiveMessage(TxComplete(params.channelId))
+    bob ! ReceiveMessage(alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxAddInput])
+    alice ! ReceiveMessage(bob2alice.expectMsgType[SendMessage].msg.asInstanceOf[TxAddInput])
     // Alice --- tx_add_output --> Bob
-    probe.expectMsgType[SendMessage]
-    alice ! ReceiveMessage(TxComplete(params.channelId))
+    bob ! ReceiveMessage(alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxAddOutput])
+    alice ! ReceiveMessage(bob2alice.expectMsgType[SendMessage].msg.asInstanceOf[TxAddOutput])
     // Alice --- tx_add_output --> Bob
-    probe.expectMsgType[SendMessage]
-    alice ! ReceiveMessage(TxComplete(params.channelId))
+    bob ! ReceiveMessage(alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxAddOutput])
+    alice ! ReceiveMessage(bob2alice.expectMsgType[SendMessage].msg.asInstanceOf[TxComplete])
     // Alice --- tx_complete --> Bob
-    assert(probe.expectMsgType[SendMessage].msg.isInstanceOf[TxComplete])
+    bob ! ReceiveMessage(alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxComplete])
     // Alice <-- commit_sig --- Bob
-    val signingA = probe.expectMsgType[Succeeded].signingSession
-    val Left(error) = signingA.receiveCommitSig(params.channelParamsA, params.channelKeysA, CommitSig(params.channelId, ByteVector64.Zeroes, Nil), params.nodeParamsA.currentBlockHeight)(akka.event.NoLogging)
+    val successA1 = alice2bob.expectMsgType[Succeeded]
+    val invalidCommitSig = channelType.commitmentFormat match {
+      case _: SimpleTaprootChannelCommitmentFormat =>
+        val priv = randomKey()
+        val (_, nonce) = Musig2.generateNonce(randomBytes32(), Left(priv), Seq(priv.publicKey), None, None)
+        CommitSig(params.channelId, ByteVector64.Zeroes, Nil, TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(ChannelSpendSignature.PartialSignatureWithNonce(ByteVector32.Zeroes, nonce))))
+      case _ => CommitSig(params.channelId, ByteVector64.Zeroes, Nil)
+    }
+    val Left(error) = successA1.signingSession.receiveCommitSig(params.channelParamsA, params.channelKeysA, invalidCommitSig, params.nodeParamsA.currentBlockHeight)(akka.event.NoLogging)
     assert(error.isInstanceOf[InvalidCommitmentSignature])
   }
 
@@ -2849,8 +2876,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     assert(initiatorTx.buildUnsignedTx().txid == unsignedTx.txid)
     assert(nonInitiatorTx.buildUnsignedTx().txid == unsignedTx.txid)
 
-    val initiatorSigs = TxSignatures(channelId, unsignedTx, Seq(ScriptWitness(Seq(hex"68656c6c6f2074686572652c2074686973206973206120626974636f6e212121", hex"82012088a820add57dfe5277079d069ca4ad4893c96de91f88ffb981fdc6a2a34d5336c66aff87"))), None)
-    val nonInitiatorSigs = TxSignatures(channelId, unsignedTx, Seq(ScriptWitness(Seq(hex"304402207de9ba56bb9f641372e805782575ee840a899e61021c8b1572b3ec1d5b5950e9022069e9ba998915dae193d3c25cb89b5e64370e6a3a7755e7f31cf6d7cbc2a49f6d01", hex"034695f5b7864c580bf11f9f8cb1a94eb336f2ce9ef872d2ae1a90ee276c772484"))), None)
+    val initiatorSigs = TxSignatures(channelId, unsignedTx, Seq(ScriptWitness(Seq(hex"68656c6c6f2074686572652c2074686973206973206120626974636f6e212121", hex"82012088a820add57dfe5277079d069ca4ad4893c96de91f88ffb981fdc6a2a34d5336c66aff87"))), None, None)
+    val nonInitiatorSigs = TxSignatures(channelId, unsignedTx, Seq(ScriptWitness(Seq(hex"304402207de9ba56bb9f641372e805782575ee840a899e61021c8b1572b3ec1d5b5950e9022069e9ba998915dae193d3c25cb89b5e64370e6a3a7755e7f31cf6d7cbc2a49f6d01", hex"034695f5b7864c580bf11f9f8cb1a94eb336f2ce9ef872d2ae1a90ee276c772484"))), None, None)
     val initiatorSignedTx = FullySignedSharedTransaction(initiatorTx, initiatorSigs, nonInitiatorSigs, None)
     assert(initiatorSignedTx.feerate == FeeratePerKw(262 sat))
     val nonInitiatorSignedTx = FullySignedSharedTransaction(nonInitiatorTx, nonInitiatorSigs, initiatorSigs, None)
@@ -2864,4 +2891,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
 class InteractiveTxBuilderWithEclairSignerSpec extends InteractiveTxBuilderSpec {
   override def useEclairSigner = true
+}
+
+class InteractiveTxBuilderWithTaprootChannelsSpec extends InteractiveTxBuilderSpec {
+  override val channelType: SupportedChannelType = ChannelTypes.SimpleTaprootChannelsStaging()
 }

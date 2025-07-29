@@ -151,7 +151,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(aliceUpdate.shortChannelId == aliceChannelReady.alias_opt.value)
     assert(aliceUpdate.feeBaseMsat == 20.msat)
     assert(aliceUpdate.feeProportionalMillionths == 125)
-    assert(aliceCommitments.localChannelReserve == aliceCommitments.commitInput.txOut.amount / 100)
+    assert(aliceCommitments.localChannelReserve == aliceCommitments.capacity / 100)
     assert(aliceCommitments.localChannelReserve == aliceCommitments.remoteChannelReserve)
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(bobCommitments.commitment.shortChannelId_opt.nonEmpty)
@@ -190,7 +190,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(aliceCommitments.commitment.shortChannelId_opt.isEmpty)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.shortChannelId == aliceChannelReady.alias_opt.value)
-    assert(aliceCommitments.localChannelReserve == aliceCommitments.commitInput.txOut.amount / 100)
+    assert(aliceCommitments.localChannelReserve == aliceCommitments.capacity / 100)
     assert(aliceCommitments.localChannelReserve == aliceCommitments.remoteChannelReserve)
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest
     assert(bobCommitments.commitment.shortChannelId_opt.isEmpty)
