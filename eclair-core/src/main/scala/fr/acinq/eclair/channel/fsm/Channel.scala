@@ -710,14 +710,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 stay() using d1 storing() sending signingSession1.localSigs calling endQuiescence(d1)
             }
           }
-        case (_, sig: CommitSig) if d.commitments.ignoreRetransmittedCommitSig(channelKeys, sig) =>
-          // If our peer hasn't implemented https://github.com/lightning/bolts/pull/1214, they may retransmit commit_sig
-          // even though we've already received it and haven't requested a retransmission. It is safe to simply ignore
-          // this commit_sig while we wait for peers to correctly implemented commit_sig retransmission, at which point
-          // we should be able to get rid of this edge case.
-          // Note that the funding transaction may have confirmed while we were reconnecting.
-          log.info("ignoring commit_sig, we're still waiting for tx_signatures")
-          stay()
         case _ =>
           // NB: in all other cases we process the commit_sigs normally. We could do a full pattern matching on all
           // splice statuses, but it would force us to handle every corner case where our peer doesn't behave correctly

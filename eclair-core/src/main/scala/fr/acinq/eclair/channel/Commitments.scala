@@ -1289,12 +1289,6 @@ case class Commitments(channelParams: ChannelParams,
     }
   }
 
-  /** This function should be used to ignore a commit_sig that we've already received. */
-  def ignoreRetransmittedCommitSig(channelKeys: ChannelKeys, commitSig: CommitSig): Boolean = {
-    val isLatestSig = false // TODO ??
-    channelParams.channelFeatures.hasFeature(Features.DualFunding) && isLatestSig
-  }
-
   def localFundingSigs(fundingTxId: TxId): Option[TxSignatures] = {
     all.find(_.fundingTxId == fundingTxId).flatMap(_.localFundingStatus.localSigs_opt)
   }
