@@ -51,7 +51,7 @@ import fr.acinq.eclair.io.Peer.LiquidityPurchaseSigned
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSettlingOnChain}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, ClosingTx, DefaultCommitmentFormat, LocalNonce, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
@@ -239,7 +239,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     val tlvs: TlvStream[ShutdownTlv] = commitments.latest.commitmentFormat match {
       case _: SimpleTaprootChannelCommitmentFormat =>
         val localFundingPubKey = channelKeys.fundingKey(commitments.latest.fundingTxIndex).publicKey
-        localClosingNonce_opt = Some(NonceGenerator.signingNonce(localFundingPubKey))
+        localClosingNonce_opt = Some(NonceGenerator.signingNonce(localFundingPubKey, commitments.latest.remoteFundingPubKey, commitments.latest.fundingTxId))
         TlvStream(ShutdownTlv.ShutdownNonce(localClosingNonce_opt.get.publicNonce))
       case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
         TlvStream.empty
@@ -2427,8 +2427,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       val nextFundingTlv: Set[ChannelReestablishTlv] = Set(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTx.txId))
       val myNextLocalNonce = d.signingSession.fundingParams.commitmentFormat match {
         case _: SimpleTaprootChannelCommitmentFormat =>
-          val localNonce = NonceGenerator.verificationNonce(d.signingSession.fundingTx.txId, channelKeys.fundingKey(0), 1)
-          val currentCommitNonce = NonceGenerator.verificationNonce(d.signingSession.fundingTx.txId, channelKeys.fundingKey(0), d.signingSession.localCommitIndex).publicNonce
+          val localFundingKey = channelKeys.fundingKey(0)
+          val remoteFundingPubKey = d.signingSession.fundingParams.remoteFundingPubKey
+          val localNonce = NonceGenerator.verificationNonce(d.signingSession.fundingTx.txId, localFundingKey, remoteFundingPubKey, 1)
+          val currentCommitNonce = NonceGenerator.verificationNonce(d.signingSession.fundingTx.txId, localFundingKey, remoteFundingPubKey, d.signingSession.localCommitIndex).publicNonce
           Set(ChannelTlv.NextLocalNoncesTlv(List(d.signingSession.fundingTx.txId -> localNonce.publicNonce)), ChannelReestablishTlv.CurrentCommitNonceTlv(currentCommitNonce))
         case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
           Set.empty
@@ -2490,7 +2492,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       d.commitments.active.collect {
         case c: Commitment if c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
           val localFundingKey = channelKeys.fundingKey(c.fundingTxIndex)
-          nonces.addOne(c.fundingTxId -> NonceGenerator.verificationNonce(c.fundingTxId, localFundingKey, d.commitments.localCommitIndex + 1).publicNonce)
+          nonces.addOne(c.fundingTxId -> NonceGenerator.verificationNonce(c.fundingTxId, localFundingKey, c.remoteFundingPubKey, d.commitments.localCommitIndex + 1).publicNonce)
       }
       val spliceStatus = d match {
         case d: DATA_NORMAL => Some(d.spliceStatus)
@@ -2500,9 +2502,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       spliceStatus.collect {
         case w: SpliceStatus.SpliceWaitingForSigs =>
           val localFundingKey = channelKeys.fundingKey(w.signingSession.fundingTxIndex)
-          nonces.addOne(w.signingSession.fundingTx.txId -> NonceGenerator.verificationNonce(w.signingSession.fundingTx.txId, localFundingKey, w.signingSession.localCommitIndex + 1).publicNonce)
+          val remoteFundingPubKey = w.signingSession.fundingParams.remoteFundingPubKey
+          nonces.addOne(w.signingSession.fundingTx.txId -> NonceGenerator.verificationNonce(w.signingSession.fundingTx.txId, localFundingKey, remoteFundingPubKey, w.signingSession.localCommitIndex + 1).publicNonce)
           // include a nonce for the current commitment as well, which our peer may need to re-send a commit sig for our current commit tx
-          currentCommitNonce.add(ChannelReestablishTlv.CurrentCommitNonceTlv(NonceGenerator.verificationNonce(w.signingSession.fundingTx.txId, localFundingKey, w.signingSession.localCommitIndex).publicNonce))
+          currentCommitNonce.add(ChannelReestablishTlv.CurrentCommitNonceTlv(NonceGenerator.verificationNonce(w.signingSession.fundingTx.txId, localFundingKey, remoteFundingPubKey, w.signingSession.localCommitIndex).publicNonce))
       }
       val myNextLocalNonces: Set[ChannelTlv.NextLocalNoncesTlv] = if (nonces.nonEmpty) Set(ChannelTlv.NextLocalNoncesTlv(nonces.toList)) else Set.empty[ChannelTlv.NextLocalNoncesTlv]
 
@@ -2563,9 +2566,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           val fundingParams = d.signingSession.fundingParams
           val remoteNonce_opt = channelReestablish.currentCommitNonce_opt // remoteNextLocalNonces.get(d.signingSession.fundingTx.txId)
           d.signingSession.remoteCommit.sign(d.channelParams, d.signingSession.remoteCommitParams, channelKeys, d.signingSession.fundingTxIndex, fundingParams.remoteFundingPubKey, d.signingSession.commitInput(channelKeys), fundingParams.commitmentFormat, remoteNonce_opt) match {
-            case Left(e) => {
-              handleLocalError(e, d, None)
-            }
+            case Left(e) => handleLocalError(e, d, None)
             case Right(commitSig) => goto(WAIT_FOR_DUAL_FUNDING_SIGNED) sending commitSig
           }
         case _ => goto(WAIT_FOR_DUAL_FUNDING_SIGNED)

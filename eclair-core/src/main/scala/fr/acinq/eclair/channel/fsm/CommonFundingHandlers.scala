@@ -26,7 +26,6 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{BroadcastChannelUpdate, PeriodicRefresh, REFRESH_CHANNEL_UPDATE_INTERVAL}
 import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
-import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{RealShortChannelId, ShortChannelId}
@@ -133,7 +132,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     val nextLocalNonce_opt = commitments.latest.commitmentFormat match {
       case _: SimpleTaprootChannelCommitmentFormat =>
         val localFundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
-        val nextLocalNonce = NonceGenerator.verificationNonce(commitments.latest.fundingTxId, localFundingKey, 1).publicNonce
+        val nextLocalNonce = NonceGenerator.verificationNonce(commitments.latest.fundingTxId, localFundingKey, commitments.latest.remoteFundingPubKey, 1).publicNonce
         Some(ChannelTlv.NextLocalNonceTlv(nextLocalNonce))
       case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
         None

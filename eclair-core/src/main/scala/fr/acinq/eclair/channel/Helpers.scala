@@ -17,7 +17,6 @@
 package fr.acinq.eclair.channel
 
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.scalacompat._
@@ -26,15 +25,14 @@ import fr.acinq.eclair.blockchain.OnChainPubkeyCache
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
-import fr.acinq.eclair.crypto.{NonceGenerator, ShaChain}
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
+import fr.acinq.eclair.crypto.{NonceGenerator, ShaChain}
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.protocol.ChannelTlv.NextLocalNonceTlv
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 
@@ -554,7 +552,7 @@ object Helpers {
         val nonces = commitments.active.collect {
           case c: Commitment if c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
             val fundingKey = channelKeys.fundingKey(c.fundingTxIndex)
-            val n = NonceGenerator.verificationNonce(c.fundingTxId, fundingKey, commitments.localCommitIndex + 1).publicNonce
+            val n = NonceGenerator.verificationNonce(c.fundingTxId, fundingKey, c.remoteFundingPubKey, commitments.localCommitIndex + 1).publicNonce
             c.fundingTxId -> n
         }
         val tlvStream: TlvStream[RevokeAndAckTlv] = if (nonces.nonEmpty) TlvStream(RevokeAndAckTlv.NextLocalNoncesTlv(nonces.toList)) else TlvStream.empty
@@ -798,17 +796,17 @@ object Helpers {
 
               TlvStream(Set(
                 closingTxs.localAndRemote_opt.map(tx => {
-                  val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey)
+                  val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey, commitment.remoteFundingPubKey, commitment.fundingTxId)
                   closingCompleteNonces = closingCompleteNonces.copy(closerAndCloseeOutputsNonce = Some(localNonce))
                   ClosingCompleteTlv.CloserAndCloseeOutputsPartialSignature(partialSign(tx, localNonce))
                 }),
                 closingTxs.localOnly_opt.map(tx => {
-                  val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey)
+                  val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey, commitment.remoteFundingPubKey, commitment.fundingTxId)
                   closingCompleteNonces = closingCompleteNonces.copy(closerOutputOnlyNonce = Some(localNonce))
                   ClosingCompleteTlv.CloserOutputOnlyPartialSignature(partialSign(tx, localNonce))
                 }),
                 closingTxs.remoteOnly_opt.map(tx => {
-                  val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey)
+                  val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey, commitment.remoteFundingPubKey, commitment.fundingTxId)
                   closingCompleteNonces = closingCompleteNonces.copy(closeeOutputOnlyNonce = Some(localNonce))
                   ClosingCompleteTlv.CloseeOutputOnlyPartialSignature(partialSign(tx, localNonce))
                 }),
@@ -864,7 +862,7 @@ object Helpers {
                   tx <- closingTx.aggregateSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig, Map.empty)
                 } yield (closingTx.copy(tx = tx), localSig)) match {
                   case Right((signedClosingTx, localSig)) if signedClosingTx.validate(Map.empty) =>
-                    val nextClosingNonce = NonceGenerator.signingNonce(localFundingKey.publicKey)
+                    val nextClosingNonce = NonceGenerator.signingNonce(localFundingKey.publicKey, commitment.remoteFundingPubKey, commitment.fundingTxId)
                     Right(signedClosingTx, ClosingSig(commitment.channelId, remoteScriptPubkey, localScriptPubkey, closingComplete.fees, closingComplete.lockTime, TlvStream(sigToTlv(localSig.partialSig), ClosingSigTlv.NextCloseeNonce(nextClosingNonce.publicNonce))), Some(nextClosingNonce))
                   case _ =>
                     Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))

@@ -473,7 +473,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   private val localNonce_opt = fundingParams.sharedInput_opt.collect {
     case s if s.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
       val localPubKeyForSharedInput = channelKeys.fundingKey(s.fundingTxIndex).publicKey
-      NonceGenerator.signingNonce(localPubKeyForSharedInput)
+      NonceGenerator.signingNonce(localPubKeyForSharedInput, s.remoteFundingPubkey, s.info.outPoint.txid)
   }
 
   def start(): Behavior[Command] = {
@@ -548,8 +548,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             )
             val fundingTxId = fundingTx.txid
             TxComplete(fundingParams.channelId,
-              NonceGenerator.verificationNonce(fundingTxId, localFundingKey, purpose.localCommitIndex).publicNonce,
-              NonceGenerator.verificationNonce(fundingTxId, localFundingKey, purpose.localCommitIndex + 1).publicNonce,
+              NonceGenerator.verificationNonce(fundingTxId, localFundingKey, fundingParams.remoteFundingPubKey, purpose.localCommitIndex).publicNonce,
+              NonceGenerator.verificationNonce(fundingTxId, localFundingKey, fundingParams.remoteFundingPubKey, purpose.localCommitIndex + 1).publicNonce,
               localNonce_opt.map(_.publicNonce)
             )
           case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
@@ -886,7 +886,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
         def makeTlvs(): Either[ChannelException, TlvStream[CommitSigTlv]] = fundingParams.commitmentFormat match {
           case _: SimpleTaprootChannelCommitmentFormat =>
-            val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey)
+            val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey, fundingParams.remoteFundingPubKey, fundingTx.txid)
             val remoteNonce = session.txCompleteReceived.flatMap(_.nonces_opt).map(_.remoteNonce) match {
               case Some(n) => n
               case None => return Left(MissingNonce(channelParams.channelId, fundingTx.txid))
