@@ -2478,28 +2478,32 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           d.commitments.lastRemoteLocked_opt.map(c => ChannelReestablishTlv.YourLastFundingLockedTlv(c.fundingTxId)).toSet
       } else Set.empty
 
-      val currentCommitNonce = collection.mutable.HashSet[ChannelReestablishTlv]()
-      val nonces = collection.mutable.HashMap[TxId, IndividualNonce]()
-      // send a nonce for each active commitment
-      d.commitments.active.collect {
+      // We send our verification nonces for all active commitments.
+      val nextCommitNonces: Map[TxId, IndividualNonce] = d.commitments.active.collect {
         case c: Commitment if c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
           val localFundingKey = channelKeys.fundingKey(c.fundingTxIndex)
-          nonces.addOne(c.fundingTxId -> NonceGenerator.verificationNonce(c.fundingTxId, localFundingKey, c.remoteFundingPubKey, d.commitments.localCommitIndex + 1).publicNonce)
+          c.fundingTxId -> NonceGenerator.verificationNonce(c.fundingTxId, localFundingKey, c.remoteFundingPubKey, d.commitments.localCommitIndex + 1).publicNonce
+      }.toMap
+      // If an interactive-tx session hasn't been fully signed, we also need to include the corresponding nonces.
+      val (interactiveTxCurrentCommitNonce_opt, interactiveTxNextCommitNonce): (Option[IndividualNonce], Map[TxId, IndividualNonce]) = d match {
+        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.status match {
+          case DualFundingStatus.RbfWaitingForSigs(signingSession) if signingSession.fundingParams.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
+            val nextCommitNonce = Map(signingSession.fundingTxId -> signingSession.nextCommitNonce(channelKeys).publicNonce)
+            (Some(signingSession.currentCommitNonce(channelKeys).publicNonce), nextCommitNonce)
+          case _ => (None, Map.empty)
+        }
+        case d: DATA_NORMAL => d.spliceStatus match {
+          case SpliceStatus.SpliceWaitingForSigs(signingSession) if signingSession.fundingParams.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
+            val nextCommitNonce = Map(signingSession.fundingTxId -> signingSession.nextCommitNonce(channelKeys).publicNonce)
+            (Some(signingSession.currentCommitNonce(channelKeys).publicNonce), nextCommitNonce)
+          case _ => (None, Map.empty)
+        }
+        case _ => (None, Map.empty)
       }
-      val spliceStatus = d match {
-        case d: DATA_NORMAL => Some(d.spliceStatus)
-        case _ => None
-      }
-      // if a splice was in progress, send a nonce for its signing session
-      spliceStatus.collect {
-        case w: SpliceStatus.SpliceWaitingForSigs =>
-          val localFundingKey = channelKeys.fundingKey(w.signingSession.fundingTxIndex)
-          val remoteFundingPubKey = w.signingSession.fundingParams.remoteFundingPubKey
-          nonces.addOne(w.signingSession.fundingTx.txId -> NonceGenerator.verificationNonce(w.signingSession.fundingTx.txId, localFundingKey, remoteFundingPubKey, w.signingSession.localCommitIndex + 1).publicNonce)
-          // include a nonce for the current commitment as well, which our peer may need to re-send a commit sig for our current commit tx
-          currentCommitNonce.add(ChannelReestablishTlv.CurrentCommitNonceTlv(NonceGenerator.verificationNonce(w.signingSession.fundingTx.txId, localFundingKey, remoteFundingPubKey, w.signingSession.localCommitIndex).publicNonce))
-      }
-      val myNextLocalNonces: Set[ChannelTlv.NextLocalNoncesTlv] = if (nonces.nonEmpty) Set(ChannelTlv.NextLocalNoncesTlv(nonces.toList)) else Set.empty[ChannelTlv.NextLocalNoncesTlv]
+      val nonceTlvs = Set(
+        interactiveTxCurrentCommitNonce_opt.map(nonce => ChannelReestablishTlv.CurrentCommitNonceTlv(nonce)),
+        if (nextCommitNonces.nonEmpty || interactiveTxNextCommitNonce.nonEmpty) Some(ChannelTlv.NextLocalNoncesTlv(nextCommitNonces.toSeq ++ interactiveTxNextCommitNonce.toSeq)) else None
+      ).flatten
 
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
@@ -2507,7 +2511,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         nextRemoteRevocationNumber = d.commitments.remoteCommitIndex,
         yourLastPerCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
         myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-        tlvStream = TlvStream(rbfTlv ++ lastFundingLockedTlvs ++ myNextLocalNonces ++ currentCommitNonce.toSet)
+        tlvStream = TlvStream(rbfTlv ++ lastFundingLockedTlvs ++ nonceTlvs)
       )
       // we update local/remote connection-local global/local features, we don't persist it right now
       val d1 = Helpers.updateFeatures(d, localInit, remoteInit)

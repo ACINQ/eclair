@@ -1153,7 +1153,7 @@ object InteractiveTxSigningSession {
               aggSig match {
                 case Right(sig) => Script.witnessKeyPathPay2tr(sig)
                 case Left(error) =>
-                  log.warning(s"adding remote sigs for ${unsignedTx.txid} local partial sig ${localPartialSig.partialSig} is using nonce ${localPartialSig.nonce} remote partial sig ${remotePartialSig.partialSig} is using nonce ${remotePartialSig.nonce} local funding key = ${localFundingPubkey} remote funding key = ${sharedInput.remoteFundingPubkey} spent outputs = ${partiallySignedTx.tx.spentOutputs} failed with $error")
+                  log.warning(s"adding remote sigs for ${unsignedTx.txid} local partial sig ${localPartialSig.partialSig} is using nonce ${localPartialSig.nonce} remote partial sig ${remotePartialSig.partialSig} is using nonce ${remotePartialSig.nonce} local funding key = $localFundingPubkey remote funding key = ${sharedInput.remoteFundingPubkey} spent outputs = ${partiallySignedTx.tx.spentOutputs} failed with $error")
                   return Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
               }
             case _ =>
@@ -1201,6 +1201,7 @@ object InteractiveTxSigningSession {
                             remoteCommitParams: CommitParams,
                             remoteCommit: RemoteCommit,
                             liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends InteractiveTxSigningSession {
+    val fundingTxId: TxId = fundingTx.txId
     val localCommitIndex: Long = localCommit.fold(_.index, _.index)
     // This value tells our peer whether we need them to retransmit their commit_sig on reconnection or not.
     val nextLocalCommitmentNumber: Long = localCommit match {
@@ -1212,11 +1213,17 @@ object InteractiveTxSigningSession {
 
     def commitInput(fundingKey: PrivateKey): InputInfo = {
       val fundingScript = Transactions.makeFundingScript(fundingKey.publicKey, fundingParams.remoteFundingPubKey, fundingParams.commitmentFormat).pubkeyScript
-      val fundingOutput = OutPoint(fundingTx.txId, fundingTx.tx.buildUnsignedTx().txOut.indexWhere(txOut => txOut.amount == fundingParams.fundingAmount && txOut.publicKeyScript == fundingScript))
+      val fundingOutput = OutPoint(fundingTxId, fundingTx.tx.buildUnsignedTx().txOut.indexWhere(txOut => txOut.amount == fundingParams.fundingAmount && txOut.publicKeyScript == fundingScript))
       InputInfo(fundingOutput, TxOut(fundingParams.fundingAmount, fundingScript))
     }
 
     def commitInput(channelKeys: ChannelKeys): InputInfo = commitInput(localFundingKey(channelKeys))
+
+    /** Nonce for the current commitment, which our peer will need if they must re-send their commit_sig for our current commitment transaction. */
+    def currentCommitNonce(channelKeys: ChannelKeys): LocalNonce = NonceGenerator.verificationNonce(fundingTxId, localFundingKey(channelKeys), fundingParams.remoteFundingPubKey, localCommitIndex)
+
+    /** Nonce for the next commitment, which our peer will need to sign our next commitment transaction. */
+    def nextCommitNonce(channelKeys: ChannelKeys): LocalNonce = NonceGenerator.verificationNonce(fundingTxId, localFundingKey(channelKeys), fundingParams.remoteFundingPubKey, localCommitIndex + 1)
 
     def receiveCommitSig(channelParams: ChannelParams, channelKeys: ChannelKeys, remoteCommitSig: CommitSig, currentBlockHeight: BlockHeight)(implicit log: LoggingAdapter): Either[ChannelException, InteractiveTxSigningSession] = {
       localCommit match {
