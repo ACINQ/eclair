@@ -17,15 +17,14 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Script.LOCKTIME_THRESHOLD
-import fr.acinq.bitcoin.{ScriptTree, SigHash}
+import fr.acinq.bitcoin.ScriptTree
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.TxIn.{SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_MASK, SEQUENCE_LOCKTIME_TYPE_FLAG}
-import fr.acinq.bitcoin.io.Output
 import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.Script._
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
 import scodec.bits.ByteVector
 
@@ -242,7 +241,7 @@ object Scripts {
   /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
   def extractPreimageFromHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
     case ScriptWitness(Seq(ByteVector.empty, _, _, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
-    case ScriptWitness(Seq(_, sig, paymentPreimage, _, _)) if sig.size == 64 && paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
+    case ScriptWitness(Seq(_, _, paymentPreimage, _, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
   }
 
   /** Extract payment preimages from a (potentially batched) 2nd-stage HTLC transaction's witnesses. */
@@ -258,7 +257,7 @@ object Scripts {
   /** Extract the payment preimage from from a fulfilled offered htlc. */
   def extractPreimageFromClaimHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
     case ScriptWitness(Seq(_, paymentPreimage, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
-    case ScriptWitness(Seq(sig, paymentPreimage, _, _)) if sig.size == 64 && paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
+    case ScriptWitness(Seq(_, paymentPreimage, _, _)) if paymentPreimage.size == 32 => ByteVector32(paymentPreimage)
   }
 
   /** Extract payment preimages from a (potentially batched) claim HTLC transaction's witnesses. */
@@ -326,7 +325,7 @@ object Scripts {
     /**
      * Taproot signatures are usually 64 bytes, unless a non-default sighash is used, in which case it is appended.
      */
-    def encodeSig(sig: ByteVector64, sighashType: Int = SIGHASH_DEFAULT): ByteVector = sighashType match {
+    private def encodeSig(sig: ByteVector64, sighashType: Int = SIGHASH_DEFAULT): ByteVector = sighashType match {
       case SIGHASH_DEFAULT | SIGHASH_ALL => sig
       case _ => sig :+ sighashType.toByte
     }
