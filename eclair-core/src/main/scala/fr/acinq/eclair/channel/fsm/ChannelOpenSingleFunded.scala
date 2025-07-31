@@ -227,7 +227,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             case _: SimpleTaprootChannelCommitmentFormat =>
               val localNonce = NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0)
               if (!remoteNextLocalNonces.contains(NonceGenerator.dummyFundingTxId)) throw MissingNonce(d.channelId, NonceGenerator.dummyFundingTxId)
-              val psig = remoteCommitTx.partialSign(fundingKey, d.remoteFundingPubKey, Map.empty, localNonce, Seq(localNonce.publicNonce, remoteNextLocalNonces(NonceGenerator.dummyFundingTxId))) match {
+              val psig = remoteCommitTx.partialSign(fundingKey, d.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNextLocalNonces(NonceGenerator.dummyFundingTxId))) match {
                 case Left(_) => throw InvalidNonce(d.channelId, NonceGenerator.dummyFundingTxId)
                 case Right(psig) => psig
               }
@@ -305,7 +305,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                 case _: SimpleTaprootChannelCommitmentFormat =>
                   val localNonce = NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0)
                   if (!remoteNextLocalNonces.contains(NonceGenerator.dummyFundingTxId)) throw MissingNonce(d.channelId, NonceGenerator.dummyFundingTxId)
-                  val localPartialSigOfRemoteTx = remoteCommitTx.partialSign(fundingKey, d.remoteFundingPubKey, Map.empty, localNonce, Seq(localNonce.publicNonce, remoteNextLocalNonces(NonceGenerator.dummyFundingTxId))) match {
+                  val localPartialSigOfRemoteTx = remoteCommitTx.partialSign(fundingKey, d.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNextLocalNonces(NonceGenerator.dummyFundingTxId))) match {
                     case Left(_) => throw InvalidNonce(d.channelId, NonceGenerator.dummyFundingTxId)
                     case Right(psig) => psig
                   }

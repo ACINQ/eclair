@@ -891,7 +891,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
               case Some(n) => n
               case None => return Left(MissingNonce(channelParams.channelId, fundingTx.txid))
             }
-            val psig = remoteCommitTx.partialSign(localFundingKey, fundingParams.remoteFundingPubKey, Map.empty, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
+            val psig = remoteCommitTx.partialSign(localFundingKey, fundingParams.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
               case Left(e) =>
                 println(e)
                 return Left(MissingNonce(channelParams.channelId, fundingTx.txid))

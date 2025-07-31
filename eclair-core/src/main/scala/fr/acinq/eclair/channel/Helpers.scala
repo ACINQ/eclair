@@ -790,7 +790,7 @@ object Helpers {
             try {
               // generate a partial signature to send to our peer, using a random signing nonce and their closing nonce
               def partialSign(tx: ClosingTx, localNonce: LocalNonce): ChannelSpendSignature.PartialSignatureWithNonce = {
-                val Right(psig) = tx.partialSign(localFundingKey, commitment.remoteFundingPubKey, Map.empty, localNonce, Seq(localNonce.publicNonce, remoteClosingNonce_opt.get))
+                val Right(psig) = tx.partialSign(localFundingKey, commitment.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteClosingNonce_opt.get))
                 psig
               }
 
@@ -858,8 +858,8 @@ object Helpers {
                 val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
                 (for {
                   // generate a local partial signature using our closing nonce (the one we sent to our peer in our Shutdown message)
-                  localSig <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, Map.empty, localClosingNonce_opt.get, Seq(localClosingNonce_opt.get.publicNonce, remoteSig.nonce))
-                  tx <- closingTx.aggregateSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig, Map.empty)
+                  localSig <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, localClosingNonce_opt.get, Seq(localClosingNonce_opt.get.publicNonce, remoteSig.nonce))
+                  tx <- closingTx.aggregateSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig)
                 } yield (closingTx.copy(tx = tx), localSig)) match {
                   case Right((signedClosingTx, localSig)) if signedClosingTx.validate(Map.empty) =>
                     val nextClosingNonce = NonceGenerator.signingNonce(localFundingKey.publicKey, commitment.remoteFundingPubKey, commitment.fundingTxId)
@@ -920,8 +920,8 @@ object Helpers {
                 ChannelSpendSignature.PartialSignatureWithNonce(remoteSig, remoteNonce_opt.get), localNonce.get.publicNonce) => Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
               case Some((closingTx, remoteSig, localNonce)) =>
                 (for {
-                  localSig <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, Map.empty, localNonce.get, Seq(localNonce.get.publicNonce, remoteNonce_opt.get))
-                  tx <- closingTx.aggregateSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, ChannelSpendSignature.PartialSignatureWithNonce(remoteSig, remoteNonce_opt.get), Map.empty)
+                  localSig <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, localNonce.get, Seq(localNonce.get.publicNonce, remoteNonce_opt.get))
+                  tx <- closingTx.aggregateSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, ChannelSpendSignature.PartialSignatureWithNonce(remoteSig, remoteNonce_opt.get))
                   signedClosingTx = closingTx.copy(tx = tx)
                 } yield signedClosingTx) match {
                   case Left(_) => Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))

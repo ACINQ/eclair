@@ -362,6 +362,10 @@ object Transactions {
     override val desc: String = "commit-tx"
 
     def sign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey): ChannelSpendSignature.IndividualSignature = sign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
+
+    def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, localNonce: LocalNonce, publicNonces: Seq[IndividualNonce]): Either[Throwable, ChannelSpendSignature.PartialSignatureWithNonce] = partialSign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty, localNonce, publicNonces)
+
+    def aggregateSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: PartialSignatureWithNonce, remoteSig: PartialSignatureWithNonce): Either[Throwable, Transaction] = aggregateSigs(localFundingPubkey, remoteFundingPubkey, localSig, remoteSig, extraUtxos = Map.empty)
   }
 
   /** This transaction collaboratively spends the channel funding output (mutual-close). */
@@ -370,6 +374,10 @@ object Transactions {
     val toLocalOutput_opt: Option[TxOut] = toLocalOutputIndex_opt.map(i => tx.txOut(i.toInt))
 
     def sign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey): ChannelSpendSignature.IndividualSignature = sign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty)
+
+    def partialSign(localFundingKey: PrivateKey, remoteFundingPubkey: PublicKey, localNonce: LocalNonce, publicNonces: Seq[IndividualNonce]): Either[Throwable, ChannelSpendSignature.PartialSignatureWithNonce] = partialSign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty, localNonce, publicNonces)
+
+    def aggregateSigs(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: PartialSignatureWithNonce, remoteSig: PartialSignatureWithNonce): Either[Throwable, Transaction] = aggregateSigs(localFundingPubkey, remoteFundingPubkey, localSig, remoteSig, extraUtxos = Map.empty)
   }
 
   object ClosingTx {

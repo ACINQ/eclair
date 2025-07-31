@@ -297,12 +297,12 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val commitTx = commitmentFormat match {
         case _: SimpleTaprootChannelCommitmentFormat =>
           val Right(commitTx) = for {
-            localPartialSig <- txInfo.partialSign(localFundingPriv, remoteFundingPriv.publicKey, Map.empty, LocalNonce(secretLocalNonce, publicLocalNonce), publicNonces)
-            remotePartialSig <- txInfo.partialSign(remoteFundingPriv, localFundingPriv.publicKey, Map.empty, LocalNonce(secretRemoteNonce, publicRemoteNonce), publicNonces)
+            localPartialSig <- txInfo.partialSign(localFundingPriv, remoteFundingPriv.publicKey, LocalNonce(secretLocalNonce, publicLocalNonce), publicNonces)
+            remotePartialSig <- txInfo.partialSign(remoteFundingPriv, localFundingPriv.publicKey, LocalNonce(secretRemoteNonce, publicRemoteNonce), publicNonces)
             _ = assert(txInfo.checkRemotePartialSignature(localFundingPriv.publicKey, remoteFundingPriv.publicKey, remotePartialSig, publicLocalNonce))
             invalidRemotePartialSig = ChannelSpendSignature.PartialSignatureWithNonce(randomBytes32(), remotePartialSig.nonce)
             _ = assert(!txInfo.checkRemotePartialSignature(localFundingPriv.publicKey, remoteFundingPriv.publicKey, invalidRemotePartialSig, publicLocalNonce))
-            tx <- txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localPartialSig, remotePartialSig, Map.empty)
+            tx <- txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localPartialSig, remotePartialSig)
           } yield tx
           commitTx
         case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>

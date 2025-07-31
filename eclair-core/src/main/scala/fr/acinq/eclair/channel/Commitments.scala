@@ -212,7 +212,7 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePer
         Left(MissingNonce(channelParams.channelId, commitInput.outPoint.txid))
       case _: SimpleTaprootChannelCommitmentFormat =>
         val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, remoteFundingPubKey, commitInput.outPoint.txid)
-        remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, Map.empty, localNonce, Seq(localNonce.publicNonce, remoteNonce_opt.get)) match {
+        remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce_opt.get)) match {
           case Left(_) => Left(InvalidNonce(channelParams.channelId, commitInput.outPoint.txid))
           case Right(psig) => Right(CommitSig(channelParams.channelId, ByteVector64.Zeroes, htlcSigs.toList, TlvStream[CommitSigTlv](CommitSigTlv.PartialSignatureWithNonceTlv(psig))))
         }
@@ -669,7 +669,7 @@ case class Commitment(fundingTxIndex: Long,
         if (nextRemoteNonce_opt.isEmpty)
           return Left(MissingNonce(params.channelId, fundingTxId))
         val Some(remoteNonce) = nextRemoteNonce_opt
-        val psig = remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, Map.empty, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
+        val psig = remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
           case Left(_) => return Left(InvalidNonce(params.channelId, fundingTxId))
           case Right(psig) => psig
         }
@@ -726,7 +726,7 @@ case class Commitment(fundingTxIndex: Long,
           NonceGenerator.verificationNonce(fundingTxId, fundingKey, remoteFundingPubKey, localCommit.index)
         }
         (for {
-          partialSig <- unsignedCommitTx.partialSign(fundingKey, remoteFundingPubKey, Map.empty, localNonce, Seq(localNonce.publicNonce, remoteNonce))
+          partialSig <- unsignedCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce))
           aggSig <- Musig2.aggregateTaprootSignatures(
             Seq(partialSig.partialSig, remotePsig),
             unsignedCommitTx.tx,
