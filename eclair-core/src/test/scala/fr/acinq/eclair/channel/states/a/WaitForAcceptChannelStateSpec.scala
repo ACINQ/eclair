@@ -112,7 +112,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsStagingLegacy()))
-    assert(accept.nexLocalNonce_opt.isDefined)
+    assert(accept.nextLocalNonce_opt.isDefined)
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].commitmentFormat == LegacySimpleTaprootChannelCommitmentFormat)
@@ -123,7 +123,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsStagingLegacy()))
-    assert(accept.nexLocalNonce_opt.isDefined)
+    assert(accept.nextLocalNonce_opt.isDefined)
     bob2alice.forward(alice, accept.copy(tlvStream = accept.tlvStream.copy(records = accept.tlvStream.records.filterNot(_.isInstanceOf[ChannelTlv.NextLocalNonceTlv]))))
     alice2bob.expectMsg(Error(accept.temporaryChannelId, MissingNonce(accept.temporaryChannelId, TxId(ByteVector32.Zeroes)).getMessage))
     listener.expectMsgType[ChannelAborted]

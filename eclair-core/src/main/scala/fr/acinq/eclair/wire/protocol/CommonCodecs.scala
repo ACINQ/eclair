@@ -23,7 +23,6 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel.{ChannelFlags, ShortIdAliases}
 import fr.acinq.eclair.crypto.Mac32
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, LegacySimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, UnspecifiedShortChannelId}
 import fr.acinq.secp256k1.Secp256k1
 import org.apache.commons.codec.binary.Base32

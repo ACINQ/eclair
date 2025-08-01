@@ -1545,6 +1545,9 @@ object Transactions {
   }
   // @formatter:on
 
+  /** When sending [[fr.acinq.eclair.wire.protocol.ClosingComplete]], we use a random nonce for each closing transaction we create. */
+  case class CloserNonces(localAndRemote_opt: Option[LocalNonce], localOnly_opt: Option[LocalNonce], remoteOnly_opt: Option[LocalNonce])
+
   /** Each closing attempt can result in multiple potential closing transactions, depending on which outputs are included. */
   case class ClosingTxs(localAndRemote_opt: Option[ClosingTx], localOnly_opt: Option[ClosingTx], remoteOnly_opt: Option[ClosingTx]) {
     /** Preferred closing transaction for this closing attempt. */

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ScriptWitness
+import fr.acinq.eclair.channel.ChannelSpendSignature
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.{Features, InitFeature, KamonExt}
@@ -273,7 +274,7 @@ object LightningMessageCodecs {
 
   val commitSigCodec: Codec[CommitSig] = (
     ("channelId" | bytes32) ::
-      ("signature" | bytes64) ::
+      ("signature" | bytes64.as[ChannelSpendSignature.IndividualSignature]) ::
       ("htlcSignatures" | listofsignatures) ::
       ("tlvStream" | CommitSigTlv.commitSigTlvCodec)).as[CommitSig]
 

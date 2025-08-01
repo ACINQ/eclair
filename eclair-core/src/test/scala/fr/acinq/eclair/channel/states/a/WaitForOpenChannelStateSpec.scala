@@ -114,14 +114,14 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].commitmentFormat == LegacySimpleTaprootChannelCommitmentFormat)
-    assert(open.nexLocalNonce_opt.isDefined)
+    assert(open.nextLocalNonce_opt.isDefined)
   }
 
   test("recv OpenChannel (simple taproot channels, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     assert(open.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsStagingLegacy()))
-    assert(open.nexLocalNonce_opt.isDefined)
+    assert(open.nextLocalNonce_opt.isDefined)
     alice2bob.forward(bob, open.copy(tlvStream = open.tlvStream.copy(records = open.tlvStream.records.filterNot(_.isInstanceOf[ChannelTlv.NextLocalNonceTlv]))))
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(open.temporaryChannelId, MissingNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes)).getMessage))

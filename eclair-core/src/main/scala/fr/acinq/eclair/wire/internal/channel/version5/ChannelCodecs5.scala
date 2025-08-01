@@ -48,7 +48,7 @@ private[channel] object ChannelCodecs5 {
 
     private val channelSpendSignatureCodec: Codec[ChannelSpendSignature] = discriminated[ChannelSpendSignature].by(uint8)
       .typecase(0x01, bytes64.as[ChannelSpendSignature.IndividualSignature])
-      .typecase(0x02, (("partialSig" | bytes32) :: ("nonce" | publicNonce)).as[ChannelSpendSignature.PartialSignatureWithNonce])
+      .typecase(0x02, partialSignatureWithNonce)
 
     private def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
 

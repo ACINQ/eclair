@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
+import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
@@ -414,7 +415,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val tx = bob.signCommitTx()
     // signature is invalid but it doesn't matter
-    bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
+    bob ! CommitSig(ByteVector32.Zeroes, IndividualSignature(ByteVector64.Zeroes), Nil)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
@@ -425,7 +426,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CommitSig (invalid signature)") { f =>
     import f._
     val tx = bob.signCommitTx()
-    bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
+    bob ! CommitSig(ByteVector32.Zeroes, IndividualSignature(ByteVector64.Zeroes), Nil)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx

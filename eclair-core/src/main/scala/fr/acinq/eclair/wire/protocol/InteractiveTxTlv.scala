@@ -63,20 +63,21 @@ sealed trait TxCompleteTlv extends Tlv
 
 object TxCompleteTlv {
   /**
-   * Musig2 nonces exchanged during an interactive tx session
+   * Musig2 nonces exchanged during an interactive tx session, when using a taproot channel or upgrading a channel to
+   * use taproot.
    *
-   * @param remoteNonce      a verification nonce for the session commitment transaction
-   * @param nextRemoteNonce  a verification nonce that will be added to the channel's nonce map once the session completes
-   * @param fundingNonce_opt an optional nonce to spend the session's shared input
+   * @param commitNonce      the sender's verification nonce for the current commit tx spending the interactive tx.
+   * @param nextCommitNonce  the sender's verification nonce for the next commit tx spending the interactive tx.
+   * @param fundingNonce_opt when splicing a taproot channel, the sender's random signing nonce for the previous funding output.
    */
-  case class Nonces(remoteNonce: IndividualNonce, nextRemoteNonce: IndividualNonce, fundingNonce_opt: Option[IndividualNonce]) extends TxCompleteTlv
+  case class Nonces(commitNonce: IndividualNonce, nextCommitNonce: IndividualNonce, fundingNonce_opt: Option[IndividualNonce]) extends TxCompleteTlv
 
   object Nonces {
-    val codec: Codec[Nonces] = (publicNonce :: publicNonce :: optional(bitsRemaining, publicNonce)).as[Nonces]
+    val codec: Codec[Nonces] = tlvField((publicNonce :: publicNonce :: optional(bitsRemaining, publicNonce)).as[Nonces])
   }
 
   val txCompleteTlvCodec: Codec[TlvStream[TxCompleteTlv]] = tlvStream(discriminated[TxCompleteTlv].by(varint)
-    .typecase(UInt64(4), tlvField[Nonces, Nonces](Nonces.codec))
+    .typecase(UInt64(4), Nonces.codec)
   )
 }
 
@@ -86,14 +87,11 @@ object TxSignaturesTlv {
   /** When doing a splice, each peer must provide their signature for the previous 2-of-2 funding output. */
   case class PreviousFundingTxSig(sig: ByteVector64) extends TxSignaturesTlv
 
+  /** When doing a splice for a taproot channel, each peer must provide their partial signature for the previous musig2 funding output. */
   case class PreviousFundingTxPartialSig(partialSigWithNonce: PartialSignatureWithNonce) extends TxSignaturesTlv
 
-  object PreviousFundingTxPartialSig {
-    val codec: Codec[PreviousFundingTxPartialSig] = tlvField(partialSignatureWithNonce)
-  }
-
   val txSignaturesTlvCodec: Codec[TlvStream[TxSignaturesTlv]] = tlvStream(discriminated[TxSignaturesTlv].by(varint)
-    .typecase(UInt64(2), PreviousFundingTxPartialSig.codec)
+    .typecase(UInt64(2), tlvField(partialSignatureWithNonce.as[PreviousFundingTxPartialSig]))
     .typecase(UInt64(601), tlvField(bytes64.as[PreviousFundingTxSig]))
   )
 }

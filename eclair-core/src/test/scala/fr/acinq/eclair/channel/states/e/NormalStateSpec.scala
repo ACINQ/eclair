@@ -28,6 +28,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
+import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
@@ -1249,7 +1250,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val tx = bob.signCommitTx()
     // signature is invalid but it doesn't matter
-    bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
+    bob ! CommitSig(ByteVector32.Zeroes, IndividualSignature(ByteVector64.Zeroes), Nil)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("cannot sign when there are no changes"))
     awaitCond(bob.stateName == CLOSING)
@@ -1266,7 +1267,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val tx = bob.signCommitTx()
 
     // actual test begins
-    bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
+    bob ! CommitSig(ByteVector32.Zeroes, IndividualSignature(ByteVector64.Zeroes), Nil)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid commitment signature"))
     awaitCond(bob.stateName == CLOSING)
@@ -1344,7 +1345,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val commitSig = alice2bob.expectMsgType[CommitSig]
 
     // actual test begins
-    val badCommitSig = commitSig.copy(htlcSignatures = commitSig.signature :: Nil)
+    val badCommitSig = commitSig.copy(htlcSignatures = commitSig.signature.sig :: Nil)
     bob ! badCommitSig
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid htlc signature"))
@@ -1475,7 +1476,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test begins
     val revokeAndAck = bob2alice.expectMsgType[RevokeAndAck]
-    val revokeAndAckWithMissingNonce = revokeAndAck.copy(tlvStream = revokeAndAck.tlvStream.copy(records = revokeAndAck.tlvStream.records.filterNot(tlv => tlv.isInstanceOf[RevokeAndAckTlv.NextLocalNoncesTlv] || tlv.isInstanceOf[RevokeAndAckTlv.NextLocalNonceTlv])))
+    val revokeAndAckWithMissingNonce = revokeAndAck.copy(tlvStream = revokeAndAck.tlvStream.copy(records = revokeAndAck.tlvStream.records.filterNot(tlv => tlv.isInstanceOf[RevokeAndAckTlv.NextLocalNoncesTlv])))
     alice ! revokeAndAckWithMissingNonce
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)

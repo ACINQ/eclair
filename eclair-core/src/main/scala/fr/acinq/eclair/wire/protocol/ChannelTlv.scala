@@ -20,8 +20,6 @@ import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, TxId}
 import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
-import fr.acinq.eclair.transactions.Transactions.CommitmentFormat
-import fr.acinq.eclair.wire.protocol.ChannelTlv.{nextLocalNonceTlvCodec, nextLocalNoncesTlvCodec}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tmillisatoshi}
 import fr.acinq.eclair.{Alias, FeatureSupport, Features, MilliSatoshi, UInt64}
@@ -93,13 +91,16 @@ object ChannelTlv {
    */
   case class UseFeeCredit(amount: MilliSatoshi) extends OpenDualFundedChannelTlv with SpliceInitTlv
 
+  /** Verification nonce used for the next commitment transaction that will be signed (when using taproot channels). */
   case class NextLocalNonceTlv(nonce: IndividualNonce) extends OpenChannelTlv with AcceptChannelTlv with ChannelReadyTlv with ClosingTlv
 
-  val nextLocalNonceTlvCodec: Codec[NextLocalNonceTlv] = tlvField(publicNonce)
+  val nextLocalNonceCodec: Codec[NextLocalNonceTlv] = tlvField(publicNonce)
 
-  case class NextLocalNoncesTlv(nonces: Seq[(TxId, IndividualNonce)]) extends ChannelReestablishTlv
+  /** Partial signature along with the signer's nonce, which is usually randomly created at signing time (when using taproot channels). */
+  case class PartialSignatureWithNonceTlv(partialSigWithNonce: PartialSignatureWithNonce) extends FundingCreatedTlv with FundingSignedTlv with ClosingTlv
 
-  val nextLocalNoncesTlvCodec: Codec[NextLocalNoncesTlv] = tlvField(list(txId ~ publicNonce).xmap[Seq[(TxId, IndividualNonce)]](_.toSeq, _.toList))
+  val partialSignatureWithNonceCodec: Codec[PartialSignatureWithNonceTlv] = tlvField(partialSignatureWithNonce)
+
 }
 
 object OpenChannelTlv {
@@ -109,7 +110,7 @@ object OpenChannelTlv {
   val openTlvCodec: Codec[TlvStream[OpenChannelTlv]] = tlvStream(discriminated[OpenChannelTlv].by(varint)
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
-    .typecase(UInt64(4), nextLocalNonceTlvCodec)
+    .typecase(UInt64(4), nextLocalNonceCodec)
   )
 
 }
@@ -121,7 +122,7 @@ object AcceptChannelTlv {
   val acceptTlvCodec: Codec[TlvStream[AcceptChannelTlv]] = tlvStream(discriminated[AcceptChannelTlv].by(varint)
     .typecase(UInt64(0), upfrontShutdownScriptCodec)
     .typecase(UInt64(1), channelTypeCodec)
-    .typecase(UInt64(4), nextLocalNonceTlvCodec)
+    .typecase(UInt64(4), nextLocalNonceCodec)
   )
 }
 
@@ -220,17 +221,11 @@ object AcceptDualFundedChannelTlv {
 
 }
 
-case class PartialSignatureWithNonceTlv(partialSigWithNonce: PartialSignatureWithNonce) extends FundingCreatedTlv with FundingSignedTlv with ClosingTlv
-
-object PartialSignatureWithNonceTlv {
-  val codec: Codec[PartialSignatureWithNonceTlv] = tlvField(partialSignatureWithNonce)
-}
-
 sealed trait FundingCreatedTlv extends Tlv
 
 object FundingCreatedTlv {
   val fundingCreatedTlvCodec: Codec[TlvStream[FundingCreatedTlv]] = tlvStream(discriminated[FundingCreatedTlv].by(varint)
-    .typecase(UInt64(2), PartialSignatureWithNonceTlv.codec)
+    .typecase(UInt64(2), ChannelTlv.partialSignatureWithNonceCodec)
   )
 }
 
@@ -238,7 +233,7 @@ sealed trait FundingSignedTlv extends Tlv
 
 object FundingSignedTlv {
   val fundingSignedTlvCodec: Codec[TlvStream[FundingSignedTlv]] = tlvStream(discriminated[FundingSignedTlv].by(varint)
-    .typecase(UInt64(2), PartialSignatureWithNonceTlv.codec)
+    .typecase(UInt64(2), ChannelTlv.partialSignatureWithNonceCodec)
   )
 }
 
@@ -252,7 +247,7 @@ object ChannelReadyTlv {
 
   val channelReadyTlvCodec: Codec[TlvStream[ChannelReadyTlv]] = tlvStream(discriminated[ChannelReadyTlv].by(varint)
     .typecase(UInt64(1), channelAliasTlvCodec)
-    .typecase(UInt64(4), nextLocalNonceTlvCodec)
+    .typecase(UInt64(4), ChannelTlv.nextLocalNonceCodec)
   )
 }
 
@@ -265,11 +260,17 @@ object ChannelReestablishTlv {
   case class MyCurrentFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
 
   /**
-   * When disconnected during an interactive tx session, we'll include a verification nonce for our *current* commitment (using the
-   * session's commitment index) which our peer may need to re-send a commit sig for our current commit tx
-   *
+   * When disconnected during an interactive tx session, we'll include a verification nonce for our *current* commitment
+   * which our peer will need to re-send a commit sig for our current commitment transaction spending the interactive tx.
    */
   case class CurrentCommitNonceTlv(nonce: IndividualNonce) extends ChannelReestablishTlv
+
+  /**
+   * Verification nonces used for the next commitment transaction, when using taproot channels.
+   * There must be a nonce for each active commitment (when there are pending splices or RBF attempts), indexed by the
+   * corresponding fundingTxId.
+   */
+  case class NextLocalNoncesTlv(nonces: Seq[(TxId, IndividualNonce)]) extends ChannelReestablishTlv
 
   object NextFundingTlv {
     val codec: Codec[NextFundingTlv] = tlvField(txIdAsHash)
@@ -287,11 +288,15 @@ object ChannelReestablishTlv {
     val codec: Codec[CurrentCommitNonceTlv] = tlvField("current_commit_nonce" | publicNonce)
   }
 
+  object NextLocalNoncesTlv {
+    val codec: Codec[NextLocalNoncesTlv] = tlvField(list(txIdAsHash ~ publicNonce).xmap[Seq[(TxId, IndividualNonce)]](_.toSeq, _.toList))
+  }
+
   val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
     .typecase(UInt64(0), NextFundingTlv.codec)
     .typecase(UInt64(1), YourLastFundingLockedTlv.codec)
     .typecase(UInt64(3), MyCurrentFundingLockedTlv.codec)
-    .typecase(UInt64(4), nextLocalNoncesTlvCodec)
+    .typecase(UInt64(4), NextLocalNoncesTlv.codec)
     .typecase(UInt64(6), CurrentCommitNonceTlv.codec)
   )
 }
@@ -305,6 +310,7 @@ object UpdateFeeTlv {
 sealed trait ShutdownTlv extends Tlv
 
 object ShutdownTlv {
+  /** When closing taproot channels, local nonce that will be used to sign the remote closing transaction. */
   case class ShutdownNonce(nonce: IndividualNonce) extends ShutdownTlv
 
   private val shutdownNonceCodec: Codec[ShutdownNonce] = tlvField(publicNonce)
@@ -339,19 +345,18 @@ object ClosingTlv {
 
   /** Signature for a closing transaction containing the closer and closee's outputs. */
   case class CloserAndCloseeOutputs(sig: ByteVector64) extends ClosingTlv with ClosingCompleteTlv with ClosingSigTlv
-
-  /** Signature for a closing transaction containing only the closer's output. */
 }
 
 sealed trait ClosingCompleteTlv extends ClosingTlv
 
 object ClosingCompleteTlv {
+  /** When closing taproot channels, partial signature for a closing transaction containing only the closer's output. */
   case class CloserOutputOnlyPartialSignature(partialSignature: PartialSignatureWithNonce) extends ClosingCompleteTlv
 
-  /** Signature for a closing transaction containing only the closee's output. */
+  /** When closing taproot channels, partial signature for a closing transaction containing only the closee's output. */
   case class CloseeOutputOnlyPartialSignature(partialSignature: PartialSignatureWithNonce) extends ClosingCompleteTlv
 
-  /** Signature for a closing transaction containing the closer and closee's outputs. */
+  /** When closing taproot channels, partial signature for a closing transaction containing the closer and closee's outputs. */
   case class CloserAndCloseeOutputsPartialSignature(partialSignature: PartialSignatureWithNonce) extends ClosingCompleteTlv
 
   val closingCompleteTlvCodec: Codec[TlvStream[ClosingCompleteTlv]] = tlvStream(discriminated[ClosingCompleteTlv].by(varint)
@@ -367,15 +372,17 @@ object ClosingCompleteTlv {
 sealed trait ClosingSigTlv extends ClosingTlv
 
 object ClosingSigTlv {
+  /** When closing taproot channels, partial signature for a closing transaction containing only the closer's output. */
   case class CloserOutputOnlyPartialSignature(partialSignature: ByteVector32) extends ClosingSigTlv
 
-  /** Signature for a closing transaction containing only the closee's output. */
+  /** When closing taproot channels, partial signature for a closing transaction containing only the closee's output. */
   case class CloseeOutputOnlyPartialSignature(partialSignature: ByteVector32) extends ClosingSigTlv
 
-  /** Signature for a closing transaction containing the closer and closee's outputs. */
+  /** When closing taproot channels, partial signature for a closing transaction containing the closer and closee's outputs. */
   case class CloserAndCloseeOutputsPartialSignature(partialSignature: ByteVector32) extends ClosingSigTlv
 
-  case class NextCloseeNonce(closeeNonce: IndividualNonce) extends ClosingSigTlv
+  /** When closing taproot channels, local nonce that will be used to sign the next remote closing transaction. */
+  case class NextCloseeNonce(nonce: IndividualNonce) extends ClosingSigTlv
 
   val closingSigTlvCodec: Codec[TlvStream[ClosingSigTlv]] = tlvStream(discriminated[ClosingSigTlv].by(varint)
     .typecase(UInt64(1), tlvField(bytes64.as[ClosingTlv.CloserOutputOnly]))

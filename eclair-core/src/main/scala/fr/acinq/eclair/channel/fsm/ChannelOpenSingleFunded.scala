@@ -32,7 +32,7 @@ import fr.acinq.eclair.crypto.{NonceGenerator, ShaChain}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, AcceptChannelTlv, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, OpenChannelTlv, PartialSignatureWithNonceTlv, TlvStream}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, AcceptChannelTlv, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, OpenChannelTlv, TlvStream}
 import fr.acinq.eclair.{MilliSatoshiLong, randomKey, toLongId}
 import scodec.bits.ByteVector
 
@@ -154,7 +154,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               Some(ChannelTlv.ChannelTypeTlv(d.initFundee.channelType)),
               localNonce.map(n => ChannelTlv.NextLocalNonceTlv(n))
             ).flatten[AcceptChannelTlv]))
-          setRemoteNextLocalNonces("from their open_channel", open.nexLocalNonce_opt.map(n => Map(NonceGenerator.dummyFundingTxId -> n)).getOrElse(Map.empty))
+          setRemoteNextLocalNonces("from their open_channel", open.nextLocalNonce_opt.map(n => Map(NonceGenerator.dummyFundingTxId -> n)).getOrElse(Map.empty))
           goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(channelParams, d.initFundee.channelType, localCommitParams, remoteCommitParams, open.fundingSatoshis, open.pushMsat, open.feeratePerKw, open.fundingPubkey, open.firstPerCommitmentPoint) sending accept
       }
 
@@ -188,7 +188,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val channelParams = ChannelParams(d.initFunder.temporaryChannelId, d.initFunder.channelConfig, channelFeatures, d.initFunder.localChannelParams, remoteChannelParams, d.lastSent.channelFlags)
           val localCommitParams = CommitParams(d.initFunder.proposedCommitParams.localDustLimit, d.initFunder.proposedCommitParams.localHtlcMinimum, d.initFunder.proposedCommitParams.localMaxHtlcValueInFlight, d.initFunder.proposedCommitParams.localMaxAcceptedHtlcs, accept.toSelfDelay)
           val remoteCommitParams = CommitParams(accept.dustLimitSatoshis, accept.htlcMinimumMsat, accept.maxHtlcValueInFlightMsat, accept.maxAcceptedHtlcs, d.initFunder.proposedCommitParams.toRemoteDelay)
-          setRemoteNextLocalNonces("received AcceptChannel", accept.nexLocalNonce_opt.map(n => Map(NonceGenerator.dummyFundingTxId -> n)).getOrElse(Map.empty))
+          setRemoteNextLocalNonces("received AcceptChannel", accept.nextLocalNonce_opt.map(n => Map(NonceGenerator.dummyFundingTxId -> n)).getOrElse(Map.empty))
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(channelParams, d.initFunder.channelType, localCommitParams, remoteCommitParams, d.initFunder.fundingAmount, d.initFunder.pushAmount_opt.getOrElse(0 msat), d.initFunder.commitTxFeerate, accept.fundingPubkey, accept.firstPerCommitmentPoint, d.initFunder.replyTo)
       }
 
@@ -226,8 +226,8 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val fundingCreated = d.commitmentFormat match {
             case _: SimpleTaprootChannelCommitmentFormat =>
               val localNonce = NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0)
-              if (!remoteNextLocalNonces.contains(NonceGenerator.dummyFundingTxId)) throw MissingNonce(d.channelId, NonceGenerator.dummyFundingTxId)
-              val psig = remoteCommitTx.partialSign(fundingKey, d.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNextLocalNonces(NonceGenerator.dummyFundingTxId))) match {
+              if (!remoteNextCommitNonces.contains(NonceGenerator.dummyFundingTxId)) throw MissingNonce(d.channelId, NonceGenerator.dummyFundingTxId)
+              val psig = remoteCommitTx.partialSign(fundingKey, d.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNextCommitNonces(NonceGenerator.dummyFundingTxId))) match {
                 case Left(_) => throw InvalidNonce(d.channelId, NonceGenerator.dummyFundingTxId)
                 case Right(psig) => psig
               }
@@ -236,7 +236,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                 fundingTxId = fundingTx.txid,
                 fundingOutputIndex = fundingTxOutputIndex,
                 signature = ByteVector64.Zeroes,
-                tlvStream = TlvStream(PartialSignatureWithNonceTlv(psig))
+                tlvStream = TlvStream(ChannelTlv.PartialSignatureWithNonceTlv(psig))
               )
             case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
               val localSigOfRemoteTx = remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey).sig
@@ -304,12 +304,12 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               val fundingSigned = d.commitmentFormat match {
                 case _: SimpleTaprootChannelCommitmentFormat =>
                   val localNonce = NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0)
-                  if (!remoteNextLocalNonces.contains(NonceGenerator.dummyFundingTxId)) throw MissingNonce(d.channelId, NonceGenerator.dummyFundingTxId)
-                  val localPartialSigOfRemoteTx = remoteCommitTx.partialSign(fundingKey, d.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNextLocalNonces(NonceGenerator.dummyFundingTxId))) match {
+                  if (!remoteNextCommitNonces.contains(NonceGenerator.dummyFundingTxId)) throw MissingNonce(d.channelId, NonceGenerator.dummyFundingTxId)
+                  val localPartialSigOfRemoteTx = remoteCommitTx.partialSign(fundingKey, d.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNextCommitNonces(NonceGenerator.dummyFundingTxId))) match {
                     case Left(_) => throw InvalidNonce(d.channelId, NonceGenerator.dummyFundingTxId)
                     case Right(psig) => psig
                   }
-                  FundingSigned(channelId = channelId, signature = ByteVector64.Zeroes, TlvStream(PartialSignatureWithNonceTlv(localPartialSigOfRemoteTx)))
+                  FundingSigned(channelId = channelId, signature = ByteVector64.Zeroes, TlvStream(ChannelTlv.PartialSignatureWithNonceTlv(localPartialSigOfRemoteTx)))
                 case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
                   val localSigOfRemoteTx = remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey).sig
                   FundingSigned(channelId = channelId, signature = localSigOfRemoteTx)

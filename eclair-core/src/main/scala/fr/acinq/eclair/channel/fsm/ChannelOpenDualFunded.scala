@@ -323,7 +323,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(msg: InteractiveTxBuilder.Response, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) => msg match {
       case InteractiveTxBuilder.SendMessage(_, msg) => stay() sending msg
       case InteractiveTxBuilder.Succeeded(status, commitSig, liquidityPurchase_opt, nextRemoteNonce_opt) =>
-        nextRemoteNonce_opt.foreach { case (t, n) => setRemoteNextLocalNonces("dual funding completed", this.remoteNextLocalNonces + (t -> n)) }
+        nextRemoteNonce_opt.foreach { case (t, n) => setRemoteNextLocalNonces("dual funding completed", remoteNextCommitNonces + (t -> n)) }
         d.deferred.foreach(self ! _)
         d.replyTo_opt.foreach(_ ! OpenChannelResponse.Created(d.channelId, status.fundingTx.txId, status.fundingTx.tx.localFees.truncateToSatoshi))
         liquidityPurchase_opt.collect {
@@ -693,7 +693,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           msg match {
             case InteractiveTxBuilder.SendMessage(_, msg) => stay() sending msg
             case InteractiveTxBuilder.Succeeded(signingSession, commitSig, liquidityPurchase_opt, nextRemoteNonce_opt) =>
-              nextRemoteNonce_opt.foreach { case (t, n) => setRemoteNextLocalNonces("rbf completed", this.remoteNextLocalNonces + (t -> n)) }
+              nextRemoteNonce_opt.foreach { case (t, n) => setRemoteNextLocalNonces("rbf completed", remoteNextCommitNonces + (t -> n)) }
               cmd_opt.foreach(cmd => cmd.replyTo ! RES_BUMP_FUNDING_FEE(rbfIndex = d.previousFundingTxs.length, signingSession.fundingTx.txId, signingSession.fundingTx.tx.localFees.truncateToSatoshi))
               remoteCommitSig_opt.foreach(self ! _)
               liquidityPurchase_opt.collect {

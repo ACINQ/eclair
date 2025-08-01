@@ -133,7 +133,7 @@ object Helpers {
 
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
     channelType.commitmentFormat match {
-      case _: SimpleTaprootChannelCommitmentFormat => if (open.nexLocalNonce_opt.isEmpty) return Left(MissingNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes)))
+      case _: SimpleTaprootChannelCommitmentFormat => if (open.nextLocalNonce_opt.isEmpty) return Left(MissingNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes)))
       case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => ()
     }
 
@@ -244,7 +244,7 @@ object Helpers {
 
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
     channelType.commitmentFormat match {
-      case _: SimpleTaprootChannelCommitmentFormat => if (accept.nexLocalNonce_opt.isEmpty) return Left(MissingNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes)))
+      case _: SimpleTaprootChannelCommitmentFormat => if (accept.nextLocalNonce_opt.isEmpty) return Left(MissingNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes)))
       case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => ()
     }
     extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
@@ -549,18 +549,17 @@ object Helpers {
         // they just sent a new commit_sig, we have received it but they didn't receive our revocation
         val localPerCommitmentSecret = channelKeys.commitmentSecret(commitments.localCommitIndex - 1)
         val localNextPerCommitmentPoint = channelKeys.commitmentPoint(commitments.localCommitIndex + 1)
-        val nonces = commitments.active.collect {
+        val localCommitNonces = commitments.active.collect {
           case c: Commitment if c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
             val fundingKey = channelKeys.fundingKey(c.fundingTxIndex)
             val n = NonceGenerator.verificationNonce(c.fundingTxId, fundingKey, c.remoteFundingPubKey, commitments.localCommitIndex + 1).publicNonce
             c.fundingTxId -> n
         }
-        val tlvStream: TlvStream[RevokeAndAckTlv] = if (nonces.nonEmpty) TlvStream(RevokeAndAckTlv.NextLocalNoncesTlv(nonces.toList)) else TlvStream.empty
         val revocation = RevokeAndAck(
           channelId = commitments.channelId,
           perCommitmentSecret = localPerCommitmentSecret,
           nextPerCommitmentPoint = localNextPerCommitmentPoint,
-          tlvStream
+          nextLocalNonces = localCommitNonces,
         )
         checkRemoteCommit(remoteChannelReestablish, retransmitRevocation_opt = Some(revocation))
       } else if (commitments.localCommitIndex > remoteChannelReestablish.nextRemoteRevocationNumber + 1) {

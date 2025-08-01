@@ -22,6 +22,7 @@ import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.{NewTransaction, SingleKeyOnChainWallet}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchFundingConfirmed, WatchPublished, WatchPublishedTriggered}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTransaction, PartiallySignedSharedTransaction}
@@ -242,7 +243,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     val aliceCommitSig = alice2bob.expectMsgType[CommitSig]
 
     val invalidBobCommitSig = bobCommitSig.sigOrPartialSig match {
-      case _: ChannelSpendSignature.IndividualSignature => bobCommitSig.copy(signature = ByteVector64.Zeroes)
+      case _: ChannelSpendSignature.IndividualSignature => bobCommitSig.copy(signature = IndividualSignature(ByteVector64.Zeroes))
       case psig: ChannelSpendSignature.PartialSignatureWithNonce => bobCommitSig.copy(tlvStream = TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(psig.copy(partialSig = psig.partialSig.reverse))))
     }
     bob2alice.forward(alice, invalidBobCommitSig)
@@ -252,7 +253,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     awaitCond(alice.stateName == CLOSED)
 
     val invalidAliceCommitSig = aliceCommitSig.sigOrPartialSig match {
-      case _: ChannelSpendSignature.IndividualSignature => bobCommitSig.copy(signature = ByteVector64.Zeroes)
+      case _: ChannelSpendSignature.IndividualSignature => bobCommitSig.copy(signature = IndividualSignature(ByteVector64.Zeroes))
       case psig: ChannelSpendSignature.PartialSignatureWithNonce => bobCommitSig.copy(tlvStream = TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(psig.copy(partialSig = psig.partialSig.reverse))))
     }
     alice2bob.forward(bob, invalidAliceCommitSig)

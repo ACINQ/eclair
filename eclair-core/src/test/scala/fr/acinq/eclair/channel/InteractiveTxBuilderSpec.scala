@@ -32,11 +32,12 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{MempoolTx, Utx
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.blockchain.{OnChainWallet, SingleKeyOnChainWallet}
+import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.io.OpenChannelInterceptor.makeChannelParams
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{InputInfo, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Feature, FeatureSupport, Features, InitFeature, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, randomBytes32, randomKey}
@@ -285,8 +286,10 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
           msg match {
             case tc: TxComplete =>
               tc.nonces_opt.foreach(nonces => {
-                if (txCompleteNonces.contains(nonces.remoteNonce)) fail("nonce reuse") else txCompleteNonces.add(nonces.remoteNonce)
-                if (txCompleteNonces.contains(nonces.nextRemoteNonce)) fail("nonce reuse") else txCompleteNonces.add(nonces.nextRemoteNonce)
+                assert(!txCompleteNonces.contains(nonces.commitNonce), "commit nonce reuse")
+                assert(!txCompleteNonces.contains(nonces.nextCommitNonce), "next commit nonce reuse")
+                txCompleteNonces.add(nonces.commitNonce)
+                txCompleteNonces.add(nonces.nextCommitNonce)
               })
             case _ => ()
           }
@@ -562,7 +565,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice --- tx_add_input --> Bob
       fwd.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_complete --- Bob
-      val foo = fwd.forwardBob2Alice[TxComplete]
+      fwd.forwardBob2Alice[TxComplete]
       // Alice --- tx_add_input --> Bob
       fwd.forwardAlice2Bob[TxAddInput]
       // Alice <-- tx_complete --- Bob
@@ -2785,8 +2788,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       case _: SimpleTaprootChannelCommitmentFormat =>
         val priv = randomKey()
         val (_, nonce) = Musig2.generateNonce(randomBytes32(), Left(priv), Seq(priv.publicKey), None, None)
-        CommitSig(params.channelId, ByteVector64.Zeroes, Nil, TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(ChannelSpendSignature.PartialSignatureWithNonce(ByteVector32.Zeroes, nonce))))
-      case _ => CommitSig(params.channelId, ByteVector64.Zeroes, Nil)
+        CommitSig(params.channelId, PartialSignatureWithNonce(ByteVector32.Zeroes, nonce), Nil)
+      case _ => CommitSig(params.channelId, IndividualSignature(ByteVector64.Zeroes), Nil)
     }
     val Left(error) = successA1.signingSession.receiveCommitSig(params.channelParamsA, params.channelKeysA, invalidCommitSig, params.nodeParamsA.currentBlockHeight)(akka.event.NoLogging)
     assert(error.isInstanceOf[InvalidCommitmentSignature])
@@ -2876,8 +2879,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     assert(initiatorTx.buildUnsignedTx().txid == unsignedTx.txid)
     assert(nonInitiatorTx.buildUnsignedTx().txid == unsignedTx.txid)
 
-    val initiatorSigs = TxSignatures(channelId, unsignedTx, Seq(ScriptWitness(Seq(hex"68656c6c6f2074686572652c2074686973206973206120626974636f6e212121", hex"82012088a820add57dfe5277079d069ca4ad4893c96de91f88ffb981fdc6a2a34d5336c66aff87"))), None, None)
-    val nonInitiatorSigs = TxSignatures(channelId, unsignedTx, Seq(ScriptWitness(Seq(hex"304402207de9ba56bb9f641372e805782575ee840a899e61021c8b1572b3ec1d5b5950e9022069e9ba998915dae193d3c25cb89b5e64370e6a3a7755e7f31cf6d7cbc2a49f6d01", hex"034695f5b7864c580bf11f9f8cb1a94eb336f2ce9ef872d2ae1a90ee276c772484"))), None, None)
+    val initiatorSigs = TxSignatures(channelId, unsignedTx, Seq(ScriptWitness(Seq(hex"68656c6c6f2074686572652c2074686973206973206120626974636f6e212121", hex"82012088a820add57dfe5277079d069ca4ad4893c96de91f88ffb981fdc6a2a34d5336c66aff87"))), None)
+    val nonInitiatorSigs = TxSignatures(channelId, unsignedTx, Seq(ScriptWitness(Seq(hex"304402207de9ba56bb9f641372e805782575ee840a899e61021c8b1572b3ec1d5b5950e9022069e9ba998915dae193d3c25cb89b5e64370e6a3a7755e7f31cf6d7cbc2a49f6d01", hex"034695f5b7864c580bf11f9f8cb1a94eb336f2ce9ef872d2ae1a90ee276c772484"))), None)
     val initiatorSignedTx = FullySignedSharedTransaction(initiatorTx, initiatorSigs, nonInitiatorSigs, None)
     assert(initiatorSignedTx.feerate == FeeratePerKw(262 sat))
     val nonInitiatorSignedTx = FullySignedSharedTransaction(nonInitiatorTx, nonInitiatorSigs, initiatorSigs, None)
