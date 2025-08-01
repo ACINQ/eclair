@@ -27,6 +27,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature
 import fr.acinq.eclair.channel.ChannelSpendSignature._
+import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts.Taproot.NUMS_POINT
@@ -1545,8 +1546,20 @@ object Transactions {
   }
   // @formatter:on
 
-  /** When sending [[fr.acinq.eclair.wire.protocol.ClosingComplete]], we use a random nonce for each closing transaction we create. */
-  case class CloserNonces(localAndRemote_opt: Option[LocalNonce], localOnly_opt: Option[LocalNonce], remoteOnly_opt: Option[LocalNonce])
+  /**
+   * When sending [[fr.acinq.eclair.wire.protocol.ClosingComplete]], we use a different nonce for each closing transaction we create.
+   * We generate nonces for all variants of the closing transaction for simplicity, even though we never use them all.
+   */
+  case class CloserNonces(localAndRemote: LocalNonce, localOnly: LocalNonce, remoteOnly: LocalNonce)
+
+  object CloserNonces {
+    /** Generate a set of random signing nonces for our closing transactions. */
+    def generate(localFundingKey: PublicKey, remoteFundingKey: PublicKey, fundingTxId: TxId): CloserNonces = CloserNonces(
+      NonceGenerator.signingNonce(localFundingKey, remoteFundingKey, fundingTxId),
+      NonceGenerator.signingNonce(localFundingKey, remoteFundingKey, fundingTxId),
+      NonceGenerator.signingNonce(localFundingKey, remoteFundingKey, fundingTxId),
+    )
+  }
 
   /** Each closing attempt can result in multiple potential closing transactions, depending on which outputs are included. */
   case class ClosingTxs(localAndRemote_opt: Option[ClosingTx], localOnly_opt: Option[ClosingTx], remoteOnly_opt: Option[ClosingTx]) {

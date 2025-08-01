@@ -32,7 +32,6 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Commitments.PostRevocationAction
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
-import fr.acinq.eclair.channel.Helpers.Closing.MutualClose.ClosingCompleteNonces
 import fr.acinq.eclair.channel.Helpers.Syncing.SyncResult
 import fr.acinq.eclair.channel.Helpers._
 import fr.acinq.eclair.channel.Monitoring.Metrics.ProcessMessage
@@ -54,7 +53,6 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
-import scodec.bits.ByteVector
 
 import scala.collection.immutable.Queue
 import scala.concurrent.ExecutionContext
@@ -230,20 +228,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   var localCloseeNonce_opt: Option[LocalNonce] = None
   var remoteCloseeNonce_opt: Option[IndividualNonce] = None
   // Closer nonces are randomly generated when sending our closing_complete.
-  var localCloserNonces: ClosingCompleteNonces = ClosingCompleteNonces(None, None, None)
-
-  def createLocalShutdown(channelId: ByteVector32, finalScriptPubKey: ByteVector, commitments: Commitments): Shutdown = {
-    commitments.latest.commitmentFormat match {
-      case _: SimpleTaprootChannelCommitmentFormat =>
-        // We create a fresh local closee nonce every time we send shutdown.
-        val localFundingPubKey = channelKeys.fundingKey(commitments.latest.fundingTxIndex).publicKey
-        val localCloseeNonce = NonceGenerator.signingNonce(localFundingPubKey, commitments.latest.remoteFundingPubKey, commitments.latest.fundingTxId)
-        localCloseeNonce_opt = Some(localCloseeNonce)
-        Shutdown(channelId, finalScriptPubKey, localCloseeNonce.publicNonce)
-      case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
-        Shutdown(channelId, finalScriptPubKey)
-    }
-  }
+  var localCloserNonces_opt: Option[CloserNonces] = None
 
   def setRemoteNextLocalNonces(info: String, n: Map[TxId, IndividualNonce]): Unit = {
     remoteNextCommitNonces = n
@@ -768,7 +753,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           if (d.remoteShutdown.isDefined && !commitments1.changes.localHasUnsignedOutgoingHtlcs) {
             // we were waiting for our pending htlcs to be signed before replying with our local shutdown
             val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
-            val localShutdown = createLocalShutdown(d.channelId, finalScriptPubKey, d.commitments)
+            val localShutdown = createShutdown(d.commitments, finalScriptPubKey)
             // this should always be defined, we provide a fallback for backward compat with older channels
             val closeStatus = d.closeStatus_opt.getOrElse(CloseStatus.NonInitiator(None))
             // note: it means that we had pending htlcs to sign, therefore we go to SHUTDOWN, not to NEGOTIATING
@@ -795,7 +780,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         d.commitments.channelParams.validateLocalShutdownScript(localScriptPubKey) match {
           case Left(e) => handleCommandError(e, c)
           case Right(localShutdownScript) =>
-            val shutdown = createLocalShutdown(d.channelId, localShutdownScript, d.commitments)
+            val shutdown = createShutdown(d.commitments, localShutdownScript)
             handleCommandSuccess(c, d.copy(localShutdown = Some(shutdown), closeStatus_opt = Some(CloseStatus.Initiator(c.feerates)))) storing() sending shutdown
         }
       }
@@ -844,10 +829,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             remoteCloseeNonce_opt = remoteShutdown.closeeNonce_opt
             // so we don't have any unsigned outgoing changes
             val (localShutdown, sendList) = d.localShutdown match {
-              case Some(localShutdown) =>
-                (localShutdown, Nil)
+              case Some(localShutdown) => (localShutdown, Nil)
               case None =>
-                val localShutdown = createLocalShutdown(d.channelId, getOrGenerateFinalScriptPubKey(d), d.commitments)
+                val localShutdown = createShutdown(d.commitments, getOrGenerateFinalScriptPubKey(d))
                 // we need to send our shutdown if we didn't previously
                 (localShutdown, localShutdown :: Nil)
             }
@@ -1924,7 +1908,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           case Left(f) => handleCommandError(f, c)
           case Right((closingTxs, closingComplete, closerNonces)) =>
             log.debug("signing local mutual close transactions: {}", closingTxs)
-            localCloserNonces = closerNonces
+            localCloserNonces_opt = Some(closerNonces)
             handleCommandSuccess(c, d.copy(lastClosingFeerate = closingFeerate, localScriptPubKey = localScript, proposedClosingTxs = d.proposedClosingTxs :+ closingTxs)) storing() sending closingComplete
         }
       }
@@ -1953,7 +1937,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // Note that if we sent two closing_complete in a row, without waiting for their closing_sig for the first one,
       // this will fail because we only care about our latest closing_complete. This is fine, we should receive their
       // closing_sig for the last closing_complete afterwards.
-      MutualClose.receiveSimpleClosingSig(channelKeys, d.commitments.latest, d.proposedClosingTxs.last, closingSig, remoteCloseeNonce_opt, localCloserNonces) match {
+      MutualClose.receiveSimpleClosingSig(channelKeys, d.commitments.latest, d.proposedClosingTxs.last, closingSig, localCloserNonces_opt, remoteCloseeNonce_opt) match {
         case Left(f) =>
           log.warning("invalid closing_sig: {}", f.getMessage)
           remoteCloseeNonce_opt = closingSig.nextCloseeNonce_opt
