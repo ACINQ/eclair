@@ -2669,8 +2669,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               val notAnnouncedYet = d.commitments.announceChannel && c.shortChannelId_opt.nonEmpty && d.lastAnnouncement_opt.isEmpty
               if (notAnnouncedYet || notReceivedByRemote || notReceivedByRemoteLegacy) {
                 log.debug("re-sending channel_ready")
-                val nextPerCommitmentPoint = channelKeys.commitmentPoint(1)
-                sendQueue = sendQueue :+ ChannelReady(d.commitments.channelId, nextPerCommitmentPoint)
+                sendQueue = sendQueue :+ createChannelReady(d.aliases, d.commitments)
               }
               if (notAnnouncedYet) {
                 // The funding transaction is confirmed, so we've already sent our announcement_signatures.

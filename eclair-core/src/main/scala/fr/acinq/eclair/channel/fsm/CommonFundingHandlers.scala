@@ -75,12 +75,9 @@ trait CommonFundingHandlers extends CommonHandlers {
       case _: SingleFundedUnconfirmedFundingTx =>
         // in the single-funding case, as fundee, it is the first time we see the full funding tx, we must verify that it is
         // valid (it pays the correct amount to the correct script). We also check as funder even if it's not really useful
-        d.commitments.latest.fullySignedLocalCommitTx(channelKeys).map(signedTx => Try(Transaction.correctlySpends(signedTx, Seq(w.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))) match {
-          case Right(Success(_)) => ()
-          case Right(Failure(t)) =>
-            log.error(t, s"rejecting channel with invalid funding tx: ${w.tx.bin}")
-            throw InvalidFundingTx(d.channelId)
-          case Left(t) =>
+        d.commitments.latest.fullySignedLocalCommitTx(channelKeys).toTry.flatMap(signedTx => Try(Transaction.correctlySpends(signedTx, Seq(w.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))) match {
+          case Success(_) => ()
+          case Failure(t) =>
             log.error(t, s"rejecting channel with invalid funding tx: ${w.tx.bin}")
             throw InvalidFundingTx(d.channelId)
         }
@@ -129,16 +126,15 @@ trait CommonFundingHandlers extends CommonHandlers {
   def createChannelReady(aliases: ShortIdAliases, commitments: Commitments): ChannelReady = {
     val params = commitments.channelParams
     val nextPerCommitmentPoint = channelKeys.commitmentPoint(1)
-    val nextLocalNonce_opt = commitments.latest.commitmentFormat match {
+    // Note that we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway.
+    commitments.latest.commitmentFormat match {
       case _: SimpleTaprootChannelCommitmentFormat =>
         val localFundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
-        val nextLocalNonce = NonceGenerator.verificationNonce(commitments.latest.fundingTxId, localFundingKey, commitments.latest.remoteFundingPubKey, 1).publicNonce
-        Some(ChannelTlv.NextLocalNonceTlv(nextLocalNonce))
+        val nextLocalNonce = NonceGenerator.verificationNonce(commitments.latest.fundingTxId, localFundingKey, commitments.latest.remoteFundingPubKey, 1)
+        ChannelReady(params.channelId, nextPerCommitmentPoint, aliases.localAlias, nextLocalNonce.publicNonce)
       case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
-        None
+        ChannelReady(params.channelId, nextPerCommitmentPoint, aliases.localAlias)
     }
-    // we always send our local alias, even if it isn't explicitly supported, that's an optional TLV anyway
-    ChannelReady(params.channelId, nextPerCommitmentPoint, TlvStream(Set(Some(ChannelReadyTlv.ShortChannelIdTlv(aliases.localAlias)), nextLocalNonce_opt).flatten[ChannelReadyTlv]))
   }
 
   def receiveChannelReady(aliases: ShortIdAliases, channelReady: ChannelReady, commitments: Commitments): DATA_NORMAL = {

@@ -326,6 +326,21 @@ case class ChannelReady(channelId: ByteVector32,
   val nextLocalNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNonceTlv].map(_.nonce)
 }
 
+object ChannelReady {
+  def apply(channelId: ByteVector32, nextPerCommitmentPoint: PublicKey, alias: Alias): ChannelReady = {
+    val tlvs = TlvStream[ChannelReadyTlv](ChannelReadyTlv.ShortChannelIdTlv(alias))
+    ChannelReady(channelId, nextPerCommitmentPoint, tlvs)
+  }
+
+  def apply(channelId: ByteVector32, nextPerCommitmentPoint: PublicKey, alias: Alias, nextCommitNonce: IndividualNonce): ChannelReady = {
+    val tlvs = TlvStream[ChannelReadyTlv](
+      ChannelReadyTlv.ShortChannelIdTlv(alias),
+      ChannelTlv.NextLocalNonceTlv(nextCommitNonce),
+    )
+    ChannelReady(channelId, nextPerCommitmentPoint, tlvs)
+  }
+}
+
 case class Stfu(channelId: ByteVector32, initiator: Boolean) extends SetupMessage with HasChannelId
 
 case class SpliceInit(channelId: ByteVector32,
