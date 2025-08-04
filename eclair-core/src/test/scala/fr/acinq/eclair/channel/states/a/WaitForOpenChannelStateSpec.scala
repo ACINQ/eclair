@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.states.a
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, SatoshiLong, TxId}
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
@@ -114,17 +114,17 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].commitmentFormat == LegacySimpleTaprootChannelCommitmentFormat)
-    assert(open.nextLocalNonce_opt.isDefined)
+    assert(open.commitNonce_opt.isDefined)
   }
 
   test("recv OpenChannel (simple taproot channels, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     assert(open.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsStagingLegacy()))
-    assert(open.nextLocalNonce_opt.isDefined)
+    assert(open.commitNonce_opt.isDefined)
     alice2bob.forward(bob, open.copy(tlvStream = open.tlvStream.copy(records = open.tlvStream.records.filterNot(_.isInstanceOf[ChannelTlv.NextLocalNonceTlv]))))
     val error = bob2alice.expectMsgType[Error]
-    assert(error == Error(open.temporaryChannelId, MissingNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes)).getMessage))
+    assert(error == Error(open.temporaryChannelId, MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), 0).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }

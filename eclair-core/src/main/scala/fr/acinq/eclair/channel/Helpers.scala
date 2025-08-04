@@ -134,7 +134,7 @@ object Helpers {
 
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
     channelType.commitmentFormat match {
-      case _: SimpleTaprootChannelCommitmentFormat => if (open.nextLocalNonce_opt.isEmpty) return Left(MissingNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes)))
+      case _: SimpleTaprootChannelCommitmentFormat => if (open.commitNonce_opt.isEmpty) return Left(MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), commitmentNumber = 0))
       case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => ()
     }
 
@@ -245,7 +245,7 @@ object Helpers {
 
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
     channelType.commitmentFormat match {
-      case _: SimpleTaprootChannelCommitmentFormat => if (accept.nextLocalNonce_opt.isEmpty) return Left(MissingNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes)))
+      case _: SimpleTaprootChannelCommitmentFormat => if (accept.commitNonce_opt.isEmpty) return Left(MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), commitmentNumber = 0))
       case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => ()
     }
     extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
@@ -288,10 +288,6 @@ object Helpers {
       val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
       (channelFeatures, script_opt, liquidityPurchase_opt)
     }
-  }
-
-  def hasMissingNonce(channelReestablish: ChannelReestablish, commitments: Commitments): Option[TxId] = {
-    commitments.active.find(c => c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && !channelReestablish.nextLocalNonces.contains(c.fundingTxId)).map(_.fundingTxId)
   }
 
   /**
@@ -560,7 +556,7 @@ object Helpers {
           channelId = commitments.channelId,
           perCommitmentSecret = localPerCommitmentSecret,
           nextPerCommitmentPoint = localNextPerCommitmentPoint,
-          nextLocalNonces = localCommitNonces,
+          nextCommitNonces = localCommitNonces,
         )
         checkRemoteCommit(remoteChannelReestablish, retransmitRevocation_opt = Some(revocation))
       } else if (commitments.localCommitIndex > remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
@@ -582,6 +578,12 @@ object Helpers {
           )
         }
       }
+    }
+
+    def checkCommitNonces(channelReestablish: ChannelReestablish, commitments: Commitments): Option[ChannelException] = {
+      commitments.active
+        .find(c => c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && !channelReestablish.nextCommitNonces.contains(c.fundingTxId))
+        .map(c => MissingCommitNonce(commitments.channelId, c.fundingTxId, c.remoteCommit.index + 1))
     }
 
   }
@@ -783,7 +785,7 @@ object Helpers {
         val tlvs: TlvStream[ClosingCompleteTlv] = commitment.commitmentFormat match {
           case _: SimpleTaprootChannelCommitmentFormat =>
             remoteNonce_opt match {
-              case None => return Left(MissingShutdownNonce(commitment.channelId))
+              case None => return Left(MissingClosingNonce(commitment.channelId))
               case Some(remoteNonce) =>
                 // If we cannot create our partial signature for one of our closing txs, we just skip it.
                 // It will only happen if our peer sent an invalid nonce, in which case we cannot do anything anyway
@@ -821,7 +823,7 @@ object Helpers {
         // Note that we're the closee, so we look for signatures including the closee output.
         commitment.commitmentFormat match {
           case _: SimpleTaprootChannelCommitmentFormat => localNonce_opt match {
-            case None => Left(MissingShutdownNonce(commitment.channelId))
+            case None => Left(MissingClosingNonce(commitment.channelId))
             case Some(localNonce) =>
               (closingTxs.localAndRemote_opt, closingTxs.localOnly_opt) match {
                 case (Some(_), Some(_)) if closingComplete.closerAndCloseeOutputsPartialSig_opt.isEmpty && closingComplete.closeeOutputOnlyPartialSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))

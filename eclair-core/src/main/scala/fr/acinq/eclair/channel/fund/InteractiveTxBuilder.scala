@@ -95,7 +95,7 @@ object InteractiveTxBuilder {
 
   sealed trait Response
   case class SendMessage(sessionId: ByteVector32, msg: LightningMessage) extends Response
-  case class Succeeded(signingSession: InteractiveTxSigningSession.WaitingForSigs, commitSig: CommitSig, liquidityPurchase_opt: Option[LiquidityAds.Purchase], nextRemoteNonce_opt: Option[(TxId, IndividualNonce)]) extends Response
+  case class Succeeded(signingSession: InteractiveTxSigningSession.WaitingForSigs, commitSig: CommitSig, liquidityPurchase_opt: Option[LiquidityAds.Purchase], nextRemoteCommitNonce_opt: Option[(TxId, IndividualNonce)]) extends Response
   sealed trait Failed extends Response { def cause: ChannelException }
   case class LocalFailure(cause: ChannelException) extends Failed
   case class RemoteFailure(cause: ChannelException) extends Failed
@@ -890,15 +890,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey, fundingParams.remoteFundingPubKey, fundingTx.txid)
             val remoteNonce = session.txCompleteReceived.flatMap(_.nonces_opt).map(_.commitNonce) match {
               case Some(n) => n
-              case None => return Left(MissingNonce(channelParams.channelId, fundingTx.txid))
+              case None => return Left(MissingCommitNonce(channelParams.channelId, fundingTx.txid, purpose.remoteCommitIndex))
             }
             val psig = remoteCommitTx.partialSign(localFundingKey, fundingParams.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
-              case Left(e) =>
-                println(e)
-                return Left(MissingNonce(channelParams.channelId, fundingTx.txid))
+              case Left(_) => return Left(InvalidCommitNonce(channelParams.channelId, fundingTx.txid, purpose.remoteCommitIndex))
               case Right(psig) => psig
             }
-            log.debug(s"signCommitTx: creating partial signature $psig for commit tx ${remoteCommitTx.tx.txid} with local nonce ${localNonce.publicNonce} remote nonce $remoteNonce")
             Right(TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(psig)))
           case _: SegwitV0CommitmentFormat => Right(TlvStream.empty[CommitSigTlv])
         }
@@ -988,12 +985,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           val remoteNonce = session.txCompleteReceived.flatMap(_.nonces_opt).flatMap(_.fundingNonce_opt) match {
             case Some(n) => n
             case None =>
-              context.self ! WalletFailure(MissingFundingNonce(channelParams.channelId))
+              context.self ! WalletFailure(MissingFundingNonce(channelParams.channelId, tx.txid))
               return
           }
           val psig = Musig2.signTaprootInput(fundingKey, tx, inputIndex, unsignedTx.spentOutputs, Scripts.sort(Seq(fundingKey.publicKey, i.remoteFundingPubkey)), localNonce.secretNonce, Seq(localNonce.publicNonce, remoteNonce), None) match {
             case Left(_) =>
-              context.self ! WalletFailure(InvalidFundingNonce(channelParams.channelId))
+              context.self ! WalletFailure(InvalidFundingNonce(channelParams.channelId, tx.txid))
               return
             case Right(psig) => psig
           }

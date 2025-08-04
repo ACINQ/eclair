@@ -230,11 +230,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   // Closer nonces are randomly generated when sending our closing_complete.
   var localCloserNonces_opt: Option[CloserNonces] = None
 
-  def setRemoteNextLocalNonces(info: String, n: Map[TxId, IndividualNonce]): Unit = {
-    remoteNextCommitNonces = n
-    log.debug("{} set remoteNextLocalNonces to {}", info, this.remoteNextCommitNonces)
-  }
-
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: akka.event.DiagnosticLoggingAdapter = diagLog
 
@@ -732,7 +727,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       d.commitments.receiveRevocation(revocation, nodeParams.onChainFeeConf.feerateToleranceFor(remoteNodeId).dustTolerance.maxExposure) match {
         case Right((commitments1, actions)) =>
           cancelTimer(RevocationTimeout.toString)
-          setRemoteNextLocalNonces("received RevokeAndAck", revocation.nextLocalNonces)
+          remoteNextCommitNonces = revocation.nextCommitNonces
           log.debug("received a new rev, spec:\n{}", commitments1.latest.specs2String)
           actions.foreach {
             case PostRevocationAction.RelayHtlc(add) =>
@@ -824,7 +819,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             // in the meantime we won't send new changes
             stay() using d.copy(remoteShutdown = Some(remoteShutdown), closeStatus_opt = Some(CloseStatus.NonInitiator(None)))
           } else if (d.commitments.latest.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && remoteShutdown.closeeNonce_opt.isEmpty) {
-            handleLocalError(MissingShutdownNonce(d.channelId), d, Some(remoteShutdown))
+            handleLocalError(MissingClosingNonce(d.channelId), d, Some(remoteShutdown))
           } else {
             remoteCloseeNonce_opt = remoteShutdown.closeeNonce_opt
             // so we don't have any unsigned outgoing changes
@@ -1394,9 +1389,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 log.info("ignoring outgoing interactive-tx message {} from previous session", msg.getClass.getSimpleName)
                 stay()
               }
-            case InteractiveTxBuilder.Succeeded(signingSession, commitSig, liquidityPurchase_opt, nextRemoteNonce_opt) =>
+            case InteractiveTxBuilder.Succeeded(signingSession, commitSig, liquidityPurchase_opt, nextRemoteCommitNonce_opt) =>
               log.info(s"splice tx created with fundingTxIndex=${signingSession.fundingTxIndex} fundingTxId=${signingSession.fundingTx.txId}")
-              nextRemoteNonce_opt.foreach { case (t, n) => setRemoteNextLocalNonces("swap completed", remoteNextCommitNonces + (t -> n)) }
+              nextRemoteCommitNonce_opt.foreach { case (txId, nonce) => remoteNextCommitNonces = remoteNextCommitNonces + (txId -> nonce) }
               cmd_opt.foreach(cmd => cmd.replyTo ! RES_SPLICE(fundingTxIndex = signingSession.fundingTxIndex, signingSession.fundingTx.txId, signingSession.fundingParams.fundingAmount, signingSession.localCommit.fold(_.spec, _.spec).toLocal))
               remoteCommitSig_opt.foreach(self ! _)
               liquidityPurchase_opt.collect {
@@ -2523,277 +2518,290 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   })
 
   when(SYNCING)(handleExceptions {
-    case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if Helpers.hasMissingNonce(channelReestablish, d.commitments).isDefined =>
-      handleLocalError(MissingNonce(d.channelId, Helpers.hasMissingNonce(channelReestablish, d.commitments).get), d, Some(channelReestablish))
-
-    case Event(channelReestablish: ChannelReestablish, _: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
-      setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
-      goto(WAIT_FOR_FUNDING_CONFIRMED)
-
-    case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) if d.signingSession.fundingParams.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && channelReestablish.nextLocalNonces.isEmpty =>
-      handleLocalError(MissingNonce(d.channelId, d.signingSession.fundingTx.txId), d, Some(channelReestablish))
+    case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
+      Helpers.Syncing.checkCommitNonces(channelReestablish, d.commitments) match {
+        case Some(f) => handleLocalError(f, d, Some(channelReestablish))
+        case None =>
+          remoteNextCommitNonces = channelReestablish.nextCommitNonces
+          goto(WAIT_FOR_FUNDING_CONFIRMED)
+      }
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
-      setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
-      channelReestablish.nextFundingTxId_opt match {
-        case Some(fundingTxId) if fundingTxId == d.signingSession.fundingTx.txId && channelReestablish.nextLocalCommitmentNumber == 0 =>
-          // They haven't received our commit_sig: we retransmit it, and will send our tx_signatures once we've received
-          // their commit_sig or their tx_signatures (depending on who must send tx_signatures first).
-          val fundingParams = d.signingSession.fundingParams
-          val remoteNonce_opt = channelReestablish.currentCommitNonce_opt // remoteNextLocalNonces.get(d.signingSession.fundingTx.txId)
-          d.signingSession.remoteCommit.sign(d.channelParams, d.signingSession.remoteCommitParams, channelKeys, d.signingSession.fundingTxIndex, fundingParams.remoteFundingPubKey, d.signingSession.commitInput(channelKeys), fundingParams.commitmentFormat, remoteNonce_opt) match {
-            case Left(e) => handleLocalError(e, d, None)
-            case Right(commitSig) => goto(WAIT_FOR_DUAL_FUNDING_SIGNED) sending commitSig
+      d.signingSession.fundingParams.commitmentFormat match {
+        case _: SimpleTaprootChannelCommitmentFormat if !channelReestablish.nextCommitNonces.contains(d.signingSession.fundingTxId) =>
+          val f = MissingCommitNonce(d.channelId, d.signingSession.fundingTxId, commitmentNumber = 0)
+          handleLocalError(f, d, Some(channelReestablish))
+        case _ =>
+          remoteNextCommitNonces = channelReestablish.nextCommitNonces
+          channelReestablish.nextFundingTxId_opt match {
+            case Some(fundingTxId) if fundingTxId == d.signingSession.fundingTx.txId && channelReestablish.nextLocalCommitmentNumber == 0 =>
+              // They haven't received our commit_sig: we retransmit it, and will send our tx_signatures once we've received
+              // their commit_sig or their tx_signatures (depending on who must send tx_signatures first).
+              val fundingParams = d.signingSession.fundingParams
+              val remoteNonce_opt = channelReestablish.currentCommitNonce_opt
+              d.signingSession.remoteCommit.sign(d.channelParams, d.signingSession.remoteCommitParams, channelKeys, d.signingSession.fundingTxIndex, fundingParams.remoteFundingPubKey, d.signingSession.commitInput(channelKeys), fundingParams.commitmentFormat, remoteNonce_opt) match {
+                case Left(e) => handleLocalError(e, d, Some(channelReestablish))
+                case Right(commitSig) => goto(WAIT_FOR_DUAL_FUNDING_SIGNED) sending commitSig
+              }
+            case _ => goto(WAIT_FOR_DUAL_FUNDING_SIGNED)
           }
-        case _ => goto(WAIT_FOR_DUAL_FUNDING_SIGNED)
       }
-
-    case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) if Helpers.hasMissingNonce(channelReestablish, d.commitments).isDefined =>
-      handleLocalError(MissingNonce(d.channelId, Helpers.hasMissingNonce(channelReestablish, d.commitments).get), d, Some(channelReestablish))
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
-      setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
-      channelReestablish.nextFundingTxId_opt match {
-        case Some(fundingTxId) =>
-          d.status match {
-            case DualFundingStatus.RbfWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
-              if (channelReestablish.nextLocalCommitmentNumber == 0) {
-                // They haven't received our commit_sig: we retransmit it.
-                // We're also waiting for signatures from them, and will send our tx_signatures once we receive them.
-                val fundingParams = signingSession.fundingParams
-                signingSession.remoteCommit.sign(d.commitments.channelParams, signingSession.remoteCommitParams, channelKeys, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubKey, signingSession.commitInput(channelKeys), fundingParams.commitmentFormat, remoteNextCommitNonces.get(signingSession.fundingTx.txId)) match {
-                  case Left(e) => handleLocalError(e, d, None)
-                  case Right(commitSig) => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending commitSig
-                }
-              } else {
-                // They have already received our commit_sig, but we were waiting for them to send either commit_sig or
-                // tx_signatures first. We wait for their message before sending our tx_signatures.
-                goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+      Helpers.Syncing.checkCommitNonces(channelReestablish, d.commitments) match {
+        case Some(f) => handleLocalError(f, d, Some(channelReestablish))
+        case None =>
+          remoteNextCommitNonces = channelReestablish.nextCommitNonces
+          channelReestablish.nextFundingTxId_opt match {
+            case Some(fundingTxId) =>
+              d.status match {
+                case DualFundingStatus.RbfWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
+                  if (channelReestablish.nextLocalCommitmentNumber == 0) {
+                    // They haven't received our commit_sig: we retransmit it.
+                    // We're also waiting for signatures from them, and will send our tx_signatures once we receive them.
+                    val fundingParams = signingSession.fundingParams
+                    val remoteNonce_opt = channelReestablish.currentCommitNonce_opt
+                    signingSession.remoteCommit.sign(d.commitments.channelParams, signingSession.remoteCommitParams, channelKeys, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubKey, signingSession.commitInput(channelKeys), fundingParams.commitmentFormat, remoteNonce_opt) match {
+                      case Left(e) => handleLocalError(e, d, Some(channelReestablish))
+                      case Right(commitSig) => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending commitSig
+                    }
+                  } else {
+                    // They have already received our commit_sig, but we were waiting for them to send either commit_sig or
+                    // tx_signatures first. We wait for their message before sending our tx_signatures.
+                    goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED)
+                  }
+                case _ if d.latestFundingTx.sharedTx.txId == fundingTxId =>
+                  // We've already received their commit_sig and sent our tx_signatures. We retransmit our tx_signatures
+                  // and our commit_sig if they haven't received it already.
+                  if (channelReestablish.nextLocalCommitmentNumber == 0) {
+                    val remoteNonce_opt = channelReestablish.currentCommitNonce_opt
+                    d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, d.commitments.latest.remoteCommitParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput(channelKeys), d.commitments.latest.commitmentFormat, remoteNonce_opt) match {
+                      case Left(e) => handleLocalError(e, d, Some(channelReestablish))
+                      case Right(commitSig) => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending Seq(commitSig, d.latestFundingTx.sharedTx.localSigs)
+                    }
+                  } else {
+                    goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending d.latestFundingTx.sharedTx.localSigs
+                  }
+                case _ =>
+                  // The fundingTxId must be for an RBF attempt that we didn't store (we got disconnected before receiving
+                  // their tx_complete): we tell them to abort that RBF attempt.
+                  goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, RbfAttemptAborted(d.channelId).getMessage)
               }
-            case _ if d.latestFundingTx.sharedTx.txId == fundingTxId =>
-              // We've already received their commit_sig and sent our tx_signatures. We retransmit our tx_signatures
-              // and our commit_sig if they haven't received it already.
-              if (channelReestablish.nextLocalCommitmentNumber == 0) {
-                val remoteNonce_opt = channelReestablish.currentCommitNonce_opt
-                d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, d.commitments.latest.remoteCommitParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput(channelKeys), d.commitments.latest.commitmentFormat, remoteNonce_opt) match {
-                  case Left(e) => handleLocalError(e, d, None)
-                  case Right(commitSig) => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending Seq(commitSig, d.latestFundingTx.sharedTx.localSigs)
-                }
-              } else {
-                goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending d.latestFundingTx.sharedTx.localSigs
-              }
-            case _ =>
-              // The fundingTxId must be for an RBF attempt that we didn't store (we got disconnected before receiving
-              // their tx_complete): we tell them to abort that RBF attempt.
-              goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d.copy(status = DualFundingStatus.RbfAborted) sending TxAbort(d.channelId, RbfAttemptAborted(d.channelId).getMessage)
+            case None => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED)
           }
-        case None => goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED)
       }
 
-    case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) if d.commitments.active.exists(c => c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && !channelReestablish.nextLocalNonces.contains(c.fundingTxId)) =>
-      handleLocalError(MissingNonce(d.channelId, d.commitments.active.find(c => c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && !channelReestablish.nextLocalNonces.contains(c.fundingTxId)).get.fundingTxId), d, Some(channelReestablish))
-
     case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_CHANNEL_READY) =>
-      setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
-      val channelReady = createChannelReady(d.aliases, d.commitments)
-      goto(WAIT_FOR_CHANNEL_READY) sending channelReady
-
-    case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) if Helpers.hasMissingNonce(channelReestablish, d.commitments).isDefined =>
-      handleLocalError(MissingNonce(d.channelId, Helpers.hasMissingNonce(channelReestablish, d.commitments).get), d, Some(channelReestablish))
+      Helpers.Syncing.checkCommitNonces(channelReestablish, d.commitments) match {
+        case Some(f) => handleLocalError(f, d, Some(channelReestablish))
+        case None =>
+          remoteNextCommitNonces = channelReestablish.nextCommitNonces
+          val channelReady = createChannelReady(d.aliases, d.commitments)
+          goto(WAIT_FOR_CHANNEL_READY) sending channelReady
+      }
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_DUAL_FUNDING_READY) =>
-      log.debug("re-sending channel_ready")
-      setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
-      val channelReady = createChannelReady(d.aliases, d.commitments)
-      // We've already received their commit_sig and sent our tx_signatures. We retransmit our tx_signatures
-      // and our commit_sig if they haven't received it already.
-      channelReestablish.nextFundingTxId_opt match {
-        case Some(fundingTxId) if fundingTxId == d.commitments.latest.fundingTxId =>
-          d.commitments.latest.localFundingStatus.localSigs_opt match {
-            case Some(txSigs) if channelReestablish.nextLocalCommitmentNumber == 0 =>
-              log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
-              val remoteNonce_opt = channelReestablish.currentCommitNonce_opt
-              d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, d.commitments.latest.remoteCommitParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput(channelKeys), d.commitments.latest.commitmentFormat, remoteNonce_opt) match {
-                case Left(e) => handleLocalError(e, d, None)
-                case Right(commitSig) => goto(WAIT_FOR_DUAL_FUNDING_READY) sending Seq(commitSig, txSigs, channelReady)
+      Helpers.Syncing.checkCommitNonces(channelReestablish, d.commitments) match {
+        case Some(f) => handleLocalError(f, d, Some(channelReestablish))
+        case None =>
+          remoteNextCommitNonces = channelReestablish.nextCommitNonces
+          val channelReady = createChannelReady(d.aliases, d.commitments)
+          // We've already received their commit_sig and sent our tx_signatures. We retransmit our tx_signatures
+          // and our commit_sig if they haven't received it already.
+          channelReestablish.nextFundingTxId_opt match {
+            case Some(fundingTxId) if fundingTxId == d.commitments.latest.fundingTxId =>
+              d.commitments.latest.localFundingStatus.localSigs_opt match {
+                case Some(txSigs) if channelReestablish.nextLocalCommitmentNumber == 0 =>
+                  log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
+                  val remoteNonce_opt = channelReestablish.currentCommitNonce_opt
+                  d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, d.commitments.latest.remoteCommitParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput(channelKeys), d.commitments.latest.commitmentFormat, remoteNonce_opt) match {
+                    case Left(e) => handleLocalError(e, d, Some(channelReestablish))
+                    case Right(commitSig) => goto(WAIT_FOR_DUAL_FUNDING_READY) sending Seq(commitSig, txSigs, channelReady)
+                  }
+                case Some(txSigs) =>
+                  log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
+                  goto(WAIT_FOR_DUAL_FUNDING_READY) sending Seq(txSigs, channelReady)
+                case None =>
+                  log.warning("cannot retransmit tx_signatures, we don't have them (status={})", d.commitments.latest.localFundingStatus)
+                  goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
               }
-            case Some(txSigs) =>
-              log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
-              goto(WAIT_FOR_DUAL_FUNDING_READY) sending Seq(txSigs, channelReady)
-            case None =>
-              log.warning("cannot retransmit tx_signatures, we don't have them (status={})", d.commitments.latest.localFundingStatus)
-              goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
+            case _ => goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
           }
-        case _ => goto(WAIT_FOR_DUAL_FUNDING_READY) sending channelReady
       }
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
-      setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
-      Syncing.checkSync(channelKeys, d.commitments, channelReestablish) match {
-        case syncFailure: SyncResult.Failure =>
-          handleSyncFailure(channelReestablish, syncFailure, d)
-        case syncSuccess: SyncResult.Success =>
-          var sendQueue = Queue.empty[LightningMessage]
-          // normal case, our data is up-to-date
+      Helpers.Syncing.checkCommitNonces(channelReestablish, d.commitments) match {
+        case Some(f) => handleLocalError(f, d, Some(channelReestablish))
+        case None =>
+          remoteNextCommitNonces = channelReestablish.nextCommitNonces
+          Syncing.checkSync(channelKeys, d.commitments, channelReestablish) match {
+            case syncFailure: SyncResult.Failure =>
+              handleSyncFailure(channelReestablish, syncFailure, d)
+            case syncSuccess: SyncResult.Success =>
+              var sendQueue = Queue.empty[LightningMessage]
+              // normal case, our data is up-to-date
 
-          // re-send channel_ready and announcement_signatures if necessary
-          d.commitments.lastLocalLocked_opt match {
-            case None => ()
-            // We only send channel_ready for initial funding transactions.
-            case Some(c) if c.fundingTxIndex != 0 => ()
-            case Some(c) =>
-              val remoteSpliceSupport = d.commitments.remoteChannelParams.initFeatures.hasFeature(Features.SplicePrototype)
-              // If our peer has not received our channel_ready, we retransmit it.
-              val notReceivedByRemote = remoteSpliceSupport && channelReestablish.yourLastFundingLocked_opt.isEmpty
-              // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node
-              // MUST retransmit channel_ready, otherwise it MUST NOT
-              val notReceivedByRemoteLegacy = !remoteSpliceSupport && channelReestablish.nextLocalCommitmentNumber == 1 && c.localCommit.index == 0
-              // If this is a public channel and we haven't announced the channel, we retransmit our channel_ready and
-              // will also send announcement_signatures.
-              val notAnnouncedYet = d.commitments.announceChannel && c.shortChannelId_opt.nonEmpty && d.lastAnnouncement_opt.isEmpty
-              if (notAnnouncedYet || notReceivedByRemote || notReceivedByRemoteLegacy) {
-                log.debug("re-sending channel_ready")
-                sendQueue = sendQueue :+ createChannelReady(d.aliases, d.commitments)
-              }
-              if (notAnnouncedYet) {
-                // The funding transaction is confirmed, so we've already sent our announcement_signatures.
-                // We haven't announced the channel yet, which means we haven't received our peer's announcement_signatures.
-                // We retransmit our announcement_signatures to let our peer know that we're ready to announce the channel.
-                val localAnnSigs = c.signAnnouncement(nodeParams, d.commitments.channelParams, channelKeys.fundingKey(c.fundingTxIndex))
-                localAnnSigs.foreach(annSigs => {
-                  announcementSigsSent += annSigs.shortChannelId
-                  sendQueue = sendQueue :+ annSigs
-                })
-              }
-          }
-
-          // resume splice signing session if any
-          val spliceStatus1 = channelReestablish.nextFundingTxId_opt match {
-            case Some(fundingTxId) =>
-              d.spliceStatus match {
-                case SpliceStatus.SpliceWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
-                  if (channelReestablish.nextLocalCommitmentNumber == d.commitments.remoteCommitIndex) {
-                    // They haven't received our commit_sig: we retransmit it.
-                    // We're also waiting for signatures from them, and will send our tx_signatures once we receive them.
-                    log.info("re-sending commit_sig for splice attempt with fundingTxIndex={} fundingTxId={}", signingSession.fundingTxIndex, signingSession.fundingTx.txId)
-                    val fundingParams = signingSession.fundingParams
-                    signingSession.remoteCommit.sign(d.commitments.channelParams, signingSession.remoteCommitParams, channelKeys, signingSession.fundingTxIndex, fundingParams.remoteFundingPubKey, signingSession.commitInput(channelKeys), fundingParams.commitmentFormat, channelReestablish.currentCommitNonce_opt) match {
-                      case Left(channelException: ChannelException) => throw channelException // our exception handler will call handleLocalError() which understands ChannelException and will close the channel
-                      case Right(commitSig) => sendQueue = sendQueue :+ commitSig
-                    }
+              // re-send channel_ready and announcement_signatures if necessary
+              d.commitments.lastLocalLocked_opt match {
+                case None => ()
+                // We only send channel_ready for initial funding transactions.
+                case Some(c) if c.fundingTxIndex != 0 => ()
+                case Some(c) =>
+                  val remoteSpliceSupport = d.commitments.remoteChannelParams.initFeatures.hasFeature(Features.SplicePrototype)
+                  // If our peer has not received our channel_ready, we retransmit it.
+                  val notReceivedByRemote = remoteSpliceSupport && channelReestablish.yourLastFundingLocked_opt.isEmpty
+                  // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node
+                  // MUST retransmit channel_ready, otherwise it MUST NOT
+                  val notReceivedByRemoteLegacy = !remoteSpliceSupport && channelReestablish.nextLocalCommitmentNumber == 1 && c.localCommit.index == 0
+                  // If this is a public channel and we haven't announced the channel, we retransmit our channel_ready and
+                  // will also send announcement_signatures.
+                  val notAnnouncedYet = d.commitments.announceChannel && c.shortChannelId_opt.nonEmpty && d.lastAnnouncement_opt.isEmpty
+                  if (notAnnouncedYet || notReceivedByRemote || notReceivedByRemoteLegacy) {
+                    log.debug("re-sending channel_ready")
+                    sendQueue = sendQueue :+ createChannelReady(d.aliases, d.commitments)
                   }
-                  d.spliceStatus
-                case _ if d.commitments.latest.fundingTxId == fundingTxId =>
-                  d.commitments.latest.localFundingStatus match {
-                    case dfu: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
-                      // We've already received their commit_sig and sent our tx_signatures. We retransmit our
-                      // tx_signatures and our commit_sig if they haven't received it already.
+                  if (notAnnouncedYet) {
+                    // The funding transaction is confirmed, so we've already sent our announcement_signatures.
+                    // We haven't announced the channel yet, which means we haven't received our peer's announcement_signatures.
+                    // We retransmit our announcement_signatures to let our peer know that we're ready to announce the channel.
+                    val localAnnSigs = c.signAnnouncement(nodeParams, d.commitments.channelParams, channelKeys.fundingKey(c.fundingTxIndex))
+                    localAnnSigs.foreach(annSigs => {
+                      announcementSigsSent += annSigs.shortChannelId
+                      sendQueue = sendQueue :+ annSigs
+                    })
+                  }
+              }
+
+              // resume splice signing session if any
+              val spliceStatus1 = channelReestablish.nextFundingTxId_opt match {
+                case Some(fundingTxId) =>
+                  d.spliceStatus match {
+                    case SpliceStatus.SpliceWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
                       if (channelReestablish.nextLocalCommitmentNumber == d.commitments.remoteCommitIndex) {
-                        log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
-                        d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, d.commitments.latest.remoteCommitParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput(channelKeys), d.commitments.latest.commitmentFormat, channelReestablish.currentCommitNonce_opt) match {
-                          case Left(channelException: ChannelException) => throw channelException // our exception handler will call handleLocalError() which understands ChannelException and will close the channel
-                          case Right(commitSig) => sendQueue = sendQueue :+ commitSig :+ dfu.sharedTx.localSigs
+                        // They haven't received our commit_sig: we retransmit it.
+                        // We're also waiting for signatures from them, and will send our tx_signatures once we receive them.
+                        log.info("re-sending commit_sig for splice attempt with fundingTxIndex={} fundingTxId={}", signingSession.fundingTxIndex, signingSession.fundingTx.txId)
+                        val fundingParams = signingSession.fundingParams
+                        val remoteNonce_opt = channelReestablish.currentCommitNonce_opt
+                        signingSession.remoteCommit.sign(d.commitments.channelParams, signingSession.remoteCommitParams, channelKeys, signingSession.fundingTxIndex, fundingParams.remoteFundingPubKey, signingSession.commitInput(channelKeys), fundingParams.commitmentFormat, remoteNonce_opt) match {
+                          case Left(f) => sendQueue = sendQueue :+ Warning(d.channelId, f.getMessage)
+                          case Right(commitSig) => sendQueue = sendQueue :+ commitSig
                         }
-                      } else {
-                        log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
-                        sendQueue = sendQueue :+ dfu.sharedTx.localSigs
                       }
-                    case fundingStatus =>
-                      // They have not received our tx_signatures, but they must have received our commit_sig, otherwise we would be in the case above.
-                      log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={} (already published or confirmed)", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
-                      sendQueue = sendQueue ++ fundingStatus.localSigs_opt.toSeq
+                      d.spliceStatus
+                    case _ if d.commitments.latest.fundingTxId == fundingTxId =>
+                      d.commitments.latest.localFundingStatus match {
+                        case dfu: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
+                          // We've already received their commit_sig and sent our tx_signatures. We retransmit our
+                          // tx_signatures and our commit_sig if they haven't received it already.
+                          if (channelReestablish.nextLocalCommitmentNumber == d.commitments.remoteCommitIndex) {
+                            log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
+                            val remoteNonce_opt = channelReestablish.currentCommitNonce_opt
+                            d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, d.commitments.latest.remoteCommitParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput(channelKeys), d.commitments.latest.commitmentFormat, remoteNonce_opt) match {
+                              case Left(f) => sendQueue = sendQueue :+ Warning(d.channelId, f.getMessage)
+                              case Right(commitSig) => sendQueue = sendQueue :+ commitSig :+ dfu.sharedTx.localSigs
+                            }
+                          } else {
+                            log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
+                            sendQueue = sendQueue :+ dfu.sharedTx.localSigs
+                          }
+                        case fundingStatus =>
+                          // They have not received our tx_signatures, but they must have received our commit_sig, otherwise we would be in the case above.
+                          log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={} (already published or confirmed)", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
+                          sendQueue = sendQueue ++ fundingStatus.localSigs_opt.toSeq
+                      }
+                      d.spliceStatus
+                    case _ =>
+                      // The fundingTxId must be for a splice attempt that we didn't store (we got disconnected before receiving
+                      // their tx_complete): we tell them to abort that splice attempt.
+                      log.info(s"aborting obsolete splice attempt for fundingTxId=$fundingTxId")
+                      sendQueue = sendQueue :+ TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage)
+                      SpliceStatus.SpliceAborted
                   }
-                  d.spliceStatus
-                case _ =>
-                  // The fundingTxId must be for a splice attempt that we didn't store (we got disconnected before receiving
-                  // their tx_complete): we tell them to abort that splice attempt.
-                  log.info(s"aborting obsolete splice attempt for fundingTxId=$fundingTxId")
-                  sendQueue = sendQueue :+ TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage)
-                  SpliceStatus.SpliceAborted
+                case None => d.spliceStatus
               }
-            case None => d.spliceStatus
-          }
 
-          // Prune previous funding transactions and RBF attempts if we already sent splice_locked for the last funding
-          // transaction that is also locked by our counterparty; we either missed their splice_locked or it confirmed
-          // while disconnected.
-          val commitments1: Commitments = channelReestablish.myCurrentFundingLocked_opt
-            .flatMap(remoteFundingTxLocked => d.commitments.updateRemoteFundingStatus(remoteFundingTxLocked, d.lastAnnouncedFundingTxId_opt).toOption.map(_._1))
-            .getOrElse(d.commitments)
-            // We then clean up unsigned updates that haven't been received before the disconnection.
-            .discardUnsignedUpdates()
+              // Prune previous funding transactions and RBF attempts if we already sent splice_locked for the last funding
+              // transaction that is also locked by our counterparty; we either missed their splice_locked or it confirmed
+              // while disconnected.
+              val commitments1: Commitments = channelReestablish.myCurrentFundingLocked_opt
+                .flatMap(remoteFundingTxLocked => d.commitments.updateRemoteFundingStatus(remoteFundingTxLocked, d.lastAnnouncedFundingTxId_opt).toOption.map(_._1))
+                .getOrElse(d.commitments)
+                // We then clean up unsigned updates that haven't been received before the disconnection.
+                .discardUnsignedUpdates()
 
-          commitments1.lastLocalLocked_opt match {
-            case None => ()
-            // We only send splice_locked for splice transactions.
-            case Some(c) if c.fundingTxIndex == 0 => ()
-            case Some(c) =>
-              // If our peer has not received our splice_locked, we retransmit it.
-              val notReceivedByRemote = !channelReestablish.yourLastFundingLocked_opt.contains(c.fundingTxId)
-              // If this is a public channel and we haven't announced the splice, we retransmit our splice_locked and
-              // will exchange announcement_signatures afterwards.
-              val notAnnouncedYet = commitments1.announceChannel && d.lastAnnouncement_opt.forall(ann => !c.shortChannelId_opt.contains(ann.shortChannelId))
-              if (notReceivedByRemote || notAnnouncedYet) {
-                // Retransmission of local announcement_signatures for splices are done when receiving splice_locked, no need
-                // to retransmit here.
-                log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)
-                spliceLockedSent += (c.fundingTxId -> c.fundingTxIndex)
-                trimSpliceLockedSentIfNeeded()
-                sendQueue = sendQueue :+ SpliceLocked(d.channelId, c.fundingTxId)
+              commitments1.lastLocalLocked_opt match {
+                case None => ()
+                // We only send splice_locked for splice transactions.
+                case Some(c) if c.fundingTxIndex == 0 => ()
+                case Some(c) =>
+                  // If our peer has not received our splice_locked, we retransmit it.
+                  val notReceivedByRemote = !channelReestablish.yourLastFundingLocked_opt.contains(c.fundingTxId)
+                  // If this is a public channel and we haven't announced the splice, we retransmit our splice_locked and
+                  // will exchange announcement_signatures afterwards.
+                  val notAnnouncedYet = commitments1.announceChannel && d.lastAnnouncement_opt.forall(ann => !c.shortChannelId_opt.contains(ann.shortChannelId))
+                  if (notReceivedByRemote || notAnnouncedYet) {
+                    // Retransmission of local announcement_signatures for splices are done when receiving splice_locked, no need
+                    // to retransmit here.
+                    log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)
+                    spliceLockedSent += (c.fundingTxId -> c.fundingTxIndex)
+                    trimSpliceLockedSentIfNeeded()
+                    sendQueue = sendQueue :+ SpliceLocked(d.channelId, c.fundingTxId)
+                  }
               }
+
+              // we may need to retransmit updates and/or commit_sig and/or revocation
+              sendQueue = sendQueue ++ syncSuccess.retransmit
+
+              commitments1.remoteNextCommitInfo match {
+                case Left(_) =>
+                  // we expect them to (re-)send the revocation immediately
+                  startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommitIndex, peer), nodeParams.channelConf.revocationTimeout)
+                case _ => ()
+              }
+
+              // do I have something to sign?
+              if (commitments1.changes.localHasChanges) {
+                self ! CMD_SIGN()
+              }
+
+              // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
+              d.localShutdown.foreach {
+                localShutdown =>
+                  log.debug("re-sending local_shutdown")
+                  sendQueue = sendQueue :+ localShutdown
+              }
+
+              if (d.commitments.announceChannel) {
+                // we will re-enable the channel after some delay to prevent flappy updates in case the connection is unstable
+                startSingleTimer(Reconnected.toString, BroadcastChannelUpdate(Reconnected), 10 seconds)
+              } else {
+                // except for private channels where our peer is likely a mobile wallet: they will stay online only for a short period of time,
+                // so we need to re-enable them immediately to ensure we can route payments to them. It's also less of a problem to frequently
+                // refresh the channel update for private channels, since we won't broadcast it to the rest of the network.
+                self ! BroadcastChannelUpdate(Reconnected)
+              }
+
+              // We usually handle feerate updates once per block (~10 minutes), but when our remote is a mobile wallet that
+              // only briefly connects and then disconnects, we may never have the opportunity to send our `update_fee`, so
+              // we send it (if needed) when reconnected.
+              val shutdownInProgress = d.localShutdown.nonEmpty || d.remoteShutdown.nonEmpty
+              if (d.commitments.localChannelParams.paysCommitTxFees && !shutdownInProgress) {
+                val currentFeeratePerKw = d.commitments.latest.localCommit.spec.commitTxFeerate
+                val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat, d.commitments.latest.capacity)
+                if (nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)) {
+                  self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
+                }
+              }
+
+              // We tell the peer that the channel is ready to process payments that may be queued.
+              if (!shutdownInProgress) {
+                val fundingTxIndex = commitments1.active.map(_.fundingTxIndex).min
+                peer ! ChannelReadyForPayments(self, remoteNodeId, d.channelId, fundingTxIndex)
+              }
+
+              goto(NORMAL) using d.copy(commitments = commitments1, spliceStatus = spliceStatus1) sending sendQueue
           }
-
-          // we may need to retransmit updates and/or commit_sig and/or revocation
-          sendQueue = sendQueue ++ syncSuccess.retransmit
-
-          commitments1.remoteNextCommitInfo match {
-            case Left(_) =>
-              // we expect them to (re-)send the revocation immediately
-              startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommitIndex, peer), nodeParams.channelConf.revocationTimeout)
-            case _ => ()
-          }
-
-          // do I have something to sign?
-          if (commitments1.changes.localHasChanges) {
-            self ! CMD_SIGN()
-          }
-
-          // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-          d.localShutdown.foreach {
-            localShutdown =>
-              log.debug("re-sending local_shutdown")
-              sendQueue = sendQueue :+ localShutdown
-          }
-
-          if (d.commitments.announceChannel) {
-            // we will re-enable the channel after some delay to prevent flappy updates in case the connection is unstable
-            startSingleTimer(Reconnected.toString, BroadcastChannelUpdate(Reconnected), 10 seconds)
-          } else {
-            // except for private channels where our peer is likely a mobile wallet: they will stay online only for a short period of time,
-            // so we need to re-enable them immediately to ensure we can route payments to them. It's also less of a problem to frequently
-            // refresh the channel update for private channels, since we won't broadcast it to the rest of the network.
-            self ! BroadcastChannelUpdate(Reconnected)
-          }
-
-          // We usually handle feerate updates once per block (~10 minutes), but when our remote is a mobile wallet that
-          // only briefly connects and then disconnects, we may never have the opportunity to send our `update_fee`, so
-          // we send it (if needed) when reconnected.
-          val shutdownInProgress = d.localShutdown.nonEmpty || d.remoteShutdown.nonEmpty
-          if (d.commitments.localChannelParams.paysCommitTxFees && !shutdownInProgress) {
-            val currentFeeratePerKw = d.commitments.latest.localCommit.spec.commitTxFeerate
-            val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat, d.commitments.latest.capacity)
-            if (nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)) {
-              self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
-            }
-          }
-
-          // We tell the peer that the channel is ready to process payments that may be queued.
-          if (!shutdownInProgress) {
-            val fundingTxIndex = commitments1.active.map(_.fundingTxIndex).min
-            peer ! ChannelReadyForPayments(self, remoteNodeId, d.channelId, fundingTxIndex)
-          }
-
-          goto(NORMAL) using d.copy(commitments = commitments1, spliceStatus = spliceStatus1) sending sendQueue
       }
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
@@ -2808,19 +2816,20 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) => handleUpdateRelayFeeDisconnected(c, d)
 
-    case Event(channelReestablish: ChannelReestablish, d: DATA_SHUTDOWN) if Helpers.hasMissingNonce(channelReestablish, d.commitments).isDefined =>
-      handleLocalError(MissingNonce(d.channelId, Helpers.hasMissingNonce(channelReestablish, d.commitments).get), d, Some(channelReestablish))
-
     case Event(channelReestablish: ChannelReestablish, d: DATA_SHUTDOWN) =>
-      setRemoteNextLocalNonces("received ChannelReestablish", channelReestablish.nextLocalNonces)
-      Syncing.checkSync(channelKeys, d.commitments, channelReestablish) match {
-        case syncFailure: SyncResult.Failure =>
-          handleSyncFailure(channelReestablish, syncFailure, d)
-        case syncSuccess: SyncResult.Success =>
-          val commitments1 = d.commitments.discardUnsignedUpdates()
-          val sendQueue = Queue.empty[LightningMessage] ++ syncSuccess.retransmit :+ d.localShutdown
-          // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-          goto(SHUTDOWN) using d.copy(commitments = commitments1) sending sendQueue
+      Helpers.Syncing.checkCommitNonces(channelReestablish, d.commitments) match {
+        case Some(f) => handleLocalError(f, d, Some(channelReestablish))
+        case None =>
+          remoteNextCommitNonces = channelReestablish.nextCommitNonces
+          Syncing.checkSync(channelKeys, d.commitments, channelReestablish) match {
+            case syncFailure: SyncResult.Failure =>
+              handleSyncFailure(channelReestablish, syncFailure, d)
+            case syncSuccess: SyncResult.Success =>
+              val commitments1 = d.commitments.discardUnsignedUpdates()
+              val sendQueue = Queue.empty[LightningMessage] ++ syncSuccess.retransmit :+ d.localShutdown
+              // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
+              goto(SHUTDOWN) using d.copy(commitments = commitments1) sending sendQueue
+          }
       }
 
     case Event(_: ChannelReestablish, d: DATA_NEGOTIATING) =>
@@ -3110,7 +3119,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         }
         context.system.eventStream.publish(ChannelStateChanged(self, nextStateData.channelId, peer, remoteNodeId, state, nextState, commitments_opt))
       }
-
       if (nextState == CLOSED) {
         // channel is closed, scheduling this actor for self destruction
         context.system.scheduler.scheduleOnce(1 minute, self, Symbol("shutdown"))
@@ -3230,12 +3238,16 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
   }
 
-  /** On disconnection we clear up stashes. */
+  /** On disconnection we clear up temporary mutable state that applies to the previous connection. */
   onTransition {
     case _ -> OFFLINE =>
       announcementSigsStash = Map.empty
       announcementSigsSent = Set.empty
       spliceLockedSent = Map.empty[TxId, Long]
+      remoteNextCommitNonces = Map.empty
+      localCloseeNonce_opt = None
+      remoteCloseeNonce_opt = None
+      localCloserNonces_opt = None
   }
 
   /*

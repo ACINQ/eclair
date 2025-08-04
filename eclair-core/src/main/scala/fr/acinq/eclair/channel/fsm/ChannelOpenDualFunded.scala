@@ -322,8 +322,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(msg: InteractiveTxBuilder.Response, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) => msg match {
       case InteractiveTxBuilder.SendMessage(_, msg) => stay() sending msg
-      case InteractiveTxBuilder.Succeeded(status, commitSig, liquidityPurchase_opt, nextRemoteNonce_opt) =>
-        nextRemoteNonce_opt.foreach { case (t, n) => setRemoteNextLocalNonces("dual funding completed", remoteNextCommitNonces + (t -> n)) }
+      case InteractiveTxBuilder.Succeeded(status, commitSig, liquidityPurchase_opt, nextRemoteCommitNonce_opt) =>
+        nextRemoteCommitNonce_opt.foreach { case (txId, nonce) => remoteNextCommitNonces = remoteNextCommitNonces + (txId -> nonce) }
         d.deferred.foreach(self ! _)
         d.replyTo_opt.foreach(_ ! OpenChannelResponse.Created(d.channelId, status.fundingTx.txId, status.fundingTx.tx.localFees.truncateToSatoshi))
         liquidityPurchase_opt.collect {
@@ -692,8 +692,8 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case DualFundingStatus.RbfInProgress(cmd_opt, _, remoteCommitSig_opt) =>
           msg match {
             case InteractiveTxBuilder.SendMessage(_, msg) => stay() sending msg
-            case InteractiveTxBuilder.Succeeded(signingSession, commitSig, liquidityPurchase_opt, nextRemoteNonce_opt) =>
-              nextRemoteNonce_opt.foreach { case (t, n) => setRemoteNextLocalNonces("rbf completed", remoteNextCommitNonces + (t -> n)) }
+            case InteractiveTxBuilder.Succeeded(signingSession, commitSig, liquidityPurchase_opt, nextRemoteCommitNonce_opt) =>
+              nextRemoteCommitNonce_opt.foreach { case (txId, nonce) => remoteNextCommitNonces = remoteNextCommitNonces + (txId -> nonce) }
               cmd_opt.foreach(cmd => cmd.replyTo ! RES_BUMP_FUNDING_FEE(rbfIndex = d.previousFundingTxs.length, signingSession.fundingTx.txId, signingSession.fundingTx.tx.localFees.truncateToSatoshi))
               remoteCommitSig_opt.foreach(self ! _)
               liquidityPurchase_opt.collect {
