@@ -342,7 +342,7 @@ object Features {
   }
 
   case object SimpleTaprootChannelsPhoenix extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
-    val rfcName = "option_simple_taproot_phoenix_tweaked"
+    val rfcName = "option_simple_taproot_phoenix"
     val mandatory = 564
   }
 
