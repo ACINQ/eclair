@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Musig2, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -171,13 +171,14 @@ object LocalCommit {
                     fundingKey: PrivateKey, remoteFundingPubKey: PublicKey, commitInput: InputInfo,
                     commit: CommitSig, localCommitIndex: Long, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Either[ChannelException, LocalCommit] = {
     val (localCommitTx, htlcTxs) = Commitment.makeLocalTxs(channelParams, commitParams, commitKeys, localCommitIndex, fundingKey, remoteFundingPubKey, commitInput, commitmentFormat, spec)
-    val remoteCommitSigOk = commit.sigOrPartialSig match {
-      case IndividualSignature(sig) if !commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
-        localCommitTx.checkRemoteSig(fundingKey.publicKey, remoteFundingPubKey, IndividualSignature(sig))
-      case psig: PartialSignatureWithNonce if commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
-        val localNonce = NonceGenerator.verificationNonce(fundingTxId, fundingKey, remoteFundingPubKey, localCommitIndex)
-        localCommitTx.checkRemotePartialSignature(fundingKey.publicKey, remoteFundingPubKey, psig, localNonce.publicNonce)
-      case _ => false
+    val remoteCommitSigOk = commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => localCommitTx.checkRemoteSig(fundingKey.publicKey, remoteFundingPubKey, commit.signature)
+      case _: SimpleTaprootChannelCommitmentFormat => commit.sigOrPartialSig match {
+        case _: IndividualSignature => false
+        case remoteSig: PartialSignatureWithNonce =>
+          val localNonce = NonceGenerator.verificationNonce(fundingTxId, fundingKey, remoteFundingPubKey, localCommitIndex)
+          localCommitTx.checkRemotePartialSignature(fundingKey.publicKey, remoteFundingPubKey, remoteSig, localNonce.publicNonce)
+      }
     }
     if (!remoteCommitSigOk) {
       return Left(InvalidCommitmentSignature(channelParams.channelId, fundingTxId, localCommitIndex, localCommitTx.tx))
@@ -209,13 +210,14 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePer
       case _: SegwitV0CommitmentFormat =>
         val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey)
         Right(CommitSig(channelParams.channelId, sig, htlcSigs.toList))
-      case _: SimpleTaprootChannelCommitmentFormat if remoteNonce_opt.isEmpty =>
-        Left(MissingCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
       case _: SimpleTaprootChannelCommitmentFormat =>
         val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, remoteFundingPubKey, commitInput.outPoint.txid)
-        remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce_opt.get)) match {
-          case Left(_) => Left(InvalidCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
-          case Right(psig) => Right(CommitSig(channelParams.channelId, psig, htlcSigs.toList))
+        remoteNonce_opt match {
+          case Some(remoteNonce) => remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
+            case Left(_) => Left(InvalidCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
+            case Right(psig) => Right(CommitSig(channelParams.channelId, psig, htlcSigs.toList, batchSize = 1))
+          }
+          case None => Left(MissingCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
         }
     }
   }
@@ -660,34 +662,23 @@ case class Commitment(fundingTxIndex: Long,
     val fundingKey = localFundingKey(channelKeys)
     val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(params, remoteCommitParams, commitKeys, remoteCommit.index + 1, fundingKey, remoteFundingPubKey, commitInput(fundingKey), commitmentFormat, spec)
     val htlcSigs = htlcTxs.sortBy(_.input.outPoint.index).map(_.localSig(commitKeys))
-
     // NB: IN/OUT htlcs are inverted because this is the remote commit
     log.info(s"built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${remoteCommitTx.tx.txid} fundingTxId=$fundingTxId", spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","))
     Metrics.recordHtlcsInFlight(spec, remoteCommit.spec)
-    val partialSig: Option[CommitSigTlv] = commitmentFormat match {
+    val sig = commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey)
       case _: SimpleTaprootChannelCommitmentFormat =>
         val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, remoteFundingPubKey, fundingTxId)
-        if (nextRemoteNonce_opt.isEmpty)
-          return Left(MissingCommitNonce(params.channelId, fundingTxId, remoteCommit.index + 1))
-        val Some(remoteNonce) = nextRemoteNonce_opt
-        val psig = remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
-          case Left(_) => return Left(InvalidCommitNonce(params.channelId, fundingTxId, remoteCommit.index + 1))
-          case Right(psig) => psig
+        nextRemoteNonce_opt match {
+          case Some(remoteNonce) =>
+            remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
+              case Left(_) => return Left(InvalidCommitNonce(params.channelId, fundingTxId, remoteCommit.index + 1))
+              case Right(psig) => psig
+            }
+          case None => return Left(MissingCommitNonce(params.channelId, fundingTxId, remoteCommit.index + 1))
         }
-        log.debug(s"sendCommit: creating partial sig $psig for remote commit tx ${remoteCommitTx.tx.txid} with fundingTxIndex = $fundingTxIndex remoteCommit.index (should add +1) = ${remoteCommit.index} remote nonce $remoteNonce and remoteNextPerCommitmentPoint = $remoteNextPerCommitmentPoint")
-        Some(CommitSigTlv.PartialSignatureWithNonceTlv(psig))
-      case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
-        None
     }
-    val sig = commitmentFormat match {
-      case _: SimpleTaprootChannelCommitmentFormat => IndividualSignature(ByteVector64.Zeroes)
-      case _: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey)
-    }
-    val tlvs = Set(
-      if (batchSize > 1) Some(CommitSigTlv.BatchTlv(batchSize)) else None,
-      partialSig
-    ).flatten[CommitSigTlv]
-    val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList, TlvStream(tlvs))
+    val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList, batchSize)
     val nextRemoteCommit = NextRemoteCommit(commitSig, RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint))
     Right((copy(nextRemoteCommit_opt = Some(nextRemoteCommit)), commitSig))
   }
@@ -711,37 +702,26 @@ case class Commitment(fundingTxIndex: Long,
   }
 
   /** Return a fully signed commit tx, that can be published as-is. */
-  def fullySignedLocalCommitTx(params: ChannelParams, channelKeys: ChannelKeys): Either[ChannelException, Transaction] = {
+  def fullySignedLocalCommitTx(params: ChannelParams, channelKeys: ChannelKeys): Transaction = {
     val fundingKey = localFundingKey(channelKeys)
     val commitKeys = localKeys(params, channelKeys)
     val (unsignedCommitTx, _) = Commitment.makeLocalTxs(params, localCommitParams, commitKeys, localCommit.index, fundingKey, remoteFundingPubKey, commitInput(fundingKey), commitmentFormat, localCommit.spec)
     localCommit.remoteSig match {
-      case remoteSig: IndividualSignature if !commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
+      case remoteSig: IndividualSignature =>
         val localSig = unsignedCommitTx.sign(fundingKey, remoteFundingPubKey)
-        Right(unsignedCommitTx.aggregateSigs(fundingKey.publicKey, remoteFundingPubKey, localSig, remoteSig))
-      case PartialSignatureWithNonce(remotePsig, remoteNonce) if commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
+        unsignedCommitTx.aggregateSigs(fundingKey.publicKey, remoteFundingPubKey, localSig, remoteSig)
+      case remoteSig: PartialSignatureWithNonce =>
         val localNonce = if (fundingTxIndex == 0 && localCommit.index == 0 && !params.channelFeatures.hasFeature(Features.DualFunding)) {
           // With channel establishment v1, we exchange the first nonce before the funding tx and remote funding key are known.
           NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, localCommit.index)
         } else {
           NonceGenerator.verificationNonce(fundingTxId, fundingKey, remoteFundingPubKey, localCommit.index)
         }
-        (for {
-          partialSig <- unsignedCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce))
-          aggSig <- Musig2.aggregateTaprootSignatures(
-            Seq(partialSig.partialSig, remotePsig),
-            unsignedCommitTx.tx,
-            inputIndex = 0, // commit txs always have a single input
-            Seq(unsignedCommitTx.input.txOut),
-            Scripts.sort(Seq(fundingKey.publicKey, remoteFundingPubKey)),
-            Seq(localNonce.publicNonce, remoteNonce),
-            None)
-          signedCommitTx = unsignedCommitTx.copy(tx = unsignedCommitTx.tx.updateWitness(0, Script.witnessKeyPathPay2tr(aggSig)))
-        } yield signedCommitTx.tx) match {
-          case Left(_) => Left(InvalidCommitmentSignature(params.channelId, fundingTxId, localCommit.index, unsignedCommitTx.tx))
-          case Right(tx) => Right(tx)
-        }
-      case _ => Left(InvalidCommitmentSignature(params.channelId, fundingTxId, localCommit.index, unsignedCommitTx.tx))
+        // We have already validated the remote nonce and partial signature when we received it, so we're guaranteed
+        // that the following code cannot produce an error.
+        val Right(localSig) = unsignedCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteSig.nonce))
+        val Right(signedTx) = unsignedCommitTx.aggregateSigs(fundingKey.publicKey, remoteFundingPubKey, localSig, remoteSig)
+        signedTx
     }
   }
 
@@ -829,7 +809,7 @@ case class FullCommitment(channelParams: ChannelParams, changes: CommitmentChang
 
   def remoteChannelReserve: Satoshi = commitment.remoteChannelReserve(channelParams)
 
-  def fullySignedLocalCommitTx(channelKeys: ChannelKeys): Either[ChannelException, Transaction] = commitment.fullySignedLocalCommitTx(channelParams, channelKeys)
+  def fullySignedLocalCommitTx(channelKeys: ChannelKeys): Transaction = commitment.fullySignedLocalCommitTx(channelParams, channelKeys)
 
   def htlcTxs(channelKeys: ChannelKeys): Seq[(UnsignedHtlcTx, ByteVector64)] = commitment.htlcTxs(channelParams, channelKeys)
 
@@ -1101,19 +1081,13 @@ case class Commitments(channelParams: ChannelParams,
     }
   }
 
-  def sendCommit(channelKeys: ChannelKeys, nextRemoteNonces: Map[TxId, IndividualNonce] = Map.empty)(implicit log: LoggingAdapter): Either[ChannelException, (Commitments, CommitSigs)] = {
+  def sendCommit(channelKeys: ChannelKeys, nextRemoteCommitNonces: Map[TxId, IndividualNonce])(implicit log: LoggingAdapter): Either[ChannelException, (Commitments, CommitSigs)] = {
     remoteNextCommitInfo match {
       case Right(_) if !changes.localHasChanges => Left(CannotSignWithoutChanges(channelId))
       case Right(remoteNextPerCommitmentPoint) =>
-
-        def remoteNonce(c: Commitment) = c.commitmentFormat match {
-          case _: SimpleTaprootChannelCommitmentFormat => nextRemoteNonces.get(c.fundingTxId)
-          case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => None
-        }
-
         val (active1, sigs) = active.map(c => {
           val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remoteNextPerCommitmentPoint, c.commitmentFormat)
-          c.sendCommit(channelParams, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, active.size, remoteNonce(c)) match {
+          c.sendCommit(channelParams, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, active.size, nextRemoteCommitNonces.get(c.fundingTxId)) match {
             case Left(e) => return Left(e)
             case Right((c, cs)) => (c, cs)
           }
@@ -1152,11 +1126,12 @@ case class Commitments(channelParams: ChannelParams,
     // we will send our revocation preimage + our next revocation hash
     val localPerCommitmentSecret = channelKeys.commitmentSecret(localCommitIndex)
     val localNextPerCommitmentPoint = channelKeys.commitmentPoint(localCommitIndex + 2)
-    val localCommitNonces = active.collect {
-      case c: Commitment if c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
+    val localCommitNonces = active.flatMap(c => c.commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => None
+      case _: SimpleTaprootChannelCommitmentFormat =>
         val localNonce = NonceGenerator.verificationNonce(c.fundingTxId, c.localFundingKey(channelKeys), c.remoteFundingPubKey, localCommitIndex + 2)
-        c.fundingTxId -> localNonce.publicNonce
-    }
+        Some(c.fundingTxId -> localNonce.publicNonce)
+    })
     val revocation = RevokeAndAck(
       channelId = channelId,
       perCommitmentSecret = localPerCommitmentSecret,

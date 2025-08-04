@@ -788,7 +788,7 @@ object ChannelStateTestsBase {
 
     def commitments: Commitments = channel.stateData.asInstanceOf[ChannelDataWithCommitments].commitments
 
-    def signCommitTx(): Transaction = commitments.latest.fullySignedLocalCommitTx(channel.underlyingActor.channelKeys).toTry.get
+    def signCommitTx(): Transaction = commitments.latest.fullySignedLocalCommitTx(channel.underlyingActor.channelKeys)
 
     def htlcTxs(): Seq[UnsignedHtlcTx] = commitments.latest.htlcTxs(channel.underlyingActor.channelKeys).map(_._1)
 

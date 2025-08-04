@@ -541,9 +541,16 @@ case class CommitSig(channelId: ByteVector32,
 }
 
 object CommitSig {
-  def apply(channelId: ByteVector32, signature: PartialSignatureWithNonce, htlcSignatures: List[ByteVector64]): CommitSig = {
-    val emptySig = IndividualSignature(ByteVector64.Zeroes)
-    CommitSig(channelId, emptySig, htlcSignatures, TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(signature)))
+  def apply(channelId: ByteVector32, signature: ChannelSpendSignature, htlcSignatures: List[ByteVector64], batchSize: Int): CommitSig = {
+    val (individualSig, partialSig_opt) = signature match {
+      case sig: IndividualSignature => (sig, None)
+      case psig: PartialSignatureWithNonce => (IndividualSignature(ByteVector64.Zeroes), Some(psig))
+    }
+    val tlvs = Set(
+      if (batchSize > 1) Some(CommitSigTlv.BatchTlv(batchSize)) else None,
+      partialSig_opt.map(CommitSigTlv.PartialSignatureWithNonceTlv(_))
+    ).flatten[CommitSigTlv]
+    CommitSig(channelId, individualSig, htlcSignatures, TlvStream(tlvs))
   }
 }
 

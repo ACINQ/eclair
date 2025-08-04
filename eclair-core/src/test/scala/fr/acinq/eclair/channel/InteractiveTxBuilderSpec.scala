@@ -2788,7 +2788,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       case _: SimpleTaprootChannelCommitmentFormat =>
         val priv = randomKey()
         val (_, nonce) = Musig2.generateNonce(randomBytes32(), Left(priv), Seq(priv.publicKey), None, None)
-        CommitSig(params.channelId, PartialSignatureWithNonce(ByteVector32.Zeroes, nonce), Nil)
+        CommitSig(params.channelId, PartialSignatureWithNonce(ByteVector32.Zeroes, nonce), Nil, batchSize = 1)
       case _ => CommitSig(params.channelId, IndividualSignature(ByteVector64.Zeroes), Nil)
     }
     val Left(error) = successA1.signingSession.receiveCommitSig(params.channelParamsA, params.channelKeysA, invalidCommitSig, params.nodeParamsA.currentBlockHeight)(akka.event.NoLogging)

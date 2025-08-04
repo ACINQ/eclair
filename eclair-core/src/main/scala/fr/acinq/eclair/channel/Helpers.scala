@@ -546,12 +546,13 @@ object Helpers {
         // they just sent a new commit_sig, we have received it but they didn't receive our revocation
         val localPerCommitmentSecret = channelKeys.commitmentSecret(commitments.localCommitIndex - 1)
         val localNextPerCommitmentPoint = channelKeys.commitmentPoint(commitments.localCommitIndex + 1)
-        val localCommitNonces = commitments.active.collect {
-          case c: Commitment if c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] =>
+        val localCommitNonces = commitments.active.flatMap(c => c.commitmentFormat match {
+          case _: SegwitV0CommitmentFormat => None
+          case _: SimpleTaprootChannelCommitmentFormat =>
             val fundingKey = channelKeys.fundingKey(c.fundingTxIndex)
             val n = NonceGenerator.verificationNonce(c.fundingTxId, fundingKey, c.remoteFundingPubKey, commitments.localCommitIndex + 1).publicNonce
-            c.fundingTxId -> n
-        }
+            Some(c.fundingTxId -> n)
+        })
         val revocation = RevokeAndAck(
           channelId = commitments.channelId,
           perCommitmentSecret = localPerCommitmentSecret,

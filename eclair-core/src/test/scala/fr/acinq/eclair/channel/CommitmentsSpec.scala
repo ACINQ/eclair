@@ -91,7 +91,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Right((ac2, commit1)) = ac1.sendCommit(alice.underlyingActor.channelKeys)
+    val Right((ac2, commit1)) = ac1.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac2.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac2.availableBalanceForReceive == b)
 
@@ -103,7 +103,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac3.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b)
 
-    val Right((bc3, commit2)) = bc2.sendCommit(bob.underlyingActor.channelKeys)
+    val Right((bc3, commit2)) = bc2.sendCommit(bob.underlyingActor.channelKeys, Map.empty)
     assert(bc3.availableBalanceForSend == b)
     assert(bc3.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -124,7 +124,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac5.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac5.availableBalanceForReceive == b + p)
 
-    val Right((bc6, commit3)) = bc5.sendCommit(bob.underlyingActor.channelKeys)
+    val Right((bc6, commit3)) = bc5.sendCommit(bob.underlyingActor.channelKeys, Map.empty)
     assert(bc6.availableBalanceForSend == b + p)
     assert(bc6.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -136,7 +136,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc7.availableBalanceForSend == b + p)
     assert(bc7.availableBalanceForReceive == a - p)
 
-    val Right((ac7, commit4)) = ac6.sendCommit(alice.underlyingActor.channelKeys)
+    val Right((ac7, commit4)) = ac6.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac7.availableBalanceForSend == a - p)
     assert(ac7.availableBalanceForReceive == b + p)
 
@@ -176,7 +176,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Right((ac2, commit1)) = ac1.sendCommit(alice.underlyingActor.channelKeys)
+    val Right((ac2, commit1)) = ac1.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac2.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac2.availableBalanceForReceive == b)
 
@@ -188,7 +188,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac3.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b)
 
-    val Right((bc3, commit2)) = bc2.sendCommit(bob.underlyingActor.channelKeys)
+    val Right((bc3, commit2)) = bc2.sendCommit(bob.underlyingActor.channelKeys, Map.empty)
     assert(bc3.availableBalanceForSend == b)
     assert(bc3.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -209,7 +209,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac5.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac5.availableBalanceForReceive == b)
 
-    val Right((bc6, commit3)) = bc5.sendCommit(bob.underlyingActor.channelKeys)
+    val Right((bc6, commit3)) = bc5.sendCommit(bob.underlyingActor.channelKeys, Map.empty)
     assert(bc6.availableBalanceForSend == b)
     assert(bc6.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -221,7 +221,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc7.availableBalanceForSend == b)
     assert(bc7.availableBalanceForReceive == a)
 
-    val Right((ac7, commit4)) = ac6.sendCommit(alice.underlyingActor.channelKeys)
+    val Right((ac7, commit4)) = ac6.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac7.availableBalanceForSend == a)
     assert(ac7.availableBalanceForReceive == b)
 
@@ -282,7 +282,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac3.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b - p3)
 
-    val Right((ac4, commit1)) = ac3.sendCommit(alice.underlyingActor.channelKeys)
+    val Right((ac4, commit1)) = ac3.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac4.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac4.availableBalanceForReceive == b - p3)
 
@@ -294,7 +294,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac5.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac5.availableBalanceForReceive == b - p3)
 
-    val Right((bc5, commit2)) = bc4.sendCommit(bob.underlyingActor.channelKeys)
+    val Right((bc5, commit2)) = bc4.sendCommit(bob.underlyingActor.channelKeys, Map.empty)
     assert(bc5.availableBalanceForSend == b - p3)
     assert(bc5.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
@@ -306,7 +306,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc6.availableBalanceForSend == b - p3)
     assert(bc6.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
-    val Right((ac7, commit3)) = ac6.sendCommit(alice.underlyingActor.channelKeys)
+    val Right((ac7, commit3)) = ac6.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac7.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
     assert(ac7.availableBalanceForReceive == b - p3)
 
@@ -345,7 +345,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc10.availableBalanceForSend == b + p1 - p3)
     assert(bc10.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3) // the fee for p3 disappears
 
-    val Right((ac12, commit4)) = ac11.sendCommit(alice.underlyingActor.channelKeys)
+    val Right((ac12, commit4)) = ac11.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac12.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
     assert(ac12.availableBalanceForReceive == b + p1 - p3)
 
@@ -357,7 +357,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac13.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
     assert(ac13.availableBalanceForReceive == b + p1 - p3)
 
-    val Right((bc12, commit5)) = bc11.sendCommit(bob.underlyingActor.channelKeys)
+    val Right((bc12, commit5)) = bc11.sendCommit(bob.underlyingActor.channelKeys, Map.empty)
     assert(bc12.availableBalanceForSend == b + p1 - p3)
     assert(bc12.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
 
@@ -369,7 +369,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc13.availableBalanceForSend == b + p1 - p3)
     assert(bc13.availableBalanceForReceive == a - p1 + p3)
 
-    val Right((ac15, commit6)) = ac14.sendCommit(alice.underlyingActor.channelKeys)
+    val Right((ac15, commit6)) = ac14.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac15.availableBalanceForSend == a - p1 + p3)
     assert(ac15.availableBalanceForReceive == b + p1 - p3)
 

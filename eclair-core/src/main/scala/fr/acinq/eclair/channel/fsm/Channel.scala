@@ -1643,7 +1643,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay()
         case Right(_) =>
-          d.commitments.sendCommit(channelKeys) match {
+          d.commitments.sendCommit(channelKeys, remoteNextCommitNonces) match {
             case Right((commitments1, commit)) =>
               log.debug("sending a new sig, spec:\n{}", commitments1.latest.specs2String)
               val nextRemoteCommit = commitments1.latest.nextRemoteCommit_opt.get.commit
@@ -2391,6 +2391,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       val myFirstPerCommitmentPoint = channelKeys.commitmentPoint(0)
       val nextFundingTlv: Set[ChannelReestablishTlv] = Set(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTxId))
       val nonceTlvs = d.signingSession.fundingParams.commitmentFormat match {
+        case _: SegwitV0CommitmentFormat => Set.empty
         case _: SimpleTaprootChannelCommitmentFormat =>
           val localFundingKey = channelKeys.fundingKey(0)
           val remoteFundingPubKey = d.signingSession.fundingParams.remoteFundingPubKey
@@ -2400,7 +2401,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             ChannelReestablishTlv.NextLocalNoncesTlv(List(d.signingSession.fundingTxId -> nextCommitNonce.publicNonce)),
             ChannelReestablishTlv.CurrentCommitNonceTlv(currentCommitNonce.publicNonce),
           )
-        case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => Set.empty
       }
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,

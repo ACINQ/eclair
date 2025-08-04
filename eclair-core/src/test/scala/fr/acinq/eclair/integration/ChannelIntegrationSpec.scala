@@ -404,7 +404,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we prepare the revoked transactions F will publish
     val channelKeysF = nodes("F").nodeParams.channelKeyManager.channelKeys(commitmentsF.channelParams.channelConfig, commitmentsF.localChannelParams.fundingKeyPath)
     val commitmentKeysF = commitmentsF.latest.localKeys(channelKeysF)
-    val revokedCommitTx = commitmentsF.latest.fullySignedLocalCommitTx(channelKeysF).toTry.get
+    val revokedCommitTx = commitmentsF.latest.fullySignedLocalCommitTx(channelKeysF)
     // in this commitment, both parties should have a main output, there are four pending htlcs and anchor outputs if applicable
     commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => assert(revokedCommitTx.txOut.size == 6)

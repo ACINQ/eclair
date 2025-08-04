@@ -357,8 +357,8 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     // We receive a batch of commit_sig messages from a first channel.
     val channelId1 = randomBytes32()
     val commitSigs1 = Seq(
-      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
-      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
+      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, batchSize = 2),
+      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, batchSize = 2),
     )
     transport.send(peerConnection, commitSigs1.head)
     transport.expectMsg(TransportHandler.ReadAck(commitSigs1.head))
@@ -370,9 +370,9 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     // We receive a batch of commit_sig messages from a second channel.
     val channelId2 = randomBytes32()
     val commitSigs2 = Seq(
-      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.BatchTlv(3))),
-      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.BatchTlv(3))),
-      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.BatchTlv(3))),
+      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, batchSize = 3),
+      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, batchSize = 3),
+      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, batchSize = 3),
     )
     commitSigs2.dropRight(1).foreach(commitSig => {
       transport.send(peerConnection, commitSig)
@@ -385,8 +385,8 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
     // We receive another batch of commit_sig messages from the first channel, with unrelated messages in the batch.
     val commitSigs3 = Seq(
-      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
-      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
+      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, batchSize = 2),
+      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, batchSize = 2),
     )
     transport.send(peerConnection, commitSigs3.head)
     transport.expectMsg(TransportHandler.ReadAck(commitSigs3.head))
@@ -406,9 +406,9 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     // We start receiving a batch of commit_sig messages from the first channel, interleaved with a batch from the second
     // channel, which is not supported.
     val commitSigs4 = Seq(
-      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
-      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
-      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.BatchTlv(2))),
+      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, batchSize = 2),
+      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, batchSize = 2),
+      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, batchSize = 2),
     )
     transport.send(peerConnection, commitSigs4.head)
     transport.expectMsg(TransportHandler.ReadAck(commitSigs4.head))
@@ -421,7 +421,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     peer.expectMsg(CommitSigBatch(commitSigs4.tail))
 
     // We receive a batch that exceeds our threshold: we process them individually.
-    val invalidCommitSigs = (0 until 30).map(_ => CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.BatchTlv(30))))
+    val invalidCommitSigs = (0 until 30).map(_ => CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, batchSize = 30))
     invalidCommitSigs.foreach(commitSig => {
       transport.send(peerConnection, commitSig)
       transport.expectMsg(TransportHandler.ReadAck(commitSig))
