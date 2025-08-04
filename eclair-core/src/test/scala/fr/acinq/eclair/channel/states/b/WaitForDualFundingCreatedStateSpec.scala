@@ -262,7 +262,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 }
 
 class WaitForDualFundingCreatedStateWithTaprootChannelsSpec extends WaitForDualFundingCreatedStateSpec {
-  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaproot)
 
   test("tx_complete is missing nonces", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._

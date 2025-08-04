@@ -1103,8 +1103,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, t.getMessage)
               case Right(willFund_opt) =>
                 log.info(s"accepting splice with remote.in.amount=${msg.fundingContribution} remote.in.push=${msg.pushAmount}")
-                val nextCommitmentFormat_opt = msg.channelType_opt.collect {
-                  case s: SupportedChannelType => s.commitmentFormat // TODO: validate msg.channelType_opt
+                // We only support updating phoenix channels to taproot: we ignore other attempts at upgrading the
+                // commitment format and will simply apply the previous commitment format.
+                val nextCommitmentFormat = msg.channelType_opt match {
+                  case Some(_: ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat => PhoenixSimpleTaprootChannelCommitmentFormat
+                  case _ => parentCommitment.commitmentFormat
                 }
                 val spliceAck = SpliceAck(d.channelId,
                   fundingContribution = willFund_opt.map(_.purchase.amount).getOrElse(0 sat),
@@ -1113,9 +1116,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
                   willFund_opt = willFund_opt.map(_.willFund),
                   feeCreditUsed_opt = msg.useFeeCredit_opt,
-                  channelType_opt = msg.channelType_opt // TODO: validate msg.channelType_opt
+                  channelType_opt = msg.channelType_opt
                 )
-                val commitmentFormat = nextCommitmentFormat_opt.getOrElse(parentCommitment.commitmentFormat)
                 val fundingParams = InteractiveTxParams(
                   channelId = d.channelId,
                   isInitiator = false,
@@ -1124,7 +1126,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   sharedInput_opt = Some(SharedFundingInput(channelKeys, parentCommitment)),
                   remoteFundingPubKey = msg.fundingPubKey,
                   localOutputs = Nil,
-                  commitmentFormat = commitmentFormat,
+                  commitmentFormat = nextCommitmentFormat,
                   lockTime = msg.lockTime,
                   dustLimit = parentCommitment.localCommitParams.dustLimit.max(parentCommitment.remoteCommitParams.dustLimit),
                   targetFeerate = msg.feerate,
@@ -1163,10 +1165,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
           val parentCommitment = d.commitments.latest.commitment
-          val nextCommitmentFormat_opt = msg.channelType_opt.collect {
-            case s: SupportedChannelType => s.commitmentFormat // TODO: validate msg.channelType_opt
+          // We only support updating phoenix channels to taproot: we ignore other attempts at upgrading the
+          // commitment format and will simply apply the previous commitment format.
+          val nextCommitmentFormat = msg.channelType_opt match {
+            case Some(_: ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat => PhoenixSimpleTaprootChannelCommitmentFormat
+            case _ => parentCommitment.commitmentFormat
           }
-          val nextCommitmentFormat = nextCommitmentFormat_opt.getOrElse(parentCommitment.commitmentFormat)
           val fundingParams = InteractiveTxParams(
             channelId = d.channelId,
             isInitiator = true,

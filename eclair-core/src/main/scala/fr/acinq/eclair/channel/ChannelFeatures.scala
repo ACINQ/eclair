@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, LegacySimpleTaprootChannelCommitmentFormat, SimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeature, PermanentChannelFeature}
 
 /**
@@ -122,7 +122,7 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
-  case class SimpleTaprootChannelsStagingLegacy(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+  case class SimpleTaprootChannelsPhoenix(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     /** Known channel-type features */
     override def features: Set[ChannelTypeFeature] = Set(
       if (scidAlias) Some(Features.ScidAlias) else None,
@@ -130,8 +130,8 @@ object ChannelTypes {
       Some(Features.SimpleTaprootChannelsPhoenix),
     ).flatten
     override def paysDirectlyToWallet: Boolean = false
-    override def commitmentFormat: CommitmentFormat = LegacySimpleTaprootChannelCommitmentFormat
-    override def toString: String = s"simple_taproot_channel_staging_legacy${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+    override def commitmentFormat: CommitmentFormat = PhoenixSimpleTaprootChannelCommitmentFormat
+    override def toString: String = s"simple_taproot_channel_phoenix${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
   case class SimpleTaprootChannelsStaging(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     /** Known channel-type features */
@@ -168,10 +168,10 @@ object ChannelTypes {
     AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
-    SimpleTaprootChannelsStagingLegacy(),
-    SimpleTaprootChannelsStagingLegacy(zeroConf = true),
-    SimpleTaprootChannelsStagingLegacy(scidAlias = true),
-    SimpleTaprootChannelsStagingLegacy(scidAlias = true, zeroConf = true),
+    SimpleTaprootChannelsPhoenix(),
+    SimpleTaprootChannelsPhoenix(zeroConf = true),
+    SimpleTaprootChannelsPhoenix(scidAlias = true),
+    SimpleTaprootChannelsPhoenix(scidAlias = true, zeroConf = true),
     SimpleTaprootChannelsStaging(),
     SimpleTaprootChannelsStaging(zeroConf = true),
     SimpleTaprootChannelsStaging(scidAlias = true),
@@ -192,7 +192,7 @@ object ChannelTypes {
     if (canUse(Features.SimpleTaprootChannelsStaging)) {
       SimpleTaprootChannelsStaging(scidAlias, zeroConf)
     } else if (canUse(Features.SimpleTaprootChannelsPhoenix)) {
-      SimpleTaprootChannelsStagingLegacy(scidAlias, zeroConf)
+      SimpleTaprootChannelsPhoenix(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
       AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputs)) {

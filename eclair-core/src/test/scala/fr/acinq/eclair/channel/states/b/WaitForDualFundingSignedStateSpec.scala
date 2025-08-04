@@ -370,7 +370,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     assert(wallet.rolledback.isEmpty)
   }
 
-  test("recv INPUT_DISCONNECTED (commit_sig not received)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+  test("recv INPUT_DISCONNECTED (commit_sig not received)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
 
     val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
@@ -405,7 +405,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     reconnect(f, fundingTxId, aliceExpectsCommitSig = false, bobExpectsCommitSig = true)
   }
 
-  test("recv INPUT_DISCONNECTED (commit_sig received by Bob)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+  test("recv INPUT_DISCONNECTED (commit_sig received by Bob)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
 
     val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
@@ -424,7 +424,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     reconnect(f, fundingTxId, aliceExpectsCommitSig = true, bobExpectsCommitSig = false)
   }
 
-  test("recv INPUT_DISCONNECTED (commit_sig received by Bob, zero-conf)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee)) { f =>
+  test("recv INPUT_DISCONNECTED (commit_sig received by Bob, zero-conf)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
     import f._
 
     alice2bob.expectMsgType[CommitSig]
@@ -623,5 +623,5 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
 }
 
 class WaitForDualFundingSignedStateWithTaprootChannelsSpec extends WaitForDualFundingSignedStateSpec {
-  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)
 }

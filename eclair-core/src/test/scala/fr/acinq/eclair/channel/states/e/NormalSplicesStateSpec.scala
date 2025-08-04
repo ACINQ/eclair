@@ -357,7 +357,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(finalState.commitments.latest.localCommit.spec.toRemote == 700_000_000.msat - settledHtlcs)
   }
 
-  test("recv CMD_SPLICE (splice-in)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+  test("recv CMD_SPLICE (splice-in)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
     import f._
 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -1061,7 +1061,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("recv TxAbort (after CommitSig)") { f =>
     import f._
 
-    assume(!this.extraTags.contains(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy) && !this.extraTags.contains(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee) && this.spliceChannelType_opt.isEmpty)
+    assume(!this.extraTags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix) && !this.extraTags.contains(ChannelStateTestsTags.OptionSimpleTaproot) && this.spliceChannelType_opt.isEmpty)
 
     val sender = TestProbe()
     alice ! CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = None, requestFunding_opt = None, this.spliceChannelType_opt)
@@ -1526,7 +1526,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitAssert(assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.all.size == 1))
   }
 
-  test("recv CMD_ADD_HTLC with multiple commitments", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+  test("recv CMD_ADD_HTLC with multiple commitments", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     val sender = TestProbe()
@@ -2702,7 +2702,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectNoMessage(100 millis)
   }
 
-  test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update; revoke_and_ack not received", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+  test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update; revoke_and_ack not received", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
     // alice                    bob
     //   |         ...           |
@@ -3794,17 +3794,17 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
 // test taproot channels
 class NormalSplicesStateWithTaprootChannelsSpec extends NormalSplicesStateSpec {
-  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee)
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaproot)
 }
 
 class NormalSplicesStateWithLegacyTaprootChannelsSpec extends NormalSplicesStateSpec {
-  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)
 }
 
 // test migration from anchor outputs to taproot channels during splices
 class NormalSplicesStateUpgradeToLegacyTaprootChannelsSpec extends NormalSplicesStateSpec {
   override val extraTags: Set[String] = Set(ChannelStateTestsTags.AnchorOutputs)
-  override val spliceChannelType_opt: Option[ChannelType] = Some(ChannelTypes.SimpleTaprootChannelsStagingLegacy(scidAlias = false, zeroConf = false))
+  override val spliceChannelType_opt: Option[ChannelType] = Some(ChannelTypes.SimpleTaprootChannelsPhoenix(scidAlias = false, zeroConf = false))
 }
 
 class NormalSplicesStateUpgradeToTaprootChannelsSpec extends NormalSplicesStateSpec {

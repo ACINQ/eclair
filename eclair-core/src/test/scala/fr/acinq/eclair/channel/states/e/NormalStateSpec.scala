@@ -1055,7 +1055,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.changes.remoteChanges.signed.size == 1)
   }
 
-  test("recv CommitSig (one htlc sent)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+  test("recv CommitSig (one htlc sent)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
 
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1130,7 +1130,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.htlcRemoteSigs.size == 3)
   }
 
-  test("recv CommitSig (multiple htlcs in both directions) (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+  test("recv CommitSig (multiple htlcs in both directions) (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
 
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
@@ -1276,7 +1276,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2blockchain.expectWatchTxConfirmed(tx.txid)
   }
 
-  test("recv CommitSig (simple taproot channels, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+  test("recv CommitSig (simple taproot channels, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     val tx = bob.signCommitTx()
@@ -1295,7 +1295,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2blockchain.expectWatchTxConfirmed(tx.txid)
   }
 
-  test("recv CommitSig (simple taproot channels, invalid partial signature)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+  test("recv CommitSig (simple taproot channels, invalid partial signature)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     val tx = bob.signCommitTx()
@@ -1465,7 +1465,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectWatchTxConfirmed(tx.txid)
   }
 
-  test("recv RevokeAndAck (simple taproot channels, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+  test("recv RevokeAndAck (simple taproot channels, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
     val tx = alice.signCommitTx()
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)

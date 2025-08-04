@@ -537,11 +537,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     `recv ClosingComplete (both outputs)`(f)
   }
 
-  test("recv ClosingComplete (both outputs, simple taproot channels)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
-    `recv ClosingComplete (both outputs)`(f)
-  }
-
-  test("recv ClosingComplete (both outputs, simple taproot channels zero fee)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee)) { f =>
+  test("recv ClosingComplete (both outputs, simple taproot channels)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     `recv ClosingComplete (both outputs)`(f)
   }
 

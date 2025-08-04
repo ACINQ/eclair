@@ -100,23 +100,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Created]
   }
 
-  test("recv FundingSigned with valid signature (simple taproot channels legacy)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
-    import f._
-    val listener = TestProbe()
-    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
-    bob2alice.expectMsgType[FundingSigned]
-    bob2alice.forward(alice)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
-    val fundingTxId = watchConfirmed.txId
-    assert(watchConfirmed.minDepth == 6)
-    val txPublished = listener.expectMsgType[TransactionPublished]
-    assert(txPublished.tx.txid == fundingTxId)
-    assert(txPublished.miningFee > 0.sat)
-    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Created]
-  }
-
-  test("recv FundingSigned with valid signature (simple taproot channels zero fee)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee)) { f =>
+  test("recv FundingSigned with valid signature (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
     val listener = TestProbe()
     alice.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])

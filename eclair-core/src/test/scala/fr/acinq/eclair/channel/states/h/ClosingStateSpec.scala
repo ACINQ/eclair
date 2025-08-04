@@ -53,7 +53,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, alice2relayer: TestProbe, bob2relayer: TestProbe, channelUpdateListener: TestProbe, txListener: TestProbe, eventListener: TestProbe, bobCommitTxs: List[Transaction])
 
-  val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)
+  val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaproot)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val tags = test.tags ++ extraTags
@@ -2487,9 +2487,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 }
 
 class ClosingStateWithTaprootChannelsSpec extends ClosingStateSpec {
-  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootStagingZeroFee)
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaproot)
 }
 
 class ClosingStateWithLegacyTaprootChannelsSpec extends ClosingStateSpec {
-  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)
+  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)
 }

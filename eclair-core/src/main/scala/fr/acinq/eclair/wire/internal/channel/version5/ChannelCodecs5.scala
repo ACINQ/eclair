@@ -81,7 +81,7 @@ private[channel] object ChannelCodecs5 {
       .typecase(0x00, provide(Transactions.DefaultCommitmentFormat))
       .typecase(0x01, provide(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
       .typecase(0x02, provide(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat))
-      .typecase(0x03, provide(Transactions.LegacySimpleTaprootChannelCommitmentFormat))
+      .typecase(0x03, provide(Transactions.PhoenixSimpleTaprootChannelCommitmentFormat))
       .typecase(0x04, provide(Transactions.ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat))
 
     private val localChannelParamsCodec: Codec[LocalChannelParams] = (

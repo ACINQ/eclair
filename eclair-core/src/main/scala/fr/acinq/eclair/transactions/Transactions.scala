@@ -192,8 +192,9 @@ object Transactions {
     override val claimHtlcPenaltyWeight = 396
   }
 
-  case object LegacySimpleTaprootChannelCommitmentFormat extends SimpleTaprootChannelCommitmentFormat {
-    override def toString: String = "unsafe_simple_taproot"
+  /** For Phoenix users we sign HTLC transactions with the same feerate as the commit tx to allow broadcasting without wallet inputs. */
+  case object PhoenixSimpleTaprootChannelCommitmentFormat extends SimpleTaprootChannelCommitmentFormat {
+    override def toString: String = "simple_taproot_phoenix"
   }
 
   case object ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat extends SimpleTaprootChannelCommitmentFormat {

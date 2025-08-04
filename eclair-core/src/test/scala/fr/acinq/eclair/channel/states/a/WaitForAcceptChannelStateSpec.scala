@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, LegacySimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, PhoenixSimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, OpenChannel, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -108,21 +108,21 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectNoMessage()
   }
 
-  test("recv AcceptChannel (simple taproot channels outputs)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+  test("recv AcceptChannel (simple taproot channels phoenix)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsStagingLegacy()))
+    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix()))
     assert(accept.commitNonce_opt.isDefined)
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].commitmentFormat == LegacySimpleTaprootChannelCommitmentFormat)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].commitmentFormat == PhoenixSimpleTaprootChannelCommitmentFormat)
     aliceOpenReplyTo.expectNoMessage()
   }
 
-  test("recv AcceptChannel (simple taproot channels outputs, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaprootStagingLegacy)) { f =>
+  test("recv AcceptChannel (simple taproot channels outputs, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsStagingLegacy()))
+    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix()))
     assert(accept.commitNonce_opt.isDefined)
     bob2alice.forward(alice, accept.copy(tlvStream = accept.tlvStream.copy(records = accept.tlvStream.records.filterNot(_.isInstanceOf[ChannelTlv.NextLocalNonceTlv]))))
     alice2bob.expectMsg(Error(accept.temporaryChannelId, MissingCommitNonce(accept.temporaryChannelId, TxId(ByteVector32.Zeroes), 0).getMessage))

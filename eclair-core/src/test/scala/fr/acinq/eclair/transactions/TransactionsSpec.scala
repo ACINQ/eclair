@@ -548,11 +548,11 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("generate valid commitment and htlc transactions (simple taproot channels)") {
-    testCommitAndHtlcTxs(LegacySimpleTaprootChannelCommitmentFormat)
+    testCommitAndHtlcTxs(ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
-  test("generate valid commitment and htlc transactions (zero fee simple taproot channels)") {
-    testCommitAndHtlcTxs(ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  test("generate valid commitment and htlc transactions (phoenix simple taproot channels)") {
+    testCommitAndHtlcTxs(PhoenixSimpleTaprootChannelCommitmentFormat)
   }
 
   test("generate taproot NUMS point") {
