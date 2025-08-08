@@ -1204,7 +1204,10 @@ object InteractiveTxSigningSession {
     def commitInput(channelKeys: ChannelKeys): InputInfo = commitInput(localFundingKey(channelKeys))
 
     /** Nonce for the current commitment, which our peer will need if they must re-send their commit_sig for our current commitment transaction. */
-    def currentCommitNonce(channelKeys: ChannelKeys): LocalNonce = NonceGenerator.verificationNonce(fundingTxId, localFundingKey(channelKeys), fundingParams.remoteFundingPubKey, localCommitIndex)
+    def currentCommitNonce_opt(channelKeys: ChannelKeys): Option[LocalNonce] = localCommit match {
+      case Left(_) => Some(NonceGenerator.verificationNonce(fundingTxId, localFundingKey(channelKeys), fundingParams.remoteFundingPubKey, localCommitIndex))
+      case Right(_) => None
+    }
 
     /** Nonce for the next commitment, which our peer will need to sign our next commitment transaction. */
     def nextCommitNonce(channelKeys: ChannelKeys): LocalNonce = NonceGenerator.verificationNonce(fundingTxId, localFundingKey(channelKeys), fundingParams.remoteFundingPubKey, localCommitIndex + 1)

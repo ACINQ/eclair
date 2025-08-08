@@ -297,8 +297,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, announceChannel = channelFlags.announceChannel)
 
     // those features can only be enabled with AnchorOutputsZeroFeeHtlcTxs, this is to prevent incompatible test configurations
-    if (tags.contains(ChannelStateTestsTags.ZeroConf)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs) || tags.contains(ChannelStateTestsTags.OptionSimpleTaproot), "invalid test configuration")
-    if (tags.contains(ChannelStateTestsTags.ScidAlias)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs) || tags.contains(ChannelStateTestsTags.OptionSimpleTaproot), "invalid test configuration")
+    if (tags.contains(ChannelStateTestsTags.ZeroConf)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs) || tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix) || tags.contains(ChannelStateTestsTags.OptionSimpleTaproot), "invalid test configuration")
+    if (tags.contains(ChannelStateTestsTags.ScidAlias)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs) || tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix) || tags.contains(ChannelStateTestsTags.OptionSimpleTaproot), "invalid test configuration")
 
     implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
     val aliceChannelParams = Alice.channelParams

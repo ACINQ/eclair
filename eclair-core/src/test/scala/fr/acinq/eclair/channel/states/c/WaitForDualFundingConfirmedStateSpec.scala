@@ -34,7 +34,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorTx, ClaimRemoteAnchorTx}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -870,7 +870,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
   }
 
-  private def initiateRbf(f: FixtureParam): Unit = {
+  private def initiateRbf(f: FixtureParam): TxComplete = {
     import f._
 
     alice ! CMD_BUMP_FUNDING_FEE(TestProbe().ref, TestConstants.feeratePerKw * 1.1, fundingFeeBudget = 100_000.sat, 0, None)
@@ -892,8 +892,9 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob2alice.forward(alice)
     alice2bob.expectMsgType[TxAddOutput]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
+    val txCompleteBob = bob2alice.expectMsgType[TxComplete]
     bob2alice.forward(alice)
+    txCompleteBob
   }
 
   private def reconnectRbf(f: FixtureParam): (ChannelReestablish, ChannelReestablish) = {
@@ -915,7 +916,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     (channelReestablishAlice, channelReestablishBob)
   }
 
-  test("recv INPUT_DISCONNECTED (unsigned rbf attempt)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  def testDisconnectUnsignedRbfAttempt(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
     import f._
 
     initiateRbf(f)
@@ -923,14 +924,24 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2bob.expectMsgType[CommitSig] // bob doesn't receive alice's commit_sig
 
     awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.isInstanceOf[DualFundingStatus.RbfWaitingForSigs])
+    val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.txId
     val rbfTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.asInstanceOf[DualFundingStatus.RbfWaitingForSigs].signingSession.fundingTx.txId
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.isInstanceOf[DualFundingStatus.RbfInProgress])
+    assert(fundingTxId != rbfTxId)
 
     val (channelReestablishAlice, channelReestablishBob) = reconnectRbf(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(rbfTxId))
     assert(channelReestablishAlice.nextLocalCommitmentNumber == 0)
     assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
     assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
+    commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => ()
+      case _: TaprootCommitmentFormat =>
+        assert(channelReestablishAlice.currentCommitNonce_opt.nonEmpty)
+        assert(channelReestablishBob.currentCommitNonce_opt.isEmpty)
+        assert(channelReestablishAlice.nextCommitNonces.contains(fundingTxId))
+        assert(channelReestablishBob.nextCommitNonces.contains(fundingTxId))
+    }
 
     // Bob detects that Alice stored an old RBF attempt and tells her to abort.
     bob2alice.expectMsgType[TxAbort]
@@ -943,24 +954,48 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob2alice.expectNoMessage(100 millis)
   }
 
-  test("recv INPUT_DISCONNECTED (rbf commit_sig received by Alice)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  test("recv INPUT_DISCONNECTED (unsigned rbf attempt)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testDisconnectUnsignedRbfAttempt(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv INPUT_DISCONNECTED (unsigned rbf attempt, taproot)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testDisconnectUnsignedRbfAttempt(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  }
+
+  def testDisconnectRbfCommitSigReceivedAlice(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
     import f._
 
-    initiateRbf(f)
-    alice2bob.expectMsgType[TxComplete]
+    val txCompleteBob = initiateRbf(f)
+    val txCompleteAlice = alice2bob.expectMsgType[TxComplete]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[CommitSig] // Bob doesn't receive Alice's commit_sig
     awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.isInstanceOf[DualFundingStatus.RbfWaitingForSigs])
     awaitCond(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.isInstanceOf[DualFundingStatus.RbfWaitingForSigs])
+    val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.txId
     val rbfTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.asInstanceOf[DualFundingStatus.RbfWaitingForSigs].signingSession.fundingTx.txId
+    assert(fundingTxId != rbfTxId)
 
     val (channelReestablishAlice, channelReestablishBob) = reconnectRbf(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(rbfTxId))
     assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
     assert(channelReestablishBob.nextFundingTxId_opt.contains(rbfTxId))
     assert(channelReestablishBob.nextLocalCommitmentNumber == 0)
+    commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => ()
+      case _: TaprootCommitmentFormat =>
+        assert(channelReestablishAlice.currentCommitNonce_opt.isEmpty)
+        assert(channelReestablishBob.currentCommitNonce_opt.nonEmpty)
+        Seq(channelReestablishAlice, channelReestablishBob).foreach(channelReestablish => {
+          assert(channelReestablish.nextCommitNonces.size == 2)
+          assert(channelReestablish.nextCommitNonces.values.toSet.size == 2)
+          assert(channelReestablish.nextCommitNonces.contains(fundingTxId))
+          assert(channelReestablish.nextCommitNonces.contains(rbfTxId))
+        })
+        assert(channelReestablishAlice.nextCommitNonces.get(rbfTxId).contains(txCompleteAlice.nonces_opt.get.nextCommitNonce))
+        assert(channelReestablishBob.nextCommitNonces.get(rbfTxId).contains(txCompleteBob.nonces_opt.get.nextCommitNonce))
+    }
 
     // Alice retransmits commit_sig, and they exchange tx_signatures afterwards.
     bob2alice.expectNoMessage(100 millis)
@@ -979,11 +1014,19 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status == DualFundingStatus.WaitingForConfirmations)
   }
 
-  test("recv INPUT_DISCONNECTED (rbf commit_sig received by Bob)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  test("recv INPUT_DISCONNECTED (rbf commit_sig received by Alice)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testDisconnectRbfCommitSigReceivedAlice(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv INPUT_DISCONNECTED (rbf commit_sig received by Alice, taproot)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testDisconnectRbfCommitSigReceivedAlice(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  }
+
+  def testDisconnectRbfCommitSigReceivedBob(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
     import f._
 
-    initiateRbf(f)
-    alice2bob.expectMsgType[TxComplete]
+    val txCompleteBob = initiateRbf(f)
+    val txCompleteAlice = alice2bob.expectMsgType[TxComplete]
     alice2bob.forward(bob)
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
@@ -991,13 +1034,29 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob2alice.expectMsgType[TxSignatures] // Alice doesn't receive Bob's tx_signatures
     awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.isInstanceOf[DualFundingStatus.RbfWaitingForSigs])
     awaitCond(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status == DualFundingStatus.WaitingForConfirmations)
+    val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.txId
     val rbfTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.asInstanceOf[DualFundingStatus.RbfWaitingForSigs].signingSession.fundingTx.txId
+    assert(fundingTxId != rbfTxId)
 
     val (channelReestablishAlice, channelReestablishBob) = reconnectRbf(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(rbfTxId))
     assert(channelReestablishAlice.nextLocalCommitmentNumber == 0)
     assert(channelReestablishBob.nextFundingTxId_opt.contains(rbfTxId))
     assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
+    commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => ()
+      case _: TaprootCommitmentFormat =>
+        assert(channelReestablishAlice.currentCommitNonce_opt.nonEmpty)
+        assert(channelReestablishBob.currentCommitNonce_opt.isEmpty)
+        Seq(channelReestablishAlice, channelReestablishBob).foreach(channelReestablish => {
+          assert(channelReestablish.nextCommitNonces.size == 2)
+          assert(channelReestablish.nextCommitNonces.values.toSet.size == 2)
+          assert(channelReestablish.nextCommitNonces.contains(fundingTxId))
+          assert(channelReestablish.nextCommitNonces.contains(rbfTxId))
+        })
+        assert(channelReestablishAlice.nextCommitNonces.get(rbfTxId).contains(txCompleteAlice.nonces_opt.get.nextCommitNonce))
+        assert(channelReestablishBob.nextCommitNonces.get(rbfTxId).contains(txCompleteBob.nonces_opt.get.nextCommitNonce))
+    }
 
     // Bob retransmits commit_sig and tx_signatures, then Alice sends her tx_signatures.
     bob2alice.expectMsgType[CommitSig]
@@ -1016,11 +1075,52 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status == DualFundingStatus.WaitingForConfirmations)
   }
 
-  test("recv INPUT_DISCONNECTED (rbf commit_sig received)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  test("recv INPUT_DISCONNECTED (rbf commit_sig received by Bob)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testDisconnectRbfCommitSigReceivedBob(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv INPUT_DISCONNECTED (rbf commit_sig received by Bob, taproot)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testDisconnectRbfCommitSigReceivedBob(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  }
+
+  test("recv INPUT_DISCONNECTED (rbf commit_sig received by Bob, taproot, missing current commit nonce)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
 
     initiateRbf(f)
     alice2bob.expectMsgType[TxComplete]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig] // Alice doesn't receive Bob's commit_sig
+    bob2alice.expectMsgType[TxSignatures] // Alice doesn't receive Bob's tx_signatures
+    awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.isInstanceOf[DualFundingStatus.RbfWaitingForSigs])
+    awaitCond(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status == DualFundingStatus.WaitingForConfirmations)
+
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    bob ! INPUT_DISCONNECTED
+    awaitCond(bob.stateName == OFFLINE)
+
+    // Alice is buggy and doesn't include her current commit nonce in channel_reestablish.
+    val aliceInit = Init(alice.underlyingActor.nodeParams.features.initFeatures())
+    val bobInit = Init(bob.underlyingActor.nodeParams.features.initFeatures())
+    alice ! INPUT_RECONNECTED(bob, aliceInit, bobInit)
+    bob ! INPUT_RECONNECTED(alice, bobInit, aliceInit)
+    val channelReestablishAlice = alice2bob.expectMsgType[ChannelReestablish]
+    assert(channelReestablishAlice.nextFundingTxId_opt.nonEmpty)
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == 0)
+    assert(channelReestablishAlice.currentCommitNonce_opt.nonEmpty)
+    bob2alice.expectMsgType[ChannelReestablish]
+    alice2bob.forward(bob, channelReestablishAlice.copy(tlvStream = TlvStream(channelReestablishAlice.tlvStream.records.filterNot(_.isInstanceOf[ChannelReestablishTlv.CurrentCommitNonceTlv]))))
+    bob2alice.expectMsgType[Error]
+    awaitCond(bob.stateName == CLOSING)
+  }
+
+  def testDisconnectRbfCommitSigReceived(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
+    import f._
+
+    val txCompleteBob = initiateRbf(f)
+    val txCompleteAlice = alice2bob.expectMsgType[TxComplete]
     alice2bob.forward(bob)
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
@@ -1029,13 +1129,29 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob2alice.expectMsgType[TxSignatures] // Alice doesn't receive Bob's tx_signatures
     awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.isInstanceOf[DualFundingStatus.RbfWaitingForSigs])
     awaitCond(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status == DualFundingStatus.WaitingForConfirmations)
+    val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.txId
     val rbfTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.asInstanceOf[DualFundingStatus.RbfWaitingForSigs].signingSession.fundingTx
+    assert(fundingTxId != rbfTx.txId)
 
     val (channelReestablishAlice, channelReestablishBob) = reconnectRbf(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(rbfTx.txId))
+    assert(channelReestablishAlice.currentCommitNonce_opt.isEmpty)
     assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
     assert(channelReestablishBob.nextFundingTxId_opt.contains(rbfTx.txId))
+    assert(channelReestablishBob.currentCommitNonce_opt.isEmpty)
     assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
+    commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => ()
+      case _: TaprootCommitmentFormat =>
+        Seq(channelReestablishAlice, channelReestablishBob).foreach(channelReestablish => {
+          assert(channelReestablish.nextCommitNonces.size == 2)
+          assert(channelReestablish.nextCommitNonces.values.toSet.size == 2)
+          assert(channelReestablish.nextCommitNonces.contains(fundingTxId))
+          assert(channelReestablish.nextCommitNonces.contains(rbfTx.txId))
+        })
+        assert(channelReestablishAlice.nextCommitNonces.get(rbfTx.txId).contains(txCompleteAlice.nonces_opt.get.nextCommitNonce))
+        assert(channelReestablishBob.nextCommitNonces.get(rbfTx.txId).contains(txCompleteBob.nonces_opt.get.nextCommitNonce))
+    }
 
     // Alice and Bob exchange tx_signatures and complete the RBF attempt.
     bob2alice.expectMsgType[TxSignatures]
@@ -1051,12 +1167,62 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     awaitCond(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status == DualFundingStatus.WaitingForConfirmations)
   }
 
-  test("recv INPUT_DISCONNECTED (rbf tx_signatures partially received)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  test("recv INPUT_DISCONNECTED (rbf commit_sig received)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testDisconnectRbfCommitSigReceived(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv INPUT_DISCONNECTED (rbf commit_sig received, taproot)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testDisconnectRbfCommitSigReceived(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  }
+
+  test("recv INPUT_DISCONNECTED (rbf commit_sig received, taproot, missing next commit nonce)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+
+    initiateRbf(f)
+    alice2bob.expectMsgType[TxComplete]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[TxSignatures] // Alice doesn't receive Bob's tx_signatures
+    awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.isInstanceOf[DualFundingStatus.RbfWaitingForSigs])
+    awaitCond(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status == DualFundingStatus.WaitingForConfirmations)
+    val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.txId
+    val rbfTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status.asInstanceOf[DualFundingStatus.RbfWaitingForSigs].signingSession.fundingTx.txId
+    assert(fundingTxId != rbfTxId)
+
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    bob ! INPUT_DISCONNECTED
+    awaitCond(bob.stateName == OFFLINE)
+
+    val aliceInit = Init(alice.underlyingActor.nodeParams.features.initFeatures())
+    val bobInit = Init(bob.underlyingActor.nodeParams.features.initFeatures())
+    alice ! INPUT_RECONNECTED(bob, aliceInit, bobInit)
+    bob ! INPUT_RECONNECTED(alice, bobInit, aliceInit)
+    // Alice is buggy and doesn't include her next commit nonce for the initial funding tx.
+    val channelReestablishAlice = alice2bob.expectMsgType[ChannelReestablish]
+    val aliceNonces = ChannelReestablishTlv.NextLocalNoncesTlv((channelReestablishAlice.nextCommitNonces - fundingTxId).toSeq)
+    val channelReestablishAlice1 = channelReestablishAlice.copy(tlvStream = TlvStream(channelReestablishAlice.tlvStream.records.filterNot(_.isInstanceOf[ChannelReestablishTlv.NextLocalNoncesTlv]) + aliceNonces))
+    // Bob is buggy and doesn't include his next commit nonce for the RBF tx.
+    val channelReestablishBob = bob2alice.expectMsgType[ChannelReestablish]
+    val bobNonces = ChannelReestablishTlv.NextLocalNoncesTlv((channelReestablishBob.nextCommitNonces - rbfTxId).toSeq)
+    val channelReestablishBob1 = channelReestablishBob.copy(tlvStream = TlvStream(channelReestablishBob.tlvStream.records.filterNot(_.isInstanceOf[ChannelReestablishTlv.NextLocalNoncesTlv]) + bobNonces))
+    alice2bob.forward(bob, channelReestablishAlice1)
+    assert(bob2alice.expectMsgType[Error].toAscii == MissingCommitNonce(channelReestablishBob.channelId, fundingTxId, commitmentNumber = 1).getMessage)
+    awaitCond(bob.stateName == CLOSING)
+    bob2alice.forward(alice, channelReestablishBob1)
+    assert(alice2bob.expectMsgType[Error].toAscii == MissingCommitNonce(channelReestablishAlice.channelId, rbfTxId, commitmentNumber = 1).getMessage)
+    awaitCond(alice.stateName == CLOSING)
+  }
+
+  def testDisconnectTxSigsPartiallyReceived(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
     import f._
 
     val currentFundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.txId
-    initiateRbf(f)
-    alice2bob.expectMsgType[TxComplete]
+    val txCompleteBob = initiateRbf(f)
+    val txCompleteAlice = alice2bob.expectMsgType[TxComplete]
     alice2bob.forward(bob)
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
@@ -1072,9 +1238,23 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
 
     val (channelReestablishAlice, channelReestablishBob) = reconnectRbf(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.isEmpty)
+    assert(channelReestablishAlice.currentCommitNonce_opt.isEmpty)
     assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
     assert(channelReestablishBob.nextFundingTxId_opt.contains(rbfTxId))
+    assert(channelReestablishBob.currentCommitNonce_opt.isEmpty)
     assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
+    commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => ()
+      case _: TaprootCommitmentFormat =>
+        Seq(channelReestablishAlice, channelReestablishBob).foreach(channelReestablish => {
+          assert(channelReestablish.nextCommitNonces.size == 2)
+          assert(channelReestablish.nextCommitNonces.values.toSet.size == 2)
+          assert(channelReestablish.nextCommitNonces.contains(currentFundingTxId))
+          assert(channelReestablish.nextCommitNonces.contains(rbfTxId))
+        })
+        assert(channelReestablishAlice.nextCommitNonces.get(rbfTxId).contains(txCompleteAlice.nonces_opt.get.nextCommitNonce))
+        assert(channelReestablishBob.nextCommitNonces.get(rbfTxId).contains(txCompleteBob.nonces_opt.get.nextCommitNonce))
+    }
 
     // Alice and Bob exchange signatures and complete the RBF attempt.
     bob2alice.expectNoMessage(100 millis)
@@ -1087,6 +1267,14 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == nextFundingTx.signedTx.txid)
     awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status == DualFundingStatus.WaitingForConfirmations)
     awaitCond(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].status == DualFundingStatus.WaitingForConfirmations)
+  }
+
+  test("recv INPUT_DISCONNECTED (rbf tx_signatures partially received)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testDisconnectTxSigsPartiallyReceived(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv INPUT_DISCONNECTED (rbf tx_signatures partially received, taproot)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testDisconnectTxSigsPartiallyReceived(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding)) { f =>

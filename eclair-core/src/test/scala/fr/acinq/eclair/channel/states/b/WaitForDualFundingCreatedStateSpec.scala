@@ -38,14 +38,11 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, wallet: SingleKeyOnChainWallet, aliceListener: TestProbe, bobListener: TestProbe)
 
-  val extraTags: Set[String] = Set.empty
-
   override def withFixture(test: OneArgTest): Outcome = {
     val wallet = new SingleKeyOnChainWallet()
-    val tags = test.tags ++ extraTags
-    val setup = init(wallet_opt = Some(wallet), tags = tags)
+    val setup = init(wallet_opt = Some(wallet), tags = test.tags)
     import setup._
-    val channelParams = computeChannelParams(setup, tags)
+    val channelParams = computeChannelParams(setup, test.tags)
     val aliceListener = TestProbe()
     val bobListener = TestProbe()
     within(30 seconds) {
@@ -111,6 +108,26 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
+  }
+
+  test("recv tx_complete without nonces (taproot)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+
+    alice2bob.expectMsgType[TxAddInput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddInput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddOutput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    val txComplete = bob2alice.expectMsgType[TxComplete]
+    assert(txComplete.nonces_opt.isDefined)
+    bob2alice.forward(alice, txComplete.copy(tlvStream = txComplete.tlvStream.copy(records = txComplete.tlvStream.records.filterNot(_.isInstanceOf[TxCompleteTlv.Nonces]))))
+    aliceListener.expectMsgType[ChannelAborted]
+    awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv TxAbort", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -259,30 +276,4 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     aliceOpenReplyTo.expectMsg(OpenChannelResponse.TimedOut)
   }
 
-}
-
-class WaitForDualFundingCreatedStateWithTaprootChannelsSpec extends WaitForDualFundingCreatedStateSpec {
-  override val extraTags: Set[String] = Set(ChannelStateTestsTags.OptionSimpleTaproot)
-
-  test("tx_complete is missing nonces", Tag(ChannelStateTestsTags.DualFunding)) { f =>
-    import f._
-
-    bob2alice.expectNoMessage(100 millis)
-    alice2bob.expectMsgType[TxAddInput]
-    alice2bob.expectNoMessage(100 millis)
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddInput]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddOutput]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    val txComplete = bob2alice.expectMsgType[TxComplete]
-    assert(txComplete.nonces_opt.isDefined)
-    bob2alice.forward(alice, txComplete.copy(tlvStream = txComplete.tlvStream.copy(records = txComplete.tlvStream.records.filterNot(_.isInstanceOf[TxCompleteTlv.Nonces]))))
-    aliceListener.expectMsgType[ChannelAborted]
-    awaitCond(alice.stateName == CLOSED)
-  }
 }

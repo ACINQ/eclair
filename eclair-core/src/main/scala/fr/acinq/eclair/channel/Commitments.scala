@@ -1153,8 +1153,8 @@ case class Commitments(channelParams: ChannelParams,
     remoteNextCommitInfo match {
       case Right(_) => Left(UnexpectedRevocation(channelId))
       case Left(_) if revocation.perCommitmentSecret.publicKey != active.head.remoteCommit.remotePerCommitmentPoint => Left(InvalidRevocation(channelId))
-      case Left(_) if active.exists(c => c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && !revocation.nextCommitNonces.contains(c.fundingTxId)) =>
-        val missingNonce = active.find(c => c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && !revocation.nextCommitNonces.contains(c.fundingTxId)).get
+      case Left(_) if active.exists(c => c.commitmentFormat.isInstanceOf[TaprootCommitmentFormat] && !revocation.nextCommitNonces.contains(c.fundingTxId)) =>
+        val missingNonce = active.find(c => c.commitmentFormat.isInstanceOf[TaprootCommitmentFormat] && !revocation.nextCommitNonces.contains(c.fundingTxId)).get
         Left(MissingCommitNonce(channelId, missingNonce.fundingTxId, remoteCommitIndex + 1))
       case Left(_) =>
         // Since htlcs are shared across all commitments, we generate the actions only once based on the first commitment.

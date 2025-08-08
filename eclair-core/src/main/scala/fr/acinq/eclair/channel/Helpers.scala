@@ -26,6 +26,7 @@ import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
+import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.crypto.{NonceGenerator, ShaChain}
 import fr.acinq.eclair.db.ChannelsDb
@@ -581,10 +582,15 @@ object Helpers {
       }
     }
 
-    def checkCommitNonces(channelReestablish: ChannelReestablish, commitments: Commitments): Option[ChannelException] = {
-      commitments.active
-        .find(c => c.commitmentFormat.isInstanceOf[SimpleTaprootChannelCommitmentFormat] && !channelReestablish.nextCommitNonces.contains(c.fundingTxId))
-        .map(c => MissingCommitNonce(commitments.channelId, c.fundingTxId, c.remoteCommit.index + 1))
+    def checkCommitNonces(channelReestablish: ChannelReestablish, commitments: Commitments, pendingSig_opt: Option[InteractiveTxSigningSession.WaitingForSigs]): Option[ChannelException] = {
+      pendingSig_opt match {
+        case Some(pendingSig) if pendingSig.fundingParams.commitmentFormat.isInstanceOf[TaprootCommitmentFormat] && !channelReestablish.nextCommitNonces.contains(pendingSig.fundingTxId) =>
+          Some(MissingCommitNonce(commitments.channelId, pendingSig.fundingTxId, commitments.remoteCommitIndex + 1))
+        case _ =>
+          commitments.active
+            .find(c => c.commitmentFormat.isInstanceOf[TaprootCommitmentFormat] && !channelReestablish.nextCommitNonces.contains(c.fundingTxId))
+            .map(c => MissingCommitNonce(commitments.channelId, c.fundingTxId, commitments.remoteCommitIndex + 1))
+      }
     }
 
   }
@@ -755,7 +761,7 @@ object Helpers {
       }
 
       /** We are the closer: we sign closing transactions for which we pay the fees. */
-      def makeSimpleClosingTx(currentBlockHeight: BlockHeight, channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerate: FeeratePerKw, remoteNonce_opt: Option[IndividualNonce] = None): Either[ChannelException, (ClosingTxs, ClosingComplete, CloserNonces)] = {
+      def makeSimpleClosingTx(currentBlockHeight: BlockHeight, channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerate: FeeratePerKw, remoteNonce_opt: Option[IndividualNonce]): Either[ChannelException, (ClosingTxs, ClosingComplete, CloserNonces)] = {
         // We must convert the feerate to a fee: we must build dummy transactions to compute their weight.
         val commitInput = commitment.commitInput(channelKeys)
         val closingFee = {
