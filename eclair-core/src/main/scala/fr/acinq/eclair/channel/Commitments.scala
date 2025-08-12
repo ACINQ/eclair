@@ -211,12 +211,13 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePer
         val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey)
         Right(CommitSig(channelParams.channelId, sig, htlcSigs.toList))
       case _: SimpleTaprootChannelCommitmentFormat =>
-        val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, remoteFundingPubKey, commitInput.outPoint.txid)
         remoteNonce_opt match {
-          case Some(remoteNonce) => remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
-            case Left(_) => Left(InvalidCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
-            case Right(psig) => Right(CommitSig(channelParams.channelId, psig, htlcSigs.toList, batchSize = 1))
-          }
+          case Some(remoteNonce) =>
+            val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, remoteFundingPubKey, commitInput.outPoint.txid)
+            remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
+              case Left(_) => Left(InvalidCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
+              case Right(psig) => Right(CommitSig(channelParams.channelId, psig, htlcSigs.toList, batchSize = 1))
+            }
           case None => Left(MissingCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
         }
     }
@@ -668,9 +669,9 @@ case class Commitment(fundingTxIndex: Long,
     val sig = commitmentFormat match {
       case _: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey)
       case _: SimpleTaprootChannelCommitmentFormat =>
-        val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, remoteFundingPubKey, fundingTxId)
         nextRemoteNonce_opt match {
           case Some(remoteNonce) =>
+            val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, remoteFundingPubKey, fundingTxId)
             remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
               case Left(_) => return Left(InvalidCommitNonce(params.channelId, fundingTxId, remoteCommit.index + 1))
               case Right(psig) => psig
