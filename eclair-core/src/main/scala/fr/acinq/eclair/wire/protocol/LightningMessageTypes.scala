@@ -205,7 +205,7 @@ case class ChannelReestablish(channelId: ByteVector32,
                               tlvStream: TlvStream[ChannelReestablishTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val nextFundingTxId_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].map(_.txId)
   val myCurrentFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.MyCurrentFundingLockedTlv].map(_.txId)
-  val yourLastFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.YourLastFundingLockedTlv].map(_.txId)
+  val retransmitAnnSigs: Boolean = tlvStream.get[ChannelReestablishTlv.MyCurrentFundingLockedTlv].exists(_.retransmitAnnSigs)
   val nextCommitNonces: Map[TxId, IndividualNonce] = tlvStream.get[ChannelReestablishTlv.NextLocalNoncesTlv].map(_.nonces.toMap).getOrElse(Map.empty)
   val currentCommitNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelReestablishTlv.CurrentCommitNonceTlv].map(_.nonce)
 }
@@ -409,7 +409,7 @@ case class ExperimentalSpliceInit(channelId: ByteVector32,
                                   lockTime: Long,
                                   fundingPubKey: PublicKey,
                                   tlvStream: TlvStream[SpliceInitTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
-  def toSpliceInit(): SpliceInit = SpliceInit(channelId, fundingContribution, feerate, lockTime, fundingPubKey, tlvStream)
+  def toSpliceInit: SpliceInit = SpliceInit(channelId, fundingContribution, feerate, lockTime, fundingPubKey, tlvStream)
 }
 
 object ExperimentalSpliceInit {
@@ -446,7 +446,7 @@ case class ExperimentalSpliceAck(channelId: ByteVector32,
                                  fundingContribution: Satoshi,
                                  fundingPubKey: PublicKey,
                                  tlvStream: TlvStream[SpliceAckTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
-  def toSpliceAck(): SpliceAck = SpliceAck(channelId, fundingContribution, fundingPubKey, tlvStream)
+  def toSpliceAck: SpliceAck = SpliceAck(channelId, fundingContribution, fundingPubKey, tlvStream)
 }
 
 object ExperimentalSpliceAck {
@@ -461,7 +461,7 @@ case class SpliceLocked(channelId: ByteVector32,
 case class ExperimentalSpliceLocked(channelId: ByteVector32,
                                     fundingTxId: TxId,
                                     tlvStream: TlvStream[SpliceLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
-  def toSpliceLocked(): SpliceLocked = SpliceLocked(channelId, fundingTxId, tlvStream)
+  def toSpliceLocked: SpliceLocked = SpliceLocked(channelId, fundingTxId, tlvStream)
 }
 
 object ExperimentalSpliceLocked {
