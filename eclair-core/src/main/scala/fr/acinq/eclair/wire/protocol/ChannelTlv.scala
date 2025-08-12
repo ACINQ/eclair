@@ -261,11 +261,11 @@ object ChannelReestablishTlv {
    */
   case class NextFundingTlv(txId: TxId) extends ChannelReestablishTlv
 
-  /** The txid of the last [[ChannelReady]] or [[SpliceLocked]] message received before disconnecting, if any. */
-  case class YourLastFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
-
-  /** The txid of our latest outgoing [[ChannelReady]] or [[SpliceLocked]] for this channel. */
-  case class MyCurrentFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
+  /**
+   * @param txId              the txid of our latest outgoing [[ChannelReady]] or [[SpliceLocked]] for this channel.
+   * @param retransmitAnnSigs true if [[AnnouncementSignatures]] must be retransmitted.
+   */
+  case class MyCurrentFundingLockedTlv(txId: TxId, retransmitAnnSigs: Boolean) extends ChannelReestablishTlv
 
   /**
    * When disconnected during an interactive tx session, we'll include a verification nonce for our *current* commitment
@@ -284,12 +284,8 @@ object ChannelReestablishTlv {
     val codec: Codec[NextFundingTlv] = tlvField(txIdAsHash)
   }
 
-  object YourLastFundingLockedTlv {
-    val codec: Codec[YourLastFundingLockedTlv] = tlvField("your_last_funding_locked_txid" | txIdAsHash)
-  }
-
   object MyCurrentFundingLockedTlv {
-    val codec: Codec[MyCurrentFundingLockedTlv] = tlvField("my_current_funding_locked_txid" | txIdAsHash)
+    val codec: Codec[MyCurrentFundingLockedTlv] = tlvField(("my_current_funding_locked_txid" | txIdAsHash) :: ("retransmit_flags" | (ignore(7) :: bool)))
   }
 
   object CurrentCommitNonceTlv {
@@ -302,8 +298,7 @@ object ChannelReestablishTlv {
 
   val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
     .typecase(UInt64(0), NextFundingTlv.codec)
-    .typecase(UInt64(1), YourLastFundingLockedTlv.codec)
-    .typecase(UInt64(3), MyCurrentFundingLockedTlv.codec)
+    .typecase(UInt64(5), MyCurrentFundingLockedTlv.codec)
     .typecase(UInt64(22), NextLocalNoncesTlv.codec)
     .typecase(UInt64(24), CurrentCommitNonceTlv.codec)
   )
