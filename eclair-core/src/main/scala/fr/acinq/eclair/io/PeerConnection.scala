@@ -437,13 +437,13 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             }
           // If our peer is using the experimental splice version, we convert splice messages.
           case msg: ExperimentalSpliceInit =>
-            d.peer ! msg.toSpliceInit()
+            d.peer ! msg.toSpliceInit
             stay()
           case msg: ExperimentalSpliceAck =>
-            d.peer ! msg.toSpliceAck()
+            d.peer ! msg.toSpliceAck
             stay()
           case msg: ExperimentalSpliceLocked =>
-            d.peer ! msg.toSpliceLocked()
+            d.peer ! msg.toSpliceLocked
             stay()
           case _ =>
             d.peer ! msg
