@@ -2607,7 +2607,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectWatchFundingSpent(fundingTx.txid)
   }
 
-  test("re-send splice_locked on reconnection") { f =>
+  def resendSpliceLockedOnReconnection(f: FixtureParam): Unit = {
     import f._
 
     val fundingTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
@@ -2693,6 +2693,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
       case e: ChannelReadyForPayments => e.fundingTxIndex == 2
       case _ => false
     }
+  }
+
+  test("re-send splice_locked on reconnection") { f =>
+    resendSpliceLockedOnReconnection(f)
+  }
+
+  test("re-send splice_locked on reconnection (taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
+    resendSpliceLockedOnReconnection(f)
   }
 
   test("disconnect before channel update and tx_signatures are received") { f =>
