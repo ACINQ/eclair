@@ -753,13 +753,23 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("recv CMD_SPLICE (upgrade channel to taproot)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+  test("recv CMD_SPLICE (accepting upgrade channel to taproot)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(400_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix()))
     assert(alice.commitments.active.head.commitmentFormat == PhoenixSimpleTaprootChannelCommitmentFormat)
     assert(alice.commitments.active.last.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat)
+    resolveHtlcs(f, htlcs)
+  }
+
+  test("recv CMD_SPLICE (rejecting upgrade channel to taproot)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+
+    val htlcs = setupHtlcs(f)
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(400_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    assert(alice.commitments.active.head.commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    assert(alice.commitments.active.last.commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     resolveHtlcs(f, htlcs)
   }
 

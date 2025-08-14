@@ -1106,8 +1106,14 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 // We only support updating phoenix channels to taproot: we ignore other attempts at upgrading the
                 // commitment format and will simply apply the previous commitment format.
                 val nextCommitmentFormat = msg.channelType_opt match {
-                  case Some(_: ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat => PhoenixSimpleTaprootChannelCommitmentFormat
-                  case _ => parentCommitment.commitmentFormat
+                  case Some(channelType: ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat =>
+                    log.info(s"accepting upgrade to $channelType during splice from commitment format ${parentCommitment.commitmentFormat}")
+                    PhoenixSimpleTaprootChannelCommitmentFormat
+                  case Some(channelType) =>
+                    log.info(s"rejecting upgrade to $channelType during splice from commitment format ${parentCommitment.commitmentFormat}")
+                    parentCommitment.commitmentFormat
+                  case _ =>
+                    parentCommitment.commitmentFormat
                 }
                 val spliceAck = SpliceAck(d.channelId,
                   fundingContribution = willFund_opt.map(_.purchase.amount).getOrElse(0 sat),
