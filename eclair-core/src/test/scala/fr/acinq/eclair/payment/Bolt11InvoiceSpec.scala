@@ -386,6 +386,16 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.sign(priv).toString == ref)
   }
 
+  test("On mainnet, with fallback (P2TR) address bc1pptdvg0d2nj99568qn6ssdy4cygnwuxgw2ukmnwgwz7jpqjz2kszse2s3lm") {
+    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqsfp4pptdvg0d2nj99568qn6ssdy4cygnwuxgw2ukmnwgwz7jpqjz2kszs9qrsgqy606dznq28exnydt2r4c29y56xjtn3sk4mhgjtl4pg2y4ar3249rq4ajlmj9jy8zvlzw7cr8mggqzm842xfr0v72rswzq9xvr4hknfsqwmn6xd"
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
+    assert(invoice.prefix == "lnbc")
+    assert(invoice.amount_opt.contains(2000000000 msat))
+    assert(invoice.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(invoice.fallbackAddress().contains("bc1pptdvg0d2nj99568qn6ssdy4cygnwuxgw2ukmnwgwz7jpqjz2kszse2s3lm"))
+    assert(invoice.sign(priv).toString == ref)
+  }
+
   test("reject invalid invoices") {
     val refs = Seq(
       // Bech32 checksum is invalid.
