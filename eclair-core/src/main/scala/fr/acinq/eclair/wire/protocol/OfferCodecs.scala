@@ -22,6 +22,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{EncodedNodeId, TimestampSecond, UInt64}
+import scodec.bits.HexStringSyntax
 import scodec.{Attempt, Codec}
 import scodec.codecs._
 
@@ -139,6 +140,8 @@ object OfferCodecs {
 
   private val invoicePaths: Codec[InvoicePaths] = tlvField(nonEmptyList(blindedRouteCodec, "invoice_paths"))
 
+  private val invoiceAccountable: Codec[InvoiceAccountable.type] = ("length" | constant(hex"00")).xmap(_ => InvoiceAccountable, _ => ())
+
   val paymentInfo: Codec[PaymentInfo] =
     (("fee_base_msat" | millisatoshi32) ::
       ("fee_proportional_millionths" | uint32) ::
@@ -187,6 +190,7 @@ object OfferCodecs {
     .typecase(UInt64(89), invoiceRequestPayerNote)
     // Invoice part
     .typecase(UInt64(160), invoicePaths)
+    .typecase(UInt64(161), invoiceAccountable)
     .typecase(UInt64(162), invoiceBlindedPay)
     .typecase(UInt64(164), invoiceCreatedAt)
     .typecase(UInt64(166), invoiceRelativeExpiry)

@@ -66,7 +66,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
   override def withFixture(test: OneArgTest): Outcome = {
     val id = UUID.randomUUID()
-    val cfg = SendPaymentConfig(id, id, Some("42"), paymentHash, randomKey().publicKey, Upstream.Local(id), None, None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = true)
+    val cfg = SendPaymentConfig(id, id, Some("42"), paymentHash, randomKey().publicKey, Upstream.Local(id), None, None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, accountable = false)
     val nodeParams = TestConstants.Alice.nodeParams
     val (childPayFsm, router, sender, eventListener, metricsListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
     val paymentHandler = TestFSMRef(new MultiPartPaymentLifecycle(nodeParams, cfg, publishPreimage = true, router.ref, FakePaymentFactory(childPayFsm)))
@@ -127,7 +127,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     assert(payFsm.stateName == WAIT_FOR_PAYMENT_REQUEST)
-    val recipient = ClearRecipient(e, recipientFeatures, 1_200_000 msat, expiry, randomBytes32(), paymentMetadata_opt = Some(hex"012345"))
+    val recipient = ClearRecipient(e, recipientFeatures, 1_200_000 msat, expiry, randomBytes32(), paymentMetadata_opt = Some(hex"012345"), upgradeAccountability = false)
     val payment = SendMultiPartPayment(sender.ref, recipient, 1, routeParams.copy(randomize = false))
     sender.send(payFsm, payment)
 
@@ -330,7 +330,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // The B -> E channel is private and provided in the invoice routing hints.
     val extraEdge = ExtraEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta, hop_be.params.htlcMinimum, hop_be.params.htlcMaximum_opt)
-    val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(extraEdge))
+    val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(extraEdge), upgradeAccountability = false)
     val payment = SendMultiPartPayment(sender.ref, recipient, 3, routeParams)
     sender.send(payFsm, payment)
     assert(router.expectMsgType[RouteRequest].target.extraEdges == Seq(extraEdge))
@@ -353,7 +353,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // The B -> E channel is private and provided in the invoice routing hints.
     val extraEdge = ExtraEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta, hop_be.params.htlcMinimum, hop_be.params.htlcMaximum_opt)
-    val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(extraEdge))
+    val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(extraEdge), upgradeAccountability = false)
     val payment = SendMultiPartPayment(sender.ref, recipient, 3, routeParams)
     sender.send(payFsm, payment)
     assert(router.expectMsgType[RouteRequest].target.extraEdges == Seq(extraEdge))
@@ -398,7 +398,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
       ExtraEdge(a, b, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12), 1 msat, None),
       ExtraEdge(b, c, ShortChannelId(2), 0 msat, 100, CltvExpiryDelta(24), 1 msat, None),
       ExtraEdge(a, c, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144), 1 msat, None)
-    ))
+    ), upgradeAccountability = false)
 
     def makeChannelUpdate(shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportional: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelUpdate = {
       defaultChannelUpdate.copy(shortChannelId = shortChannelId, feeBaseMsat = feeBase, feeProportionalMillionths = feeProportional, cltvExpiryDelta = cltvExpiryDelta)
@@ -746,6 +746,6 @@ object MultiPartPaymentLifecycleSpec {
     Features.PaymentSecret -> FeatureSupport.Mandatory,
     Features.BasicMultiPartPayment -> FeatureSupport.Optional,
   ).invoiceFeatures()
-  val clearRecipient = ClearRecipient(e, recipientFeatures, finalAmount, expiry, ByteVector32.One)
+  val clearRecipient = ClearRecipient(e, recipientFeatures, finalAmount, expiry, ByteVector32.One, upgradeAccountability = false)
 
 }
