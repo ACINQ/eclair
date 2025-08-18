@@ -2661,34 +2661,38 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           handleSyncFailure(channelReestablish, syncFailure, d)
         case syncSuccess: SyncResult.Success =>
           // normal case, our data is up-to-date
-          var sendQueue = resendChannelReady(channelReestablish: ChannelReestablish, d)
-          val (spliceStatus1, sendQueue1) = resumeSigningSession(channelReestablish, d)
-          sendQueue = sendQueue ++ sendQueue1
+          var sendQueue = Queue.empty[LightningMessage]
+          // We re-send channel_ready and announcement_signatures for the initial funding transaction if necessary.
+          val (channelReady_opt, announcementSigs_opt) = resendChannelReadyIfNeeded(channelReestablish, d)
+          sendQueue = sendQueue ++ channelReady_opt.toSeq ++ announcementSigs_opt.toSeq
+          // If we disconnected in the middle of a signing a splice transaction, we re-send our signatures or abort.
+          val (spliceStatus1, spliceMessages) = resumeSpliceSigningSessionIfNeeded(channelReestablish, d)
+          sendQueue = sendQueue ++ spliceMessages
 
           // Prune previous funding transactions and RBF attempts if we already sent splice_locked for the last funding
           // transaction that is also locked by our counterparty; we either missed their splice_locked or it confirmed
           // while disconnected.
-          val commitments1: Commitments = channelReestablish.myCurrentFundingLocked_opt
+          val commitments1 = channelReestablish.myCurrentFundingLocked_opt
             .flatMap(remoteFundingTxLocked => d.commitments.updateRemoteFundingStatus(remoteFundingTxLocked, d.lastAnnouncedFundingTxId_opt).toOption.map(_._1))
             .getOrElse(d.commitments)
             // We then clean up unsigned updates that haven't been received before the disconnection.
             .discardUnsignedUpdates()
 
+          // If there is a pending splice, we need to receive nonces for the corresponding transaction if we're using taproot.
           val pendingSplice_opt = spliceStatus1 match {
             // Note that we only consider splices that are also pending for our peer: otherwise it means we have disconnected
             // before they sent their commit_sig, in which case they will abort the splice attempt on reconnection.
             case SpliceStatus.SpliceWaitingForSigs(signingSession) if channelReestablish.nextFundingTxId_opt.contains(signingSession.fundingTxId) => Some(signingSession)
             case _ => None
           }
-
           Helpers.Syncing.checkCommitNonces(channelReestablish, commitments1, pendingSplice_opt) match {
             case Some(f) => handleLocalError(f, d, Some(channelReestablish))
             case None =>
               remoteNextCommitNonces = channelReestablish.nextCommitNonces
-
-              sendQueue = sendQueue ++ resendSpliceLocked(channelReestablish, commitments1, d.channelId, d.lastAnnouncement_opt)
-
-              // we may need to retransmit updates and/or commit_sig and/or revocation
+              // We re-send our latest splice_locked if needed.
+              val spliceLocked_opt = resendSpliceLockedIfNeeded(channelReestablish, commitments1, d.lastAnnouncement_opt)
+              sendQueue = sendQueue ++ spliceLocked_opt.toSeq
+              // We may need to retransmit updates and/or commit_sig and/or revocation to resume the channel.
               sendQueue = sendQueue ++ syncSuccess.retransmit
 
               commitments1.remoteNextCommitInfo match {
@@ -3403,13 +3407,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     }
   }
 
-  private def resendChannelReady(channelReestablish: ChannelReestablish, d: DATA_NORMAL): Queue[LightningMessage] = {
-    var sendQueue = Queue.empty[LightningMessage]
-    // re-send channel_ready and announcement_signatures if necessary
+  private def resendChannelReadyIfNeeded(channelReestablish: ChannelReestablish, d: DATA_NORMAL): (Option[ChannelReady], Option[AnnouncementSignatures]) = {
     d.commitments.lastLocalLocked_opt match {
-      case None => ()
+      case None => (None, None)
       // We only send channel_ready for initial funding transactions.
-      case Some(c) if c.fundingTxIndex != 0 => ()
+      case Some(c) if c.fundingTxIndex != 0 => (None, None)
       case Some(c) =>
         val remoteSpliceSupport = d.commitments.remoteChannelParams.initFeatures.hasFeature(Features.SplicePrototype)
         // If our peer has not received our channel_ready, we retransmit it.
@@ -3420,27 +3422,28 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         // If this is a public channel and we haven't announced the channel, we retransmit our channel_ready and
         // will also send announcement_signatures.
         val notAnnouncedYet = d.commitments.announceChannel && c.shortChannelId_opt.nonEmpty && d.lastAnnouncement_opt.isEmpty
-        if (notAnnouncedYet || notReceivedByRemote || notReceivedByRemoteLegacy) {
+        val channelReady_opt = if (notAnnouncedYet || notReceivedByRemote || notReceivedByRemoteLegacy) {
           log.debug("re-sending channel_ready")
-          sendQueue = sendQueue :+ createChannelReady(d.aliases, d.commitments)
+          Some(createChannelReady(d.aliases, d.commitments))
+        } else {
+          None
         }
-        if (notAnnouncedYet) {
+        val announcementSigs_opt = if (notAnnouncedYet) {
           // The funding transaction is confirmed, so we've already sent our announcement_signatures.
           // We haven't announced the channel yet, which means we haven't received our peer's announcement_signatures.
           // We retransmit our announcement_signatures to let our peer know that we're ready to announce the channel.
           val localAnnSigs = c.signAnnouncement(nodeParams, d.commitments.channelParams, channelKeys.fundingKey(c.fundingTxIndex))
-          localAnnSigs.foreach(annSigs => {
-            announcementSigsSent += annSigs.shortChannelId
-            sendQueue = sendQueue :+ annSigs
-          })
+          localAnnSigs.foreach(annSigs => announcementSigsSent += annSigs.shortChannelId)
+          localAnnSigs
+        } else {
+          None
         }
+        (channelReady_opt, announcementSigs_opt)
     }
-    sendQueue
   }
 
-  private def resumeSigningSession(channelReestablish: ChannelReestablish, d: DATA_NORMAL): (SpliceStatus, Queue[LightningMessage]) = {
+  private def resumeSpliceSigningSessionIfNeeded(channelReestablish: ChannelReestablish, d: DATA_NORMAL): (SpliceStatus, Queue[LightningMessage]) = {
     var sendQueue = Queue.empty[LightningMessage]
-    // resume splice signing session if any
     val spliceStatus1 = channelReestablish.nextFundingTxId_opt match {
       case Some(fundingTxId) =>
         d.spliceStatus match {
@@ -3491,12 +3494,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     (spliceStatus1, sendQueue)
   }
 
-  private def resendSpliceLocked(channelReestablish: ChannelReestablish, commitments: Commitments, channelId: ByteVector32, lastAnnouncement_opt: Option[ChannelAnnouncement]): Queue[LightningMessage] = {
-    var sendQueue = Queue.empty[LightningMessage]
+  private def resendSpliceLockedIfNeeded(channelReestablish: ChannelReestablish, commitments: Commitments, lastAnnouncement_opt: Option[ChannelAnnouncement]): Option[SpliceLocked] = {
     commitments.lastLocalLocked_opt match {
-      case None => ()
+      case None => None
       // We only send splice_locked for splice transactions.
-      case Some(c) if c.fundingTxIndex == 0 => ()
+      case Some(c) if c.fundingTxIndex == 0 => None
       case Some(c) =>
         // If our peer has not received our splice_locked, we retransmit it.
         val notReceivedByRemote = !channelReestablish.yourLastFundingLocked_opt.contains(c.fundingTxId)
@@ -3509,10 +3511,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)
           spliceLockedSent += (c.fundingTxId -> c.fundingTxIndex)
           trimSpliceLockedSentIfNeeded()
-          sendQueue = sendQueue :+ SpliceLocked(channelId, c.fundingTxId)
+          Some(SpliceLocked(commitments.channelId, c.fundingTxId))
+        } else {
+          None
         }
     }
-    sendQueue
   }
 
   /**
