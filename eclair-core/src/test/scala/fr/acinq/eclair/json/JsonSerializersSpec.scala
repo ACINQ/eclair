@@ -268,7 +268,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         hmac = ByteVector32(hex"9442626f72c475963dbddf8a57ab2cef3013eb3d6a5e8afbea9e631dac4481f5")
       ),
       pathKey_opt = None,
-      endorsement = 6,
+      accountable = false,
       fundingFee_opt = None,
     )
 

@@ -51,6 +51,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   val blindedPaths: Seq[PaymentBlindedRoute] = records.get[InvoicePaths].get.paths.zip(records.get[InvoiceBlindedPay].get.paymentInfo).map { case (route, info) => PaymentBlindedRoute(route, info) }
   val fallbacks: Option[Seq[FallbackAddress]] = records.get[InvoiceFallbacks].map(_.addresses)
   val signature: ByteVector64 = records.get[Signature].get.signature
+  override val accountable: Boolean = records.records.contains(InvoiceAccountable)
 
   // It is assumed that the request is valid for this offer.
   def validateFor(request: InvoiceRequest, pathNodeId: PublicKey): Either[String, Unit] = {
@@ -109,6 +110,7 @@ object Bolt12Invoice {
     val amount = request.amount
     val tlvs: Set[InvoiceTlv] = removeSignature(request.records).records ++ Set(
       Some(InvoicePaths(paths.map(_.route))),
+      Some(InvoiceAccountable),
       Some(InvoiceBlindedPay(paths.map(_.paymentInfo))),
       Some(InvoiceCreatedAt(TimestampSecond.now())),
       Some(InvoiceRelativeExpiry(invoiceExpiry.toSeconds)),
@@ -168,6 +170,7 @@ case class MinimalBolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice 
   override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(Bolt12Invoice.DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
   override val features: Features[InvoiceFeature] = records.get[InvoiceFeatures].map(f => Features(f.features).invoiceFeatures()).getOrElse(Features[InvoiceFeature](Features.BasicMultiPartPayment -> FeatureSupport.Optional))
+  override def accountable: Boolean = true
 
   override def toString: String = {
     val data = OfferCodecs.invoiceTlvCodec.encode(records).require.bytes

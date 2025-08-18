@@ -247,9 +247,9 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // and then one extra
     val extraReceivedAt = TimestampMilli.now()
     val extra = IncomingPaymentPacket.RelayToTrampolinePacket(
-      UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None),
-      FinalPayload.Standard.createPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None),
-      IntermediatePayload.NodeRelay.Standard(outgoingAmount, outgoingExpiry, outgoingNodeId),
+      UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None, accountable = false, None),
+      FinalPayload.Standard.createPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None, upgradeAccountability = false),
+      IntermediatePayload.NodeRelay.Standard(outgoingAmount, outgoingExpiry, outgoingNodeId, upgradeAccountability = false),
       createTrampolinePacket(outgoingAmount, outgoingExpiry),
       extraReceivedAt)
     nodeRelayer ! NodeRelay.Relay(extra, randomKey().publicKey, 0.01)
@@ -285,8 +285,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val receivedAt1 = TimestampMilli.now()
     val i1 = IncomingPaymentPacket.RelayToTrampolinePacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None, 6, None),
-      FinalPayload.Standard.createPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None),
-      IntermediatePayload.NodeRelay.Standard(outgoingAmount, outgoingExpiry, outgoingNodeId),
+      FinalPayload.Standard.createPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret, None, upgradeAccountability = false),
+      IntermediatePayload.NodeRelay.Standard(outgoingAmount, outgoingExpiry, outgoingNodeId, upgradeAccountability = false),
       createTrampolinePacket(outgoingAmount, outgoingExpiry),
       receivedAt1)
     nodeRelayer ! NodeRelay.Relay(i1, randomKey().publicKey, 0.01)
@@ -300,8 +300,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val receivedAt2 = TimestampMilli.now() + 1.millis
     val i2 = IncomingPaymentPacket.RelayToTrampolinePacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), 1500 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket, None, 4, None),
-      PaymentOnion.FinalPayload.Standard.createPayload(1500 msat, 1500 msat, CltvExpiry(499990), incomingSecret, None),
-      IntermediatePayload.NodeRelay.Standard(1250 msat, outgoingExpiry, outgoingNodeId),
+      PaymentOnion.FinalPayload.Standard.createPayload(1500 msat, 1500 msat, CltvExpiry(499990), incomingSecret, None, upgradeAccountability = false),
+      IntermediatePayload.NodeRelay.Standard(1250 msat, outgoingExpiry, outgoingNodeId, upgradeAccountability = false),
       createTrampolinePacket(outgoingAmount, outgoingExpiry),
       receivedAt2)
     nodeRelayer ! NodeRelay.Relay(i2, randomKey().publicKey, 0.01)
@@ -745,7 +745,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(fwd.message.nextPathKey_opt.isEmpty)
     assert(fwd.message.onion.payload.size == PaymentOnionCodecs.paymentOnionPayloadLength)
     // We verify that the next node is able to decrypt the onion that we will send in will_add_htlc.
-    val dummyAdd = UpdateAddHtlc(randomBytes32(), 0, fwd.message.amount, fwd.message.paymentHash, fwd.message.expiry, fwd.message.onion, None, 7, None)
+    val dummyAdd = UpdateAddHtlc(randomBytes32(), 0, fwd.message.amount, fwd.message.paymentHash, fwd.message.expiry, fwd.message.onion, None, accountable = false, None)
     val Right(incoming) = IncomingPaymentPacket.decrypt(dummyAdd, outgoingNodeKey, nodeParams.features)
     assert(incoming.isInstanceOf[IncomingPaymentPacket.FinalPacket])
     val finalPayload = incoming.asInstanceOf[IncomingPaymentPacket.FinalPacket].payload.asInstanceOf[FinalPayload.Standard]
@@ -1046,7 +1046,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(fwd.message.nextPathKey_opt.nonEmpty)
     assert(fwd.message.onion.payload.size == PaymentOnionCodecs.paymentOnionPayloadLength)
     // We verify that the next node is able to decrypt the onion that we will send in will_add_htlc.
-    val dummyAdd = UpdateAddHtlc(randomBytes32(), 0, fwd.message.amount, fwd.message.paymentHash, fwd.message.expiry, fwd.message.onion, fwd.message.nextPathKey_opt, 7, None)
+    val dummyAdd = UpdateAddHtlc(randomBytes32(), 0, fwd.message.amount, fwd.message.paymentHash, fwd.message.expiry, fwd.message.onion, fwd.message.nextPathKey_opt, accountable = false, None)
     val Right(incoming) = IncomingPaymentPacket.decrypt(dummyAdd, outgoingNodeKey, nodeParams.features)
     assert(incoming.isInstanceOf[IncomingPaymentPacket.FinalPacket])
     val finalPayload = incoming.asInstanceOf[IncomingPaymentPacket.FinalPacket].payload.asInstanceOf[FinalPayload.Blinded]
@@ -1205,7 +1205,7 @@ object NodeRelayerSpec {
     createValidIncomingPacket(11_000_000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry, TimestampMilli(3000), endorsementIn = 7)
   )
   val incomingSinglePart = createValidIncomingPacket(incomingAmount, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry, TimestampMilli(5000))
-  val incomingAsyncPayment: Seq[RelayToTrampolinePacket] = incomingMultiPart.map(p => p.copy(innerPayload = IntermediatePayload.NodeRelay.Standard.createNodeRelayForAsyncPayment(p.innerPayload.amountToForward, p.innerPayload.outgoingCltv, outgoingNodeId)))
+  val incomingAsyncPayment: Seq[RelayToTrampolinePacket] = incomingMultiPart.map(p => p.copy(innerPayload = IntermediatePayload.NodeRelay.Standard.createNodeRelayForAsyncPayment(p.innerPayload.amountToForward, p.innerPayload.outgoingCltv, outgoingNodeId, upgradeAccountability = false)))
 
   def asyncTimeoutHeight(nodeParams: NodeParams): BlockHeight =
     nodeParams.currentBlockHeight + nodeParams.relayParams.asyncPaymentsParams.holdTimeoutBlocks
@@ -1217,18 +1217,18 @@ object NodeRelayerSpec {
     PaymentSent(relayId, paymentHash, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), outgoingAmount, 10 msat, randomBytes32(), None)), None)
 
   def createTrampolinePacket(amount: MilliSatoshi, expiry: CltvExpiry): OnionRoutingPacket = {
-    val payload = NodePayload(outgoingNodeId, FinalPayload.Standard.createPayload(amount, amount, expiry, paymentSecret))
+    val payload = NodePayload(outgoingNodeId, FinalPayload.Standard.createPayload(amount, amount, expiry, paymentSecret, upgradeAccountability = false))
     val Right(onion) = OutgoingPaymentPacket.buildOnion(Seq(payload), paymentHash, None)
     onion.packet
   }
 
   def createValidIncomingPacket(amountIn: MilliSatoshi, totalAmountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry, receivedAt: TimestampMilli, endorsementIn: Int = 7): RelayToTrampolinePacket = {
-    val outerPayload = FinalPayload.Standard.createPayload(amountIn, totalAmountIn, expiryIn, incomingSecret, None)
+    val outerPayload = FinalPayload.Standard.createPayload(amountIn, totalAmountIn, expiryIn, incomingSecret, None, upgradeAccountability = false)
     val tlvs = TlvStream[UpdateAddHtlcTlv](UpdateAddHtlcTlv.Endorsement(endorsementIn))
     RelayToTrampolinePacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, tlvs),
       outerPayload,
-      IntermediatePayload.NodeRelay.Standard(amountOut, expiryOut, outgoingNodeId),
+      IntermediatePayload.NodeRelay.Standard(amountOut, expiryOut, outgoingNodeId, upgradeAccountability = false),
       createTrampolinePacket(amountOut, expiryOut),
       receivedAt)
   }
@@ -1237,9 +1237,9 @@ object NodeRelayerSpec {
     val (expiryIn, expiryOut) = (CltvExpiry(500000), CltvExpiry(490000))
     val amountIn = incomingAmount / 2
     RelayToTrampolinePacket(
-      UpdateAddHtlc(randomBytes32(), Random.nextInt(100), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, None, 7, None),
-      FinalPayload.Standard.createPayload(amountIn, incomingAmount, expiryIn, paymentSecret, None),
-      IntermediatePayload.NodeRelay.Standard(outgoingAmount, expiryOut, outgoingNodeId),
+      UpdateAddHtlc(randomBytes32(), Random.nextInt(100), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, None, accountable = false, None),
+      FinalPayload.Standard.createPayload(amountIn, incomingAmount, expiryIn, paymentSecret, None, upgradeAccountability = false),
+      IntermediatePayload.NodeRelay.Standard(outgoingAmount, expiryOut, outgoingNodeId, upgradeAccountability = false),
       createTrampolinePacket(outgoingAmount, expiryOut),
       TimestampMilli.now())
   }

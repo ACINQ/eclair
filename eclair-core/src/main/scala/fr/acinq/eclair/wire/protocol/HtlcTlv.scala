@@ -40,9 +40,9 @@ object UpdateAddHtlcTlv {
 
   private val pathKey: Codec[PathKey] = (("length" | constant(hex"21")) :: ("pathKey" | publicKey)).as[PathKey]
 
-  case class Endorsement(level: Int) extends UpdateAddHtlcTlv
+  case object Accountable extends UpdateAddHtlcTlv
 
-  private val endorsement: Codec[Endorsement] = tlvField(uint8.narrow[Endorsement](n => if (n >= 8) Attempt.failure(Err(s"invalid endorsement level: $n")) else Attempt.successful(Endorsement(n)), _.level))
+  private val accountable: Codec[Accountable.type] = ("length" | constant(hex"00")).xmap(_ => Accountable, _ => ())
 
   /** When on-the-fly funding is used, the liquidity fees may be taken from HTLCs relayed after funding. */
   case class FundingFeeTlv(fee: LiquidityAds.FundingFee) extends UpdateAddHtlcTlv
@@ -51,8 +51,8 @@ object UpdateAddHtlcTlv {
 
   val addHtlcTlvCodec: Codec[TlvStream[UpdateAddHtlcTlv]] = tlvStream(discriminated[UpdateAddHtlcTlv].by(varint)
     .typecase(UInt64(0), pathKey)
+    .typecase(UInt64(1), accountable)
     .typecase(UInt64(41041), fundingFee)
-    .typecase(UInt64(106823), endorsement)
   )
 }
 
