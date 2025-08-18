@@ -20,9 +20,9 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.channel.{ChannelJammingException, ChannelParams, Commitments, IncomingConfidenceTooLow, OutgoingConfidenceTooLow, TooManySmallHtlcs}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{MilliSatoshi, TimestampMilli}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, TimestampMilli}
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 /**
  * Reputation score per endorsement level.
@@ -34,14 +34,20 @@ import scala.concurrent.duration.FiniteDuration
 case class PastScore(weight: Double, score: Double, lastSettlementAt: TimestampMilli)
 
 /** We're relaying that HTLC and are waiting for it to settle. */
-case class PendingHtlc(fee: MilliSatoshi, endorsement: Int, startedAt: TimestampMilli) {
-  def weight(now: TimestampMilli, minDuration: FiniteDuration, multiplier: Double): Double = {
-    val duration = now - startedAt
-    fee.toLong.toDouble * (duration / minDuration).max(multiplier)
+case class PendingHtlc(fee: MilliSatoshi, endorsement: Int, startedAt: TimestampMilli, expiry: CltvExpiry) {
+  def weight(now: TimestampMilli, minDuration: FiniteDuration, currentBlockHeight: BlockHeight): Double = {
+    val alreadyPending = now - startedAt
+    val untilExpiry = (expiry.toLong - currentBlockHeight.toLong) * 10.minutes
+    val duration = alreadyPending + untilExpiry
+    fee.toLong.toDouble * (duration / minDuration)
   }
 }
 
 case class HtlcId(channelId: ByteVector32, id: Long)
+
+case object HtlcId {
+  def apply(add: UpdateAddHtlc): HtlcId = HtlcId(add.channelId, add.id)
+}
 
 /**
  * Local reputation for a given node.
@@ -50,15 +56,14 @@ case class HtlcId(channelId: ByteVector32, id: Long)
  * @param pending           Set of pending HTLCs.
  * @param halfLife          Half life for the exponential moving average.
  * @param maxRelayDuration  Duration after which HTLCs are penalized for staying pending too long.
- * @param pendingMultiplier How much to penalize pending HTLCs.
  */
-case class Reputation(pastScores: Map[Int, PastScore], pending: Map[HtlcId, PendingHtlc], halfLife: FiniteDuration, maxRelayDuration: FiniteDuration, pendingMultiplier: Double) {
+case class Reputation(pastScores: Map[Int, PastScore], pending: Map[HtlcId, PendingHtlc], halfLife: FiniteDuration, maxRelayDuration: FiniteDuration) {
   private def decay(now: TimestampMilli, lastSettlementAt: TimestampMilli): Double = scala.math.pow(0.5, (now - lastSettlementAt) / halfLife)
 
   /**
    * Estimate the confidence that a payment will succeed.
    */
-  def getConfidence(fee: MilliSatoshi, endorsement: Int, now: TimestampMilli = TimestampMilli.now()): Double = {
+  def getConfidence(fee: MilliSatoshi, endorsement: Int, currentBlockHeight: BlockHeight, expiry: CltvExpiry, now: TimestampMilli = TimestampMilli.now()): Double = {
     val weights = Array.fill(Reputation.endorsementLevels)(0.0)
     val scores = Array.fill(Reputation.endorsementLevels)(0.0)
     for (e <- 0 until Reputation.endorsementLevels) {
@@ -67,9 +72,9 @@ case class Reputation(pastScores: Map[Int, PastScore], pending: Map[HtlcId, Pend
       scores(e) += d * pastScores(e).score
     }
     for (p <- pending.values) {
-      weights(p.endorsement) += p.weight(now, maxRelayDuration, pendingMultiplier)
+      weights(p.endorsement) += p.weight(now, maxRelayDuration, currentBlockHeight)
     }
-    weights(endorsement) += fee.toLong.toDouble * pendingMultiplier
+    weights(endorsement) += PendingHtlc(fee, endorsement, now, expiry).weight(now, maxRelayDuration, currentBlockHeight)
     /*
      Higher endorsement buckets may have fewer payments which makes the weight of pending payments disproportionately
      important. To counter this effect, we try adding payments from the lower buckets to see if it gives us a higher
@@ -91,8 +96,8 @@ case class Reputation(pastScores: Map[Int, PastScore], pending: Map[HtlcId, Pend
   /**
    * Register a pending relay.
    */
-  def addPendingHtlc(htlcId: HtlcId, fee: MilliSatoshi, endorsement: Int, now: TimestampMilli = TimestampMilli.now()): Reputation =
-    copy(pending = pending + (htlcId -> PendingHtlc(fee, endorsement, now)))
+  def addPendingHtlc(add: UpdateAddHtlc, fee: MilliSatoshi, endorsement: Int, now: TimestampMilli = TimestampMilli.now()): Reputation =
+    copy(pending = pending + (HtlcId(add) -> PendingHtlc(fee, endorsement, now, add.cltvExpiry)))
 
   /**
    * When a HTLC is settled, we record whether it succeeded and how long it took.
@@ -100,8 +105,14 @@ case class Reputation(pastScores: Map[Int, PastScore], pending: Map[HtlcId, Pend
   def settlePendingHtlc(htlcId: HtlcId, isSuccess: Boolean, now: TimestampMilli = TimestampMilli.now()): Reputation = {
     val newScores = pending.get(htlcId).map(p => {
       val d = decay(now, pastScores(p.endorsement).lastSettlementAt)
-      val newWeight = d * pastScores(p.endorsement).weight + p.weight(now, maxRelayDuration, if (isSuccess) 1.0 else 0.0)
-      val newScore = d * pastScores(p.endorsement).score + (if (isSuccess) p.fee.toLong.toDouble else 0)
+      val duration = now - p.startedAt
+      val (weight, score) = if (isSuccess) {
+        (p.fee.toLong.toDouble * (duration / maxRelayDuration).max(1.0), p.fee.toLong.toDouble)
+      } else {
+        (p.fee.toLong.toDouble * (duration / maxRelayDuration), 0.0)
+      }
+      val newWeight = d * pastScores(p.endorsement).weight + weight
+      val newScore = d * pastScores(p.endorsement).score + score
       pastScores + (p.endorsement -> PastScore(newWeight, newScore, now))
     }).getOrElse(pastScores)
     copy(pending = pending - htlcId, pastScores = newScores)
@@ -112,9 +123,9 @@ object Reputation {
   val endorsementLevels = 8
   val maxEndorsement = endorsementLevels - 1
 
-  case class Config(enabled: Boolean, halfLife: FiniteDuration, maxRelayDuration: FiniteDuration, pendingMultiplier: Double)
+  case class Config(enabled: Boolean, halfLife: FiniteDuration, maxRelayDuration: FiniteDuration)
 
-  def init(config: Config): Reputation = Reputation(Map.empty.withDefaultValue(PastScore(0.0, 0.0, TimestampMilli.min)), Map.empty, config.halfLife, config.maxRelayDuration, config.pendingMultiplier)
+  def init(config: Config): Reputation = Reputation(Map.empty.withDefaultValue(PastScore(0.0, 0.0, TimestampMilli.min)), Map.empty, config.halfLife, config.maxRelayDuration)
 
   /**
    * @param incomingConfidence Confidence that the outgoing HTLC will succeed given the reputation of the incoming peer

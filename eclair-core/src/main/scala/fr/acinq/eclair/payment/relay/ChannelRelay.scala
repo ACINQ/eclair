@@ -79,7 +79,7 @@ object ChannelRelay {
         val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), r.receivedAt, originNode, incomingChannelOccupancy)
         reputationRecorder_opt match {
           case Some(reputationRecorder) =>
-            reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), upstream, channels.values.headOption.map(_.nextNodeId), r.relayFeeMsat)
+            reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), upstream, channels.values.headOption.map(_.nextNodeId), r.relayFeeMsat, nodeParams.currentBlockHeight, r.outgoingCltv)
           case None =>
             context.self ! WrappedReputationScore(Reputation.Score.fromEndorsement(r.add.endorsement))
         }
