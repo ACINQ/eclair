@@ -105,7 +105,7 @@ case class LocalCommitConfirmed(channel: ActorRef, remoteNodeId: PublicKey, chan
 
 case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, commitments: Commitments) extends ChannelEvent
 
-case class OutgoingHtlcAdded(add: UpdateAddHtlc, remoteNodeId: PublicKey, upstream: Upstream.Hot, fee: MilliSatoshi)
+case class OutgoingHtlcAdded(add: UpdateAddHtlc, remoteNodeId: PublicKey, fee: MilliSatoshi)
 
 sealed trait OutgoingHtlcSettled
 
