@@ -753,13 +753,23 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("recv CMD_SPLICE (upgrade channel to taproot)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+  test("recv CMD_SPLICE (accepting upgrade channel to taproot)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
     initiateSplice(f, spliceIn_opt = Some(SpliceIn(400_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix()))
     assert(alice.commitments.active.head.commitmentFormat == PhoenixSimpleTaprootChannelCommitmentFormat)
     assert(alice.commitments.active.last.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat)
+    resolveHtlcs(f, htlcs)
+  }
+
+  test("recv CMD_SPLICE (rejecting upgrade channel to taproot)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+
+    val htlcs = setupHtlcs(f)
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(400_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    assert(alice.commitments.active.head.commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    assert(alice.commitments.active.last.commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     resolveHtlcs(f, htlcs)
   }
 
@@ -2607,7 +2617,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectWatchFundingSpent(fundingTx.txid)
   }
 
-  test("re-send splice_locked on reconnection") { f =>
+  def resendSpliceLockedOnReconnection(f: FixtureParam): Unit = {
     import f._
 
     val fundingTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
@@ -2693,6 +2703,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
       case e: ChannelReadyForPayments => e.fundingTxIndex == 2
       case _ => false
     }
+  }
+
+  test("re-send splice_locked on reconnection") { f =>
+    resendSpliceLockedOnReconnection(f)
+  }
+
+  test("re-send splice_locked on reconnection (taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
+    resendSpliceLockedOnReconnection(f)
   }
 
   test("disconnect before channel update and tx_signatures are received") { f =>
