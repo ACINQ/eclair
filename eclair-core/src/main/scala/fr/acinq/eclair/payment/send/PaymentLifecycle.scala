@@ -76,17 +76,13 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(route +: _), WaitingForRoute(request, failures, ignore)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${request.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
+      val accountability = ??? // TODO
       reputationRecorder_opt match {
         case Some(reputationRecorder) =>
           val cltvExpiry = route.fullRoute.map(_.cltvExpiryDelta).foldLeft(request.recipient.expiry)(_ + _)
-          reputationRecorder ! GetConfidence(self, cfg.upstream, Some(route.hops.head.nextNodeId), route.hops.head.fee(request.amount), nodeParams.currentBlockHeight, cltvExpiry)
+          reputationRecorder ! GetConfidence(self, Some(route.hops.head.nextNodeId), route.hops.head.fee(request.amount), nodeParams.currentBlockHeight, cltvExpiry, accountability)
         case None =>
-          val endorsement = cfg.upstream match {
-            case Hot.Channel(add, _, _, _) => add.endorsement
-            case Hot.Trampoline(received) => received.map(_.add.endorsement).min
-            case Upstream.Local(_) => Reputation.maxEndorsement
-          }
-          self ! Reputation.Score.fromEndorsement(endorsement)
+          self ! Reputation.Score.max(accountability)
       }
       goto(WAITING_FOR_CONFIDENCE) using WaitingForConfidence(request, failures, ignore, route)
 

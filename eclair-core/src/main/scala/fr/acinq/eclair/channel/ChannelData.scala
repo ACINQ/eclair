@@ -160,7 +160,7 @@ object Upstream {
       override val amountIn: MilliSatoshi = add.amountMsat
       val expiryIn: CltvExpiry = add.cltvExpiry
 
-      override def toString: String = s"Channel(amountIn=$amountIn, receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, endorsement=${add.endorsement}, incomingChannelOccupancy=$incomingChannelOccupancy)"
+      override def toString: String = s"Channel(amountIn=$amountIn, receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, accountability=${add.accountability}, incomingChannelOccupancy=$incomingChannelOccupancy)"
     }
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
     case class Trampoline(received: List[Channel]) extends Hot {

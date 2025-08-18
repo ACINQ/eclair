@@ -219,6 +219,7 @@ object IncomingPaymentPacket {
       case payload if add.amountMsat < payload.paymentRelayData.paymentConstraints.minAmount => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if add.cltvExpiry > payload.paymentRelayData.paymentConstraints.maxCltvExpiry => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if !Features.areCompatible(Features.empty, payload.paymentRelayData.allowedFeatures) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+      case payload if add.accountability
       case payload => Right(ChannelRelayPacket(add, payload, nextPacket, TimestampMilli.now()))
     }
   }
@@ -253,7 +254,7 @@ object IncomingPaymentPacket {
           // We merge contents from the outer and inner payloads.
           // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
           val trampolinePacket = outerPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].map(_.packet)
-          Right(FinalPacket(add, FinalPayload.Standard.createPayload(outerPayload.amount, innerPayload.totalAmount, innerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata, trampolinePacket), TimestampMilli.now()))
+          Right(FinalPacket(add, FinalPayload.Standard.createPayload(outerPayload.amount, innerPayload.totalAmount, innerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata, trampolinePacket, upgradeAccountability = outerPayload.upgradeAccountability), TimestampMilli.now()))
       }
     }
   }

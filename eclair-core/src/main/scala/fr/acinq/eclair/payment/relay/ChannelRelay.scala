@@ -77,11 +77,12 @@ object ChannelRelay {
         paymentHash_opt = Some(r.add.paymentHash),
         nodeAlias_opt = Some(nodeParams.alias))) {
         val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), r.receivedAt, originNode, incomingChannelOccupancy)
+        val accountability = r.add.accountability // TODO incomingChannelOccupancy
         reputationRecorder_opt match {
           case Some(reputationRecorder) =>
-            reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), upstream, channels.values.headOption.map(_.nextNodeId), r.relayFeeMsat, nodeParams.currentBlockHeight, r.outgoingCltv)
+            reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), channels.values.headOption.map(_.nextNodeId), r.relayFeeMsat, nodeParams.currentBlockHeight, r.outgoingCltv, accountability)
           case None =>
-            context.self ! WrappedReputationScore(Reputation.Score.fromEndorsement(r.add.endorsement))
+            context.self ! WrappedReputationScore(Reputation.Score.max(accountability))
         }
         Behaviors.receiveMessagePartial {
           case WrappedReputationScore(score) =>
@@ -234,8 +235,8 @@ class ChannelRelay private(nodeParams: NodeParams,
   private def waitForAddSettled(): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill)) =>
-        context.log.info("relaying fulfill to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.incomingConfidence, upstream.receivedFrom, htlc.channelId)
-        Metrics.relayFulfill(reputationScore.incomingConfidence)
+        context.log.info("relaying fulfill to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.outgoingConfidence, upstream.receivedFrom, htlc.channelId)
+        Metrics.relayFulfill(reputationScore.outgoingConfidence)
         val downstreamAttribution_opt = fulfill match {
           case HtlcResult.RemoteFulfill(fulfill) => fulfill.attribution_opt
           case HtlcResult.OnChainFulfill(_) => None
@@ -247,8 +248,8 @@ class ChannelRelay private(nodeParams: NodeParams,
         safeSendAndStop(upstream.add.channelId, cmd)
 
       case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fail: HtlcResult.Fail)) =>
-        context.log.info("relaying fail to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.incomingConfidence, upstream.receivedFrom, htlc.channelId)
-        Metrics.relayFail(reputationScore.incomingConfidence)
+        context.log.info("relaying fail to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.outgoingConfidence, upstream.receivedFrom, htlc.channelId)
+        Metrics.relayFail(reputationScore.outgoingConfidence)
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
         val cmd = translateRelayFailure(upstream.add.id, fail, Some(upstream.receivedAt))
         recordRelayDuration(isSuccess = false)

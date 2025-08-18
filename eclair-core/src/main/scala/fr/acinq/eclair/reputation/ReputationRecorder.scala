@@ -31,7 +31,7 @@ import scala.collection.mutable
 object ReputationRecorder {
   // @formatter:off
   sealed trait Command
-  case class GetConfidence(replyTo: ActorRef[Reputation.Score], upstream: Upstream.Hot, downstream_opt: Option[PublicKey], fee: MilliSatoshi, currentBlockHeight: BlockHeight, expiry: CltvExpiry) extends Command
+  case class GetConfidence(replyTo: ActorRef[Reputation.Score], downstream_opt: Option[PublicKey], fee: MilliSatoshi, currentBlockHeight: BlockHeight, expiry: CltvExpiry, accountability: Int) extends Command
   case class WrappedOutgoingHtlcAdded(added: OutgoingHtlcAdded) extends Command
   case class WrappedOutgoingHtlcSettled(settled: OutgoingHtlcSettled) extends Command
   // @formatter:on
@@ -46,63 +46,27 @@ object ReputationRecorder {
   /**
    * A pending outgoing HTLC.
    *
-   * @param add        UpdateAddHtlc that contains an id for the HTLC and an endorsement value.
-   * @param upstream   The incoming node or nodes.
-   * @param downstream The outgoing node.
+   * @param add          UpdateAddHtlc that contains an id for the HTLC and an accountability value.
+   * @param remoteNodeId The outgoing node.
    */
-  case class PendingHtlc(add: UpdateAddHtlc, upstream: Upstream.Hot, downstream: PublicKey)
+  case class PendingHtlc(add: UpdateAddHtlc, remoteNodeId: PublicKey)
 }
 
 class ReputationRecorder(config: Reputation.Config) {
-  private val incomingReputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty.withDefaultValue(Reputation.init(config))
   private val outgoingReputations: mutable.Map[PublicKey, Reputation] = mutable.HashMap.empty.withDefaultValue(Reputation.init(config))
   private val pending: mutable.Map[HtlcId, PendingHtlc] = mutable.HashMap.empty
 
   def run(): Behavior[Command] =
     Behaviors.receiveMessage {
-      case GetConfidence(replyTo, _: Upstream.Local, _, _, _, _) =>
-        replyTo ! Reputation.Score.max
+      case GetConfidence(replyTo, downstream_opt, fee, currentBlockHeight, expiry, accountability) =>
+        val outgoingConfidence = downstream_opt.flatMap(outgoingReputations.get).map(_.getConfidence(fee, accountability, currentBlockHeight, expiry)).getOrElse(0.0)
+        replyTo ! Reputation.Score(outgoingConfidence, accountability)
         Behaviors.same
 
-      case GetConfidence(replyTo, upstream: Upstream.Hot.Channel, downstream_opt, fee, currentBlockHeight, expiry) =>
-        val incomingConfidence = incomingReputations.get(upstream.receivedFrom).map(_.getConfidence(fee, upstream.add.endorsement, currentBlockHeight, expiry)).getOrElse(0.0)
-        val outgoingConfidence = downstream_opt.flatMap(outgoingReputations.get).map(_.getConfidence(fee, Reputation.toEndorsement(incomingConfidence), currentBlockHeight, expiry)).getOrElse(0.0)
-        replyTo ! Reputation.Score(incomingConfidence, outgoingConfidence)
-        Behaviors.same
-
-      case GetConfidence(replyTo, upstream: Upstream.Hot.Trampoline, downstream_opt, totalFee, currentBlockHeight, expiry) =>
-        val incomingConfidence =
-          upstream.received
-            .groupMapReduce(_.receivedFrom)(r => (r.add.amountMsat, r.add.endorsement)) {
-              case ((amount1, endorsement1), (amount2, endorsement2)) => (amount1 + amount2, endorsement1 min endorsement2)
-            }
-            .map {
-              case (nodeId, (amount, endorsement)) =>
-                val fee = amount * totalFee.toLong / upstream.amountIn.toLong
-                incomingReputations.get(nodeId).map(_.getConfidence(fee, endorsement, currentBlockHeight, expiry)).getOrElse(0.0)
-            }
-            .min
-        val outgoingConfidence = downstream_opt.flatMap(outgoingReputations.get).map(_.getConfidence(totalFee, Reputation.toEndorsement(incomingConfidence), currentBlockHeight, expiry)).getOrElse(0.0)
-        replyTo ! Reputation.Score(incomingConfidence, outgoingConfidence)
-        Behaviors.same
-
-      case WrappedOutgoingHtlcAdded(OutgoingHtlcAdded(add, remoteNodeId, upstream, fee)) =>
+      case WrappedOutgoingHtlcAdded(OutgoingHtlcAdded(add, remoteNodeId, fee)) =>
         val htlcId = HtlcId(add)
-        upstream match {
-          case channel: Hot.Channel =>
-            incomingReputations(channel.receivedFrom) = incomingReputations(channel.receivedFrom).addPendingHtlc(add, fee, channel.add.endorsement)
-          case trampoline: Hot.Trampoline =>
-            trampoline.received
-              .groupMapReduce(_.receivedFrom)(r => (r.add.amountMsat, r.add.endorsement)) {
-                case ((amount1, endorsement1), (amount2, endorsement2)) => (amount1 + amount2, endorsement1 min endorsement2)
-              }
-              .foreach { case (nodeId, (amount, endorsement)) =>
-                incomingReputations(nodeId) = incomingReputations(nodeId).addPendingHtlc(add, fee * amount.toLong / trampoline.amountIn.toLong, endorsement)
-              }
-          case _: Upstream.Local => ()
-        }
-        outgoingReputations(remoteNodeId) = outgoingReputations(remoteNodeId).addPendingHtlc(add, fee, add.endorsement)
-        pending(htlcId) = PendingHtlc(add, upstream, remoteNodeId)
+        outgoingReputations(remoteNodeId) = outgoingReputations(remoteNodeId).addPendingHtlc(add, fee, add.accountability)
+        pending(htlcId) = PendingHtlc(add, remoteNodeId)
         Behaviors.same
 
       case WrappedOutgoingHtlcSettled(settled) =>
@@ -116,16 +80,7 @@ class ReputationRecorder(config: Reputation.Config) {
           case _: OutgoingHtlcFulfilled => true
         }
         pending.remove(htlcId).foreach(p => {
-          p.upstream match {
-            case Hot.Channel(_, _, receivedFrom, _) =>
-              incomingReputations(receivedFrom) = incomingReputations(receivedFrom).settlePendingHtlc(htlcId, isSuccess)
-            case Hot.Trampoline(received) =>
-              received.foreach(channel =>
-                incomingReputations(channel.receivedFrom) = incomingReputations(channel.receivedFrom).settlePendingHtlc(htlcId, isSuccess)
-              )
-            case _: Upstream.Local => ()
-          }
-          outgoingReputations(p.downstream) = outgoingReputations(p.downstream).settlePendingHtlc(htlcId, isSuccess)
+          outgoingReputations(p.remoteNodeId) = outgoingReputations(p.remoteNodeId).settlePendingHtlc(htlcId, isSuccess)
         })
         Behaviors.same
     }
