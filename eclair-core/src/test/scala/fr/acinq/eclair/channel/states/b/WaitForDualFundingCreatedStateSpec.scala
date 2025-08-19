@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelReestablish, CommitSig, Error, Init, LiquidityAds, OpenDualFundedChannel, TxAbort, TxAckRbf, TxAddInput, TxAddOutput, TxComplete, TxInitRbf, Warning}
+import fr.acinq.eclair.wire.protocol.{AcceptDualFundedChannel, ChannelReestablish, CommitSig, Error, Init, LiquidityAds, OpenDualFundedChannel, TxAbort, TxAckRbf, TxAddInput, TxAddOutput, TxComplete, TxCompleteTlv, TxInitRbf, Warning}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, UInt64, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -108,6 +108,26 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
+  }
+
+  test("recv tx_complete without nonces (taproot)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+
+    alice2bob.expectMsgType[TxAddInput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddInput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddOutput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    val txComplete = bob2alice.expectMsgType[TxComplete]
+    assert(txComplete.nonces_opt.isDefined)
+    bob2alice.forward(alice, txComplete.copy(tlvStream = txComplete.tlvStream.copy(records = txComplete.tlvStream.records.filterNot(_.isInstanceOf[TxCompleteTlv.Nonces]))))
+    aliceListener.expectMsgType[ChannelAborted]
+    awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv TxAbort", Tag(ChannelStateTestsTags.DualFunding)) { f =>

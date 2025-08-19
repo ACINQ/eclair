@@ -21,8 +21,10 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{ClosingComplete, HtlcSettlementMessage, LightningMessage, Shutdown, UpdateMessage}
 import scodec.bits.ByteVector
 
@@ -132,17 +134,31 @@ trait CommonHandlers {
     finalScriptPubkey
   }
 
+  def createShutdown(commitments: Commitments, finalScriptPubKey: ByteVector): Shutdown = {
+    commitments.latest.commitmentFormat match {
+      case _: SimpleTaprootChannelCommitmentFormat =>
+        // We create a fresh local closee nonce every time we send shutdown.
+        val localFundingPubKey = channelKeys.fundingKey(commitments.latest.fundingTxIndex).publicKey
+        val localCloseeNonce = NonceGenerator.signingNonce(localFundingPubKey, commitments.latest.remoteFundingPubKey, commitments.latest.fundingTxId)
+        localCloseeNonce_opt = Some(localCloseeNonce)
+        Shutdown(commitments.channelId, finalScriptPubKey, localCloseeNonce.publicNonce)
+      case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
+        Shutdown(commitments.channelId, finalScriptPubKey)
+    }
+  }
+
   def startSimpleClose(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closeStatus: CloseStatus): (DATA_NEGOTIATING_SIMPLE, Option[ClosingComplete]) = {
     val localScript = localShutdown.scriptPubKey
     val remoteScript = remoteShutdown.scriptPubKey
     val closingFeerate = closeStatus.feerates_opt.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates))
-    MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, channelKeys, commitments.latest, localScript, remoteScript, closingFeerate) match {
+    MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, channelKeys, commitments.latest, localScript, remoteScript, closingFeerate, remoteShutdown.closeeNonce_opt) match {
       case Left(f) =>
         log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
         val d = DATA_NEGOTIATING_SIMPLE(commitments, closingFeerate, localScript, remoteScript, Nil, Nil)
         (d, None)
-      case Right((closingTxs, closingComplete)) =>
+      case Right((closingTxs, closingComplete, closerNonces)) =>
         log.debug("signing local mutual close transactions: {}", closingTxs)
+        localCloserNonces_opt = Some(closerNonces)
         val d = DATA_NEGOTIATING_SIMPLE(commitments, closingFeerate, localScript, remoteScript, closingTxs :: Nil, Nil)
         (d, Some(closingComplete))
     }

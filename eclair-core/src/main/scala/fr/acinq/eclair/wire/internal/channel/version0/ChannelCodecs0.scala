@@ -233,7 +233,7 @@ private[channel] object ChannelCodecs0 {
 
     val commitSigCodec: Codec[CommitSig] = (
       ("channelId" | bytes32) ::
-        ("signature" | bytes64) ::
+        ("signature" | bytes64.as[ChannelSpendSignature.IndividualSignature]) ::
         ("htlcSignatures" | listofsignatures) ::
         ("tlvStream" | provide(TlvStream.empty[CommitSigTlv]))).as[CommitSig]
 

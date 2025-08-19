@@ -24,8 +24,9 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
+import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishTx}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishTx, SetChannelId}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment._
@@ -34,8 +35,8 @@ import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTimeoutTx, ClaimRemoteAnchorTx}
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -156,9 +157,16 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     bob ! CMD_FULFILL_HTLC(0, r1, None)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
-    awaitCond(bob.stateData == initialState
-      .modify(_.commitments.changes.localChanges.proposed).using(_ :+ fulfill)
+    awaitCond(bob.stateData == initialState.modify(_.commitments.changes.localChanges.proposed).using(_ :+ fulfill)
     )
+  }
+
+  test("recv CMD_FULFILL_HTLC (taproot)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
+    bob ! CMD_FULFILL_HTLC(0, r1, None)
+    val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
+    awaitCond(bob.stateData == initialState.modify(_.commitments.changes.localChanges.proposed).using(_ :+ fulfill))
   }
 
   test("recv CMD_FULFILL_HTLC (unknown htlc id)") { f =>
@@ -374,6 +382,22 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
   }
 
+  test("recv CMD_SIGN (taproot)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    val sender = TestProbe()
+    bob ! CMD_FULFILL_HTLC(0, r1, None)
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
+    bob2alice.forward(alice)
+    bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
+    sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
+    assert(bob2alice.expectMsgType[CommitSig].partialSignature_opt.nonEmpty)
+    bob2alice.forward(alice)
+    assert(alice2bob.expectMsgType[RevokeAndAck].nextCommitNonces.contains(bob.commitments.latest.fundingTxId))
+    alice2bob.forward(bob)
+    assert(alice2bob.expectMsgType[CommitSig].partialSignature_opt.nonEmpty)
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
+  }
+
   test("recv CMD_SIGN (no changes)") { f =>
     import f._
     val sender = TestProbe()
@@ -414,7 +438,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val tx = bob.signCommitTx()
     // signature is invalid but it doesn't matter
-    bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
+    bob ! CommitSig(ByteVector32.Zeroes, IndividualSignature(ByteVector64.Zeroes), Nil)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
@@ -425,7 +449,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CommitSig (invalid signature)") { f =>
     import f._
     val tx = bob.signCommitTx()
-    bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
+    bob ! CommitSig(ByteVector32.Zeroes, IndividualSignature(ByteVector64.Zeroes), Nil)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
@@ -468,6 +492,19 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     crossSign(bob, alice, bob2alice, alice2bob)
     // actual test starts here
     awaitCond(alice.stateName == NEGOTIATING)
+  }
+
+  test("recv RevokeAndAck (no more htlcs on either side, taproot)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    // Bob fulfills the first HTLC.
+    fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    assert(alice.stateName == SHUTDOWN)
+    // Bob fulfills the second HTLC.
+    fulfillHtlc(1, r2, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    awaitCond(alice.stateName == NEGOTIATING_SIMPLE)
+    awaitCond(bob.stateName == NEGOTIATING_SIMPLE)
   }
 
   test("recv RevokeAndAck (invalid preimage)") { f =>
@@ -951,6 +988,61 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
     alice2blockchain.expectNoMessage(100 millis)
     assert(alice.stateName == SHUTDOWN)
+  }
+
+  def testInputRestored(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
+    import f._
+    // Alice and Bob restart.
+    val aliceData = alice.underlyingActor.nodeParams.db.channels.getChannel(channelId(alice)).get
+    alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
+    alice ! INPUT_RESTORED(aliceData)
+    alice2blockchain.expectMsgType[SetChannelId]
+    val fundingTxId = alice2blockchain.expectMsgType[WatchFundingSpent].txId
+    awaitCond(alice.stateName == OFFLINE)
+    val bobData = bob.underlyingActor.nodeParams.db.channels.getChannel(channelId(bob)).get
+    bob.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
+    bob ! INPUT_RESTORED(bobData)
+    bob2blockchain.expectMsgType[SetChannelId]
+    bob2blockchain.expectMsgType[WatchFundingSpent]
+    awaitCond(bob.stateName == OFFLINE)
+    // They reconnect and provide nonces to resume HTLC settlement.
+    val aliceInit = Init(alice.underlyingActor.nodeParams.features.initFeatures())
+    val bobInit = Init(bob.underlyingActor.nodeParams.features.initFeatures())
+    alice ! INPUT_RECONNECTED(bob, aliceInit, bobInit)
+    bob ! INPUT_RECONNECTED(alice, bobInit, aliceInit)
+    val channelReestablishAlice = alice2bob.expectMsgType[ChannelReestablish]
+    val channelReestablishBob = bob2alice.expectMsgType[ChannelReestablish]
+    Seq(channelReestablishAlice, channelReestablishBob).foreach(channelReestablish => commitmentFormat match {
+      case _: SegwitV0CommitmentFormat =>
+        assert(channelReestablish.currentCommitNonce_opt.isEmpty)
+        assert(channelReestablish.nextCommitNonces.isEmpty)
+      case _: TaprootCommitmentFormat =>
+        assert(channelReestablish.currentCommitNonce_opt.isEmpty)
+        assert(channelReestablish.nextCommitNonces.contains(fundingTxId))
+    })
+    alice2bob.forward(bob, channelReestablishAlice)
+    bob2alice.forward(alice, channelReestablishBob)
+    // They retransmit shutdown.
+    alice2bob.expectMsgType[Shutdown]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[Shutdown]
+    bob2alice.forward(alice)
+    // They resume HTLC settlement.
+    fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    assert(alice.stateName == SHUTDOWN)
+    fulfillHtlc(1, r2, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    awaitCond(alice.stateName == NEGOTIATING_SIMPLE)
+    awaitCond(bob.stateName == NEGOTIATING_SIMPLE)
+  }
+
+  test("recv INPUT_RESTORED", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testInputRestored(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv INPUT_RESTORED (taproot)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testInputRestored(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
   test("recv Error") { f =>

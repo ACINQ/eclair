@@ -29,9 +29,9 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe._
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.ClosingSignedTlv.FeeRange
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingComplete, ClosingSig, ClosingSigned, ClosingTlv, Error, Shutdown, TlvStream, Warning}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingComplete, ClosingCompleteTlv, ClosingSig, ClosingSigTlv, ClosingSigned, ClosingTlv, Error, Shutdown, TlvStream, Warning}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -63,8 +63,10 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     alice ! CMD_CLOSE(sender.ref, None, feerates)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     val aliceShutdown = alice2bob.expectMsgType[Shutdown]
+    if (alice.commitments.latest.commitmentFormat.isInstanceOf[TaprootCommitmentFormat]) assert(aliceShutdown.closeeNonce_opt.nonEmpty)
     alice2bob.forward(bob, aliceShutdown)
     val bobShutdown = bob2alice.expectMsgType[Shutdown]
+    if (bob.commitments.latest.commitmentFormat.isInstanceOf[TaprootCommitmentFormat]) assert(bobShutdown.closeeNonce_opt.nonEmpty)
     bob2alice.forward(alice, bobShutdown)
     if (alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.localChannelParams.initFeatures.hasFeature(Features.SimpleClose)) {
       awaitCond(alice.stateName == NEGOTIATING_SIMPLE)
@@ -83,8 +85,10 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     bob ! CMD_CLOSE(sender.ref, None, feerates)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     val bobShutdown = bob2alice.expectMsgType[Shutdown]
+    if (bob.commitments.latest.commitmentFormat.isInstanceOf[TaprootCommitmentFormat]) assert(bobShutdown.closeeNonce_opt.nonEmpty)
     bob2alice.forward(alice, bobShutdown)
     val aliceShutdown = alice2bob.expectMsgType[Shutdown]
+    if (alice.commitments.latest.commitmentFormat.isInstanceOf[TaprootCommitmentFormat]) assert(aliceShutdown.closeeNonce_opt.nonEmpty)
     alice2bob.forward(bob, aliceShutdown)
     if (bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.localChannelParams.initFeatures.hasFeature(Features.SimpleClose)) {
       awaitCond(alice.stateName == NEGOTIATING_SIMPLE)
@@ -484,24 +488,41 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     bob2blockchain.expectMsgType[WatchTxConfirmed]
   }
 
-  test("recv ClosingComplete (both outputs)", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+  def testReceiveClosingCompleteBothOutputs(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
     import f._
+
     aliceClose(f)
     val aliceClosingComplete = alice2bob.expectMsgType[ClosingComplete]
     assert(aliceClosingComplete.fees > 0.sat)
-    assert(aliceClosingComplete.closerAndCloseeOutputsSig_opt.nonEmpty)
-    assert(aliceClosingComplete.closerOutputOnlySig_opt.nonEmpty)
-    assert(aliceClosingComplete.closeeOutputOnlySig_opt.isEmpty)
+    commitmentFormat match {
+      case _: SegwitV0CommitmentFormat =>
+        assert(aliceClosingComplete.closerAndCloseeOutputsSig_opt.nonEmpty)
+        assert(aliceClosingComplete.closerOutputOnlySig_opt.nonEmpty)
+      case _: TaprootCommitmentFormat =>
+        assert(aliceClosingComplete.closerAndCloseeOutputsPartialSig_opt.nonEmpty)
+        assert(aliceClosingComplete.closerOutputOnlyPartialSig_opt.nonEmpty)
+    }
+    assert(aliceClosingComplete.closeeOutputOnlySig_opt.orElse(aliceClosingComplete.closeeOutputOnlyPartialSig_opt).isEmpty)
     val bobClosingComplete = bob2alice.expectMsgType[ClosingComplete]
     assert(bobClosingComplete.fees > 0.sat)
-    assert(bobClosingComplete.closerAndCloseeOutputsSig_opt.nonEmpty)
-    assert(bobClosingComplete.closerOutputOnlySig_opt.nonEmpty)
-    assert(bobClosingComplete.closeeOutputOnlySig_opt.isEmpty)
+    commitmentFormat match {
+      case _: SegwitV0CommitmentFormat =>
+        assert(bobClosingComplete.closerAndCloseeOutputsSig_opt.nonEmpty)
+        assert(bobClosingComplete.closerOutputOnlySig_opt.nonEmpty)
+      case _: TaprootCommitmentFormat =>
+        assert(bobClosingComplete.closerAndCloseeOutputsPartialSig_opt.nonEmpty)
+        assert(bobClosingComplete.closerOutputOnlyPartialSig_opt.nonEmpty)
+    }
+    assert(bobClosingComplete.closeeOutputOnlySig_opt.orElse(bobClosingComplete.closeeOutputOnlyPartialSig_opt).isEmpty)
 
     alice2bob.forward(bob, aliceClosingComplete)
     val bobClosingSig = bob2alice.expectMsgType[ClosingSig]
     assert(bobClosingSig.fees == aliceClosingComplete.fees)
     assert(bobClosingSig.lockTime == aliceClosingComplete.lockTime)
+    commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => assert(bobClosingSig.closerAndCloseeOutputsSig_opt.nonEmpty)
+      case _: TaprootCommitmentFormat => assert(bobClosingSig.closerAndCloseeOutputsPartialSig_opt.nonEmpty)
+    }
     bob2alice.forward(alice, bobClosingSig)
     val aliceTx = alice2blockchain.expectMsgType[PublishFinalTx]
     assert(aliceTx.desc == "closing-tx")
@@ -518,6 +539,10 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val aliceClosingSig = alice2bob.expectMsgType[ClosingSig]
     assert(aliceClosingSig.fees == bobClosingComplete.fees)
     assert(aliceClosingSig.lockTime == bobClosingComplete.lockTime)
+    commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => assert(aliceClosingSig.closerAndCloseeOutputsSig_opt.nonEmpty)
+      case _: TaprootCommitmentFormat => assert(aliceClosingSig.closerAndCloseeOutputsPartialSig_opt.nonEmpty)
+    }
     alice2bob.forward(bob, aliceClosingSig)
     val bobTx = bob2blockchain.expectMsgType[PublishFinalTx]
     assert(bobTx.desc == "closing-tx")
@@ -532,25 +557,50 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(bob.stateName == NEGOTIATING_SIMPLE)
   }
 
-  test("recv ClosingComplete (single output)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
+  test("recv ClosingComplete (both outputs)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testReceiveClosingCompleteBothOutputs(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv ClosingComplete (both outputs, simple taproot channels)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testReceiveClosingCompleteBothOutputs(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  }
+
+  def testReceiveClosingCompleteSingleOutput(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
     import f._
     aliceClose(f)
     val closingComplete = alice2bob.expectMsgType[ClosingComplete]
+    commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => assert(closingComplete.closerOutputOnlySig_opt.nonEmpty)
+      case _: TaprootCommitmentFormat => assert(closingComplete.closerOutputOnlyPartialSig_opt.nonEmpty)
+    }
     assert(closingComplete.closerAndCloseeOutputsSig_opt.isEmpty)
-    assert(closingComplete.closerOutputOnlySig_opt.nonEmpty)
+    assert(closingComplete.closerAndCloseeOutputsPartialSig_opt.isEmpty)
     assert(closingComplete.closeeOutputOnlySig_opt.isEmpty)
+    assert(closingComplete.closeeOutputOnlyPartialSig_opt.isEmpty)
     // Bob has nothing at stake.
     bob2alice.expectNoMessage(100 millis)
 
     alice2bob.forward(bob, closingComplete)
-    bob2alice.expectMsgType[ClosingSig]
-    bob2alice.forward(alice)
+    val closingSig = bob2alice.expectMsgType[ClosingSig]
+    commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => assert(closingSig.closerOutputOnlySig_opt.nonEmpty)
+      case _: TaprootCommitmentFormat => assert(closingSig.closerOutputOnlyPartialSig_opt.nonEmpty)
+    }
+    bob2alice.forward(alice, closingSig)
     val closingTx = alice2blockchain.expectMsgType[PublishFinalTx]
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == closingTx.tx.txid)
     alice2blockchain.expectWatchTxConfirmed(closingTx.tx.txid)
     bob2blockchain.expectWatchTxConfirmed(closingTx.tx.txid)
     assert(alice.stateName == NEGOTIATING_SIMPLE)
     assert(bob.stateName == NEGOTIATING_SIMPLE)
+  }
+
+  test("recv ClosingComplete (single output)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
+    testReceiveClosingCompleteSingleOutput(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv ClosingComplete (single output, taproot)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot), Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
+    testReceiveClosingCompleteSingleOutput(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
   test("recv ClosingComplete (single output, trimmed)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
@@ -581,22 +631,38 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(bob.stateName == NEGOTIATING_SIMPLE)
   }
 
-  test("recv ClosingComplete (missing closee output)", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
+  def testReceiveClosingCompleteMissingCloseeOutput(f: FixtureParam, commitmentFormat: CommitmentFormat): Unit = {
     import f._
     aliceClose(f)
     val aliceClosingComplete = alice2bob.expectMsgType[ClosingComplete]
     val bobClosingComplete = bob2alice.expectMsgType[ClosingComplete]
-    alice2bob.forward(bob, aliceClosingComplete.copy(tlvStream = TlvStream(ClosingTlv.CloserOutputOnly(aliceClosingComplete.closerOutputOnlySig_opt.get))))
+    val aliceClosingComplete1 = commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => aliceClosingComplete.copy(tlvStream = TlvStream(ClosingTlv.CloserOutputOnly(aliceClosingComplete.closerOutputOnlySig_opt.get)))
+      case _: TaprootCommitmentFormat => aliceClosingComplete.copy(tlvStream = TlvStream(ClosingCompleteTlv.CloserOutputOnlyPartialSignature(aliceClosingComplete.closerOutputOnlyPartialSig_opt.get)))
+    }
+    alice2bob.forward(bob, aliceClosingComplete1)
     // Bob expects to receive a signature for a closing transaction containing his output, so he ignores Alice's
     // closing_complete instead of sending back his closing_sig.
     bob2alice.expectMsgType[Warning]
     bob2alice.expectNoMessage(100 millis)
     bob2alice.forward(alice, bobClosingComplete)
     val aliceClosingSig = alice2bob.expectMsgType[ClosingSig]
-    alice2bob.forward(bob, aliceClosingSig.copy(tlvStream = TlvStream(ClosingTlv.CloseeOutputOnly(aliceClosingSig.closerAndCloseeOutputsSig_opt.get))))
+    val aliceClosingSig1 = commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => aliceClosingSig.copy(tlvStream = TlvStream(ClosingTlv.CloseeOutputOnly(aliceClosingSig.closerAndCloseeOutputsSig_opt.get)))
+      case _: TaprootCommitmentFormat => aliceClosingSig.copy(tlvStream = TlvStream(ClosingSigTlv.CloseeOutputOnlyPartialSignature(aliceClosingSig.closerAndCloseeOutputsPartialSig_opt.get)))
+    }
+    alice2bob.forward(bob, aliceClosingSig1)
     bob2alice.expectMsgType[Warning]
     bob2alice.expectNoMessage(100 millis)
     bob2blockchain.expectNoMessage(100 millis)
+  }
+
+  test("recv ClosingComplete (missing closee output)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    testReceiveClosingCompleteMissingCloseeOutput(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+  }
+
+  test("recv ClosingComplete (missing closee output, taproot)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    testReceiveClosingCompleteMissingCloseeOutput(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
   test("recv ClosingComplete (with concurrent script update)", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
@@ -879,6 +945,38 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(bob2blockchain.expectMsgType[PublishFinalTx].tx == mutualCloseTx)
     awaitCond(alice.stateName == CLOSING)
     awaitCond(bob.stateName == CLOSING)
+  }
+
+  test("recv CMD_CLOSE with RBF feerates (taproot)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    // Alice creates a first closing transaction.
+    aliceClose(f)
+    alice2bob.expectMsgType[ClosingComplete]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ClosingComplete] // ignored
+    val aliceTx1 = bob2blockchain.expectMsgType[PublishFinalTx]
+    bob2blockchain.expectWatchTxConfirmed(aliceTx1.tx.txid)
+    val closingSig1 = bob2alice.expectMsgType[ClosingSig]
+    assert(closingSig1.nextCloseeNonce_opt.nonEmpty)
+    bob2alice.forward(alice, closingSig1)
+    alice2blockchain.expectFinalTxPublished(aliceTx1.tx.txid)
+    alice2blockchain.expectWatchTxConfirmed(aliceTx1.tx.txid)
+
+    // Alice sends another closing_complete, updating her fees.
+    val probe = TestProbe()
+    val aliceFeerate2 = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].lastClosingFeerate * 1.25
+    alice ! CMD_CLOSE(probe.ref, None, Some(ClosingFeerates(aliceFeerate2, aliceFeerate2, aliceFeerate2)))
+    probe.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    assert(alice2bob.expectMsgType[ClosingComplete].fees > aliceTx1.fee)
+    alice2bob.forward(bob)
+    val aliceTx2 = bob2blockchain.expectMsgType[PublishFinalTx]
+    bob2blockchain.expectWatchTxConfirmed(aliceTx2.tx.txid)
+    val closingSig2 = bob2alice.expectMsgType[ClosingSig]
+    assert(closingSig2.nextCloseeNonce_opt.nonEmpty)
+    assert(closingSig2.nextCloseeNonce_opt != closingSig1.nextCloseeNonce_opt)
+    bob2alice.forward(alice, closingSig2)
+    alice2blockchain.expectFinalTxPublished(aliceTx2.tx.txid)
+    alice2blockchain.expectWatchTxConfirmed(aliceTx2.tx.txid)
   }
 
   test("recv CMD_CLOSE with RBF feerate too low", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
