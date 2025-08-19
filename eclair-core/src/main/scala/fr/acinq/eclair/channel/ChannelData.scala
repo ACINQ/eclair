@@ -252,7 +252,7 @@ final case class ClosingFeerates(preferred: FeeratePerKw, min: FeeratePerKw, max
 
 sealed trait CloseCommand extends HasReplyToCommand
 final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], feerates: Option[ClosingFeerates]) extends CloseCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
-final case class CMD_FORCECLOSE(replyTo: ActorRef, resetFundingTxIndex_opt: Option[Int] = None) extends CloseCommand
+final case class CMD_FORCECLOSE(replyTo: ActorRef, maxClosingFeerate_opt: Option[FeeratePerKw] = None, resetFundingTxIndex_opt: Option[Int] = None) extends CloseCommand
 final case class CMD_BUMP_FORCE_CLOSE_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]], confirmationTarget: ConfirmationTarget) extends Command
 
 sealed trait ChannelFundingCommand extends Command {

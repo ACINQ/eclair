@@ -389,16 +389,17 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           //  - there may be 3rd-stage transactions to publish
           //  - there is a single commitment, the others have all been invalidated
           val commitment = closing.commitments.latest
+          val closingFeerate = closing.maxClosingFeerate_opt.getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates))
           closingType_opt match {
             case Some(c: Closing.MutualClose) =>
               doPublish(c.tx, localPaysClosingFees)
             case Some(c: Closing.LocalClose) =>
-              val (_, secondStageTransactions) = Closing.LocalClose.claimCommitTxOutputs(channelKeys, commitment, c.localCommitPublished.commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
+              val (_, secondStageTransactions) = Closing.LocalClose.claimCommitTxOutputs(channelKeys, commitment, c.localCommitPublished.commitTx, closingFeerate, closing.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
               doPublish(c.localCommitPublished, secondStageTransactions, commitment)
               val thirdStageTransactions = Closing.LocalClose.claimHtlcDelayedOutputs(c.localCommitPublished, channelKeys, commitment, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
               doPublish(c.localCommitPublished, thirdStageTransactions)
             case Some(c: Closing.RemoteClose) =>
-              val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, c.remoteCommit, c.remoteCommitPublished.commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
+              val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, c.remoteCommit, c.remoteCommitPublished.commitTx, closingFeerate, closing.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
               doPublish(c.remoteCommitPublished, secondStageTransactions, commitment)
             case Some(c: Closing.RecoveryClose) =>
               // We cannot do anything in that case: we've already published our recovery transaction before restarting,
@@ -423,16 +424,16 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               //  - there cannot be 3rd-stage transactions yet, no need to re-compute them
               closing.mutualClosePublished.foreach(mcp => doPublish(mcp, localPaysClosingFees))
               closing.localCommitPublished.foreach(lcp => {
-                val (_, secondStageTransactions) = Closing.LocalClose.claimCommitTxOutputs(channelKeys, commitment, lcp.commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
+                val (_, secondStageTransactions) = Closing.LocalClose.claimCommitTxOutputs(channelKeys, commitment, lcp.commitTx, closingFeerate, closing.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
                 doPublish(lcp, secondStageTransactions, commitment)
               })
               closing.remoteCommitPublished.foreach(rcp => {
-                val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, commitment.remoteCommit, rcp.commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
+                val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, commitment.remoteCommit, rcp.commitTx, closingFeerate, closing.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
                 doPublish(rcp, secondStageTransactions, commitment)
               })
               closing.nextRemoteCommitPublished.foreach(rcp => {
                 val remoteCommit = commitment.nextRemoteCommit_opt.get.commit
-                val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, rcp.commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
+                val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, rcp.commitTx, closingFeerate, closing.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
                 doPublish(rcp, secondStageTransactions, commitment)
               })
               closing.revokedCommitPublished.foreach(rvk => {
@@ -2048,7 +2049,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               inactive = Nil
             )
             val d1 = d.copy(commitments = commitments2)
-            spendLocalCurrent(d1)
+            spendLocalCurrent(d1, d.maxClosingFeerate_opt)
           } else {
             // We're still on the same splice history, nothing to do
             stay() using d.copy(commitments = commitments1) storing()
@@ -2131,7 +2132,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           // This commitment may be revoked: we need to verify that its index matches our latest known index before overwriting our previous commitments.
           if (commitment.localCommit.txId == tx.txid) {
             // Our local commit has been published from the outside, it's unexpected but let's deal with it anyway.
-            spendLocalCurrent(d1)
+            spendLocalCurrent(d1, d.maxClosingFeerate_opt)
           } else if (commitment.remoteCommit.txId == tx.txid && commitment.remoteCommit.index == d.commitments.remoteCommitIndex) {
             handleRemoteSpentCurrent(tx, d1)
           } else if (commitment.nextRemoteCommit_opt.exists(_.commit.txId == tx.txid) && commitment.remoteCommit.index == d.commitments.remoteCommitIndex && d.commitments.remoteNextCommitInfo.isLeft) {
@@ -3033,7 +3034,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         handleRemoteSpentNext(tx, d)
       } else if (tx.txid == d.commitments.latest.localCommit.txId) {
         log.warning(s"processing local commit spent from the outside")
-        spendLocalCurrent(d)
+        spendLocalCurrent(d, maxClosingFeerateOverride_opt = None)
       } else if (tx.txIn.map(_.outPoint.txid).contains(d.commitments.latest.fundingTxId)) {
         handleRemoteSpentOther(tx, d)
       } else {
@@ -3042,7 +3043,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             log.warning("a commit tx for an older commitment has been published fundingTxId={} fundingTxIndex={}", tx.txid, commitment.fundingTxIndex)
             // We watch the commitment tx, in the meantime we force close using the latest commitment.
             blockchain ! WatchAlternativeCommitTxConfirmed(self, tx.txid, nodeParams.channelConf.minDepth)
-            spendLocalCurrent(d)
+            spendLocalCurrent(d, maxClosingFeerateOverride_opt = None)
           case None =>
             // This must be a former funding tx that has already been pruned, because watches are unordered.
             log.warning(s"ignoring unrecognized tx=${tx.txid}")
