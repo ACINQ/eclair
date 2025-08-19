@@ -44,12 +44,8 @@ object ChannelFeatures {
     val permanentFeatures = Features.knownFeatures.collect {
       // If we both support 0-conf or scid_alias, we use it even if it wasn't in the channel-type.
       // Note that we cannot use scid_alias if the channel is announced.
-      case Features.ScidAlias =>
-        if (Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias) && !announceChannel) {
-          Some(Features.ScidAlias)
-        } else {
-          None
-        }
+      case Features.ScidAlias if Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias) && !announceChannel => Some(Features.ScidAlias)
+      case Features.ScidAlias => None
       case Features.ZeroConf if Features.canUseFeature(localFeatures, remoteFeatures, Features.ZeroConf) => Some(Features.ZeroConf)
       // We add all other permanent channel features that we both support.
       case f: PermanentChannelFeature if Features.canUseFeature(localFeatures, remoteFeatures, f) => Some(f)
