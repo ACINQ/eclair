@@ -1005,19 +1005,18 @@ object Helpers {
       case class ThirdStageTransactions(htlcDelayedTxs: Seq[HtlcDelayedTx])
 
       /** Claim all the outputs that belong to us in our local commitment transaction. */
-      def claimCommitTxOutputs(channelKeys: ChannelKeys, commitment: FullCommitment, commitTx: Transaction, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (LocalCommitPublished, SecondStageTransactions) = {
+      def claimCommitTxOutputs(channelKeys: ChannelKeys, commitment: FullCommitment, commitTx: Transaction, closingFeerate: FeeratePerKw, finalScriptPubKey: ByteVector, spendAnchorWithoutHtlcs: Boolean)(implicit log: LoggingAdapter): (LocalCommitPublished, SecondStageTransactions) = {
         require(commitment.localCommit.txId == commitTx.txid, "txid mismatch, provided tx is not the current local commit tx")
         val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
         val commitmentKeys = commitment.localKeys(channelKeys)
-        val feerateDelayed = onChainFeeConf.getClosingFeerate(feerates)
         val mainDelayedTx_opt = withTxGenerationLog("local-main-delayed") {
-          ClaimLocalDelayedOutputTx.createUnsignedTx(commitmentKeys, commitTx, commitment.localCommitParams.dustLimit, commitment.localCommitParams.toSelfDelay, finalScriptPubKey, feerateDelayed, commitment.commitmentFormat)
+          ClaimLocalDelayedOutputTx.createUnsignedTx(commitmentKeys, commitTx, commitment.localCommitParams.dustLimit, commitment.localCommitParams.toSelfDelay, finalScriptPubKey, closingFeerate, commitment.commitmentFormat)
         }
         val unsignedHtlcTxs = commitment.htlcTxs(fundingKey, commitmentKeys)
         val (incomingHtlcs, htlcSuccessTxs) = claimIncomingHtlcOutputs(commitmentKeys, commitment.changes, unsignedHtlcTxs)
         val (outgoingHtlcs, htlcTimeoutTxs) = claimOutgoingHtlcOutputs(commitmentKeys, unsignedHtlcTxs)
         val anchorOutput_opt = ClaimLocalAnchorTx.findInput(commitTx, fundingKey, commitmentKeys, commitment.commitmentFormat).toOption
-        val spendAnchor = incomingHtlcs.nonEmpty || outgoingHtlcs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
+        val spendAnchor = incomingHtlcs.nonEmpty || outgoingHtlcs.nonEmpty || spendAnchorWithoutHtlcs
         val anchorTx_opt = if (spendAnchor) {
           claimAnchor(fundingKey, commitmentKeys, commitTx, commitment.commitmentFormat)
         } else {
@@ -1182,16 +1181,16 @@ object Helpers {
       case class SecondStageTransactions(mainTx_opt: Option[ClaimRemoteCommitMainOutputTx], anchorTx_opt: Option[ClaimRemoteAnchorTx], htlcTxs: Seq[ClaimHtlcTx])
 
       /** Claim all the outputs that belong to us in the remote commitment transaction (which can be either their current or next commitment). */
-      def claimCommitTxOutputs(channelKeys: ChannelKeys, commitment: FullCommitment, remoteCommit: RemoteCommit, commitTx: Transaction, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (RemoteCommitPublished, SecondStageTransactions) = {
+      def claimCommitTxOutputs(channelKeys: ChannelKeys, commitment: FullCommitment, remoteCommit: RemoteCommit, commitTx: Transaction, closingFeerate: FeeratePerKw, finalScriptPubKey: ByteVector, spendAnchorWithoutHtlcs: Boolean)(implicit log: LoggingAdapter): (RemoteCommitPublished, SecondStageTransactions) = {
         require(remoteCommit.txId == commitTx.txid, "txid mismatch, provided tx is not the current remote commit tx")
         val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
         val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)
         val outputs = makeRemoteCommitTxOutputs(channelKeys, commitKeys, commitment, remoteCommit)
-        val mainTx_opt = claimMainOutput(commitKeys, commitTx, commitment.localCommitParams.dustLimit, commitment.commitmentFormat, feerates, onChainFeeConf, finalScriptPubKey)
+        val mainTx_opt = claimMainOutput(commitKeys, commitTx, commitment.localCommitParams.dustLimit, commitment.commitmentFormat, closingFeerate, finalScriptPubKey)
         val (incomingHtlcs, htlcSuccessTxs) = claimIncomingHtlcOutputs(commitKeys, commitTx, outputs, commitment, remoteCommit, finalScriptPubKey)
         val (outgoingHtlcs, htlcTimeoutTxs) = claimOutgoingHtlcOutputs(commitKeys, commitTx, outputs, commitment, remoteCommit, finalScriptPubKey)
         val anchorOutput_opt = ClaimRemoteAnchorTx.findInput(commitTx, fundingKey, commitKeys, commitment.commitmentFormat).toOption
-        val spendAnchor = incomingHtlcs.nonEmpty || outgoingHtlcs.nonEmpty || onChainFeeConf.spendAnchorWithoutHtlcs
+        val spendAnchor = incomingHtlcs.nonEmpty || outgoingHtlcs.nonEmpty || spendAnchorWithoutHtlcs
         val anchorTx_opt = if (spendAnchor) {
           claimAnchor(fundingKey, commitKeys, commitTx, commitment.commitmentFormat)
         } else {
@@ -1216,8 +1215,7 @@ object Helpers {
       }
 
       /** Claim our main output from the remote commitment transaction, if available. */
-      def claimMainOutput(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, dustLimit: Satoshi, commitmentFormat: CommitmentFormat, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Option[ClaimRemoteCommitMainOutputTx] = {
-        val feerate = onChainFeeConf.getClosingFeerate(feerates)
+      def claimMainOutput(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, dustLimit: Satoshi, commitmentFormat: CommitmentFormat, feerate: FeeratePerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Option[ClaimRemoteCommitMainOutputTx] = {
         commitmentFormat match {
           case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
             ClaimP2WPKHOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerate, commitmentFormat)
