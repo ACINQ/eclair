@@ -20,7 +20,6 @@ import akka.actor.{ActorRef, PossiblyHarmful, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
-import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.io.Peer
@@ -430,6 +429,7 @@ case class RevokedCommitPublished(commitTx: Transaction, localOutput_opt: Option
 case class ShortIdAliases(localAlias: Alias, remoteAlias_opt: Option[Alias])
 
 sealed trait LocalFundingStatus {
+  /** While the transaction is unconfirmed, we keep the funding transaction (if available) to allow rebroadcasting. */
   def signedTx_opt: Option[Transaction]
   /** We store local signatures for the purpose of retransmitting if the funding/splicing flow is interrupted. */
   def localSigs_opt: Option[TxSignatures]
@@ -458,8 +458,8 @@ object LocalFundingStatus {
   case class ZeroconfPublishedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends UnconfirmedFundingTx with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
-  case class ConfirmedFundingTx(tx: Transaction, shortChannelId: RealShortChannelId, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
-    override val signedTx_opt: Option[Transaction] = Some(tx)
+  case class ConfirmedFundingTx(txOut: TxOut, shortChannelId: RealShortChannelId, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
+    override val signedTx_opt: Option[Transaction] = None
   }
 }
 
@@ -567,6 +567,9 @@ final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_CHANNEL_INI
   val channelId: ByteVector32 = initFunder.temporaryChannelId
 }
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(channelParams: ChannelParams,
+                                                channelType: SupportedChannelType,
+                                                localCommitParams: CommitParams,
+                                                remoteCommitParams: CommitParams,
                                                 fundingAmount: Satoshi,
                                                 pushAmount: MilliSatoshi,
                                                 commitTxFeerate: FeeratePerKw,
@@ -574,16 +577,24 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(channelParams: ChannelParams,
                                                 remoteFirstPerCommitmentPoint: PublicKey,
                                                 replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) extends TransientChannelData {
   val channelId: ByteVector32 = channelParams.channelId
+  val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 }
 final case class DATA_WAIT_FOR_FUNDING_CREATED(channelParams: ChannelParams,
+                                               channelType: SupportedChannelType,
+                                               localCommitParams: CommitParams,
+                                               remoteCommitParams: CommitParams,
                                                fundingAmount: Satoshi,
                                                pushAmount: MilliSatoshi,
                                                commitTxFeerate: FeeratePerKw,
                                                remoteFundingPubKey: PublicKey,
                                                remoteFirstPerCommitmentPoint: PublicKey) extends TransientChannelData {
   val channelId: ByteVector32 = channelParams.channelId
+  val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 }
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelParams: ChannelParams,
+                                              channelType: SupportedChannelType,
+                                              localCommitParams: CommitParams,
+                                              remoteCommitParams: CommitParams,
                                               remoteFundingPubKey: PublicKey,
                                               fundingTx: Transaction,
                                               fundingTxFee: Satoshi,
@@ -593,6 +604,7 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelParams: ChannelParams,
                                               lastSent: FundingCreated,
                                               replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) extends TransientChannelData {
   val channelId: ByteVector32 = channelParams.channelId
+  val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 }
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
@@ -610,6 +622,8 @@ final case class DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANN
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
                                                     channelParams: ChannelParams,
+                                                    localCommitParams: CommitParams,
+                                                    remoteCommitParams: CommitParams,
                                                     secondRemotePerCommitmentPoint: PublicKey,
                                                     localPushAmount: MilliSatoshi,
                                                     remotePushAmount: MilliSatoshi,
@@ -620,8 +634,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(channelParams: ChannelParams,
                                                    secondRemotePerCommitmentPoint: PublicKey,
                                                    localPushAmount: MilliSatoshi,
                                                    remotePushAmount: MilliSatoshi,
-                                                   signingSession: InteractiveTxSigningSession.WaitingForSigs,
-                                                   remoteChannelData_opt: Option[ByteVector]) extends ChannelDataWithoutCommitments
+                                                   signingSession: InteractiveTxSigningSession.WaitingForSigs) extends ChannelDataWithoutCommitments
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       localPushAmount: MilliSatoshi,
                                                       remotePushAmount: MilliSatoshi,
@@ -629,9 +642,9 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
                                                       status: DualFundingStatus,
                                                       deferred: Option[ChannelReady]) extends ChannelDataWithCommitments {
-  def allFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = commitments.active.map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx }
-  def latestFundingTx: DualFundedUnconfirmedFundingTx = commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx]
-  def previousFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = allFundingTxs diff Seq(latestFundingTx)
+  def allFundingTxs: Seq[LocalFundingStatus.DualFundedUnconfirmedFundingTx] = commitments.active.map(_.localFundingStatus).collect { case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx => fundingTx }
+  def latestFundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx = commitments.latest.localFundingStatus.asInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx]
+  def previousFundingTxs: Seq[LocalFundingStatus.DualFundedUnconfirmedFundingTx] = allFundingTxs diff Seq(latestFundingTx)
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments, aliases: ShortIdAliases) extends ChannelDataWithCommitments
 
@@ -639,10 +652,10 @@ final case class DATA_NORMAL(commitments: Commitments,
                              aliases: ShortIdAliases,
                              lastAnnouncement_opt: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
+                             spliceStatus: SpliceStatus,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
-                             closeStatus_opt: Option[CloseStatus],
-                             spliceStatus: SpliceStatus) extends ChannelDataWithCommitments {
+                             closeStatus_opt: Option[CloseStatus]) extends ChannelDataWithCommitments {
   val lastAnnouncedCommitment_opt: Option[AnnouncedCommitment] = lastAnnouncement_opt.flatMap(ann => commitments.resolveCommitment(ann.shortChannelId).map(c => AnnouncedCommitment(c, ann)))
   val lastAnnouncedFundingTxId_opt: Option[TxId] = lastAnnouncedCommitment_opt.map(_.fundingTxId)
   val isNegotiatingQuiescence: Boolean = spliceStatus.isNegotiatingQuiescence
@@ -675,24 +688,21 @@ final case class DATA_CLOSING(commitments: Commitments,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
-                              revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends ChannelDataWithCommitments {
+                              revokedCommitPublished: List[RevokedCommitPublished] = Nil,
+                              maxClosingFeerate_opt: Option[FeeratePerKw] = None) extends ChannelDataWithCommitments {
   val spendingTxs: List[Transaction] = mutualClosePublished.map(_.tx) ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
   require(spendingTxs.nonEmpty, "there must be at least one tx published in this state")
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends ChannelDataWithCommitments
 
+/** Local params that apply for the channel's lifetime. */
 case class LocalChannelParams(nodeId: PublicKey,
                               fundingKeyPath: DeterministicWallet.KeyPath,
-                              dustLimit: Satoshi,
-                              maxHtlcValueInFlightMsat: UInt64,
                               // Channel reserve applied to the remote peer, if we're not using [[Features.DualFunding]] (in
                               // which case the reserve is set to 1%). If the channel is spliced, this initial value will be
                               // ignored in favor of a 1% reserve of the resulting capacity.
                               initialRequestedChannelReserve_opt: Option[Satoshi],
-                              htlcMinimum: MilliSatoshi,
-                              toRemoteDelay: CltvExpiryDelta,
-                              maxAcceptedHtlcs: Int,
                               isChannelOpener: Boolean,
                               paysCommitTxFees: Boolean,
                               upfrontShutdownScript_opt: Option[ByteVector],
@@ -704,18 +714,12 @@ case class LocalChannelParams(nodeId: PublicKey,
   // The node responsible for the commit tx fees is also the node paying the mutual close fees.
   // The other node's balance may be empty, which wouldn't allow them to pay the closing fees.
   val paysClosingFees: Boolean = paysCommitTxFees
-
-  val proposedCommitParams: ProposedCommitParams = ProposedCommitParams(dustLimit, htlcMinimum, maxHtlcValueInFlightMsat, maxAcceptedHtlcs, toRemoteDelay)
 }
 
+/** Remote params that apply for the channel's lifetime. */
 case class RemoteChannelParams(nodeId: PublicKey,
-                               dustLimit: Satoshi,
-                               maxHtlcValueInFlightMsat: UInt64,
                                // See comment in LocalChannelParams for details.
                                initialRequestedChannelReserve_opt: Option[Satoshi],
-                               htlcMinimum: MilliSatoshi,
-                               toRemoteDelay: CltvExpiryDelta,
-                               maxAcceptedHtlcs: Int,
                                revocationBasepoint: PublicKey,
                                paymentBasepoint: PublicKey,
                                delayedPaymentBasepoint: PublicKey,

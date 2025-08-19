@@ -25,21 +25,9 @@ import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeatur
 
 /**
  * Subset of Bolt 9 features used to configure a channel and applicable over the lifetime of that channel.
- * Even if one of these features is later disabled at the connection level, it will still apply to the channel until the
- * channel is upgraded or closed.
+ * Even if one of these features is later disabled at the connection level, it will still apply to the channel.
  */
 case class ChannelFeatures(features: Set[PermanentChannelFeature]) {
-
-  /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
-  val paysDirectlyToWallet: Boolean = hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs) && !hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)
-  /** Legacy option_anchor_outputs is used for Phoenix, because Phoenix doesn't have an on-chain wallet to pay for fees. */
-  val commitmentFormat: CommitmentFormat = if (hasFeature(Features.AnchorOutputs)) {
-    UnsafeLegacyAnchorOutputsCommitmentFormat
-  } else if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
-    ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
-  } else {
-    DefaultCommitmentFormat
-  }
 
   def hasFeature(feature: PermanentChannelFeature): Boolean = features.contains(feature)
 
@@ -51,19 +39,20 @@ object ChannelFeatures {
 
   def apply(features: PermanentChannelFeature*): ChannelFeatures = ChannelFeatures(Set.from(features))
 
-  /** Enrich the channel type with other permanent features that will be applied to the channel. */
+  /** Configure permanent channel features based on local and remote feature. */
   def apply(channelType: SupportedChannelType, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean): ChannelFeatures = {
-    val additionalPermanentFeatures = Features.knownFeatures.collect {
+    val permanentFeatures = Features.knownFeatures.collect {
       // If we both support 0-conf or scid_alias, we use it even if it wasn't in the channel-type.
+      // Note that we cannot use scid_alias if the channel is announced.
       case Features.ScidAlias if Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias) && !announceChannel => Some(Features.ScidAlias)
+      case Features.ScidAlias => None
       case Features.ZeroConf if Features.canUseFeature(localFeatures, remoteFeatures, Features.ZeroConf) => Some(Features.ZeroConf)
-      // Other channel-type features are negotiated in the channel-type, we ignore their value from the init message.
-      case _: ChannelTypeFeature => None
-      // We add all other permanent channel features that aren't negotiated as part of the channel-type.
+      // We add all other permanent channel features that we both support.
       case f: PermanentChannelFeature if Features.canUseFeature(localFeatures, remoteFeatures, f) => Some(f)
     }.flatten
-    val allPermanentFeatures = channelType.features.toSeq ++ additionalPermanentFeatures
-    ChannelFeatures(allPermanentFeatures: _*)
+    // Some permanent features can be negotiated as part of the channel-type.
+    val channelTypeFeatures = channelType.features.collect { case f: PermanentChannelFeature => f }
+    ChannelFeatures(permanentFeatures ++ channelTypeFeatures)
   }
 
 }

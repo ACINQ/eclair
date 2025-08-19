@@ -57,7 +57,7 @@ private[channel] object ChannelCodecs0 {
       // field and don't support additional features which is why all bits are set to 0.
     )
 
-    def localParamsCodec(channelVersion: ChannelTypes0.ChannelVersion): Codec[LocalChannelParams] = (
+    def localParamsCodec(channelVersion: ChannelTypes0.ChannelVersion): Codec[ChannelTypes0.LocalParams] = (
       ("nodeId" | publicKey) ::
         ("channelPath" | keyPathCodec) ::
         ("dustLimit" | satoshi) ::
@@ -71,7 +71,7 @@ private[channel] object ChannelCodecs0 {
         ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
         ("features" | combinedFeaturesCodec)).map {
       case nodeId :: channelPath :: dustLimit :: maxHtlcValueInFlightMsat :: channelReserve :: htlcMinimum :: toSelfDelay :: maxAcceptedHtlcs :: isInitiator :: upfrontShutdownScript_opt :: walletStaticPaymentBasepoint :: features :: HNil =>
-        LocalChannelParams(nodeId, channelPath, dustLimit, maxHtlcValueInFlightMsat, channelReserve, htlcMinimum, toSelfDelay, maxAcceptedHtlcs, isInitiator, isInitiator, upfrontShutdownScript_opt, walletStaticPaymentBasepoint, features)
+        ChannelTypes0.LocalParams(nodeId, channelPath, dustLimit, maxHtlcValueInFlightMsat, channelReserve, htlcMinimum, toSelfDelay, maxAcceptedHtlcs, isInitiator, isInitiator, upfrontShutdownScript_opt, walletStaticPaymentBasepoint, features)
     }.decodeOnly
 
     val remoteParamsCodec: Codec[ChannelTypes0.RemoteParams] = (
@@ -129,7 +129,7 @@ private[channel] object ChannelCodecs0 {
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
         ("redeemScript" | varsizebinarydata)).map {
-      case outpoint :: txOut :: _ :: HNil => InputInfo(outpoint, txOut, ByteVector.empty)
+      case outpoint :: txOut :: _ :: HNil => InputInfo(outpoint, txOut)
     }.decodeOnly
 
     private val missingHtlcExpiry: Codec[CltvExpiry] = provide(CltvExpiry(0))
@@ -420,7 +420,7 @@ private[channel] object ChannelCodecs0 {
         ("closeStatus" | provide(Option.empty[CloseStatus]))).map {
       case commitments :: shortChannelId :: _ :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
         val aliases = ShortIdAliases(localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None)
-        DATA_NORMAL(commitments, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice)
+        DATA_NORMAL(commitments, aliases, channelAnnouncement, channelUpdate, SpliceStatus.NoSplice, localShutdown, remoteShutdown, closingFeerates)
     }.decodeOnly
 
     val DATA_NORMAL_10_Codec: Codec[DATA_NORMAL] = (
@@ -434,7 +434,7 @@ private[channel] object ChannelCodecs0 {
         ("closeStatus" | provide(Option.empty[CloseStatus]))).map {
       case commitments :: shortChannelId :: _ :: channelAnnouncement :: channelUpdate :: localShutdown :: remoteShutdown :: closingFeerates :: HNil =>
         val aliases = ShortIdAliases(localAlias = Alias(shortChannelId.toLong), remoteAlias_opt = None)
-        DATA_NORMAL(commitments, aliases, channelAnnouncement, channelUpdate, localShutdown, remoteShutdown, closingFeerates, SpliceStatus.NoSplice)
+        DATA_NORMAL(commitments, aliases, channelAnnouncement, channelUpdate, SpliceStatus.NoSplice, localShutdown, remoteShutdown, closingFeerates)
     }.decodeOnly
 
     val DATA_SHUTDOWN_04_Codec: Codec[DATA_SHUTDOWN] = (

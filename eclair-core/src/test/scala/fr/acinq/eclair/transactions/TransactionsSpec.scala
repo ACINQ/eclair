@@ -24,7 +24,6 @@ import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature
-import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions.CommitmentOutput.OutHtlc
@@ -251,10 +250,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val walletPriv = randomKey()
     val walletPub = walletPriv.publicKey
     val finalPubKeyScript = Script.write(Script.pay2wpkh(walletPub))
-    val fundingInfo = Funding.makeFundingScript(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitmentFormat)
+    val fundingInfo = makeFundingScript(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitmentFormat)
     val fundingTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(1), fundingInfo.pubkeyScript) :: Nil, lockTime = 0)
     val fundingTxOutpoint = OutPoint(fundingTx.txid, 0)
-    val commitInput = Funding.makeFundingInputInfo(fundingTxOutpoint.txid, fundingTxOutpoint.index.toInt, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitmentFormat)
+    val commitInput = makeFundingInputInfo(fundingTxOutpoint.txid, fundingTxOutpoint.index.toInt, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitmentFormat)
 
     val paymentPreimages = Seq(randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32(), randomBytes32())
     val paymentPreimageMap = paymentPreimages.map(p => sha256(p) -> p).toMap
@@ -316,6 +315,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           commitTx
       }
       commitTx.correctlySpends(Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      // We check the expected weight of the commit input:
+      val commitInputWeight = commitTx.copy(txIn = Seq(commitTx.txIn.head, commitTx.txIn.head)).weight() - commitTx.weight()
+      checkExpectedWeight(commitInputWeight, commitmentFormat.fundingInputWeight, commitmentFormat)
       val htlcTxs = makeHtlcTxs(commitTx, outputs, commitmentFormat)
       val expiries = htlcTxs.map(tx => tx.htlcId -> tx.htlcExpiry.toLong).toMap
       val htlcSuccessTxs = htlcTxs.collect { case tx: UnsignedHtlcSuccessTx => tx }
@@ -587,7 +589,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       theirHtlcPublicKey = remoteHtlcPriv.publicKey,
       revocationPublicKey = localRevocationPriv.publicKey,
     )
-    val commitInput = Funding.makeFundingInputInfo(TxId.fromValidHex("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, DefaultCommitmentFormat)
+    val commitInput = makeFundingInputInfo(TxId.fromValidHex("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, DefaultCommitmentFormat)
 
     // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
     // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
@@ -648,7 +650,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("find our output in closing tx") {
-    val commitInput = Funding.makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    val commitInput = makeFundingInputInfo(randomTxId(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val localPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
     val remotePubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
 

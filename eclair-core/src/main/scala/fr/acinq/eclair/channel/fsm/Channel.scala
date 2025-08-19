@@ -396,9 +396,13 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             case Some(c: Closing.RevokedClose) =>
               Closing.RevokedClose.getRemotePerCommitmentSecret(closing.commitments.channelParams, channelKeys, closing.commitments.remotePerCommitmentSecrets, c.revokedCommitPublished.commitTx).foreach {
                 case (commitmentNumber, remotePerCommitmentSecret) =>
-                  val (_, secondStageTransactions) = Closing.RevokedClose.claimCommitTxOutputs(closing.commitments.channelParams, channelKeys, c.revokedCommitPublished.commitTx, commitmentNumber, remotePerCommitmentSecret, nodeParams.db.channels, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
+                  // TODO: once we allow changing the commitment format or to_self_delay during a splice, those values may be incorrect.
+                  val toSelfDelay = closing.commitments.latest.remoteCommitParams.toSelfDelay
+                  val commitmentFormat = closing.commitments.latest.commitmentFormat
+                  val dustLimit = closing.commitments.latest.localCommitParams.dustLimit
+                  val (_, secondStageTransactions) = Closing.RevokedClose.claimCommitTxOutputs(closing.commitments.channelParams, channelKeys, c.revokedCommitPublished.commitTx, commitmentNumber, remotePerCommitmentSecret, toSelfDelay, commitmentFormat, nodeParams.db.channels, dustLimit, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
                   doPublish(c.revokedCommitPublished, secondStageTransactions)
-                  val thirdStageTransactions = Closing.RevokedClose.claimHtlcTxsOutputs(closing.commitments.channelParams, channelKeys, remotePerCommitmentSecret, c.revokedCommitPublished, nodeParams.currentBitcoinCoreFeerates, closing.finalScriptPubKey)
+                  val thirdStageTransactions = Closing.RevokedClose.claimHtlcTxsOutputs(closing.commitments.channelParams, channelKeys, remotePerCommitmentSecret, toSelfDelay, commitmentFormat, c.revokedCommitPublished, dustLimit, nodeParams.currentBitcoinCoreFeerates, closing.finalScriptPubKey)
                   doPublish(c.revokedCommitPublished, thirdStageTransactions)
               }
             case None =>
@@ -423,7 +427,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               closing.revokedCommitPublished.foreach(rvk => {
                 Closing.RevokedClose.getRemotePerCommitmentSecret(closing.commitments.channelParams, channelKeys, closing.commitments.remotePerCommitmentSecrets, rvk.commitTx).foreach {
                   case (commitmentNumber, remotePerCommitmentSecret) =>
-                    val (_, secondStageTransactions) = Closing.RevokedClose.claimCommitTxOutputs(closing.commitments.channelParams, channelKeys, rvk.commitTx, commitmentNumber, remotePerCommitmentSecret, nodeParams.db.channels, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
+                    // TODO: once we allow changing the commitment format or to_self_delay during a splice, those values may be incorrect.
+                    val toSelfDelay = closing.commitments.latest.remoteCommitParams.toSelfDelay
+                    val commitmentFormat = closing.commitments.latest.commitmentFormat
+                    val dustLimit = closing.commitments.latest.localCommitParams.dustLimit
+                    val (_, secondStageTransactions) = Closing.RevokedClose.claimCommitTxOutputs(closing.commitments.channelParams, channelKeys, rvk.commitTx, commitmentNumber, remotePerCommitmentSecret, toSelfDelay, commitmentFormat, nodeParams.db.channels, dustLimit, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, closing.finalScriptPubKey)
                     doPublish(rvk, secondStageTransactions)
                 }
               })
@@ -620,11 +628,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               log.debug("sending a new sig, spec:\n{}", commitments1.latest.specs2String)
               val nextRemoteCommit = commitments1.latest.nextRemoteCommit_opt.get.commit
               val nextCommitNumber = nextRemoteCommit.index
-              // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
-              // counterparty, so only htlcs above remote's dust_limit matter
-              val trimmedHtlcs = Transactions.trimOfferedHtlcs(d.commitments.channelParams.remoteCommitParams.dustLimit, nextRemoteCommit.spec, commitments1.channelParams.commitmentFormat) ++
-                Transactions.trimReceivedHtlcs(commitments1.channelParams.remoteCommitParams.dustLimit, nextRemoteCommit.spec, commitments1.channelParams.commitmentFormat)
-              trimmedHtlcs.map(_.add).foreach { htlc =>
+              // We persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
+              // counterparty, so only htlcs above remote's dust_limit matter.
+              val trimmedOfferedHtlcs = d.commitments.active.flatMap(c => Transactions.trimOfferedHtlcs(c.remoteCommitParams.dustLimit, nextRemoteCommit.spec, c.commitmentFormat)).map(_.add).toSet
+              val trimmedReceivedHtlcs = d.commitments.active.flatMap(c => Transactions.trimReceivedHtlcs(c.remoteCommitParams.dustLimit, nextRemoteCommit.spec, c.commitmentFormat)).map(_.add).toSet
+              (trimmedOfferedHtlcs ++ trimmedReceivedHtlcs).foreach { htlc =>
                 log.debug(s"adding paymentHash=${htlc.paymentHash} cltvExpiry=${htlc.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
                 nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, htlc.paymentHash, htlc.cltvExpiry)
               }
@@ -1082,8 +1090,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceWithUnconfirmedTx(d.channelId, d.commitments.latest.fundingTxId).getMessage)
           } else {
             val parentCommitment = d.commitments.latest.commitment
+            val commitmentFormat = parentCommitment.commitmentFormat
             val localFundingPubKey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey
-            val fundingScript = Funding.makeFundingScript(localFundingPubKey, msg.fundingPubKey, d.commitments.channelParams.commitmentFormat).pubkeyScript
+            val fundingScript = Transactions.makeFundingScript(localFundingPubKey, msg.fundingPubKey, commitmentFormat).pubkeyScript
             LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = false, msg.requestFunding_opt, nodeParams.liquidityAdsConfig.rates_opt, msg.useFeeCredit_opt) match {
               case Left(t) =>
                 log.warning("rejecting splice request with invalid liquidity ads: {}", t.getMessage)
@@ -1103,11 +1112,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   isInitiator = false,
                   localContribution = spliceAck.fundingContribution,
                   remoteContribution = msg.fundingContribution,
-                  sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
+                  sharedInput_opt = Some(SharedFundingInput(channelKeys, parentCommitment)),
                   remoteFundingPubKey = msg.fundingPubKey,
                   localOutputs = Nil,
+                  commitmentFormat = commitmentFormat,
                   lockTime = msg.lockTime,
-                  dustLimit = d.commitments.channelParams.localCommitParams.dustLimit.max(d.commitments.channelParams.remoteCommitParams.dustLimit),
+                  dustLimit = parentCommitment.localCommitParams.dustLimit.max(parentCommitment.remoteCommitParams.dustLimit),
                   targetFeerate = msg.feerate,
                   requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceAck.requireConfirmedInputs)
                 )
@@ -1116,6 +1126,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   sessionId,
                   nodeParams, fundingParams,
                   channelParams = d.commitments.channelParams,
+                  localCommitParams = parentCommitment.localCommitParams,
+                  remoteCommitParams = parentCommitment.remoteCommitParams,
                   channelKeys = channelKeys,
                   purpose = InteractiveTxBuilder.SpliceTx(parentCommitment, d.commitments.changes),
                   localPushAmount = spliceAck.pushAmount, remotePushAmount = msg.pushAmount,
@@ -1142,20 +1154,22 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case SpliceStatus.SpliceRequested(cmd, spliceInit) =>
           log.info("our peer accepted our splice request and will contribute {} to the funding transaction", msg.fundingContribution)
           val parentCommitment = d.commitments.latest.commitment
+          val commitmentFormat = parentCommitment.commitmentFormat
           val fundingParams = InteractiveTxParams(
             channelId = d.channelId,
             isInitiator = true,
             localContribution = spliceInit.fundingContribution,
             remoteContribution = msg.fundingContribution,
-            sharedInput_opt = Some(Multisig2of2Input(parentCommitment)),
+            sharedInput_opt = Some(SharedFundingInput(channelKeys, parentCommitment)),
             remoteFundingPubKey = msg.fundingPubKey,
             localOutputs = cmd.spliceOutputs,
+            commitmentFormat = commitmentFormat,
             lockTime = spliceInit.lockTime,
-            dustLimit = d.commitments.channelParams.localCommitParams.dustLimit.max(d.commitments.channelParams.remoteCommitParams.dustLimit),
+            dustLimit = parentCommitment.localCommitParams.dustLimit.max(parentCommitment.remoteCommitParams.dustLimit),
             targetFeerate = spliceInit.feerate,
             requireConfirmedInputs = RequireConfirmedInputs(forLocal = msg.requireConfirmedInputs, forRemote = spliceInit.requireConfirmedInputs)
           )
-          val fundingScript = Funding.makeFundingScript(spliceInit.fundingPubKey, msg.fundingPubKey, d.commitments.channelParams.commitmentFormat).pubkeyScript
+          val fundingScript = Transactions.makeFundingScript(spliceInit.fundingPubKey, msg.fundingPubKey, commitmentFormat).pubkeyScript
           LiquidityAds.validateRemoteFunding(spliceInit.requestFunding_opt, remoteNodeId, d.channelId, fundingScript, msg.fundingContribution, spliceInit.feerate, isChannelCreation = false, msg.willFund_opt) match {
             case Left(t) =>
               log.info("rejecting splice attempt: invalid liquidity ads response ({})", t.getMessage)
@@ -1167,6 +1181,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 sessionId,
                 nodeParams, fundingParams,
                 channelParams = d.commitments.channelParams,
+                localCommitParams = parentCommitment.localCommitParams,
+                remoteCommitParams = parentCommitment.remoteCommitParams,
                 channelKeys = channelKeys,
                 purpose = InteractiveTxBuilder.SpliceTx(parentCommitment, d.commitments.changes),
                 localPushAmount = cmd.pushAmount, remotePushAmount = msg.pushAmount,
@@ -1207,7 +1223,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               log.info("rejecting rbf attempt: last attempt was less than {} blocks ago", nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks)
               stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidRbfAttemptTooSoon(d.channelId, rbf.latestFundingTx.createdAt, rbf.latestFundingTx.createdAt + nodeParams.channelConf.remoteRbfLimits.attemptDeltaBlocks).getMessage)
             case Right(rbf) =>
-              val fundingScript = d.commitments.latest.commitInput.txOut.publicKeyScript
+              val fundingScript = d.commitments.latest.commitInput(channelKeys).txOut.publicKeyScript
               LiquidityAds.validateRequest(nodeParams.privateKey, d.channelId, fundingScript, msg.feerate, isChannelCreation = false, msg.requestFunding_opt, nodeParams.liquidityAdsConfig.rates_opt, feeCreditUsed_opt = None) match {
                 case Left(t) =>
                   log.warning("rejecting rbf request with invalid liquidity ads: {}", t.getMessage)
@@ -1223,9 +1239,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                     isInitiator = false,
                     localContribution = fundingContribution,
                     remoteContribution = msg.fundingContribution,
-                    sharedInput_opt = Some(Multisig2of2Input(rbf.parentCommitment)),
+                    sharedInput_opt = Some(SharedFundingInput(channelKeys, rbf.parentCommitment)),
                     remoteFundingPubKey = rbf.latestFundingTx.fundingParams.remoteFundingPubKey,
                     localOutputs = rbf.latestFundingTx.fundingParams.localOutputs,
+                    commitmentFormat = rbf.latestFundingTx.fundingParams.commitmentFormat,
                     lockTime = msg.lockTime,
                     dustLimit = rbf.latestFundingTx.fundingParams.dustLimit,
                     targetFeerate = msg.feerate,
@@ -1236,6 +1253,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                     sessionId,
                     nodeParams, fundingParams,
                     channelParams = d.commitments.channelParams,
+                    localCommitParams = rbf.parentCommitment.localCommitParams,
+                    remoteCommitParams = rbf.parentCommitment.remoteCommitParams,
                     channelKeys = channelKeys,
                     purpose = rbf,
                     localPushAmount = 0 msat, remotePushAmount = 0 msat,
@@ -1264,7 +1283,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case SpliceStatus.RbfRequested(cmd, txInitRbf) =>
           getSpliceRbfContext(Some(cmd), d) match {
             case Right(rbf) =>
-              val fundingScript = d.commitments.latest.commitInput.txOut.publicKeyScript
+              val fundingScript = d.commitments.latest.commitInput(channelKeys).txOut.publicKeyScript
               LiquidityAds.validateRemoteFunding(cmd.requestFunding_opt, remoteNodeId, d.channelId, fundingScript, msg.fundingContribution, txInitRbf.feerate, isChannelCreation = false, msg.willFund_opt) match {
                 case Left(t) =>
                   log.info("rejecting rbf attempt: invalid liquidity ads response ({})", t.getMessage)
@@ -1277,9 +1296,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                     isInitiator = true,
                     localContribution = txInitRbf.fundingContribution,
                     remoteContribution = msg.fundingContribution,
-                    sharedInput_opt = Some(Multisig2of2Input(rbf.parentCommitment)),
+                    sharedInput_opt = Some(SharedFundingInput(channelKeys, rbf.parentCommitment)),
                     remoteFundingPubKey = rbf.latestFundingTx.fundingParams.remoteFundingPubKey,
                     localOutputs = rbf.latestFundingTx.fundingParams.localOutputs,
+                    commitmentFormat = rbf.latestFundingTx.fundingParams.commitmentFormat,
                     lockTime = txInitRbf.lockTime,
                     dustLimit = rbf.latestFundingTx.fundingParams.dustLimit,
                     targetFeerate = txInitRbf.feerate,
@@ -1290,6 +1310,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                     sessionId,
                     nodeParams, fundingParams,
                     channelParams = d.commitments.channelParams,
+                    localCommitParams = rbf.parentCommitment.localCommitParams,
+                    remoteCommitParams = rbf.parentCommitment.remoteCommitParams,
                     channelKeys = channelKeys,
                     purpose = rbf,
                     localPushAmount = 0 msat, remotePushAmount = 0 msat,
@@ -1360,7 +1382,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               cmd_opt.foreach(cmd => cmd.replyTo ! RES_SPLICE(fundingTxIndex = signingSession.fundingTxIndex, signingSession.fundingTx.txId, signingSession.fundingParams.fundingAmount, signingSession.localCommit.fold(_.spec, _.spec).toLocal))
               remoteCommitSig_opt.foreach(self ! _)
               liquidityPurchase_opt.collect {
-                case purchase if !signingSession.fundingParams.isInitiator => peer ! LiquidityPurchaseSigned(d.channelId, signingSession.fundingTx.txId, signingSession.fundingTxIndex, d.commitments.channelParams.remoteCommitParams.htlcMinimum, purchase)
+                case purchase if !signingSession.fundingParams.isInitiator => peer ! LiquidityPurchaseSigned(d.channelId, signingSession.fundingTx.txId, signingSession.fundingTxIndex, signingSession.remoteCommitParams.htlcMinimum, purchase)
               }
               val d1 = d.copy(spliceStatus = SpliceStatus.SpliceWaitingForSigs(signingSession))
               stay() using d1 storing() sending commitSig
@@ -1613,11 +1635,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               log.debug("sending a new sig, spec:\n{}", commitments1.latest.specs2String)
               val nextRemoteCommit = commitments1.latest.nextRemoteCommit_opt.get.commit
               val nextCommitNumber = nextRemoteCommit.index
-              // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
-              // counterparty, so only htlcs above remote's dust_limit matter
-              val trimmedHtlcs = Transactions.trimOfferedHtlcs(d.commitments.channelParams.remoteCommitParams.dustLimit, nextRemoteCommit.spec, d.commitments.channelParams.commitmentFormat) ++
-                Transactions.trimReceivedHtlcs(d.commitments.channelParams.remoteCommitParams.dustLimit, nextRemoteCommit.spec, d.commitments.channelParams.commitmentFormat)
-              trimmedHtlcs.map(_.add).foreach { htlc =>
+              // We persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
+              // counterparty, so only htlcs above remote's dust_limit matter.
+              val trimmedOfferedHtlcs = d.commitments.active.flatMap(c => Transactions.trimOfferedHtlcs(c.remoteCommitParams.dustLimit, nextRemoteCommit.spec, c.commitmentFormat)).map(_.add).toSet
+              val trimmedReceivedHtlcs = d.commitments.active.flatMap(c => Transactions.trimReceivedHtlcs(c.remoteCommitParams.dustLimit, nextRemoteCommit.spec, c.commitmentFormat)).map(_.add).toSet
+              (trimmedOfferedHtlcs ++ trimmedReceivedHtlcs).foreach { htlc =>
                 log.debug(s"adding paymentHash=${htlc.paymentHash} cltvExpiry=${htlc.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
                 nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, htlc.paymentHash, htlc.cltvExpiry)
               }
@@ -1774,7 +1796,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               case Some(ClosingSignedTlv.FeeRange(minFee, maxFee)) if !d.commitments.localChannelParams.paysClosingFees =>
                 // if we are not paying the closing fees and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
                 // we don't care much about the closing fee since they're paying it (not us) and we can use CPFP if we want to speed up confirmation
-                val localClosingFees = MutualClose.firstClosingFee(d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.currentFeeratesForFundingClosing, nodeParams.onChainFeeConf)
+                val localClosingFees = MutualClose.firstClosingFee(channelKeys, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.currentFeeratesForFundingClosing, nodeParams.onChainFeeConf)
                 if (maxFee < localClosingFees.min) {
                   log.warning("their highest closing fee is below our minimum fee: {} < {}", maxFee, localClosingFees.min)
                   stay() sending Warning(d.channelId, s"closing fee range must not be below ${localClosingFees.min}")
@@ -1801,7 +1823,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 val lastLocalClosingFee_opt = lastLocalClosingSigned_opt.map(_.localClosingSigned.feeSatoshis)
                 val (closingTx, closingSigned) = {
                   // if we are not the channel initiator and we were waiting for them to send their first closing_signed, we don't have a lastLocalClosingFee, so we compute a firstClosingFee
-                  val localClosingFees = MutualClose.firstClosingFee(d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.currentFeeratesForFundingClosing, nodeParams.onChainFeeConf)
+                  val localClosingFees = MutualClose.firstClosingFee(channelKeys, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.currentFeeratesForFundingClosing, nodeParams.onChainFeeConf)
                   val nextPreferredFee = MutualClose.nextClosingFee(lastLocalClosingFee_opt.getOrElse(localClosingFees.preferred), remoteClosingFee)
                   MutualClose.makeClosingTx(channelKeys, d.commitments.latest, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, localClosingFees.copy(preferred = nextPreferredFee))
                 }
@@ -2148,14 +2170,18 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         revokedCommitPublished = d.revokedCommitPublished.map(rvk => {
           // If the tx is one of our peer's HTLC txs, they were able to claim the output before us.
           // In that case, we immediately publish a penalty transaction spending their HTLC tx to steal their funds.
-          val (rvk1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(d.commitments.channelParams, channelKeys, d.commitments.remotePerCommitmentSecrets, rvk, tx, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)
+          // TODO: once we allow changing the commitment format or to_self_delay during a splice, those values may be incorrect.
+          val toSelfDelay = d.commitments.latest.remoteCommitParams.toSelfDelay
+          val commitmentFormat = d.commitments.latest.commitmentFormat
+          val dustLimit = d.commitments.latest.localCommitParams.dustLimit
+          val (rvk1, penaltyTxs) = Closing.RevokedClose.claimHtlcTxOutputs(d.commitments.channelParams, channelKeys, d.commitments.remotePerCommitmentSecrets, toSelfDelay, commitmentFormat, rvk, tx, dustLimit, nodeParams.currentBitcoinCoreFeerates, d.finalScriptPubKey)
           doPublish(rvk1, penaltyTxs)
           Closing.updateIrrevocablySpent(rvk1, tx)
         })
       )
       // if the local commitment tx just got confirmed, let's send an event telling when we will get the main output refund
       if (d1.localCommitPublished.exists(_.commitTx.txid == tx.txid)) {
-        context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.channelParams.localCommitParams.toSelfDelay.toInt))
+        context.system.eventStream.publish(LocalCommitConfirmed(self, remoteNodeId, d.channelId, blockHeight + d.commitments.latest.localCommitParams.toSelfDelay.toInt))
       }
       // if the local or remote commitment tx just got confirmed, we abandon anchor transactions that were created based
       // on the other commitment: they will never confirm so we must free their wallet inputs.
@@ -2239,7 +2265,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     case Event(c: CMD_CLOSE, d: DATA_CLOSING) => handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
 
     case Event(c: CMD_BUMP_FORCE_CLOSE_FEE, d: DATA_CLOSING) =>
-      d.commitments.channelParams.commitmentFormat match {
+      d.commitments.latest.commitmentFormat match {
         case commitmentFormat: Transactions.AnchorOutputsCommitmentFormat =>
           val commitment = d.commitments.latest
           val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
@@ -2443,7 +2469,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case Some(fundingTxId) if fundingTxId == d.signingSession.fundingTx.txId && channelReestablish.nextLocalCommitmentNumber == 0 =>
           // They haven't received our commit_sig: we retransmit it, and will send our tx_signatures once we've received
           // their commit_sig or their tx_signatures (depending on who must send tx_signatures first).
-          val commitSig = d.signingSession.remoteCommit.sign(d.channelParams, channelKeys, d.signingSession.fundingTxIndex, d.signingSession.fundingParams.remoteFundingPubKey, d.signingSession.commitInput)
+          val fundingParams = d.signingSession.fundingParams
+          val commitSig = d.signingSession.remoteCommit.sign(d.channelParams, d.signingSession.remoteCommitParams, channelKeys, d.signingSession.fundingTxIndex, fundingParams.remoteFundingPubKey, d.signingSession.commitInput(channelKeys), fundingParams.commitmentFormat)
           goto(WAIT_FOR_DUAL_FUNDING_SIGNED) sending commitSig
         case _ => goto(WAIT_FOR_DUAL_FUNDING_SIGNED)
       }
@@ -2456,7 +2483,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               if (channelReestablish.nextLocalCommitmentNumber == 0) {
                 // They haven't received our commit_sig: we retransmit it.
                 // We're also waiting for signatures from them, and will send our tx_signatures once we receive them.
-                val commitSig = signingSession.remoteCommit.sign(d.commitments.channelParams, channelKeys, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubKey, signingSession.commitInput)
+                val fundingParams = signingSession.fundingParams
+                val commitSig = signingSession.remoteCommit.sign(d.commitments.channelParams, signingSession.remoteCommitParams, channelKeys, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubKey, signingSession.commitInput(channelKeys), fundingParams.commitmentFormat)
                 goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending commitSig
               } else {
                 // They have already received our commit_sig, but we were waiting for them to send either commit_sig or
@@ -2467,7 +2495,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               // We've already received their commit_sig and sent our tx_signatures. We retransmit our tx_signatures
               // and our commit_sig if they haven't received it already.
               if (channelReestablish.nextLocalCommitmentNumber == 0) {
-                val commitSig = d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput)
+                val commitSig = d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, d.commitments.latest.remoteCommitParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput(channelKeys), d.commitments.latest.commitmentFormat)
                 goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending Seq(commitSig, d.latestFundingTx.sharedTx.localSigs)
               } else {
                 goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) sending d.latestFundingTx.sharedTx.localSigs
@@ -2495,7 +2523,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           d.commitments.latest.localFundingStatus.localSigs_opt match {
             case Some(txSigs) if channelReestablish.nextLocalCommitmentNumber == 0 =>
               log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
-              val commitSig = d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput)
+              val commitSig = d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, d.commitments.latest.remoteCommitParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput(channelKeys), d.commitments.latest.commitmentFormat)
               goto(WAIT_FOR_DUAL_FUNDING_READY) sending Seq(commitSig, txSigs, channelReady)
             case Some(txSigs) =>
               log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
@@ -2556,7 +2584,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                     // They haven't received our commit_sig: we retransmit it.
                     // We're also waiting for signatures from them, and will send our tx_signatures once we receive them.
                     log.info("re-sending commit_sig for splice attempt with fundingTxIndex={} fundingTxId={}", signingSession.fundingTxIndex, signingSession.fundingTx.txId)
-                    val commitSig = signingSession.remoteCommit.sign(d.commitments.channelParams, channelKeys, signingSession.fundingTxIndex, signingSession.fundingParams.remoteFundingPubKey, signingSession.commitInput)
+                    val fundingParams = signingSession.fundingParams
+                    val commitSig = signingSession.remoteCommit.sign(d.commitments.channelParams, signingSession.remoteCommitParams, channelKeys, signingSession.fundingTxIndex, fundingParams.remoteFundingPubKey, signingSession.commitInput(channelKeys), fundingParams.commitmentFormat)
                     sendQueue = sendQueue :+ commitSig
                   }
                   d.spliceStatus
@@ -2567,7 +2596,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                       // tx_signatures and our commit_sig if they haven't received it already.
                       if (channelReestablish.nextLocalCommitmentNumber == d.commitments.remoteCommitIndex) {
                         log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
-                        val commitSig = d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput)
+                        val commitSig = d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, d.commitments.latest.remoteCommitParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput(channelKeys), d.commitments.latest.commitmentFormat)
                         sendQueue = sendQueue :+ commitSig :+ dfu.sharedTx.localSigs
                       } else {
                         log.info("re-sending tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
@@ -2656,7 +2685,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           val shutdownInProgress = d.localShutdown.nonEmpty || d.remoteShutdown.nonEmpty
           if (d.commitments.localChannelParams.paysCommitTxFees && !shutdownInProgress) {
             val currentFeeratePerKw = d.commitments.latest.localCommit.spec.commitTxFeerate
-            val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.channelParams.commitmentFormat, d.commitments.latest.capacity)
+            val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat, d.commitments.latest.capacity)
             if (nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)) {
               self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
             }
@@ -2862,7 +2891,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // slightly before us. In that case, the WatchConfirmed may trigger first, and it would be inefficient to let the
       // WatchPublished override our funding status: it will make us set a new WatchConfirmed that will instantly
       // trigger and rewrite the funding status again.
-      val alreadyConfirmed = d.commitments.active.map(_.localFundingStatus).collect { case f: LocalFundingStatus.ConfirmedFundingTx => f.tx }.exists(_.txid == w.tx.txid)
+      val alreadyConfirmed = d.commitments.active.exists(c => c.fundingTxId == w.tx.txid && c.localFundingStatus.isInstanceOf[LocalFundingStatus.ConfirmedFundingTx])
       if (alreadyConfirmed) {
         stay()
       } else {
@@ -3122,11 +3151,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
   private def handleCurrentFeerate(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
     val commitments = d.commitments.latest
-    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.channelParams.commitmentFormat, commitments.capacity)
+    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat, commitments.capacity)
     val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
     val shouldUpdateFee = d.commitments.localChannelParams.paysCommitTxFees && nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)
     val shouldClose = !d.commitments.localChannelParams.paysCommitTxFees &&
-      nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isProposedFeerateTooLow(d.commitments.channelParams.commitmentFormat, networkFeeratePerKw, currentFeeratePerKw) &&
+      nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isProposedFeerateTooLow(d.commitments.latest.commitmentFormat, networkFeeratePerKw, currentFeeratePerKw) &&
       d.commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
     if (shouldUpdateFee) {
       self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
@@ -3147,11 +3176,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
    */
   private def handleCurrentFeerateDisconnected(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
     val commitments = d.commitments.latest
-    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.channelParams.commitmentFormat, commitments.capacity)
+    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat, commitments.capacity)
     val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
     // if the network fees are too high we risk to not be able to confirm our current commitment
     val shouldClose = networkFeeratePerKw > currentFeeratePerKw &&
-      nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isProposedFeerateTooLow(d.commitments.channelParams.commitmentFormat, networkFeeratePerKw, currentFeeratePerKw) &&
+      nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isProposedFeerateTooLow(d.commitments.latest.commitmentFormat, networkFeeratePerKw, currentFeeratePerKw) &&
       d.commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
     if (shouldClose) {
       if (nodeParams.onChainFeeConf.closeOnOfflineMismatch) {
@@ -3340,12 +3369,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     val targetFeerate = nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing)
     val fundingContribution = InteractiveTxFunder.computeSpliceContribution(
       isInitiator = true,
-      sharedInput = Multisig2of2Input(parentCommitment),
+      sharedInput = SharedFundingInput(channelKeys, parentCommitment),
       spliceInAmount = cmd.additionalLocalFunding,
       spliceOut = cmd.spliceOutputs,
       targetFeerate = targetFeerate)
     val commitTxFees = if (d.commitments.localChannelParams.paysCommitTxFees) {
-      Transactions.commitTxTotalCost(d.commitments.channelParams.remoteCommitParams.dustLimit, parentCommitment.remoteCommit.spec, d.commitments.channelParams.commitmentFormat)
+      Transactions.commitTxTotalCost(parentCommitment.remoteCommitParams.dustLimit, parentCommitment.remoteCommit.spec, parentCommitment.commitmentFormat)
     } else {
       0.sat
     }
@@ -3375,7 +3404,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // We use the same contribution as the previous splice attempt.
       val fundingContribution = rbf.latestFundingTx.fundingParams.localContribution
       val commitTxFees = if (d.commitments.localChannelParams.paysCommitTxFees) {
-        Transactions.commitTxTotalCost(d.commitments.channelParams.remoteCommitParams.dustLimit, rbf.parentCommitment.remoteCommit.spec, d.commitments.channelParams.commitmentFormat)
+        Transactions.commitTxTotalCost(rbf.parentCommitment.remoteCommitParams.dustLimit, rbf.parentCommitment.remoteCommit.spec, rbf.latestFundingTx.fundingParams.commitmentFormat)
       } else {
         0.sat
       }

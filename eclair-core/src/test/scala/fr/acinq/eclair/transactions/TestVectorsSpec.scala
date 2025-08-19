@@ -20,13 +20,11 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelFeatures
-import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants}
+import fr.acinq.eclair.{ChannelTypeFeature, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants}
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -37,9 +35,16 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
   // @formatter:off
   def filename: String
-  def channelFeatures: ChannelFeatures
-  val commitmentFormat = channelFeatures.commitmentFormat
+  def channelFeatures: Set[ChannelTypeFeature]
   // @formatter:on
+
+  val commitmentFormat: CommitmentFormat = if (channelFeatures.contains(Features.AnchorOutputsZeroFeeHtlcTx)) {
+    ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
+  } else if (channelFeatures.contains(Features.AnchorOutputs)) {
+    UnsafeLegacyAnchorOutputsCommitmentFormat
+  } else {
+    DefaultCommitmentFormat
+  }
 
   val tests = {
     val tests = collection.mutable.HashMap.empty[String, Map[String, String]]
@@ -99,7 +104,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val funding_pubkey = funding_privkey.publicKey
     val per_commitment_point = PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
     val htlc_privkey = ChannelKeys.derivePerCommitmentKey(payment_basepoint_secret, per_commitment_point)
-    val payment_privkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
+    val payment_privkey = if (channelFeatures.contains(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
     val delayed_payment_privkey = ChannelKeys.derivePerCommitmentKey(delayed_payment_basepoint_secret, per_commitment_point)
     val revocation_pubkey = PublicKey(hex"0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19")
     val feerate_per_kw = 15000
@@ -116,7 +121,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val funding_privkey = PrivateKey(hex"1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301")
     val funding_pubkey = funding_privkey.publicKey
     val htlc_privkey = ChannelKeys.derivePerCommitmentKey(payment_basepoint_secret, Local.per_commitment_point)
-    val payment_privkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
+    val payment_privkey = if (channelFeatures.contains(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
   }
 
   // Keys used by the local node to spend outputs of its local commitment.
@@ -144,8 +149,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   val fundingAmount = fundingTx.txOut(0).amount
   logger.info(s"# funding-tx: $fundingTx}")
 
-  val fundingScript = Funding.makeFundingScript(Local.funding_pubkey, Remote.funding_pubkey, commitmentFormat).asInstanceOf[RedeemInfo.SegwitV0]
-  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey, commitmentFormat)
+  val fundingScript = makeFundingScript(Local.funding_pubkey, Remote.funding_pubkey, commitmentFormat).asInstanceOf[RedeemInfo.SegwitV0]
+  val commitmentInput = makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey, commitmentFormat)
 
   val obscured_tx_number = Transactions.obscuredCommitTxNumber(42, localIsChannelOpener = true, Local.payment_basepoint, Remote.payment_basepoint)
   assert(obscured_tx_number == (0x2bb038521914L ^ 42L))
@@ -442,27 +447,27 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 class DefaultCommitmentTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-default-commitment-format.txt"
-  override def channelFeatures: ChannelFeatures = ChannelFeatures()
+  override def channelFeatures: Set[ChannelTypeFeature] = Set.empty
   // @formatter:on
 }
 
 class StaticRemoteKeyTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-static-remotekey-format.txt"
-  override def channelFeatures: ChannelFeatures = ChannelFeatures(Features.StaticRemoteKey)
+  override def channelFeatures: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey)
   // @formatter:on
 }
 
 class AnchorOutputsTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-anchor-outputs-format.txt"
-  override def channelFeatures: ChannelFeatures = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
+  override def channelFeatures: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputs)
   // @formatter:on
 }
 
 class AnchorOutputsZeroFeeHtlcTxTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-anchor-outputs-zero-fee-htlc-tx-format.txt"
-  override def channelFeatures: ChannelFeatures = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
+  override def channelFeatures: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
   // @formatter:on
 }
