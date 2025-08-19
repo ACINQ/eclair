@@ -296,8 +296,8 @@ object ChannelReestablishTlv {
     .typecase(UInt64(0), NextFundingTlv.codec)
     .typecase(UInt64(1), YourLastFundingLockedTlv.codec)
     .typecase(UInt64(3), MyCurrentFundingLockedTlv.codec)
-    .typecase(UInt64(4), NextLocalNoncesTlv.codec)
-    .typecase(UInt64(6), CurrentCommitNonceTlv.codec)
+    .typecase(UInt64(22), NextLocalNoncesTlv.codec)
+    .typecase(UInt64(24), CurrentCommitNonceTlv.codec)
   )
 }
 
@@ -363,9 +363,9 @@ object ClosingCompleteTlv {
     .typecase(UInt64(1), tlvField(bytes64.as[ClosingTlv.CloserOutputOnly]))
     .typecase(UInt64(2), tlvField(bytes64.as[ClosingTlv.CloseeOutputOnly]))
     .typecase(UInt64(3), tlvField(bytes64.as[ClosingTlv.CloserAndCloseeOutputs]))
-    .typecase(UInt64(4), tlvField(partialSignatureWithNonce.as[CloserOutputOnlyPartialSignature]))
-    .typecase(UInt64(5), tlvField(partialSignatureWithNonce.as[CloseeOutputOnlyPartialSignature]))
-    .typecase(UInt64(6), tlvField(partialSignatureWithNonce.as[CloserAndCloseeOutputsPartialSignature]))
+    .typecase(UInt64(5), tlvField(partialSignatureWithNonce.as[CloserOutputOnlyPartialSignature]))
+    .typecase(UInt64(6), tlvField(partialSignatureWithNonce.as[CloseeOutputOnlyPartialSignature]))
+    .typecase(UInt64(7), tlvField(partialSignatureWithNonce.as[CloserAndCloseeOutputsPartialSignature]))
   )
 }
 
@@ -388,9 +388,9 @@ object ClosingSigTlv {
     .typecase(UInt64(1), tlvField(bytes64.as[ClosingTlv.CloserOutputOnly]))
     .typecase(UInt64(2), tlvField(bytes64.as[ClosingTlv.CloseeOutputOnly]))
     .typecase(UInt64(3), tlvField(bytes64.as[ClosingTlv.CloserAndCloseeOutputs]))
-    .typecase(UInt64(4), tlvField(bytes32.as[CloserOutputOnlyPartialSignature]))
-    .typecase(UInt64(5), tlvField(bytes32.as[CloseeOutputOnlyPartialSignature]))
-    .typecase(UInt64(6), tlvField(bytes32.as[CloserAndCloseeOutputsPartialSignature]))
+    .typecase(UInt64(5), tlvField(bytes32.as[CloserOutputOnlyPartialSignature]))
+    .typecase(UInt64(6), tlvField(bytes32.as[CloseeOutputOnlyPartialSignature]))
+    .typecase(UInt64(7), tlvField(bytes32.as[CloserAndCloseeOutputsPartialSignature]))
     .typecase(UInt64(22), tlvField(publicNonce.as[NextCloseeNonce]))
   )
 }

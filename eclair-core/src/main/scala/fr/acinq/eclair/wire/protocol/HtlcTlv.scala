@@ -127,6 +127,6 @@ object RevokeAndAckTlv {
   }
 
   val revokeAndAckTlvCodec: Codec[TlvStream[RevokeAndAckTlv]] = tlvStream(discriminated[RevokeAndAckTlv].by(varint)
-    .typecase(UInt64(6), NextLocalNoncesTlv.codec)
+    .typecase(UInt64(22), NextLocalNoncesTlv.codec)
   )
 }
