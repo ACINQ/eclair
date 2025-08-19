@@ -33,6 +33,10 @@ import scala.util.{Failure, Success}
  */
 object Boot extends App with Logging {
   try {
+    if (!System.getProperty("eclair.allow-unsafe-startup", "false").toBooleanOption.contains(true)) {
+      throw new RuntimeException("This version of eclair is unsafe to use: please wait for the next official release to update your node.")
+    }
+
     val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
     val config = NodeParams.loadConfiguration(datadir)
 
@@ -63,7 +67,7 @@ object Boot extends App with Logging {
   /**
    * Starts the http APIs service if enabled in the configuration
    */
-  def startApiServiceIfEnabled(kit: Kit, providers: Seq[RouteProvider] = Nil)(implicit system: ActorSystem, ec: ExecutionContext) = {
+  private def startApiServiceIfEnabled(kit: Kit, providers: Seq[RouteProvider] = Nil)(implicit system: ActorSystem, ec: ExecutionContext) = {
     val config = system.settings.config.getConfig("eclair")
     if (config.getBoolean("api.enabled")) {
       logger.info(s"json API enabled on port=${config.getInt("api.port")}")
@@ -84,7 +88,7 @@ object Boot extends App with Logging {
     }
   }
 
-  def onError(t: Throwable): Unit = {
+  private def onError(t: Throwable): Unit = {
     val errorMsg = if (t.getMessage != null) t.getMessage else t.getClass.getSimpleName
     System.err.println(s"fatal error: $errorMsg")
     logger.error(s"fatal error: $errorMsg", t)
