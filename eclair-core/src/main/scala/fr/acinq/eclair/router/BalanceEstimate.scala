@@ -24,7 +24,7 @@ import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Route}
 import fr.acinq.eclair.wire.protocol.NodeAnnouncement
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion}
 
-import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * Estimates the balance between a pair of nodes
@@ -216,7 +216,7 @@ case class BalanceEstimate private(low: MilliSatoshi,
    * - probability that it can relay a payment of high is decay(high, 0, highTimestamp) which is close to 0 if highTimestamp is recent
    * - probability that it can relay a payment of maxCapacity is 0
    */
-  def canSend(amount: MilliSatoshi, now: TimestampSecond)(implicit log: LoggingAdapter): Double = {
+  def canSend(amount: MilliSatoshi, now: TimestampSecond): Double = {
     val a = amount.toLong.toDouble
     val l = low.toLong.toDouble
     val h = high.toLong.toDouble
@@ -226,7 +226,7 @@ case class BalanceEstimate private(low: MilliSatoshi,
     val pLow = decay(low, 1, lowTimestamp, now)
     val pHigh = decay(high, 0, highTimestamp, now)
 
-    val estimate = if (amount < low) {
+    if (amount < low) {
       (l - a * (1.0 - pLow)) / l
     } else if (amount < high) {
       ((h - a) * pLow + (a - l) * pHigh) / (h - l)
@@ -235,12 +235,6 @@ case class BalanceEstimate private(low: MilliSatoshi,
     } else {
       0
     }
-
-    if (estimate < 0 || estimate > 1) {
-      log.error("Could not estimate balance: this={}, amount={}, now={}", this, amount, now)
-    }
-
-    estimate
   }
 }
 
@@ -253,6 +247,8 @@ object BalanceEstimate {
  */
 case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstimate], defaultHalfLife: FiniteDuration) {
   private def get(a: PublicKey, b: PublicKey): Option[BalanceEstimate] = balances.get((a, b))
+
+  def get(edge: GraphEdge): BalanceEstimate = get(edge.desc.a, edge.desc.b).getOrElse(BalanceEstimate.empty(defaultHalfLife).addEdge(edge))
 
   def addEdge(edge: GraphEdge): BalancesEstimates = BalancesEstimates(
     balances.updatedWith((edge.desc.a, edge.desc.b))(balance =>
@@ -314,7 +310,7 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
 
 }
 
-case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances: BalancesEstimates) {
+case class GraphWithBalanceEstimates(graph: DirectedGraph, balances: BalancesEstimates) {
   def addOrUpdateVertex(ann: NodeAnnouncement): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addOrUpdateVertex(ann), balances)
 
   def addEdge(edge: GraphEdge): GraphWithBalanceEstimates = GraphWithBalanceEstimates(graph.addEdge(edge), balances.addEdge(edge))
@@ -355,13 +351,6 @@ case class GraphWithBalanceEstimates(graph: DirectedGraph, private val balances:
 
   def channelCouldNotSend(hop: ChannelHop, amount: MilliSatoshi)(implicit log: LoggingAdapter): GraphWithBalanceEstimates = {
     GraphWithBalanceEstimates(graph, balances.channelCouldNotSend(hop, amount))
-  }
-
-  def canSend(amount: MilliSatoshi, edge: GraphEdge)(implicit log: LoggingAdapter): Double = {
-    balances.balances.get((edge.desc.a, edge.desc.b)) match {
-      case Some(estimate) => estimate.canSend(amount, TimestampSecond.now())
-      case None => BalanceEstimate.empty(1 hour).addEdge(edge).canSend(amount, TimestampSecond.now())
-    }
   }
 }
 
