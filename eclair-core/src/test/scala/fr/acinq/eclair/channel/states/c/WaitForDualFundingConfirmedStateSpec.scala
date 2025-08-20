@@ -338,49 +338,61 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
   }
 
   def testBumpFundingFees(f: FixtureParam, feerate_opt: Option[FeeratePerKw] = None, requestFunding_opt: Option[LiquidityAds.RequestFunding] = None): FullySignedSharedTransaction = {
+    testBumpFundingFees(f, f.alice, f.bob, f.alice2bob, f.bob2alice, feerate_opt, requestFunding_opt)
+  }
+
+  def testBumpFundingFees(f: FixtureParam, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, feerate_opt: Option[FeeratePerKw], requestFunding_opt: Option[LiquidityAds.RequestFunding]): FullySignedSharedTransaction = {
     import f._
 
     val probe = TestProbe()
-    val currentFundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
-    val previousFundingTxs = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs
-    alice ! CMD_BUMP_FUNDING_FEE(probe.ref, feerate_opt.getOrElse(currentFundingTx.feerate * 1.1), fundingFeeBudget = 100_000.sat, 0, requestFunding_opt)
-    assert(alice2bob.expectMsgType[TxInitRbf].fundingContribution == TestConstants.fundingSatoshis)
-    alice2bob.forward(bob)
-    val txAckRbf = bob2alice.expectMsgType[TxAckRbf]
-    assert(txAckRbf.fundingContribution == requestFunding_opt.map(_.requestedAmount).getOrElse(TestConstants.nonInitiatorFundingSatoshis))
+    val currentFundingParams = s.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.fundingParams
+    val currentFundingTx = s.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
+    val previousFundingTxs = s.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs
+    s ! CMD_BUMP_FUNDING_FEE(probe.ref, feerate_opt.getOrElse(currentFundingTx.feerate * 1.1), fundingFeeBudget = 100_000.sat, 0, requestFunding_opt)
+    assert(s2r.expectMsgType[TxInitRbf].fundingContribution == currentFundingParams.localContribution)
+    s2r.forward(r)
+    val txAckRbf = r2s.expectMsgType[TxAckRbf]
+    assert(txAckRbf.fundingContribution == requestFunding_opt.map(_.requestedAmount).getOrElse(currentFundingParams.remoteContribution))
     requestFunding_opt.foreach(_ => assert(txAckRbf.willFund_opt.nonEmpty))
-    bob2alice.forward(alice)
+    r2s.forward(s)
 
     // Alice and Bob build a new version of the funding transaction, with one new input every time.
     val inputCount = previousFundingTxs.length + 2
     (1 to inputCount).foreach(_ => {
-      alice2bob.expectMsgType[TxAddInput]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[TxAddInput]
-      bob2alice.forward(alice)
+      s2r.expectMsgType[TxAddInput]
+      s2r.forward(r)
+      r2s.expectMsgType[TxAddInput]
+      r2s.forward(s)
     })
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxAddOutput]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxAddOutput]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxComplete]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxComplete]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[CommitSig]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[CommitSig]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[TxSignatures]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxSignatures]
-    alice2bob.forward(bob)
+    s2r.expectMsgType[TxAddOutput]
+    s2r.forward(r)
+    r2s.expectMsgType[TxAddOutput]
+    r2s.forward(s)
+    s2r.expectMsgType[TxAddOutput]
+    s2r.forward(r)
+    r2s.expectMsgType[TxComplete]
+    r2s.forward(s)
+    s2r.expectMsgType[TxComplete]
+    s2r.forward(r)
+    r2s.expectMsgType[CommitSig]
+    r2s.forward(s)
+    s2r.expectMsgType[CommitSig]
+    s2r.forward(r)
+    if (currentFundingParams.localContribution < currentFundingParams.remoteContribution) {
+      s2r.expectMsgType[TxSignatures]
+      s2r.forward(r)
+      r2s.expectMsgType[TxSignatures]
+      r2s.forward(s)
+    } else {
+      r2s.expectMsgType[TxSignatures]
+      r2s.forward(s)
+      s2r.expectMsgType[TxSignatures]
+      s2r.forward(r)
+    }
 
     probe.expectMsgType[RES_BUMP_FUNDING_FEE]
 
-    val nextFundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
+    val nextFundingTx = s.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction]
     assert(aliceListener.expectMsgType[TransactionPublished].tx.txid == nextFundingTx.signedTx.txid)
     assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == nextFundingTx.signedTx.txid)
     assert(bobListener.expectMsgType[TransactionPublished].tx.txid == nextFundingTx.signedTx.txid)
@@ -389,12 +401,12 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(currentFundingTx.feerate < nextFundingTx.feerate)
     // The new transaction double-spends previous inputs.
     currentFundingTx.signedTx.txIn.map(_.outPoint).foreach(o => assert(nextFundingTx.signedTx.txIn.exists(_.outPoint == o)))
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.length == previousFundingTxs.length + 1)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.head.sharedTx == currentFundingTx)
+    assert(s.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.length == previousFundingTxs.length + 1)
+    assert(s.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.head.sharedTx == currentFundingTx)
     nextFundingTx
   }
 
-  test("recv CMD_BUMP_FUNDING_FEE", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+  test("recv CMD_BUMP_FUNDING_FEE", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.UnlimitedRbfAttempts)) { f =>
     import f._
 
     // Bob contributed to the funding transaction.
@@ -420,9 +432,21 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(FeeratePerKw(15_000 sat) <= fundingTx3.feerate && fundingTx3.feerate < FeeratePerKw(15_700 sat))
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.length == 2)
 
-    // The initial funding transaction confirms
+    // Bob RBFs the funding transaction: Alice keeps contributing the same amount.
+    val feerate4 = FeeratePerKw(20_000 sat)
+    testBumpFundingFees(f, bob, alice, bob2alice, alice2bob, Some(feerate4), requestFunding_opt = None)
+    val balanceBob4 = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.spec.toLocal
+    assert(balanceBob4 == TestConstants.nonInitiatorFundingSatoshis.toMilliSatoshi)
+    val balanceAlice4 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localCommit.spec.toLocal
+    assert(balanceAlice4 == TestConstants.fundingSatoshis.toMilliSatoshi)
+    val fundingTx4 = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx].sharedTx.asInstanceOf[FullySignedSharedTransaction]
+    assert(FeeratePerKw(20_000 sat) <= fundingTx4.feerate && fundingTx4.feerate < FeeratePerKw(20_500 sat))
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.length == 3)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED].previousFundingTxs.length == 3)
+
+    // The initial funding transaction confirms: we rollback unused inputs.
     alice ! WatchFundingConfirmedTriggered(BlockHeight(42000), 42, fundingTx1.signedTx)
-    testUnusedInputsUnlocked(wallet, Seq(fundingTx2, fundingTx3))
+    testUnusedInputsUnlocked(wallet, Seq(fundingTx2, fundingTx3, fundingTx4))
   }
 
   test("recv CMD_BUMP_FUNDING_FEE (liquidity ads)", Tag(ChannelStateTestsTags.DualFunding), Tag(liquidityPurchase)) { f =>
@@ -478,6 +502,10 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob2alice.forward(alice)
     alice2bob.expectMsgType[TxAbort]
     alice2bob.forward(bob)
+
+    // Bob tries to RBF: this is disabled because it would override Alice's liquidity purchase.
+    bob ! CMD_BUMP_FUNDING_FEE(sender.ref, FeeratePerKw(20_000 sat), 100_000 sat, 0, requestFunding_opt = None)
+    assert(sender.expectMsgType[RES_FAILURE[_, ChannelException]].t.isInstanceOf[InvalidRbfOverridesLiquidityPurchase])
   }
 
   test("recv CMD_BUMP_FUNDING_FEE (aborted)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
