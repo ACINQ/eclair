@@ -930,7 +930,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             unlockAndStop(completeTx)
           case Right(localSigOfRemoteTx) =>
             val htlcSignatures = sortedHtlcTxs.map(_.localSig(remoteCommitmentKeys)).toList
-            val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures, batchSize = 1)
+            val localCommitSig = CommitSig(fundingParams.channelId, fundingTx.txid, localSigOfRemoteTx, htlcSignatures, batchSize = 1)
             val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx.tx.txid)
             val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)
             signFundingTx(completeTx, remoteNonces_opt, localCommitSig, localCommit, remoteCommit)

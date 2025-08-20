@@ -121,7 +121,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("add liquidity if on-the-fly funding is used", Tag(noPlugin)) { f =>
     import f._
 
-    val features = defaultFeatures.add(Features.SplicePrototype, FeatureSupport.Optional).add(Features.OnTheFlyFunding, FeatureSupport.Optional)
+    val features = defaultFeatures.add(Features.Splicing, FeatureSupport.Optional).add(Features.OnTheFlyFunding, FeatureSupport.Optional)
     val requestFunding = LiquidityAds.RequestFunding(250_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(randomBytes32() :: Nil))
     val open = createOpenDualFundedChannelMessage().copy(
       channelFlags = ChannelFlags(nonInitiatorPaysCommitFees = true, announceChannel = false),
@@ -242,7 +242,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("reject on-the-fly channel if another channel exists", Tag(noPlugin)) { f =>
     import f._
 
-    val features = defaultFeatures.add(Features.SplicePrototype, FeatureSupport.Optional).add(Features.OnTheFlyFunding, FeatureSupport.Optional)
+    val features = defaultFeatures.add(Features.Splicing, FeatureSupport.Optional).add(Features.OnTheFlyFunding, FeatureSupport.Optional)
     val requestFunding = LiquidityAds.RequestFunding(250_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(randomBytes32() :: Nil))
     val open = createOpenDualFundedChannelMessage().copy(
       channelFlags = ChannelFlags(nonInitiatorPaysCommitFees = true, announceChannel = false),

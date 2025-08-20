@@ -35,9 +35,13 @@ object TxAddInputTlv {
   /** When doing a splice, the initiator must provide the previous funding txId instead of the whole transaction. */
   case class SharedInputTxId(txId: TxId) extends TxAddInputTlv
 
+  /** Same as [[SharedInputTxId]] for peers who only support the experimental version of splicing. */
+  case class ExperimentalSharedInputTxId(txId: TxId) extends TxAddInputTlv
+
   val txAddInputTlvCodec: Codec[TlvStream[TxAddInputTlv]] = tlvStream(discriminated[TxAddInputTlv].by(varint)
     // Note that we actually encode as a tx_hash to be consistent with other lightning messages.
-    .typecase(UInt64(1105), tlvField(txIdAsHash.as[SharedInputTxId]))
+    .typecase(UInt64(0), tlvField(txIdAsHash.as[SharedInputTxId]))
+    .typecase(UInt64(1105), tlvField(txIdAsHash.as[ExperimentalSharedInputTxId]))
   )
 }
 
@@ -90,9 +94,13 @@ object TxSignaturesTlv {
   /** When doing a splice for a taproot channel, each peer must provide their partial signature for the previous musig2 funding output. */
   case class PreviousFundingTxPartialSig(partialSigWithNonce: PartialSignatureWithNonce) extends TxSignaturesTlv
 
+  /** Same as [[PreviousFundingTxSig]] for peers who only support the experimental version of splicing. */
+  case class ExperimentalPreviousFundingTxSig(sig: ByteVector64) extends TxSignaturesTlv
+
   val txSignaturesTlvCodec: Codec[TlvStream[TxSignaturesTlv]] = tlvStream(discriminated[TxSignaturesTlv].by(varint)
+    .typecase(UInt64(0), tlvField(bytes64.as[PreviousFundingTxSig]))
     .typecase(UInt64(2), tlvField(partialSignatureWithNonce.as[PreviousFundingTxPartialSig]))
-    .typecase(UInt64(601), tlvField(bytes64.as[PreviousFundingTxSig]))
+    .typecase(UInt64(601), tlvField(bytes64.as[ExperimentalPreviousFundingTxSig]))
   )
 }
 
