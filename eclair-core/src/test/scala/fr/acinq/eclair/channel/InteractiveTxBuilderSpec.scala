@@ -480,7 +480,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val targetFeerate = FeeratePerKw(2500 sat)
     val fundingA = 150_000 sat
     val utxosA = Seq(80_000 sat, 120_000 sat)
-    withFixture(ChannelTypes.SimpleTaprootChannelsStaging(), fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
+    withFixture(ChannelTypes.SimpleTaprootChannel(), fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       alice ! Start(alice2bob.ref)
@@ -1997,7 +1997,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val utxosA = Seq(340_000 sat, 40_000 sat, 35_000 sat)
     val fundingB1 = 80_000 sat
     val utxosB = Seq(290_000 sat, 20_000 sat, 15_000 sat)
-    withFixture(ChannelTypes.SimpleTaprootChannelsStaging(), fundingA1, utxosA, fundingB1, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
+    withFixture(ChannelTypes.SimpleTaprootChannel(), fundingA1, utxosA, fundingB1, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
       val probe = TestProbe()
@@ -2385,7 +2385,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   test("invalid tx_signatures (missing shared input signature, taproot)") {
-    testTxSignaturesMissingSharedInputSigs(ChannelTypes.SimpleTaprootChannelsStaging())
+    testTxSignaturesMissingSharedInputSigs(ChannelTypes.SimpleTaprootChannel())
   }
 
   test("invalid commitment index") {

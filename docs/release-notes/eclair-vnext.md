@@ -4,6 +4,28 @@
 
 ## Major changes
 
+### Taproot Channels (without announcements)
+
+This release adds support for taproot channels, as specified in [the BOLTs](https://github.com/lightning/bolts/pull/995).
+Taproot channels improve privacy and cost less on-chain fees by using musig2 for the channel output.
+This release is fully compatible with the `lnd` implementation of taproot channels.
+
+We don't support public taproot channels yet, as the gossip mechanism for this isn't finalized yet.
+It is thus only possible to open "private" (unannounced) taproot channels.
+You may follow progress on the specification for public taproot channels [here](https://github.com/lightning/bolts/pull/1059).
+
+This feature is active by default. To disable it, add the following to your `eclair.conf`:
+
+```conf
+eclair.features.option_simple_taproot = disabled
+```
+
+To open a taproot channel with a node that supports the `option_simple_taproot` feature, use the following command:
+
+```sh
+$ eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_amount> --channelType=simple_taproot_channel --announceChannel=false
+```
+
 ### Remove support for non-anchor channels
 
 We remove the code used to support legacy channels that don't use anchor outputs or taproot.
