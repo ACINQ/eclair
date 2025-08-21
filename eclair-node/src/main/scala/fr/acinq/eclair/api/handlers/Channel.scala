@@ -32,7 +32,7 @@ trait Channel {
 
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
-  val supportedChannelTypes = Set(
+  private val supportedChannelTypes = Set(
     ChannelTypes.Standard(),
     ChannelTypes.Standard(zeroConf = true),
     ChannelTypes.Standard(scidAlias = true),
@@ -49,9 +49,9 @@ trait Channel {
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
-    ChannelTypes.SimpleTaprootChannelsStaging(),
-    ChannelTypes.SimpleTaprootChannelsStaging(scidAlias = true),
-    ChannelTypes.SimpleTaprootChannelsStaging(scidAlias = true, zeroConf = true)
+    ChannelTypes.SimpleTaprootChannel(),
+    ChannelTypes.SimpleTaprootChannel(scidAlias = true),
+    ChannelTypes.SimpleTaprootChannel(scidAlias = true, zeroConf = true)
   ).map(ct => ct.toString -> ct).toMap // we use the toString method as name in the api
 
   val open: Route = postRequest("open") { implicit t =>
