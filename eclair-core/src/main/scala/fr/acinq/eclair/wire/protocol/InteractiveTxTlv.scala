@@ -17,13 +17,14 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, Satoshi, TxId}
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
 import scodec.Codec
-import scodec.codecs.{bitsRemaining, discriminated, optional}
+import scodec.bits.ByteVector
+import scodec.codecs._
 
 /**
  * Created by t-bast on 08/04/2022.
@@ -35,9 +36,21 @@ object TxAddInputTlv {
   /** When doing a splice, the initiator must provide the previous funding txId instead of the whole transaction. */
   case class SharedInputTxId(txId: TxId) extends TxAddInputTlv
 
+  /**
+   * When creating an interactive-tx where both participants sign a taproot input, we don't need to provide the entire
+   * previous transaction in [[TxAddInput]]: signatures will commit to the txOut of *all* of the transaction's inputs,
+   * which ensures that nodes cannot cheat and downgrade to a non-segwit input.
+   */
+  case class PrevTxOut(txId: TxId, amount: Satoshi, publicKeyScript: ByteVector) extends TxAddInputTlv
+
+  object PrevTxOut {
+    val codec: Codec[PrevTxOut] = tlvField((txIdAsHash :: satoshi :: bytes).as[PrevTxOut])
+  }
+
   val txAddInputTlvCodec: Codec[TlvStream[TxAddInputTlv]] = tlvStream(discriminated[TxAddInputTlv].by(varint)
     // Note that we actually encode as a tx_hash to be consistent with other lightning messages.
     .typecase(UInt64(1105), tlvField(txIdAsHash.as[SharedInputTxId]))
+    .typecase(UInt64(1107), PrevTxOut.codec)
   )
 }
 

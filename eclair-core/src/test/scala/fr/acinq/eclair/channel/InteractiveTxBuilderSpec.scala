@@ -1981,6 +1981,15 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
+  private def replacePrevTxWithPrevTxOut(input: TxAddInput): TxAddInput = {
+    input.previousTx_opt match {
+      case None => input
+      case Some(tx) =>
+        val txOut = tx.txOut(input.previousTxOutput.toInt)
+        input.copy(previousTx_opt = None, tlvStream = TlvStream(TxAddInputTlv.PrevTxOut(tx.txid, txOut.amount, txOut.publicKeyScript)))
+    }
+  }
+
   test("fund splice transaction with previous inputs (different balance)") {
     val targetFeerate = FeeratePerKw(2_500 sat)
     val fundingA1 = 100_000 sat
@@ -2029,12 +2038,15 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       aliceSplice ! Start(alice2bob.ref)
       bobSplice ! Start(bob2alice.ref)
 
+      // Since we're splicing a taproot channel, we can replace the entire previous transaction by only its txOut.
       // Alice --- tx_add_input --> Bob
-      fwdSplice.forwardAlice2Bob[TxAddInput]
+      val input1 = alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxAddInput]
+      bobSplice ! ReceiveMessage(replacePrevTxWithPrevTxOut(input1))
       // Alice <-- tx_complete --- Bob
       fwdSplice.forwardBob2Alice[TxComplete]
       // Alice --- tx_add_input --> Bob
-      fwdSplice.forwardAlice2Bob[TxAddInput]
+      val input2 = alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxAddInput]
+      bobSplice ! ReceiveMessage(replacePrevTxWithPrevTxOut(input2))
       // Alice <-- tx_complete --- Bob
       fwdSplice.forwardBob2Alice[TxComplete]
       // Alice --- tx_add_output --> Bob
@@ -2518,6 +2530,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       TxAddInput(params.channelId, UInt64(7), Some(previousTx), 1, 0) -> NonSegwitInput(params.channelId, UInt64(7), previousTx.txid, 1),
       TxAddInput(params.channelId, UInt64(9), Some(previousTx), 2, 0xfffffffeL) -> NonReplaceableInput(params.channelId, UInt64(9), previousTx.txid, 2, 0xfffffffeL),
       TxAddInput(params.channelId, UInt64(9), Some(previousTx), 2, 0xffffffffL) -> NonReplaceableInput(params.channelId, UInt64(9), previousTx.txid, 2, 0xffffffffL),
+      // Replacing the previousTx field with previousTxOut is only allowed for splices on taproot channels.
+      TxAddInput(params.channelId, UInt64(5), None, 0, 0, TlvStream(TxAddInputTlv.PrevTxOut(previousTx.txid, previousOutputs(0).amount, previousOutputs(0).publicKeyScript))) -> PreviousTxMissing(params.channelId, UInt64(5))
     )
     testCases.foreach {
       case (input, expected) =>
@@ -2748,6 +2762,20 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     // The input doesn't include the previous transaction but is not the shared input.
     val nonSharedInput = TxAddInput(params.channelId, UInt64(0), OutPoint(randomTxId(), 7), 0)
     bob ! ReceiveMessage(nonSharedInput)
+    assert(probe.expectMsgType[RemoteFailure].cause == PreviousTxMissing(params.channelId, UInt64(0)))
+  }
+
+  test("previous txOut not allowed for non-taproot channels") {
+    val probe = TestProbe()
+    val wallet = new SingleKeyOnChainWallet()
+    val params = createFixtureParams(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100_000 sat, 0 sat, FeeratePerKw(5000 sat), 330 sat, 0)
+    val previousCommitment = CommitmentsSpec.makeCommitments(25_000_000 msat, 50_000_000 msat).active.head
+    val fundingParams = params.fundingParamsB.copy(sharedInput_opt = Some(SharedFundingInput(previousCommitment.commitInput(params.channelKeysB), 0, randomKey().publicKey, previousCommitment.commitmentFormat)))
+    val bob = params.spawnTxBuilderSpliceBob(fundingParams, previousCommitment, wallet)
+    bob ! Start(probe.ref)
+    // Alice --- tx_add_input --> Bob
+    // The input only includes the previous txOut which is only allowed for taproot channels.
+    bob ! ReceiveMessage(TxAddInput(params.channelId, UInt64(0), None, 0, 0, TlvStream(TxAddInputTlv.PrevTxOut(randomTxId(), 100_000 sat, Script.write(Script.pay2tr(randomKey().xOnlyPublicKey()))))))
     assert(probe.expectMsgType[RemoteFailure].cause == PreviousTxMissing(params.channelId, UInt64(0)))
   }
 

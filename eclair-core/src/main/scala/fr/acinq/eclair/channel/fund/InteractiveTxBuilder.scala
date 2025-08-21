@@ -588,29 +588,31 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     if (session.remoteInputs.exists(_.serialId == addInput.serialId)) {
       return Left(DuplicateSerialId(fundingParams.channelId, addInput.serialId))
     }
-    // We check whether this is the shared input or a remote input.
-    val input = addInput.previousTx_opt match {
-      case Some(previousTx) if previousTx.txOut.length <= addInput.previousTxOutput =>
-        return Left(InputOutOfBounds(fundingParams.channelId, addInput.serialId, previousTx.txid, addInput.previousTxOutput))
-      case Some(previousTx) if fundingParams.sharedInput_opt.exists(_.info.outPoint == OutPoint(previousTx, addInput.previousTxOutput.toInt)) =>
-        return Left(InvalidSharedInput(fundingParams.channelId, addInput.serialId))
-      case Some(previousTx) if !Script.isNativeWitnessScript(previousTx.txOut(addInput.previousTxOutput.toInt).publicKeyScript) =>
-        return Left(NonSegwitInput(fundingParams.channelId, addInput.serialId, previousTx.txid, addInput.previousTxOutput))
-      case Some(previousTx) =>
-        Input.Remote(addInput.serialId, OutPoint(previousTx, addInput.previousTxOutput.toInt), previousTx.txOut(addInput.previousTxOutput.toInt), addInput.sequence)
-      case None =>
-        (addInput.sharedInput_opt, fundingParams.sharedInput_opt) match {
-          case (Some(outPoint), Some(sharedInput)) if outPoint == sharedInput.info.outPoint =>
-            Input.Shared(addInput.serialId, outPoint, sharedInput.info.txOut.publicKeyScript, addInput.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance, purpose.htlcBalance)
-          case _ =>
-            return Left(PreviousTxMissing(fundingParams.channelId, addInput.serialId))
-        }
+    // We check whether this is the shared input or a remote input, and validate input details if it is not the shared input.
+    // The remote input details are usually provided by sending the entire previous transaction.
+    // But when splicing a taproot channel, it is possible to only send the previous txOut (which saves bandwidth and
+    // allows spending transactions that are larger than 65kB) because the signature of the shared taproot input will
+    // commit to *every* txOut that is being spent, which protects against malleability issues.
+    // See https://delvingbitcoin.org/t/malleability-issues-when-creating-shared-transactions-with-segwit-v0/497 for more details.
+    val remoteInputInfo_opt = (addInput.previousTx_opt, addInput.previousTxOut_opt) match {
+      case (Some(previousTx), _) if previousTx.txOut.length <= addInput.previousTxOutput => return Left(InputOutOfBounds(fundingParams.channelId, addInput.serialId, previousTx.txid, addInput.previousTxOutput))
+      case (Some(previousTx), _) => Some(InputInfo(OutPoint(previousTx, addInput.previousTxOutput.toInt), previousTx.txOut(addInput.previousTxOutput.toInt)))
+      case (None, Some(_)) if !fundingParams.sharedInput_opt.exists(_.commitmentFormat.isInstanceOf[TaprootCommitmentFormat]) => return Left(PreviousTxMissing(fundingParams.channelId, addInput.serialId))
+      case (None, Some(inputInfo)) => Some(inputInfo)
+      case (None, None) => None
+    }
+    val input = remoteInputInfo_opt match {
+      case Some(input) if !Script.isNativeWitnessScript(input.txOut.publicKeyScript) => return Left(NonSegwitInput(fundingParams.channelId, addInput.serialId, input.outPoint.txid, addInput.previousTxOutput))
+      case Some(input) if addInput.sequence > 0xfffffffdL => return Left(NonReplaceableInput(fundingParams.channelId, addInput.serialId, input.outPoint.txid, input.outPoint.index, addInput.sequence))
+      case Some(input) if fundingParams.sharedInput_opt.exists(_.info.outPoint == input.outPoint) => return Left(InvalidSharedInput(fundingParams.channelId, addInput.serialId))
+      case Some(input) => Input.Remote(addInput.serialId, input.outPoint, input.txOut, addInput.sequence)
+      case None => (addInput.sharedInput_opt, fundingParams.sharedInput_opt) match {
+        case (Some(outPoint), Some(sharedInput)) if outPoint == sharedInput.info.outPoint => Input.Shared(addInput.serialId, outPoint, sharedInput.info.txOut.publicKeyScript, addInput.sequence, purpose.previousLocalBalance, purpose.previousRemoteBalance, purpose.htlcBalance)
+        case _ => return Left(PreviousTxMissing(fundingParams.channelId, addInput.serialId))
+      }
     }
     if (session.localInputs.exists(_.outPoint == input.outPoint) || session.remoteInputs.exists(_.outPoint == input.outPoint)) {
       return Left(DuplicateInput(fundingParams.channelId, addInput.serialId, input.outPoint.txid, input.outPoint.index))
-    }
-    if (input.sequence > 0xfffffffdL) {
-      return Left(NonReplaceableInput(fundingParams.channelId, addInput.serialId, input.outPoint.txid, input.outPoint.index, addInput.sequence))
     }
     Right(input)
   }
