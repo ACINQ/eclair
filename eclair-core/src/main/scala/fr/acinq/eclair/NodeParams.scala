@@ -131,7 +131,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
     // We use the most likely commitment format, even though there is no guarantee that this is the one that will be used.
     val commitmentFormat = if (Features.canUseFeature(localFeatures, remoteFeatures, Features.SimpleTaprootChannelsPhoenix)) {
       PhoenixSimpleTaprootChannelCommitmentFormat
-    } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.SimpleTaprootChannelsStaging)) {
+    } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.SimpleTaprootChannels)) {
       ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
     } else {
       ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
