@@ -399,6 +399,11 @@ object Features {
     val mandatory = 62
   }
 
+  case object SimpleTaprootChannels extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot"
+    val mandatory = 80
+  }
+
   case object PhoenixZeroReserve extends Feature with InitFeature with ChannelTypeFeature with PermanentChannelFeature {
     val rfcName = "phoenix_zero_reserve"
     val mandatory = 128
@@ -436,11 +441,6 @@ object Features {
   case object SimpleTaprootChannelsPhoenix extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
     val rfcName = "option_simple_taproot_phoenix"
     val mandatory = 564
-  }
-
-  case object SimpleTaprootChannelsStaging extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
-    val rfcName = "option_simple_taproot_staging"
-    val mandatory = 180
   }
 
   /**
@@ -487,8 +487,8 @@ object Features {
     KeySend,
     SimpleClose,
     Splicing,
+    SimpleTaprootChannels,
     SimpleTaprootChannelsPhoenix,
-    SimpleTaprootChannelsStaging,
     WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
@@ -509,6 +509,7 @@ object Features {
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
     SimpleClose -> (ShutdownAnySegwit :: Nil),
+    SimpleTaprootChannels -> (ChannelType :: SimpleClose :: Nil),
     SimpleTaprootChannelsPhoenix -> (ChannelType :: SimpleClose :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)
