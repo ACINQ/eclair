@@ -84,20 +84,12 @@ object TxCompleteTlv {
    */
   case class CommitNonces(commitNonce: IndividualNonce, nextCommitNonce: IndividualNonce) extends TxCompleteTlv
 
-  object CommitNonces {
-    val codec: Codec[CommitNonces] = tlvField((publicNonce :: publicNonce).as[CommitNonces])
-  }
-
   /** When splicing a taproot channel, the sender's random signing nonce for the previous funding output. */
   case class FundingInputNonce(nonce: IndividualNonce) extends TxCompleteTlv
 
-  object FundingInputNonce {
-    val codec: Codec[FundingInputNonce] = tlvField(publicNonce.as[FundingInputNonce])
-  }
-
   val txCompleteTlvCodec: Codec[TlvStream[TxCompleteTlv]] = tlvStream(discriminated[TxCompleteTlv].by(varint)
-    .typecase(UInt64(4), CommitNonces.codec)
-    .typecase(UInt64(6), FundingInputNonce.codec)
+    .typecase(UInt64(4), tlvField[CommitNonces, CommitNonces]((publicNonce :: publicNonce).as[CommitNonces]))
+    .typecase(UInt64(6), tlvField[FundingInputNonce, FundingInputNonce](publicNonce.as[FundingInputNonce]))
   )
 }
 
