@@ -503,14 +503,14 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val txCompleteB3 = fwd.forwardBob2Alice[TxComplete]
       // Alice --- tx_complete --> Bob
       val txCompleteA = fwd.forwardAlice2Bob[TxComplete]
-      assert(txCompleteA.nonces_opt.nonEmpty)
-      assert(txCompleteA.nonces_opt.flatMap(_.fundingNonce_opt).isEmpty)
+      assert(txCompleteA.commitNonces_opt.nonEmpty)
+      assert(txCompleteA.fundingNonce_opt.isEmpty)
       Seq(txCompleteB1, txCompleteB2, txCompleteB3).foreach(txCompleteB => {
-        assert(txCompleteB.nonces_opt.nonEmpty)
-        assert(txCompleteB.nonces_opt.flatMap(_.fundingNonce_opt).isEmpty)
+        assert(txCompleteB.commitNonces_opt.nonEmpty)
+        assert(txCompleteB.fundingNonce_opt.isEmpty)
       })
       // Nonces change every time the shared transaction changes.
-      assert(Seq(txCompleteB1, txCompleteB2, txCompleteB3).flatMap(_.nonces_opt).flatMap(n => Seq(n.commitNonce, n.nextCommitNonce)).toSet.size == 6)
+      assert(Seq(txCompleteB1, txCompleteB2, txCompleteB3).flatMap(_.commitNonces_opt).flatMap(n => Seq(n.commitNonce, n.nextCommitNonce)).toSet.size == 6)
 
       // Alice is responsible for adding the shared output.
       assert(aliceParams.fundingAmount == fundingA)
@@ -523,8 +523,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val successB = bob2alice.expectMsgType[Succeeded]
       assert(successB.commitSig.sigOrPartialSig.isInstanceOf[PartialSignatureWithNonce])
       val (txA, _, txB, _) = fixtureParams.exchangeSigsBobFirst(bobParams, successA, successB)
-      assert(successA.nextRemoteCommitNonce_opt.contains((txA.txId, txCompleteB3.nonces_opt.get.nextCommitNonce)))
-      assert(successB.nextRemoteCommitNonce_opt.contains((txB.txId, txCompleteA.nonces_opt.get.nextCommitNonce)))
+      assert(successA.nextRemoteCommitNonce_opt.contains((txA.txId, txCompleteB3.commitNonces_opt.get.nextCommitNonce)))
+      assert(successB.nextRemoteCommitNonce_opt.contains((txB.txId, txCompleteA.commitNonces_opt.get.nextCommitNonce)))
       // The resulting transaction is valid and has the right feerate.
       assert(txA.txId == txB.txId)
       assert(txA.signedTx.lockTime == aliceParams.lockTime)
@@ -1175,9 +1175,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice --- tx_complete --> Bob
       val txCompleteA = fwdSplice.forwardAlice2Bob[TxComplete]
       Seq(txCompleteA, txCompleteB).foreach(txComplete => {
-        assert(txComplete.nonces_opt.nonEmpty)
-        assert(txComplete.nonces_opt.flatMap(_.fundingNonce_opt).isEmpty) // the previous commitment didn't use taproot
-        assert(txComplete.nonces_opt.map(n => Seq(n.commitNonce, n.nextCommitNonce)).get.size == 2)
+        assert(txComplete.commitNonces_opt.nonEmpty)
+        assert(txComplete.fundingNonce_opt.isEmpty) // the previous commitment didn't use taproot
+        assert(txComplete.commitNonces_opt.map(n => Seq(n.commitNonce, n.nextCommitNonce)).get.size == 2)
       })
 
       val successA2 = alice2bob.expectMsgType[Succeeded]
@@ -1189,8 +1189,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       assert(successB2.signingSession.fundingTx.localSigs.previousFundingTxPartialSig_opt.isEmpty)
       assert(successB2.commitSig.sigOrPartialSig.isInstanceOf[PartialSignatureWithNonce])
       val (spliceTxA, commitmentA2, spliceTxB, commitmentB2) = fixtureParams.exchangeSigsBobFirst(spliceFixtureParams.fundingParamsB, successA2, successB2)
-      assert(successA2.nextRemoteCommitNonce_opt.contains((spliceTxA.txId, txCompleteB.nonces_opt.get.nextCommitNonce)))
-      assert(successB2.nextRemoteCommitNonce_opt.contains((spliceTxB.txId, txCompleteA.nonces_opt.get.nextCommitNonce)))
+      assert(successA2.nextRemoteCommitNonce_opt.contains((spliceTxA.txId, txCompleteB.commitNonces_opt.get.nextCommitNonce)))
+      assert(successB2.nextRemoteCommitNonce_opt.contains((spliceTxB.txId, txCompleteA.commitNonces_opt.get.nextCommitNonce)))
       assert(spliceTxA.tx.localAmountIn > spliceTxA.tx.remoteAmountIn)
       assert(spliceTxA.signedTx.txIn.exists(_.outPoint == commitmentA1.fundingInput))
       assert(0.msat < spliceTxA.tx.localFees)
@@ -2948,13 +2948,13 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     // Alice --- tx_add_output --> Bob
     bob ! ReceiveMessage(alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxAddOutput])
     val txCompleteBob = bob2alice.expectMsgType[SendMessage].msg.asInstanceOf[TxComplete]
-    assert(txCompleteBob.nonces_opt.nonEmpty)
+    assert(txCompleteBob.commitNonces_opt.nonEmpty)
     alice ! ReceiveMessage(txCompleteBob)
     // Alice --- tx_complete --> Bob
     bob ! ReceiveMessage(alice2bob.expectMsgType[SendMessage].msg.asInstanceOf[TxComplete])
     // Alice <-- commit_sig --- Bob
     val successA1 = alice2bob.expectMsgType[Succeeded]
-    val invalidCommitSig = CommitSig(params.channelId, PartialSignatureWithNonce(randomBytes32(), txCompleteBob.nonces_opt.get.commitNonce), Nil, batchSize = 1)
+    val invalidCommitSig = CommitSig(params.channelId, PartialSignatureWithNonce(randomBytes32(), txCompleteBob.commitNonces_opt.get.commitNonce), Nil, batchSize = 1)
     val Left(error) = successA1.signingSession.receiveCommitSig(params.channelParamsA, params.channelKeysA, invalidCommitSig, params.nodeParamsA.currentBlockHeight)(akka.event.NoLogging)
     assert(error.isInstanceOf[InvalidCommitmentSignature])
   }

@@ -76,21 +76,20 @@ sealed trait TxCompleteTlv extends Tlv
 
 object TxCompleteTlv {
   /**
-   * Musig2 nonces exchanged during an interactive tx session, when using a taproot channel or upgrading a channel to
-   * use taproot.
+   * Musig2 nonces for the commitment transaction(s), exchanged during an interactive tx session, when using a taproot
+   * channel or upgrading a channel to use taproot.
    *
-   * @param commitNonce      the sender's verification nonce for the current commit tx spending the interactive tx.
-   * @param nextCommitNonce  the sender's verification nonce for the next commit tx spending the interactive tx.
-   * @param fundingNonce_opt when splicing a taproot channel, the sender's random signing nonce for the previous funding output.
+   * @param commitNonce     the sender's verification nonce for the current commit tx spending the interactive tx.
+   * @param nextCommitNonce the sender's verification nonce for the next commit tx spending the interactive tx.
    */
-  case class Nonces(commitNonce: IndividualNonce, nextCommitNonce: IndividualNonce, fundingNonce_opt: Option[IndividualNonce]) extends TxCompleteTlv
+  case class CommitNonces(commitNonce: IndividualNonce, nextCommitNonce: IndividualNonce) extends TxCompleteTlv
 
-  object Nonces {
-    val codec: Codec[Nonces] = tlvField((publicNonce :: publicNonce :: optional(bitsRemaining, publicNonce)).as[Nonces])
-  }
+  /** When splicing a taproot channel, the sender's random signing nonce for the previous funding output. */
+  case class FundingInputNonce(nonce: IndividualNonce) extends TxCompleteTlv
 
   val txCompleteTlvCodec: Codec[TlvStream[TxCompleteTlv]] = tlvStream(discriminated[TxCompleteTlv].by(varint)
-    .typecase(UInt64(4), Nonces.codec)
+    .typecase(UInt64(4), tlvField[CommitNonces, CommitNonces]((publicNonce :: publicNonce).as[CommitNonces]))
+    .typecase(UInt64(6), tlvField[FundingInputNonce, FundingInputNonce](publicNonce.as[FundingInputNonce]))
   )
 }
 

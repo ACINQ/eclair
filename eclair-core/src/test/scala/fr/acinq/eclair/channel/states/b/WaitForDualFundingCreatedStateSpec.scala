@@ -124,8 +124,8 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     alice2bob.expectMsgType[TxAddOutput]
     alice2bob.forward(bob)
     val txComplete = bob2alice.expectMsgType[TxComplete]
-    assert(txComplete.nonces_opt.isDefined)
-    bob2alice.forward(alice, txComplete.copy(tlvStream = txComplete.tlvStream.copy(records = txComplete.tlvStream.records.filterNot(_.isInstanceOf[TxCompleteTlv.Nonces]))))
+    assert(txComplete.commitNonces_opt.isDefined)
+    bob2alice.forward(alice, txComplete.copy(tlvStream = txComplete.tlvStream.copy(records = txComplete.tlvStream.records.filterNot(_.isInstanceOf[TxCompleteTlv.CommitNonces]))))
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
   }
