@@ -118,8 +118,17 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
-  case class SimpleTaprootChannelsPhoenix(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
-    /** Known channel-type features */
+  case class SimpleTaprootChannel(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.SimpleTaprootChannels),
+    ).flatten
+    override def paysDirectlyToWallet: Boolean = false
+    override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
+    override def toString: String = s"simple_taproot_channel${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+  }
+  case class SimpleTaprootChannelPhoenix(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     override def features: Set[ChannelTypeFeature] = Set(
       if (scidAlias) Some(Features.ScidAlias) else None,
       if (zeroConf) Some(Features.ZeroConf) else None,
@@ -128,17 +137,6 @@ object ChannelTypes {
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = PhoenixSimpleTaprootChannelCommitmentFormat
     override def toString: String = s"simple_taproot_channel_phoenix${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
-  }
-  case class SimpleTaprootChannelsStaging(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
-    /** Known channel-type features */
-    override def features: Set[ChannelTypeFeature] = Set(
-      if (scidAlias) Some(Features.ScidAlias) else None,
-      if (zeroConf) Some(Features.ZeroConf) else None,
-      Some(Features.SimpleTaprootChannelsStaging),
-    ).flatten
-    override def paysDirectlyToWallet: Boolean = false
-    override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
-    override def toString: String = s"simple_taproot_channel_staging${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
 
   case class UnsupportedChannelType(featureBits: Features[InitFeature]) extends ChannelType {
@@ -164,17 +162,17 @@ object ChannelTypes {
     AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
-    SimpleTaprootChannelsPhoenix(),
-    SimpleTaprootChannelsPhoenix(zeroConf = true),
-    SimpleTaprootChannelsPhoenix(scidAlias = true),
-    SimpleTaprootChannelsPhoenix(scidAlias = true, zeroConf = true),
-    SimpleTaprootChannelsStaging(),
-    SimpleTaprootChannelsStaging(zeroConf = true),
-    SimpleTaprootChannelsStaging(scidAlias = true),
-    SimpleTaprootChannelsStaging(scidAlias = true, zeroConf = true),
-  )
-    .map(channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType)
-    .toMap
+    SimpleTaprootChannel(),
+    SimpleTaprootChannel(zeroConf = true),
+    SimpleTaprootChannel(scidAlias = true),
+    SimpleTaprootChannel(scidAlias = true, zeroConf = true),
+    SimpleTaprootChannelPhoenix(),
+    SimpleTaprootChannelPhoenix(zeroConf = true),
+    SimpleTaprootChannelPhoenix(scidAlias = true),
+    SimpleTaprootChannelPhoenix(scidAlias = true, zeroConf = true),
+  ).map {
+    channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType
+  }.toMap
 
   // NB: Bolt 2: features must exactly match in order to identify a channel type.
   def fromFeatures(features: Features[InitFeature]): ChannelType = features2ChannelType.getOrElse(features, UnsupportedChannelType(features))
@@ -185,10 +183,10 @@ object ChannelTypes {
 
     val scidAlias = canUse(Features.ScidAlias) && !announceChannel // alias feature is incompatible with public channel
     val zeroConf = canUse(Features.ZeroConf)
-    if (canUse(Features.SimpleTaprootChannelsStaging)) {
-      SimpleTaprootChannelsStaging(scidAlias, zeroConf)
+    if (canUse(Features.SimpleTaprootChannels)) {
+      SimpleTaprootChannel(scidAlias, zeroConf)
     } else if (canUse(Features.SimpleTaprootChannelsPhoenix)) {
-      SimpleTaprootChannelsPhoenix(scidAlias, zeroConf)
+      SimpleTaprootChannelPhoenix(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
       AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputs)) {
