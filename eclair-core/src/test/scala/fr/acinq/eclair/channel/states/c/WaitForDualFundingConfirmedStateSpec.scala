@@ -993,8 +993,8 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
           assert(channelReestablish.nextCommitNonces.contains(fundingTxId))
           assert(channelReestablish.nextCommitNonces.contains(rbfTxId))
         })
-        assert(channelReestablishAlice.nextCommitNonces.get(rbfTxId).contains(txCompleteAlice.nonces_opt.get.nextCommitNonce))
-        assert(channelReestablishBob.nextCommitNonces.get(rbfTxId).contains(txCompleteBob.nonces_opt.get.nextCommitNonce))
+        assert(channelReestablishAlice.nextCommitNonces.get(rbfTxId).contains(txCompleteAlice.commitNonces_opt.get.nextCommitNonce))
+        assert(channelReestablishBob.nextCommitNonces.get(rbfTxId).contains(txCompleteBob.commitNonces_opt.get.nextCommitNonce))
     }
 
     // Alice retransmits commit_sig, and they exchange tx_signatures afterwards.
@@ -1054,8 +1054,8 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
           assert(channelReestablish.nextCommitNonces.contains(fundingTxId))
           assert(channelReestablish.nextCommitNonces.contains(rbfTxId))
         })
-        assert(channelReestablishAlice.nextCommitNonces.get(rbfTxId).contains(txCompleteAlice.nonces_opt.get.nextCommitNonce))
-        assert(channelReestablishBob.nextCommitNonces.get(rbfTxId).contains(txCompleteBob.nonces_opt.get.nextCommitNonce))
+        assert(channelReestablishAlice.nextCommitNonces.get(rbfTxId).contains(txCompleteAlice.commitNonces_opt.get.nextCommitNonce))
+        assert(channelReestablishBob.nextCommitNonces.get(rbfTxId).contains(txCompleteBob.commitNonces_opt.get.nextCommitNonce))
     }
 
     // Bob retransmits commit_sig and tx_signatures, then Alice sends her tx_signatures.
@@ -1149,8 +1149,8 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
           assert(channelReestablish.nextCommitNonces.contains(fundingTxId))
           assert(channelReestablish.nextCommitNonces.contains(rbfTx.txId))
         })
-        assert(channelReestablishAlice.nextCommitNonces.get(rbfTx.txId).contains(txCompleteAlice.nonces_opt.get.nextCommitNonce))
-        assert(channelReestablishBob.nextCommitNonces.get(rbfTx.txId).contains(txCompleteBob.nonces_opt.get.nextCommitNonce))
+        assert(channelReestablishAlice.nextCommitNonces.get(rbfTx.txId).contains(txCompleteAlice.commitNonces_opt.get.nextCommitNonce))
+        assert(channelReestablishBob.nextCommitNonces.get(rbfTx.txId).contains(txCompleteBob.commitNonces_opt.get.nextCommitNonce))
     }
 
     // Alice and Bob exchange tx_signatures and complete the RBF attempt.
@@ -1252,8 +1252,8 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
           assert(channelReestablish.nextCommitNonces.contains(currentFundingTxId))
           assert(channelReestablish.nextCommitNonces.contains(rbfTxId))
         })
-        assert(channelReestablishAlice.nextCommitNonces.get(rbfTxId).contains(txCompleteAlice.nonces_opt.get.nextCommitNonce))
-        assert(channelReestablishBob.nextCommitNonces.get(rbfTxId).contains(txCompleteBob.nonces_opt.get.nextCommitNonce))
+        assert(channelReestablishAlice.nextCommitNonces.get(rbfTxId).contains(txCompleteAlice.commitNonces_opt.get.nextCommitNonce))
+        assert(channelReestablishBob.nextCommitNonces.get(rbfTxId).contains(txCompleteBob.commitNonces_opt.get.nextCommitNonce))
     }
 
     // Alice and Bob exchange signatures and complete the RBF attempt.

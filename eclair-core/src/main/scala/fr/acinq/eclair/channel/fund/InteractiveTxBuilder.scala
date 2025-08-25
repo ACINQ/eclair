@@ -722,7 +722,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           replyTo ! RemoteFailure(cause)
           unlockAndStop(session)
         case Right(completeTx) =>
-          signCommitTx(completeTx, session.txCompleteReceived.flatMap(_.nonces_opt))
+          signCommitTx(completeTx, session.txCompleteReceived.flatMap(_.fundingNonce_opt), session.txCompleteReceived.flatMap(_.commitNonces_opt))
       }
       case _: WalletFailure =>
         replyTo ! RemoteFailure(UnconfirmedInteractiveTxInputs(fundingParams.channelId))
@@ -799,7 +799,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         case _: SegwitV0CommitmentFormat => ()
         case _: SimpleTaprootChannelCommitmentFormat =>
           // If we're spending a taproot channel, our peer must provide a nonce for the shared input.
-          val remoteFundingNonce_opt: Option[IndividualNonce] = session.txCompleteReceived.flatMap(_.nonces_opt).flatMap(_.fundingNonce_opt)
+          val remoteFundingNonce_opt = session.txCompleteReceived.flatMap(_.fundingNonce_opt)
           if (remoteFundingNonce_opt.isEmpty) return Left(MissingFundingNonce(fundingParams.channelId, sharedInput.info.outPoint.txid))
       }
       sharedInputs.headOption match {
@@ -821,7 +821,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     fundingParams.commitmentFormat match {
       case _: SegwitV0CommitmentFormat => ()
       case _: SimpleTaprootChannelCommitmentFormat =>
-        val remoteCommitNonces_opt = session.txCompleteReceived.flatMap(_.nonces_opt)
+        val remoteCommitNonces_opt = session.txCompleteReceived.flatMap(_.commitNonces_opt)
         if (remoteCommitNonces_opt.isEmpty) return Left(MissingCommitNonce(fundingParams.channelId, tx.txid, purpose.remoteCommitIndex))
     }
 
@@ -890,7 +890,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     Right(sharedTx)
   }
 
-  private def signCommitTx(completeTx: SharedTransaction, remoteNonces_opt: Option[TxCompleteTlv.Nonces]): Behavior[Command] = {
+  private def signCommitTx(completeTx: SharedTransaction, remoteFundingNonce_opt: Option[IndividualNonce], remoteCommitNonces_opt: Option[TxCompleteTlv.CommitNonces]): Behavior[Command] = {
     val fundingTx = completeTx.buildUnsignedTx()
     val fundingOutputIndex = fundingTx.txOut.indexWhere(_.publicKeyScript == fundingPubkeyScript)
     val liquidityFee = fundingParams.liquidityFees(liquidityPurchase_opt)
@@ -916,7 +916,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         val localSigOfRemoteTx = fundingParams.commitmentFormat match {
           case _: SegwitV0CommitmentFormat => Right(remoteCommitTx.sign(localFundingKey, fundingParams.remoteFundingPubKey))
           case _: SimpleTaprootChannelCommitmentFormat =>
-            remoteNonces_opt match {
+            remoteCommitNonces_opt match {
               case Some(remoteNonces) =>
                 val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey, fundingParams.remoteFundingPubKey, fundingTx.txid)
                 remoteCommitTx.partialSign(localFundingKey, fundingParams.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonces.commitNonce)) match {
@@ -935,13 +935,13 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures, batchSize = 1)
             val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx.tx.txid)
             val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)
-            signFundingTx(completeTx, remoteNonces_opt, localCommitSig, localCommit, remoteCommit)
+            signFundingTx(completeTx, remoteFundingNonce_opt, remoteCommitNonces_opt.map(_.nextCommitNonce), localCommitSig, localCommit, remoteCommit)
         }
     }
   }
 
-  private def signFundingTx(completeTx: SharedTransaction, remoteNonces_opt: Option[TxCompleteTlv.Nonces], commitSig: CommitSig, localCommit: UnsignedLocalCommit, remoteCommit: RemoteCommit): Behavior[Command] = {
-    signTx(completeTx, remoteNonces_opt.flatMap(_.fundingNonce_opt))
+  private def signFundingTx(completeTx: SharedTransaction, remoteFundingNonce_opt: Option[IndividualNonce], nextRemoteCommitNonce_opt: Option[IndividualNonce], commitSig: CommitSig, localCommit: UnsignedLocalCommit, remoteCommit: RemoteCommit): Behavior[Command] = {
+    signTx(completeTx, remoteFundingNonce_opt)
     Behaviors.receiveMessagePartial {
       case SignTransactionResult(signedTx) =>
         log.info(s"interactive-tx txid=${signedTx.txId} partially signed with {} local inputs, {} remote inputs, {} local outputs and {} remote outputs", signedTx.tx.localInputs.length, signedTx.tx.remoteInputs.length, signedTx.tx.localOutputs.length, signedTx.tx.remoteOutputs.length)
@@ -978,8 +978,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           remoteCommit,
           liquidityPurchase_opt.map(_.basicInfo(isBuyer = fundingParams.isInitiator))
         )
-        val nextRemoteCommitNonce_opt = remoteNonces_opt.map(n => signedTx.txId -> n.nextCommitNonce)
-        replyTo ! Succeeded(signingSession, commitSig, liquidityPurchase_opt, nextRemoteCommitNonce_opt)
+        replyTo ! Succeeded(signingSession, commitSig, liquidityPurchase_opt, nextRemoteCommitNonce_opt.map(n => signedTx.txId -> n))
         Behaviors.stopped
       case WalletFailure(t) =>
         log.error("could not sign funding transaction: ", t)

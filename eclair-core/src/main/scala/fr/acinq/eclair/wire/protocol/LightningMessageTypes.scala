@@ -122,12 +122,18 @@ case class TxRemoveOutput(channelId: ByteVector32,
 
 case class TxComplete(channelId: ByteVector32,
                       tlvStream: TlvStream[TxCompleteTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId {
-  val nonces_opt: Option[TxCompleteTlv.Nonces] = tlvStream.get[TxCompleteTlv.Nonces]
+  val commitNonces_opt: Option[TxCompleteTlv.CommitNonces] = tlvStream.get[TxCompleteTlv.CommitNonces]
+  val fundingNonce_opt: Option[IndividualNonce] = tlvStream.get[TxCompleteTlv.FundingInputNonce].map(_.nonce)
 }
 
 object TxComplete {
-  def apply(channelId: ByteVector32, commitNonce: IndividualNonce, nextCommitNonce: IndividualNonce, fundingNonce_opt: Option[IndividualNonce]): TxComplete =
-    TxComplete(channelId, TlvStream(TxCompleteTlv.Nonces(commitNonce, nextCommitNonce, fundingNonce_opt)))
+  def apply(channelId: ByteVector32, commitNonce: IndividualNonce, nextCommitNonce: IndividualNonce, fundingNonce_opt: Option[IndividualNonce]): TxComplete = {
+    val tlvs = Set(
+      Some(TxCompleteTlv.CommitNonces(commitNonce, nextCommitNonce)),
+      fundingNonce_opt.map(TxCompleteTlv.FundingInputNonce(_)),
+    ).flatten[TxCompleteTlv]
+    TxComplete(channelId, TlvStream(tlvs))
+  }
 }
 
 case class TxSignatures(channelId: ByteVector32,
