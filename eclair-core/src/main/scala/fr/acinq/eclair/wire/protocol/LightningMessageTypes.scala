@@ -20,11 +20,12 @@ import com.google.common.base.Charsets
 import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, OutPoint, Satoshi, SatoshiLong, ScriptWitness, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, OutPoint, Satoshi, SatoshiLong, ScriptWitness, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelSpendSignature, ChannelType}
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.wire.protocol.ChannelReadyTlv.ShortChannelIdTlv
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64, isAsciiPrintable}
 import scodec.bits.ByteVector
@@ -94,6 +95,8 @@ case class TxAddInput(channelId: ByteVector32,
                       previousTxOutput: Long,
                       sequence: Long,
                       tlvStream: TlvStream[TxAddInputTlv] = TlvStream.empty) extends InteractiveTxConstructionMessage with HasChannelId with HasSerialId {
+  /** This field may replace [[previousTx_opt]] when using taproot. */
+  val previousTxOut_opt: Option[InputInfo] = tlvStream.get[TxAddInputTlv.PrevTxOut].map(tlv => InputInfo(OutPoint(tlv.txId, previousTxOutput), TxOut(tlv.amount, tlv.publicKeyScript)))
   val sharedInput_opt: Option[OutPoint] = tlvStream.get[TxAddInputTlv.SharedInputTxId].map(i => OutPoint(i.txId, previousTxOutput))
 }
 
