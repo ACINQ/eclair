@@ -481,13 +481,15 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
 
     alice ! INPUT_RECONNECTED(bob, aliceInit, bobInit)
     val channelReestablishAlice = alice2bob.expectMsgType[ChannelReestablish]
-    assert(channelReestablishAlice.nextLocalCommitmentNumber == 0)
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
+    assert(channelReestablishAlice.retransmitInteractiveTxCommitSig)
     assert(channelReestablishAlice.currentCommitNonce_opt.nonEmpty)
     assert(channelReestablishAlice.nextCommitNonces.contains(fundingTxId))
 
     bob ! INPUT_RECONNECTED(alice, bobInit, aliceInit)
     val channelReestablishBob = bob2alice.expectMsgType[ChannelReestablish]
-    assert(channelReestablishBob.nextLocalCommitmentNumber == 0)
+    assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
+    assert(channelReestablishBob.retransmitInteractiveTxCommitSig)
     assert(channelReestablishBob.currentCommitNonce_opt.nonEmpty)
     assert(channelReestablishBob.nextCommitNonces.contains(fundingTxId))
 
@@ -586,12 +588,14 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     assert(channelReestablishAlice.nextCommitNonces.contains(fundingTx.txid))
     assert(channelReestablishAlice.nextCommitNonces.get(fundingTx.txid) != channelReestablishAlice.currentCommitNonce_opt)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(fundingTx.txid))
-    assert(channelReestablishAlice.nextLocalCommitmentNumber == 0)
+    assert(channelReestablishAlice.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
     alice2bob.forward(bob, channelReestablishAlice)
     val channelReestablishBob = bob2alice.expectMsgType[ChannelReestablish]
     assert(channelReestablishBob.currentCommitNonce_opt.isEmpty)
     assert(channelReestablishBob.nextCommitNonces.get(fundingTx.txid) == channelReadyB.nextCommitNonce_opt)
     assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
+    assert(!channelReestablishBob.retransmitInteractiveTxCommitSig)
     assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
     bob2alice.forward(alice, channelReestablishBob)
 
@@ -729,14 +733,14 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     alice ! INPUT_RECONNECTED(bob, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(alice, bobInit, aliceInit)
     val channelReestablishAlice = alice2bob.expectMsgType[ChannelReestablish]
-    val nextLocalCommitmentNumberAlice = if (aliceExpectsCommitSig) 0 else 1
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(fundingTxId))
-    assert(channelReestablishAlice.nextLocalCommitmentNumber == nextLocalCommitmentNumberAlice)
+    assert(channelReestablishAlice.retransmitInteractiveTxCommitSig == aliceExpectsCommitSig)
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
     alice2bob.forward(bob, channelReestablishAlice)
     val channelReestablishBob = bob2alice.expectMsgType[ChannelReestablish]
-    val nextLocalCommitmentNumberBob = if (bobExpectsCommitSig) 0 else 1
     assert(channelReestablishBob.nextFundingTxId_opt.contains(fundingTxId))
-    assert(channelReestablishBob.nextLocalCommitmentNumber == nextLocalCommitmentNumberBob)
+    assert(channelReestablishBob.retransmitInteractiveTxCommitSig == bobExpectsCommitSig)
+    assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
     bob2alice.forward(alice, channelReestablishBob)
 
     // When using taproot, we must provide nonces for the partial signatures.

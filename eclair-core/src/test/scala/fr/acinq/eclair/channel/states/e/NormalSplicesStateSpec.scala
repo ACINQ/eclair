@@ -1882,6 +1882,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     reconnect(f)
 
     // Bob and Alice will exchange tx_abort because Bob did not receive Alice's tx_complete before the disconnect.
+    bob2alice.expectMsgType[ChannelReady]
+    bob2alice.forward(alice)
     bob2alice.expectMsgType[TxAbort]
     bob2alice.forward(alice)
     alice2bob.expectMsgType[ChannelReady]
@@ -1927,14 +1929,16 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     disconnect(f)
 
-    // If Bob has not implemented https://github.com/lightning/bolts/pull/1214, he will send an incorrect next_commitment_number.
+    // If Bob has not implemented https://github.com/lightning/bolts/pull/1214, he will not ask for a retransmission of commit_sig.
     val (channelReestablishAlice1, channelReestablishBob1) = reconnect(f, sendReestablish = false)
     assert(channelReestablishAlice1.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
-    assert(channelReestablishAlice1.nextLocalCommitmentNumber == aliceCommitIndex)
+    assert(channelReestablishAlice1.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishAlice1.nextLocalCommitmentNumber == aliceCommitIndex + 1)
     assert(channelReestablishBob1.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
-    assert(channelReestablishBob1.nextLocalCommitmentNumber == bobCommitIndex)
+    assert(channelReestablishBob1.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishBob1.nextLocalCommitmentNumber == bobCommitIndex + 1)
     alice2bob.forward(bob, channelReestablishAlice1)
-    bob2alice.forward(alice, channelReestablishBob1.copy(nextLocalCommitmentNumber = bobCommitIndex + 1))
+    bob2alice.forward(alice, channelReestablishBob1.copy(tlvStream = TlvStream(channelReestablishBob1.tlvStream.records.filterNot(_.isInstanceOf[ChannelReestablishTlv.NextFundingTlv]))))
     // In that case Alice won't retransmit commit_sig and the splice won't complete since they haven't exchanged tx_signatures.
     assert(bob2alice.expectMsgType[CommitSig].fundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
     bob2alice.forward(alice)
@@ -1948,13 +1952,15 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! cmd.copy(replyTo = probe.ref)
     probe.expectMsgType[RES_ADD_FAILED[ForbiddenDuringSplice]]
 
-    // But when correctly setting their next_commitment_number, they're able to finalize the splice.
+    // But when correctly setting their next_funding TLV, they're able to finalize the splice.
     disconnect(f)
     val (channelReestablishAlice2, channelReestablishBob2) = reconnect(f)
     assert(channelReestablishAlice2.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
+    assert(!channelReestablishAlice2.retransmitInteractiveTxCommitSig)
     assert(channelReestablishAlice2.nextLocalCommitmentNumber == aliceCommitIndex + 1)
     assert(channelReestablishBob2.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
-    assert(channelReestablishBob2.nextLocalCommitmentNumber == bobCommitIndex)
+    assert(channelReestablishBob2.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishBob2.nextLocalCommitmentNumber == bobCommitIndex + 1)
 
     // Alice retransmits commit_sig and both retransmit tx_signatures.
     assert(alice2bob.expectMsgType[CommitSig].fundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
@@ -2094,9 +2100,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     disconnect(f)
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTxId))
+    assert(!channelReestablishAlice.retransmitInteractiveTxCommitSig)
     assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex + 1)
     assert(channelReestablishBob.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTxId))
-    assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex)
+    assert(channelReestablishBob.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex + 1)
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat => ()
       case _: SimpleTaprootChannelCommitmentFormat =>
@@ -2164,8 +2172,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     disconnect(f)
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
-    assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex)
+    assert(channelReestablishAlice.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex + 1)
     assert(channelReestablishBob.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
+    assert(!channelReestablishBob.retransmitInteractiveTxCommitSig)
     assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex + 1)
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat => ()
@@ -2499,9 +2509,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     disconnect(f)
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(rbfTxId))
-    assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex)
+    assert(channelReestablishAlice.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex + 1)
     assert(channelReestablishBob.nextFundingTxId_opt.contains(rbfTxId))
-    assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex)
+    assert(channelReestablishBob.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex + 1)
     bob2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
 
     // Alice and Bob retransmit commit_sig and tx_signatures.
@@ -2546,9 +2558,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     disconnect(f)
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(rbfTxId))
+    assert(!channelReestablishAlice.retransmitInteractiveTxCommitSig)
     assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex + 1)
     assert(channelReestablishBob.nextFundingTxId_opt.contains(rbfTxId))
-    assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex)
+    assert(channelReestablishBob.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex + 1)
     bob2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
 
     // Alice retransmits commit_sig, and they exchange tx_signatures afterwards.
@@ -2596,9 +2610,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     disconnect(f)
     val (channelReestablishAlice, channelReestablishBob) = reconnect(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(rbfTxId))
-    assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex)
+    assert(channelReestablishAlice.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex + 1)
     assert(channelReestablishAlice.currentCommitNonce_opt.nonEmpty)
     assert(channelReestablishBob.nextFundingTxId_opt.contains(rbfTxId))
+    assert(!channelReestablishBob.retransmitInteractiveTxCommitSig)
     assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex + 1)
     assert(channelReestablishBob.currentCommitNonce_opt.isEmpty)
     Seq(channelReestablishAlice, channelReestablishBob).foreach(channelReestablish => {
