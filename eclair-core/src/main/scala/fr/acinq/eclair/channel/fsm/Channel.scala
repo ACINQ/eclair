@@ -1459,7 +1459,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     case Event(w: WatchPublishedTriggered, d: DATA_NORMAL) =>
       val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
       d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, d.lastAnnouncedFundingTxId_opt) match {
-        case Right((commitments1, commitment)) =>
+        case Right((commitments1, _)) =>
           watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepth), delay_opt = None)
           maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
           maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
@@ -2374,7 +2374,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED) =>
       activeConnection = r
       val myFirstPerCommitmentPoint = channelKeys.commitmentPoint(0)
-      val nextFundingTlv: Set[ChannelReestablishTlv] = Set(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTxId))
+      val nextFundingTlv = Set[ChannelReestablishTlv](ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTxId, d.signingSession.retransmitRemoteCommitSig))
       val nonceTlvs = d.signingSession.fundingParams.commitmentFormat match {
         case _: SegwitV0CommitmentFormat => Set.empty
         case _: SimpleTaprootChannelCommitmentFormat =>
@@ -2392,7 +2392,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
-        nextLocalCommitmentNumber = d.signingSession.nextLocalCommitmentNumber,
+        nextLocalCommitmentNumber = 1,
         nextRemoteRevocationNumber = 0,
         yourLastPerCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
         myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
@@ -2406,31 +2406,19 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       val remotePerCommitmentSecrets = d.commitments.remotePerCommitmentSecrets
       val yourLastPerCommitmentSecret = remotePerCommitmentSecrets.lastIndex.flatMap(remotePerCommitmentSecrets.getHash).getOrElse(ByteVector32.Zeroes)
       val myCurrentPerCommitmentPoint = channelKeys.commitmentPoint(d.commitments.localCommitIndex)
-      // If we disconnected while signing a funding transaction, we may need our peer to retransmit their commit_sig.
-      val nextLocalCommitmentNumber = d match {
-        case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.status match {
-          case DualFundingStatus.RbfWaitingForSigs(status) => status.nextLocalCommitmentNumber
-          case _ => d.commitments.localCommitIndex + 1
-        }
-        case d: DATA_NORMAL => d.spliceStatus match {
-          case SpliceStatus.SpliceWaitingForSigs(status) => status.nextLocalCommitmentNumber
-          case _ => d.commitments.localCommitIndex + 1
-        }
-        case _ => d.commitments.localCommitIndex + 1
-      }
-      // If we disconnected while signing a funding transaction, we may need our peer to (re)transmit their tx_signatures.
+      // If we disconnected while signing a funding transaction, we may need our peer to (re)transmit their tx_signatures and commit_sig.
       val rbfTlv: Set[ChannelReestablishTlv] = d match {
         case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.status match {
-          case DualFundingStatus.RbfWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId))
+          case DualFundingStatus.RbfWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId, status.retransmitRemoteCommitSig))
           case _ => d.latestFundingTx.sharedTx match {
-            case _: InteractiveTxBuilder.PartiallySignedSharedTransaction => Set(ChannelReestablishTlv.NextFundingTlv(d.latestFundingTx.sharedTx.txId))
+            case _: InteractiveTxBuilder.PartiallySignedSharedTransaction => Set(ChannelReestablishTlv.NextFundingTlv(d.latestFundingTx.sharedTx.txId, retransmitCommitSig = false))
             case _: InteractiveTxBuilder.FullySignedSharedTransaction => Set.empty
           }
         }
         case d: DATA_NORMAL => d.spliceStatus match {
-          case SpliceStatus.SpliceWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId))
+          case SpliceStatus.SpliceWaitingForSigs(status) => Set(ChannelReestablishTlv.NextFundingTlv(status.fundingTx.txId, status.retransmitRemoteCommitSig))
           case _ => d.commitments.latest.localFundingStatus match {
-            case LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx: PartiallySignedSharedTransaction, _, _, _) => Set(ChannelReestablishTlv.NextFundingTlv(fundingTx.txId))
+            case LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx: PartiallySignedSharedTransaction, _, _, _) => Set(ChannelReestablishTlv.NextFundingTlv(fundingTx.txId, retransmitCommitSig = false))
             case _ => Set.empty
           }
         }
@@ -2480,7 +2468,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
-        nextLocalCommitmentNumber = nextLocalCommitmentNumber,
+        nextLocalCommitmentNumber = d.commitments.localCommitIndex + 1,
         nextRemoteRevocationNumber = d.commitments.remoteCommitIndex,
         yourLastPerCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
         myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
@@ -2532,7 +2520,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case _ =>
           remoteNextCommitNonces = channelReestablish.nextCommitNonces
           channelReestablish.nextFundingTxId_opt match {
-            case Some(fundingTxId) if fundingTxId == d.signingSession.fundingTx.txId && channelReestablish.nextLocalCommitmentNumber == 0 =>
+            case Some(fundingTxId) if fundingTxId == d.signingSession.fundingTx.txId && channelReestablish.retransmitInteractiveTxCommitSig =>
               // They haven't received our commit_sig: we retransmit it, and will send our tx_signatures once we've received
               // their commit_sig or their tx_signatures (depending on who must send tx_signatures first).
               val fundingParams = d.signingSession.fundingParams
@@ -2560,7 +2548,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             case Some(fundingTxId) =>
               d.status match {
                 case DualFundingStatus.RbfWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
-                  if (channelReestablish.nextLocalCommitmentNumber == 0) {
+                  if (channelReestablish.retransmitInteractiveTxCommitSig) {
                     // They haven't received our commit_sig: we retransmit it.
                     // We're also waiting for signatures from them, and will send our tx_signatures once we receive them.
                     val fundingParams = signingSession.fundingParams
@@ -2577,7 +2565,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 case _ if d.latestFundingTx.sharedTx.txId == fundingTxId =>
                   // We've already received their commit_sig and sent our tx_signatures. We retransmit our tx_signatures
                   // and our commit_sig if they haven't received it already.
-                  if (channelReestablish.nextLocalCommitmentNumber == 0) {
+                  if (channelReestablish.retransmitInteractiveTxCommitSig) {
                     val remoteNonce_opt = channelReestablish.currentCommitNonce_opt
                     d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, d.commitments.latest.remoteCommitParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput(channelKeys), d.commitments.latest.commitmentFormat, remoteNonce_opt) match {
                       case Left(e) => handleLocalError(e, d, Some(channelReestablish))
@@ -2615,7 +2603,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           channelReestablish.nextFundingTxId_opt match {
             case Some(fundingTxId) if fundingTxId == d.commitments.latest.fundingTxId =>
               d.commitments.latest.localFundingStatus.localSigs_opt match {
-                case Some(txSigs) if channelReestablish.nextLocalCommitmentNumber == 0 =>
+                case Some(txSigs) if channelReestablish.retransmitInteractiveTxCommitSig =>
                   log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
                   val remoteNonce_opt = channelReestablish.currentCommitNonce_opt
                   d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, d.commitments.latest.remoteCommitParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput(channelKeys), d.commitments.latest.commitmentFormat, remoteNonce_opt) match {
@@ -2676,9 +2664,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               sendQueue = sendQueue ++ syncSuccess.retransmit
 
               commitments1.remoteNextCommitInfo match {
-                case Left(_) =>
-                  // we expect them to (re-)send the revocation immediately
-                  startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommitIndex, peer), nodeParams.channelConf.revocationTimeout)
+                // we expect them to (re-)send their revocation immediately
+                case Left(_) => startSingleTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommitIndex, peer), nodeParams.channelConf.revocationTimeout)
                 case _ => ()
               }
 
@@ -3402,7 +3389,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       case Some(fundingTxId) =>
         d.spliceStatus match {
           case SpliceStatus.SpliceWaitingForSigs(signingSession) if signingSession.fundingTx.txId == fundingTxId =>
-            if (channelReestablish.nextLocalCommitmentNumber == d.commitments.remoteCommitIndex) {
+            if (channelReestablish.retransmitInteractiveTxCommitSig) {
               // They haven't received our commit_sig: we retransmit it.
               // We're also waiting for signatures from them, and will send our tx_signatures once we receive them.
               log.info("re-sending commit_sig for splice attempt with fundingTxIndex={} fundingTxId={}", signingSession.fundingTxIndex, signingSession.fundingTx.txId)
@@ -3419,7 +3406,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               case dfu: LocalFundingStatus.DualFundedUnconfirmedFundingTx =>
                 // We've already received their commit_sig and sent our tx_signatures. We retransmit our
                 // tx_signatures and our commit_sig if they haven't received it already.
-                if (channelReestablish.nextLocalCommitmentNumber == d.commitments.remoteCommitIndex) {
+                if (channelReestablish.retransmitInteractiveTxCommitSig) {
                   log.info("re-sending commit_sig and tx_signatures for fundingTxIndex={} fundingTxId={}", d.commitments.latest.fundingTxIndex, d.commitments.latest.fundingTxId)
                   val remoteNonce_opt = channelReestablish.currentCommitNonce_opt
                   d.commitments.latest.remoteCommit.sign(d.commitments.channelParams, d.commitments.latest.remoteCommitParams, channelKeys, d.commitments.latest.fundingTxIndex, d.commitments.latest.remoteFundingPubKey, d.commitments.latest.commitInput(channelKeys), d.commitments.latest.commitmentFormat, remoteNonce_opt) match {
