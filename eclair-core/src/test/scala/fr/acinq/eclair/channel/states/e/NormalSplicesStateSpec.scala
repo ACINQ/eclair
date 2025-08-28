@@ -2856,7 +2856,51 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
-  test("disconnection after exchanging tx_signatures and one side sends commit_sig for channel update") { f =>
+  test("disconnect while updating channel before receiving splice_locked", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
+    import f._
+
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    checkWatchConfirmed(f, spliceTx)
+
+    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+
+    // The splice confirms on Alice's side.
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, spliceTx)
+    alice2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == spliceTx.txid)
+    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == spliceTx.txid)
+    alice2bob.forward(bob)
+
+    // Alice sends an HTLC to Bob, but Bob doesn't receive the commit_sig messages.
+    addHtlc(25_000_000 msat, alice, bob, alice2bob, bob2alice)
+    alice ! CMD_SIGN()
+    assert(alice2bob.expectMsgType[CommitSigBatch].batchSize == 2)
+
+    // At the same time, the splice confirms on Bob's side, who now expects a single commit_sig message.
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, spliceTx)
+    bob2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == spliceTx.txid)
+    bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == spliceTx.txid)
+    bob2alice.forward(alice)
+
+    disconnect(f)
+    reconnect(f)
+
+    // On reconnection, Alice will only re-send commit_sig for the (locked) splice transaction.
+    assert(alice.commitments.active.size == 1)
+    assert(bob.commitments.active.size == 1)
+    alice2bob.expectMsgType[UpdateAddHtlc]
+    alice2bob.forward(bob)
+    assert(alice2bob.expectMsgType[CommitSig].tlvStream.get[CommitSigTlv.BatchTlv].isEmpty)
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+  }
+
+  test("disconnect after exchanging tx_signatures and one side sends commit_sig for channel update") { f =>
     import f._
 
     // alice                    bob
@@ -2924,7 +2968,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectNoMessage(100 millis)
   }
 
-  test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update; revoke_and_ack not received") { f =>
+  test("disconnect after exchanging tx_signatures and both sides send commit_sig for channel update; revoke_and_ack not received") { f =>
     import f._
     // alice                    bob
     //   |         ...           |
@@ -2989,7 +3033,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectNoMessage(100 millis)
   }
 
-  test("Disconnection after exchanging tx_signatures and both sides send commit_sig for channel update") { f =>
+  test("disconnect after exchanging tx_signatures and both sides send commit_sig for channel update") { f =>
     import f._
     // alice                    bob
     //   |         ...           |
