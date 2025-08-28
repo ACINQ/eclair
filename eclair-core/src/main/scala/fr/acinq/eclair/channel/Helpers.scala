@@ -499,7 +499,16 @@ object Helpers {
             // we just sent a new commit_sig but they didn't receive it
             // we resend the same updates and the same sig, and preserve the same ordering
             val signedUpdates = commitments.changes.localChanges.signed
-            val commitSigs = CommitSigs(commitments.active.flatMap(_.nextRemoteCommit_opt).map(_.sig))
+            val commitSigs = CommitSigs(commitments.active.flatMap(_.nextRemoteCommit_opt).map { nextRemoteCommit =>
+              // If there was a race condition with the remote splice_locked, we may need to adjust the batch size
+              // on reconnection: we may have less commit_sig messages to send than before the disconnection.
+              val commitSig = nextRemoteCommit.sig
+              if (commitments.active.size == 1) {
+                commitSig.copy(tlvStream = TlvStream(commitSig.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.BatchTlv])))
+              } else {
+                commitSig.copy(tlvStream = TlvStream(commitSig.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.BatchTlv]) + CommitSigTlv.BatchTlv(commitments.active.size)))
+              }
+            })
             retransmitRevocation_opt match {
               case None =>
                 SyncResult.Success(retransmit = signedUpdates :+ commitSigs)
