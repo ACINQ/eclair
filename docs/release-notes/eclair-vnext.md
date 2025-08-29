@@ -84,6 +84,14 @@ eclair.channel.min-depth-blocks = 8
 Note however that we require `min-depth` to be at least 6 blocks, since the BOLTs require this before announcing channels.
 See #3044 for more details.
 
+#### Database migration of channel data
+
+When updating your node, eclair will automatically migrate all of your channel data to the latest (internal) encoding.
+Depending on the number of open channels, this may be a bit slow: don't worry if this initial start-up is taking more time than usual.
+This will only happen the first time you restart your node.
+
+This is an important step towards removing legacy code from our codebase, which we will do before the next release.
+
 ## Verifying signatures
 
 You will need `gpg` and our release signing key E04E48E72C205463. Note that you can get it:

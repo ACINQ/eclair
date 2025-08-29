@@ -32,7 +32,7 @@ import java.sql.{Connection, Statement}
 
 object SqliteChannelsDb {
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 6
+  val CURRENT_VERSION = 7
 }
 
 class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
@@ -90,6 +90,21 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
       statement.executeUpdate("DROP INDEX IF EXISTS htlc_infos_idx")
     }
 
+    def migration67(): Unit = {
+      migrateTable(sqlite, sqlite,
+        "local_channels",
+        "UPDATE local_channels SET data=? WHERE channel_id=?",
+        (rs, statement) => {
+          // This forces a re-serialization of the channel data with latest codecs, because we want to remove support
+          // for codecs older than v5 in the next release.
+          val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
+          val data = channelDataCodec.encode(state).require.toByteArray
+          statement.setBytes(1, data)
+          statement.setBytes(2, state.channelId.toArray)
+        }
+      )(logger)
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0, created_timestamp INTEGER, last_payment_sent_timestamp INTEGER, last_payment_received_timestamp INTEGER, last_connected_timestamp INTEGER, closed_timestamp INTEGER)")
@@ -99,7 +114,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         // This is more efficient because we're writing a lot to this table but only reading when a channel is force-closed.
         statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON htlc_infos(channel_id)")
         statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON htlc_infos(commitment_number)")
-      case Some(v@(1 | 2 | 3 | 4 | 5)) =>
+      case Some(v@(1 | 2 | 3 | 4 | 5 | 6)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -115,6 +130,9 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         }
         if (v < 6) {
           migration56()
+        }
+        if (v < 7) {
+          migration67()
         }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
