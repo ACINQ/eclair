@@ -2543,4 +2543,31 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     sender.expectMsg(RES_FAILURE(c, ClosingAlreadyInProgress(channelId(alice))))
   }
 
+  test("recv CMD_FORCECLOSE (max_closing_feerate override)") { f =>
+    import f._
+
+    val sender = TestProbe()
+    alice ! CMD_FORCECLOSE(sender.ref)
+    awaitCond(alice.stateName == CLOSING)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].maxClosingFeerate_opt.isEmpty)
+    val commitTx = alice2blockchain.expectFinalTxPublished("commit-tx").tx
+    val claimMain1 = alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    alice2blockchain.expectWatchTxConfirmed(commitTx.txid)
+    alice2blockchain.expectWatchOutputSpent(claimMain1.input)
+
+    alice ! CMD_FORCECLOSE(sender.ref, maxClosingFeerate_opt = Some(FeeratePerKw(5_000 sat)))
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].maxClosingFeerate_opt.contains(FeeratePerKw(5_000 sat)))
+    alice2blockchain.expectFinalTxPublished(commitTx.txid)
+    val claimMain2 = alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    alice2blockchain.expectWatchTxConfirmed(commitTx.txid)
+    alice2blockchain.expectWatchOutputSpent(claimMain2.input)
+    assert(claimMain2.fee != claimMain1.fee)
+
+    alice ! CMD_FORCECLOSE(sender.ref, maxClosingFeerate_opt = Some(FeeratePerKw(10_000 sat)))
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].maxClosingFeerate_opt.contains(FeeratePerKw(10_000 sat)))
+    alice2blockchain.expectFinalTxPublished(commitTx.txid)
+    val claimMain3 = alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    assert(claimMain2.fee * 1.9 <= claimMain3.fee && claimMain3.fee <= claimMain2.fee * 2.1)
+  }
+
 }

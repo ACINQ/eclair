@@ -52,8 +52,8 @@ eclair.relay.peer-reputation {
 ### API changes
 
 - `listoffers` now returns more details about each offer.
-- `parseoffer` is added to display offer fields in a human-readable format. 
-
+- `parseoffer` is added to display offer fields in a human-readable format.
+- `forceclose` has a new optional parameter `maxClosingFeerateSatByte`: see the `max-closing-feerate` configuration section below for more details.
 
 ### Configuration changes
 
@@ -67,7 +67,13 @@ eclair.relay.peer-reputation {
 
 We added a new configuration value to `eclair.conf` to limit the feerate used for force-close transactions where funds aren't at risk: `eclair.on-chain-fees.max-closing-feerate`.
 This ensures that you won't end up paying a lot of fees during mempool congestion: your node will wait for the feerate to decrease to get your non-urgent transactions confirmed.
-If you need those transactions to confirm because you are low on liquidity, you should update `eclair.on-chain-fees.max-closing-feerate` and restart your node: `eclair` will automatically RBF all available transactions.
+
+The default value from `eclair.conf` can be overridden by using the `forceclose` API with the `maxClosingFeerateSatByte` set, which allows a per-channel override. This is particularly useful for channels where you have a large balance, which you may wish to recover more quickly.
+
+If you need those transactions to confirm because you are low on liquidity, you can either:
+
+- update `eclair.on-chain-fees.max-closing-feerate` and restart your node: `eclair` will automatically RBF all available transactions for all closing channels.
+- use the `forceclose` API with the `maxClosingFeerateSatByte` set, to update a selection of channels without restarting your node.
 
 #### Remove confirmation scaling based on funding amount
 
