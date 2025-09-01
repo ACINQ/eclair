@@ -50,7 +50,7 @@ object TxAddInputTlv {
   val txAddInputTlvCodec: Codec[TlvStream[TxAddInputTlv]] = tlvStream(discriminated[TxAddInputTlv].by(varint)
     // Note that we actually encode as a tx_hash to be consistent with other lightning messages.
     .typecase(UInt64(1105), tlvField(txIdAsHash.as[SharedInputTxId]))
-    .typecase(UInt64(1107), PrevTxOut.codec)
+    .typecase(UInt64(1111), PrevTxOut.codec)
   )
 }
 

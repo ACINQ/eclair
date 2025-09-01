@@ -124,8 +124,9 @@ private[channel] object ChannelTypes4 {
 
   case class ConfirmedFundingTx(tx: Transaction, shortChannelId: RealShortChannelId, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus {
     override def migrate(commitmentFormat: CommitmentFormat): channel.LocalFundingStatus.ConfirmedFundingTx = {
+      val spentInputs = tx.txIn.map(_.outPoint)
       val txOut = tx.txOut(shortChannelId.outputIndex)
-      channel.LocalFundingStatus.ConfirmedFundingTx(txOut, shortChannelId, localSigs_opt, liquidityPurchase_opt)
+      channel.LocalFundingStatus.ConfirmedFundingTx(spentInputs, txOut, shortChannelId, localSigs_opt, liquidityPurchase_opt)
     }
   }
 

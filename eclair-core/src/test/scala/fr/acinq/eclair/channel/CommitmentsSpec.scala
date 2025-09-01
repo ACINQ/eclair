@@ -499,7 +499,7 @@ object CommitmentsSpec {
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toLocal, toRemote), randomTxId(), IndividualSignature(ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomTxId(), randomKey().publicKey)
     val localFundingStatus = announcement_opt match {
-      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(fundingTxOut, ann.shortChannelId, None, None)
+      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(Nil, fundingTxOut, ann.shortChannelId, None, None)
       case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
     }
     Commitments(
@@ -524,7 +524,7 @@ object CommitmentsSpec {
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toLocal, toRemote), randomTxId(), IndividualSignature(ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toRemote, toLocal), randomTxId(), randomKey().publicKey)
     val localFundingStatus = announcement_opt match {
-      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(fundingTxOut, ann.shortChannelId, None, None)
+      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(Nil, fundingTxOut, ann.shortChannelId, None, None)
       case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
     }
     Commitments(
