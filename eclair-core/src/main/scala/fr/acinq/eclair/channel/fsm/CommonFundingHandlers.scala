@@ -87,7 +87,7 @@ trait CommonFundingHandlers extends CommonHandlers {
     d.commitments.all.find(_.fundingTxId == w.tx.txid) match {
       case Some(c) =>
         val scid = RealShortChannelId(w.blockHeight, w.txIndex, c.fundingInput.index.toInt)
-        val fundingStatus = ConfirmedFundingTx(w.tx.txOut(c.fundingInput.index.toInt), scid, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
+        val fundingStatus = ConfirmedFundingTx(w.tx.txIn.map(_.outPoint), w.tx.txOut(c.fundingInput.index.toInt), scid, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
         // When a splice transaction confirms, it double-spends all the commitment transactions that only applied to the
         // previous funding transaction. Our peer cannot publish the corresponding revoked commitments anymore, so we can
         // clean-up the htlc data that we were storing for the matching penalty transactions.

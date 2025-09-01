@@ -458,7 +458,7 @@ object LocalFundingStatus {
   case class ZeroconfPublishedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends UnconfirmedFundingTx with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
-  case class ConfirmedFundingTx(txOut: TxOut, shortChannelId: RealShortChannelId, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
+  case class ConfirmedFundingTx(spentInputs: Seq[OutPoint], txOut: TxOut, shortChannelId: RealShortChannelId, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
     override val signedTx_opt: Option[Transaction] = None
   }
 }

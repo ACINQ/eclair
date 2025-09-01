@@ -226,8 +226,10 @@ private[channel] object ChannelCodecs5 {
       .typecase(0x01, partiallySignedSharedTransactionCodec)
       .typecase(0x02, fullySignedSharedTransactionCodec)
 
+    private val spentInputscodec: Codec[Seq[OutPoint]] = listOfN(uint16, outPointCodec).xmap(_.toSeq, _.toList)
+
     private val localFundingStatusCodec: Codec[LocalFundingStatus] = discriminated[LocalFundingStatus].by(uint8)
-      .typecase(0x04, (txOutCodec :: realshortchannelid :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[LocalFundingStatus.ConfirmedFundingTx])
+      .typecase(0x04, (spentInputscodec :: txOutCodec :: realshortchannelid :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[LocalFundingStatus.ConfirmedFundingTx])
       .typecase(0x03, (txCodec :: optional(bool8, lengthDelimited(txSignaturesCodec)) :: optional(bool8, liquidityPurchaseCodec)).as[LocalFundingStatus.ZeroconfPublishedFundingTx])
       .typecase(0x02, (signedSharedTransactionCodec :: blockHeight :: fundingParamsCodec :: optional(bool8, liquidityPurchaseCodec)).as[LocalFundingStatus.DualFundedUnconfirmedFundingTx])
       .typecase(0x01, optional(bool8, txCodec).as[LocalFundingStatus.SingleFundedUnconfirmedFundingTx])

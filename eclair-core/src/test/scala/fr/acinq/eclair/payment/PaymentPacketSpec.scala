@@ -754,7 +754,7 @@ object PaymentPacketSpec {
     val localChanges = LocalChanges(Nil, Nil, Nil)
     val remoteChanges = RemoteChanges(Nil, Nil, Nil)
     val localFundingStatus = announcement_opt match {
-      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(fundingTx.txOut.head, ann.shortChannelId, None, None)
+      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(Nil, fundingTx.txOut.head, ann.shortChannelId, None, None)
       case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
     }
     val channelFlags = ChannelFlags(announceChannel = announcement_opt.nonEmpty)
