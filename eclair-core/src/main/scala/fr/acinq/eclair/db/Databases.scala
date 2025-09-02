@@ -80,6 +80,8 @@ object Databases extends Logging {
   object SqliteDatabases {
     def apply(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection, jdbcUrlFile_opt: Option[File]): SqliteDatabases = {
       jdbcUrlFile_opt.foreach(checkIfDatabaseUrlIsUnchanged("sqlite", _))
+      // We check whether the node operator needs to run an intermediate eclair version first.
+      using(eclairJdbc.createStatement(), inTransaction = true) { statement => checkChannelsDbVersion(statement, SqliteChannelsDb.DB_NAME, minimum = 7) }
       SqliteDatabases(
         network = new SqliteNetworkDb(networkJdbc),
         liquidity = new SqliteLiquidityDb(eclairJdbc),
@@ -152,6 +154,11 @@ object Databases extends Logging {
               }
             }
           }
+      }
+
+      // We check whether the node operator needs to run an intermediate eclair version first.
+      PgUtils.inTransaction { connection =>
+        using(connection.createStatement()) { statement => checkChannelsDbVersion(statement, PgChannelsDb.DB_NAME, minimum = 11) }
       }
 
       val databases = PostgresDatabases(
