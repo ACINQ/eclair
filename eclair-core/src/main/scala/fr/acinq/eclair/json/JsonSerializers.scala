@@ -17,6 +17,7 @@
 package fr.acinq.eclair.json
 
 import com.google.common.net.HostAndPort
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
@@ -149,6 +150,10 @@ object BlockHashKmpSerializer extends MinimalSerializer({
 
 object ByteVector64Serializer extends MinimalSerializer({
   case x: ByteVector64 => JString(x.toHex)
+})
+
+object IndividualNonceSerializer extends MinimalSerializer({
+  case x: IndividualNonce => JString(x.toString)
 })
 
 object UInt64Serializer extends MinimalSerializer({
@@ -730,6 +735,7 @@ object JsonSerializers {
     BlockIdSerializer +
     BlockHashSerializer +
     ByteVector64Serializer +
+    IndividualNonceSerializer +
     ChannelEventSerializer +
     UInt64Serializer +
     TimestampSecondSerializer +

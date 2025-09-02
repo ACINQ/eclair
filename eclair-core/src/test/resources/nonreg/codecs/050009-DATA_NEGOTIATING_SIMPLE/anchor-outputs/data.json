@@ -1,0 +1,169 @@
+{
+  "type" : "DATA_NEGOTIATING_SIMPLE",
+  "commitments" : {
+    "channelParams" : {
+      "channelId" : "d140d9192056abb1eb3cd4fab1c658e00d480256862b1b3aac179bb344a62a5d",
+      "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
+      "channelFeatures" : [ ],
+      "localParams" : {
+        "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
+        "fundingKeyPath" : [ 3372489842, 745241260, 550178004, 1037187544, 2751294782, 812588251, 3187087427, 2717381044, 2147483648 ],
+        "initialRequestedChannelReserve_opt" : 20000,
+        "isChannelOpener" : false,
+        "paysCommitTxFees" : false,
+        "initFeatures" : {
+          "activated" : {
+            "option_simple_close" : "optional",
+            "option_route_blinding" : "optional",
+            "splice_prototype" : "optional",
+            "payment_secret" : "mandatory",
+            "gossip_queries_ex" : "optional",
+            "option_anchor_outputs" : "optional",
+            "option_quiesce" : "optional",
+            "option_data_loss_protect" : "optional",
+            "var_onion_optin" : "mandatory",
+            "option_static_remotekey" : "optional",
+            "option_support_large_channel" : "optional",
+            "option_anchors_zero_fee_htlc_tx" : "optional",
+            "option_channel_type" : "mandatory",
+            "basic_mpp" : "optional",
+            "gossip_queries" : "optional"
+          },
+          "unknown" : [ ]
+        }
+      },
+      "remoteParams" : {
+        "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
+        "initialRequestedChannelReserve_opt" : 10000,
+        "revocationBasepoint" : "03970fc468240f7269c6ea3340468cf6c8f3ebded529f5cde0769987fa7b82ab36",
+        "paymentBasepoint" : "03a01edb1460bf62d68b90b8d5cff9837b2ba425a5aab391f3771ea44dd18aac2b",
+        "delayedPaymentBasepoint" : "02cc2f85c3de3578dbb34724dc3c6eb19e4a809b4d3a5468630f5f23d3fab6562e",
+        "htlcBasepoint" : "034ea352d4ce042fbaa08c02a7831be67e7c58402930a2962242407fcbece8c109",
+        "initFeatures" : {
+          "activated" : {
+            "option_simple_close" : "optional",
+            "option_route_blinding" : "optional",
+            "option_provide_storage" : "optional",
+            "splice_prototype" : "optional",
+            "payment_secret" : "mandatory",
+            "gossip_queries_ex" : "optional",
+            "option_anchor_outputs" : "optional",
+            "option_quiesce" : "optional",
+            "option_data_loss_protect" : "optional",
+            "var_onion_optin" : "mandatory",
+            "option_static_remotekey" : "optional",
+            "option_support_large_channel" : "optional",
+            "option_anchors_zero_fee_htlc_tx" : "optional",
+            "option_channel_type" : "mandatory",
+            "basic_mpp" : "optional",
+            "gossip_queries" : "optional"
+          },
+          "unknown" : [ 50001 ]
+        }
+      },
+      "channelFlags" : {
+        "nonInitiatorPaysCommitFees" : false,
+        "announceChannel" : false
+      }
+    },
+    "changes" : {
+      "localChanges" : {
+        "proposed" : [ ],
+        "signed" : [ ],
+        "acked" : [ ]
+      },
+      "remoteChanges" : {
+        "proposed" : [ ],
+        "acked" : [ ],
+        "signed" : [ ]
+      },
+      "localNextHtlcId" : 0,
+      "remoteNextHtlcId" : 0
+    },
+    "active" : [ {
+      "fundingTxIndex" : 0,
+      "fundingInput" : "5d2aa644b39b17ac3a1b2b865602480de058c6b1fad43cebb1ab562019d940d1:0",
+      "fundingAmount" : 1000000,
+      "localFunding" : {
+        "status" : "confirmed",
+        "shortChannelId" : "400000x42x0"
+      },
+      "remoteFunding" : {
+        "status" : "locked"
+      },
+      "commitmentFormat" : "anchor_outputs",
+      "localCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 1000000000,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
+      },
+      "localCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 200000000,
+          "toRemote" : 800000000
+        },
+        "txId" : "8758dbf63c228973c5e00946120993d6b5aba15f5fbbc7008241ad8881503826",
+        "remoteSig" : {
+          "sig" : "ce4fa6feeb54c7ae66fa0f513f27ffdc9a1d904d1e0b038f73570cce52579e0c1814241eaadeec4b4a8110fa06dc4e8bcdd639c34fd519ebd69355c8feeae404"
+        },
+        "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 500000000,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 720
+      },
+      "remoteCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 800000000,
+          "toRemote" : 200000000
+        },
+        "txId" : "647051acccba343fa8201fe3931315053c2339f5ea6031c97a42e1d1cca25f80",
+        "remotePerCommitmentPoint" : "035a1ebb061ea7d8ea91b0ef7ef4a6cab7bd2b2b89d5f6120807ccb6f2f2ac6034"
+      }
+    } ],
+    "inactive" : [ ],
+    "remoteNextCommitInfo" : "0237da0e963609124a77d37f2e132e1ed79a4ff42f072620d50dbd8513b42cfc14",
+    "remotePerCommitmentSecrets" : null,
+    "originChannels" : { }
+  },
+  "lastClosingFeerate" : 10000,
+  "localScriptPubKey" : "0014761879f7b274ce995f87150a02e75cc0c037e8e3",
+  "remoteScriptPubKey" : "0014761879f7b274ce995f87150a02e75cc0c037e8e3",
+  "proposedClosingTxs" : [ {
+    "localAndRemote_opt" : {
+      "txid" : "96184f5c7ba4abc65a188b0c15306afd8ff51708a96ba309b8ef9751f6b3e64f",
+      "tx" : "0200000001d140d9192056abb1eb3cd4fab1c658e00d480256862b1b3aac179bb344a62a5d0000000000fdffffff02ecf2020000000000160014761879f7b274ce995f87150a02e75cc0c037e8e300350c0000000000160014761879f7b274ce995f87150a02e75cc0c037e8e3801a0600",
+      "toLocalOutput" : {
+        "amount" : 193260,
+        "publicKeyScript" : "0014761879f7b274ce995f87150a02e75cc0c037e8e3"
+      }
+    },
+    "localOnly_opt" : {
+      "txid" : "9eef1646e92d55426ac9149f18bcdf46bba9f838e7e8c66d6a3698162a3395cf",
+      "tx" : "0200000001d140d9192056abb1eb3cd4fab1c658e00d480256862b1b3aac179bb344a62a5d0000000000fdffffff01ecf2020000000000160014761879f7b274ce995f87150a02e75cc0c037e8e3801a0600",
+      "toLocalOutput" : {
+        "amount" : 193260,
+        "publicKeyScript" : "0014761879f7b274ce995f87150a02e75cc0c037e8e3"
+      }
+    }
+  } ],
+  "publishedClosingTxs" : [ {
+    "txid" : "e12d095d42f2ec84fe04dccc953bac08bd877635fa862ba1a0f205fc9d0568c7",
+    "tx" : "02000000000101d140d9192056abb1eb3cd4fab1c658e00d480256862b1b3aac179bb344a62a5d0000000000fdffffff02400d030000000000160014761879f7b274ce995f87150a02e75cc0c037e8e3ac1a0c0000000000160014761879f7b274ce995f87150a02e75cc0c037e8e304004730440220545ea4567257d78dd484e0d93e79adb98b59bef80dceaf4f1f753aab5c0d1f170220047732512997b79ab613326b419de6f7dde0e003aa9b91bd750c1306ed9f6096014730440220672a30519847599e2466243f815d17fd5525cdacd02783209d21910f090f567302204409c342638216a505769a5278e7643d71f8fbce596562ce8d485133c55772d30147522102d571d16072a66bd4bbc9f425eed490893eabe60126728e919a23b69513c90c9a2103d5751f1f29e5117ec524020084f42eaf73aa3eabcbfd32fbb3702a9eab12d67d52ae801a0600",
+    "toLocalOutput" : {
+      "amount" : 200000,
+      "publicKeyScript" : "0014761879f7b274ce995f87150a02e75cc0c037e8e3"
+    }
+  } ]
+}

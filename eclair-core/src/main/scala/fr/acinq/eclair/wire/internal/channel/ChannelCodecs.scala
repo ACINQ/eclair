@@ -17,15 +17,10 @@
 package fr.acinq.eclair.wire.internal.channel
 
 import fr.acinq.eclair.channel.PersistentChannelData
-import fr.acinq.eclair.wire.internal.channel.version0.ChannelCodecs0
-import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1
-import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2
-import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3
-import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4
 import fr.acinq.eclair.wire.internal.channel.version5.ChannelCodecs5
 import grizzled.slf4j.Logging
-import scodec.Codec
-import scodec.codecs.{byte, discriminated}
+import scodec.codecs.{byte, discriminated, fail}
+import scodec.{Codec, Err}
 
 // @formatter:off
 /**
@@ -51,13 +46,19 @@ import scodec.codecs.{byte, discriminated}
  * }}}
  *
  * Notice that the outer class has a visibility restricted to package [[fr.acinq.eclair.wire.internal.channel]], while the inner class has a
- * visibility restricted to package [[version0]]. This guarantees that we strictly segregate each codec version,
+ * visibility restricted to package [[version5]]. This guarantees that we strictly segregate each codec version,
  * while still allowing unitary testing.
  *
  * Created by PM on 02/06/2017.
  */
 // @formatter:on
 object ChannelCodecs extends Logging {
+
+  /**
+   * Codecs v0 to v4 have been removed after the eclair v0.13 release.
+   * Users on older version will need to first run the v0.13 release before updating to a newer version.
+   */
+  private val pre013FailingCodec: Codec[PersistentChannelData] = fail(Err("You are updating from a version of eclair older than v0.13: please update to the v0.13 release first to migrate your channel data, and afterwards you'll be able to update to the latest version."))
 
   /**
    * Order matters!!
@@ -69,10 +70,10 @@ object ChannelCodecs extends Logging {
    */
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(byte)
     .typecase(5, ChannelCodecs5.channelDataCodec)
-    .typecase(4, ChannelCodecs4.channelDataCodec.decodeOnly)
-    .typecase(3, ChannelCodecs3.channelDataCodec.decodeOnly)
-    .typecase(2, ChannelCodecs2.channelDataCodec.decodeOnly)
-    .typecase(1, ChannelCodecs1.channelDataCodec.decodeOnly)
-    .typecase(0, ChannelCodecs0.channelDataCodec.decodeOnly)
+    .typecase(4, pre013FailingCodec)
+    .typecase(3, pre013FailingCodec)
+    .typecase(2, pre013FailingCodec)
+    .typecase(1, pre013FailingCodec)
+    .typecase(0, pre013FailingCodec)
 
 }
