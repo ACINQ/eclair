@@ -26,9 +26,8 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.{CltvExpiry, Paginated, TimestampMilli}
 import grizzled.slf4j.Logging
-import scodec.bits.BitVector
 
-import java.sql.{Connection, Statement}
+import java.sql.Connection
 
 object SqliteChannelsDb {
   val DB_NAME = "channels"
@@ -51,60 +50,6 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
   }
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
-
-    def migration12(statement: Statement): Unit = {
-      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")
-    }
-
-    def migration23(statement: Statement): Unit = {
-      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN created_timestamp INTEGER")
-      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_sent_timestamp INTEGER")
-      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_received_timestamp INTEGER")
-      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_connected_timestamp INTEGER")
-      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN closed_timestamp INTEGER")
-    }
-
-    def migration34(): Unit = {
-      migrateTable(sqlite, sqlite,
-        "local_channels",
-        s"UPDATE local_channels SET data=? WHERE channel_id=?",
-        (rs, statement) => {
-          // This forces a re-serialization of the channel data with latest codecs, because as of codecs v3 we don't
-          // store local commitment signatures anymore, and we want to clean up existing data
-          val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
-          val data = channelDataCodec.encode(state).require.toByteArray
-          statement.setBytes(1, data)
-          statement.setBytes(2, state.channelId.toArray)
-        }
-      )(logger)
-    }
-
-    def migration45(): Unit = {
-      statement.executeUpdate("CREATE TABLE htlc_infos_to_remove (channel_id BLOB NOT NULL PRIMARY KEY, before_commitment_number INTEGER NOT NULL)")
-    }
-
-    def migration56(): Unit = {
-      // We're changing our composite index to two distinct indices to improve performance.
-      statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON htlc_infos(channel_id)")
-      statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON htlc_infos(commitment_number)")
-      statement.executeUpdate("DROP INDEX IF EXISTS htlc_infos_idx")
-    }
-
-    def migration67(): Unit = {
-      migrateTable(sqlite, sqlite,
-        "local_channels",
-        "UPDATE local_channels SET data=? WHERE channel_id=?",
-        (rs, statement) => {
-          // This forces a re-serialization of the channel data with latest codecs, because we want to remove support
-          // for codecs older than v5 in the next release.
-          val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
-          val data = channelDataCodec.encode(state).require.toByteArray
-          statement.setBytes(1, data)
-          statement.setBytes(2, state.channelId.toArray)
-        }
-      )(logger)
-    }
-
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0, created_timestamp INTEGER, last_payment_sent_timestamp INTEGER, last_payment_received_timestamp INTEGER, last_connected_timestamp INTEGER, closed_timestamp INTEGER)")
@@ -114,26 +59,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         // This is more efficient because we're writing a lot to this table but only reading when a channel is force-closed.
         statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON htlc_infos(channel_id)")
         statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON htlc_infos(commitment_number)")
-      case Some(v@(1 | 2 | 3 | 4 | 5 | 6)) =>
-        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-        if (v < 2) {
-          migration12(statement)
-        }
-        if (v < 3) {
-          migration23(statement)
-        }
-        if (v < 4) {
-          migration34()
-        }
-        if (v < 5) {
-          migration45()
-        }
-        if (v < 6) {
-          migration56()
-        }
-        if (v < 7) {
-          migration67()
-        }
+      case Some(v) if v < 7 => throw new RuntimeException("You are updating from a version of eclair older than v0.13: please update to the v0.13 release first to migrate your channel data, and afterwards you'll be able to update to the latest version.")
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }

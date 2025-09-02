@@ -6,6 +6,11 @@
 
 <insert changes>
 
+### Remove support for legacy channel codecs
+
+We remove the code used to deserialize channel data from versions of eclair prior to v0.13.
+Node operators running a version of `eclair` older than v0.13 must first upgrade to v0.13 to migrate their channel data, and then upgrade to the latest version.
+
 ### Package relay
 
 With Bitcoin Core 28.1, eclair starts relying on the `submitpackage` RPC during channel force-close.

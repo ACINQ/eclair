@@ -1,0 +1,141 @@
+{
+  "type" : "DATA_WAIT_FOR_DUAL_FUNDING_READY",
+  "commitments" : {
+    "channelParams" : {
+      "channelId" : "53befcd6f2049374f803f765adc794f7b5c43978c31b225659a5a85797ad0730",
+      "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
+      "channelFeatures" : [ "option_dual_fund" ],
+      "localParams" : {
+        "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
+        "fundingKeyPath" : [ 2822171952, 1883185703, 3993045765, 574527927, 644570810, 1584111834, 2195767386, 423419983, 2147483649 ],
+        "isChannelOpener" : true,
+        "paysCommitTxFees" : true,
+        "initFeatures" : {
+          "activated" : {
+            "option_route_blinding" : "optional",
+            "option_provide_storage" : "optional",
+            "option_dual_fund" : "optional",
+            "splice_prototype" : "optional",
+            "payment_secret" : "mandatory",
+            "gossip_queries_ex" : "optional",
+            "option_anchor_outputs" : "optional",
+            "option_quiesce" : "optional",
+            "option_data_loss_protect" : "optional",
+            "var_onion_optin" : "mandatory",
+            "option_static_remotekey" : "optional",
+            "option_support_large_channel" : "optional",
+            "option_anchors_zero_fee_htlc_tx" : "optional",
+            "option_channel_type" : "mandatory",
+            "basic_mpp" : "optional",
+            "gossip_queries" : "optional"
+          },
+          "unknown" : [ 50001 ]
+        }
+      },
+      "remoteParams" : {
+        "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
+        "revocationBasepoint" : "0294eb03c0fb94b572d4488e367496af7c583c3a91a6b779cb8dc89a9801f09907",
+        "paymentBasepoint" : "02d1aa755ef89b975b151ed0161e01df06d0b993009e4bcf166c4310ae7349ba34",
+        "delayedPaymentBasepoint" : "021026827860f06ec11a860cef2ad4493eecbdacb082eb426e854c159e2836381c",
+        "htlcBasepoint" : "033a2eb85e7b76af367225e9f8f8f34d0e19bc33c7d4f7c9b94e7ec39fcc2ec53c",
+        "initFeatures" : {
+          "activated" : {
+            "option_route_blinding" : "optional",
+            "option_dual_fund" : "optional",
+            "splice_prototype" : "optional",
+            "payment_secret" : "mandatory",
+            "gossip_queries_ex" : "optional",
+            "option_anchor_outputs" : "optional",
+            "option_quiesce" : "optional",
+            "option_data_loss_protect" : "optional",
+            "var_onion_optin" : "mandatory",
+            "option_static_remotekey" : "optional",
+            "option_support_large_channel" : "optional",
+            "option_anchors_zero_fee_htlc_tx" : "optional",
+            "option_channel_type" : "mandatory",
+            "basic_mpp" : "optional",
+            "gossip_queries" : "optional"
+          },
+          "unknown" : [ ]
+        }
+      },
+      "channelFlags" : {
+        "nonInitiatorPaysCommitFees" : false,
+        "announceChannel" : false
+      }
+    },
+    "changes" : {
+      "localChanges" : {
+        "proposed" : [ ],
+        "signed" : [ ],
+        "acked" : [ ]
+      },
+      "remoteChanges" : {
+        "proposed" : [ ],
+        "acked" : [ ],
+        "signed" : [ ]
+      },
+      "localNextHtlcId" : 0,
+      "remoteNextHtlcId" : 0
+    },
+    "active" : [ {
+      "fundingTxIndex" : 0,
+      "fundingInput" : "b3542362e8ed8bc3fbc1b0a10bda84e19403e550b6d478d7d8620db1291bb521:2",
+      "fundingAmount" : 1500000,
+      "localFunding" : {
+        "status" : "confirmed",
+        "shortChannelId" : "400000x42x2"
+      },
+      "remoteFunding" : {
+        "status" : "not-locked"
+      },
+      "commitmentFormat" : "anchor_outputs",
+      "localCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 500000000,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 720
+      },
+      "localCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 1000000000,
+          "toRemote" : 500000000
+        },
+        "txId" : "ef3e5bb8e68f6cc3edbef0f63546679204b93d89e72a1ef305f1d302ec911792",
+        "remoteSig" : {
+          "sig" : "de15babcc6ed94cd9221952cfd47154e9450e061827b68e0e692871a8ce5c4005ffbca12b217885c4a476b34e94265b9db80e711986e0a51fe7a793397c6877b"
+        },
+        "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 1000000000,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
+      },
+      "remoteCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 500000000,
+          "toRemote" : 1000000000
+        },
+        "txId" : "56d3f5823d83d308887fe61e4aeba828725a2d4d745f4257c18de65edaaee9d6",
+        "remotePerCommitmentPoint" : "02d0c96ba289fa5ad21a528fc9905457f27bebb989c0631f1e3dbd4bb163955836"
+      }
+    } ],
+    "inactive" : [ ],
+    "remoteNextCommitInfo" : "03ed2f5a37317543756a3958e8e6e8f367e714fbec63eae76eb53db0fd9f20d1df",
+    "remotePerCommitmentSecrets" : null,
+    "originChannels" : { }
+  },
+  "aliases" : {
+    "localAlias" : "0x1853569ad74643"
+  }
+}

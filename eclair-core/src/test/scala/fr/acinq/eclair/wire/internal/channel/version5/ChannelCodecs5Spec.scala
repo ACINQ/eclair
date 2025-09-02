@@ -5,10 +5,10 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, PartiallySignedSharedTransaction, RequireConfirmedInputs, SharedTransaction}
 import fr.acinq.eclair.channel.fund.InteractiveTxSigningSession.UnsignedLocalCommit
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
-import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
 import fr.acinq.eclair.wire.internal.channel.version5.ChannelCodecs5.Codecs.{dualFundingStatusCodec, remoteChannelParamsCodec}

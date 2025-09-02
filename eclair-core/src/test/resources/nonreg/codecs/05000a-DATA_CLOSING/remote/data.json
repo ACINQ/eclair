@@ -1,0 +1,221 @@
+{
+  "type" : "DATA_CLOSING",
+  "commitments" : {
+    "channelParams" : {
+      "channelId" : "517d2e413b334da125c59240368a0cf601d3b661f0bb14841900cfb34c5ced31",
+      "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
+      "channelFeatures" : [ ],
+      "localParams" : {
+        "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
+        "fundingKeyPath" : [ 2465171583, 265411917, 468114705, 2303872767, 2627170256, 675347429, 1050017569, 4205305699, 2147483649 ],
+        "initialRequestedChannelReserve_opt" : 10000,
+        "isChannelOpener" : true,
+        "paysCommitTxFees" : true,
+        "initFeatures" : {
+          "activated" : {
+            "option_route_blinding" : "optional",
+            "option_provide_storage" : "optional",
+            "splice_prototype" : "optional",
+            "payment_secret" : "mandatory",
+            "gossip_queries_ex" : "optional",
+            "option_anchor_outputs" : "optional",
+            "option_quiesce" : "optional",
+            "option_data_loss_protect" : "optional",
+            "var_onion_optin" : "mandatory",
+            "option_static_remotekey" : "optional",
+            "option_support_large_channel" : "optional",
+            "option_anchors_zero_fee_htlc_tx" : "optional",
+            "option_channel_type" : "mandatory",
+            "basic_mpp" : "optional",
+            "gossip_queries" : "optional"
+          },
+          "unknown" : [ 50001 ]
+        }
+      },
+      "remoteParams" : {
+        "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
+        "initialRequestedChannelReserve_opt" : 20000,
+        "revocationBasepoint" : "02c3c29dc57978b69aa8f3d483b54ce7e9e08fef3a556f854ab7f93d9c56d504e5",
+        "paymentBasepoint" : "03cbfd24887a5fb7f8d8e6ca0c652a70a809f4044faf58ee39a02a3a98acc50253",
+        "delayedPaymentBasepoint" : "023f449e1a43e11ead00b327e72088c6d8632c0b4a84ec8d80e237474c8d840131",
+        "htlcBasepoint" : "0315ded9d5e06c7b544580b893ee1a136437cf307e59ed48f6a4e9f8d4c9200d39",
+        "initFeatures" : {
+          "activated" : {
+            "option_route_blinding" : "optional",
+            "splice_prototype" : "optional",
+            "payment_secret" : "mandatory",
+            "gossip_queries_ex" : "optional",
+            "option_anchor_outputs" : "optional",
+            "option_quiesce" : "optional",
+            "option_data_loss_protect" : "optional",
+            "var_onion_optin" : "mandatory",
+            "option_static_remotekey" : "optional",
+            "option_support_large_channel" : "optional",
+            "option_anchors_zero_fee_htlc_tx" : "optional",
+            "option_channel_type" : "mandatory",
+            "basic_mpp" : "optional",
+            "gossip_queries" : "optional"
+          },
+          "unknown" : [ ]
+        }
+      },
+      "channelFlags" : {
+        "nonInitiatorPaysCommitFees" : false,
+        "announceChannel" : false
+      }
+    },
+    "changes" : {
+      "localChanges" : {
+        "proposed" : [ ],
+        "signed" : [ ],
+        "acked" : [ ]
+      },
+      "remoteChanges" : {
+        "proposed" : [ ],
+        "acked" : [ ],
+        "signed" : [ ]
+      },
+      "localNextHtlcId" : 6,
+      "remoteNextHtlcId" : 0
+    },
+    "active" : [ {
+      "fundingTxIndex" : 0,
+      "fundingInput" : "31ed5c4cb3cf00198414bbf061b6d301f60c8a364092c525a14d333b412e7d51:0",
+      "fundingAmount" : 1000000,
+      "localFunding" : {
+        "status" : "confirmed",
+        "shortChannelId" : "400000x42x0"
+      },
+      "remoteFunding" : {
+        "status" : "locked"
+      },
+      "commitmentFormat" : "anchor_outputs",
+      "localCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 500000000,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 720
+      },
+      "localCommit" : {
+        "index" : 7,
+        "spec" : {
+          "htlcs" : [ {
+            "direction" : "OUT",
+            "id" : 3,
+            "amountMsat" : 15000000,
+            "paymentHash" : "e9a8e03598461419045c46113c29e561e9c94cb9d2539359bf31730e65047cf8",
+            "cltvExpiry" : 400144
+          }, {
+            "direction" : "OUT",
+            "id" : 4,
+            "amountMsat" : 15000000,
+            "paymentHash" : "e9a8e03598461419045c46113c29e561e9c94cb9d2539359bf31730e65047cf8",
+            "cltvExpiry" : 400144
+          }, {
+            "direction" : "OUT",
+            "id" : 5,
+            "amountMsat" : 20000000,
+            "paymentHash" : "e9a8e03598461419045c46113c29e561e9c94cb9d2539359bf31730e65047cf8",
+            "cltvExpiry" : 400143
+          } ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 150000000,
+          "toRemote" : 800000000
+        },
+        "txId" : "417afe669ec45cc974ead3d5a450cee95071f0181b30e79b4cac0b7bca5bde8f",
+        "remoteSig" : {
+          "sig" : "75c470a01e387085420921021ff96c15e52d92c38ff7fc001b39d788124041596ad205bb702803ca7bf5b6fb400855b44f60885120a1b5dd8d4127a592e0e1ee"
+        },
+        "htlcRemoteSigs" : [ "02a77bdecaff8ba889a600bd0c6ff275fbb4c653fd384dcc74ef83c0a489f0cb4fae0232ba93a4199979214cc04b6674f4c71c2160ea730f12984a505bf5e3b2", "e67109b0f66f783a9a81440f5efa94d5e24e3b94ad7ba416299c7a73e13207654a9400f345144eeae4416323e681c1b54f0fa6d4b8b114f7d147e6752655c6cf", "67449349d9dc68f08bf6ac6cd843a069659b95473b896cad80aa8f4d569b87986f03c32d8e3823ae81816c2d0700fcd159bea42bccd65f432e00f4714a310d88" ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 1000000000,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
+      },
+      "remoteCommit" : {
+        "index" : 7,
+        "spec" : {
+          "htlcs" : [ {
+            "direction" : "IN",
+            "id" : 3,
+            "amountMsat" : 15000000,
+            "paymentHash" : "e9a8e03598461419045c46113c29e561e9c94cb9d2539359bf31730e65047cf8",
+            "cltvExpiry" : 400144
+          }, {
+            "direction" : "IN",
+            "id" : 4,
+            "amountMsat" : 15000000,
+            "paymentHash" : "e9a8e03598461419045c46113c29e561e9c94cb9d2539359bf31730e65047cf8",
+            "cltvExpiry" : 400144
+          }, {
+            "direction" : "IN",
+            "id" : 5,
+            "amountMsat" : 20000000,
+            "paymentHash" : "e9a8e03598461419045c46113c29e561e9c94cb9d2539359bf31730e65047cf8",
+            "cltvExpiry" : 400143
+          } ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 800000000,
+          "toRemote" : 150000000
+        },
+        "txId" : "c07f56129b0acc8016f3b2b92177d2f0b4f5c3f2062da6d2ffa9fbbbb169c7f4",
+        "remotePerCommitmentPoint" : "0257defec7cc49ca82a1a35763ad8062f18b2efd6544352824bf46955fc125faae"
+      }
+    } ],
+    "inactive" : [ ],
+    "remoteNextCommitInfo" : "03a3d68883581ae02971963997762b8a87f7e4d3436726c08e68227833ac97522c",
+    "remotePerCommitmentSecrets" : null,
+    "originChannels" : {
+      "3" : {
+        "paymentId" : "3ad29267-07b2-4337-b4b8-a4807f29ea32"
+      },
+      "4" : {
+        "paymentId" : "864f8fbb-a78c-43e7-9fad-189132c58dac"
+      },
+      "5" : {
+        "paymentId" : "3b681979-5b5d-43c0-9e67-dedfa8e5b090"
+      }
+    }
+  },
+  "waitingSince" : 400000,
+  "finalScriptPubKey" : "0014761879f7b274ce995f87150a02e75cc0c037e8e3",
+  "mutualCloseProposed" : [ ],
+  "mutualClosePublished" : [ ],
+  "remoteCommitPublished" : {
+    "commitTx" : {
+      "txid" : "c07f56129b0acc8016f3b2b92177d2f0b4f5c3f2062da6d2ffa9fbbbb169c7f4",
+      "tx" : "02000000000101517d2e413b334da125c59240368a0cf601d3b661f0bb14841900cfb34c5ced310000000000ac411680074a010000000000002200203aed4774869098eee46a59020a36e77e001549a3a4fa5adca7182289d9c3cfb84a01000000000000220020afd285c7863ed45cb5c369755b800bef1a93922b68ac12476163b2a2cda7f301983a000000000000220020dce9b7bf8b7b37b3d193e649cfbcb90b9141761e7cdd84fe822cec65d87465f6983a000000000000220020dce9b7bf8b7b37b3d193e649cfbcb90b9141761e7cdd84fe822cec65d87465f6204e0000000000002200205f70ee0c30e5d2107ec6826c0806b7793e6c95a3153a3c0f116f06a2f1d12f6d5837020000000000220020cfe0882d0bb9ed2d0b2a7ca9d1982f4660ea04e76bd6c25fc02fd6b678a1a42a00350c000000000022002074e7dd4e6c440f206647694be395adfdd416731ebaa1e4d4a70121e5674c7b9d040047304402204e8649d2b4c18df6a009a7cb1ca7eba52f5e9aab0b5ca03f9f0eff3438b5d94102207e639b145cc353495ea583b3d38212a9d45c79e816e1289bb060fd522c4caafd01483045022100c37dd0d8f0f77248bb3044561470d41e1e3f1a3a96abfbae083db1bab3c3ee5802206c8dc44a9dde0a63dc354da22898de5aba52fbb21950ad3a64968b06ffd71094014752210275ddbe228db6b90c9e2a3350e0048a44e04fcfeb680ed425e2bdf7964368f83d2102f9061287def08210bb486b2d7da13a892dd617ac9cab05c4b0cf5df76900126352ae87498120"
+    },
+    "localOutput_opt" : "c07f56129b0acc8016f3b2b92177d2f0b4f5c3f2062da6d2ffa9fbbbb169c7f4:5",
+    "anchorOutput_opt" : "c07f56129b0acc8016f3b2b92177d2f0b4f5c3f2062da6d2ffa9fbbbb169c7f4:0",
+    "incomingHtlcs" : { },
+    "outgoingHtlcs" : {
+      "c07f56129b0acc8016f3b2b92177d2f0b4f5c3f2062da6d2ffa9fbbbb169c7f4:2" : 3,
+      "c07f56129b0acc8016f3b2b92177d2f0b4f5c3f2062da6d2ffa9fbbbb169c7f4:3" : 4,
+      "c07f56129b0acc8016f3b2b92177d2f0b4f5c3f2062da6d2ffa9fbbbb169c7f4:4" : 5
+    },
+    "irrevocablySpent" : {
+      "31ed5c4cb3cf00198414bbf061b6d301f60c8a364092c525a14d333b412e7d51:0" : {
+        "txid" : "c07f56129b0acc8016f3b2b92177d2f0b4f5c3f2062da6d2ffa9fbbbb169c7f4",
+        "tx" : "02000000000101517d2e413b334da125c59240368a0cf601d3b661f0bb14841900cfb34c5ced310000000000ac411680074a010000000000002200203aed4774869098eee46a59020a36e77e001549a3a4fa5adca7182289d9c3cfb84a01000000000000220020afd285c7863ed45cb5c369755b800bef1a93922b68ac12476163b2a2cda7f301983a000000000000220020dce9b7bf8b7b37b3d193e649cfbcb90b9141761e7cdd84fe822cec65d87465f6983a000000000000220020dce9b7bf8b7b37b3d193e649cfbcb90b9141761e7cdd84fe822cec65d87465f6204e0000000000002200205f70ee0c30e5d2107ec6826c0806b7793e6c95a3153a3c0f116f06a2f1d12f6d5837020000000000220020cfe0882d0bb9ed2d0b2a7ca9d1982f4660ea04e76bd6c25fc02fd6b678a1a42a00350c000000000022002074e7dd4e6c440f206647694be395adfdd416731ebaa1e4d4a70121e5674c7b9d040047304402204e8649d2b4c18df6a009a7cb1ca7eba52f5e9aab0b5ca03f9f0eff3438b5d94102207e639b145cc353495ea583b3d38212a9d45c79e816e1289bb060fd522c4caafd01483045022100c37dd0d8f0f77248bb3044561470d41e1e3f1a3a96abfbae083db1bab3c3ee5802206c8dc44a9dde0a63dc354da22898de5aba52fbb21950ad3a64968b06ffd71094014752210275ddbe228db6b90c9e2a3350e0048a44e04fcfeb680ed425e2bdf7964368f83d2102f9061287def08210bb486b2d7da13a892dd617ac9cab05c4b0cf5df76900126352ae87498120"
+      },
+      "c07f56129b0acc8016f3b2b92177d2f0b4f5c3f2062da6d2ffa9fbbbb169c7f4:5" : {
+        "txid" : "aa4ee5b0f8cfdaa256f2c45771602eeb990e05916ab4eb2ab25ce57b8c8cbd96",
+        "tx" : "02000000000101f4c769b1bbfba9ffd2a62d06f2c3f5b4f0d27721b9b2f31680cc0a9b12567fc0050000000001000000011426020000000000160014761879f7b274ce995f87150a02e75cc0c037e8e30247304402206779ed6341471bc350a476eb7ed93118337e19f85128c5c9c806355f811aac4702200128ac254b38260987611eeba5bea32717b412ac2c67f47a4c2071c972959f57012521038babd383821d5e104eba86044151807a5bc08294e436a26817f1865104fbe457ad51b200000000"
+      },
+      "c07f56129b0acc8016f3b2b92177d2f0b4f5c3f2062da6d2ffa9fbbbb169c7f4:2" : {
+        "txid" : "c3e834e9a14a7e76d4ba837d561011893a5e7182dfb61f0f3dd822d2fc2bf3ac",
+        "tx" : "02000000000101f4c769b1bbfba9ffd2a62d06f2c3f5b4f0d27721b9b2f31680cc0a9b12567fc0020000000001000000010e3a000000000000160014761879f7b274ce995f87150a02e75cc0c037e8e303483045022100f7ce5624964ede4c2b47f13550f8e9e41877ea079dbc3020f5dcede34407efcd022065782d162aa8cef61d7e203f1f78344992b52d830d3f7858517e79f50e9f3cf401008e76a9149c9ff72dc1e2dffe43b9ce2e36ab45f552b217b98763ac672103da09db658d1955bc6e80a6f994e70db971fff30ab497e95f2b08cef650d80e0b7c8201208763a914039d026f03732badf6719bd217778462a3e19a9088527c21027a3c9c9f92a2ea7a3016e25453677908519dffc0ae863f49b9bc5b9d7022287452ae677503101b06b175ac6851b27568101b0600"
+      },
+      "c07f56129b0acc8016f3b2b92177d2f0b4f5c3f2062da6d2ffa9fbbbb169c7f4:3" : {
+        "txid" : "3da048e73602307642a52e7ebf2ac7fdf6010380ee2518512817d1114464f643",
+        "tx" : "02000000000101f4c769b1bbfba9ffd2a62d06f2c3f5b4f0d27721b9b2f31680cc0a9b12567fc0030000000001000000010e3a000000000000160014761879f7b274ce995f87150a02e75cc0c037e8e303483045022100c5ca68ad6ca3abac56919cfdae84e6c95130a5b90fd8852668454f599bd60c880220248c9789caa074cf785c3eadd6a2d133dd4887c30fdf0281669b257f66ba0c3e01008e76a9149c9ff72dc1e2dffe43b9ce2e36ab45f552b217b98763ac672103da09db658d1955bc6e80a6f994e70db971fff30ab497e95f2b08cef650d80e0b7c8201208763a914039d026f03732badf6719bd217778462a3e19a9088527c21027a3c9c9f92a2ea7a3016e25453677908519dffc0ae863f49b9bc5b9d7022287452ae677503101b06b175ac6851b27568101b0600"
+      }
+    }
+  },
+  "revokedCommitPublished" : [ ]
+}
