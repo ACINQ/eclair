@@ -107,26 +107,25 @@ private[channel] object ChannelTypes4 {
 
   // We removed the signed transaction when confirmed to save space when moving to channel codecs v5.
   sealed trait LocalFundingStatus {
-    def migrate(commitmentFormat: CommitmentFormat): channel.LocalFundingStatus
+    def migrate(commitmentFormat: CommitmentFormat, commitInput: InputInfo): channel.LocalFundingStatus
   }
 
   case class SingleFundedUnconfirmedFundingTx(signedTx_opt: Option[Transaction]) extends LocalFundingStatus {
-    override def migrate(commitmentFormat: CommitmentFormat): channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx = channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx(signedTx_opt)
+    override def migrate(commitmentFormat: CommitmentFormat, commitInput: InputInfo): channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx = channel.LocalFundingStatus.SingleFundedUnconfirmedFundingTx(signedTx_opt)
   }
 
   case class DualFundedUnconfirmedFundingTx(sharedTx: SignedSharedTransaction, createdAt: BlockHeight, fundingParams: InteractiveTxParams, liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus {
-    override def migrate(commitmentFormat: CommitmentFormat): channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx = channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx(sharedTx, createdAt, fundingParams.migrate(commitmentFormat), liquidityPurchase_opt)
+    override def migrate(commitmentFormat: CommitmentFormat, commitInput: InputInfo): channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx = channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx(sharedTx, createdAt, fundingParams.migrate(commitmentFormat), liquidityPurchase_opt)
   }
 
   case class ZeroconfPublishedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus {
-    override def migrate(commitmentFormat: CommitmentFormat): channel.LocalFundingStatus.ZeroconfPublishedFundingTx = channel.LocalFundingStatus.ZeroconfPublishedFundingTx(tx, localSigs_opt, liquidityPurchase_opt)
+    override def migrate(commitmentFormat: CommitmentFormat, commitInput: InputInfo): channel.LocalFundingStatus.ZeroconfPublishedFundingTx = channel.LocalFundingStatus.ZeroconfPublishedFundingTx(tx, localSigs_opt, liquidityPurchase_opt)
   }
 
   case class ConfirmedFundingTx(tx: Transaction, shortChannelId: RealShortChannelId, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus {
-    override def migrate(commitmentFormat: CommitmentFormat): channel.LocalFundingStatus.ConfirmedFundingTx = {
+    override def migrate(commitmentFormat: CommitmentFormat, commitInput: InputInfo): channel.LocalFundingStatus.ConfirmedFundingTx = {
       val spentInputs = tx.txIn.map(_.outPoint)
-      val txOut = tx.txOut(shortChannelId.outputIndex)
-      channel.LocalFundingStatus.ConfirmedFundingTx(spentInputs, txOut, shortChannelId, localSigs_opt, liquidityPurchase_opt)
+      channel.LocalFundingStatus.ConfirmedFundingTx(spentInputs, commitInput.txOut, shortChannelId, localSigs_opt, liquidityPurchase_opt)
     }
   }
 
@@ -146,7 +145,7 @@ private[channel] object ChannelTypes4 {
       fundingInput = localCommit.input.outPoint,
       fundingAmount = localCommit.input.txOut.amount,
       remoteFundingPubKey = remoteFundingPubKey,
-      localFundingStatus = localFundingStatus.migrate(params.channelFeatures.commitmentFormat),
+      localFundingStatus = localFundingStatus.migrate(params.channelFeatures.commitmentFormat, localCommit.input),
       remoteFundingStatus = remoteFundingStatus,
       commitmentFormat = params.channelFeatures.commitmentFormat,
       localCommitParams = params.localCommitParams(),
