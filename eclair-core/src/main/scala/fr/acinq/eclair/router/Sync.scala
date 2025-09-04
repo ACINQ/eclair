@@ -57,10 +57,9 @@ object Sync {
 
       // we also set a pass-all filter for now (we can update it later) for the future gossip messages, by setting
       // the first_timestamp field to the current date/time minus one minute and timestamp_range to the maximum value
-      // the one minute buffer ensures that we don't miss recent gossip that hasn't reached our peer yet
       // NB: we can't just set firstTimestamp to 0, because in that case peer would send us all past messages matching
       // that (i.e. the whole routing table)
-      val filter = GossipTimestampFilter(s.chainHash, firstTimestamp = TimestampSecond.now() - 1.minute, timestampRange = Int.MaxValue)
+      val filter = GossipTimestampFilter(s.chainHash, firstTimestamp = TimestampSecond.now() - 1.minute, timestampRange = Int.MaxValue) // the one minute buffer ensures that we don't miss recent gossip that hasn't reached our peer yet
       s.to ! filter
 
       // reset our sync state for this peer: we create an entry to ensure we reject duplicate queries and unsolicited reply_channel_range
