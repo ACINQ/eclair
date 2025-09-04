@@ -36,7 +36,7 @@ import javax.sql.DataSource
 
 object PgChannelsDb {
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 10
+  val CURRENT_VERSION = 11
 }
 
 class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb with Logging {
@@ -118,12 +118,29 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       def migration89(statement: Statement): Unit = {
         statement.executeUpdate("CREATE TABLE local.htlc_infos_to_remove (channel_id TEXT NOT NULL PRIMARY KEY, before_commitment_number BIGINT NOT NULL)")
       }
-      
+
       def migration910(statement: Statement): Unit = {
         // We're changing our composite index to two distinct indices to improve performance.
         statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON local.htlc_infos(channel_id)")
         statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON local.htlc_infos(commitment_number)")
         statement.executeUpdate("DROP INDEX IF EXISTS local.htlc_infos_idx")
+      }
+
+      def migration1011(statement: Statement): Unit = {
+        migrateTable(pg, pg,
+          "local.channels",
+          "UPDATE local.channels SET data=?, json=?::JSONB WHERE channel_id=?",
+          (rs, statement) => {
+            // This forces a re-serialization of the channel data with latest codecs, because we want to remove support
+            // for codecs older than v5 in the next release.
+            val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
+            val data = channelDataCodec.encode(state).require.toByteArray
+            val json = serialization.write(state)
+            statement.setBytes(1, data)
+            statement.setString(2, json)
+            statement.setString(3, state.channelId.toHex)
+          }
+        )(logger)
       }
 
       getVersion(statement, DB_NAME) match {
@@ -140,7 +157,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           // This is more efficient because we're writing a lot to this table but only reading when a channel is force-closed.
           statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON local.htlc_infos(channel_id)")
           statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON local.htlc_infos(commitment_number)")
-        case Some(v@(2 | 3 | 4 | 5 | 6 | 7 | 8 | 9)) =>
+        case Some(v@(2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 3) {
             migration23(statement)
@@ -165,6 +182,9 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           }
           if (v < 10) {
             migration910(statement)
+          }
+          if (v < 11) {
+            migration1011(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")

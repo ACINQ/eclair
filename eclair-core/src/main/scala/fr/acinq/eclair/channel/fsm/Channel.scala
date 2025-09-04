@@ -317,6 +317,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(INPUT_RESTORED(data), _) =>
       log.debug("restoring channel")
+      data match {
+        case data: ChannelDataWithCommitments if data.commitments.active.exists(_.commitmentFormat == DefaultCommitmentFormat) =>
+          log.warning("channel is not using anchor outputs: please close it and re-open an anchor output channel before updating to the next version of eclair")
+        case _ => ()
+      }
       context.system.eventStream.publish(ChannelRestored(self, data.channelId, peer, remoteNodeId, data))
       txPublisher ! SetChannelId(remoteNodeId, data.channelId)
       // We watch all unconfirmed funding txs, whatever our state is.
