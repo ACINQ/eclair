@@ -116,7 +116,7 @@ case class OnChainFeeConf(feeTargets: FeeTargets,
    * @param remoteNodeId     nodeId of our channel peer
    * @param commitmentFormat commitment format
    */
-  def getCommitmentFeerate(feerates: FeeratesPerKw, remoteNodeId: PublicKey, commitmentFormat: CommitmentFormat, channelCapacity: Satoshi): FeeratePerKw = {
+  def getCommitmentFeerate(feerates: FeeratesPerKw, remoteNodeId: PublicKey, commitmentFormat: CommitmentFormat): FeeratePerKw = {
     val networkFeerate = feerates.fast
     val networkMinFee = feerates.minimum
     commitmentFormat match {

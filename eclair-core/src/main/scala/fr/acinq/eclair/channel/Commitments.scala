@@ -465,7 +465,7 @@ case class Commitment(fundingTxIndex: Long,
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
     // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
-    val localFeerate = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, commitmentFormat, capacity)
+    val localFeerate = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, commitmentFormat)
     val remoteFeerate = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
     // What we want to avoid is having an HTLC in a commitment transaction that has a very low feerate, which we won't
     // be able to confirm in time to claim the HTLC, so we only need to check that the feerate isn't too low.
@@ -545,7 +545,7 @@ case class Commitment(fundingTxIndex: Long,
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
     // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
-    val localFeerate = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, commitmentFormat, capacity)
+    val localFeerate = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, commitmentFormat)
     val remoteFeerate = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
     remoteFeerate.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isProposedFeerateTooLow(commitmentFormat, localFeerate, feerate)) match {
       case Some(feerate) => return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeerate, remoteFeeratePerKw = feerate))
@@ -618,7 +618,7 @@ case class Commitment(fundingTxIndex: Long,
   }
 
   def canReceiveFee(targetFeerate: FeeratePerKw, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
-    val localFeerate = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, commitmentFormat, capacity)
+    val localFeerate = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, commitmentFormat)
     if (feeConf.feerateToleranceFor(params.remoteNodeId).isProposedFeerateTooHigh(commitmentFormat, localFeerate, targetFeerate)) {
       return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeerate, remoteFeeratePerKw = targetFeerate))
     } else if (feeConf.feerateToleranceFor(params.remoteNodeId).isProposedFeerateTooLow(commitmentFormat, localFeerate, targetFeerate) && hasPendingOrProposedHtlcs(changes)) {
@@ -1073,7 +1073,7 @@ case class Commitments(channelParams: ChannelParams,
     } else if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw) {
       Left(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
     } else {
-      val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, remoteNodeId, active.head.commitmentFormat, active.head.capacity)
+      val localFeeratePerKw = feeConf.getCommitmentFeerate(feerates, remoteNodeId, active.head.commitmentFormat)
       log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toLong.toDouble / localFeeratePerKw.toLong)
       // update_fee replace each other, so we can remove previous ones
       val changes1 = changes.copy(remoteChanges = changes.remoteChanges.copy(proposed = changes.remoteChanges.proposed.filterNot(_.isInstanceOf[UpdateFee]) :+ fee))

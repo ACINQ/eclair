@@ -2733,7 +2733,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               val shutdownInProgress = d.localShutdown.nonEmpty || d.remoteShutdown.nonEmpty
               if (d.commitments.localChannelParams.paysCommitTxFees && !shutdownInProgress) {
                 val currentFeeratePerKw = d.commitments.latest.localCommit.spec.commitTxFeerate
-                val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat, d.commitments.latest.capacity)
+                val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat)
                 if (nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)) {
                   self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
                 }
@@ -3208,7 +3208,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
   private def handleCurrentFeerate(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
     val commitments = d.commitments.latest
-    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat, commitments.capacity)
+    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat)
     val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
     val shouldUpdateFee = d.commitments.localChannelParams.paysCommitTxFees && nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)
     val shouldClose = !d.commitments.localChannelParams.paysCommitTxFees &&
@@ -3233,7 +3233,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
    */
   private def handleCurrentFeerateDisconnected(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
     val commitments = d.commitments.latest
-    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat, commitments.capacity)
+    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat)
     val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
     // if the network fees are too high we risk to not be able to confirm our current commitment
     val shouldClose = networkFeeratePerKw > currentFeeratePerKw &&
