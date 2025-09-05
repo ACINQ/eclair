@@ -95,7 +95,7 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
     regtestProvider.mempoolMinFee().pipeTo(sender.ref)
     val mempoolMinFee = sender.expectMsgType[FeeratePerKB]
     // The regtest provider doesn't have any transaction in its mempool, so it defaults to the min_relay_fee.
-    assert(mempoolMinFee.feerate.toLong == FeeratePerKw.MinimumRelayFeeRate)
+    assert(mempoolMinFee.feerate.toLong == 100) // 0.1 sat/byte
   }
 
   private def createMockBitcoinClient(fees: Map[Int, FeeratePerKB], mempoolMinFee: FeeratePerKB): BasicBitcoinJsonRPCClient = {
