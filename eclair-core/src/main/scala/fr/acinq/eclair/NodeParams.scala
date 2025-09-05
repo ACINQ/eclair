@@ -130,7 +130,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
     )
     // We use the most likely commitment format, even though there is no guarantee that this is the one that will be used.
     val commitmentFormat = ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, announceChannel = false).commitmentFormat
-    val commitmentFeerate = onChainFeeConf.getCommitmentFeerate(currentBitcoinCoreFeerates, remoteNodeId, commitmentFormat, channelConf.minFundingPrivateSatoshis)
+    val commitmentFeerate = onChainFeeConf.getCommitmentFeerate(currentBitcoinCoreFeerates, remoteNodeId, commitmentFormat)
     val commitmentRange = RecommendedFeeratesTlv.CommitmentFeerateRange(
       min = (commitmentFeerate * feerateTolerance.ratioLow).max(minimumFeerate),
       max = (commitmentFormat match {

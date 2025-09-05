@@ -105,7 +105,7 @@ trait Eclair {
 
   def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector], closingFeerates_opt: Option[ClosingFeerates])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]]
 
-  def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]]
+  def forceClose(channels: List[ApiTypes.ChannelIdentifier], maxClosingFeerate_opt: Option[FeeratePerKw])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]]
 
   def forceCloseResetFundingIndex(channel: ApiTypes.ChannelIdentifier, resetFundingTxIndex: Int)(implicit timeout: Timeout): Future[CommandResponse[CMD_FORCECLOSE]]
 
@@ -295,8 +295,8 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     sendToChannels(channels, CMD_CLOSE(ActorRef.noSender, scriptPubKey_opt, closingFeerates_opt))
   }
 
-  override def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]] = {
-    sendToChannels(channels, CMD_FORCECLOSE(ActorRef.noSender))
+  override def forceClose(channels: List[ApiTypes.ChannelIdentifier], maxClosingFeerate_opt: Option[FeeratePerKw])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]] = {
+    sendToChannels(channels, CMD_FORCECLOSE(ActorRef.noSender, maxClosingFeerate_opt))
   }
 
   override def forceCloseResetFundingIndex(channel: ApiTypes.ChannelIdentifier, resetFundingTxIndex: Int)(implicit timeout: Timeout): Future[CommandResponse[CMD_FORCECLOSE]] = {

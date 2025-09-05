@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Transa
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchOutputSpent, WatchTxConfirmed}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.UnhandledExceptionStrategy
@@ -90,6 +91,10 @@ trait ErrorHandlers extends CommonHandlers {
         val closing = DATA_CLOSING(negotiating.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = negotiating.localScriptPubKey, mutualCloseProposed = negotiating.proposedClosingTxs.flatMap(_.all), mutualClosePublished = negotiating.publishedClosingTxs)
         goto(CLOSING) using closing storing()
       case dd: ChannelDataWithCommitments =>
+        val maxClosingFeerate_opt = msg match {
+          case Some(cmd: CMD_FORCECLOSE) => cmd.maxClosingFeerate_opt
+          case _ => None
+        }
         // We publish our commitment even if we have nothing at stake: it's a nice thing to do because it lets our peer
         // get their funds back without delays.
         cause match {
@@ -98,12 +103,12 @@ trait ErrorHandlers extends CommonHandlers {
             goto(CLOSED)
           case _: ChannelException =>
             // known channel exception: we force close using our current commitment
-            spendLocalCurrent(dd) sending error
+            spendLocalCurrent(dd, maxClosingFeerate_opt) sending error
           case _ =>
             // unhandled exception: we apply the configured strategy
             nodeParams.channelConf.unhandledExceptionStrategy match {
               case UnhandledExceptionStrategy.LocalClose =>
-                spendLocalCurrent(dd) sending error
+                spendLocalCurrent(dd, maxClosingFeerate_opt) sending error
               case UnhandledExceptionStrategy.Stop =>
                 log.error("unhandled exception: standard procedure would be to force-close the channel, but eclair has been configured to halt instead.")
                 NotificationsLogger.logFatalError(
@@ -155,7 +160,7 @@ trait ErrorHandlers extends CommonHandlers {
           log.warning("ignoring remote 'link failed to shutdown', probably coming from lnd")
           stay() sending Warning(d.channelId, "ignoring your 'link failed to shutdown' to avoid an unnecessary force-close")
         } else {
-          spendLocalCurrent(hasCommitments)
+          spendLocalCurrent(hasCommitments, maxClosingFeerateOverride_opt = None)
         }
       // When there is no commitment yet, we just go to CLOSED state in case an error occurs.
       case waitForDualFundingSigned: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED =>
@@ -196,7 +201,7 @@ trait ErrorHandlers extends CommonHandlers {
     }
   }
 
-  def spendLocalCurrent(d: ChannelDataWithCommitments): FSM.State[ChannelState, ChannelData] = {
+  def spendLocalCurrent(d: ChannelDataWithCommitments, maxClosingFeerateOverride_opt: Option[FeeratePerKw]): FSM.State[ChannelState, ChannelData] = {
     val outdatedCommitment = d match {
       case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.isDefined => true
@@ -211,12 +216,13 @@ trait ErrorHandlers extends CommonHandlers {
       log.error(s"force-closing with fundingIndex=${commitment.fundingTxIndex}")
       context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Error, s"force-closing channel ${d.channelId} with fundingIndex=${commitment.fundingTxIndex}"))
       val commitTx = commitment.fullySignedLocalCommitTx(channelKeys)
-      val (localCommitPublished, closingTxs) = Closing.LocalClose.claimCommitTxOutputs(channelKeys, commitment, commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
+      val closingFeerate = nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, maxClosingFeerateOverride_opt)
+      val (localCommitPublished, closingTxs) = Closing.LocalClose.claimCommitTxOutputs(channelKeys, commitment, commitTx, closingFeerate, finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
       val nextData = d match {
-        case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
+        case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished), maxClosingFeerate_opt = maxClosingFeerateOverride_opt.orElse(closing.maxClosingFeerate_opt))
         case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, negotiating.closingTxProposed.flatten.map(_.unsignedTx), localCommitPublished = Some(localCommitPublished))
         case negotiating: DATA_NEGOTIATING_SIMPLE => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = negotiating.proposedClosingTxs.flatMap(_.all), mutualClosePublished = negotiating.publishedClosingTxs, localCommitPublished = Some(localCommitPublished))
-        case _ => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished))
+        case _ => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = Nil, localCommitPublished = Some(localCommitPublished), maxClosingFeerate_opt = maxClosingFeerateOverride_opt)
       }
       goto(CLOSING) using nextData storing() calling doPublish(localCommitPublished, closingTxs, commitment)
     }
@@ -265,8 +271,12 @@ trait ErrorHandlers extends CommonHandlers {
     log.warning(s"they published their current commit in txid=${commitTx.txid}")
     require(commitTx.txid == commitments.remoteCommit.txId, "txid mismatch")
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
+    val closingFeerate = d match {
+      case closing: DATA_CLOSING => nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, closing.maxClosingFeerate_opt)
+      case _ => nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, maxClosingFeerateOverride_opt = None)
+    }
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitments.commitInput(channelKeys), commitTx, d.commitments.localChannelParams.paysCommitTxFees), "remote-commit"))
-    val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitments, commitments.remoteCommit, commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
+    val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitments, commitments.remoteCommit, commitTx, closingFeerate, finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
       case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), remoteCommitPublished = Some(remoteCommitPublished))
@@ -282,10 +292,13 @@ trait ErrorHandlers extends CommonHandlers {
     require(commitment.nextRemoteCommit_opt.nonEmpty, "next remote commit must be defined")
     val remoteCommit = commitment.nextRemoteCommit_opt.get.commit
     require(commitTx.txid == remoteCommit.txId, "txid mismatch")
-
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
+    val closingFeerate = d match {
+      case closing: DATA_CLOSING => nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, closing.maxClosingFeerate_opt)
+      case _ => nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, maxClosingFeerateOverride_opt = None)
+    }
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitment.commitInput(channelKeys), commitTx, d.commitments.localChannelParams.paysCommitTxFees), "next-remote-commit"))
-    val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, commitTx, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
+    val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, commitTx, closingFeerate, finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
       case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), nextRemoteCommitPublished = Some(remoteCommitPublished))
@@ -355,7 +368,8 @@ trait ErrorHandlers extends CommonHandlers {
           context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, Closing.commitTxFee(d.commitments.latest.commitInput(channelKeys), tx, d.commitments.localChannelParams.paysCommitTxFees), "future-remote-commit"))
           val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
           val commitKeys = d.commitments.latest.remoteKeys(channelKeys, remotePerCommitmentPoint)
-          val mainTx_opt = Closing.RemoteClose.claimMainOutput(commitKeys, tx, d.commitments.latest.localCommitParams.dustLimit, d.commitments.latest.commitmentFormat, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
+          val closingFeerate = nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, maxClosingFeerateOverride_opt = None)
+          val mainTx_opt = Closing.RemoteClose.claimMainOutput(commitKeys, tx, d.commitments.latest.localCommitParams.dustLimit, d.commitments.latest.commitmentFormat, closingFeerate, finalScriptPubKey)
           mainTx_opt.foreach(tx => log.warning("publishing our recovery transaction: tx={}", tx.toString))
           val remoteCommitPublished = RemoteCommitPublished(
             commitTx = tx,

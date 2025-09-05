@@ -116,10 +116,9 @@ case class OnChainFeeConf(feeTargets: FeeTargets,
    * @param remoteNodeId     nodeId of our channel peer
    * @param commitmentFormat commitment format
    */
-  def getCommitmentFeerate(feerates: FeeratesPerKw, remoteNodeId: PublicKey, commitmentFormat: CommitmentFormat, channelCapacity: Satoshi): FeeratePerKw = {
+  def getCommitmentFeerate(feerates: FeeratesPerKw, remoteNodeId: PublicKey, commitmentFormat: CommitmentFormat): FeeratePerKw = {
     val networkFeerate = feerates.fast
     val networkMinFee = feerates.minimum
-
     commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => networkFeerate
       case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat =>
@@ -129,5 +128,8 @@ case class OnChainFeeConf(feeTargets: FeeTargets,
     }
   }
 
-  def getClosingFeerate(feerates: FeeratesPerKw): FeeratePerKw = feeTargets.closing.getFeerate(feerates).min(maxClosingFeerate)
+  def getClosingFeerate(feerates: FeeratesPerKw, maxClosingFeerateOverride_opt: Option[FeeratePerKw]): FeeratePerKw = {
+    feeTargets.closing.getFeerate(feerates).min(maxClosingFeerateOverride_opt.getOrElse(maxClosingFeerate))
+  }
+
 }
