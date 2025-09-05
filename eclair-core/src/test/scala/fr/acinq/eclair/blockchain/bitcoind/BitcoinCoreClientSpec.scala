@@ -249,7 +249,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val pubkeyScript = Script.write(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get)
 
     // We first receive some confirmed funds.
-    miner.sendToPubkeyScript(pubkeyScript, 150_000 sat, FeeratePerKw(FeeratePerByte(5 sat))).pipeTo(sender.ref)
+    miner.sendToPubkeyScript(pubkeyScript, 150_000 sat, FeeratePerByte(5 sat).perKw).pipeTo(sender.ref)
     val externalTxId = sender.expectMsgType[TxId]
     generateBlocks(1)
 
@@ -294,7 +294,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     Seq(25 millibtc, 15 millibtc, 20 millibtc).foreach(amount => {
       walletExternalFunds.getReceiveAddress().pipeTo(sender.ref)
       val walletAddress = sender.expectMsgType[String]
-      defaultWallet.sendToPubkeyScript(Script.write(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, walletAddress).toOption.get), amount, FeeratePerKw(FeeratePerByte(3.sat))).pipeTo(sender.ref)
+      defaultWallet.sendToPubkeyScript(Script.write(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, walletAddress).toOption.get), amount, FeeratePerByte(3.sat).perKw).pipeTo(sender.ref)
       sender.expectMsgType[TxId]
     })
 
@@ -442,7 +442,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       // When sending to a p2wpkh, bitcoin core should add a p2wpkh change output.
       val pubkeyScript = Script.pay2wpkh(pubKey)
       val unsignedTx = Transaction(version = 2, Nil, Seq(TxOut(150_000 sat, pubkeyScript)), lockTime = 0)
-      bitcoinClient.fundTransaction(unsignedTx, feeRate = FeeratePerKw(FeeratePerByte(3 sat)), changePosition = Some(1)).pipeTo(sender.ref)
+      bitcoinClient.fundTransaction(unsignedTx, feeRate = FeeratePerByte(3 sat).perKw, changePosition = Some(1)).pipeTo(sender.ref)
       val tx = sender.expectMsgType[FundTransactionResponse].tx
       // We have a change output.
       assert(tx.txOut.length == 2)
@@ -460,7 +460,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       // When sending to a p2tr, bitcoin core should add a p2tr change output.
       val pubkeyScript = Script.pay2tr(pubKey.xOnly)
       val unsignedTx = Transaction(version = 2, Nil, Seq(TxOut(150_000 sat, pubkeyScript)), lockTime = 0)
-      bitcoinClient.fundTransaction(unsignedTx, feeRate = FeeratePerKw(FeeratePerByte(3 sat)), changePosition = Some(1)).pipeTo(sender.ref)
+      bitcoinClient.fundTransaction(unsignedTx, feeRate = FeeratePerByte(3 sat).perKw, changePosition = Some(1)).pipeTo(sender.ref)
       val tx = sender.expectMsgType[FundTransactionResponse].tx
       // We have a change output.
       assert(tx.txOut.length == 2)
@@ -820,7 +820,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val bitcoinClient = makeBitcoinCoreClient()
 
     val txNotFunded = Transaction(2, Nil, Seq(TxOut(200_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
-    bitcoinClient.fundTransaction(txNotFunded, FeeratePerKw(FeeratePerByte(1 sat)), replaceable = true).pipeTo(sender.ref)
+    bitcoinClient.fundTransaction(txNotFunded, FeeratePerByte(1 sat).perKw, replaceable = true).pipeTo(sender.ref)
     val txFunded1 = sender.expectMsgType[FundTransactionResponse].tx
     assert(txFunded1.txIn.nonEmpty)
     bitcoinClient.signPsbt(new Psbt(txFunded1), txFunded1.txIn.indices, Nil).pipeTo(sender.ref)
@@ -833,7 +833,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     sender.expectMsg(txFunded1.txIn.map(_.outPoint).toSet)
 
     // we double-spend the inputs, which unlocks them
-    bitcoinClient.fundTransaction(txFunded1, FeeratePerKw(FeeratePerByte(5 sat)), replaceable = true).pipeTo(sender.ref)
+    bitcoinClient.fundTransaction(txFunded1, FeeratePerByte(5 sat).perKw, replaceable = true).pipeTo(sender.ref)
     val txFunded2 = sender.expectMsgType[FundTransactionResponse].tx
     assert(txFunded2.txid != txFunded1.txid)
     txFunded1.txIn.foreach(txIn => assert(txFunded2.txIn.map(_.outPoint).contains(txIn.outPoint)))
@@ -2078,7 +2078,7 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
       val error = sender.expectMsgType[Failure]
       assert(error.cause.getMessage.contains("Private keys are disabled for this wallet"))
 
-      wallet.sendToPubkeyScript(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get, 50_000.sat, FeeratePerKw(FeeratePerByte(5.sat))).pipeTo(sender.ref)
+      wallet.sendToPubkeyScript(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get, 50_000.sat, FeeratePerByte(5.sat).perKw).pipeTo(sender.ref)
       sender.expectMsgType[TxId]
     }
   }

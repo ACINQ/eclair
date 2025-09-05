@@ -245,7 +245,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
         fundingAmount = fundingAmount,
         channelType_opt = channelType_opt,
         pushAmount_opt = pushAmount_opt,
-        fundingTxFeerate_opt = fundingFeerate_opt.map(FeeratePerKw(_)),
+        fundingTxFeerate_opt = fundingFeerate_opt.map(_.perKw),
         fundingTxFeeBudget_opt = Some(fundingFeeBudget),
         requestFunding_opt = None,
         channelFlags_opt = announceChannel_opt.map(announceChannel => ChannelFlags(announceChannel = announceChannel)),
@@ -441,7 +441,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
         if (blocks < 3) appKit.nodeParams.currentBitcoinCoreFeerates.fast
         else if (blocks > 6) appKit.nodeParams.currentBitcoinCoreFeerates.slow
         else appKit.nodeParams.currentBitcoinCoreFeerates.medium
-      case Right(feeratePerByte) => FeeratePerKw(feeratePerByte)
+      case Right(feeratePerByte) => feeratePerByte.perKw
     }
     appKit.wallet match {
       case w: BitcoinCoreClient =>
@@ -455,7 +455,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
 
   override def cpfpBumpFees(targetFeeratePerByte: FeeratePerByte, outpoints: Set[OutPoint]): Future[TxId] = {
     appKit.wallet match {
-      case w: BitcoinCoreClient => w.cpfp(outpoints, FeeratePerKw(targetFeeratePerByte)).map(_.txid)
+      case w: BitcoinCoreClient => w.cpfp(outpoints, targetFeeratePerByte.perKw).map(_.txid)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }

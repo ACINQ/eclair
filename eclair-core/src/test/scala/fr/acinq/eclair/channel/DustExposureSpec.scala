@@ -42,7 +42,7 @@ class DustExposureSpec extends AnyFunSuiteLike {
         IncomingHtlc(createHtlc(3, 500.sat.toMilliSatoshi)),
         OutgoingHtlc(createHtlc(3, 500.sat.toMilliSatoshi)),
       )
-      val spec = CommitmentSpec(htlcs, FeeratePerKw(FeeratePerByte(50 sat)), 50000 msat, 75000 msat)
+      val spec = CommitmentSpec(htlcs, FeeratePerByte(50 sat).perKw, 50000 msat, 75000 msat)
       assert(DustExposure.computeExposure(spec, 450 sat, Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == 898.sat.toMilliSatoshi)
       assert(DustExposure.computeExposure(spec, 500 sat, Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == 2796.sat.toMilliSatoshi)
       assert(DustExposure.computeExposure(spec, 500 sat, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) == 3796.sat.toMilliSatoshi)
@@ -50,7 +50,7 @@ class DustExposureSpec extends AnyFunSuiteLike {
     {
       // Low feerate: buffer adds 10 sat/byte
       val dustLimit = 500.sat
-      val feerate = FeeratePerKw(FeeratePerByte(10 sat))
+      val feerate = FeeratePerByte(10 sat).perKw
       assert(Transactions.receivedHtlcTrimThreshold(dustLimit, feerate, Transactions.DefaultCommitmentFormat) == 2257.sat)
       assert(Transactions.offeredHtlcTrimThreshold(dustLimit, feerate, Transactions.DefaultCommitmentFormat) == 2157.sat)
       assert(Transactions.receivedHtlcTrimThreshold(dustLimit, feerate * 2, Transactions.DefaultCommitmentFormat) == 4015.sat)
@@ -81,7 +81,7 @@ class DustExposureSpec extends AnyFunSuiteLike {
     {
       // High feerate: buffer adds 25%
       val dustLimit = 1000.sat
-      val feerate = FeeratePerKw(FeeratePerByte(80 sat))
+      val feerate = FeeratePerByte(80 sat).perKw
       assert(Transactions.receivedHtlcTrimThreshold(dustLimit, feerate, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) == 15120.sat)
       assert(Transactions.offeredHtlcTrimThreshold(dustLimit, feerate, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) == 14320.sat)
       assert(Transactions.receivedHtlcTrimThreshold(dustLimit, feerate * 1.25, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) == 18650.sat)

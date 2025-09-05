@@ -237,11 +237,11 @@ class Setup(val datadir: File,
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
-          minimum = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.minimum")))),
-          slow = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.slow")))),
-          medium = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.medium")))),
-          fast = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.fast")))),
-          fastest = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.fastest")))),
+          minimum = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.minimum"))).perKB,
+          slow = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.slow"))).perKB,
+          medium = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.medium"))).perKB,
+          fast = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.fast"))).perKB,
+          fastest = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.fastest"))).perKB,
         )
         feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
         confDefaultFeerates
