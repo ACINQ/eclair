@@ -1,0 +1,207 @@
+{
+  "type" : "DATA_SHUTDOWN",
+  "commitments" : {
+    "channelParams" : {
+      "channelId" : "e8ae5d9e18da0563038a7d089d5211edfb508060cc4bff99bf1e4f381d039c4e",
+      "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
+      "channelFeatures" : [ ],
+      "localParams" : {
+        "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
+        "fundingKeyPath" : [ 1692367755, 958766326, 1134086240, 945607032, 293750338, 1332199599, 142778280, 825056256, 2147483648 ],
+        "initialRequestedChannelReserve_opt" : 20000,
+        "isChannelOpener" : false,
+        "paysCommitTxFees" : false,
+        "initFeatures" : {
+          "activated" : {
+            "option_simple_close" : "optional",
+            "option_simple_taproot_phoenix" : "optional",
+            "option_route_blinding" : "optional",
+            "splice_prototype" : "optional",
+            "payment_secret" : "mandatory",
+            "gossip_queries_ex" : "optional",
+            "option_quiesce" : "optional",
+            "option_data_loss_protect" : "optional",
+            "var_onion_optin" : "mandatory",
+            "option_static_remotekey" : "mandatory",
+            "option_support_large_channel" : "optional",
+            "option_anchors_zero_fee_htlc_tx" : "optional",
+            "option_channel_type" : "mandatory",
+            "basic_mpp" : "optional",
+            "gossip_queries" : "optional"
+          },
+          "unknown" : [ ]
+        }
+      },
+      "remoteParams" : {
+        "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
+        "initialRequestedChannelReserve_opt" : 10000,
+        "revocationBasepoint" : "0331fb0c0375e15a02366a6d3d48f6d61a2c424af7ac5eab1372a17a4881097c00",
+        "paymentBasepoint" : "027fb3280f1e548f4d805dfdb3f6de2a5e5cf0c96a3b6441baf28a0ef101a847ec",
+        "delayedPaymentBasepoint" : "028fe2f6350ead9d1dd1f8bd86abf8be43e5592d4ab3883083c336ab1d28d2825a",
+        "htlcBasepoint" : "02a3346f122555685c5b2267182c40bb8b774f502af0c877e230d7e898957cfb24",
+        "initFeatures" : {
+          "activated" : {
+            "option_simple_close" : "optional",
+            "option_support_large_channel" : "optional",
+            "option_simple_taproot_phoenix" : "optional",
+            "option_route_blinding" : "optional",
+            "option_provide_storage" : "optional",
+            "splice_prototype" : "optional",
+            "payment_secret" : "mandatory",
+            "gossip_queries_ex" : "optional",
+            "option_quiesce" : "optional",
+            "option_data_loss_protect" : "optional",
+            "var_onion_optin" : "mandatory",
+            "option_static_remotekey" : "mandatory",
+            "option_channel_type" : "mandatory",
+            "basic_mpp" : "optional",
+            "gossip_queries" : "optional"
+          },
+          "unknown" : [ 50001 ]
+        }
+      },
+      "channelFlags" : {
+        "nonInitiatorPaysCommitFees" : false,
+        "announceChannel" : false
+      }
+    },
+    "changes" : {
+      "localChanges" : {
+        "proposed" : [ ],
+        "signed" : [ {
+          "channelId" : "e8ae5d9e18da0563038a7d089d5211edfb508060cc4bff99bf1e4f381d039c4e",
+          "id" : 0,
+          "paymentPreimage" : "a0c60915dfca3bb24a8a221b0427ff592686d6967d5c4413215864d20649471c",
+          "tlvStream" : { }
+        } ],
+        "acked" : [ ]
+      },
+      "remoteChanges" : {
+        "proposed" : [ ],
+        "acked" : [ ],
+        "signed" : [ ]
+      },
+      "localNextHtlcId" : 0,
+      "remoteNextHtlcId" : 2
+    },
+    "active" : [ {
+      "fundingTxIndex" : 0,
+      "fundingInput" : "4e9c031d384f1ebf99ff4bcc608050fbed11529d087d8a036305da189e5daee8:0",
+      "fundingAmount" : 1000000,
+      "localFunding" : {
+        "status" : "confirmed",
+        "shortChannelId" : "400000x42x0"
+      },
+      "remoteFunding" : {
+        "status" : "locked"
+      },
+      "commitmentFormat" : "simple_taproot_phoenix",
+      "localCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 1000000000,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
+      },
+      "localCommit" : {
+        "index" : 1,
+        "spec" : {
+          "htlcs" : [ {
+            "direction" : "IN",
+            "id" : 0,
+            "amountMsat" : 300000000,
+            "paymentHash" : "200c93d62ce9375b8862f962a0d1631db53eddc988600e27f388883567a28ea1",
+            "cltvExpiry" : 400144
+          }, {
+            "direction" : "IN",
+            "id" : 1,
+            "amountMsat" : 200000000,
+            "paymentHash" : "ebcadc0c561cc439e1c20a0b8ac15ac7c185c93027cf37bf684beb521553d22e",
+            "cltvExpiry" : 400144
+          } ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 200000000,
+          "toRemote" : 300000000
+        },
+        "txId" : "30bbcb2766a592860e836c3dc093e78e5392fc351e840d2d5cd3bc14eba09258",
+        "remoteSig" : {
+          "partialSig" : "7b152de4f72844830b125d897287d257bd8081f8c3c22abf46eecf3c0eb23ff8",
+          "nonce" : "025eb602b798b41d3f0e2f71e2b4c43c00a755faa89d736b2c7848f88f2157527703f4021a5b09f0578cba827eb12202600b30772f4b1be0d7b1392c2e587c781ec0"
+        },
+        "htlcRemoteSigs" : [ "2367cd8ac316305d019b9016171926d7ae8cd43af23cabd99420549d9482d9e9adcb2c5addf01f8eee196abcc441cc428f72321958ca4611da877e947f288f80", "bc5dcd63f30ecaab75dd327a6977d90c163a55dffdb73b60c4973699e42eea70d4abfa3f9505c76fa2d0fa94224d61f32ae88c8a40a50189718acee7d28118dd" ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 500000000,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 720
+      },
+      "remoteCommit" : {
+        "index" : 1,
+        "spec" : {
+          "htlcs" : [ {
+            "direction" : "OUT",
+            "id" : 0,
+            "amountMsat" : 300000000,
+            "paymentHash" : "200c93d62ce9375b8862f962a0d1631db53eddc988600e27f388883567a28ea1",
+            "cltvExpiry" : 400144
+          }, {
+            "direction" : "OUT",
+            "id" : 1,
+            "amountMsat" : 200000000,
+            "paymentHash" : "ebcadc0c561cc439e1c20a0b8ac15ac7c185c93027cf37bf684beb521553d22e",
+            "cltvExpiry" : 400144
+          } ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 300000000,
+          "toRemote" : 200000000
+        },
+        "txId" : "d136df4c62a78cec95967023c33fc0534d61482f2457c8a434bede9ef75b211d",
+        "remotePerCommitmentPoint" : "03d8267557b3d73846072ee5f6e5acb9c27f25088a695e62b60c9e117c6d222021"
+      },
+      "nextRemoteCommit" : {
+        "index" : 2,
+        "spec" : {
+          "htlcs" : [ {
+            "direction" : "OUT",
+            "id" : 1,
+            "amountMsat" : 200000000,
+            "paymentHash" : "ebcadc0c561cc439e1c20a0b8ac15ac7c185c93027cf37bf684beb521553d22e",
+            "cltvExpiry" : 400144
+          } ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 300000000,
+          "toRemote" : 500000000
+        },
+        "txId" : "07c8a5cb379ee61d9312c300db594f543b848bb8e9ec3d027de615e8f2de62e2",
+        "remotePerCommitmentPoint" : "020360035e021651b01c4471a014d3b7cdc5c86e2ed915f915817fa46609397306"
+      }
+    } ],
+    "inactive" : [ ],
+    "remoteNextCommitInfo" : {
+      "sentAfterLocalCommitIndex" : 1
+    },
+    "remotePerCommitmentSecrets" : null,
+    "originChannels" : { }
+  },
+  "localShutdown" : {
+    "channelId" : "e8ae5d9e18da0563038a7d089d5211edfb508060cc4bff99bf1e4f381d039c4e",
+    "scriptPubKey" : "0014761879f7b274ce995f87150a02e75cc0c037e8e3",
+    "tlvStream" : {
+      "ShutdownNonce" : {
+        "nonce" : "03bc0cb276be08751de656b8a712bdd8635e037316f1820dd30877dbbb159263820288218519982ce2eae32123f5b2a868b50bdae61bcd918d0a096bff9de31cb6ab"
+      }
+    }
+  },
+  "remoteShutdown" : {
+    "channelId" : "e8ae5d9e18da0563038a7d089d5211edfb508060cc4bff99bf1e4f381d039c4e",
+    "scriptPubKey" : "0014761879f7b274ce995f87150a02e75cc0c037e8e3",
+    "tlvStream" : {
+      "ShutdownNonce" : {
+        "nonce" : "02a8e6a615c3782f5cd2db2e6188888f9525e13df215f1693e62cde511633cd6980239caecb127656cdba3e080f73e4c2e9734efd4a05a82ed2e4203fc76265a6c63"
+      }
+    }
+  },
+  "closeStatus" : { }
+}
