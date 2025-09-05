@@ -90,11 +90,13 @@ class OnChainFeeConfSpec extends AnyFunSuite {
     val feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Fast)
     val feeConf = OnChainFeeConf(feeTargets, maxClosingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
     val feerates1 = FeeratesPerKw.single(FeeratePerKw(1000 sat)).copy(fast = FeeratePerKw(1500 sat))
-    assert(feeConf.getClosingFeerate(feerates1) == FeeratePerKw(1500 sat))
+    assert(feeConf.getClosingFeerate(feerates1, None) == FeeratePerKw(1500 sat))
     val feerates2 = FeeratesPerKw.single(FeeratePerKw(1000 sat)).copy(fast = FeeratePerKw(500 sat))
-    assert(feeConf.getClosingFeerate(feerates2) == FeeratePerKw(500 sat))
+    assert(feeConf.getClosingFeerate(feerates2, None) == FeeratePerKw(500 sat))
     val feerates3 = FeeratesPerKw.single(FeeratePerKw(1000 sat)).copy(fast = FeeratePerKw(3000 sat))
-    assert(feeConf.getClosingFeerate(feerates3) == maxClosingFeerate)
+    assert(feeConf.getClosingFeerate(feerates3, None) == maxClosingFeerate)
+    assert(feeConf.getClosingFeerate(feerates3, maxClosingFeerateOverride_opt = Some(FeeratePerKw(2600 sat))) == FeeratePerKw(2600 sat))
+    assert(feeConf.getClosingFeerate(feerates3, maxClosingFeerateOverride_opt = Some(FeeratePerKw(2400 sat))) == FeeratePerKw(2400 sat))
   }
 
   test("fee difference too high") {

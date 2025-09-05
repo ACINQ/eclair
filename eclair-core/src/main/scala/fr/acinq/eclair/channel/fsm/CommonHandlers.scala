@@ -150,7 +150,7 @@ trait CommonHandlers {
   def startSimpleClose(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closeStatus: CloseStatus): (DATA_NEGOTIATING_SIMPLE, Option[ClosingComplete]) = {
     val localScript = localShutdown.scriptPubKey
     val remoteScript = remoteShutdown.scriptPubKey
-    val closingFeerate = closeStatus.feerates_opt.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates))
+    val closingFeerate = closeStatus.feerates_opt.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, maxClosingFeerateOverride_opt = None))
     MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, channelKeys, commitments.latest, localScript, remoteScript, closingFeerate, remoteShutdown.closeeNonce_opt) match {
       case Left(f) =>
         log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)

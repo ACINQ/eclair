@@ -711,7 +711,7 @@ object Helpers {
       }
 
       def firstClosingFee(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf)(implicit log: LoggingAdapter): ClosingFees = {
-        val requestedFeerate = onChainFeeConf.getClosingFeerate(feerates)
+        val requestedFeerate = onChainFeeConf.getClosingFeerate(feerates, maxClosingFeerateOverride_opt = None)
         val preferredFeerate = commitment.commitmentFormat match {
           case DefaultCommitmentFormat =>
             // we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
@@ -1148,14 +1148,13 @@ object Helpers {
        * NB: with anchor outputs, it's possible to have transactions that spend *many* HTLC outputs at once, but we're not
        * doing that because it introduces a lot of subtle edge cases.
        */
-      def claimHtlcDelayedOutput(localCommitPublished: LocalCommitPublished, channelKeys: ChannelKeys, commitment: FullCommitment, tx: Transaction, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (LocalCommitPublished, ThirdStageTransactions) = {
+      def claimHtlcDelayedOutput(localCommitPublished: LocalCommitPublished, channelKeys: ChannelKeys, commitment: FullCommitment, tx: Transaction, closingFeerate: FeeratePerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (LocalCommitPublished, ThirdStageTransactions) = {
         if (tx.txIn.exists(txIn => localCommitPublished.htlcOutputs.contains(txIn.outPoint))) {
-          val feerateDelayed = onChainFeeConf.getClosingFeerate(feerates)
           val commitKeys = commitment.localKeys(channelKeys)
           // Note that this will return None if the transaction wasn't one of our HTLC transactions, which may happen
           // if our peer was able to claim the HTLC output before us (race condition between success and timeout).
           val htlcDelayedTx_opt = withTxGenerationLog("htlc-delayed") {
-            HtlcDelayedTx.createUnsignedTx(commitKeys, tx, commitment.localCommitParams.dustLimit, commitment.localCommitParams.toSelfDelay, finalScriptPubKey, feerateDelayed, commitment.commitmentFormat)
+            HtlcDelayedTx.createUnsignedTx(commitKeys, tx, commitment.localCommitParams.dustLimit, commitment.localCommitParams.toSelfDelay, finalScriptPubKey, closingFeerate, commitment.commitmentFormat)
           }
           val localCommitPublished1 = localCommitPublished.copy(htlcDelayedOutputs = localCommitPublished.htlcDelayedOutputs ++ htlcDelayedTx_opt.map(_.input.outPoint).toSeq)
           (localCommitPublished1, ThirdStageTransactions(htlcDelayedTx_opt.toSeq))
@@ -1167,9 +1166,9 @@ object Helpers {
       /**
        * Claim the outputs of all 2nd-stage HTLC transactions that have been confirmed.
        */
-      def claimHtlcDelayedOutputs(localCommitPublished: LocalCommitPublished, channelKeys: ChannelKeys, commitment: FullCommitment, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): ThirdStageTransactions = {
+      def claimHtlcDelayedOutputs(localCommitPublished: LocalCommitPublished, channelKeys: ChannelKeys, commitment: FullCommitment, closingFeerate: FeeratePerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): ThirdStageTransactions = {
         val confirmedHtlcTxs = localCommitPublished.htlcOutputs.flatMap(htlcOutput => localCommitPublished.irrevocablySpent.get(htlcOutput))
-        val htlcDelayedTxs = confirmedHtlcTxs.flatMap(tx => claimHtlcDelayedOutput(localCommitPublished, channelKeys, commitment, tx, feerates, onChainFeeConf, finalScriptPubKey)._2.htlcDelayedTxs)
+        val htlcDelayedTxs = confirmedHtlcTxs.flatMap(tx => claimHtlcDelayedOutput(localCommitPublished, channelKeys, commitment, tx, closingFeerate, finalScriptPubKey)._2.htlcDelayedTxs)
         ThirdStageTransactions(htlcDelayedTxs.toSeq)
       }
 
@@ -1382,7 +1381,7 @@ object Helpers {
         val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentSecret.publicKey, commitmentFormat)
         val revocationKey = channelKeys.revocationKey(remotePerCommitmentSecret)
 
-        val feerateMain = onChainFeeConf.getClosingFeerate(feerates)
+        val feerateMain = onChainFeeConf.getClosingFeerate(feerates, maxClosingFeerateOverride_opt = None)
         // We need to use a high fee here for punishment txs because after a delay they can be spent by the counterparty.
         val feeratePenalty = feerates.fast
 
