@@ -1474,6 +1474,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       // we try to publish the htlc-success again (can be caused by a node restart): it will fail to replace the existing
       // one in the mempool but we must ensure we don't leave some utxos locked.
+      setFeerate(targetFeerate * 0.9)
       val publisher2 = createPublisher()
       publisher2 ! Publish(probe.ref, htlcSuccess)
       val result = probe.expectMsgType[TxRejected]
