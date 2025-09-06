@@ -1061,7 +1061,7 @@ case class Commitments(channelParams: ChannelParams,
       active.map(_.canSendFee(cmd.feeratePerKw, channelParams, changes1, feeConf))
         .collectFirst { case Left(f) => Left(f) }
         .getOrElse {
-          Metrics.LocalFeeratePerByte.withTag(Tags.CommitmentFormat, active.head.commitmentFormat.toString).record(FeeratePerByte(cmd.feeratePerKw).feerate.toLong)
+          Metrics.LocalFeeratePerByte.withTag(Tags.CommitmentFormat, active.head.commitmentFormat.toString).record(cmd.feeratePerKw.perByte.feerate.toLong)
           Right(copy(changes = changes1), fee)
         }
     }
@@ -1080,7 +1080,7 @@ case class Commitments(channelParams: ChannelParams,
       active.map(_.canReceiveFee(fee.feeratePerKw, channelParams, changes1, feerates, feeConf))
         .collectFirst { case Left(f) => Left(f) }
         .getOrElse {
-          Metrics.RemoteFeeratePerByte.withTag(Tags.CommitmentFormat, active.head.commitmentFormat.toString).record(FeeratePerByte(fee.feeratePerKw).feerate.toLong)
+          Metrics.RemoteFeeratePerByte.withTag(Tags.CommitmentFormat, active.head.commitmentFormat.toString).record(fee.feeratePerKw.perByte.feerate.toLong)
           Right(copy(changes = changes1))
         }
     }

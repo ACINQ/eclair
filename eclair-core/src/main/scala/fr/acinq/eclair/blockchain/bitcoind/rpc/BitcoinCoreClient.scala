@@ -263,7 +263,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
 
   def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, externalInputsWeight: Map[OutPoint, Long] = Map.empty, minInputConfirmations_opt: Option[Int] = None, feeBudget_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
     val options = FundTransactionOptions(
-      feeRate = BigDecimal(FeeratePerKB(feeRate).toLong).bigDecimal.scaleByPowerOfTen(-8),
+      feeRate = BigDecimal(feeRate.perKB.toLong).bigDecimal.scaleByPowerOfTen(-8),
       replaceable = replaceable,
       // We must either *always* lock inputs selected for funding or *never* lock them, otherwise locking wouldn't work
       // at all, as the following scenario highlights:
@@ -357,7 +357,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
 
     for {
       // TODO: we should check that mempoolMinFee is not dangerously high
-      feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
+      feerate <- mempoolMinFee().map(minFee => minFee.perKw.max(targetFeerate))
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
       FundTransactionResponse(tx, fee, _) <- fundTransaction(partialFundingTx, feerate, feeBudget_opt = feeBudget_opt)
       lockedUtxos = tx.txIn.map(_.outPoint)

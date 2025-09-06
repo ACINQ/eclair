@@ -32,19 +32,21 @@ case object CannotRetrieveFeerates extends RuntimeException("cannot retrieve fee
 
 /** Fee rate in satoshi-per-bytes. */
 case class FeeratePerByte(feerate: Satoshi) {
+  def perKw: FeeratePerKw = FeeratePerKw(this)
   def perKB: FeeratePerKB = FeeratePerKB(this)
   override def toString: String = s"$feerate/byte"
 }
 
 object FeeratePerByte {
-  def apply(feeratePerKB: FeeratePerKB): FeeratePerByte = FeeratePerByte(feeratePerKB.feerate / 1000)
-  def apply(feeratePerKw: FeeratePerKw): FeeratePerByte = FeeratePerByte(FeeratePerKB(feeratePerKw))
+  private[fee] def apply(feeratePerKB: FeeratePerKB): FeeratePerByte = FeeratePerByte(feeratePerKB.feerate / 1000)
+  private[fee] def apply(feeratePerKw: FeeratePerKw): FeeratePerByte = FeeratePerByte(FeeratePerKB(feeratePerKw))
 }
 
 /** Fee rate in satoshi-per-kilo-bytes (1 kB = 1000 bytes). */
 case class FeeratePerKB(feerate: Satoshi) extends Ordered[FeeratePerKB] {
   // @formatter:off
   def perByte: FeeratePerByte = FeeratePerByte(this)
+  def perKw: FeeratePerKw = FeeratePerKw(this)
   override def compare(that: FeeratePerKB): Int = feerate.compare(that.feerate)
   def max(other: FeeratePerKB): FeeratePerKB = if (this > other) this else other
   def min(other: FeeratePerKB): FeeratePerKB = if (this < other) this else other
@@ -55,8 +57,8 @@ case class FeeratePerKB(feerate: Satoshi) extends Ordered[FeeratePerKB] {
 
 object FeeratePerKB {
   // @formatter:off
-  def apply(feeratePerByte: FeeratePerByte): FeeratePerKB = FeeratePerKB(feeratePerByte.feerate * 1000)
-  def apply(feeratePerKw: FeeratePerKw): FeeratePerKB = FeeratePerKB(feeratePerKw.feerate * 4)
+  private[fee] def apply(feeratePerByte: FeeratePerByte): FeeratePerKB = FeeratePerKB(feeratePerByte.feerate * 1000)
+  private[fee] def apply(feeratePerKw: FeeratePerKw): FeeratePerKB = FeeratePerKB(feeratePerKw.feerate * 4)
   // @formatter:on
 }
 
@@ -64,6 +66,7 @@ object FeeratePerKB {
 case class FeeratePerKw(feerate: Satoshi) extends Ordered[FeeratePerKw] {
   // @formatter:off
   def perByte: FeeratePerByte = FeeratePerByte(this)
+  def perKB: FeeratePerKB = FeeratePerKB(this)
   override def compare(that: FeeratePerKw): Int = feerate.compare(that.feerate)
   def max(other: FeeratePerKw): FeeratePerKw = if (this > other) this else other
   def min(other: FeeratePerKw): FeeratePerKw = if (this < other) this else other
@@ -104,8 +107,8 @@ object FeeratePerKw {
   val MinimumFeeratePerKw = FeeratePerKw(253 sat)
 
   // @formatter:off
-  def apply(feeratePerKB: FeeratePerKB): FeeratePerKw = MinimumFeeratePerKw.max(FeeratePerKw(feeratePerKB.feerate / 4))
-  def apply(feeratePerByte: FeeratePerByte): FeeratePerKw = FeeratePerKw(FeeratePerKB(feeratePerByte))
+  private[fee] def apply(feeratePerKB: FeeratePerKB): FeeratePerKw = MinimumFeeratePerKw.max(FeeratePerKw(feeratePerKB.feerate / 4))
+  private[fee] def apply(feeratePerByte: FeeratePerByte): FeeratePerKw = FeeratePerKw(FeeratePerKB(feeratePerByte))
   // @formatter:on
 }
 
@@ -140,7 +143,7 @@ object FeeratesPerKw {
     fastest = FeeratePerKw(feerates.fastest))
 
   /** Used in tests */
-  def single(feeratePerKw: FeeratePerKw, networkMinFee: FeeratePerKw = FeeratePerKw(FeeratePerByte(1 sat))): FeeratesPerKw = FeeratesPerKw(
+  def single(feeratePerKw: FeeratePerKw, networkMinFee: FeeratePerKw = FeeratePerByte(1 sat).perKw): FeeratesPerKw = FeeratesPerKw(
     minimum = networkMinFee,
     slow = feeratePerKw,
     medium = feeratePerKw,

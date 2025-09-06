@@ -31,11 +31,11 @@ class LiquidityAdsSpec extends AnyFunSuite {
     assert(nodeKey.publicKey == PublicKey(hex"03ca9b880627d2d4e3b33164f66946349f820d26aa9572fe0e525e534850cbd413"))
 
     val fundingRate = LiquidityAds.FundingRate(100_000 sat, 1_000_000 sat, 500, 100, 10 sat, 1000 sat)
-    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(5 sat)), 500_000 sat, 500_000 sat, isChannelCreation = false).total == 5635.sat)
-    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(5 sat)), 500_000 sat, 600_000 sat, isChannelCreation = false).total == 5635.sat)
-    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(5 sat)), 500_000 sat, 600_000 sat, isChannelCreation = true).total == 6635.sat)
-    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(5 sat)), 500_000 sat, 400_000 sat, isChannelCreation = false).total == 4635.sat)
-    assert(fundingRate.fees(FeeratePerKw(FeeratePerByte(10 sat)), 500_000 sat, 500_000 sat, isChannelCreation = false).total == 6260.sat)
+    assert(fundingRate.fees(FeeratePerByte(5 sat).perKw, 500_000 sat, 500_000 sat, isChannelCreation = false).total == 5635.sat)
+    assert(fundingRate.fees(FeeratePerByte(5 sat).perKw, 500_000 sat, 600_000 sat, isChannelCreation = false).total == 5635.sat)
+    assert(fundingRate.fees(FeeratePerByte(5 sat).perKw, 500_000 sat, 600_000 sat, isChannelCreation = true).total == 6635.sat)
+    assert(fundingRate.fees(FeeratePerByte(5 sat).perKw, 500_000 sat, 400_000 sat, isChannelCreation = false).total == 4635.sat)
+    assert(fundingRate.fees(FeeratePerByte(10 sat).perKw, 500_000 sat, 500_000 sat, isChannelCreation = false).total == 6260.sat)
 
     val fundingRates = LiquidityAds.WillFundRates(fundingRate :: Nil, Set(LiquidityAds.PaymentType.FromChannelBalance))
     val Some(request) = LiquidityAds.requestFunding(500_000 sat, LiquidityAds.PaymentDetails.FromChannelBalance, fundingRates)

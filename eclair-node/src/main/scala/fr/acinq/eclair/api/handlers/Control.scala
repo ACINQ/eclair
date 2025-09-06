@@ -57,7 +57,7 @@ trait Control {
   val spendFromChannelAddressPrep: Route = postRequest("spendfromchanneladdressprep") { implicit t =>
     formFields("t".as[ByteVector32], "o".as[Int], "kp", "fi".as[Int], "address", "f".as[FeeratePerByte]) {
       (txId, outputIndex, keyPath, fundingTxIndex, address, feerate) =>
-        complete(eclairApi.spendFromChannelAddressPrep(OutPoint(TxId(txId), outputIndex), KeyPath(keyPath), fundingTxIndex, address, FeeratePerKw(feerate)))
+        complete(eclairApi.spendFromChannelAddressPrep(OutPoint(TxId(txId), outputIndex), KeyPath(keyPath), fundingTxIndex, address, feerate.perKw))
     }
   }
 

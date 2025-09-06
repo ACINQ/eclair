@@ -608,7 +608,7 @@ object NodeParams extends Logging {
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
-        maxClosingFeerate = FeeratePerKw(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.max-closing-feerate")))),
+        maxClosingFeerate = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.max-closing-feerate"))).perKw,
         safeUtxosThreshold = config.getInt("on-chain-fees.safe-utxos-threshold"),
         spendAnchorWithoutHtlcs = config.getBoolean("on-chain-fees.spend-anchor-without-htlcs"),
         anchorWithoutHtlcsMaxFee = Satoshi(config.getLong("on-chain-fees.anchor-without-htlcs-max-fee-satoshis")),
@@ -617,7 +617,7 @@ object NodeParams extends Logging {
         defaultFeerateTolerance = FeerateTolerance(
           config.getDouble("on-chain-fees.feerate-tolerance.ratio-low"),
           config.getDouble("on-chain-fees.feerate-tolerance.ratio-high"),
-          FeeratePerKw(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.feerate-tolerance.anchor-output-max-commit-feerate")))),
+          FeeratePerByte(Satoshi(config.getLong("on-chain-fees.feerate-tolerance.anchor-output-max-commit-feerate"))).perKw,
           DustTolerance(
             Satoshi(config.getLong("on-chain-fees.feerate-tolerance.dust-tolerance.max-exposure-satoshis")),
             config.getBoolean("on-chain-fees.feerate-tolerance.dust-tolerance.close-on-update-fee-overflow")
@@ -628,7 +628,7 @@ object NodeParams extends Logging {
           val tolerance = FeerateTolerance(
             e.getDouble("feerate-tolerance.ratio-low"),
             e.getDouble("feerate-tolerance.ratio-high"),
-            FeeratePerKw(FeeratePerByte(Satoshi(e.getLong("feerate-tolerance.anchor-output-max-commit-feerate")))),
+            FeeratePerByte(Satoshi(e.getLong("feerate-tolerance.anchor-output-max-commit-feerate"))).perKw,
             DustTolerance(
               Satoshi(e.getLong("feerate-tolerance.dust-tolerance.max-exposure-satoshis")),
               e.getBoolean("feerate-tolerance.dust-tolerance.close-on-update-fee-overflow")

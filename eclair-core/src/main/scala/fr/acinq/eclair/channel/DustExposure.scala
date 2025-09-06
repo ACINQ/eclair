@@ -36,7 +36,7 @@ object DustExposure {
    * However, this cannot fully protect us if the feerate increases too much (in which case we may have to force-close).
    */
   def feerateForDustExposure(currentFeerate: FeeratePerKw): FeeratePerKw = {
-    (currentFeerate * 1.25).max(currentFeerate + FeeratePerKw(FeeratePerByte(10 sat)))
+    (currentFeerate * 1.25).max(currentFeerate + FeeratePerByte(10 sat).perKw)
   }
 
   /** Test whether the given HTLC contributes to our dust exposure with the default dust feerate calculation. */

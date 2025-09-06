@@ -1246,7 +1246,7 @@ object Helpers {
        */
       private def claimIncomingHtlcOutputs(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, outputs: Seq[CommitmentOutput], commitment: FullCommitment, remoteCommit: RemoteCommit, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (Map[OutPoint, Long], Seq[ClaimHtlcSuccessTx]) = {
         // The feerate will be set by the publisher actor based on the HTLC expiry, we don't care which feerate is used here.
-        val feerate = FeeratePerKw(FeeratePerByte(1 sat))
+        val feerate = FeeratePerByte(1 sat).perKw
         // We collect all the preimages available.
         val preimages = (commitment.changes.localChanges.all ++ commitment.changes.remoteChanges.all).collect {
           case u: UpdateFulfillHtlc => Crypto.sha256(u.paymentPreimage) -> u.paymentPreimage
@@ -1292,7 +1292,7 @@ object Helpers {
        */
       private def claimOutgoingHtlcOutputs(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, outputs: Seq[CommitmentOutput], commitment: FullCommitment, remoteCommit: RemoteCommit, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (Map[OutPoint, Long], Seq[ClaimHtlcTimeoutTx]) = {
         // The feerate will be set by the publisher actor based on the HTLC expiry, we don't care which feerate is used here.
-        val feerate = FeeratePerKw(FeeratePerByte(1 sat))
+        val feerate = FeeratePerByte(1 sat).perKw
         // Remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa.
         val outgoingHtlcs = remoteCommit.spec.htlcs.collect {
           case IncomingHtlc(add: UpdateAddHtlc) =>
@@ -1312,7 +1312,7 @@ object Helpers {
       def claimHtlcsWithPreimage(channelKeys: ChannelKeys, commitKeys: RemoteCommitmentKeys, remoteCommitPublished: RemoteCommitPublished, commitment: FullCommitment, remoteCommit: RemoteCommit, preimage: ByteVector32, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Seq[ClaimHtlcSuccessTx] = {
         val outputs = makeRemoteCommitTxOutputs(channelKeys, commitKeys, commitment, remoteCommit)
         // The feerate will be set by the publisher actor based on the HTLC expiry, we don't care which feerate is used here.
-        val feerate = FeeratePerKw(FeeratePerByte(1 sat))
+        val feerate = FeeratePerByte(1 sat).perKw
         remoteCommit.spec.htlcs.collect {
           // Remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa.
           case OutgoingHtlc(add: UpdateAddHtlc) if add.paymentHash == Crypto.sha256(preimage) =>

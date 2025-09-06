@@ -68,7 +68,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val tx = Transaction(version = 2, Nil, TxOut(amount, addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, walletAddress).toOption.get) :: Nil, lockTime = 0)
     val client = makeBitcoinCoreClient()
     val f = for {
-      funded <- client.fundTransaction(tx, FeeratePerKw(FeeratePerByte(10.sat)))
+      funded <- client.fundTransaction(tx, FeeratePerByte(10.sat).perKw)
       signed <- client.signPsbt(new Psbt(funded.tx), funded.tx.txIn.indices, Nil)
       txid <- client.publishTransaction(signed.finalTx_opt.toOption.get)
     } yield txid
@@ -2188,7 +2188,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Bob's available utxo is unconfirmed.
       val probe = TestProbe()
       walletB.getP2wpkhPubkey().pipeTo(probe.ref)
-      walletB.sendToPubkeyScript(Script.write(Script.pay2wpkh(probe.expectMsgType[PublicKey])), 75_000 sat, FeeratePerKw(FeeratePerByte(1.sat))).pipeTo(probe.ref)
+      walletB.sendToPubkeyScript(Script.write(Script.pay2wpkh(probe.expectMsgType[PublicKey])), 75_000 sat, FeeratePerByte(1.sat).perKw).pipeTo(probe.ref)
       probe.expectMsgType[TxId]
 
       alice ! Start(alice2bob.ref)
