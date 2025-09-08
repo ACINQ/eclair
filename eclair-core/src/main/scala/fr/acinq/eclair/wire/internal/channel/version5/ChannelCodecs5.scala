@@ -280,9 +280,18 @@ private[channel] object ChannelCodecs5 {
         ("txid" | txId) ::
         ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit]
 
-    private def nextRemoteCommitCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[NextRemoteCommit] = (
-      ("sig" | lengthDelimited(commitSigCodec)) ::
-        ("commit" | remoteCommitCodec(commitmentSpecCodec))).as[NextRemoteCommit]
+    // We previously stored our commit_sig for the next remote commit and retransmitted it on reconnection.
+    // For taproot channels, we need to re-sign because the remote nonce may have changed, so we stopped storing those.
+    private case class NextRemoteCommitWithSig(commitSig: ByteVector, commit: RemoteCommit)
+
+    private def nextRemoteCommitWithSigCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[NextRemoteCommitWithSig] = (
+      ("sig" | lengthDelimited(bytes)) ::
+        ("commit" | remoteCommitCodec(commitmentSpecCodec))).as[NextRemoteCommitWithSig]
+
+    private def nextRemoteCommitCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[NextRemoteCommit] = discriminatorWithDefault(
+      discriminator = discriminated[NextRemoteCommit].by(varintoverflow).typecase(0L, remoteCommitCodec(commitmentSpecCodec).as[NextRemoteCommit]),
+      fallback = nextRemoteCommitWithSigCodec(commitmentSpecCodec).xmap(c => NextRemoteCommit(c.commit), c => NextRemoteCommitWithSig(ByteVector.empty, c.commit))
+    )
 
     private def commitmentCodec(htlcs: Set[DirectedHtlc]): Codec[Commitment] = (
       ("fundingTxIndex" | uint32) ::

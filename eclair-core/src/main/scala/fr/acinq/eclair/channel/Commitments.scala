@@ -200,7 +200,7 @@ object LocalCommit {
 
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePerCommitmentPoint: PublicKey) {
-  def sign(channelParams: ChannelParams, commitParams: CommitParams, channelKeys: ChannelKeys, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo, commitmentFormat: CommitmentFormat, remoteNonce_opt: Option[IndividualNonce]): Either[ChannelException, CommitSig] = {
+  def sign(channelParams: ChannelParams, commitParams: CommitParams, channelKeys: ChannelKeys, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo, commitmentFormat: CommitmentFormat, remoteNonce_opt: Option[IndividualNonce], batchSize: Int = 1): Either[ChannelException, CommitSig] = {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentPoint, commitmentFormat)
     val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(channelParams, commitParams, commitKeys, index, fundingKey, remoteFundingPubKey, commitInput, commitmentFormat, spec)
@@ -209,14 +209,14 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePer
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat =>
         val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey)
-        Right(CommitSig(channelParams.channelId, sig, htlcSigs.toList))
+        Right(CommitSig(channelParams.channelId, sig, htlcSigs.toList, batchSize))
       case _: SimpleTaprootChannelCommitmentFormat =>
         remoteNonce_opt match {
           case Some(remoteNonce) =>
             val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, remoteFundingPubKey, commitInput.outPoint.txid)
             remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
               case Left(_) => Left(InvalidCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
-              case Right(psig) => Right(CommitSig(channelParams.channelId, psig, htlcSigs.toList, batchSize = 1))
+              case Right(psig) => Right(CommitSig(channelParams.channelId, psig, htlcSigs.toList, batchSize))
             }
           case None => Left(MissingCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
         }
@@ -225,7 +225,7 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePer
 }
 
 /** We have the next remote commit when we've sent our commit_sig but haven't yet received their revoke_and_ack. */
-case class NextRemoteCommit(sig: CommitSig, commit: RemoteCommit)
+case class NextRemoteCommit(commit: RemoteCommit)
 
 /**
  * If we ignore revoked commitments, there can be at most three concurrent commitment transactions during a force-close:
@@ -680,7 +680,7 @@ case class Commitment(fundingTxIndex: Long,
         }
     }
     val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList, batchSize)
-    val nextRemoteCommit = NextRemoteCommit(commitSig, RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint))
+    val nextRemoteCommit = NextRemoteCommit(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint))
     Right((copy(nextRemoteCommit_opt = Some(nextRemoteCommit)), commitSig))
   }
 

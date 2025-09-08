@@ -496,19 +496,19 @@ object Helpers {
       def checkRemoteCommit(remoteChannelReestablish: ChannelReestablish, retransmitRevocation_opt: Option[RevokeAndAck]): SyncResult = {
         commitments.remoteNextCommitInfo match {
           case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == commitments.nextRemoteCommitIndex =>
-            // we just sent a new commit_sig but they didn't receive it
-            // we resend the same updates and the same sig, and preserve the same ordering
+            // We just sent a new commit_sig but they didn't receive it: we resend the same updates and sign them again,
+            // and preserve the same ordering of messages.
             val signedUpdates = commitments.changes.localChanges.signed
-            val commitSigs = CommitSigs(commitments.active.flatMap(_.nextRemoteCommit_opt).map { nextRemoteCommit =>
-              // If there was a race condition with the remote splice_locked, we may need to adjust the batch size
-              // on reconnection: we may have less commit_sig messages to send than before the disconnection.
-              val commitSig = nextRemoteCommit.sig
-              if (commitments.active.size == 1) {
-                commitSig.copy(tlvStream = TlvStream(commitSig.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.BatchTlv])))
-              } else {
-                commitSig.copy(tlvStream = TlvStream(commitSig.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.BatchTlv]) + CommitSigTlv.BatchTlv(commitments.active.size)))
-              }
-            })
+            val channelParams = commitments.channelParams
+            val batchSize = commitments.active.size
+            val commitSigs = CommitSigs(commitments.active.flatMap(c => {
+              val commitInput = c.commitInput(c.localFundingKey(channelKeys))
+              val remoteCommitNonce_opt = remoteChannelReestablish.nextCommitNonces.get(c.fundingTxId)
+              // Note that we ignore errors and simply skip failures to sign: we've already signed those updates before
+              // the disconnection, so we don't expect any error here unless our peer sends an invalid nonce. In that
+              // case, we simply won't send back our commit_sig until they fix their node.
+              c.nextRemoteCommit_opt.flatMap(_.commit.sign(channelParams, c.remoteCommitParams, channelKeys, c.fundingTxIndex, c.remoteFundingPubKey, commitInput, c.commitmentFormat, remoteCommitNonce_opt, batchSize).toOption)
+            }))
             retransmitRevocation_opt match {
               case None =>
                 SyncResult.Success(retransmit = signedUpdates :+ commitSigs)

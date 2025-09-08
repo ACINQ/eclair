@@ -268,7 +268,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(bob.stateName == NORMAL)
   }
 
-  test("resume htlc settlement", Tag(IgnoreChannelUpdates)) { f =>
+  test("resume htlc settlement", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
 
     // Successfully send a first payment.
@@ -287,7 +287,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     val revB = bob2alice.expectMsgType[RevokeAndAck]
-    bob2alice.expectMsgType[CommitSig]
+    val bobCommitSig1 = bob2alice.expectMsgType[CommitSig]
     disconnect(alice, bob)
 
     reconnect(alice, bob, alice2bob, bob2alice)
@@ -299,14 +299,16 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(reestablishB.nextRemoteRevocationNumber == 3)
 
     bob2alice.forward(alice, reestablishB)
-    // alice does not re-send messages bob already received
+    // Alice does not re-send messages that Bob already received.
     alice2bob.expectNoMessage(100 millis)
 
     alice2bob.forward(bob, reestablishA)
-    // bob re-sends its revocation and signature, alice then completes the update
+    // Bob re-sends its revocation and signature, Alice then completes the update.
+    // Note that Bob signs with a fresh nonce instead of retransmitting its previous signature, in case Alice changed her nonce.
     bob2alice.expectMsg(revB)
     bob2alice.forward(alice)
-    bob2alice.expectMsgType[CommitSig]
+    val bobCommitSig2 = bob2alice.expectMsgType[CommitSig]
+    assert(bobCommitSig2.sigOrPartialSig != bobCommitSig1.sigOrPartialSig)
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
