@@ -507,7 +507,7 @@ object Helpers {
               // Note that we ignore errors and simply skip failures to sign: we've already signed those updates before
               // the disconnection, so we don't expect any error here unless our peer sends an invalid nonce. In that
               // case, we simply won't send back our commit_sig until they fix their node.
-              c.nextRemoteCommit_opt.flatMap(_.commit.sign(channelParams, c.remoteCommitParams, channelKeys, c.fundingTxIndex, c.remoteFundingPubKey, commitInput, c.commitmentFormat, remoteCommitNonce_opt, batchSize).toOption)
+              c.nextRemoteCommit_opt.flatMap(_.sign(channelParams, c.remoteCommitParams, channelKeys, c.fundingTxIndex, c.remoteFundingPubKey, commitInput, c.commitmentFormat, remoteCommitNonce_opt, batchSize).toOption)
             }))
             retransmitRevocation_opt match {
               case None =>
@@ -651,7 +651,7 @@ object Helpers {
         case _ if closing.remoteCommitPublished.exists(_.isConfirmed) =>
           Some(CurrentRemoteClose(closing.commitments.latest.remoteCommit, closing.remoteCommitPublished.get))
         case _ if closing.nextRemoteCommitPublished.exists(_.isConfirmed) =>
-          Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get.commit, closing.nextRemoteCommitPublished.get))
+          Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get, closing.nextRemoteCommitPublished.get))
         case _ if closing.futureRemoteCommitPublished.exists(_.isConfirmed) =>
           Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
         case _ if closing.revokedCommitPublished.exists(_.isConfirmed) =>
@@ -677,7 +677,7 @@ object Helpers {
       case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(_.isDone) =>
         Some(CurrentRemoteClose(closing.commitments.latest.remoteCommit, closing.remoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(_.isDone) =>
-        Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get.commit, closing.nextRemoteCommitPublished.get))
+        Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get, closing.nextRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(_.isDone) =>
         Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(_.isDone) =>
@@ -1511,7 +1511,7 @@ object Helpers {
         val fromRemote = commitment.remoteCommit.spec.htlcs.collect {
           case IncomingHtlc(add) if add.paymentHash == paymentHash => (add, paymentPreimage)
         }
-        val fromNextRemote = commitment.nextRemoteCommit_opt.map(_.commit.spec.htlcs).getOrElse(Set.empty).collect {
+        val fromNextRemote = commitment.nextRemoteCommit_opt.map(_.spec.htlcs).getOrElse(Set.empty).collect {
           case IncomingHtlc(add) if add.paymentHash == paymentHash => (add, paymentPreimage)
         }
         fromLocal ++ fromRemote ++ fromNextRemote
@@ -1604,7 +1604,7 @@ object Helpers {
     def overriddenOutgoingHtlcs(d: DATA_CLOSING, tx: Transaction): Set[UpdateAddHtlc] = {
       val localCommit = d.commitments.latest.localCommit
       val remoteCommit = d.commitments.latest.remoteCommit
-      val nextRemoteCommit_opt = d.commitments.latest.nextRemoteCommit_opt.map(_.commit)
+      val nextRemoteCommit_opt = d.commitments.latest.nextRemoteCommit_opt
       // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs.
       val outgoingHtlcs = localCommit.spec.htlcs.collect(outgoing) ++ (remoteCommit.spec.htlcs ++ nextRemoteCommit_opt.map(_.spec.htlcs).getOrElse(Set.empty)).collect(incoming)
       if (localCommit.txId == tx.txid) {

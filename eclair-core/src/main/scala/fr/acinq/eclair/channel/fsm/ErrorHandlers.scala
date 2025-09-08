@@ -290,7 +290,7 @@ trait ErrorHandlers extends CommonHandlers {
     val commitment = d.commitments.latest
     log.warning(s"they published their next commit in txid=${commitTx.txid}")
     require(commitment.nextRemoteCommit_opt.nonEmpty, "next remote commit must be defined")
-    val remoteCommit = commitment.nextRemoteCommit_opt.get.commit
+    val remoteCommit = commitment.nextRemoteCommit_opt.get
     require(commitTx.txid == remoteCommit.txId, "txid mismatch")
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
     val closingFeerate = d match {
@@ -312,7 +312,7 @@ trait ErrorHandlers extends CommonHandlers {
   /** Publish 2nd-stage transactions for the remote commitment (no need for 3rd-stage transactions in that case). */
   def doPublish(rcp: RemoteCommitPublished, txs: Closing.RemoteClose.SecondStageTransactions, commitment: FullCommitment): Unit = {
     val remoteCommit = commitment.nextRemoteCommit_opt match {
-      case Some(c) if rcp.commitTx.txid == c.commit.txId => c.commit
+      case Some(commit) if rcp.commitTx.txid == commit.txId => commit
       case _ => commitment.remoteCommit
     }
     val publishAnchorTx_opt = txs.anchorTx_opt match {

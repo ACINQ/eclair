@@ -288,9 +288,9 @@ private[channel] object ChannelCodecs5 {
       ("sig" | lengthDelimited(bytes)) ::
         ("commit" | remoteCommitCodec(commitmentSpecCodec))).as[NextRemoteCommitWithSig]
 
-    private def nextRemoteCommitCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[NextRemoteCommit] = discriminatorWithDefault(
-      discriminator = discriminated[NextRemoteCommit].by(varintoverflow).typecase(0L, remoteCommitCodec(commitmentSpecCodec).as[NextRemoteCommit]),
-      fallback = nextRemoteCommitWithSigCodec(commitmentSpecCodec).xmap(c => NextRemoteCommit(c.commit), c => NextRemoteCommitWithSig(ByteVector.empty, c.commit))
+    private def nextRemoteCommitCodec(commitmentSpecCodec: Codec[CommitmentSpec]): Codec[RemoteCommit] = discriminatorWithDefault(
+      discriminator = discriminated[RemoteCommit].by(varintoverflow).typecase(0L, remoteCommitCodec(commitmentSpecCodec)),
+      fallback = nextRemoteCommitWithSigCodec(commitmentSpecCodec).xmap(c => c.commit, c => NextRemoteCommitWithSig(ByteVector.empty, c))
     )
 
     private def commitmentCodec(htlcs: Set[DirectedHtlc]): Codec[Commitment] = (
