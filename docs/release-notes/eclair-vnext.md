@@ -49,6 +49,12 @@ eclair.relay.peer-reputation {
 }
 ```
 
+### Use past payment attempts to estimate payment success
+
+When setting `use-ratios = false` in `eclair.router.path-finding`, we estimate the probability that a given route can relay a given payment as part of route selection.
+Until now this estimate was naively assuming the channel balances to be uniformly distributed.
+By setting `use-past-relay-data = true`, we will now use data from past payment attempts (both successes and failures) to provide a better estimate, hopefully improving route selection.
+
 ### API changes
 
 - `listoffers` now returns more details about each offer.
