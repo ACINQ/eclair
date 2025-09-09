@@ -106,10 +106,10 @@ private class BalanceActor(context: ActorContext[Command],
             case Some(previousBalance) =>
               // On-chain metrics:
               log.info("on-chain diff={}", balance.onChain.total - previousBalance.onChain.total)
-              val utxosBefore = previousBalance.onChain.utxos.toSet
-              val utxosAfter = balance.onChain.utxos.toSet
-              val utxosAdded = utxosAfter -- utxosBefore
-              val utxosRemoved = utxosBefore -- utxosAfter
+              val utxosBefore = previousBalance.onChain.utxos.map(utxo => utxo.outPoint -> utxo).toMap
+              val utxosAfter = balance.onChain.utxos.map(utxo => utxo.outPoint -> utxo).toMap
+              val utxosAdded = (utxosAfter -- utxosBefore.keys).values
+              val utxosRemoved = (utxosBefore -- utxosAfter.keys).values
               utxosAdded
                 .toList.sortBy(_.amount)
                 .foreach(utxo => log.info("+ utxo={} amount={}", utxo.outPoint, utxo.amount))
