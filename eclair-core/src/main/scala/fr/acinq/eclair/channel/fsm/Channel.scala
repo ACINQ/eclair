@@ -2862,14 +2862,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       val error = ChannelUnavailable(d.channelId)
       handleAddHtlcCommandError(c, error, None) // we don't provide a channel_update: this will be a permanent channel failure
 
-    case Event(c: CMD_CLOSE, d) =>
-        d match {
-          case data: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED =>
-            rollbackFundingAttempt(data.signingSession.fundingTx.tx, Nil)
-            handleFastClose(c, d.channelId)
-          case _ =>
-            handleCommandError(CommandUnavailableInThisState(d.channelId, "close", stateName), c)
-        }
+    case Event(c: CMD_CLOSE, d) => handleCommandError(CommandUnavailableInThisState(d.channelId, "close", stateName), c)
 
     case Event(c: CMD_FORCECLOSE, d) =>
       d match {
