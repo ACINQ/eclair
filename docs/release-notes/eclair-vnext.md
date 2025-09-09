@@ -13,6 +13,30 @@ When using anchor outputs, allows propagating our local commitment transaction t
 
 This removes the need for increasing the commitment feerate based on mempool conditions, which ensures that channels won't be force-closed anymore when nodes disagree on the current feerate.
 
+### Deprecation warning for non-anchor channels
+
+This is the last release where `eclair` will support non-anchor channels.
+Starting with the next release, those channels will be deprecated and `eclair` will refuse to start.
+Please make sure you close your existing non-anchor channels whenever convenient.
+
+You can list those channels using the following command:
+
+```sh
+$ eclair-cli channels | jq '.[] | { channelId: .data.commitments.channelParams.channelId, commitmentFormat: .data.commitments.active[].commitmentFormat }' | jq 'select(.["commitmentFormat"] == "legacy")'
+```
+
+If your peer is online, you can then cooperatively close those channels using the following command:
+
+```sh
+$ eclair-cli close --channelId=<channel_id_from_previous_step>  --preferredFeerateSatByte=<feerate_satoshis_per_byte>
+```
+
+If your peer isn't online, you may want to force-close those channels to recover your funds:
+
+```sh
+$ eclair-cli forceclose --channelId=<channel_id_from_previous_step>
+```
+
 ### Attribution data
 
 Eclair now supports attributable failures which allow nodes to prove they are not the source of the failure.
@@ -95,6 +119,14 @@ eclair.channel.min-depth-blocks = 8
 
 Note however that we require `min-depth` to be at least 6 blocks, since the BOLTs require this before announcing channels.
 See #3044 for more details.
+
+#### Database migration of channel data
+
+When updating your node, eclair will automatically migrate all of your channel data to the latest (internal) encoding.
+Depending on the number of open channels, this may be a bit slow: don't worry if this initial start-up is taking more time than usual.
+This will only happen the first time you restart your node.
+
+This is an important step towards removing legacy code from our codebase, which we will do before the next release.
 
 ## Verifying signatures
 
