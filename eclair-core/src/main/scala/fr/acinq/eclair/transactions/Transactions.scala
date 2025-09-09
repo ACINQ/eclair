@@ -171,10 +171,12 @@ object Transactions {
   sealed trait TaprootCommitmentFormat extends CommitmentFormat
 
   sealed trait SimpleTaprootChannelCommitmentFormat extends TaprootCommitmentFormat {
-    // weights for taproot transactions are deterministic since signatures are encoded as 64 bytes and
-    // not in variable length DER format (around 72 bytes)
+    // Weights for taproot transactions are deterministic since signatures are encoded as 64 bytes and not in variable
+    // length DER format like ECDSA (which is used for segwit v0 commitment formats).
     override val fundingInputWeight = 230
-    override val commitWeight = 960
+    // Note that the commit weight assumes that the number of outputs is encoded using 3 bytes, to handle the case
+    // where we have a lot of HTLCs pending.
+    override val commitWeight = 968
     override val anchorInputWeight = 230
     override val htlcOutputWeight = 172
     override val htlcTimeoutWeight = 645
