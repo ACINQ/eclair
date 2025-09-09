@@ -74,7 +74,7 @@ trait Channel {
 
   val rbfOpen: Route = postRequest("rbfopen") { implicit f =>
     formFields(channelIdFormParam, "targetFeerateSatByte".as[FeeratePerByte], "fundingFeeBudgetSatoshis".as[Satoshi], "lockTime".as[Long].?) {
-      (channelId, targetFeerateSatByte, fundingFeeBudget, lockTime_opt) => complete(eclairApi.rbfOpen(channelId, FeeratePerKw(targetFeerateSatByte), fundingFeeBudget, lockTime_opt))
+      (channelId, targetFeerateSatByte, fundingFeeBudget, lockTime_opt) => complete(eclairApi.rbfOpen(channelId, targetFeerateSatByte.perKw, fundingFeeBudget, lockTime_opt))
     }
   }
 
@@ -95,7 +95,7 @@ trait Channel {
 
   val rbfSplice: Route = postRequest("rbfsplice") { implicit f =>
     formFields(channelIdFormParam, "targetFeerateSatByte".as[FeeratePerByte], "fundingFeeBudgetSatoshis".as[Satoshi], "lockTime".as[Long].?) {
-      (channelId, targetFeerateSatByte, fundingFeeBudget, lockTime_opt) => complete(eclairApi.rbfSplice(channelId, FeeratePerKw(targetFeerateSatByte), fundingFeeBudget, lockTime_opt))
+      (channelId, targetFeerateSatByte, fundingFeeBudget, lockTime_opt) => complete(eclairApi.rbfSplice(channelId, targetFeerateSatByte.perKw, fundingFeeBudget, lockTime_opt))
     }
   }
 
@@ -104,9 +104,9 @@ trait Channel {
       formFields("scriptPubKey".as[ByteVector](bytesUnmarshaller).?, "preferredFeerateSatByte".as[FeeratePerByte].?, "minFeerateSatByte".as[FeeratePerByte].?, "maxFeerateSatByte".as[FeeratePerByte].?) {
         (scriptPubKey_opt, preferredFeerate_opt, minFeerate_opt, maxFeerate_opt) =>
           val closingFeerates = preferredFeerate_opt.map(preferredPerByte => {
-            val preferredFeerate = FeeratePerKw(preferredPerByte)
-            val minFeerate = minFeerate_opt.map(feerate => FeeratePerKw(feerate)).getOrElse(preferredFeerate / 2)
-            val maxFeerate = maxFeerate_opt.map(feerate => FeeratePerKw(feerate)).getOrElse(preferredFeerate * 2)
+            val preferredFeerate = preferredPerByte.perKw
+            val minFeerate = minFeerate_opt.map(feerate => feerate.perKw).getOrElse(preferredFeerate / 2)
+            val maxFeerate = maxFeerate_opt.map(feerate => feerate.perKw).getOrElse(preferredFeerate * 2)
             ClosingFeerates(preferredFeerate, minFeerate, maxFeerate)
           })
           if (scriptPubKey_opt.forall(Script.isNativeWitnessScript)) {
@@ -121,7 +121,7 @@ trait Channel {
   val forceClose: Route = postRequest("forceclose") { implicit t =>
     withChannelsIdentifier { channels =>
       formFields("maxClosingFeerateSatByte".as[FeeratePerByte].?) { maxClosingFeerate_opt =>
-        complete(eclairApi.forceClose(channels, maxClosingFeerate_opt.map(FeeratePerKw(_))))
+        complete(eclairApi.forceClose(channels, maxClosingFeerate_opt.map(_.perKw)))
       }
     }
   }

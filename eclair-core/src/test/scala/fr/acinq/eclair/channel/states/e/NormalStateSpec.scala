@@ -2458,7 +2458,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(initialState.commitments.latest.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
     val add = UpdateAddHtlc(ByteVector32.Zeroes, 0, 2500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
     alice2bob.send(bob, add)
-    val fee = UpdateFee(initialState.channelId, FeeratePerKw(FeeratePerByte(2 sat)))
+    val fee = UpdateFee(initialState.channelId, FeeratePerByte(2 sat).perKw)
     alice2bob.send(bob, fee)
     awaitCond(bob.stateData == initialState
       .modify(_.commitments.changes.remoteChanges.proposed).using(_ :+ add :+ fee)

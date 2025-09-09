@@ -26,14 +26,14 @@ class FeeProviderSpec extends AnyFunSuite {
     assert(FeeratePerByte(FeeratePerKw(2000 sat)) == FeeratePerByte(8 sat))
     assert(FeeratePerKB(FeeratePerByte(10 sat)) == FeeratePerKB(10000 sat))
     assert(FeeratePerKB(FeeratePerKw(25 sat)) == FeeratePerKB(100 sat))
-    assert(FeeratePerKw(FeeratePerKB(10000 sat)) == FeeratePerKw(2500 sat))
-    assert(FeeratePerKw(FeeratePerByte(10 sat)) == FeeratePerKw(2500 sat))
+    assert(FeeratePerKB(10000 sat).perKw == FeeratePerKw(2500 sat))
+    assert(FeeratePerByte(10 sat).perKw == FeeratePerKw(2500 sat))
   }
 
   test("enforce a minimum feerate-per-kw") {
-    assert(FeeratePerKw(FeeratePerKB(1000 sat)) == MinimumFeeratePerKw)
-    assert(FeeratePerKw(FeeratePerKB(500 sat)) == MinimumFeeratePerKw)
-    assert(FeeratePerKw(FeeratePerByte(1 sat)) == MinimumFeeratePerKw)
+    assert(FeeratePerKB(1000 sat).perKw == MinimumFeeratePerKw)
+    assert(FeeratePerKB(500 sat).perKw == MinimumFeeratePerKw)
+    assert(FeeratePerByte(1 sat).perKw == MinimumFeeratePerKw)
   }
 
   test("compare feerates") {
