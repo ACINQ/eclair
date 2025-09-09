@@ -2866,6 +2866,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(c: CMD_FORCECLOSE, d) =>
       d match {
+        case data: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED =>
+          rollbackFundingAttempt(data.signingSession.fundingTx.tx, Nil)
+          handleFastClose(c, d.channelId)
         case data: ChannelDataWithCommitments =>
           val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
           val failure = ForcedLocalCommit(d.channelId)
