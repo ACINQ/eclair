@@ -364,6 +364,31 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     awaitCond(bob.stateName == CLOSED)
   }
 
+  test("recv CMD_CLOSE (offline)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
+    import f._
+
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == OFFLINE)
+    bob ! INPUT_DISCONNECTED
+    awaitCond(bob.stateName == OFFLINE)
+
+    val finalChannelId = channelId(alice)
+    val sender = TestProbe()
+    val c = CMD_CLOSE(sender.ref, None, None)
+
+    alice ! c
+    sender.expectMsg(RES_SUCCESS(c, finalChannelId))
+    awaitCond(wallet.rolledback.size == 1)
+    aliceListener.expectMsgType[ChannelAborted]
+    awaitCond(alice.stateName == CLOSED)
+
+    bob ! c
+    sender.expectMsg(RES_SUCCESS(c, finalChannelId))
+    awaitCond(wallet.rolledback.size == 2)
+    bobListener.expectMsgType[ChannelAborted]
+    awaitCond(bob.stateName == CLOSED)
+  }
+
   test("recv INPUT_DISCONNECTED", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
