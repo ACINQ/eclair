@@ -83,9 +83,9 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val f = ThreeNodesFixture(aliceParams, bobParams, carolParams, testData.name)
     import f._
 
-    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob)))
+    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
     bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
-    carol.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(bob, carol)))
+    carol.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
 
     connect(alice, bob)
     connect(bob, carol)
@@ -114,6 +114,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     eventually {
       assert(getRouterData(alice).channels.size == 3 || testData.tags.contains(PrivateChannels))
+      assert(getRouterData(carol).graphWithBalances.graph.getEdgesBetween(alice.nodeId, bob.nodeId).nonEmpty || testData.tags.contains(PrivateChannels))
     }
   }
 
