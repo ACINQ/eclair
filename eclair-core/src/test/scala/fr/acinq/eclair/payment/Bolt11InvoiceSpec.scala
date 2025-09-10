@@ -396,6 +396,14 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.sign(priv).toString == ref)
   }
 
+  test("On mainnet, public-key recovery with high-S signature") {
+    val ref = "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7ck6q93dj32dlqnls087fxdwk8qakdyafkq3yap2r09nt4ndd0unm3z9u5t48y6ucv4r5sg7lk98c77ctvjczkspk5qprc90gx"
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
+    assert(invoice.prefix == "lnbc")
+    assert(invoice.amount_opt.isEmpty)
+    assert(invoice.nodeId == PublicKey(hex"02d0139ce7427d6dfffd26a326c18be754ef1e64672b42694ba5b23ef6e6e7803d"))
+  }
+
   test("reject invalid invoices") {
     val refs = Seq(
       // Bech32 checksum is invalid.
