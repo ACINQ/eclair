@@ -115,6 +115,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     eventually {
       assert(getRouterData(alice).channels.size == 3 || testData.tags.contains(PrivateChannels))
       assert(getRouterData(carol).graphWithBalances.graph.getEdgesBetween(alice.nodeId, bob.nodeId).nonEmpty || testData.tags.contains(PrivateChannels))
+      assert(getRouterData(carol).graphWithBalances.graph.getEdgesBetween(bob.nodeId, carol.nodeId).size == 2)
     }
   }
 
@@ -464,6 +465,9 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     // We create a first channel between Bob and Carol.
     val channelId_bc_1 = openChannel(bob, carol, 200_000 sat).channelId
     waitForChannelCreatedBC(f, channelId_bc_1)
+    eventually {
+      assert(getRouterData(carol).graphWithBalances.graph.getEdgesBetween(bob.nodeId, carol.nodeId).nonEmpty)
+    }
 
     val sender = TestProbe()
     carol.router ! Router.FinalizeRoute(sender.ref.toTyped, Router.PredefinedNodeRoute(50_000_000 msat, Seq(bob.nodeId, carol.nodeId)))
