@@ -114,7 +114,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     eventually {
       assert(getRouterData(alice).channels.size == 3 || testData.tags.contains(PrivateChannels))
-      assert(getRouterData(carol).graphWithBalances.graph.getEdgesBetween(alice.nodeId, bob.nodeId).nonEmpty)
+      assert(getRouterData(carol).graphWithBalances.graph.getEdgesBetween(alice.nodeId, bob.nodeId).nonEmpty || testData.tags.contains(PrivateChannels))
     }
   }
 
