@@ -416,7 +416,6 @@ object Features {
     KeySend -> (VariableLengthOnion :: Nil),
     SimpleClose -> (ShutdownAnySegwit :: Nil),
     SimpleTaprootChannelsPhoenix -> (ChannelType :: SimpleClose :: Nil),
-    SimpleTaprootChannelsStaging -> (ChannelType :: SimpleClose :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
     OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)
