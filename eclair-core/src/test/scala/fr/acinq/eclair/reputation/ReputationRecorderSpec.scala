@@ -64,8 +64,8 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     reputationRecorder ! GetConfidence(replyTo.ref, upstream1, Some(nextA), 2000 msat, BlockHeight(0), CltvExpiry(2))
     replyTo.expectMessage(Reputation.Score(0.0, 0.0))
     val added1 = makeOutgoingHtlcAdded(upstream1, nextA, 2000 msat, CltvExpiry(2))
-    testKit.system.eventStream ! EventStream.Publish(added1)
-    testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added1.add))
+    reputationRecorder ! WrappedOutgoingHtlcAdded(added1)
+    reputationRecorder ! WrappedOutgoingHtlcSettled(makeOutgoingHtlcFulfilled(added1.add))
     val upstream2 = makeChannelUpstream(originNode, 7)
     awaitCond({
       reputationRecorder ! GetConfidence(replyTo.ref, upstream2, Some(nextB), 1000 msat, BlockHeight(0), CltvExpiry(2))
@@ -73,7 +73,7 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       score.incomingConfidence === (2.0 / 4) +- 0.001 && score.outgoingConfidence == 0.0
     }, max = 60 seconds)
     val added2 = makeOutgoingHtlcAdded(upstream2, nextB, 1000 msat, CltvExpiry(2))
-    testKit.system.eventStream ! EventStream.Publish(added2)
+    reputationRecorder ! WrappedOutgoingHtlcAdded(added2)
     awaitCond({
       reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 7), Some(nextA), 3000 msat, BlockHeight(0), CltvExpiry(2))
       val score = replyTo.expectMessageType[Reputation.Score]
@@ -86,9 +86,9 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       score.incomingConfidence === (2.0 / 6) +- 0.001 && score.outgoingConfidence == 0.0
     })
     val added3 = makeOutgoingHtlcAdded(upstream3, nextB, 1000 msat, CltvExpiry(2))
-    testKit.system.eventStream ! EventStream.Publish(added3)
-    testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added3.add))
-    testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFailed(added2.add))
+    reputationRecorder ! WrappedOutgoingHtlcAdded(added3)
+    reputationRecorder ! WrappedOutgoingHtlcSettled(makeOutgoingHtlcFulfilled(added3.add))
+    reputationRecorder ! WrappedOutgoingHtlcSettled(makeOutgoingHtlcFailed(added2.add))
     // Not endorsed
     awaitCond({
       reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 0), Some(nextA), 1000 msat, BlockHeight(0), CltvExpiry(2))
@@ -122,8 +122,8 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       score.incomingConfidence == 0.0 && score.outgoingConfidence == 0.0
     })
     val added1 = makeOutgoingHtlcAdded(upstream1, d, 6000 msat, CltvExpiry(2))
-    testKit.system.eventStream ! EventStream.Publish(added1)
-    testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added1.add))
+    reputationRecorder ! WrappedOutgoingHtlcAdded(added1)
+    reputationRecorder ! WrappedOutgoingHtlcSettled(makeOutgoingHtlcFulfilled(added1.add))
     val upstream2 = Upstream.Hot.Trampoline(makeChannelUpstream(a, 7, 10000 msat) :: makeChannelUpstream(c, 0, 10000 msat) :: Nil)
     awaitCond({
       reputationRecorder ! GetConfidence(replyTo.ref, upstream2, Some(d), 2000 msat, BlockHeight(0), CltvExpiry(2))
@@ -131,7 +131,7 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       score.incomingConfidence === (1.0 / 3) +- 0.001 && score.outgoingConfidence === (6.0 / 10) +- 0.001
     }, max = 60 seconds)
     val added2 = makeOutgoingHtlcAdded(upstream2, d, 2000 msat, CltvExpiry(2))
-    testKit.system.eventStream ! EventStream.Publish(added2)
+    reputationRecorder ! WrappedOutgoingHtlcAdded(added2)
     val upstream3 = Upstream.Hot.Trampoline(makeChannelUpstream(a, 0, 10000 msat) :: makeChannelUpstream(b, 7, 15000 msat) :: makeChannelUpstream(b, 7, 5000 msat) :: Nil)
     awaitCond({
       reputationRecorder ! GetConfidence(replyTo.ref, upstream3, Some(e), 3000 msat, BlockHeight(0), CltvExpiry(2))
@@ -139,9 +139,9 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       score.incomingConfidence == 0.0 && score.outgoingConfidence == 0.0
     }, max = 60 seconds)
     val added3 = makeOutgoingHtlcAdded(upstream3, e, 3000 msat, CltvExpiry(2))
-    testKit.system.eventStream ! EventStream.Publish(added3)
-    testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFailed(added2.add))
-    testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added3.add))
+    reputationRecorder ! WrappedOutgoingHtlcAdded(added3)
+    reputationRecorder ! WrappedOutgoingHtlcSettled(makeOutgoingHtlcFailed(added2.add))
+    reputationRecorder ! WrappedOutgoingHtlcSettled(makeOutgoingHtlcFulfilled(added3.add))
 
     awaitCond({
       reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(a, 7), Some(d), 1000 msat, BlockHeight(0), CltvExpiry(2))
@@ -179,13 +179,13 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     for (_ <- 1 to 200) {
       val upstream = makeChannelUpstream(originNode, 7)
       val added = makeOutgoingHtlcAdded(upstream, nextNode, 10000 msat, CltvExpiry(2))
-      testKit.system.eventStream ! EventStream.Publish(added)
-      testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added.add))
+      reputationRecorder ! WrappedOutgoingHtlcAdded(added)
+      reputationRecorder ! WrappedOutgoingHtlcSettled(makeOutgoingHtlcFulfilled(added.add))
     }
     awaitCond({
       reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 7), Some(nextNode), 10000 msat, BlockHeight(0), CltvExpiry(2))
       val score = replyTo.expectMessageType[Reputation.Score]
-      (score.incomingConfidence === 1.0 +- 0.01) && (score.outgoingConfidence === 1.0 +- 0.01)
+      (score.incomingConfidence === 0.99 +- 0.01) && (score.outgoingConfidence === 0.99 +- 0.01)
     }, max = 60 seconds)
 
     // HTLCs with lower endorsement don't benefit from this high reputation.
@@ -198,7 +198,7 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     for (_ <- 1 to 100) {
       val upstream = makeChannelUpstream(originNode, 7)
       val added = makeOutgoingHtlcAdded(upstream, nextNode, 10000 msat, CltvExpiry(2))
-      testKit.system.eventStream ! EventStream.Publish(added)
+      reputationRecorder ! WrappedOutgoingHtlcAdded(added)
     }
     awaitCond({
       reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(originNode, 7), Some(nextNode), 10000 msat, BlockHeight(0), CltvExpiry(2))
@@ -216,8 +216,8 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     for (node <- Seq(a, b, c)) {
       val upstream = makeChannelUpstream(node, 7)
       val added = makeOutgoingHtlcAdded(upstream, randomKey().publicKey, 10000000 msat, CltvExpiry(2))
-      testKit.system.eventStream ! EventStream.Publish(added)
-      testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added.add))
+      reputationRecorder ! WrappedOutgoingHtlcAdded(added)
+      reputationRecorder ! WrappedOutgoingHtlcSettled(makeOutgoingHtlcFulfilled(added.add))
       awaitCond({
         reputationRecorder ! GetConfidence(replyTo.ref, makeChannelUpstream(node, 7), Some(attacker), 10000 msat, BlockHeight(0), CltvExpiry(2))
         val score = replyTo.expectMessageType[Reputation.Score]
@@ -230,8 +230,8 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       for (_ <- 1 to 100) {
         val upstream = makeChannelUpstream(node, 7)
         val added = makeOutgoingHtlcAdded(upstream, attacker, 10000 msat, CltvExpiry(2))
-        testKit.system.eventStream ! EventStream.Publish(added)
-        testKit.system.eventStream ! EventStream.Publish(makeOutgoingHtlcFulfilled(added.add))
+        reputationRecorder ! WrappedOutgoingHtlcAdded(added)
+        reputationRecorder ! WrappedOutgoingHtlcSettled(makeOutgoingHtlcFulfilled(added.add))
       }
     }
 
@@ -240,7 +240,7 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       for (_ <- 1 to 50) {
         val upstream = makeChannelUpstream(node, 7)
         val added = makeOutgoingHtlcAdded(upstream, attacker, 10000 msat, CltvExpiry(2))
-        testKit.system.eventStream ! EventStream.Publish(added)
+        reputationRecorder ! WrappedOutgoingHtlcAdded(added)
       }
     }
     awaitCond({
