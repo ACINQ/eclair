@@ -32,14 +32,14 @@ object ReputationRecorder {
   // @formatter:off
   sealed trait Command
   case class GetConfidence(replyTo: ActorRef[Reputation.Score], upstream: Upstream.Hot, downstream_opt: Option[PublicKey], fee: MilliSatoshi, currentBlockHeight: BlockHeight, expiry: CltvExpiry) extends Command
-  private case class WrappedOutgoingHtlcAdded(added: OutgoingHtlcAdded) extends Command
-  private case class WrappedOutgoingHtlcSettled(settled: OutgoingHtlcSettled) extends Command
+  case class WrappedOutgoingHtlcAdded(added: OutgoingHtlcAdded) extends Command
+  case class WrappedOutgoingHtlcSettled(settled: OutgoingHtlcSettled) extends Command
   // @formatter:on
 
   def apply(config: Reputation.Config): Behavior[Command] =
     Behaviors.setup(context => {
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcAdded))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcSettled))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcAdded))
       new ReputationRecorder(config).run()
     })
 
