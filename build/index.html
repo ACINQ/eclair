@@ -774,7 +774,7 @@ A negotiation will start with your channel peer, and if they agree, your node wi
 <td>channelId</td>
 <td>The <strong>channelId</strong> of the channel that should be RBF-ed</td>
 <td>No</td>
-<td>33-bytes-HexString (String)</td>
+<td>32-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>targetFeerateSatByte</td>
@@ -1064,7 +1064,7 @@ That will ensure that when you open channels to the selected node(s), the fees y
 <td>nodeId</td>
 <td>The <strong>nodeId</strong> of the peer you want to update</td>
 <td>Yes (*)</td>
-<td>32-bytes-HexString (String)</td>
+<td>33-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>nodeIds</td>
@@ -4709,11 +4709,8 @@ eclair-cli usablebalances
 <pre class="highlight json tab-json"><code><span class="p">[</span><span class="w">
   </span><span class="p">{</span><span class="w">
     </span><span class="s2">"remoteNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"shortIds"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"real"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"final"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"realScid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"562890x809x0"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
+    </span><span class="s2">"realScid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"562890x809x0"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"aliases"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"localAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0x17537e03b55a01e"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"remoteAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0xcde44c7ebd1449"</span><span class="w">
     </span><span class="p">},</span><span class="w">
@@ -4738,11 +4735,8 @@ eclair-cli channelbalances
 <pre class="highlight json tab-json"><code><span class="p">[</span><span class="w">
   </span><span class="p">{</span><span class="w">
     </span><span class="s2">"remoteNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"shortIds"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"real"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"final"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"realScid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"562890x809x0"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
+    </span><span class="s2">"realScid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"562890x809x0"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"aliases"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"localAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0x17537e03b55a01e"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"remoteAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0xcde44c7ebd1449"</span><span class="w">
     </span><span class="p">},</span><span class="w">
@@ -4753,11 +4747,8 @@ eclair-cli channelbalances
   </span><span class="p">},</span><span class="w">
   </span><span class="p">{</span><span class="w">
     </span><span class="s2">"remoteNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02865c138ddfb0e1e8c62aa8cebbed383d5b343c2d40fa22c31773a6725854154f"</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"shortIds"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"real"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"final"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"realScid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"562890x809x1"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
+    </span><span class="s2">"realScid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"562890x809x1"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"aliases"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"localAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0x8676ba94f75888"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"remoteAlias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0x317b1df704e350f"</span><span class="w">
     </span><span class="p">},</span><span class="w">
