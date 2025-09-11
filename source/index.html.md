@@ -276,7 +276,7 @@ A negotiation will start with your channel peer, and if they agree, your node wi
 
 Parameter                | Description                                             | Optional | Type
 ------------------------ | ------------------------------------------------------- | -------- | ---------------------------
-channelId                | The **channelId** of the channel that should be RBF-ed  | No       | 33-bytes-HexString (String)
+channelId                | The **channelId** of the channel that should be RBF-ed  | No       | 32-bytes-HexString (String)
 targetFeerateSatByte     | Feerate in sat/byte to apply to the funding transaction | No       | Satoshis (Integer)
 fundingFeeBudgetSatoshis | Maximum fees (in satoshis) of the funding transaction   | No       | Satoshis (Integer)
 lockTime                 | The nLockTime to apply to the funding transaction       | Yes      | Integer
@@ -464,7 +464,7 @@ That will ensure that when you open channels to the selected node(s), the fees y
 
 Parameter                 | Description                                          | Optional | Type
 ------------------------- | ---------------------------------------------------- | -------- | -----------------------------------------------
-nodeId                    | The **nodeId** of the peer you want to update        | Yes (*)  | 32-bytes-HexString (String)
+nodeId                    | The **nodeId** of the peer you want to update        | Yes (*)  | 33-bytes-HexString (String)
 nodeIds                   | The **nodeIds** of the peers you want to update      | Yes (*)  | CSV or JSON list of 33-bytes-HexString (String)
 feeBaseMsat               | The new base fee to use                              | No       | Millisatoshi (Integer)
 feeProportionalMillionths | The new proportional fee to use                      | No       | Integer
@@ -3481,11 +3481,8 @@ eclair-cli usablebalances
 [
   {
     "remoteNodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-    "shortIds": {
-      "real": {
-        "status": "final",
-        "realScid": "562890x809x0"
-      },
+    "realScid": "562890x809x0",
+    "aliases": {
       "localAlias": "0x17537e03b55a01e",
       "remoteAlias": "0xcde44c7ebd1449"
     },
@@ -3518,11 +3515,8 @@ eclair-cli channelbalances
 [
   {
     "remoteNodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-    "shortIds": {
-      "real": {
-        "status": "final",
-        "realScid": "562890x809x0"
-      },
+    "realScid": "562890x809x0",
+    "aliases": {
       "localAlias": "0x17537e03b55a01e",
       "remoteAlias": "0xcde44c7ebd1449"
     },
@@ -3533,11 +3527,8 @@ eclair-cli channelbalances
   },
   {
     "remoteNodeId": "02865c138ddfb0e1e8c62aa8cebbed383d5b343c2d40fa22c31773a6725854154f",
-    "shortIds": {
-      "real": {
-        "status": "final",
-        "realScid": "562890x809x1"
-      },
+    "realScid": "562890x809x1",
+    "aliases": {
       "localAlias": "0x8676ba94f75888",
       "remoteAlias": "0x317b1df704e350f"
     },
