@@ -3077,7 +3077,7 @@ Retrieves information about the latest on-chain transactions made by our Bitcoin
 Parameter | Description                      | Optional | Type
 --------- | -------------------------------- | -------- | -------
 count     | Number of transactions to return | Yes      | Integer
-skip      | Number of transactions to skip   | No       | Integer
+skip      | Number of transactions to skip   | Yes      | Integer
 
 # Messages
 
