@@ -6,6 +6,11 @@
 
 <insert changes>
 
+### Remove support for legacy channel codecs
+
+We remove the code used to deserialize channel data from versions of eclair prior to v0.13.
+Node operators running a version of `eclair` older than v0.13 must first upgrade to v0.13 to migrate their channel data, and then upgrade to the latest version.
+
 ### Update minimal version of Bitcoin Core
 
 With this release, eclair requires using Bitcoin Core 29.1.

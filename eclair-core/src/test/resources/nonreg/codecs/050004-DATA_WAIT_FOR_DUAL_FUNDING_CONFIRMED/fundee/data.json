@@ -1,0 +1,296 @@
+{
+  "type" : "DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED",
+  "commitments" : {
+    "channelParams" : {
+      "channelId" : "8b5505fe64ed55ab7d7505338be5e2895453eb113d68f0d9ca8ace01d1c2610a",
+      "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
+      "channelFeatures" : [ "option_dual_fund" ],
+      "localParams" : {
+        "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
+        "fundingKeyPath" : [ 2130907010, 2080938934, 2736446374, 1845415084, 1791272782, 2679898832, 716282112, 1506424446, 2147483648 ],
+        "isChannelOpener" : false,
+        "paysCommitTxFees" : false,
+        "initFeatures" : {
+          "activated" : {
+            "option_route_blinding" : "optional",
+            "option_dual_fund" : "optional",
+            "splice_prototype" : "optional",
+            "payment_secret" : "mandatory",
+            "gossip_queries_ex" : "optional",
+            "option_anchor_outputs" : "optional",
+            "option_quiesce" : "optional",
+            "option_data_loss_protect" : "optional",
+            "var_onion_optin" : "mandatory",
+            "option_static_remotekey" : "optional",
+            "option_support_large_channel" : "optional",
+            "option_anchors_zero_fee_htlc_tx" : "optional",
+            "option_channel_type" : "mandatory",
+            "basic_mpp" : "optional",
+            "gossip_queries" : "optional"
+          },
+          "unknown" : [ ]
+        }
+      },
+      "remoteParams" : {
+        "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
+        "revocationBasepoint" : "021b51b8d0d785d9c368fd445f9ed729c60f1402f41381ec088708c77b1dfa62aa",
+        "paymentBasepoint" : "028b32b2d2fc2dc23ed3af743c966a39039108ec1a4f68d863f9d9d989ef48b810",
+        "delayedPaymentBasepoint" : "03d5c9a694d89647ae561a4de51d831467f08a7cc4f43d432ef88094e6b2f97c15",
+        "htlcBasepoint" : "0250882801587f6c1f3aa3109867e1e84ca7ec9465a65665e7786b47a47fa39d88",
+        "initFeatures" : {
+          "activated" : {
+            "option_route_blinding" : "optional",
+            "option_provide_storage" : "optional",
+            "option_dual_fund" : "optional",
+            "splice_prototype" : "optional",
+            "payment_secret" : "mandatory",
+            "gossip_queries_ex" : "optional",
+            "option_anchor_outputs" : "optional",
+            "option_quiesce" : "optional",
+            "option_data_loss_protect" : "optional",
+            "var_onion_optin" : "mandatory",
+            "option_static_remotekey" : "optional",
+            "option_support_large_channel" : "optional",
+            "option_anchors_zero_fee_htlc_tx" : "optional",
+            "option_channel_type" : "mandatory",
+            "basic_mpp" : "optional",
+            "gossip_queries" : "optional"
+          },
+          "unknown" : [ 50001 ]
+        }
+      },
+      "channelFlags" : {
+        "nonInitiatorPaysCommitFees" : false,
+        "announceChannel" : false
+      }
+    },
+    "changes" : {
+      "localChanges" : {
+        "proposed" : [ ],
+        "signed" : [ ],
+        "acked" : [ ]
+      },
+      "remoteChanges" : {
+        "proposed" : [ ],
+        "acked" : [ ],
+        "signed" : [ ]
+      },
+      "localNextHtlcId" : 0,
+      "remoteNextHtlcId" : 0
+    },
+    "active" : [ {
+      "fundingTxIndex" : 0,
+      "fundingInput" : "8079e0d28cbf88d7c215b900251b3a259bc0e9dcbb8a7217a39a8b85b42bd6df:0",
+      "fundingAmount" : 1250000,
+      "localFunding" : {
+        "status" : "unconfirmed",
+        "txid" : "8079e0d28cbf88d7c215b900251b3a259bc0e9dcbb8a7217a39a8b85b42bd6df"
+      },
+      "remoteFunding" : {
+        "status" : "not-locked"
+      },
+      "commitmentFormat" : "anchor_outputs",
+      "localCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 1000000000,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
+      },
+      "localCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 262350000,
+          "toRemote" : 987650000
+        },
+        "txId" : "d7c4038d94da90de0f6d7a545b90333485229bb2dad55a182c94bb6921221569",
+        "remoteSig" : {
+          "sig" : "3b191ca883c1becfd540ec44a6be968a0b7d99130624df5fbcda0d3f57b77eb4776f581f94406c8480149ef7d7fb5aa843d2cd43d2013e231602086eaf677eb3"
+        },
+        "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 500000000,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 720
+      },
+      "remoteCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 987650000,
+          "toRemote" : 262350000
+        },
+        "txId" : "ba5e83eafb7f06b6f343b963fd07b4e58e0e94d1fed90be388e6a6646186c46d",
+        "remotePerCommitmentPoint" : "03041d0ccce284f7e89da8ef93b566ac3561768db5bd0ba6ca69f58ee8d45eea83"
+      }
+    }, {
+      "fundingTxIndex" : 0,
+      "fundingInput" : "afcffdab28726d4831a25e77015dcf9b05494dd0b4a1bb5b54fd88f81ad5dce3:2",
+      "fundingAmount" : 1750000,
+      "localFunding" : {
+        "status" : "unconfirmed",
+        "txid" : "afcffdab28726d4831a25e77015dcf9b05494dd0b4a1bb5b54fd88f81ad5dce3"
+      },
+      "remoteFunding" : {
+        "status" : "not-locked"
+      },
+      "commitmentFormat" : "anchor_outputs",
+      "localCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 1000000000,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
+      },
+      "localCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 766100000,
+          "toRemote" : 983900000
+        },
+        "txId" : "d19ab71cca21e7bbc60949b9003491aa95db1b928ff58eaac7a9c601ab7a6b8e",
+        "remoteSig" : {
+          "sig" : "9fa2f9aeba09f73f5f48f916e7271e2d69fc8bdd2cd093d8cc43b820db6fc7653f5a7c429d741cf15ba9102247fb53c0453a8e257514daf1b35b1fd7a2c8e5de"
+        },
+        "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 500000000,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 720
+      },
+      "remoteCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 983900000,
+          "toRemote" : 766100000
+        },
+        "txId" : "021a43ae2d2d01dbb79d9dbf3860da3c669fd1cfc800598847fc8de55eafd6ce",
+        "remotePerCommitmentPoint" : "03041d0ccce284f7e89da8ef93b566ac3561768db5bd0ba6ca69f58ee8d45eea83"
+      }
+    }, {
+      "fundingTxIndex" : 0,
+      "fundingInput" : "6f702ee7ed4b8e60c40936dc95cda7fae6b72738189c3fac0a30af3bab8d7de4:0",
+      "fundingAmount" : 1500000,
+      "localFunding" : {
+        "status" : "unconfirmed",
+        "txid" : "6f702ee7ed4b8e60c40936dc95cda7fae6b72738189c3fac0a30af3bab8d7de4"
+      },
+      "remoteFunding" : {
+        "status" : "not-locked"
+      },
+      "commitmentFormat" : "anchor_outputs",
+      "localCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 1000000000,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
+      },
+      "localCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 512350000,
+          "toRemote" : 987650000
+        },
+        "txId" : "624b66b127057abbc7c74fd70c4a66de86be773e4ef25500881e9f31c897d1ff",
+        "remoteSig" : {
+          "sig" : "83a1d18b9e30c353513ec1d7228876eb89e97051e295521615c3afbcee5ae99a0c04770f4f909646afee1aaaaed34286355f05fbc7eb554c23666e133e82891a"
+        },
+        "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 500000000,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 720
+      },
+      "remoteCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 987650000,
+          "toRemote" : 512350000
+        },
+        "txId" : "56768c50777aa0a60664aeab43f6bba0a1410eeab680669dfbda438f217ba816",
+        "remotePerCommitmentPoint" : "03041d0ccce284f7e89da8ef93b566ac3561768db5bd0ba6ca69f58ee8d45eea83"
+      }
+    }, {
+      "fundingTxIndex" : 0,
+      "fundingInput" : "72d847363b8cff6b8398ac42fded0711c491d8c150a9cb7b0f09e200b7dbfa52:0",
+      "fundingAmount" : 1500000,
+      "localFunding" : {
+        "status" : "unconfirmed",
+        "txid" : "72d847363b8cff6b8398ac42fded0711c491d8c150a9cb7b0f09e200b7dbfa52"
+      },
+      "remoteFunding" : {
+        "status" : "not-locked"
+      },
+      "commitmentFormat" : "anchor_outputs",
+      "localCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 1000000000,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
+      },
+      "localCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 511100000,
+          "toRemote" : 988900000
+        },
+        "txId" : "d21bfaa4fd823795583f4760ec87d8fcdab7eef75dd7e8a88b45bde9b5d6bf13",
+        "remoteSig" : {
+          "sig" : "75430684a3cd0bd03132328da55c77aebaca125f403cfac9dbc6d774b9bbbd7e334addf9703208c96c301cc7cf67a460bd629fd05ae992aaf5a8c9d1cc50822b"
+        },
+        "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 500000000,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 720
+      },
+      "remoteCommit" : {
+        "index" : 0,
+        "spec" : {
+          "htlcs" : [ ],
+          "commitTxFeerate" : 2500,
+          "toLocal" : 988900000,
+          "toRemote" : 511100000
+        },
+        "txId" : "283ecb8bd6b29edbbae369f17c996dae91ff2cc85c42ad7c3f9f7ec8896577ff",
+        "remotePerCommitmentPoint" : "03041d0ccce284f7e89da8ef93b566ac3561768db5bd0ba6ca69f58ee8d45eea83"
+      }
+    } ],
+    "inactive" : [ ],
+    "remoteNextCommitInfo" : "038019cc4175a000ffac250cab41e9eda28e8aecc628a770a7146784ad51f20d2b",
+    "remotePerCommitmentSecrets" : null,
+    "originChannels" : { }
+  },
+  "localPushAmount" : 0,
+  "remotePushAmount" : 0,
+  "waitingSince" : 400000,
+  "lastChecked" : 400000,
+  "status" : { }
+}
