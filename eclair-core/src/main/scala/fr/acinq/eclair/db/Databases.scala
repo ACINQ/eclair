@@ -21,7 +21,6 @@ import akka.actor.{ActorSystem, CoordinatedShutdown}
 import com.typesafe.config.Config
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import fr.acinq.eclair.TimestampMilli
-import fr.acinq.eclair.db.migration.{CompareDb, MigrateDb}
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import fr.acinq.eclair.db.pg.PgUtils._
 import fr.acinq.eclair.db.pg._
@@ -288,21 +287,6 @@ object Databases extends Logging {
         dbConfig.getString("driver") match {
           case "sqlite" => Databases.sqlite(chaindir, jdbcUrlFile_opt = Some(jdbcUrlFile))
           case "postgres" => Databases.postgres(dbConfig, instanceId, chaindir, jdbcUrlFile_opt = Some(jdbcUrlFile))
-          case dual@("dual-sqlite-primary" | "dual-postgres-primary") =>
-            logger.info(s"using $dual database mode")
-            val sqlite = Databases.sqlite(chaindir, jdbcUrlFile_opt = None)
-            val postgres = Databases.postgres(dbConfig, instanceId, chaindir, jdbcUrlFile_opt = None)
-            val (primary, secondary) = if (dual == "dual-sqlite-primary") (sqlite, postgres) else (postgres, sqlite)
-            val dualDb = DualDatabases(primary, secondary)
-            if (primary == sqlite) {
-              if (dbConfig.getBoolean("dual.migrate-on-restart")) {
-                MigrateDb.migrateAll(dualDb)
-              }
-              if (dbConfig.getBoolean("dual.compare-on-restart")) {
-                CompareDb.compareAll(dualDb)
-              }
-            }
-            dualDb
           case driver => throw new RuntimeException(s"unknown database driver `$driver`")
         }
     }
