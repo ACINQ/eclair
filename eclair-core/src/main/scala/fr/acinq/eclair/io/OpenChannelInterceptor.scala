@@ -29,6 +29,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.Peer.{OpenChannelResponse, SpawnChannelNonInitiator}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{Error, LiquidityAds, NodeAddress}
 import fr.acinq.eclair.{AcceptOpenChannel, Features, InitFeature, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, InterceptOpenChannelResponse, Logs, NodeParams, RejectOpenChannel}
@@ -115,10 +116,11 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     } else if (request.open.fundingAmount >= Channel.MAX_FUNDING_WITHOUT_WUMBO && !request.remoteFeatures.hasFeature(Wumbo)) {
       request.replyTo ! OpenChannelResponse.Rejected(s"fundingAmount=${request.open.fundingAmount} is too big, the remote peer doesn't support wumbo")
       waitForRequest()
+    } else if (request.open.channelType_opt.isEmpty) {
+      request.replyTo ! OpenChannelResponse.Rejected("channel_type must be provided")
+      waitForRequest()
     } else {
-      // If a channel type was provided, we directly use it instead of computing it based on local and remote features.
-      val channelFlags = request.open.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags)
-      val channelType = request.open.channelType_opt.getOrElse(ChannelTypes.defaultFromFeatures(request.localFeatures, request.remoteFeatures, channelFlags.announceChannel))
+      val channelType = request.open.channelType_opt.get
       val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
       val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
       // If we're purchasing liquidity, we expect our peer to contribute at least the amount we're purchasing, otherwise we'll cancel the funding attempt.
@@ -130,15 +132,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
   }
 
   private def sanityCheckNonInitiator(request: OpenChannelNonInitiator): Behavior[Command] = {
-    validateRemoteChannelType(request.temporaryChannelId, request.channelFlags, request.channelType_opt, request.localFeatures, request.remoteFeatures) match {
-      case Right(_: ChannelTypes.Standard) =>
-        context.log.warn("rejecting incoming channel: anchor outputs must be used for new channels")
-        sendFailure("rejecting incoming channel: anchor outputs must be used for new channels", request)
-        waitForRequest()
-      case Right(_: ChannelTypes.StaticRemoteKey) if !nodeParams.channelConf.acceptIncomingStaticRemoteKeyChannels =>
-        context.log.warn("rejecting static_remote_key incoming static_remote_key channels")
-        sendFailure("rejecting incoming static_remote_key channel: anchor outputs must be used for new channels", request)
-        waitForRequest()
+    validateRemoteChannelType(request.temporaryChannelId, request.channelType_opt, request.localFeatures) match {
       case Right(channelType) =>
         val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
         val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
@@ -279,17 +273,14 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     }
   }
 
-  private def validateRemoteChannelType(temporaryChannelId: ByteVector32, channelFlags: ChannelFlags, remoteChannelType_opt: Option[ChannelType], localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): Either[ChannelException, SupportedChannelType] = {
+  private def validateRemoteChannelType(temporaryChannelId: ByteVector32, remoteChannelType_opt: Option[ChannelType], localFeatures: Features[InitFeature]): Either[ChannelException, SupportedChannelType] = {
     remoteChannelType_opt match {
       // remote explicitly specifies a channel type: we check whether we want to allow it
       case Some(remoteChannelType) => ChannelTypes.areCompatible(localFeatures, remoteChannelType) match {
         case Some(acceptedChannelType) => Right(acceptedChannelType)
-        case None => Left(InvalidChannelType(temporaryChannelId, ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, channelFlags.announceChannel), remoteChannelType))
+        case None => Left(InvalidChannelType(temporaryChannelId, remoteChannelType))
       }
-      // Bolt 2: if `option_channel_type` is negotiated: MUST set `channel_type`
-      case None if Features.canUseFeature(localFeatures, remoteFeatures, Features.ChannelType) => Left(MissingChannelType(temporaryChannelId))
-      // remote doesn't specify a channel type: we use spec-defined defaults
-      case None => Right(ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, channelFlags.announceChannel))
+      case None => Left(MissingChannelType(temporaryChannelId))
     }
   }
 
@@ -301,7 +292,11 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       // This is fine: "serious" nodes should support option_shutdown_anysegwit, and if we want to use taproot, we
       // most likely don't want to open channels with nodes that don't support it. 
       if (upfrontShutdownScript) Some(Script.write(wallet.getReceivePublicKeyScript(renew = true))) else None,
-      if (channelType.paysDirectlyToWallet) Some(wallet.getP2wpkhPubkey(renew = true)) else None,
+      // This is currently unused: it was previously used for pre-anchor channels, and will be used for v3 commitments.
+      walletStaticPaymentBasepoint_opt = channelType.commitmentFormat match {
+        case _: AnchorOutputsCommitmentFormat => None
+        case _: SimpleTaprootChannelCommitmentFormat => None
+      },
       isChannelOpener = isChannelOpener,
       paysCommitTxFees = paysCommitTxFees,
       dualFunded = dualFunded,

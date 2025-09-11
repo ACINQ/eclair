@@ -98,7 +98,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE]), recentlySpentInputs = Set(closingTxInput)).negotiating == expected)
   }
 
-  test("channel closed with remote commit tx", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("channel closed with remote commit tx") { f =>
     import f._
 
     // We add 3 htlcs Alice -> Bob (one of them below dust) and 2 htlcs Bob -> Alice
@@ -151,7 +151,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(balance4 == expected4)
   }
 
-  test("channel closed with next remote commit tx", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("channel closed with next remote commit tx") { f =>
     import f._
 
     // We add 3 htlcs Alice -> Bob (one of them below dust) and 2 htlcs Bob -> Alice.

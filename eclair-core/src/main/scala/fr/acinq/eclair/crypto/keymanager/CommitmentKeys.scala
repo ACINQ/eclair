@@ -17,9 +17,8 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.Features
 import fr.acinq.eclair.channel.ChannelParams
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 
 /**
  * Created by t-bast on 10/04/2025.
@@ -72,8 +71,6 @@ object LocalCommitmentKeys {
     LocalCommitmentKeys(
       ourDelayedPaymentKey = channelKeys.delayedPaymentKey(localPerCommitmentPoint),
       theirPaymentPublicKey = commitmentFormat match {
-        case DefaultCommitmentFormat if params.localParams.walletStaticPaymentBasepoint.nonEmpty => params.remoteParams.paymentBasepoint
-        case DefaultCommitmentFormat => ChannelKeys.remotePerCommitmentPublicKey(params.remoteParams.paymentBasepoint, localPerCommitmentPoint)
         case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => params.remoteParams.paymentBasepoint
       },
       ourPaymentBasePoint = params.localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
@@ -121,8 +118,6 @@ object RemoteCommitmentKeys {
       ourPaymentKey = params.localParams.walletStaticPaymentBasepoint match {
         case Some(walletPublicKey) => Left(walletPublicKey)
         case None => commitmentFormat match {
-          // Note that if we're using option_static_remotekey, a walletStaticPaymentBasepoint will be provided.
-          case DefaultCommitmentFormat => Right(channelKeys.paymentKey(remotePerCommitmentPoint))
           case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Right(channelKeys.paymentBaseSecret)
         }
       },

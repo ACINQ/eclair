@@ -35,7 +35,6 @@ import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
-import scala.io.Source
 import scala.util.Random
 
 /**
@@ -116,7 +115,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("compute fees") {
-    // see BOLT #3 specs
     val htlcs = Set[DirectedHtlc](
       OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000 msat, ByteVector32.Zeroes, CltvExpiry(552), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
       OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, ByteVector32.Zeroes, CltvExpiry(553), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
@@ -124,8 +122,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 800000 msat, ByteVector32.Zeroes, CltvExpiry(551), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None))
     )
     val spec = CommitmentSpec(htlcs, FeeratePerKw(5000 sat), toLocal = 0 msat, toRemote = 0 msat)
-    val fee = commitTxFeeMsat(546 sat, spec, DefaultCommitmentFormat)
-    assert(fee == 5340000.msat)
+    val fee = commitTxFeeMsat(546 sat, spec, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    assert(fee == 5_340_000.msat)
   }
 
   test("pre-compute wallet input and output weight") {
@@ -153,47 +151,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   private def checkExpectedWeight(actual: Int, expected: Int, commitmentFormat: CommitmentFormat): Unit = {
     commitmentFormat match {
       case _: SimpleTaprootChannelCommitmentFormat => assert(actual == expected)
-      case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
+      case _: AnchorOutputsCommitmentFormat =>
         // ECDSA signatures are der-encoded, which creates some variability in signature size compared to the baseline.
         assert(actual <= expected + 2)
         assert(actual >= expected - 2)
-    }
-  }
-
-  test("generate valid commitment with some outputs that don't materialize (default commitment format)") {
-    val spec = CommitmentSpec(htlcs = Set.empty, commitTxFeerate = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
-    val commitFee = commitTxTotalCost(localDustLimit, spec, DefaultCommitmentFormat)
-    val belowDust = (localDustLimit * 0.9).toMilliSatoshi
-    val belowDustWithFee = (localDustLimit + commitFee * 0.9).toMilliSatoshi
-
-    {
-      val toRemoteFundeeBelowDust = spec.copy(toRemote = belowDust)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, toRemoteFundeeBelowDust, DefaultCommitmentFormat)
-      assert(outputs.forall(_.isInstanceOf[CommitmentOutput.ToLocal]))
-      assert(outputs.head.txOut.amount.toMilliSatoshi == toRemoteFundeeBelowDust.toLocal - commitFee)
-    }
-    {
-      val toLocalFunderBelowDust = spec.copy(toLocal = belowDustWithFee)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, toLocalFunderBelowDust, DefaultCommitmentFormat)
-      assert(outputs.forall(_.isInstanceOf[CommitmentOutput.ToRemote]))
-      assert(outputs.head.txOut.amount.toMilliSatoshi == toLocalFunderBelowDust.toRemote)
-    }
-    {
-      val toRemoteFunderBelowDust = spec.copy(toRemote = belowDustWithFee)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = false, localDustLimit, toLocalDelay, toRemoteFunderBelowDust, DefaultCommitmentFormat)
-      assert(outputs.forall(_.isInstanceOf[CommitmentOutput.ToLocal]))
-      assert(outputs.head.txOut.amount.toMilliSatoshi == toRemoteFunderBelowDust.toLocal)
-    }
-    {
-      val toLocalFundeeBelowDust = spec.copy(toLocal = belowDust)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = false, localDustLimit, toLocalDelay, toLocalFundeeBelowDust, DefaultCommitmentFormat)
-      assert(outputs.forall(_.isInstanceOf[CommitmentOutput.ToRemote]))
-      assert(outputs.head.txOut.amount.toMilliSatoshi == toLocalFundeeBelowDust.toRemote - commitFee)
-    }
-    {
-      val allBelowDust = spec.copy(toLocal = belowDust, toRemote = belowDust)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, allBelowDust, DefaultCommitmentFormat)
-      assert(outputs.isEmpty)
     }
   }
 
@@ -305,7 +266,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
             tx <- txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localPartialSig, remotePartialSig)
           } yield tx
           commitTx
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat =>
           val localSig = txInfo.sign(localFundingPriv, remoteFundingPriv.publicKey)
           val remoteSig = txInfo.sign(remoteFundingPriv, localFundingPriv.publicKey)
           assert(txInfo.checkRemoteSig(localFundingPubkey = localFundingPriv.publicKey, remoteFundingPriv.publicKey, remoteSig))
@@ -347,18 +308,13 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       checkExpectedWeight(claimMainOutputTx.weight(), commitmentFormat.toLocalDelayedWeight, commitmentFormat)
       Transaction.correctlySpends(claimMainOutputTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
-    if (commitmentFormat != DefaultCommitmentFormat) {
-      // remote cannot spend main output with default commitment format
-      val Left(failure) = ClaimP2WPKHOutputTx.createUnsignedTx(remoteKeys, commitTx, localDustLimit, finalPubKeyScript, feeratePerKw, commitmentFormat)
-      assert(failure == OutputNotFound)
-    }
-    if (commitmentFormat != DefaultCommitmentFormat) {
+    {
       // remote spends main delayed output
       val Right(claimRemoteDelayedOutputTx) = ClaimRemoteDelayedOutputTx.createUnsignedTx(remoteKeys, commitTx, localDustLimit, finalPubKeyScript, feeratePerKw, commitmentFormat).map(_.sign())
       checkExpectedWeight(claimRemoteDelayedOutputTx.weight(), commitmentFormat.toRemoteWeight, commitmentFormat)
       Transaction.correctlySpends(claimRemoteDelayedOutputTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
-    if (commitmentFormat != DefaultCommitmentFormat) {
+    {
       // local spends local anchor with additional wallet inputs
       val walletAmount = 50_000 sat
       val walletInputs = WalletInputs(Seq(
@@ -381,7 +337,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val anchorTxWeight = claimAnchorTx.tx.copy(txIn = claimAnchorTx.tx.txIn.take(1), txOut = Nil).weight()
       checkExpectedWeight(anchorTxWeight, claimAnchorTx.expectedWeight, commitmentFormat)
     }
-    if (commitmentFormat != DefaultCommitmentFormat) {
+    {
       // remote spends remote anchor
       val Right(claimAnchorOutputTx) = ClaimRemoteAnchorTx.createUnsignedTx(remoteFundingPriv, remoteKeys, commitTx, commitmentFormat)
       assert(!claimAnchorOutputTx.validate(Map.empty))
@@ -402,10 +358,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val signedTx = htlcTimeoutTx.addRemoteSig(localKeys, remoteSig).sign()
         Transaction.correctlySpends(signedTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         // local detects when remote doesn't use the right sighash flags
-        val invalidSighash = commitmentFormat match {
-          case DefaultCommitmentFormat => Seq(SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
-          case _ => Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
-        }
+        val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         for (sighash <- invalidSighash) {
           val invalidRemoteSig = htlcTimeoutTx.localSigWithInvalidSighash(remoteKeys, sighash)
           assert(!htlcTimeoutTx.checkRemoteSig(localKeys, invalidRemoteSig))
@@ -430,10 +383,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         Transaction.correctlySpends(signedTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         assert(htlcSuccessTx.checkRemoteSig(localKeys, remoteSig))
         // local detects when remote doesn't use the right sighash flags
-        val invalidSighash = commitmentFormat match {
-          case DefaultCommitmentFormat => Seq(SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
-          case _ => Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
-        }
+        val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         for (sighash <- invalidSighash) {
           val invalidRemoteSig = htlcSuccessTx.localSigWithInvalidSighash(remoteKeys, sighash)
           assert(!htlcSuccessTx.checkRemoteSig(localKeys, invalidRemoteSig))
@@ -535,10 +485,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
   }
 
-  test("generate valid commitment and htlc transactions (default commitment format)") {
-    testCommitAndHtlcTxs(DefaultCommitmentFormat)
-  }
-
   test("generate valid commitment and htlc transactions (legacy anchor outputs)") {
     testCommitAndHtlcTxs(UnsafeLegacyAnchorOutputsCommitmentFormat)
   }
@@ -589,7 +535,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       theirHtlcPublicKey = remoteHtlcPriv.publicKey,
       revocationPublicKey = localRevocationPriv.publicKey,
     )
-    val commitInput = makeFundingInputInfo(TxId.fromValidHex("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, DefaultCommitmentFormat)
+    val commitInput = makeFundingInputInfo(TxId.fromValidHex("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
 
     // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
     // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
@@ -617,13 +563,13 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
     val commitTxNumber = 0x404142434446L
     val (commitTx, outputs, htlcTxs) = {
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, spec, DefaultCommitmentFormat)
+      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, spec, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
       val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localIsChannelOpener = true, outputs)
       val localSig = txInfo.sign(localFundingPriv, remoteFundingPriv.publicKey)
       val remoteSig = txInfo.sign(remoteFundingPriv, localFundingPriv.publicKey)
       val commitTx = txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
       commitTx.correctlySpends(Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      val htlcTxs = makeHtlcTxs(commitTx, outputs, DefaultCommitmentFormat)
+      val htlcTxs = makeHtlcTxs(commitTx, outputs, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
       (commitTx, outputs, htlcTxs)
     }
 
@@ -786,51 +732,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(closingTx.tx.txOut.isEmpty)
       assert(closingTx.toLocalOutput_opt.isEmpty)
     }
-  }
-
-  test("BOLT 3 fee tests") {
-    val dustLimit = 546 sat
-    val bolt3 = {
-      val fetch = Source.fromURL("https://raw.githubusercontent.com/lightning/bolts/master/03-transactions.md")
-      // We'll use character '$' to separate tests:
-      val formatted = fetch.mkString.replace("    name:", "$   name:")
-      fetch.close()
-      formatted
-    }
-
-    def htlcIn(amount: Satoshi): DirectedHtlc = IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None))
-
-    def htlcOut(amount: Satoshi): DirectedHtlc = OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None))
-
-    case class TestVector(name: String, spec: CommitmentSpec, expectedFee: Satoshi)
-
-    // this regex extract params from a given test
-    val testRegex = ("""name: (.*)\n""" +
-      """.*to_local_msat: ([0-9]+)\n""" +
-      """.*to_remote_msat: ([0-9]+)\n""" +
-      """.*feerate_per_kw: ([0-9]+)\n""" +
-      """.*base commitment transaction fee = ([0-9]+)\n""" +
-      """[^$]+""").r
-    // this regex extracts htlc direction and amounts
-    val htlcRegex = """.*HTLC #[0-9] ([a-z]+) amount ([0-9]+).*""".r
-    val tests = testRegex.findAllIn(bolt3).map(s => {
-      val testRegex(name, to_local_msat, to_remote_msat, feerate_per_kw, fee) = s
-      val htlcs = htlcRegex.findAllIn(s).map(l => {
-        val htlcRegex(direction, amount) = l
-        direction match {
-          case "offered" => htlcOut(Satoshi(amount.toLong))
-          case "received" => htlcIn(Satoshi(amount.toLong))
-        }
-      }).toSet
-      TestVector(name, CommitmentSpec(htlcs, FeeratePerKw(feerate_per_kw.toLong.sat), MilliSatoshi(to_local_msat.toLong), MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
-    }).toSeq
-
-    assert(tests.size == 15, "there were 15 tests at e042c615efb5139a0bfdca0c6391c3c13df70418") // simple non-reg to make sure we are not missing tests
-    tests.foreach(test => {
-      logger.info(s"running BOLT 3 test: '${test.name}'")
-      val fee = commitTxTotalCost(dustLimit, test.spec, DefaultCommitmentFormat)
-      assert(fee == test.expectedFee)
-    })
   }
 
 }

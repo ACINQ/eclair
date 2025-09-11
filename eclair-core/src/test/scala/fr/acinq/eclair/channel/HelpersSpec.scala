@@ -32,7 +32,7 @@ import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong, randomKey}
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuiteLike
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.HexStringSyntax
 
 import java.util.UUID
 import scala.concurrent.duration._
@@ -174,12 +174,12 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     bobClaimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, claimHtlcTimeout.sign()).isEmpty))
   }
 
-  test("find timed out htlcs (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) {
-    findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputs)))
+  test("find timed out htlcs") {
+    findTimedOutHtlcs(setupHtlcs())
   }
 
-  test("find timed out htlcs (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) {
-    findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)))
+  test("find timed out htlcs (anchor outputs phoenix)", Tag(ChannelStateTestsTags.AnchorOutputsPhoenix)) {
+    findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputsPhoenix)))
   }
 
   test("check closing tx amounts above dust") {

@@ -11,6 +11,12 @@
 We remove the code used to deserialize channel data from versions of eclair prior to v0.13.
 Node operators running a version of `eclair` older than v0.13 must first upgrade to v0.13 to migrate their channel data, and then upgrade to the latest version.
 
+### Remove support for non-anchor channels
+
+We remove the code used to support legacy channels that don't use anchor outputs or taproot.
+If you still have such channels, you MUST NOT update to this version of eclair.
+You must instead close those channels, and will only be able to update eclair once they have been successfully closed.
+
 ### Update minimal version of Bitcoin Core
 
 With this release, eclair requires using Bitcoin Core 29.1.
