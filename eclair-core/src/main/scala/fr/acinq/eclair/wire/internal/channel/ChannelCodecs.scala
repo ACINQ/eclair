@@ -22,7 +22,6 @@ import grizzled.slf4j.Logging
 import scodec.codecs.{byte, discriminated, fail}
 import scodec.{Codec, Err}
 
-// @formatter:off
 /**
  * Codecs used to store the internal channel data.
  *
@@ -32,26 +31,25 @@ import scodec.{Codec, Err}
  * 1) [[ChannelCodecs]] is the only publicly accessible class. It handles compatibility between different versions
  * of the codecs.
  *
- * 2) Each codec version must be in its separate package, and have the following structure:
+ * 2) Each codec version must be in its separate package (version0, version1, etc), and have the following structure:
  * {{{
- *   private[channel] object ChannelCodecs0 {
-
-       private[version0] object Codecs {
-
-         // internal codecs
-
-       }
-
-       val channelDataCodec: Codec[PersistentChannelData] = ...
+ *   private[channel] object ChannelCodecsN {
+ *
+ *       private[versionN] object Codecs {
+ *
+ *         // internal codecs
+ *
+ *       }
+ *
+ *       val channelDataCodec: Codec[PersistentChannelData] = ...
  * }}}
  *
- * Notice that the outer class has a visibility restricted to package [[fr.acinq.eclair.wire.internal.channel]], while the inner class has a
- * visibility restricted to package [[version5]]. This guarantees that we strictly segregate each codec version,
- * while still allowing unitary testing.
+ * Notice that the outer class has a visibility restricted to package [[fr.acinq.eclair.wire.internal.channel]], while
+ * the inner class has a visibility restricted to package [[versionN]]. This guarantees that we strictly segregate each
+ * codec version, while still allowing unitary testing.
  *
  * Created by PM on 02/06/2017.
  */
-// @formatter:on
 object ChannelCodecs extends Logging {
 
   /**
