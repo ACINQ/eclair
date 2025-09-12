@@ -18,6 +18,7 @@ package fr.acinq.eclair.message
 
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
+import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
@@ -106,8 +107,8 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val Right(reply) = buildMessage(randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
     val ReceiveMessage(replyPayload, blindedKey) = receive(Seq(recipientKey, nodeParams.privateKey), reply)
 
-    postman ! WrappedMessage(replyPayload, blindedKey)
-    postman ! WrappedMessage(replyPayload, blindedKey)
+    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload, blindedKey))
+    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload, blindedKey))
 
     messageSender.expectMessage(Response(replyPayload))
     messageSender.expectNoMessage(10 millis)
@@ -154,7 +155,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val replyPath = finalPayload.records.get[ReplyPath].get.blindedRoute
     val Right(reply) = buildMessage(randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
     val receiveReply = receive(Seq(recipientKey, nodeParams.privateKey), reply)
-    postman ! WrappedMessage(receiveReply.finalPayload, receiveReply.blindedKey)
+    testKit.system.eventStream ! EventStream.Publish(receiveReply)
 
     messageSender.expectNoMessage(10 millis)
   }
