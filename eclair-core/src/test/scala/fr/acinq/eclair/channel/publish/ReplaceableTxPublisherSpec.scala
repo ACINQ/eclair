@@ -339,7 +339,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       bob2alice.expectMsgType[RevokeAndAck]
       bob2alice.expectMsgType[CommitSig]
       assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.nonEmpty)
-      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.get.commit.txId
+      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.get.txId
 
       val nextRemoteCommit = bob.signCommitTx()
       assert(nextRemoteCommit.txid == nextRemoteCommitTxId)
@@ -487,7 +487,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     if (nextCommit) {
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.nextRemoteCommit_opt.nonEmpty)
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.nextRemoteCommit_opt.map(_.commit.txId).contains(commitTx.txid))
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.nextRemoteCommit_opt.map(_.txId).contains(commitTx.txid))
     }
 
     val targetFeerate = FeeratePerKw(3000 sat)
@@ -1028,7 +1028,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       bob2alice.expectMsgType[RevokeAndAck]
       bob2alice.expectMsgType[CommitSig]
       assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.nonEmpty)
-      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.get.commit.txId
+      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.get.txId
 
       // Force-close channel.
       probe.send(alice, CMD_FORCECLOSE(probe.ref))

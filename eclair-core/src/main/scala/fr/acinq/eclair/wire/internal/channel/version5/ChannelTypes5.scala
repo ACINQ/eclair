@@ -66,7 +66,7 @@ private[channel] object ChannelTypes5 {
       val commitmentsSet = commitments.active.head +: commitments.inactive
       val htlcs = commitmentsSet.flatMap(_.localCommit.spec.htlcs).toSet ++
         commitmentsSet.flatMap(_.remoteCommit.spec.htlcs.map(_.opposite)).toSet ++
-        commitmentsSet.flatMap(_.nextRemoteCommit_opt.toList.flatMap(_.commit.spec.htlcs.map(_.opposite))).toSet
+        commitmentsSet.flatMap(_.nextRemoteCommit_opt.toList.flatMap(_.spec.htlcs.map(_.opposite))).toSet
       EncodedCommitments(
         channelParams = commitments.channelParams,
         changes = commitments.changes,
