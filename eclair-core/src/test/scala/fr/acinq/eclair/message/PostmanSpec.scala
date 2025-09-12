@@ -18,8 +18,8 @@ package fr.acinq.eclair.message
 
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
-import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
+import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Block
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
@@ -37,8 +37,8 @@ import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.{InvoiceRequest, Rep
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.PathId
 import fr.acinq.eclair.wire.protocol.{GenericTlv, MessageOnion, OfferTypes, OnionMessage, OnionMessagePayloadTlv, TlvStream}
 import fr.acinq.eclair.{EncodedNodeId, Features, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TestConstants, UInt64, randomKey}
-import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax
 
 import scala.annotation.tailrec
@@ -46,10 +46,11 @@ import scala.concurrent.duration.DurationInt
 
 class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
+  private val ShortTimeout = "short timeout"
   case class FixtureParam(postman: ActorRef[Command], nodeParams: NodeParams, messageSender: TestProbe[OnionMessageResponse], switchboard: TestProbe[Any], offerManager: TestProbe[RequestInvoice], router: TestProbe[Router.PostmanRequest])
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val nodeParams = TestConstants.Alice.nodeParams
+    val nodeParams = if (test.tags.contains(ShortTimeout)) TestConstants.Alice.nodeParams.modify(_.onionMessageConfig.timeout).setTo(1 millis) else TestConstants.Alice.nodeParams
     val messageSender = TestProbe[OnionMessageResponse]("messageSender")
     val switchboard = TestProbe[Any]("switchboard")
     val offerManager = TestProbe[RequestInvoice]("offerManager")
@@ -105,8 +106,8 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val Right(reply) = buildMessage(randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
     val ReceiveMessage(replyPayload, blindedKey) = receive(Seq(recipientKey, nodeParams.privateKey), reply)
 
-    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload, blindedKey))
-    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(replyPayload, blindedKey))
+    postman ! WrappedMessage(replyPayload, blindedKey)
+    postman ! WrappedMessage(replyPayload, blindedKey)
 
     messageSender.expectMessage(Response(replyPayload))
     messageSender.expectNoMessage(10 millis)
@@ -131,7 +132,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     messageSender.expectNoMessage(10 millis)
   }
 
-  test("timeout") { f =>
+  test("timeout", Tag(ShortTimeout)) { f =>
     import f._
 
     val recipientKey = randomKey()
@@ -153,7 +154,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val replyPath = finalPayload.records.get[ReplyPath].get.blindedRoute
     val Right(reply) = buildMessage(randomKey(), randomKey(), Nil, BlindedPath(replyPath), TlvStream(Set.empty[OnionMessagePayloadTlv], Set(GenericTlv(UInt64(55), hex"1234"))))
     val receiveReply = receive(Seq(recipientKey, nodeParams.privateKey), reply)
-    testKit.system.eventStream ! EventStream.Publish(receiveReply)
+    postman ! WrappedMessage(receiveReply.finalPayload, receiveReply.blindedKey)
 
     messageSender.expectNoMessage(10 millis)
   }

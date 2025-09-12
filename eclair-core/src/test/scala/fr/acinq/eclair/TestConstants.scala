@@ -248,7 +248,7 @@ object TestConstants {
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
         minIntermediateHops = 9,
-        timeout = 200 millis,
+        timeout = 40 seconds,
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
@@ -439,7 +439,7 @@ object TestConstants {
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
         minIntermediateHops = 8,
-        timeout = 100 millis,
+        timeout = 30 seconds,
         maxAttempts = 2,
       ),
       purgeInvoicesInterval = None,
