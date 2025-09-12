@@ -608,13 +608,13 @@ object Helpers {
 
     // @formatter:off
     sealed trait ClosingType
-    case class MutualClose(tx: ClosingTx) extends ClosingType
-    case class LocalClose(localCommit: LocalCommit, localCommitPublished: LocalCommitPublished) extends ClosingType
+    case class MutualClose(tx: ClosingTx) extends ClosingType { override def toString: String = "mutual-close" }
+    case class LocalClose(localCommit: LocalCommit, localCommitPublished: LocalCommitPublished) extends ClosingType { override def toString: String = "local-close" }
     sealed trait RemoteClose extends ClosingType { def remoteCommit: RemoteCommit; def remoteCommitPublished: RemoteCommitPublished }
-    case class CurrentRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose
-    case class NextRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose
-    case class RecoveryClose(remoteCommitPublished: RemoteCommitPublished) extends ClosingType
-    case class RevokedClose(revokedCommitPublished: RevokedCommitPublished) extends ClosingType
+    case class CurrentRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose { override def toString: String = "remote-close" }
+    case class NextRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose { override def toString: String = "next-remote-close" }
+    case class RecoveryClose(remoteCommitPublished: RemoteCommitPublished) extends ClosingType { override def toString: String = "recovery-close" }
+    case class RevokedClose(revokedCommitPublished: RevokedCommitPublished) extends ClosingType { override def toString: String = "revoked-close" }
     // @formatter:on
 
     /**
@@ -1705,6 +1705,14 @@ object Helpers {
       })
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
       revokedCommitPublished.copy(irrevocablySpent = revokedCommitPublished.irrevocablySpent ++ relevantOutpoints.map(o => o -> tx).toMap)
+    }
+
+    /** Returns the amount sent to our closing script using our confirmed closing transactions. */
+    def closingBalance(closingScript: ByteVector, irrevocablySpent: Map[OutPoint, Transaction]): Satoshi = {
+      irrevocablySpent.values.flatMap(_.txOut)
+        .filter(_.publicKeyScript == closingScript)
+        .map(_.amount)
+        .sum
     }
 
   }
