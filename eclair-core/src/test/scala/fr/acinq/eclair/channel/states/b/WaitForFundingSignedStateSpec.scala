@@ -20,7 +20,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.TestUtils.randomTxId
-import fr.acinq.eclair.blockchain.DummyOnChainWallet
+import fr.acinq.eclair.blockchain.SingleKeyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel._
@@ -173,10 +173,10 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv INPUT_DISCONNECTED") { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_SIGNED].fundingTx
-    assert(alice.underlyingActor.wallet.asInstanceOf[DummyOnChainWallet].rolledback.isEmpty)
+    assert(alice.underlyingActor.wallet.asInstanceOf[SingleKeyOnChainWallet].rolledback.isEmpty)
     alice ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == CLOSED)
-    assert(alice.underlyingActor.wallet.asInstanceOf[DummyOnChainWallet].rolledback.contains(fundingTx))
+    assert(alice.underlyingActor.wallet.asInstanceOf[SingleKeyOnChainWallet].rolledback.contains(fundingTx))
     aliceOpenReplyTo.expectMsg(OpenChannelResponse.Disconnected)
     listener.expectMsgType[ChannelAborted]
   }

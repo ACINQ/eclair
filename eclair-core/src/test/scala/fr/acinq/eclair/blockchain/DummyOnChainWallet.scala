@@ -30,7 +30,7 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.{TimestampSecond, randomBytes32}
 import scodec.bits._
 
-import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Random, Success}
 
 /**
@@ -91,56 +91,6 @@ class DummyOnChainWallet extends OnChainWallet with OnChainPubkeyCache {
   }
 
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(false)
-
-  override def getP2wpkhPubkey(renew: Boolean): PublicKey = dummyReceivePubkey
-
-  override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = Script.pay2tr(dummyReceivePubkey.xOnly)
-}
-
-class NoOpOnChainWallet extends OnChainWallet with OnChainPubkeyCache {
-
-  import DummyOnChainWallet._
-
-  var rolledback = Seq.empty[Transaction]
-  var doubleSpent = Set.empty[TxId]
-  var abandoned = Set.empty[TxId]
-
-  override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
-
-  override def getReceivePublicKeyScript(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]] = Future.successful(addressType match {
-    case Some(AddressType.P2tr) => Script.pay2tr(dummyReceivePubkey.xOnly)
-    case _ => Script.pay2wpkh(dummyReceivePubkey)
-  })
-
-  override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
-
-  override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, changePosition: Option[Int], externalInputsWeight: Map[OutPoint, Long], minInputConfirmations_opt: Option[Int], feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = Promise().future // will never be completed
-
-  override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int])(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = Promise().future // will never be completed
-
-  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[TxId] = Future.successful(tx.txid)
-
-  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw, feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = Promise().future // will never be completed
-
-  override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
-
-  override def getTransaction(txId: TxId)(implicit ec: ExecutionContext): Future[Transaction] = Promise().future // will never be completed
-
-  override def getTxConfirmations(txid: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = Promise().future // will never be completed
-
-  override def isTransactionOutputSpendable(txid: TxId, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
-
-  override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
-    rolledback = rolledback :+ tx
-    Future.successful(true)
-  }
-
-  override def abandon(txId: TxId)(implicit ec: ExecutionContext): Future[Boolean] = {
-    abandoned = abandoned + txId
-    Future.successful(true)
-  }
-
-  override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(doubleSpent.contains(tx.txid))
 
   override def getP2wpkhPubkey(renew: Boolean): PublicKey = dummyReceivePubkey
 

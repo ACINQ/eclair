@@ -27,7 +27,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainPubkeyCache, OnChainWallet, SingleKeyOnChainWallet}
+import fr.acinq.eclair.blockchain.{OnChainPubkeyCache, OnChainWallet, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
@@ -119,7 +119,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
                           alice2relayer: TestProbe,
                           bob2relayer: TestProbe,
                           channelUpdateListener: TestProbe,
-                          wallet: OnChainWallet with OnChainPubkeyCache,
+                          aliceWallet: OnChainWallet with OnChainPubkeyCache,
+                          bobWallet: OnChainWallet with OnChainPubkeyCache,
                           alicePeer: TestProbe,
                           bobPeer: TestProbe) {
     def currentBlockHeight: BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
@@ -203,7 +204,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   system.registerOnTermination(TestKit.shutdownActorSystem(systemA))
   system.registerOnTermination(TestKit.shutdownActorSystem(systemB))
 
-  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet_opt: Option[OnChainWallet with OnChainPubkeyCache] = None, tags: Set[String] = Set.empty): SetupFixture = {
+  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, walletA_opt: Option[OnChainWallet with OnChainPubkeyCache] = None, walletB_opt: Option[OnChainWallet with OnChainPubkeyCache] = None, tags: Set[String] = Set.empty): SetupFixture = {
     val aliceOpenReplyTo = TestProbe()
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
@@ -246,19 +247,17 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.onChainFeeConf.defaultFeerateTolerance.ratioHigh).setToIf(tags.contains(ChannelStateTestsTags.HighFeerateMismatchTolerance))(1000000)
       .modify(_.onChainFeeConf.spendAnchorWithoutHtlcs).setToIf(tags.contains(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs))(false)
       .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(1_000 sat, 0 sat), Channel.BalanceThreshold(5_000 sat, 1_000 sat), Channel.BalanceThreshold(10_000 sat, 5_000 sat)))
-    val wallet = wallet_opt match {
-      case Some(wallet) => wallet
-      case None => if (tags.contains(ChannelStateTestsTags.DualFunding)) new SingleKeyOnChainWallet() else new DummyOnChainWallet()
-    }
+    val aliceWallet = walletA_opt.getOrElse(new SingleKeyOnChainWallet())
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = {
       implicit val system: ActorSystem = systemA
-      TestFSMRef(new Channel(finalNodeParamsA, TestConstants.Alice.channelKeys(), wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+      TestFSMRef(new Channel(finalNodeParamsA, TestConstants.Alice.channelKeys(), aliceWallet, finalNodeParamsB.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     }
+    val bobWallet = walletB_opt.getOrElse(new SingleKeyOnChainWallet())
     val bob: TestFSMRef[ChannelState, ChannelData, Channel] = {
       implicit val system: ActorSystem = systemB
-      TestFSMRef(new Channel(finalNodeParamsB, TestConstants.Bob.channelKeys(), wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, bob2relayer.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
+      TestFSMRef(new Channel(finalNodeParamsB, TestConstants.Bob.channelKeys(), bobWallet, finalNodeParamsA.nodeId, bob2blockchain.ref, bob2relayer.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     }
-    SetupFixture(alice, bob, aliceOpenReplyTo, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, wallet, alicePeer, bobPeer)
+    SetupFixture(alice, bob, aliceOpenReplyTo, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, alice2relayer, bob2relayer, channelUpdateListener, aliceWallet, bobWallet, alicePeer, bobPeer)
   }
 
   def updateInitFeatures(nodeParamsA: NodeParams, nodeParamsB: NodeParams, tags: Set[String]): (NodeParams, NodeParams) = {
@@ -309,9 +308,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
     val aliceChannelParams = Alice.channelParams
       .modify(_.initFeatures).setTo(aliceInitFeatures)
-      .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))
+      .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Await.result(aliceWallet.getP2wpkhPubkey(), 10 seconds)))
       .modify(_.initialRequestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
-      .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))))
+      .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(aliceWallet.getP2wpkhPubkey(), 10 seconds)))))
     val aliceCommitParams = CommitParams(nodeParamsA.channelConf.dustLimit, nodeParamsA.channelConf.htlcMinimum, nodeParamsA.channelConf.maxHtlcValueInFlight(TestConstants.fundingSatoshis, unlimited = false), nodeParamsA.channelConf.maxAcceptedHtlcs, nodeParamsB.channelConf.toRemoteDelay)
       .modify(_.maxHtlcValueInFlight).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
       .modify(_.maxHtlcValueInFlight).setToIf(tags.contains(ChannelStateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150_000_000))
@@ -319,9 +318,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
     val bobChannelParams = Bob.channelParams
       .modify(_.initFeatures).setTo(bobInitFeatures)
-      .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))
+      .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Await.result(bobWallet.getP2wpkhPubkey(), 10 seconds)))
       .modify(_.initialRequestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
-      .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(wallet.getP2wpkhPubkey(), 10 seconds)))))
+      .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(bobWallet.getP2wpkhPubkey(), 10 seconds)))))
     val bobCommitParams = CommitParams(nodeParamsB.channelConf.dustLimit, nodeParamsB.channelConf.htlcMinimum, nodeParamsB.channelConf.maxHtlcValueInFlight(TestConstants.fundingSatoshis, unlimited = false), nodeParamsB.channelConf.maxAcceptedHtlcs, nodeParamsA.channelConf.toRemoteDelay)
       .modify(_.maxHtlcValueInFlight).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)

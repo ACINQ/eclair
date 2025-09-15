@@ -380,7 +380,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   }
 
   test("recv CMD_SPLICE (splice-in, non dual-funded channel)") { () =>
-    val f = init(tags = Set.empty, wallet_opt = Some(new SingleKeyOnChainWallet()))
+    val f = init(tags = Set.empty, walletA_opt = Some(new SingleKeyOnChainWallet()), walletB_opt = Some(new SingleKeyOnChainWallet()))
     import f._
 
     reachNormal(f, tags = Set.empty) // we open a non dual-funded channel
@@ -3596,7 +3596,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val remoteMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
     val claimHtlcTimeout = htlcs.aliceToBob.map(_ => alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx])
     claimHtlcTimeout.foreach(htlcTx => Transaction.correctlySpends(htlcTx.sign(), Seq(bobCommitTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-    awaitCond(wallet.asInstanceOf[SingleKeyOnChainWallet].abandoned.contains(fundingTx2.txid))
+    awaitCond(aliceWallet.asInstanceOf[SingleKeyOnChainWallet].abandoned.contains(fundingTx2.txid))
     // this one fires immediately, tx is already confirmed
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx1.txid)
     alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, bobCommitTx1)
@@ -3699,7 +3699,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectWatchTxConfirmed(bobRevokedCommitTx.txid)
     alice2blockchain.expectWatchOutputsSpent(Seq(remoteMain.input, mainPenalty.input) ++ htlcPenalty.map(_.input))
     alice2blockchain.expectNoMessage(100 millis)
-    awaitCond(wallet.asInstanceOf[SingleKeyOnChainWallet].abandoned.contains(fundingTx2.txid))
+    awaitCond(aliceWallet.asInstanceOf[SingleKeyOnChainWallet].abandoned.contains(fundingTx2.txid))
 
     // Alice sends a failure upstream for every outgoing HTLC, including the ones that don't appear in the revoked commitment.
     val outgoingHtlcs = (htlcs.aliceToBob.map(_._2) ++ Set(htlcOut1, htlcOut2)).map(htlc => (htlc, alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)))
@@ -4039,7 +4039,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectNoMessage(100 millis)
     bob2blockchain.expectNoMessage(100 millis)
 
-    val alice2 = TestFSMRef(new Channel(aliceNodeParams, aliceKeys, wallet, bobNodeParams.nodeId, alice2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer)
+    val alice2 = TestFSMRef(new Channel(aliceNodeParams, aliceKeys, aliceWallet, bobNodeParams.nodeId, alice2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer)
     alice2 ! INPUT_RESTORED(aliceData)
     alice2blockchain.expectMsgType[SetChannelId]
     alice2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
@@ -4047,7 +4047,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectWatchFundingSpent(fundingTxId0)
     alice2blockchain.expectNoMessage(100 millis)
 
-    val bob2 = TestFSMRef(new Channel(bobNodeParams, bobKeys, wallet, aliceNodeParams.nodeId, bob2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer)
+    val bob2 = TestFSMRef(new Channel(bobNodeParams, bobKeys, bobWallet, aliceNodeParams.nodeId, bob2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer)
     bob2 ! INPUT_RESTORED(bobData)
     bob2blockchain.expectMsgType[SetChannelId]
     bob2blockchain.expectWatchFundingConfirmed(fundingTx2.txid)
@@ -4100,7 +4100,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectNoMessage(100 millis)
     bob2blockchain.expectNoMessage(100 millis)
 
-    val alice2 = TestFSMRef(new Channel(aliceNodeParams, aliceKeys, wallet, bobNodeParams.nodeId, alice2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer)
+    val alice2 = TestFSMRef(new Channel(aliceNodeParams, aliceKeys, aliceWallet, bobNodeParams.nodeId, alice2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer)
     alice2 ! INPUT_RESTORED(aliceData)
     alice2blockchain.expectMsgType[SetChannelId]
     alice2blockchain.expectWatchPublished(fundingTx2.txid)
@@ -4108,7 +4108,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2blockchain.expectWatchFundingSpent(fundingTx0.txid)
     alice2blockchain.expectNoMessage(100 millis)
 
-    val bob2 = TestFSMRef(new Channel(bobNodeParams, bobKeys, wallet, aliceNodeParams.nodeId, bob2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer)
+    val bob2 = TestFSMRef(new Channel(bobNodeParams, bobKeys, bobWallet, aliceNodeParams.nodeId, bob2blockchain.ref, TestProbe().ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer)
     bob2 ! INPUT_RESTORED(bobData)
     bob2blockchain.expectMsgType[SetChannelId]
     bob2blockchain.expectWatchPublished(fundingTx2.txid)
