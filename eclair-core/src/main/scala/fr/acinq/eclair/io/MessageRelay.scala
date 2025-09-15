@@ -137,6 +137,7 @@ private class MessageRelay(nodeParams: NodeParams,
             Behaviors.stopped
         }
       case EncodedNodeId.WithPublicKey.Plain(nodeId) =>
+        println(policy)
         policy match {
           case RelayChannelsOnly =>
             switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), prevNodeId)
