@@ -127,6 +127,7 @@ trait ErrorHandlers extends CommonHandlers {
       // When there is no commitment yet, we just send an error to our peer and go to CLOSED state.
       case _: ChannelDataWithoutCommitments => goto(CLOSED) sending error
       case _: TransientChannelData => goto(CLOSED) sending error
+      case _: DATA_CLOSED => stay()
     }
   }
 
@@ -167,6 +168,7 @@ trait ErrorHandlers extends CommonHandlers {
         rollbackFundingAttempt(waitForDualFundingSigned.signingSession.fundingTx.tx, Nil)
         goto(CLOSED)
       case _: TransientChannelData => goto(CLOSED)
+      case _: DATA_CLOSED => stay()
     }
   }
 
