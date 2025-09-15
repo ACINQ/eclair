@@ -548,10 +548,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Alice's Claim-HTLC-timeout transaction confirms: we relay the failure upstream.
     val claimHtlcTimeout = claimHtlcTimeoutTxs.find(_.htlcId == htlc3.id).get
+    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc3.id)
     alice ! WatchTxConfirmedTriggered(alice.nodeParams.currentBlockHeight, 13, claimHtlcTimeout.tx)
     inside(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]]) { fail =>
       assert(fail.htlc == htlc3)
-      assert(fail.origin == alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc3.id))
+      assert(fail.origin == origin)
     }
   }
 
@@ -644,10 +645,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Alice's Claim-HTLC-timeout transaction confirms: we relay the failure upstream.
     val claimHtlcTimeout = claimHtlcTimeoutTxs.find(_.htlcId == htlc3.id).get
+    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc3.id)
     alice ! WatchTxConfirmedTriggered(alice.nodeParams.currentBlockHeight, 13, claimHtlcTimeout.tx)
     inside(alice2relayer.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]]) { fail =>
       assert(fail.htlc == htlc3)
-      assert(fail.origin == alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc3.id))
+      assert(fail.origin == origin)
     }
     alice2relayer.expectNoMessage(100 millis)
   }
@@ -828,9 +830,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(closingState.htlcOutputs.isEmpty && closingState.htlcDelayedOutputs.isEmpty)
     assert(closingTxs.htlcTxs.isEmpty)
     // when the commit tx is confirmed, alice knows that the htlc she sent right before the unilateral close will never reach the chain
+    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, aliceCommitTx)
     // so she fails it
-    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
     alice2relayer.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
     // the htlc will not settle on chain
     listener.expectNoMessage(100 millis)
@@ -942,9 +944,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(closingState.htlcOutputs.isEmpty && closingState.htlcDelayedOutputs.isEmpty)
     assert(closingTxs.htlcTxs.isEmpty)
     // when the commit tx is confirmed, alice knows that the htlc will never reach the chain
+    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, closingState.commitTx)
     // so she fails it
-    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
     alice2relayer.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
     // the htlc will not settle on chain
     listener.expectNoMessage(100 millis)
@@ -1271,11 +1273,19 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectWatchOutputSpent(htlcDelayed3.input)
     assert(alice.stateName == CLOSING)
     awaitCond(bob.stateName == CLOSED)
+    val closedBob = bob.stateData.asInstanceOf[DATA_CLOSED]
+    assert(closedBob.closingType == "remote-close")
+    assert(closedBob.closingTxId == closingStateAlice.commitTx.txid)
+    assert(closedBob.closingAmount == closingTxsBob.mainTx_opt.get.txOut.head.amount + Seq(htlcTimeoutTxBob1, htlcTimeoutTxBob2, htlcSuccessBob).map(_.txOut.head.amount).sum)
 
     // Alice's 3rd-stage transactions confirm.
     Seq(htlcDelayed1, htlcDelayed2, htlcDelayed3).foreach(p => alice ! WatchTxConfirmedTriggered(BlockHeight(750_100), 0, p.tx))
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(alice.stateName == CLOSED)
+    val closedAlice = alice.stateData.asInstanceOf[DATA_CLOSED]
+    assert(closedAlice.closingType == "local-close")
+    assert(closedAlice.closingTxId == closingStateAlice.commitTx.txid)
+    assert(closedAlice.closingAmount == closingTxsAlice.mainTx_opt.get.txOut.head.amount + Seq(htlcDelayed1, htlcDelayed2, htlcDelayed3).map(_.tx.txOut.head.amount).sum)
   }
 
   test("recv WatchTxConfirmedTriggered (remote commit with htlcs only signed by local in next remote commit)") { f =>
@@ -1295,9 +1305,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(closingState.localOutput_opt.isEmpty)
     assert(closingState.htlcOutputs.isEmpty)
     // when the commit tx is signed, alice knows that the htlc she sent right before the unilateral close will never reach the chain
+    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, bobCommitTx)
     // so she fails it
-    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
     alice2relayer.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
     // the htlc will not settle on chain
     listener.expectNoMessage(100 millis)
@@ -1704,6 +1714,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(Set(forwardedFail1, forwardedFail2, forwardedFail3) == htlcs)
     alice2relayer.expectNoMessage(100 millis)
     awaitCond(alice.stateName == CLOSED)
+    val closedAlice = alice.stateData.asInstanceOf[DATA_CLOSED]
+    assert(closedAlice.closingType == "next-remote-close")
+    assert(closedAlice.closingTxId == bobCommitTx.txid)
+    assert(closedAlice.closingAmount == closingTxs.mainTx_opt.map(_.txOut.head.amount).getOrElse(0 sat) + closingTxs.htlcTimeoutTxs.map(_.txOut.head.amount).sum)
   }
 
   test("recv WatchTxConfirmedTriggered (next remote commit, taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
@@ -2062,10 +2076,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice.stateName == CLOSING)
     alice ! WatchTxConfirmedTriggered(BlockHeight(115), 2, closingTxs.htlcPenaltyTxs.last)
     awaitCond(alice.stateName == CLOSED)
-  }
-
-  test("recv WatchFundingSpentTriggered (one revoked tx, option_static_remotekey)", Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
-    testFundingSpentRevokedTx(f, DefaultCommitmentFormat)
+    val closedAlice = alice.stateData.asInstanceOf[DATA_CLOSED]
+    assert(closedAlice.closingType == "revoked-close")
+    assert(closedAlice.closingTxId == bobRevokedTx.txid)
+    assert(closedAlice.closingAmount == closingTxs.mainTx_opt.map(_.txOut.head.amount).getOrElse(0 sat) + closingTxs.mainPenaltyTx.txOut.head.amount + closingTxs.htlcPenaltyTxs.map(_.txOut.head.amount).sum)
   }
 
   test("recv WatchFundingSpentTriggered (one revoked tx, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>

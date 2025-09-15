@@ -385,7 +385,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>
           log.info("we have nothing at stake, going straight to CLOSED")
           context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, closing.channelId))
-          goto(CLOSED) using closing
+          goto(CLOSED) using IgnoreClosedData(closing)
         case closing: DATA_CLOSING =>
           val localPaysClosingFees = closing.commitments.localChannelParams.paysClosingFees
           val closingType_opt = Closing.isClosingTypeAlreadyKnown(closing)
@@ -2289,7 +2289,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case Some(closingType) =>
           log.info("channel closed (type={})", EventType.Closed(closingType).label)
           context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.commitments))
-          goto(CLOSED) using d1 storing()
+          goto(CLOSED) using DATA_CLOSED(d1, closingType)
         case None =>
           stay() using d1 storing()
       }
@@ -2366,9 +2366,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   when(CLOSED)(handleExceptions {
     case Event(Symbol("shutdown"), _) =>
       stateData match {
-        case d: PersistentChannelData =>
-          log.info(s"deleting database record for channelId=${d.channelId}")
-          nodeParams.db.channels.removeChannel(d.channelId)
+        case d: DATA_CLOSED =>
+          log.info(s"moving channelId=${d.channelId} to the closed channels DB")
+          nodeParams.db.channels.removeChannel(d.channelId, Some(d))
+        case _: PersistentChannelData | _: IgnoreClosedData =>
+          log.info("deleting database record for channelId={}", stateData.channelId)
+          nodeParams.db.channels.removeChannel(stateData.channelId, None)
         case _: TransientChannelData => // nothing was stored in the DB
       }
       log.info("shutting down")
@@ -3029,10 +3032,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(WatchTxConfirmedTriggered(_, _, tx), d: DATA_NEGOTIATING_SIMPLE) if d.findClosingTx(tx).nonEmpty =>
-      val closingType = MutualClose(d.findClosingTx(tx).get)
+      val closingTx = d.findClosingTx(tx).get
+      val closingType = MutualClose(closingTx)
       log.info("channel closed (type={})", EventType.Closed(closingType).label)
       context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.commitments))
-      goto(CLOSED) using d storing()
+      goto(CLOSED) using DATA_CLOSED(d, closingTx)
 
     case Event(WatchFundingSpentTriggered(tx), d: ChannelDataWithCommitments) =>
       if (d.commitments.all.map(_.fundingTxId).contains(tx.txid)) {
@@ -3070,6 +3074,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           case d: ChannelDataWithCommitments => Some(d.commitments)
           case _: ChannelDataWithoutCommitments => None
           case _: TransientChannelData => None
+          case _: ClosedData => None
         }
         context.system.eventStream.publish(ChannelStateChanged(self, nextStateData.channelId, peer, remoteNodeId, state, nextState, commitments_opt))
       }

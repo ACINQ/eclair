@@ -36,6 +36,7 @@ import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, MilliSatoshiLong, Tes
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -57,10 +58,10 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
-  def aliceClose(f: FixtureParam, feerates: Option[ClosingFeerates] = None): Unit = {
+  def aliceClose(f: FixtureParam, feerates: Option[ClosingFeerates] = None, script_opt: Option[ByteVector] = None): Unit = {
     import f._
     val sender = TestProbe()
-    alice ! CMD_CLOSE(sender.ref, None, feerates)
+    alice ! CMD_CLOSE(sender.ref, script_opt, feerates)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     val aliceShutdown = alice2bob.expectMsgType[Shutdown]
     if (alice.commitments.latest.commitmentFormat.isInstanceOf[TaprootCommitmentFormat]) assert(aliceShutdown.closeeNonce_opt.nonEmpty)
@@ -79,10 +80,10 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     }
   }
 
-  def bobClose(f: FixtureParam, feerates: Option[ClosingFeerates] = None): Unit = {
+  def bobClose(f: FixtureParam, feerates: Option[ClosingFeerates] = None, script_opt: Option[ByteVector] = None): Unit = {
     import f._
     val sender = TestProbe()
-    bob ! CMD_CLOSE(sender.ref, None, feerates)
+    bob ! CMD_CLOSE(sender.ref, script_opt, feerates)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     val bobShutdown = bob2alice.expectMsgType[Shutdown]
     if (bob.commitments.latest.commitmentFormat.isInstanceOf[TaprootCommitmentFormat]) assert(bobShutdown.closeeNonce_opt.nonEmpty)
@@ -999,7 +1000,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("receive INPUT_RESTORED", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
     import f._
-    aliceClose(f)
+    aliceClose(f, script_opt = Some(Script.write(Script.pay2wpkh(randomKey().publicKey))))
     alice2bob.expectMsgType[ClosingComplete]
     alice2bob.forward(bob)
     val aliceTx = bob2blockchain.expectMsgType[PublishFinalTx].tx
@@ -1026,13 +1027,21 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     // Alice's transaction (published by Bob) confirms.
     alice ! WatchFundingSpentTriggered(aliceTx)
-    inside(alice2blockchain.expectMsgType[PublishFinalTx]) { p =>
+    val fee = inside(alice2blockchain.expectMsgType[PublishFinalTx]) { p =>
       assert(p.tx.txid == aliceTx.txid)
       assert(p.fee > 0.sat)
+      p.fee
     }
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceTx.txid)
     alice ! WatchTxConfirmedTriggered(BlockHeight(100), 3, aliceTx)
     awaitCond(alice.stateName == CLOSED)
+    assert(alice.stateData.isInstanceOf[DATA_CLOSED])
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].isChannelOpener)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingType == "mutual-close")
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingTxId == aliceTx.txid)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].remoteNodeId == alice.underlyingActor.remoteNodeId)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].capacity == 1_000_000.sat)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingAmount == 800_000.sat - fee)
 
     // Bob restarts and detects that Alice's closing transaction is confirmed.
     bob.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
@@ -1044,6 +1053,13 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceTx.txid)
     bob ! WatchTxConfirmedTriggered(BlockHeight(100), 3, aliceTx)
     awaitCond(bob.stateName == CLOSED)
+    assert(bob.stateData.isInstanceOf[DATA_CLOSED])
+    assert(!bob.stateData.asInstanceOf[DATA_CLOSED].isChannelOpener)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingType == "mutual-close")
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingTxId == aliceTx.txid)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].remoteNodeId == bob.underlyingActor.remoteNodeId)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].capacity == TestConstants.fundingSatoshis)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingAmount == 200_000.sat)
   }
 
   test("recv Error") { f =>
