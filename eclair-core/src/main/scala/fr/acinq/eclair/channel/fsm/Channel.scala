@@ -2368,10 +2368,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       stateData match {
         case d: DATA_CLOSED =>
           log.info(s"moving channelId=${d.channelId} to the closed channels DB")
-          nodeParams.db.channels.removeChannel(d.channelId)
+          nodeParams.db.channels.removeChannel(d.channelId, Some(d))
         case d: PersistentChannelData =>
           log.info("deleting database record for channelId={}", d.channelId)
-          nodeParams.db.channels.removeChannel(d.channelId)
+          nodeParams.db.channels.removeChannel(d.channelId, None)
         case _: TransientChannelData => // nothing was stored in the DB
       }
       log.info("shutting down")

@@ -20,7 +20,7 @@ import akka.actor.typed.receptionist.{Receptionist, ServiceKey}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps, ClassicActorSystemOps, TypedActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy, typed}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.OnChainPubkeyCache
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -56,8 +56,12 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       // Closed channels will be removed, other channels will be restored.
       val (channels, closedChannels) = init.channels.partition(c => Closing.isClosed(c, None).isEmpty)
       closedChannels.foreach(c => {
-        log.info(s"closing channel ${c.channelId}")
-        nodeParams.db.channels.removeChannel(c.channelId)
+        log.info("channel {} was closed before restarting, updating the DB", c.channelId)
+        val closingData_opt = (c, Closing.isClosed(c, None)) match {
+          case (c: DATA_CLOSING, Some(closingType)) => Some(DATA_CLOSED(c, closingType))
+          case _ => None
+        }
+        nodeParams.db.channels.removeChannel(c.channelId, closingData_opt)
       })
       val peersWithChannels = channels.groupBy(_.remoteNodeId)
       val peersWithOnTheFlyFunding = nodeParams.db.liquidity.listPendingOnTheFlyFunding()
