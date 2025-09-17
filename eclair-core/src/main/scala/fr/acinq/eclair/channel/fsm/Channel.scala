@@ -384,7 +384,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>
           log.info("we have nothing at stake, going straight to CLOSED")
           context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, closing.channelId))
-          goto(CLOSED) using closing
+          goto(CLOSED) using IgnoreClosedData
         case closing: DATA_CLOSING =>
           val localPaysClosingFees = closing.commitments.localChannelParams.paysClosingFees
           val closingType_opt = Closing.isClosingTypeAlreadyKnown(closing)
@@ -2288,8 +2288,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case Some(closingType) =>
           log.info("channel closed (type={})", EventType.Closed(closingType).label)
           context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.commitments))
-          val closed = DATA_CLOSED(d1, closingType)
-          goto(CLOSED) using closed
+          goto(CLOSED) using DATA_CLOSED(d1, closingType)
         case None =>
           stay() using d1 storing()
       }
@@ -2369,9 +2368,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case d: DATA_CLOSED =>
           log.info(s"moving channelId=${d.channelId} to the closed channels DB")
           nodeParams.db.channels.removeChannel(d.channelId, Some(d))
-        case d: PersistentChannelData =>
-          log.info("deleting database record for channelId={}", d.channelId)
-          nodeParams.db.channels.removeChannel(d.channelId, None)
+        case _: PersistentChannelData | IgnoreClosedData =>
+          log.info("deleting database record for channelId={}", stateData.channelId)
+          nodeParams.db.channels.removeChannel(stateData.channelId, None)
         case _: TransientChannelData => // nothing was stored in the DB
       }
       log.info("shutting down")
@@ -3074,7 +3073,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           case d: ChannelDataWithCommitments => Some(d.commitments)
           case _: ChannelDataWithoutCommitments => None
           case _: TransientChannelData => None
-          case _: DATA_CLOSED => None
+          case _: ClosedData => None
         }
         context.system.eventStream.publish(ChannelStateChanged(self, nextStateData.channelId, peer, remoteNodeId, state, nextState, commitments_opt))
       }

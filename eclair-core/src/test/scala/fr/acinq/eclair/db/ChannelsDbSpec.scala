@@ -92,7 +92,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listHtlcInfos(channel1.channelId, commitNumber + 1).isEmpty)
 
       assert(db.listClosedChannels(None, None).isEmpty)
-      val closed1 = DATA_CLOSED(channel1.channelId, channel1.remoteNodeId, randomTxId(), 3, 2, isChannelOpener = true, "anchor_outputs", announced = true, 100_000 sat, randomTxId(), "local-close", hex"deadbeef", 60_000 sat)
+      val closed1 = DATA_CLOSED(channel1.channelId, channel1.remoteNodeId, randomTxId(), 3, 2, channel1.channelParams.localParams.fundingKeyPath.toString(), channel1.channelParams.channelFeatures.toString, isChannelOpener = true, "anchor_outputs", announced = true, 100_000 sat, randomTxId(), "local-close", hex"deadbeef", 61_000_500 msat, 40_000_000 msat, 60_000 sat)
       db.removeChannel(channel1.channelId, Some(closed1))
       assert(db.getChannel(channel1.channelId).isEmpty)
       assert(db.listLocalChannels() == List(channel2b))

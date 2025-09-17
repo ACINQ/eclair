@@ -97,13 +97,13 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
   }
 
   def handleFundingPublishFailed(d: PersistentChannelData) = {
-    log.error(s"failed to publish funding tx")
+    log.error("failed to publish funding tx")
     val exc = ChannelFundingError(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
     // NB: we don't use the handleLocalError handler because it would result in the commit tx being published, which we don't want:
     // implementation *guarantees* that in case of BITCOIN_FUNDING_PUBLISH_FAILED, the funding tx hasn't and will never be published, so we can close the channel right away
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(exc), isFatal = true))
-    goto(CLOSED) sending error
+    goto(CLOSED) using IgnoreClosedData sending error
   }
 
   def handleFundingTimeout(d: PersistentChannelData) = {
@@ -116,7 +116,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
     val exc = FundingTxTimedout(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(exc), isFatal = true))
-    goto(CLOSED) sending error
+    goto(CLOSED) using IgnoreClosedData sending error
   }
 
 }

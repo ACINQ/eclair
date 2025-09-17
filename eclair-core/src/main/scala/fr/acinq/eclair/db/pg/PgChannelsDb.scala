@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
-import fr.acinq.eclair.{CltvExpiry, Paginated}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -58,12 +58,12 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         // closed channels to a different table.
         statement.executeUpdate("ALTER TABLE local.htlc_infos DROP CONSTRAINT htlc_infos_channel_id_fkey")
         // We can now move closed channels to a dedicated table.
-        statement.executeUpdate("CREATE TABLE local.closed_channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, funding_output_index BIGINT NOT NULL, funding_tx_index BIGINT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis BIGINT NOT NULL, closing_txid TEXT NOT NULL, closing_type TEXT NOT NULL, closing_script TEXT NOT NULL, closing_amount_satoshis INTEGER NOT NULL, closed_at TIMESTAMP WITH TIME ZONE NOT NULL)")
+        statement.executeUpdate("CREATE TABLE local.closed_channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, funding_output_index BIGINT NOT NULL, funding_tx_index BIGINT NOT NULL, funding_key_path TEXT NOT NULL, channel_features TEXT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis BIGINT NOT NULL, closing_txid TEXT NOT NULL, closing_type TEXT NOT NULL, closing_script TEXT NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, closing_amount_satoshis INTEGER NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL, closed_at TIMESTAMP WITH TIME ZONE NOT NULL)")
         statement.executeUpdate("CREATE INDEX closed_channels_remote_node_id_idx ON local.closed_channels(remote_node_id)")
         // We migrate closed channels from the local_channels table to the new closed_channels table, whenever possible.
-        val insertStatement = pg.prepareStatement("INSERT INTO local.closed_channels VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        val insertStatement = pg.prepareStatement("INSERT INTO local.closed_channels VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         val batchSize = 50
-        using(pg.prepareStatement("SELECT channel_id, data, is_closed, closed_timestamp FROM local.channels WHERE is_closed=TRUE")) { queryStatement =>
+        using(pg.prepareStatement("SELECT channel_id, data, is_closed, created_timestamp, closed_timestamp FROM local.channels WHERE is_closed=TRUE")) { queryStatement =>
           val rs = queryStatement.executeQuery()
           var inserted = 0
           var batchCount = 0
@@ -96,15 +96,20 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
                 insertStatement.setString(3, data.fundingTxId.value.toHex)
                 insertStatement.setLong(4, data.fundingOutputIndex)
                 insertStatement.setLong(5, data.fundingTxIndex)
-                insertStatement.setBoolean(6, data.isChannelOpener)
-                insertStatement.setString(7, data.commitmentFormat)
-                insertStatement.setBoolean(8, data.announced)
-                insertStatement.setLong(9, data.capacity.toLong)
-                insertStatement.setString(10, data.closingTxId.value.toHex)
-                insertStatement.setString(11, data.closingType)
-                insertStatement.setString(12, data.closingScript.toHex)
-                insertStatement.setLong(13, data.closingAmount.toLong)
-                insertStatement.setTimestamp(14, rs.getTimestampNullable("closed_timestamp").getOrElse(Timestamp.from(Instant.ofEpochMilli(0))))
+                insertStatement.setString(6, data.fundingKeyPath)
+                insertStatement.setString(7, data.channelFeatures)
+                insertStatement.setBoolean(8, data.isChannelOpener)
+                insertStatement.setString(9, data.commitmentFormat)
+                insertStatement.setBoolean(10, data.announced)
+                insertStatement.setLong(11, data.capacity.toLong)
+                insertStatement.setString(12, data.closingTxId.value.toHex)
+                insertStatement.setString(13, data.closingType)
+                insertStatement.setString(14, data.closingScript.toHex)
+                insertStatement.setLong(15, data.localBalance.toLong)
+                insertStatement.setLong(16, data.remoteBalance.toLong)
+                insertStatement.setLong(17, data.closingAmount.toLong)
+                insertStatement.setTimestamp(18, rs.getTimestampNullable("created_timestamp").getOrElse(Timestamp.from(Instant.ofEpochMilli(0))))
+                insertStatement.setTimestamp(19, rs.getTimestampNullable("closed_timestamp").getOrElse(Timestamp.from(Instant.ofEpochMilli(0))))
                 insertStatement.addBatch()
                 batchCount = batchCount + 1
                 if (batchCount % batchSize == 0) {
@@ -128,7 +133,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
 
           statement.executeUpdate("CREATE TABLE local.channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, data BYTEA NOT NULL, json JSONB NOT NULL, created_timestamp TIMESTAMP WITH TIME ZONE, last_payment_sent_timestamp TIMESTAMP WITH TIME ZONE, last_payment_received_timestamp TIMESTAMP WITH TIME ZONE, last_connected_timestamp TIMESTAMP WITH TIME ZONE)")
-          statement.executeUpdate("CREATE TABLE local.closed_channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, funding_output_index BIGINT NOT NULL, funding_tx_index BIGINT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis BIGINT NOT NULL, closing_txid TEXT NOT NULL, closing_type TEXT NOT NULL, closing_script TEXT NOT NULL, closing_amount_satoshis INTEGER NOT NULL, closed_at TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE local.closed_channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, funding_output_index BIGINT NOT NULL, funding_tx_index BIGINT NOT NULL, funding_key_path TEXT NOT NULL, channel_features TEXT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis BIGINT NOT NULL, closing_txid TEXT NOT NULL, closing_type TEXT NOT NULL, closing_script TEXT NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, closing_amount_satoshis INTEGER NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL, closed_at TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE local.htlc_infos (channel_id TEXT NOT NULL, commitment_number BIGINT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL)")
           statement.executeUpdate("CREATE TABLE local.htlc_infos_to_remove (channel_id TEXT NOT NULL PRIMARY KEY, before_commitment_number BIGINT NOT NULL)")
 
@@ -229,21 +234,30 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
       // If we have useful closing data for this channel, we keep it in a dedicated table.
       data_opt.foreach(data => {
-        using(pg.prepareStatement("INSERT INTO local.closed_channels VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
+        val createdAt_opt = using(pg.prepareStatement("SELECT created_timestamp FROM local.channels WHERE channel_id=?")) { statement =>
+          statement.setString(1, channelId.toHex)
+          statement.executeQuery().flatMap(rs => rs.getTimestampNullable("created_timestamp")).headOption
+        }
+        using(pg.prepareStatement("INSERT INTO local.closed_channels VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
           statement.setString(1, channelId.toHex)
           statement.setString(2, data.remoteNodeId.toHex)
           statement.setString(3, data.fundingTxId.value.toHex)
           statement.setLong(4, data.fundingOutputIndex)
           statement.setLong(5, data.fundingTxIndex)
-          statement.setBoolean(6, data.isChannelOpener)
-          statement.setString(7, data.commitmentFormat)
-          statement.setBoolean(8, data.announced)
-          statement.setLong(9, data.capacity.toLong)
-          statement.setString(10, data.closingTxId.value.toHex)
-          statement.setString(11, data.closingType)
-          statement.setString(12, data.closingScript.toHex)
-          statement.setLong(13, data.closingAmount.toLong)
-          statement.setTimestamp(14, Timestamp.from(Instant.now()))
+          statement.setString(6, data.fundingKeyPath)
+          statement.setString(7, data.channelFeatures)
+          statement.setBoolean(8, data.isChannelOpener)
+          statement.setString(9, data.commitmentFormat)
+          statement.setBoolean(10, data.announced)
+          statement.setLong(11, data.capacity.toLong)
+          statement.setString(12, data.closingTxId.value.toHex)
+          statement.setString(13, data.closingType)
+          statement.setString(14, data.closingScript.toHex)
+          statement.setLong(15, data.localBalance.toLong)
+          statement.setLong(16, data.remoteBalance.toLong)
+          statement.setLong(17, data.closingAmount.toLong)
+          statement.setTimestamp(18, createdAt_opt.getOrElse(Timestamp.from(Instant.ofEpochMilli(0))))
+          statement.setTimestamp(19, Timestamp.from(Instant.now()))
           statement.executeUpdate()
         }
       })
@@ -319,6 +333,8 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
             fundingTxId = TxId(rs.getByteVector32FromHex("funding_txid")),
             fundingOutputIndex = rs.getLong("funding_output_index"),
             fundingTxIndex = rs.getLong("funding_tx_index"),
+            fundingKeyPath = rs.getString("funding_key_path"),
+            channelFeatures = rs.getString("channel_features"),
             isChannelOpener = rs.getBoolean("is_channel_opener"),
             commitmentFormat = rs.getString("commitment_format"),
             announced = rs.getBoolean("announced"),
@@ -326,6 +342,8 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
             closingTxId = TxId(rs.getByteVector32FromHex("closing_txid")),
             closingType = rs.getString("closing_type"),
             closingScript = rs.getByteVectorFromHex("closing_script"),
+            localBalance = MilliSatoshi(rs.getLong("local_balance_msat")),
+            remoteBalance = MilliSatoshi(rs.getLong("remote_balance_msat")),
             closingAmount = Satoshi(rs.getLong("closing_amount_satoshis"))
           )
         }.toSeq

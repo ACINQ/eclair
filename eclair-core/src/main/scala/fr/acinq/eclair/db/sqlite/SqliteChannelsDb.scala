@@ -24,7 +24,7 @@ import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
-import fr.acinq.eclair.{CltvExpiry, Paginated, TimestampMilli}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, TimestampMilli}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -64,12 +64,12 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON htlc_infos(channel_id)")
     statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON htlc_infos(commitment_number)")
     // We can now move closed channels to a dedicated table.
-    statement.executeUpdate("CREATE TABLE closed_channels (channel_id BLOB NOT NULL PRIMARY KEY, remote_node_id BLOB NOT NULL, funding_txid BLOB NOT NULL, funding_output_index INTEGER NOT NULL, funding_tx_index INTEGER NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis INTEGER NOT NULL, closing_txid BLOB NOT NULL, closing_type TEXT NOT NULL, closing_script BLOB NOT NULL, closing_amount_satoshis INTEGER NOT NULL, closed_at INTEGER NOT NULL)")
+    statement.executeUpdate("CREATE TABLE closed_channels (channel_id BLOB NOT NULL PRIMARY KEY, remote_node_id BLOB NOT NULL, funding_txid BLOB NOT NULL, funding_output_index INTEGER NOT NULL, funding_tx_index INTEGER NOT NULL, funding_key_path TEXT NOT NULL, channel_features TEXT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis INTEGER NOT NULL, closing_txid BLOB NOT NULL, closing_type TEXT NOT NULL, closing_script BLOB NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, closing_amount_satoshis INTEGER NOT NULL, created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL)")
     statement.executeUpdate("CREATE INDEX closed_channels_remote_node_id_idx ON closed_channels(remote_node_id)")
     // We migrate closed channels from the local_channels table to the new closed_channels table, whenever possible.
-    val insertStatement = sqlite.prepareStatement("INSERT INTO closed_channels VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    val insertStatement = sqlite.prepareStatement("INSERT INTO closed_channels VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
     val batchSize = 50
-    using(sqlite.prepareStatement("SELECT channel_id, data, is_closed, closed_timestamp FROM local_channels WHERE is_closed=1")) { queryStatement =>
+    using(sqlite.prepareStatement("SELECT channel_id, data, is_closed, created_timestamp, closed_timestamp FROM local_channels WHERE is_closed=1")) { queryStatement =>
       val rs = queryStatement.executeQuery()
       var inserted = 0
       var batchCount = 0
@@ -102,15 +102,20 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
             insertStatement.setBytes(3, data.fundingTxId.value.toArray)
             insertStatement.setLong(4, data.fundingOutputIndex)
             insertStatement.setLong(5, data.fundingTxIndex)
-            insertStatement.setBoolean(6, data.isChannelOpener)
-            insertStatement.setString(7, data.commitmentFormat)
-            insertStatement.setBoolean(8, data.announced)
-            insertStatement.setLong(9, data.capacity.toLong)
-            insertStatement.setBytes(10, data.closingTxId.value.toArray)
-            insertStatement.setString(11, data.closingType)
-            insertStatement.setBytes(12, data.closingScript.toArray)
-            insertStatement.setLong(13, data.closingAmount.toLong)
-            insertStatement.setLong(14, rs.getLongNullable("closed_timestamp").getOrElse(0))
+            insertStatement.setString(6, data.fundingKeyPath)
+            insertStatement.setString(7, data.channelFeatures)
+            insertStatement.setBoolean(8, data.isChannelOpener)
+            insertStatement.setString(9, data.commitmentFormat)
+            insertStatement.setBoolean(10, data.announced)
+            insertStatement.setLong(11, data.capacity.toLong)
+            insertStatement.setBytes(12, data.closingTxId.value.toArray)
+            insertStatement.setString(13, data.closingType)
+            insertStatement.setBytes(14, data.closingScript.toArray)
+            insertStatement.setLong(15, data.localBalance.toLong)
+            insertStatement.setLong(16, data.remoteBalance.toLong)
+            insertStatement.setLong(17, data.closingAmount.toLong)
+            insertStatement.setLong(18, rs.getLongNullable("created_timestamp").getOrElse(0))
+            insertStatement.setLong(19, rs.getLongNullable("closed_timestamp").getOrElse(0))
             insertStatement.addBatch()
             batchCount = batchCount + 1
             if (batchCount % batchSize == 0) {
@@ -133,7 +138,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, created_timestamp INTEGER, last_payment_sent_timestamp INTEGER, last_payment_received_timestamp INTEGER, last_connected_timestamp INTEGER)")
-        statement.executeUpdate("CREATE TABLE closed_channels (channel_id BLOB NOT NULL PRIMARY KEY, remote_node_id BLOB NOT NULL, funding_txid BLOB NOT NULL, funding_output_index INTEGER NOT NULL, funding_tx_index INTEGER NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis INTEGER NOT NULL, closing_txid BLOB NOT NULL, closing_type TEXT NOT NULL, closing_script BLOB NOT NULL, closing_amount_satoshis INTEGER NOT NULL, closed_at INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE closed_channels (channel_id BLOB NOT NULL PRIMARY KEY, remote_node_id BLOB NOT NULL, funding_txid BLOB NOT NULL, funding_output_index INTEGER NOT NULL, funding_tx_index INTEGER NOT NULL, funding_key_path TEXT NOT NULL, channel_features TEXT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis INTEGER NOT NULL, closing_txid BLOB NOT NULL, closing_type TEXT NOT NULL, closing_script BLOB NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, closing_amount_satoshis INTEGER NOT NULL, created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE htlc_infos (channel_id BLOB NOT NULL, commitment_number INTEGER NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE htlc_infos_to_remove (channel_id BLOB NOT NULL PRIMARY KEY, before_commitment_number INTEGER NOT NULL)")
         // Note that we use two distinct indices instead of a composite index on (channel_id, commitment_number).
@@ -208,21 +213,30 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
 
     // If we have useful closing data for this channel, we keep it in a dedicated table.
     data_opt.foreach(data => {
-      using(sqlite.prepareStatement("INSERT OR IGNORE INTO closed_channels VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      val createdAt_opt = using(sqlite.prepareStatement("SELECT created_timestamp FROM local_channels WHERE channel_id=?")) { statement =>
+        statement.setBytes(1, channelId.toArray)
+        statement.executeQuery().flatMap(rs => rs.getLongNullable("created_timestamp")).headOption
+      }
+      using(sqlite.prepareStatement("INSERT OR IGNORE INTO closed_channels VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setBytes(1, channelId.toArray)
         statement.setBytes(2, data.remoteNodeId.value.toArray)
         statement.setBytes(3, data.fundingTxId.value.toArray)
         statement.setLong(4, data.fundingOutputIndex)
         statement.setLong(5, data.fundingTxIndex)
-        statement.setBoolean(6, data.isChannelOpener)
-        statement.setString(7, data.commitmentFormat)
-        statement.setBoolean(8, data.announced)
-        statement.setLong(9, data.capacity.toLong)
-        statement.setBytes(10, data.closingTxId.value.toArray)
-        statement.setString(11, data.closingType)
-        statement.setBytes(12, data.closingScript.toArray)
-        statement.setLong(13, data.closingAmount.toLong)
-        statement.setLong(14, TimestampMilli.now().toLong)
+        statement.setString(6, data.fundingKeyPath)
+        statement.setString(7, data.channelFeatures)
+        statement.setBoolean(8, data.isChannelOpener)
+        statement.setString(9, data.commitmentFormat)
+        statement.setBoolean(10, data.announced)
+        statement.setLong(11, data.capacity.toLong)
+        statement.setBytes(12, data.closingTxId.value.toArray)
+        statement.setString(13, data.closingType)
+        statement.setBytes(14, data.closingScript.toArray)
+        statement.setLong(15, data.localBalance.toLong)
+        statement.setLong(16, data.remoteBalance.toLong)
+        statement.setLong(17, data.closingAmount.toLong)
+        statement.setLong(18, createdAt_opt.getOrElse(0))
+        statement.setLong(19, TimestampMilli.now().toLong)
         statement.executeUpdate()
       }
     })
@@ -297,6 +311,8 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
           fundingTxId = TxId(rs.getByteVector32("funding_txid")),
           fundingOutputIndex = rs.getLong("funding_output_index"),
           fundingTxIndex = rs.getLong("funding_tx_index"),
+          fundingKeyPath = rs.getString("funding_key_path"),
+          channelFeatures = rs.getString("channel_features"),
           isChannelOpener = rs.getBoolean("is_channel_opener"),
           commitmentFormat = rs.getString("commitment_format"),
           announced = rs.getBoolean("announced"),
@@ -304,6 +320,8 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
           closingTxId = TxId(rs.getByteVector32("closing_txid")),
           closingType = rs.getString("closing_type"),
           closingScript = rs.getByteVector("closing_script"),
+          localBalance = MilliSatoshi(rs.getLong("local_balance_msat")),
+          remoteBalance = MilliSatoshi(rs.getLong("remote_balance_msat")),
           closingAmount = Satoshi(rs.getLong("closing_amount_satoshis"))
         )
       }.toSeq
