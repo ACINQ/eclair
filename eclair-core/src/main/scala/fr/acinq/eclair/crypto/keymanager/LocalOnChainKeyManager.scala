@@ -290,7 +290,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
         s.getPsbt.finalizeWitnessInput(pos, Script.witnessPay2wpkh(pub, s.getSig))
       }) match {
       case Right(psbt) => psbt
-      case Left(failure) => throw new RuntimeException(s"cannot sign psbt input, error = $failure")
+      case Left(failure) => throw new RuntimeException(s"cannot sign psbt input at position $pos, error = $failure")
     }
   }
 
@@ -315,7 +315,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
       .sign(priv, pos)
       .flatMap(s => s.getPsbt.finalizeWitnessInput(pos, Script.witnessKeyPathPay2tr(ByteVector64(s.getSig), SigHash.SIGHASH_DEFAULT))) match {
       case Right(psbt) => psbt
-      case Left(failure) => throw new RuntimeException(s"cannot sign psbt input, error = $failure")
+      case Left(failure) => throw new RuntimeException(s"cannot sign psbt input at position $pos, error = $failure")
     }
   }
 }

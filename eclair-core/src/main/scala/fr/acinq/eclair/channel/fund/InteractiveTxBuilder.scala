@@ -1017,11 +1017,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           // We trust that non-change outputs are valid: this only works if the entry point for creating such outputs is trusted (for example, a secure API call).
           case _: Output.Local.NonChange => None
         }
-        // If this is a splice, the PSBT we create must contain the shared input, because if we use taproot wallet inputs
-        // we need information about *all* of the transaction's inputs, not just the one we're signing.
-        val psbt = unsignedTx.sharedInput_opt.flatMap {
-          si => new Psbt(tx).updateWitnessInput(si.outPoint, si.txOut, null, null, null, java.util.Map.of(), null, null, java.util.Map.of()).toOption
-        }.getOrElse(new Psbt(tx))
+        // We must include all remote inputs in the PSBT we create, because if we use taproot wallet inputs we need
+        // information about *all* of the transaction's inputs, not just the one we're signing. If this is a splice,
+        // we also need to include the shared input, for the same reason.
+        val psbt = (unsignedTx.remoteInputs ++ unsignedTx.sharedInput_opt.toSeq).foldLeft(new Psbt(tx)) {
+          case (psbt, input) => psbt.updateWitnessInput(input.outPoint, input.txOut, null, null, null, java.util.Map.of(), null, null, java.util.Map.of()).toOption.getOrElse(psbt)
+        }
         context.pipeToSelf(wallet.signPsbt(psbt, ourWalletInputs, ourWalletOutputs).map {
           response =>
             val localOutpoints = unsignedTx.localInputs.map(_.outPoint).toSet

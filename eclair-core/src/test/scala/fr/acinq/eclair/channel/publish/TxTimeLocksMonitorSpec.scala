@@ -20,7 +20,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.scalacompat.{OutPoint, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.NoOpOnChainWallet
+import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.{CheckTx, TimeLocksOk, WrappedCurrentBlockHeight}
 import fr.acinq.eclair.{NodeParams, TestConstants, TestKitBaseClass, randomKey}
@@ -36,7 +36,7 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
   case class FixtureParam(nodeParams: NodeParams, monitor: ActorRef[TxTimeLocksMonitor.Command], bitcoinClient: BitcoinTestClient, probe: TestProbe)
 
-  case class BitcoinTestClient() extends NoOpOnChainWallet {
+  case class BitcoinTestClient() extends DummyOnChainWallet {
     private val requests = collection.concurrent.TrieMap.empty[TxId, Promise[Option[Int]]]
 
     override def getTxConfirmations(txId: TxId)(implicit ec: ExecutionContext): Future[Option[Int]] = {
