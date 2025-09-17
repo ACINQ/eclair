@@ -23,12 +23,13 @@ import akka.testkit.TestProbe
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Transaction
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.TestUtils.waitEventStreamSynced
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.{CMD_CLOSE, RES_SUCCESS, Register}
+import fr.acinq.eclair.crypto.keymanager.LocalNodeKeyManager
 import fr.acinq.eclair.io.Switchboard
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
@@ -36,7 +37,7 @@ import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.ReplyPath
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
 import fr.acinq.eclair.wire.protocol.{GenericTlv, NodeAnnouncement}
-import fr.acinq.eclair.{EclairImpl, EncodedNodeId, Features, MilliSatoshi, SendOnionMessageResponse, UInt64, randomBytes, randomKey}
+import fr.acinq.eclair.{EclairImpl, EncodedNodeId, Features, MilliSatoshi, SendOnionMessageResponse, UInt64, randomBytes, randomBytes32, randomKey}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -47,12 +48,12 @@ class MessageIntegrationSpec extends IntegrationSpec {
   implicit val timeout: Timeout = FiniteDuration(30, SECONDS)
 
   test("start eclair nodes") {
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.server.port" -> 30700, "eclair.api.port" -> 30780, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all", "eclair.onion-messages.reply-timeout" -> "1 minute").asJava).withFallback(commonConfig))
-    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.server.port" -> 30701, "eclair.api.port" -> 30781, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all", "eclair.onion-messages.reply-timeout" -> "1 second").asJava).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.server.port" -> 30702, "eclair.api.port" -> 30782, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all").asJava).withFallback(commonConfig))
-    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.server.port" -> 30703, "eclair.api.port" -> 30783).asJava).withFallback(commonConfig))
-    instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.server.port" -> 30704, "eclair.api.port" -> 30784, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "channels-only").asJava).withFallback(commonConfig))
-    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.server.port" -> 30705, "eclair.api.port" -> 30785, s"eclair.features.${Features.OnionMessages.rfcName}" -> "disabled").asJava).withFallback(commonConfig))
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.server.port" -> 30700, "eclair.api.port" -> 30780, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all", "eclair.onion-messages.reply-timeout" -> "1 minute").asJava).withFallback(commonConfig), Some(ByteVector32(hex"40e4f4f95f9967b8cc5f844e94936f7045ed3ab67e0db7951a8af0bcddb8abbb")))
+    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.server.port" -> 30701, "eclair.api.port" -> 30781, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all", "eclair.onion-messages.reply-timeout" -> "1 second").asJava).withFallback(commonConfig), Some(ByteVector32(hex"0c436bdc75a384126b86c0f65fee1a87ab16ef28397c3f38f6b165a13c969bba")))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.server.port" -> 30702, "eclair.api.port" -> 30782, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all").asJava).withFallback(commonConfig), Some(ByteVector32(hex"de6614d459422d77df04571f62c7b73c1aae404e00f568af462d513303f54b46")))
+    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.server.port" -> 30703, "eclair.api.port" -> 30783).asJava).withFallback(commonConfig), Some(ByteVector32(hex"454e58503bec6b75430c3a5a738cc9329318969afd2a5d789bee3fa0b0327027")))
+    instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.server.port" -> 30704, "eclair.api.port" -> 30784, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "channels-only").asJava).withFallback(commonConfig), Some(ByteVector32(hex"e8faa9ac62d99f6362452c4d4decfdf826b0d47718550a10821d19a4d6382d43")))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.server.port" -> 30705, "eclair.api.port" -> 30785, s"eclair.features.${Features.OnionMessages.rfcName}" -> "disabled").asJava).withFallback(commonConfig), Some(ByteVector32(hex"acc27975904e764e18d1261de40014a42a992fbacf9d9b2a333162993520bdca")))
   }
 
   test("try to reach unknown node") {
@@ -369,6 +370,9 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
     waitEventStreamSynced(nodes("C").system.eventStream)
+    println(".")
+    println(".")
+    println("=== automatically connect to known nodes ===")
     alice.sendOnionMessage(Some(nodes("B").nodeParams.nodeId :: Nil), Left(nodes("C").nodeParams.nodeId), expectsReply = false, hex"7300").pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 

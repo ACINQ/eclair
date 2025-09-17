@@ -19,7 +19,7 @@ package fr.acinq.eclair.integration
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.scalacompat.Satoshi
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.PaymentWeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.{DefaultFormats, Formats}
 import org.scalatest.BeforeAndAfterAll
@@ -145,14 +145,14 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     super.afterAll()
   }
 
-  def instantiateEclairNode(name: String, config: Config): Unit = {
+  def instantiateEclairNode(name: String, config: Config, seed_opt: Option[ByteVector32] = None): Unit = {
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-$name")
     datadir.mkdirs()
     if (useEclairSigner) {
       Files.writeString(datadir.toPath.resolve("eclair-signer.conf"), eclairSignerConf)
     }
     implicit val system: ActorSystem = ActorSystem(s"system-$name", config)
-    val setup = new Setup(datadir, pluginParams = Seq.empty)
+    val setup = new Setup(datadir, pluginParams = Seq.empty, seed_opt.map(s => Setup.Seeds(s, randomBytes32())))
     val kit = Await.result(setup.bootstrap, 10 seconds)
     nodes = nodes + (name -> kit)
   }

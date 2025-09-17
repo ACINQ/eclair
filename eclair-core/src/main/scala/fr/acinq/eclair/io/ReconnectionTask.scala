@@ -129,6 +129,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
     case Event(TickReconnect, _) => stay()
 
     case Event(Peer.Connect(_, address_opt, replyTo, isPersistent), _) =>
+      println(s"${nodeParams.alias} -> ${remoteNodeId.toHex.substring(2, 3)} connection isPersistent=$isPersistent")
       // manual connection requests happen completely independently of the automated reconnection process;
       // we initiate a connection but don't modify our state.
       // if we are already connecting/connected, the peer will kill any duplicate connections

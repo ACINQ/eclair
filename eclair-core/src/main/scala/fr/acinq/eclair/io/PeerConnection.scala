@@ -185,6 +185,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
     heartbeat {
       case Event(msg: OnionMessage, d: ConnectedData) => // we process onion messages separately as we want to rate limit them
         if (sender() == d.transport) {
+          println(s"${keyPair.pub.toHex.substring(2, 3)} <- ${d.remoteNodeId.toHex.substring(2, 3)}")
           d.transport ! TransportHandler.ReadAck(msg)
           if (incomingRateLimiter.tryAcquire()) {
             d.peer ! msg
@@ -193,6 +194,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             Metrics.OnionMessagesThrottled.withTag(Tags.Direction, Tags.Directions.Incoming).increment()
           }
         } else {
+          println(s"${keyPair.pub.toHex.substring(2, 3)} -> ${d.remoteNodeId.toHex.substring(2, 3)}")
           if (outgoingRateLimiter.tryAcquire()) {
             d.transport forward msg
             Metrics.OnionMessagesProcessed.withTag(Tags.Direction, Tags.Directions.Outgoing).increment()
