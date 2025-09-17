@@ -56,7 +56,10 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       def migration1112(statement: Statement): Unit = {
         // We start by dropping for foreign key constraint on htlc_infos, otherwise we won't be able to move recently
         // closed channels to a different table.
-        statement.executeUpdate("ALTER TABLE local.htlc_infos DROP CONSTRAINT htlc_infos_channel_id_fkey")
+        statement.executeQuery("SELECT conname FROM pg_catalog.pg_constraint WHERE contype = 'f'").map(rs => rs.getString("conname")).headOption match {
+          case Some(foreignKeyConstraint) => statement.executeUpdate(s"ALTER TABLE local.htlc_infos DROP CONSTRAINT $foreignKeyConstraint")
+          case None => logger.warn("couldn't find foreign key constraint for htlc_infos table: DB migration may fail")
+        }
         // We can now move closed channels to a dedicated table.
         statement.executeUpdate("CREATE TABLE local.closed_channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, funding_output_index BIGINT NOT NULL, funding_tx_index BIGINT NOT NULL, funding_key_path TEXT NOT NULL, channel_features TEXT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis BIGINT NOT NULL, closing_txid TEXT NOT NULL, closing_type TEXT NOT NULL, closing_script TEXT NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, closing_amount_satoshis INTEGER NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL, closed_at TIMESTAMP WITH TIME ZONE NOT NULL)")
         statement.executeUpdate("CREATE INDEX closed_channels_remote_node_id_idx ON local.closed_channels(remote_node_id)")
