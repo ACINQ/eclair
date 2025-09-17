@@ -108,6 +108,15 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
     m
   }
 
+  private def encodeAndSendToPeer(encryptor: Encryptor, t: LightningMessage): Encryptor = {
+    logMessage(t, "OUT")
+    val blob = codec.encode(t).require.toByteVector
+    Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.OUT).record(blob.size)
+    val (enc1, ciphertext) = encryptor.encrypt(blob)
+    connection ! Tcp.Write(buf(ciphertext), WriteAck)
+    enc1
+  }
+
   startWith(Handshake, HandshakeData(reader))
 
   when(Handshake) {
@@ -209,32 +218,19 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
           }
           stay() using d.copy(sendBuffer = sendBuffer1)
         } else {
-          logMessage(t, "OUT")
-          val blob = codec.encode(t).require.toByteVector
-          Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.OUT).record(blob.size)
-          val (enc1, ciphertext) = d.encryptor.encrypt(blob)
-          connection ! Tcp.Write(buf(ciphertext), WriteAck)
+          val enc1 = encodeAndSendToPeer(d.encryptor, t)
           stay() using d.copy(encryptor = enc1, unackedSent = Some(t))
         }
 
       case Event(WriteAck, d: NormalData) =>
-        def send(t: LightningMessage) = {
-          logMessage(t, "OUT")
-          val blob = codec.encode(t).require.toByteVector
-          Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.OUT).record(blob.size)
-          val (enc1, ciphertext) = d.encryptor.encrypt(blob)
-          connection ! Tcp.Write(buf(ciphertext), WriteAck)
-          enc1
-        }
-
         d.sendBuffer.normalPriority.dequeueOption match {
           case Some((t, normalPriority1)) =>
-            val enc1 = send(t)
+            val enc1 = encodeAndSendToPeer(d.encryptor, t)
             stay() using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(normalPriority = normalPriority1), unackedSent = Some(t))
           case None =>
             d.sendBuffer.lowPriority.dequeueOption match {
               case Some((t, lowPriority1)) =>
-                val enc1 = send(t)
+                val enc1 = encodeAndSendToPeer(d.encryptor, t)
                 stay() using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(lowPriority = lowPriority1), unackedSent = Some(t))
               case None =>
                 stay() using d.copy(unackedSent = None)
