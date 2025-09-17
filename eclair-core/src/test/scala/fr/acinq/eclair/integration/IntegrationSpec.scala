@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.PaymentWeightRatios
+import fr.acinq.eclair.router.Graph.HeuristicsConstants
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
@@ -57,12 +57,12 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       maxFeeProportional = 0.03,
       maxCltv = CltvExpiryDelta(Int.MaxValue),
       maxRouteLength = ROUTE_MAX_LENGTH),
-    heuristics = PaymentWeightRatios(
-      baseFactor = 0,
-      cltvDeltaFactor = 1,
-      ageFactor = 0,
-      capacityFactor = 0,
+    heuristics = HeuristicsConstants(
+      lockedFundsRisk = 0,
+      failureFees = RelayFees(0 msat, 0),
       hopFees = RelayFees(0 msat, 0),
+      useLogProbability = false,
+      usePastRelaysData = false
     ),
     mpp = MultiPartParams(15000000 msat, 6),
     experimentName = "my-test-experiment",

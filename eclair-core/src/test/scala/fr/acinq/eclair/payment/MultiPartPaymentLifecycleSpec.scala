@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelHopFromUpdate}
-import fr.acinq.eclair.router.Graph.PaymentWeightRatios
+import fr.acinq.eclair.router.Graph.HeuristicsConstants
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Announcements, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
@@ -696,7 +696,7 @@ object MultiPartPaymentLifecycleSpec {
       0.00,
       6,
       CltvExpiryDelta(1008)),
-    PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
+    HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false),
     MultiPartParams(1000 msat, 5),
     experimentName = "my-test-experiment",
     experimentPercentage = 100
