@@ -68,7 +68,8 @@ object EclairInternalsSerializer {
     ("lockedFundsRisk" | double) ::
       ("failureCost" | relayFeesCodec) ::
       ("hopCost" | relayFeesCodec) ::
-      ("useLogProbability" | bool(8))).as[HeuristicsConstants]
+      ("useLogProbability" | bool(8)) ::
+      ("usePastRelaysData" | bool(8))).as[HeuristicsConstants]
 
   val weightRatiosCodec: Codec[WeightRatios[PaymentPathWeight]] =
     discriminated[WeightRatios[PaymentPathWeight]].by(uint8)
@@ -109,6 +110,7 @@ object EclairInternalsSerializer {
 
   val routerConfCodec: Codec[RouterConf] = (
     ("watchSpentWindow" | finiteDurationCodec) ::
+      ("channelSpentSpliceDelay" | int32) ::
       ("channelExcludeDuration" | finiteDurationCodec) ::
       ("routerBroadcastInterval" | finiteDurationCodec) ::
       ("syncConf" | syncConfCodec) ::

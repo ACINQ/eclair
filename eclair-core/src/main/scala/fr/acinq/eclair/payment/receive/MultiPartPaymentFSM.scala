@@ -134,7 +134,7 @@ object MultiPartPaymentFSM {
     def totalAmount: MilliSatoshi
   }
   /** An incoming HTLC. */
-  case class HtlcPart(totalAmount: MilliSatoshi, htlc: UpdateAddHtlc) extends PaymentPart {
+  case class HtlcPart(totalAmount: MilliSatoshi, htlc: UpdateAddHtlc, receivedAt: TimestampMilli) extends PaymentPart {
     override def paymentHash: ByteVector32  = htlc.paymentHash
     override def amount: MilliSatoshi  = htlc.amountMsat
   }

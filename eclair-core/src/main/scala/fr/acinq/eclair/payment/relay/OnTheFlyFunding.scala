@@ -27,6 +27,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.Monitoring.Metrics
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.wire.protocol.LiquidityAds.PaymentDetails
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, ToMilliSatoshiConversion}
@@ -96,19 +97,20 @@ object OnTheFlyFunding {
     def createFailureCommands(failure_opt: Option[FailureReason])(implicit log: LoggingAdapter): Seq[(ByteVector32, CMD_FAIL_HTLC)] = upstream match {
       case _: Upstream.Local => Nil
       case u: Upstream.Hot.Channel =>
-        val failure = htlc.pathKey_opt match {
-          case Some(_) => FailureReason.LocalFailure(InvalidOnionBlinding(Sphinx.hash(u.add.onionRoutingPacket)))
-          case None => failure_opt.getOrElse(FailureReason.LocalFailure(UnknownNextPeer()))
-        }
-        Seq(u.add.channelId -> CMD_FAIL_HTLC(u.add.id, failure, commit = true))
+        // Note that even in the Bolt12 case, we relay the downstream failure instead of sending back invalid_onion_blinding.
+        // That's because we are directly connected to the wallet: the blinded path doesn't contain any other public nodes,
+        // so we don't need to protect against probing. This allows us to return a more meaningful failure to the payer.
+        val failure = failure_opt.getOrElse(FailureReason.LocalFailure(UnknownNextPeer()))
+        val attribution = FailureAttributionData(htlcReceivedAt = u.receivedAt, trampolineReceivedAt_opt = None)
+        Seq(u.add.channelId -> CMD_FAIL_HTLC(u.add.id, failure, Some(attribution), commit = true))
       case u: Upstream.Hot.Trampoline =>
         val failure = failure_opt match {
           case Some(f) => f match {
             case f: FailureReason.EncryptedDownstreamFailure =>
               // In the trampoline case, we currently ignore downstream failures: we should add dedicated failures to
               // the BOLTs to better handle those cases.
-              Sphinx.FailurePacket.decrypt(f.packet, onionSharedSecrets) match {
-                case Left(Sphinx.CannotDecryptFailurePacket(_)) =>
+              Sphinx.FailurePacket.decrypt(f.packet, f.attribution_opt, onionSharedSecrets).failure match {
+                case Left(Sphinx.CannotDecryptFailurePacket(_, _)) =>
                   log.warning("couldn't decrypt downstream on-the-fly funding failure")
                 case Right(f) =>
                   log.warning("downstream on-the-fly funding failure: {}", f.failureMessage.message)
@@ -118,14 +120,20 @@ object OnTheFlyFunding {
           }
           case None => FailureReason.LocalFailure(UnknownNextPeer())
         }
-        u.received.map(_.add).map(add => add.channelId -> CMD_FAIL_HTLC(add.id, failure, commit = true))
+        u.received.map(c => {
+          val attribution = FailureAttributionData(htlcReceivedAt = c.receivedAt, trampolineReceivedAt_opt = Some(u.receivedAt))
+          c.add.channelId -> CMD_FAIL_HTLC(c.add.id, failure, Some(attribution), commit = true)
+        })
     }
 
     /** Create commands to fulfill all upstream HTLCs. */
     def createFulfillCommands(preimage: ByteVector32): Seq[(ByteVector32, CMD_FULFILL_HTLC)] = upstream match {
       case _: Upstream.Local => Nil
-      case u: Upstream.Hot.Channel => Seq(u.add.channelId -> CMD_FULFILL_HTLC(u.add.id, preimage, commit = true))
-      case u: Upstream.Hot.Trampoline => u.received.map(_.add).map(add => add.channelId -> CMD_FULFILL_HTLC(add.id, preimage, commit = true))
+      case u: Upstream.Hot.Channel => Seq(u.add.channelId -> CMD_FULFILL_HTLC(u.add.id, preimage, Some(FulfillAttributionData(htlcReceivedAt = u.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = None)), commit = true))
+      case u: Upstream.Hot.Trampoline => u.received.map(c => {
+        val attribution = FulfillAttributionData(htlcReceivedAt = c.receivedAt, trampolineReceivedAt_opt = Some(u.receivedAt), downstreamAttribution_opt = None)
+        c.add.channelId -> CMD_FULFILL_HTLC(c.add.id, preimage, Some(attribution), commit = true)
+      })
     }
   }
 
@@ -293,7 +301,7 @@ object OnTheFlyFunding {
 
     private def relay(data: DATA_NORMAL): Behavior[Command] = {
       context.log.debug("relaying {} on-the-fly HTLCs that have been funded", cmd.proposed.size)
-      val htlcMinimum = data.commitments.params.remoteParams.htlcMinimum
+      val htlcMinimum = data.commitments.latest.remoteCommitParams.htlcMinimum
       val cmdAdapter = context.messageAdapter[CommandResponse[CMD_ADD_HTLC]](WrappedCommandResponse)
       val htlcSettledAdapter = context.messageAdapter[RES_ADD_SETTLED[Origin.Hot, HtlcResult]](WrappedHtlcSettled)
       cmd.proposed.foldLeft(cmd.status.remainingFees) {
@@ -302,7 +310,7 @@ object OnTheFlyFunding {
           // This lets us detect that this HTLC is an on-the-fly funded HTLC.
           val htlcFees = LiquidityAds.FundingFee(remainingFees.min(p.maxFees(htlcMinimum)), cmd.status.txId)
           val origin = Origin.Hot(htlcSettledAdapter.toClassic, p.upstream)
-          val add = CMD_ADD_HTLC(cmdAdapter.toClassic, p.htlc.amount - htlcFees.amount, paymentHash, p.htlc.expiry, p.htlc.finalPacket, p.htlc.pathKey_opt, 1.0, Some(htlcFees), origin, commit = true)
+          val add = CMD_ADD_HTLC(cmdAdapter.toClassic, p.htlc.amount - htlcFees.amount, paymentHash, p.htlc.expiry, p.htlc.finalPacket, p.htlc.pathKey_opt, Reputation.Score.max, Some(htlcFees), origin, commit = true)
           cmd.channel ! add
           remainingFees - htlcFees.amount
       }
@@ -355,13 +363,17 @@ object OnTheFlyFunding {
     import scodec.codecs._
 
     private val upstreamLocal: Codec[Upstream.Local] = uuid.as[Upstream.Local]
-    private val upstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey).as[Upstream.Hot.Channel]
+    private val upstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: double).as[Upstream.Hot.Channel]
     private val upstreamTrampoline: Codec[Upstream.Hot.Trampoline] = listOfN(uint16, upstreamChannel).as[Upstream.Hot.Trampoline]
+    private val legacyUpstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: provide(0.0)).as[Upstream.Hot.Channel]
+    private val legacyUpstreamTrampoline: Codec[Upstream.Hot.Trampoline] = listOfN(uint16, legacyUpstreamChannel).as[Upstream.Hot.Trampoline]
 
     val upstream: Codec[Upstream.Hot] = discriminated[Upstream.Hot].by(uint16)
       .typecase(0x00, upstreamLocal)
-      .typecase(0x01, upstreamChannel)
-      .typecase(0x02, upstreamTrampoline)
+      .typecase(0x03, upstreamChannel)
+      .typecase(0x04, upstreamTrampoline)
+      .typecase(0x01, legacyUpstreamChannel)
+      .typecase(0x02, legacyUpstreamTrampoline)
 
     val proposal: Codec[Proposal] = (
       ("willAddHtlc" | lengthDelimited(willAddHtlcCodec)) ::

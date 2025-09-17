@@ -29,10 +29,11 @@ import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates, OnChainChannelFunder, OnchainPubkeyCache}
+import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates, OnChainChannelFunder, OnChainPubkeyCache}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.MessageRelay.Status
 import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
@@ -60,7 +61,7 @@ import scodec.bits.ByteVector
  */
 class Peer(val nodeParams: NodeParams,
            remoteNodeId: PublicKey,
-           wallet: OnchainPubkeyCache,
+           wallet: OnChainPubkeyCache,
            channelFactory: Peer.ChannelFactory,
            switchboard: ActorRef,
            register: ActorRef,
@@ -82,7 +83,8 @@ class Peer(val nodeParams: NodeParams,
     case Event(init: Init, _) =>
       pendingOnTheFlyFunding = init.pendingOnTheFlyFunding
       val channels = init.storedChannels.map { state =>
-        val channel = spawnChannel()
+        val channelKeys = nodeParams.channelKeyManager.channelKeys(state.channelParams.channelConfig, state.channelParams.localParams.fundingKeyPath)
+        val channel = spawnChannel(channelKeys)
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
@@ -206,19 +208,37 @@ class Peer(val nodeParams: NodeParams,
         stay()
 
       case Event(SpawnChannelInitiator(replyTo, c, channelConfig, channelType, localParams), d: ConnectedData) =>
-        val channel = spawnChannel()
+        val channelKeys = nodeParams.channelKeyManager.channelKeys(channelConfig, localParams.fundingKeyPath)
+        val channel = spawnChannel(channelKeys)
         context.system.scheduler.scheduleOnce(c.timeout_opt.map(_.duration).getOrElse(nodeParams.channelConf.channelFundingTimeout), channel, Channel.TickChannelOpenTimeout)(context.dispatcher)
         val dualFunded = Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding)
         val requireConfirmedInputs = c.requireConfirmedInputsOverride_opt.getOrElse(nodeParams.channelConf.requireConfirmedInputsForDualFunding)
         val temporaryChannelId = if (dualFunded) {
-          Helpers.dualFundedTemporaryChannelId(nodeParams, localParams, channelConfig)
+          Helpers.dualFundedTemporaryChannelId(channelKeys)
         } else {
           randomBytes32()
         }
-        val fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing))
-        val commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelType.commitmentFormat, c.fundingAmount)
-        log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=$fundingTxFeerate temporaryChannelId=$temporaryChannelId localParams=$localParams")
-        channel ! INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId, c.fundingAmount, dualFunded, commitTxFeerate, fundingTxFeerate, c.fundingTxFeeBudget_opt, c.pushAmount_opt, requireConfirmedInputs, c.requestFunding_opt, localParams, d.peerConnection, d.remoteInit, c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags), channelConfig, channelType, replyTo)
+        val init = INPUT_INIT_CHANNEL_INITIATOR(
+          temporaryChannelId = temporaryChannelId,
+          fundingAmount = c.fundingAmount,
+          dualFunded = dualFunded,
+          commitTxFeerate = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelType.commitmentFormat),
+          fundingTxFeerate = c.fundingTxFeerate_opt.getOrElse(nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing)),
+          fundingTxFeeBudget_opt = c.fundingTxFeeBudget_opt,
+          pushAmount_opt = c.pushAmount_opt,
+          requireConfirmedInputs = requireConfirmedInputs,
+          requestFunding_opt = c.requestFunding_opt,
+          localChannelParams = localParams,
+          proposedCommitParams = nodeParams.channelConf.commitParams(c.fundingAmount, unlimitedMaxHtlcValueInFlight = false),
+          remote = d.peerConnection,
+          remoteInit = d.remoteInit,
+          channelFlags = c.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags),
+          channelConfig = channelConfig,
+          channelType = channelType,
+          replyTo = replyTo
+        )
+        log.info(s"requesting a new channel with type=$channelType fundingAmount=${c.fundingAmount} dualFunded=$dualFunded pushAmount=${c.pushAmount_opt} fundingFeerate=${init.fundingTxFeerate} temporaryChannelId=$temporaryChannelId")
+        channel ! init
         stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
@@ -260,16 +280,40 @@ class Peer(val nodeParams: NodeParams,
               context.system.eventStream.publish(ChannelAborted(ActorRef.noSender, remoteNodeId, temporaryChannelId))
               stay()
             case accept: OnTheFlyFunding.ValidationResult.Accept =>
-              val channel = spawnChannel()
+              val channelKeys = nodeParams.channelKeyManager.channelKeys(channelConfig, localParams.fundingKeyPath)
+              val channel = spawnChannel(channelKeys)
               context.system.scheduler.scheduleOnce(nodeParams.channelConf.channelFundingTimeout, channel, Channel.TickChannelOpenTimeout)(context.dispatcher)
               log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
               open match {
                 case Left(open) =>
-                  channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, None, dualFunded = false, None, requireConfirmedInputs = false, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+                  val init = INPUT_INIT_CHANNEL_NON_INITIATOR(
+                    temporaryChannelId = open.temporaryChannelId,
+                    fundingContribution_opt = None,
+                    dualFunded = false,
+                    pushAmount_opt = None,
+                    requireConfirmedInputs = false,
+                    localChannelParams = localParams,
+                    proposedCommitParams = nodeParams.channelConf.commitParams(open.fundingSatoshis, unlimitedMaxHtlcValueInFlight = false),
+                    remote = d.peerConnection,
+                    remoteInit = d.remoteInit,
+                    channelConfig = channelConfig,
+                    channelType = channelType)
+                  channel ! init
                   channel ! open
                 case Right(open) =>
-                  val requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding
-                  channel ! INPUT_INIT_CHANNEL_NON_INITIATOR(open.temporaryChannelId, addFunding_opt, dualFunded = true, None, requireConfirmedInputs, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+                  val init = INPUT_INIT_CHANNEL_NON_INITIATOR(
+                    temporaryChannelId = open.temporaryChannelId,
+                    fundingContribution_opt = addFunding_opt,
+                    dualFunded = true,
+                    pushAmount_opt = None,
+                    requireConfirmedInputs = nodeParams.channelConf.requireConfirmedInputsForDualFunding,
+                    localChannelParams = localParams,
+                    proposedCommitParams = nodeParams.channelConf.commitParams(open.fundingAmount + addFunding_opt.map(_.fundingAmount).getOrElse(0 sat), unlimitedMaxHtlcValueInFlight = false),
+                    remote = d.peerConnection,
+                    remoteInit = d.remoteInit,
+                    channelConfig = channelConfig,
+                    channelType = channelType)
+                  channel ! init
                   accept.useFeeCredit_opt match {
                     case Some(useFeeCredit) => channel ! open.copy(tlvStream = TlvStream(open.tlvStream.records + ChannelTlv.UseFeeCredit(useFeeCredit)))
                     case None => channel ! open
@@ -335,7 +379,7 @@ class Peer(val nodeParams: NodeParams,
                 pending.proposed.find(_.htlc.id == msg.id) match {
                   case Some(htlc) =>
                     val failure = msg match {
-                      case msg: WillFailHtlc => FailureReason.EncryptedDownstreamFailure(msg.reason)
+                      case msg: WillFailHtlc => FailureReason.EncryptedDownstreamFailure(msg.reason, msg.attribution_opt)
                       case msg: WillFailMalformedHtlc => FailureReason.LocalFailure(createBadOnionFailure(msg.onionHash, msg.failureCode))
                     }
                     htlc.createFailureCommands(Some(failure))(log).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
@@ -872,8 +916,8 @@ class Peer(val nodeParams: NodeParams,
       s(e)
   }
 
-  private def spawnChannel(): ActorRef = {
-    val channel = channelFactory.spawn(context, remoteNodeId)
+  private def spawnChannel(channelKeys: ChannelKeys): ActorRef = {
+    val channel = channelFactory.spawn(context, remoteNodeId, channelKeys)
     context.watchWith(channel, ChannelTerminated(channel.ref))
     channel
   }
@@ -976,15 +1020,15 @@ object Peer {
   val CHANNELID_ZERO: ByteVector32 = ByteVector32.Zeroes
 
   trait ChannelFactory {
-    def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef
+    def spawn(context: ActorContext, remoteNodeId: PublicKey, channelKeys: ChannelKeys): ActorRef
   }
 
-  case class SimpleChannelFactory(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, wallet: OnChainChannelFunder with OnchainPubkeyCache, txPublisherFactory: Channel.TxPublisherFactory) extends ChannelFactory {
-    override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef =
-      context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory))
+  case class SimpleChannelFactory(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, wallet: OnChainChannelFunder with OnChainPubkeyCache, txPublisherFactory: Channel.TxPublisherFactory) extends ChannelFactory {
+    override def spawn(context: ActorContext, remoteNodeId: PublicKey, channelKeys: ChannelKeys): ActorRef =
+      context.actorOf(Channel.props(nodeParams, channelKeys, wallet, remoteNodeId, watcher, relayer, txPublisherFactory))
   }
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnchainPubkeyCache, channelFactory: ChannelFactory, switchboard: ActorRef, register: ActorRef, router: typed.ActorRef[Router.GetNodeId], pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]): Props =
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainPubkeyCache, channelFactory: ChannelFactory, switchboard: ActorRef, register: ActorRef, router: typed.ActorRef[Router.GetNodeId], pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]): Props =
     Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard, register, router, pendingChannelsRateLimiter))
 
   // @formatter:off
@@ -1074,8 +1118,8 @@ object Peer {
     case class RemoteError(ascii: String) extends OpenChannelResponse { override def toString = s"peer aborted the channel funding flow: '$ascii'" }
   }
 
-  case class SpawnChannelInitiator(replyTo: akka.actor.typed.ActorRef[OpenChannelResponse], cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalParams)
-  case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, addFunding_opt: Option[LiquidityAds.AddFunding], localParams: LocalParams, peerConnection: ActorRef)
+  case class SpawnChannelInitiator(replyTo: akka.actor.typed.ActorRef[OpenChannelResponse], cmd: Peer.OpenChannel, channelConfig: ChannelConfig, channelType: SupportedChannelType, localParams: LocalChannelParams)
+  case class SpawnChannelNonInitiator(open: Either[protocol.OpenChannel, protocol.OpenDualFundedChannel], channelConfig: ChannelConfig, channelType: SupportedChannelType, addFunding_opt: Option[LiquidityAds.AddFunding], localParams: LocalChannelParams, peerConnection: ActorRef)
 
   /** If [[Features.OnTheFlyFunding]] is supported and we're connected, relay a funding proposal to our peer. */
   case class ProposeOnTheFlyFunding(replyTo: typed.ActorRef[ProposeOnTheFlyFundingResponse], amount: MilliSatoshi, paymentHash: ByteVector32, expiry: CltvExpiry, onion: OnionRoutingPacket, onionSharedSecrets: Seq[Sphinx.SharedSecret], nextPathKey_opt: Option[PublicKey], upstream: Upstream.Hot)

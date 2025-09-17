@@ -20,7 +20,6 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystemOps}
 import akka.testkit.TestProbe
-import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
@@ -33,8 +32,8 @@ import fr.acinq.eclair.integration.basic.fixtures.composite.ThreeNodesFixture
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.offer.{OfferCreator, OfferManager}
 import fr.acinq.eclair.payment.offer.OfferManager.InvoiceRequestActor
+import fr.acinq.eclair.payment.offer.{OfferCreator, OfferManager}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.OfferPayment
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendSpontaneousPayment}
@@ -44,12 +43,12 @@ import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.wire.protocol.OfferTypes.{BlindedPath, Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, InvalidOnionBlinding}
 import fr.acinq.eclair.{CltvExpiryDelta, EncodedNodeId, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, randomBytes32, randomKey}
-import org.scalatest.concurrent.IntegrationPatience
+import org.scalatest.concurrent.{IntegrationPatience, PatienceConfiguration}
+import org.scalatest.time.{Seconds, Span}
 import org.scalatest.{Tag, TestData}
 import scodec.bits.HexStringSyntax
 
 import java.util.UUID
-import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 
 class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
@@ -84,9 +83,9 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val f = ThreeNodesFixture(aliceParams, bobParams, carolParams, testData.name)
     import f._
 
-    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob)))
+    alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
     bob.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
-    carol.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(bob, carol)))
+    carol.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob, carol)))
 
     connect(alice, bob)
     connect(bob, carol)
@@ -115,6 +114,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     eventually {
       assert(getRouterData(alice).channels.size == 3 || testData.tags.contains(PrivateChannels))
+      assert(getRouterData(carol).graphWithBalances.graph.getEdgesBetween(alice.nodeId, bob.nodeId).nonEmpty || testData.tags.contains(PrivateChannels))
     }
   }
 
@@ -141,7 +141,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
   private def waitForAllChannelUpdates(f: FixtureParam, channelsCount: Int): Unit = {
     import f._
 
-    eventually {
+    eventually(timeout = PatienceConfiguration.Timeout(Span(30, Seconds))) {
       // We wait for Alice and Carol to receive channel updates for the path Alice -> Bob -> Carol.
       Seq(getRouterData(alice), getRouterData(carol)).foreach(routerData => {
         assert(routerData.channels.size == channelsCount)
@@ -171,7 +171,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val sender = TestProbe("sender")(recipient.system)
     val offerCreator = recipient.system.spawnAnonymous(OfferCreator(recipient.nodeParams, recipient.router, recipient.offerManager, recipient.defaultOfferHandler))
     offerCreator ! OfferCreator.Create(sender.ref.toTyped, description_opt, amount_opt, None, issuer_opt, blindedPathsFirstNodeId_opt)
-    sender.expectMsgType[OfferCreator.CreatedOffer].offer
+    sender.expectMsgType[OfferCreator.CreatedOffer].offerData.offer
   }
 
   def payOffer(payer: MinimalNodeFixture, offer: Offer, amount: MilliSatoshi, maxAttempts: Int = 1): PaymentEvent = {
@@ -273,7 +273,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
       InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta),
       InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta),
     )
-    val (offer, result) = sendOfferPayment(alice, carol, amount, routes, maxAttempts = 3)
+    val (offer, result) = sendOfferPayment(alice, carol, amount, routes, maxAttempts = 4)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 2)
     assert(payment.parts.forall(_.feesPaid > 0.msat))
@@ -292,7 +292,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
       InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta, feeOverride_opt = Some(RelayFees.zero)),
       InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta, feeOverride_opt = Some(RelayFees.zero)),
     )
-    val (offer, result) = sendOfferPayment(alice, carol, amount, routes, maxAttempts = 3)
+    val (offer, result) = sendOfferPayment(alice, carol, amount, routes, maxAttempts = 4)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length == 2)
     assert(payment.parts.forall(_.feesPaid == 0.msat))
@@ -316,7 +316,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     // None of the channels between Bob and Carol have enough balance for the payment: Alice needs to split it.
     val amount = 50_000_000 msat
-    val (offer, result) = sendPrivateOfferPayment(alice, carol, amount, routes, maxAttempts = 3)
+    val (offer, result) = sendPrivateOfferPayment(alice, carol, amount, routes, maxAttempts = 4)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length > 1)
   }
@@ -340,7 +340,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
     val amount1 = 150_000_000 msat
-    val (offer, result) = sendPrivateOfferPayment(alice, carol, amount1, routes, maxAttempts = 3)
+    val (offer, result) = sendPrivateOfferPayment(alice, carol, amount1, routes, maxAttempts = 4)
     val payment = verifyPaymentSuccess(offer, amount1, result)
     assert(payment.parts.length > 1)
   }
@@ -481,7 +481,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     // None of the channels have enough balance for the payment: it must be split.
     val amount = 150_000_000 msat
-    val (offer, result) = sendOfferPayment(bob, carol, amount, routes, maxAttempts = 3)
+    val (offer, result) = sendOfferPayment(bob, carol, amount, routes, maxAttempts = 4)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length > 1)
   }
@@ -539,7 +539,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     {
       val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
       val amount2 = 200_000_000 msat
-      val (offer, result) = sendOfferPayment(alice, carol, amount2, routes, maxAttempts = 3)
+      val (offer, result) = sendOfferPayment(alice, carol, amount2, routes, maxAttempts = 4)
       val payment = verifyPaymentSuccess(offer, amount2, result)
       assert(payment.parts.length > 1)
     }
@@ -568,7 +568,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     // Carol receives a payment that requires using MPP.
     val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
     val amount = 300_000_000 msat
-    val (offer, result) = sendOfferPayment(alice, carol, amount, routes, maxAttempts = 3)
+    val (offer, result) = sendOfferPayment(alice, carol, amount, routes, maxAttempts = 4)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length > 1)
   }
@@ -596,7 +596,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     // Carol receives a payment that requires using MPP.
     val routes = Seq(InvoiceRequestActor.Route(route.hops, maxFinalExpiryDelta))
     val amount = 200_000_000 msat
-    val (offer, result) = sendOfferPayment(alice, carol, amount, routes, maxAttempts = 3)
+    val (offer, result) = sendOfferPayment(alice, carol, amount, routes, maxAttempts = 4)
     val payment = verifyPaymentSuccess(offer, amount, result)
     assert(payment.parts.length > 1)
   }

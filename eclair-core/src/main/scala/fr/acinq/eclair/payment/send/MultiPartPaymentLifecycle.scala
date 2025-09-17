@@ -29,6 +29,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshiLong, NodeParams, TimestampMilli}
+import scodec.bits.ByteVector
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -118,7 +119,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(ps: PaymentSent, d: PaymentProgress) =>
       require(ps.parts.length == 1, "child payment must contain only one part")
       // As soon as we get the preimage we can consider that the whole payment succeeded (we have a proof of payment).
-      gotoSucceededOrStop(PaymentSucceeded(d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id))
+      gotoSucceededOrStop(PaymentSucceeded(d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id, ps.remainingAttribution_opt))
   }
 
   when(PAYMENT_IN_PROGRESS) {
@@ -144,7 +145,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       require(ps.parts.length == 1, "child payment must contain only one part")
       // As soon as we get the preimage we can consider that the whole payment succeeded (we have a proof of payment).
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = true).record(d.request.maxAttempts - d.remainingAttempts)
-      gotoSucceededOrStop(PaymentSucceeded(d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id))
+      gotoSucceededOrStop(PaymentSucceeded(d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id, ps.remainingAttribution_opt))
   }
 
   when(PAYMENT_ABORTED) {
@@ -162,7 +163,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(ps: PaymentSent, d: PaymentAborted) =>
       require(ps.parts.length == 1, "child payment must contain only one part")
       log.warning(s"payment recipient fulfilled incomplete multi-part payment (id=${ps.parts.head.id})")
-      gotoSucceededOrStop(PaymentSucceeded(d.request, ps.paymentPreimage, ps.parts, d.pending - ps.parts.head.id))
+      gotoSucceededOrStop(PaymentSucceeded(d.request, ps.paymentPreimage, ps.parts, d.pending - ps.parts.head.id, ps.remainingAttribution_opt))
 
     case Event(_: RouteResponse, _) => stay()
     case Event(_: PaymentRouteNotFound, _) => stay()
@@ -174,7 +175,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val parts = d.parts ++ ps.parts
       val pending = d.pending - ps.parts.head.id
       if (pending.isEmpty) {
-        myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, parts)))
+        myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, parts, d.remainingAttribution_opt)))
       } else {
         stay() using d.copy(parts = parts, pending = pending)
       }
@@ -185,7 +186,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       log.warning(s"payment succeeded but partial payment failed (id=${pf.id})")
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts)))
+        myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts, d.remainingAttribution_opt)))
       } else {
         stay() using d.copy(pending = pending)
       }
@@ -212,10 +213,10 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   private def gotoSucceededOrStop(d: PaymentSucceeded): State = {
     if (publishPreimage) {
-      d.request.replyTo ! PreimageReceived(paymentHash, d.preimage)
+      d.request.replyTo ! PreimageReceived(paymentHash, d.preimage, d.remainingAttribution_opt)
     }
     if (d.pending.isEmpty) {
-      myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts)))
+      myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts, d.remainingAttribution_opt)))
     } else
       goto(PAYMENT_SUCCEEDED) using d
   }
@@ -310,7 +311,7 @@ object MultiPartPaymentLifecycle {
    * The payment FSM will wait for all child payments to settle before emitting payment events, but the preimage will be
    * shared as soon as it's received to unblock other actors that may need it.
    */
-  case class PreimageReceived(paymentHash: ByteVector32, paymentPreimage: ByteVector32)
+  case class PreimageReceived(paymentHash: ByteVector32, paymentPreimage: ByteVector32, remainingAttribution_opt: Option[ByteVector])
 
   // @formatter:off
   sealed trait State
@@ -367,7 +368,7 @@ object MultiPartPaymentLifecycle {
    * @param parts    fulfilled child payments.
    * @param pending  pending child payments (we are waiting for them to be fulfilled downstream).
    */
-  case class PaymentSucceeded(request: SendMultiPartPayment, preimage: ByteVector32, parts: Seq[PartialPayment], pending: Set[UUID]) extends Data
+  case class PaymentSucceeded(request: SendMultiPartPayment, preimage: ByteVector32, parts: Seq[PartialPayment], pending: Set[UUID], remainingAttribution_opt: Option[ByteVector]) extends Data
 
   private def createRouteRequest(replyTo: ActorRef, nodeParams: NodeParams, routeParams: RouteParams, d: PaymentProgress, cfg: SendPaymentConfig): RouteRequest = {
     RouteRequest(replyTo.toTyped, nodeParams.nodeId, d.request.recipient, routeParams, d.ignore, allowMultiPart = true, d.pending.values.toSeq, Some(cfg.paymentContext), blip18InboundFees = nodeParams.routerConf.blip18InboundFees, excludePositiveInboundFees = nodeParams.routerConf.excludePositiveInboundFees)

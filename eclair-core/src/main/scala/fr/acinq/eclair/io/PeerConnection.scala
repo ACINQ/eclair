@@ -18,8 +18,8 @@ package fr.acinq.eclair.io
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Stash, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, FeatureCompatibilityResult, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -206,11 +206,13 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         stay()
 
       case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.transport => // if the message doesn't originate from the transport, it is an outgoing message
-        d.transport forward msg
+        msg match {
+          case batch: CommitSigBatch => batch.messages.foreach(msg => d.transport forward msg)
+          case msg => d.transport forward msg
+        }
         msg match {
           // If we send any channel management message to this peer, the connection should be persistent.
-          case _: ChannelMessage if !d.isPersistent =>
-            stay() using d.copy(isPersistent = true)
+          case _: ChannelMessage if !d.isPersistent => stay() using d.copy(isPersistent = true)
           case _ => stay()
         }
 
@@ -341,10 +343,48 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         stay()
 
       case Event(msg: LightningMessage, d: ConnectedData) =>
-        // we acknowledge and pass all other messages to the peer
+        // We immediately acknowledge all other messages.
         d.transport ! TransportHandler.ReadAck(msg)
-        d.peer ! msg
-        stay()
+        // We immediately forward messages to the peer, unless they are part of a batch, in which case we wait to
+        // receive the whole batch before forwarding.
+        msg match {
+          case msg: CommitSig =>
+            msg.tlvStream.get[CommitSigTlv.BatchTlv].map(_.size) match {
+              case Some(batchSize) if batchSize > 25 =>
+                log.warning("received legacy batch of commit_sig exceeding our threshold ({} > 25), processing messages individually", batchSize)
+                // We don't want peers to be able to exhaust our memory by sending batches of dummy messages that we keep in RAM.
+                d.peer ! msg
+                stay()
+              case Some(batchSize) if batchSize > 1 =>
+                d.legacyCommitSigBatch_opt match {
+                  case Some(pending) if pending.channelId != msg.channelId || pending.batchSize != batchSize =>
+                    log.warning("received invalid commit_sig batch while a different batch isn't complete")
+                    // This should never happen, otherwise it will likely lead to a force-close.
+                    d.peer ! CommitSigBatch(pending.received)
+                    stay() using d.copy(legacyCommitSigBatch_opt = Some(PendingCommitSigBatch(msg.channelId, batchSize, Seq(msg))))
+                  case Some(pending) =>
+                    val received1 = pending.received :+ msg
+                    if (received1.size == batchSize) {
+                      log.debug("received last commit_sig in legacy batch for channel_id={}", msg.channelId)
+                      d.peer ! CommitSigBatch(received1)
+                      stay() using d.copy(legacyCommitSigBatch_opt = None)
+                    } else {
+                      log.debug("received commit_sig {}/{} in legacy batch for channel_id={}", received1.size, batchSize, msg.channelId)
+                      stay() using d.copy(legacyCommitSigBatch_opt = Some(pending.copy(received = received1)))
+                    }
+                  case None =>
+                    log.debug("received first commit_sig in legacy batch of size {} for channel_id={}", batchSize, msg.channelId)
+                    stay() using d.copy(legacyCommitSigBatch_opt = Some(PendingCommitSigBatch(msg.channelId, batchSize, Seq(msg))))
+                }
+              case _ =>
+                log.debug("received individual commit_sig for channel_id={}", msg.channelId)
+                d.peer ! msg
+                stay()
+            }
+          case _ =>
+            d.peer ! msg
+            stay()
+        }
 
       case Event(readAck: TransportHandler.ReadAck, d: ConnectedData) =>
         // we just forward acks to the transport (e.g. from the router)
@@ -564,8 +604,19 @@ object PeerConnection {
   case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef, isPersistent: Boolean) extends Data with HasTransport
   case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef, isPersistent: Boolean) extends Data with HasTransport
   case class InitializingData(chainHash: BlockHash, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, doSync: Boolean, isPersistent: Boolean) extends Data with HasTransport
-  case class ConnectedData(chainHash: BlockHash, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None, isPersistent: Boolean) extends Data with HasTransport
+  case class ConnectedData(chainHash: BlockHash,
+                           remoteNodeId: PublicKey,
+                           transport: ActorRef,
+                           peer: ActorRef,
+                           localInit: protocol.Init, remoteInit: protocol.Init,
+                           rebroadcastDelay: FiniteDuration,
+                           gossipTimestampFilter: Option[GossipTimestampFilter] = None,
+                           behavior: Behavior = Behavior(),
+                           expectedPong_opt: Option[ExpectedPong] = None,
+                           legacyCommitSigBatch_opt: Option[PendingCommitSigBatch] = None,
+                           isPersistent: Boolean) extends Data with HasTransport
 
+  case class PendingCommitSigBatch(channelId: ByteVector32, batchSize: Int, received: Seq[CommitSig])
   case class ExpectedPong(ping: Ping, timestamp: TimestampMilli = TimestampMilli.now())
   case class PingTimeout(ping: Ping)
 

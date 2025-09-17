@@ -4,18 +4,16 @@ import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{Actor, ActorContext, ActorRef, Props}
 import akka.testkit.{TestActorRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OutPoint, Satoshi, TxHash, TxOut}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, Satoshi}
 import fr.acinq.eclair.TestConstants._
-import fr.acinq.eclair.channel.SpliceStatus.NoSplice
-import fr.acinq.eclair.channel.{ChannelFeatures, ChannelFlags, ChannelIdAssigned, ChannelParams, CommitTxAndRemoteSig, Commitment, Commitments, DATA_NORMAL, LocalCommit, LocalParams, PersistentChannelData, RemoteCommit, RemoteParams, Upstream}
+import fr.acinq.eclair.channel.{ChannelIdAssigned, DATA_NORMAL, PersistentChannelData, Upstream}
 import fr.acinq.eclair.io.Peer.PeerNotFound
 import fr.acinq.eclair.io.Switchboard._
 import fr.acinq.eclair.payment.relay.{OnTheFlyFunding, OnTheFlyFundingSpec}
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, Features, InitFeature, MilliSatoshiLong, NodeParams, TestKitBaseClass, TimestampSecondLong, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, Features, InitFeature, MilliSatoshiLong, NodeParams, TestKitBaseClass, TimestampSecondLong, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
@@ -166,8 +164,9 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
   }
 
   def dummyDataNormal(remoteNodeId: PublicKey, capacity: Satoshi): DATA_NORMAL = {
-    val data = ChannelCodecsSpec.normal.modify(_.commitments.params.remoteParams.nodeId).setTo(remoteNodeId)
-      .modify(_.commitments.active).apply(_.map(_.modify(_.localCommit.commitTxAndRemoteSig.commitTx.input.txOut.amount).setTo(capacity)))
+    val data = ChannelCodecsSpec.normal
+      .modify(_.commitments.channelParams.remoteParams.nodeId).setTo(remoteNodeId)
+      .modify(_.commitments.active).apply(_.map(_.modify(_.fundingAmount).setTo(capacity)))
     assert(data.remoteNodeId == remoteNodeId)
     assert(data.commitments.capacity == capacity)
     data

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.crypto.Mac32
+import fr.acinq.eclair.crypto.{Mac32, Sphinx}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.failureMessageCodec
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelFlagsCodec, channelUpdateCodec, messageFlagsCodec, meteredLightningMessageCodec}
@@ -36,7 +36,7 @@ import scodec.{Attempt, Codec, Err}
 sealed trait FailureReason
 object FailureReason {
   /** An encrypted failure coming from downstream which we should re-encrypt and forward upstream. */
-  case class EncryptedDownstreamFailure(packet: ByteVector) extends FailureReason
+  case class EncryptedDownstreamFailure(packet: ByteVector, attribution_opt: Option[ByteVector]) extends FailureReason
   /** A local failure that should be encrypted for the node that created the payment onion. */
   case class LocalFailure(failure: FailureMessage) extends FailureReason 
 }
@@ -168,8 +168,14 @@ object FailureMessageCodecs {
     fallback = unknownFailureMessageCodec.upcast[FailureMessage]
   )
 
+  private val encryptedDownstreamFailure: Codec[FailureReason.EncryptedDownstreamFailure] =
+    (("packet" | varsizebinarydata) ::
+      ("attribution_opt" | optional(bool8, bytes(Sphinx.Attribution.totalLength)))).as[FailureReason.EncryptedDownstreamFailure]
+
   val failureReasonCodec: Codec[FailureReason] = discriminated[FailureReason].by(uint8)
-    .typecase(0, varsizebinarydata.as[FailureReason.EncryptedDownstreamFailure])
+    // Order matters: latest codec comes first, then old codecs for backward compatibility
+    .typecase(2, encryptedDownstreamFailure)
+    .typecase(0, (varsizebinarydata :: provide[Option[ByteVector]](None)).as[FailureReason.EncryptedDownstreamFailure])
     .typecase(1, variableSizeBytes(uint16, failureMessageCodec).as[FailureReason.LocalFailure])
   
   private def failureOnionPayload(payloadAndPadLength: Int): Codec[FailureMessage] = Codec(

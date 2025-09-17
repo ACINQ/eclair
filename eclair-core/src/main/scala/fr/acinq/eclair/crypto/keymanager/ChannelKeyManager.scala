@@ -17,91 +17,34 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, Crypto, DeterministicWallet, Protocol}
-import fr.acinq.eclair.channel.{ChannelConfig, LocalParams}
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
-import scodec.bits.ByteVector
+import fr.acinq.bitcoin.scalacompat.{Crypto, DeterministicWallet, Protocol}
+import fr.acinq.eclair.channel.ChannelConfig
 
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
 
 trait ChannelKeyManager {
-  def fundingPublicKey(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long): ExtendedPublicKey
-
-  def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
-
-  def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
-
-  def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
-
-  def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
-
-  def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PrivateKey
-
-  def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PublicKey
-
-  def keyPath(localParams: LocalParams, channelConfig: ChannelConfig): DeterministicWallet.KeyPath = {
-    if (channelConfig.hasOption(ChannelConfig.FundingPubKeyBasedChannelKeyPath)) {
-      // deterministic mode: use the funding pubkey to compute the channel key path
-      ChannelKeyManager.keyPath(fundingPublicKey(localParams.fundingKeyPath, fundingTxIndex = 0))
-    } else {
-      // legacy mode:  we reuse the funding key path as our channel key path
-      localParams.fundingKeyPath
-    }
-  }
 
   /**
-   * @param isChannelOpener true if we initiated the channel open
-   * @return a partial key path for a new funding public key. This key path will be extended:
-   *         - with a specific "chain" prefix
-   *         - with a specific "funding pubkey" suffix
+   * Create a BIP32 funding key path a new channel.
+   * This function must return a unique path every time it is called.
+   * This guarantees that unrelated channels use different BIP32 key paths and thus unrelated keys.
+   *
+   * @param isChannelOpener true if we initiated the channel open: this must be used to derive different key paths.
    */
   def newFundingKeyPath(isChannelOpener: Boolean): DeterministicWallet.KeyPath
 
   /**
-   * @param tx               input transaction
-   * @param publicKey        extended public key
-   * @param txOwner          owner of the transaction (local/remote)
-   * @param commitmentFormat format of the commitment tx
-   * @return a signature generated with the private key that matches the input extended public key
+   * Create channel keys based on a funding key path obtained using [[newFundingKeyPath]].
+   * This function is deterministic: it must always return the same result when called with the same arguments.
+   * This allows re-creating the channel keys based on the seed and its main parameters.
    */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
+  def channelKeys(channelConfig: ChannelConfig, fundingKeyPath: DeterministicWallet.KeyPath): ChannelKeys
 
-  /**
-   * This method is used to spend funds sent to htlc keys/delayed keys
-   *
-   * @param tx               input transaction
-   * @param publicKey        extended public key
-   * @param remotePoint      remote point
-   * @param txOwner          owner of the transaction (local/remote)
-   * @param commitmentFormat format of the commitment tx
-   * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
-   */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
-
-  /**
-   * Ths method is used to spend revoked transactions, with the corresponding revocation key
-   *
-   * @param tx               input transaction
-   * @param publicKey        extended public key
-   * @param remoteSecret     remote secret
-   * @param txOwner          owner of the transaction (local/remote)
-   * @param commitmentFormat format of the commitment tx
-   * @return a signature generated with a private key generated from the input key's matching private key and the remote secret.
-   */
-  def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: PrivateKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64
-
-  /**
-   * Sign a channel announcement message
-   *
-   * @param witness channel announcement message
-   * @return the signature of the channel announcement with the channel's funding private key
-   */
-  def signChannelAnnouncement(witness: ByteVector, fundingKeyPath: DeterministicWallet.KeyPath): ByteVector64
 }
 
 object ChannelKeyManager {
+
   /**
    * Create a BIP32 path from a public key. This path will be used to derive channel keys.
    * Having channel keys derived from the funding public keys makes it very easy to retrieve your funds when you've lost your data:
@@ -112,7 +55,8 @@ object ChannelKeyManager {
    * @param fundingPubKey funding public key
    * @return a BIP32 path
    */
-  def keyPath(fundingPubKey: PublicKey): DeterministicWallet.KeyPath = {
+  def keyPathFromPublicKey(fundingPubKey: PublicKey): DeterministicWallet.KeyPath = {
+    // We simply hash the public key, and then read the result in 4-bytes chunks to create a BIP32 path.
     val buffer = Crypto.sha256(fundingPubKey.value)
     val bis = new ByteArrayInputStream(buffer.toArray)
 
@@ -121,5 +65,4 @@ object ChannelKeyManager {
     DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next()))
   }
 
-  def keyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey): DeterministicWallet.KeyPath = keyPath(fundingPubKey.publicKey)
 }

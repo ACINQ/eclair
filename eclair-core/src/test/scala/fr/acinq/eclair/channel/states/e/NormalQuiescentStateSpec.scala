@@ -22,15 +22,17 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishTx}
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.relay.Relayer.RelayForward
+import fr.acinq.eclair.reputation.Reputation
+import fr.acinq.eclair.testutils.PimpTestProbe.convert
+import fr.acinq.eclair.transactions.Transactions.{UnsignedHtlcSuccessTx, UnsignedHtlcTimeoutTx}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{channel, _}
 import org.scalatest.Outcome
@@ -67,8 +69,8 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
   private def reconnect(f: FixtureParam): Unit = {
     import f._
 
-    val aliceInit = Init(alice.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params.localParams.initFeatures)
-    val bobInit = Init(bob.stateData.asInstanceOf[ChannelDataWithCommitments].commitments.params.localParams.initFeatures)
+    val aliceInit = Init(alice.commitments.localChannelParams.initFeatures)
+    val bobInit = Init(bob.commitments.localChannelParams.initFeatures)
     alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
     alice2bob.expectMsgType[ChannelReestablish]
@@ -95,7 +97,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
     val sender = TestProbe()
     val scriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey))
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)), requestFunding_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, scriptPubKey)), requestFunding_opt = None, channelType_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[Stfu]
     if (!sendInitialStfu) {
@@ -115,7 +117,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     import f._
     // we have an unsigned htlc in our local changes
     addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
-    alice ! CMD_SPLICE(TestProbe().ref, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = None, requestFunding_opt = None)
+    alice ! CMD_SPLICE(TestProbe().ref, spliceIn_opt = Some(SpliceIn(50_000 sat)), spliceOut_opt = None, requestFunding_opt = None, channelType_opt = None)
     alice2bob.expectNoMessage(100 millis)
     crossSign(alice, bob, alice2bob, bob2alice)
     alice2bob.expectMsgType[Stfu]
@@ -146,7 +148,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     // initiator should reject commands that change the commitment once it became quiescent
     val sender1, sender2, sender3 = TestProbe()
     val cmds = Seq(
-      CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender1.ref)),
+      CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max, None, localOrigin(sender1.ref)),
       CMD_UPDATE_FEE(FeeratePerKw(100 sat), replyTo_opt = Some(sender2.ref)),
       CMD_CLOSE(sender3.ref, None, None)
     )
@@ -162,7 +164,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     // both should reject commands that change the commitment while quiescent
     val sender1, sender2, sender3 = TestProbe()
     val cmds = Seq(
-      CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None, localOrigin(sender1.ref)),
+      CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max, None, localOrigin(sender1.ref)),
       CMD_UPDATE_FEE(FeeratePerKw(100 sat), replyTo_opt = Some(sender2.ref)),
       CMD_CLOSE(sender3.ref, None, None)
     )
@@ -188,8 +190,8 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
     val (preimage, add) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
     val cmd = c match {
-      case FulfillHtlc => CMD_FULFILL_HTLC(add.id, preimage)
-      case FailHtlc => CMD_FAIL_HTLC(add.id, FailureReason.EncryptedDownstreamFailure(randomBytes(252)))
+      case FulfillHtlc => CMD_FULFILL_HTLC(add.id, preimage, None)
+      case FailHtlc => CMD_FAIL_HTLC(add.id, FailureReason.EncryptedDownstreamFailure(randomBytes(252), None), None)
     }
     crossSign(bob, alice, bob2alice, alice2bob)
     val sender = initiateQuiescence(f, sendInitialStfu)
@@ -309,7 +311,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     import f._
     val (preimage, add) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
-    alice2relayer.expectMsg(RelayForward(add, TestConstants.Bob.nodeParams.nodeId))
+    alice2relayer.expectMsg(RelayForward(add, TestConstants.Bob.nodeParams.nodeId, 0.1))
     initiateQuiescence(f, sendInitialStfu = true)
     val forbiddenMsg = UpdateFulfillHtlc(channelId(bob), add.id, preimage)
     // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)
@@ -350,7 +352,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     import f._
     initiateQuiescence(f, sendInitialStfu = true)
     // have to build a htlc manually because eclair would refuse to accept this command as it's forbidden
-    val forbiddenMsg = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, pathKey_opt = None, confidence = 1.0, fundingFee_opt = None)
+    val forbiddenMsg = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, pathKey_opt = None, endorsement = Reputation.maxEndorsement, fundingFee_opt = None)
     // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)
     bob2alice.forward(alice, forbiddenMsg)
     alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateAddHtlc").getMessage))
@@ -388,7 +390,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     import f._
 
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None, channelType_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[Stfu]
     bob ! cmd
@@ -405,7 +407,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
     addHtlc(50_000_000 msat, alice, bob, alice2bob, bob2alice)
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None, channelType_opt = None)
     alice ! cmd
     alice2bob.expectNoMessage(100 millis) // alice isn't quiescent yet
     bob ! cmd
@@ -424,7 +426,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
     addHtlc(10_000 msat, bob, alice, bob2alice, alice2bob)
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)), spliceOut_opt = None, requestFunding_opt = None, channelType_opt = None)
     alice ! cmd
     alice2bob.expectMsgType[Stfu]
     bob ! cmd
@@ -444,19 +446,20 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     crossSign(alice, bob, alice2bob, bob2alice)
     initiateQuiescence(f, sendInitialStfu = true)
 
-    val aliceCommit = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit
-    val commitTx = aliceCommit.commitTxAndRemoteSig.commitTx.tx
-    assert(aliceCommit.htlcTxsAndRemoteSigs.size == 1)
-    val htlcTimeoutTx = aliceCommit.htlcTxsAndRemoteSigs.head.htlcTx.tx
+    val commitTx = alice.signCommitTx()
+    val htlcTxs = alice.htlcTxs()
+    assert(htlcTxs.size == 1)
+    val htlcTimeoutTx = htlcTxs.head
+    assert(htlcTimeoutTx.isInstanceOf[UnsignedHtlcTimeoutTx])
 
     // the HTLC times out, alice needs to close the channel
     alice ! CurrentBlockHeight(add.cltvExpiry.blockHeight)
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == commitTx.txid)
-    alice2blockchain.expectMsgType[PublishTx] // main delayed
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == htlcTimeoutTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
-    alice2blockchain.expectMsgType[WatchTxConfirmed] // main delayed
-    alice2blockchain.expectMsgType[WatchOutputSpent] // htlc output
+    alice2blockchain.expectFinalTxPublished(commitTx.txid)
+    val mainDelayedTx = alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    assert(alice2blockchain.expectFinalTxPublished("htlc-timeout").input == htlcTimeoutTx.input.outPoint)
+    alice2blockchain.expectWatchTxConfirmed(commitTx.txid)
+    alice2blockchain.expectWatchOutputSpent(mainDelayedTx.input)
+    alice2blockchain.expectWatchOutputSpent(htlcTimeoutTx.input.outPoint)
     alice2blockchain.expectNoMessage(100 millis)
 
     channelUpdateListener.expectMsgType[LocalChannelDown]
@@ -468,35 +471,29 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     crossSign(alice, bob, alice2bob, bob2alice)
     initiateQuiescence(f, sendInitialStfu = true)
 
-    val bobCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit
-    val commitTx = bobCommit.commitTxAndRemoteSig.commitTx.tx
-    assert(bobCommit.htlcTxsAndRemoteSigs.size == 1)
-    val htlcSuccessTx = bobCommit.htlcTxsAndRemoteSigs.head.htlcTx.tx
+    val commitTx = bob.signCommitTx()
+    val htlcTxs = bob.htlcTxs()
+    assert(htlcTxs.size == 1)
+    val htlcSuccessTx = htlcTxs.head
+    assert(htlcSuccessTx.isInstanceOf[UnsignedHtlcSuccessTx])
 
     // bob does not force-close unless there is a pending preimage for the incoming htlc
     bob ! CurrentBlockHeight(add.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
     bob2blockchain.expectNoMessage(100 millis)
 
     // bob receives the fulfill for htlc, which is ignored because the channel is quiescent
-    val fulfillHtlc = CMD_FULFILL_HTLC(add.id, preimage)
+    val fulfillHtlc = CMD_FULFILL_HTLC(add.id, preimage, None)
     safeSend(bob, Seq(fulfillHtlc))
 
     // the HTLC timeout from alice is near, bob needs to close the channel to avoid an on-chain race condition
     bob ! CurrentBlockHeight(add.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
-    // bob publishes a first set of force-close transactions
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == commitTx.txid)
-    bob2blockchain.expectMsgType[PublishTx] // main delayed
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
-    bob2blockchain.expectMsgType[WatchTxConfirmed]
-    bob2blockchain.expectMsgType[WatchOutputSpent] // htlc output
-
-    // when transitioning to the closing state, bob checks the pending commands DB and replays the HTLC fulfill
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == commitTx.txid)
-    bob2blockchain.expectMsgType[PublishTx] // main delayed
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == htlcSuccessTx.txid)
-    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
-    bob2blockchain.expectMsgType[WatchTxConfirmed] // main delayed
-    bob2blockchain.expectMsgType[WatchOutputSpent] // htlc output
+    // bob publishes a set of force-close transactions, including the HTLC-success using the received preimage
+    bob2blockchain.expectFinalTxPublished(commitTx.txid)
+    val mainDelayedTx = bob2blockchain.expectFinalTxPublished("local-main-delayed")
+    bob2blockchain.expectWatchTxConfirmed(commitTx.txid)
+    bob2blockchain.expectWatchOutputSpent(mainDelayedTx.input)
+    bob2blockchain.expectWatchOutputSpent(htlcSuccessTx.input.outPoint)
+    assert(bob2blockchain.expectFinalTxPublished("htlc-success").input == htlcSuccessTx.input.outPoint)
     bob2blockchain.expectNoMessage(100 millis)
 
     channelUpdateListener.expectMsgType[LocalChannelDown]

@@ -23,7 +23,7 @@ import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{BalanceThreshold, ChannelConf, UnhandledExceptionStrategy}
-import fr.acinq.eclair.channel.{ChannelFlags, ChannelType, ChannelTypes}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
@@ -33,6 +33,7 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentWeightRatios}
 import fr.acinq.eclair.router.Router._
@@ -129,12 +130,12 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
     )
     // We use the most likely commitment format, even though there is no guarantee that this is the one that will be used.
     val commitmentFormat = ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, announceChannel = false).commitmentFormat
-    val commitmentFeerate = onChainFeeConf.getCommitmentFeerate(currentBitcoinCoreFeerates, remoteNodeId, commitmentFormat, channelConf.minFundingPrivateSatoshis)
+    val commitmentFeerate = onChainFeeConf.getCommitmentFeerate(currentBitcoinCoreFeerates, remoteNodeId, commitmentFormat)
     val commitmentRange = RecommendedFeeratesTlv.CommitmentFeerateRange(
       min = (commitmentFeerate * feerateTolerance.ratioLow).max(minimumFeerate),
       max = (commitmentFormat match {
         case Transactions.DefaultCommitmentFormat => commitmentFeerate * feerateTolerance.ratioHigh
-        case _: Transactions.AnchorOutputsCommitmentFormat => (commitmentFeerate * feerateTolerance.ratioHigh).max(feerateTolerance.anchorOutputMaxCommitFeerate)
+        case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat => (commitmentFeerate * feerateTolerance.ratioHigh).max(feerateTolerance.anchorOutputMaxCommitFeerate)
       }).max(minimumFeerate),
     )
     RecommendedFeerates(chainHash, fundingFeerate, commitmentFeerate, TlvStream(fundingRange, commitmentRange))
@@ -473,6 +474,7 @@ object NodeParams extends Logging {
           failureFees = getRelayFees(config.getConfig("failure-cost")),
           hopFees = getRelayFees(config.getConfig("hop-cost")),
           useLogProbability = config.getBoolean("use-log-probability"),
+          usePastRelaysData = config.getBoolean("use-past-relay-data"),
         )
       },
       mpp = MultiPartParams(
@@ -606,6 +608,7 @@ object NodeParams extends Logging {
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
+        maxClosingFeerate = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.max-closing-feerate"))).perKw,
         safeUtxosThreshold = config.getInt("on-chain-fees.safe-utxos-threshold"),
         spendAnchorWithoutHtlcs = config.getBoolean("on-chain-fees.spend-anchor-without-htlcs"),
         anchorWithoutHtlcsMaxFee = Satoshi(config.getLong("on-chain-fees.anchor-without-htlcs-max-fee-satoshis")),
@@ -614,7 +617,7 @@ object NodeParams extends Logging {
         defaultFeerateTolerance = FeerateTolerance(
           config.getDouble("on-chain-fees.feerate-tolerance.ratio-low"),
           config.getDouble("on-chain-fees.feerate-tolerance.ratio-high"),
-          FeeratePerKw(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.feerate-tolerance.anchor-output-max-commit-feerate")))),
+          FeeratePerByte(Satoshi(config.getLong("on-chain-fees.feerate-tolerance.anchor-output-max-commit-feerate"))).perKw,
           DustTolerance(
             Satoshi(config.getLong("on-chain-fees.feerate-tolerance.dust-tolerance.max-exposure-satoshis")),
             config.getBoolean("on-chain-fees.feerate-tolerance.dust-tolerance.close-on-update-fee-overflow")
@@ -625,7 +628,7 @@ object NodeParams extends Logging {
           val tolerance = FeerateTolerance(
             e.getDouble("feerate-tolerance.ratio-low"),
             e.getDouble("feerate-tolerance.ratio-high"),
-            FeeratePerKw(FeeratePerByte(Satoshi(e.getLong("feerate-tolerance.anchor-output-max-commit-feerate")))),
+            FeeratePerByte(Satoshi(e.getLong("feerate-tolerance.anchor-output-max-commit-feerate"))).perKw,
             DustTolerance(
               Satoshi(e.getLong("feerate-tolerance.dust-tolerance.max-exposure-satoshis")),
               e.getBoolean("feerate-tolerance.dust-tolerance.close-on-update-fee-overflow")
@@ -639,7 +642,12 @@ object NodeParams extends Logging {
         privateChannelFees = getRelayFees(config.getConfig("relay.fees.private-channels")),
         minTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-trampoline")),
         enforcementDelay = FiniteDuration(config.getDuration("relay.fees.enforcement-delay").getSeconds, TimeUnit.SECONDS),
-        asyncPaymentsParams = AsyncPaymentsParams(asyncPaymentHoldTimeoutBlocks, asyncPaymentCancelSafetyBeforeTimeoutBlocks)
+        asyncPaymentsParams = AsyncPaymentsParams(asyncPaymentHoldTimeoutBlocks, asyncPaymentCancelSafetyBeforeTimeoutBlocks),
+        peerReputationConfig = Reputation.Config(
+          enabled = config.getBoolean("relay.peer-reputation.enabled"),
+          halfLife = FiniteDuration(config.getDuration("relay.peer-reputation.half-life").getSeconds, TimeUnit.SECONDS),
+          maxRelayDuration = FiniteDuration(config.getDuration("relay.peer-reputation.max-relay-duration").getSeconds, TimeUnit.SECONDS),
+        ),
       ),
       db = database,
       autoReconnect = config.getBoolean("auto-reconnect"),
@@ -662,6 +670,7 @@ object NodeParams extends Logging {
       ),
       routerConf = RouterConf(
         watchSpentWindow = watchSpentWindow,
+        channelSpentSpliceDelay = config.getInt("router.channel-spent-splice-delay"),
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         syncConf = Router.SyncConf(

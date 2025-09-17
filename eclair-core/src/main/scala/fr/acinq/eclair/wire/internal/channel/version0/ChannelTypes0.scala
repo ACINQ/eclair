@@ -16,16 +16,14 @@
 
 package fr.acinq.eclair.wire.internal.channel.version0
 
-import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxId, TxOut}
-import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxId, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.CommitSig
-import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, UInt64, channel}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, InitFeature, MilliSatoshi, UInt64, channel}
 import scodec.bits.{BitVector, ByteVector}
 
 private[channel] object ChannelTypes0 {
@@ -43,14 +41,6 @@ private[channel] object ChannelTypes0 {
   //  - the `htlcId` in htlc txs is used to detect timed out htlcs and relay them upstream, but it can be safely set to
   //    0 because the `timedOutHtlcs` in `Helpers.scala` explicitly handle the case where this information is unavailable.
 
-  private def getPartialInputInfo(parentTx: Transaction, childTx: Transaction): InputInfo = {
-    // When using the default commitment format, spending txs have a single input. These txs are fully signed and never
-    // modified: we don't use the InputInfo in closing business logic, so we don't need to fill everything (this part
-    // assumes that we only have standard channels, no anchor output channels - which was the case before version2).
-    val input = childTx.txIn.head.outPoint
-    InputInfo(input, parentTx.txOut(input.index.toInt), Nil)
-  }
-
   case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, TxId]) {
     def migrate(): channel.LocalCommitPublished = {
       val htlcTxs = htlcSuccessTxs ++ htlcTimeoutTxs
@@ -58,16 +48,11 @@ private[channel] object ChannelTypes0 {
       // NB: irrevocablySpent may contain transactions that belong to our peer: we will drop them in this migration but
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
-      val claimMainDelayedOutputTxNew = claimMainDelayedOutputTx.map(tx => ClaimLocalDelayedOutputTx(getPartialInputInfo(commitTx, tx), tx))
-      val htlcSuccessTxsNew = htlcSuccessTxs.map(tx => HtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, ByteVector32.Zeroes, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
-      val htlcTimeoutTxsNew = htlcTimeoutTxs.map(tx => HtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
-      val htlcTxsNew = (htlcSuccessTxsNew ++ htlcTimeoutTxsNew).map(tx => tx.input.outPoint -> Some(tx)).toMap
-      val claimHtlcDelayedTxsNew = claimHtlcDelayedTxs.map(tx => {
-        val htlcTx = htlcTxs.find(_.txid == tx.txIn.head.outPoint.txid)
-        require(htlcTx.nonEmpty, s"3rd-stage htlc tx doesn't spend one of our htlc txs: claim-htlc-tx=$tx, htlc-txs=${htlcTxs.mkString(",")}")
-        HtlcDelayedTx(getPartialInputInfo(htlcTx.get, tx), tx)
-      })
-      channel.LocalCommitPublished(commitTx, claimMainDelayedOutputTxNew, htlcTxsNew, claimHtlcDelayedTxsNew, Nil, irrevocablySpentNew)
+      val localOutput_opt = claimMainDelayedOutputTx.map(_.txIn.head.outPoint)
+      val incomingHtlcs = htlcSuccessTxs.map(tx => tx.txIn.head.outPoint -> 0L).toMap
+      val outgoingHtlcs = htlcTimeoutTxs.map(tx => tx.txIn.head.outPoint -> 0L).toMap
+      val htlcDelayedOutputs = claimHtlcDelayedTxs.map(_.txIn.head.outPoint).toSet
+      channel.LocalCommitPublished(commitTx, localOutput_opt, anchorOutput_opt = None, incomingHtlcs = incomingHtlcs, outgoingHtlcs = outgoingHtlcs, htlcDelayedOutputs, irrevocablySpentNew)
     }
   }
 
@@ -78,11 +63,10 @@ private[channel] object ChannelTypes0 {
       // NB: irrevocablySpent may contain transactions that belong to our peer: we will drop them in this migration but
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
-      val claimMainOutputTxNew = claimMainOutputTx.map(tx => ClaimP2WPKHOutputTx(getPartialInputInfo(commitTx, tx), tx))
-      val claimHtlcSuccessTxsNew = claimHtlcSuccessTxs.map(tx => LegacyClaimHtlcSuccessTx(getPartialInputInfo(commitTx, tx), tx, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
-      val claimHtlcTimeoutTxsNew = claimHtlcTimeoutTxs.map(tx => ClaimHtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0, ConfirmationTarget.Absolute(BlockHeight(0))))
-      val claimHtlcTxsNew = (claimHtlcSuccessTxsNew ++ claimHtlcTimeoutTxsNew).map(tx => tx.input.outPoint -> Some(tx)).toMap
-      channel.RemoteCommitPublished(commitTx, claimMainOutputTxNew, claimHtlcTxsNew, Nil, irrevocablySpentNew)
+      val localOutput_opt = claimMainOutputTx.map(_.txIn.head.outPoint)
+      val incomingHtlcs = claimHtlcSuccessTxs.map(tx => tx.txIn.head.outPoint -> 0L).toMap
+      val outgoingHtlcs = claimHtlcTimeoutTxs.map(tx => tx.txIn.head.outPoint -> 0L).toMap
+      channel.RemoteCommitPublished(commitTx, localOutput_opt, anchorOutput_opt = None, incomingHtlcs = incomingHtlcs, outgoingHtlcs = outgoingHtlcs, irrevocablySpentNew)
     }
   }
 
@@ -92,15 +76,18 @@ private[channel] object ChannelTypes0 {
       // NB: irrevocablySpent may contain transactions that belong to our peer: we will drop them in this migration but
       // the channel will put a watch at start-up which will make us fetch the spending transaction.
       val irrevocablySpentNew = irrevocablySpent.collect { case (outpoint, txid) if knownTxs.contains(txid) => (outpoint, knownTxs(txid)) }
-      val claimMainOutputTxNew = claimMainOutputTx.map(tx => ClaimP2WPKHOutputTx(getPartialInputInfo(commitTx, tx), tx))
-      val mainPenaltyTxNew = mainPenaltyTx.map(tx => MainPenaltyTx(getPartialInputInfo(commitTx, tx), tx))
-      val htlcPenaltyTxsNew = htlcPenaltyTxs.map(tx => HtlcPenaltyTx(getPartialInputInfo(commitTx, tx), tx))
-      val claimHtlcDelayedPenaltyTxsNew = claimHtlcDelayedPenaltyTxs.map(tx => {
-        // We don't have all the `InputInfo` data, but it's ok: we only use the tx that is fully signed.
-        ClaimHtlcDelayedOutputPenaltyTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx)
-      })
-      channel.RevokedCommitPublished(commitTx, claimMainOutputTxNew, mainPenaltyTxNew, htlcPenaltyTxsNew, claimHtlcDelayedPenaltyTxsNew, irrevocablySpentNew)
+      val localOutput_opt = claimMainOutputTx.map(_.txIn.head.outPoint)
+      val remoteOutput_opt = mainPenaltyTx.map(_.txIn.head.outPoint)
+      val htlcOutputs = htlcPenaltyTxs.map(_.txIn.head.outPoint).toSet
+      val htlcDelayedOutputs = claimHtlcDelayedPenaltyTxs.map(_.txIn.head.outPoint).toSet
+      channel.RevokedCommitPublished(commitTx, localOutput_opt, remoteOutput_opt, htlcOutputs, htlcDelayedOutputs, irrevocablySpentNew)
     }
+  }
+
+  def setFundingStatus(commitments: fr.acinq.eclair.channel.Commitments, status: LocalFundingStatus): fr.acinq.eclair.channel.Commitments = {
+    commitments.copy(
+      active = commitments.active.head.copy(localFundingStatus = status) +: commitments.active.tail
+    )
   }
 
   /**
@@ -108,43 +95,36 @@ private[channel] object ChannelTypes0 {
    * the raw transaction. It provides more information for auditing but is not used for business logic, so we can safely
    * put dummy values in the migration.
    */
-  def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx, None)
+  def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil)), tx, None)
 
-  case class HtlcTxAndSigs(txinfo: HtlcTx, localSig: ByteVector64, remoteSig: ByteVector64)
+  case class HtlcTxAndSigs(txinfo: UnsignedHtlcTx, localSig: ByteVector64, remoteSig: ByteVector64)
 
   case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
 
   // Before version3, we stored fully signed local transactions (commit tx and htlc txs). It meant that someone gaining
-  // access to the database could publish revoked commit txs, so we changed that to only store unsigned txs and remote
-  // signatures.
+  // access to the database could publish revoked commit txs, so we changed that to only store remote signatures.
   case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs) {
-    def migrate(remoteFundingPubKey: PublicKey): channel.LocalCommit = {
+    def migrate(remoteFundingPubKey: PublicKey): (channel.LocalCommit, InputInfo) = {
       val remoteSig = extractRemoteSig(publishableTxs.commitTx, remoteFundingPubKey)
-      val unsignedCommitTx = publishableTxs.commitTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
-      val commitTxAndRemoteSig = CommitTxAndRemoteSig(unsignedCommitTx, remoteSig)
-      val htlcTxsAndRemoteSigs = publishableTxs.htlcTxsAndSigs map {
-        case HtlcTxAndSigs(htlcTx: HtlcSuccessTx, _, remoteSig) =>
-          val unsignedHtlcTx = htlcTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
-          HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
-        case HtlcTxAndSigs(htlcTx: HtlcTimeoutTx, _, remoteSig) =>
-          val unsignedHtlcTx = htlcTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
-          HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
-      }
-      channel.LocalCommit(index, spec, commitTxAndRemoteSig, htlcTxsAndRemoteSigs)
+      val unsignedCommitTx = publishableTxs.commitTx.copy(tx = removeWitnesses(publishableTxs.commitTx.tx))
+      val htlcRemoteSigs = publishableTxs.htlcTxsAndSigs.map(_.remoteSig)
+      (channel.LocalCommit(index, spec, unsignedCommitTx.tx.txid, remoteSig, htlcRemoteSigs), unsignedCommitTx.input)
     }
 
-    private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): ByteVector64 = {
+    private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): ChannelSpendSignature.IndividualSignature = {
       require(commitTx.tx.txIn.size == 1, s"commit tx must have exactly one input, found ${commitTx.tx.txIn.size}")
       val ScriptWitness(Seq(_, sig1, sig2, redeemScript)) = commitTx.tx.txIn.head.witness
       val _ :: OP_PUSHDATA(pub1, _) :: OP_PUSHDATA(pub2, _) :: _ :: OP_CHECKMULTISIG :: Nil = Script.parse(redeemScript)
       require(pub1 == remoteFundingPubKey.value || pub2 == remoteFundingPubKey.value, "unrecognized funding pubkey")
       if (pub1 == remoteFundingPubKey.value) {
-        Crypto.der2compact(sig1)
+        ChannelSpendSignature.IndividualSignature(Crypto.der2compact(sig1))
       } else {
-        Crypto.der2compact(sig2)
+        ChannelSpendSignature.IndividualSignature(Crypto.der2compact(sig2))
       }
     }
   }
+
+  private def removeWitnesses(tx: Transaction): Transaction = tx.copy(txIn = tx.txIn.map(_.copy(witness = ScriptWitness.empty)))
 
   // Before version3, we had a ChannelVersion field describing what channel features were activated. It was mixing
   // official features (static_remotekey, anchor_outputs) and internal features (channel key derivation scheme).
@@ -181,12 +161,37 @@ private[channel] object ChannelTypes0 {
     val ANCHOR_OUTPUTS = STATIC_REMOTEKEY | fromBit(USE_ANCHOR_OUTPUTS_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY + ANCHOR_OUTPUTS
   }
 
+  case class LocalParams(nodeId: PublicKey,
+                         fundingKeyPath: DeterministicWallet.KeyPath,
+                         dustLimit: Satoshi,
+                         maxHtlcValueInFlightMsat: UInt64,
+                         initialRequestedChannelReserve_opt: Option[Satoshi],
+                         htlcMinimum: MilliSatoshi,
+                         toSelfDelay: CltvExpiryDelta,
+                         maxAcceptedHtlcs: Int,
+                         isChannelOpener: Boolean,
+                         paysCommitTxFees: Boolean,
+                         upfrontShutdownScript_opt: Option[ByteVector],
+                         walletStaticPaymentBasepoint: Option[PublicKey],
+                         initFeatures: Features[InitFeature]) {
+    def migrate(): channel.LocalChannelParams = channel.LocalChannelParams(
+      nodeId = nodeId,
+      fundingKeyPath = fundingKeyPath,
+      initialRequestedChannelReserve_opt = initialRequestedChannelReserve_opt,
+      isChannelOpener = isChannelOpener,
+      paysCommitTxFees = paysCommitTxFees,
+      upfrontShutdownScript_opt = upfrontShutdownScript_opt,
+      walletStaticPaymentBasepoint = walletStaticPaymentBasepoint,
+      initFeatures = initFeatures,
+    )
+  }
+
   case class RemoteParams(nodeId: PublicKey,
                           dustLimit: Satoshi,
                           maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                           requestedChannelReserve_opt: Option[Satoshi],
                           htlcMinimum: MilliSatoshi,
-                          toSelfDelay: CltvExpiryDelta,
+                          toRemoteDelay: CltvExpiryDelta,
                           maxAcceptedHtlcs: Int,
                           fundingPubKey: PublicKey,
                           revocationBasepoint: PublicKey,
@@ -195,14 +200,9 @@ private[channel] object ChannelTypes0 {
                           htlcBasepoint: PublicKey,
                           initFeatures: Features[InitFeature],
                           upfrontShutdownScript_opt: Option[ByteVector]) {
-    def migrate(): channel.RemoteParams = channel.RemoteParams(
+    def migrate(): channel.RemoteChannelParams = channel.RemoteChannelParams(
       nodeId = nodeId,
-      dustLimit = dustLimit,
-      maxHtlcValueInFlightMsat = maxHtlcValueInFlightMsat,
       initialRequestedChannelReserve_opt = requestedChannelReserve_opt,
-      htlcMinimum = htlcMinimum,
-      toSelfDelay = toSelfDelay,
-      maxAcceptedHtlcs = maxAcceptedHtlcs,
       revocationBasepoint = revocationBasepoint,
       paymentBasepoint = paymentBasepoint,
       delayedPaymentBasepoint = delayedPaymentBasepoint,
@@ -230,25 +230,34 @@ private[channel] object ChannelTypes0 {
       } else {
         ChannelConfig()
       }
-      val channelFeatures = if (channelVersion.hasAnchorOutputs) {
-        ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
-      } else if (channelVersion.hasStaticRemotekey) {
-        ChannelFeatures(Features.StaticRemoteKey)
+      val commitmentFormat = if (channelVersion.hasAnchorOutputs) {
+        UnsafeLegacyAnchorOutputsCommitmentFormat
       } else {
-        ChannelFeatures()
+        DefaultCommitmentFormat
       }
+      val (localCommit1, commitInput) = localCommit.migrate(remoteParams.fundingPubKey)
+      val localCommitParams = CommitParams(localParams.dustLimit, localParams.htlcMinimum, localParams.maxHtlcValueInFlightMsat, localParams.maxAcceptedHtlcs, remoteParams.toRemoteDelay)
+      val remoteCommitParams = CommitParams(remoteParams.dustLimit, remoteParams.htlcMinimum, remoteParams.maxHtlcValueInFlightMsat, remoteParams.maxAcceptedHtlcs, localParams.toSelfDelay)
       val commitment = Commitment(
         fundingTxIndex = 0,
         firstRemoteCommitIndex = 0,
+        fundingInput = commitInput.outPoint,
+        fundingAmount = commitInput.txOut.amount,
         remoteFundingPubKey = remoteParams.fundingPubKey,
         // We set an empty funding tx, even if it may be confirmed already (and the channel fully operational). We could
         // have set a specific Unknown status, but it would have forced us to keep it forever. We will retrieve the
         // funding tx when the channel is instantiated, and update the status (possibly immediately if it was confirmed).
-        LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked,
-        localCommit.migrate(remoteParams.fundingPubKey), remoteCommit, remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit))
+        localFundingStatus = LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None),
+        remoteFundingStatus = RemoteFundingStatus.Locked,
+        commitmentFormat = commitmentFormat,
+        localCommitParams = localCommitParams,
+        localCommit = localCommit1,
+        remoteCommitParams = remoteCommitParams,
+        remoteCommit = remoteCommit,
+        nextRemoteCommit_opt = remoteNextCommitInfo.left.toOption.map(w => NextRemoteCommit(w.sent, w.nextRemoteCommit))
       )
       channel.Commitments(
-        ChannelParams(channelId, channelConfig, channelFeatures, localParams, remoteParams.migrate(), channelFlags),
+        ChannelParams(channelId, channelConfig, ChannelFeatures(), localParams.migrate(), remoteParams.migrate(), channelFlags),
         CommitmentChanges(localChanges, remoteChanges, localNextHtlcId, remoteNextHtlcId),
         Seq(commitment),
         inactive = Nil,

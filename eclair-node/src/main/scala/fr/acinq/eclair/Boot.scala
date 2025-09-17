@@ -63,7 +63,7 @@ object Boot extends App with Logging {
   /**
    * Starts the http APIs service if enabled in the configuration
    */
-  def startApiServiceIfEnabled(kit: Kit, providers: Seq[RouteProvider] = Nil)(implicit system: ActorSystem, ec: ExecutionContext) = {
+  private def startApiServiceIfEnabled(kit: Kit, providers: Seq[RouteProvider] = Nil)(implicit system: ActorSystem, ec: ExecutionContext) = {
     val config = system.settings.config.getConfig("eclair")
     if (config.getBoolean("api.enabled")) {
       logger.info(s"json API enabled on port=${config.getInt("api.port")}")
@@ -84,7 +84,7 @@ object Boot extends App with Logging {
     }
   }
 
-  def onError(t: Throwable): Unit = {
+  private def onError(t: Throwable): Unit = {
     val errorMsg = if (t.getMessage != null) t.getMessage else t.getClass.getSimpleName
     System.err.println(s"fatal error: $errorMsg")
     logger.error(s"fatal error: $errorMsg", t)

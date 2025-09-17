@@ -61,8 +61,8 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
 
     val channelId = createChannel(f)
     eventually {
-      assert(!getChannelData(alice, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.params.channelFeatures.hasFeature(ZeroConf))
-      assert(!getChannelData(bob, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.params.channelFeatures.hasFeature(ZeroConf))
+      assert(!getChannelData(alice, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.channelParams.channelFeatures.hasFeature(ZeroConf))
+      assert(!getChannelData(bob, channelId).asInstanceOf[ChannelDataWithCommitments].commitments.channelParams.channelFeatures.hasFeature(ZeroConf))
     }
   }
 
@@ -90,8 +90,8 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     val channelId = createChannel(f, channelType_opt = Some(channelType))
 
     eventually {
-      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.hasFeature(ZeroConf))
-      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.hasFeature(ZeroConf))
+      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].commitments.channelParams.channelFeatures.hasFeature(ZeroConf))
+      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].commitments.channelParams.channelFeatures.hasFeature(ZeroConf))
     }
   }
 
@@ -123,8 +123,8 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     val channelId = createChannel(f, channelType_opt = Some(channelType))
 
     eventually {
-      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.hasFeature(ZeroConf))
-      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].commitments.params.channelFeatures.hasFeature(ZeroConf))
+      assert(getChannelData(alice, channelId).asInstanceOf[DATA_NORMAL].commitments.channelParams.channelFeatures.hasFeature(ZeroConf))
+      assert(getChannelData(bob, channelId).asInstanceOf[DATA_NORMAL].commitments.channelParams.channelFeatures.hasFeature(ZeroConf))
     }
   }
 

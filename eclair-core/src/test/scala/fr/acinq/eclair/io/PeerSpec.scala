@@ -30,11 +30,11 @@ import fr.acinq.eclair.blockchain.{CurrentFeerates, DummyOnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
+import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
 import fr.acinq.eclair.testutils.FixtureSpec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.localParams
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Inside.inside
@@ -70,7 +70,6 @@ class PeerSpec extends FixtureSpec {
 
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
-      .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.ChannelType))(Features(ChannelType -> Optional))
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.StaticRemoteKey))(Features(StaticRemoteKey -> Optional))
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.AnchorOutputs))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional))
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional))
@@ -86,7 +85,7 @@ class PeerSpec extends FixtureSpec {
     }
 
     case class FakeChannelFactory(channel: TestProbe) extends ChannelFactory {
-      override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef = {
+      override def spawn(context: ActorContext, remoteNodeId: PublicKey, channelKeys: ChannelKeys): ActorRef = {
         assert(remoteNodeId == Bob.nodeParams.nodeId)
         channel.ref
       }
@@ -589,8 +588,8 @@ class PeerSpec extends FixtureSpec {
     val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
     assert(init.channelType == ChannelTypes.StaticRemoteKey())
     assert(!init.dualFunded)
-    assert(init.localParams.walletStaticPaymentBasepoint.isDefined)
-    assert(init.localParams.upfrontShutdownScript_opt.isEmpty)
+    assert(init.localChannelParams.walletStaticPaymentBasepoint.isDefined)
+    assert(init.localChannelParams.upfrontShutdownScript_opt.isEmpty)
   }
 
   test("compute max-htlc-value-in-flight based on funding amount", Tag("max-htlc-value-in-flight-percent"), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -604,25 +603,25 @@ class PeerSpec extends FixtureSpec {
     {
       probe.send(peer, Peer.OpenChannel(remoteNodeId, 200_000 sat, None, None, None, None, None, None, None))
       val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
-      assert(init.localParams.maxHtlcValueInFlightMsat == 50_000_000.msat) // max-htlc-value-in-flight-percent
+      assert(init.proposedCommitParams.localMaxHtlcValueInFlight == UInt64(50_000_000)) // max-htlc-value-in-flight-percent
     }
     {
       probe.send(peer, Peer.OpenChannel(remoteNodeId, 500_000 sat, None, None, None, None, None, None, None))
       val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
-      assert(init.localParams.maxHtlcValueInFlightMsat == 100_000_000.msat) // max-htlc-value-in-flight-msat
+      assert(init.proposedCommitParams.localMaxHtlcValueInFlight == UInt64(100_000_000)) // max-htlc-value-in-flight-msat
     }
     {
       val open = createOpenChannelMessage().copy(fundingSatoshis = 200_000 sat)
       peerConnection.send(peer, open)
       val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
-      assert(init.localParams.maxHtlcValueInFlightMsat == 50_000_000.msat) // max-htlc-value-in-flight-percent
+      assert(init.proposedCommitParams.localMaxHtlcValueInFlight == UInt64(50_000_000)) // max-htlc-value-in-flight-percent
       channel.expectMsg(open)
     }
     {
       val open = createOpenChannelMessage().copy(fundingSatoshis = 500_000 sat)
       peerConnection.send(peer, open)
       val init = channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
-      assert(init.localParams.maxHtlcValueInFlightMsat == 100_000_000.msat) // max-htlc-value-in-flight-msat
+      assert(init.proposedCommitParams.localMaxHtlcValueInFlight == UInt64(100_000_000)) // max-htlc-value-in-flight-msat
       channel.expectMsg(open)
     }
   }
@@ -714,7 +713,7 @@ class PeerSpec extends FixtureSpec {
     val open = createOpenChannelMessage()
     system.eventStream.subscribe(probe.ref, classOf[ChannelAborted])
     connect(remoteNodeId, peer, peerConnection, switchboard)
-    peer ! SpawnChannelNonInitiator(Left(open), ChannelConfig.standard, ChannelTypes.Standard(), None, localParams, ActorRef.noSender)
+    peer ! SpawnChannelNonInitiator(Left(open), ChannelConfig.standard, ChannelTypes.Standard(), None, ChannelCodecsSpec.localChannelParams, ActorRef.noSender)
     val channelAborted = probe.expectMsgType[ChannelAborted]
     assert(channelAborted.remoteNodeId == remoteNodeId)
     assert(channelAborted.channelId == open.temporaryChannelId)
@@ -843,7 +842,7 @@ class PeerSpec extends FixtureSpec {
     assert(nodeParams.db.peers.getPeer(remoteNodeId).isEmpty)
 
     // Our peer wants to open a channel to us, but we disconnect before we have a confirmed channel.
-    peer ! SpawnChannelNonInitiator(Left(createOpenChannelMessage()), ChannelConfig.standard, ChannelTypes.Standard(), None, localParams, peerConnection.ref)
+    peer ! SpawnChannelNonInitiator(Left(createOpenChannelMessage()), ChannelConfig.standard, ChannelTypes.Standard(), None, ChannelCodecsSpec.localChannelParams, peerConnection.ref)
     peer ! Peer.ConnectionDown(peerConnection.ref)
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.DISCONNECTED)

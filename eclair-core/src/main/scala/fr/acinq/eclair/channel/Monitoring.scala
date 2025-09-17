@@ -35,6 +35,7 @@ object Monitoring {
     val RemoteFeeratePerByte = Kamon.histogram("channels.remote-feerate-per-byte")
     val Splices = Kamon.histogram("channels.splices", "Splices")
     val ProcessMessage = Kamon.timer("channels.messages-processed")
+    val HtlcDropped = Kamon.counter("channels.htlc-dropped")
 
     def recordHtlcsInFlight(remoteSpec: CommitmentSpec, previousRemoteSpec: CommitmentSpec): Unit = {
       for (direction <- Tags.Directions.Incoming :: Tags.Directions.Outgoing :: Nil) {
@@ -75,6 +76,10 @@ object Monitoring {
         Metrics.Splices.withTag(Tags.Origin, Tags.Origins.Remote).withTag(Tags.SpliceType, Tags.SpliceTypes.SpliceCpfp).record(Math.abs(fundingParams.remoteContribution.toLong))
       }
     }
+
+    def dropHtlc(reason: ChannelException, direction: String): Unit = {
+      HtlcDropped.withTag(Tags.Reason, reason.getClass.getSimpleName).withTag(Tags.Direction, direction).increment()
+    }
   }
 
   object Tags {
@@ -85,6 +90,7 @@ object Monitoring {
     val State = "state"
     val CommitmentFormat = "commitment-format"
     val SpliceType = "splice-type"
+    val Reason = "reason"
 
     object Events {
       val Created = "created"

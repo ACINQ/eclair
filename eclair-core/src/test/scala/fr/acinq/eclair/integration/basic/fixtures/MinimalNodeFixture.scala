@@ -28,9 +28,10 @@ import fr.acinq.eclair.payment.offer.{DefaultOfferHandler, OfferManager}
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.{ChannelRelayer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
+import fr.acinq.eclair.reputation.ReputationRecorder
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
-import fr.acinq.eclair.{BlockHeight, EclairImpl, Kit, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases, nodeFee}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases}
 import org.scalatest.concurrent.{Eventually, IntegrationPatience}
 import org.scalatest.{Assertions, EitherValues}
 
@@ -69,8 +70,8 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     NodeParams.makeNodeParams(
         config = ConfigFactory.load().getConfig("eclair"),
         instanceId = UUID.randomUUID(),
-        nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash),
-        channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash),
+        nodeKeyManager = LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash),
+        channelKeyManager = LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash),
         onChainKeyManager_opt = None,
         torAddress_opt = None,
         database = TestDatabases.inMemoryDb(),
@@ -97,7 +98,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val offerManager = system.spawn(OfferManager(nodeParams, 1 minute), "offer-manager")
     val defaultOfferHandler = system.spawn(DefaultOfferHandler(nodeParams, router), "default-offer-handler")
     val paymentHandler = system.actorOf(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler")
-    val relayer = system.actorOf(Relayer.props(nodeParams, router, register, paymentHandler), "relayer")
+    val relayer = system.actorOf(Relayer.props(nodeParams, router, register, paymentHandler, None), "relayer")
     val txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, bitcoinClient)
     val channelFactory = Peer.SimpleChannelFactory(nodeParams, watcherTyped, relayer, wallet, txPublisherFactory)
     val pendingChannelsRateLimiter = system.spawnAnonymous(Behaviors.supervise(PendingChannelsRateLimiter(nodeParams, router.toTyped, Seq())).onFailure(typed.SupervisorStrategy.resume))
@@ -191,7 +192,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
   def spliceIn(node1: MinimalNodeFixture, channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi])(implicit system: ActorSystem): CommandResponse[CMD_SPLICE] = {
     val sender = TestProbe("sender")
     val spliceIn = SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))
-    val cmd = CMD_SPLICE(sender.ref.toTyped, spliceIn_opt = Some(spliceIn), spliceOut_opt = None, requestFunding_opt = None)
+    val cmd = CMD_SPLICE(sender.ref.toTyped, spliceIn_opt = Some(spliceIn), spliceOut_opt = None, requestFunding_opt = None, channelType_opt = None)
     sender.send(node1.register, Register.Forward(sender.ref.toTyped, channelId, cmd))
     sender.expectMsgType[CommandResponse[CMD_SPLICE]]
   }

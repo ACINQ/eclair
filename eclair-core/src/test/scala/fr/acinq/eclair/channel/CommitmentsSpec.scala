@@ -17,16 +17,16 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.crypto.keymanager.LocalChannelKeyManager
-import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.transactions.{CommitmentSpec, Scripts, Transactions}
+import fr.acinq.eclair.reputation.Reputation
+import fr.acinq.eclair.transactions.Transactions.DefaultCommitmentFormat
+import fr.acinq.eclair.transactions.{CommitmentSpec, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -43,6 +43,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   private val feerates = FeeratesPerKw.single(TestConstants.feeratePerKw)
   private val feeConfNoMismatch = OnChainFeeConf(
     feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
+    maxClosingFeerate = FeeratePerKw(10_000 sat),
     safeUtxosThreshold = 0,
     spendAnchorWithoutHtlcs = true,
     anchorWithoutHtlcsMaxFee = 10_000.sat,
@@ -90,11 +91,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Right((ac2, commit1)) = ac1.sendCommit(alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac2, commit1)) = ac1.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac2.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac2.availableBalanceForReceive == b)
 
-    val Right((bc2, revocation1)) = bc1.receiveCommit(commit1, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc2, revocation1)) = bc1.receiveCommit(commit1, bob.underlyingActor.channelKeys)
     assert(bc2.availableBalanceForSend == b)
     assert(bc2.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -102,11 +103,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac3.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b)
 
-    val Right((bc3, commit2)) = bc2.sendCommit(bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc3, commit2)) = bc2.sendCommit(bob.underlyingActor.channelKeys, Map.empty)
     assert(bc3.availableBalanceForSend == b)
     assert(bc3.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Right((ac4, revocation2)) = ac3.receiveCommit(commit2, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac4, revocation2)) = ac3.receiveCommit(commit2, alice.underlyingActor.channelKeys)
     assert(ac4.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac4.availableBalanceForReceive == b)
 
@@ -114,8 +115,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc4.availableBalanceForSend == b)
     assert(bc4.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val cmdFulfill = CMD_FULFILL_HTLC(0, payment_preimage)
-    val Right((bc5, fulfill)) = bc4.sendFulfill(cmdFulfill)
+    val cmdFulfill = CMD_FULFILL_HTLC(0, payment_preimage, None)
+    val Right((bc5, fulfill)) = bc4.sendFulfill(cmdFulfill, bob.underlyingActor.nodeParams.privateKey, useAttributionData = false)
     assert(bc5.availableBalanceForSend == b + p) // as soon as we have the fulfill, the balance increases
     assert(bc5.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -123,11 +124,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac5.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac5.availableBalanceForReceive == b + p)
 
-    val Right((bc6, commit3)) = bc5.sendCommit(bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc6, commit3)) = bc5.sendCommit(bob.underlyingActor.channelKeys, Map.empty)
     assert(bc6.availableBalanceForSend == b + p)
     assert(bc6.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Right((ac6, revocation3)) = ac5.receiveCommit(commit3, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac6, revocation3)) = ac5.receiveCommit(commit3, alice.underlyingActor.channelKeys)
     assert(ac6.availableBalanceForSend == a - p)
     assert(ac6.availableBalanceForReceive == b + p)
 
@@ -135,11 +136,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc7.availableBalanceForSend == b + p)
     assert(bc7.availableBalanceForReceive == a - p)
 
-    val Right((ac7, commit4)) = ac6.sendCommit(alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac7, commit4)) = ac6.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac7.availableBalanceForSend == a - p)
     assert(ac7.availableBalanceForReceive == b + p)
 
-    val Right((bc8, revocation4)) = bc7.receiveCommit(commit4, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc8, revocation4)) = bc7.receiveCommit(commit4, bob.underlyingActor.channelKeys)
     assert(bc8.availableBalanceForSend == b + p)
     assert(bc8.availableBalanceForReceive == a - p)
 
@@ -175,11 +176,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Right((ac2, commit1)) = ac1.sendCommit(alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac2, commit1)) = ac1.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac2.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac2.availableBalanceForReceive == b)
 
-    val Right((bc2, revocation1)) = bc1.receiveCommit(commit1, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc2, revocation1)) = bc1.receiveCommit(commit1, bob.underlyingActor.channelKeys)
     assert(bc2.availableBalanceForSend == b)
     assert(bc2.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -187,11 +188,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac3.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b)
 
-    val Right((bc3, commit2)) = bc2.sendCommit(bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc3, commit2)) = bc2.sendCommit(bob.underlyingActor.channelKeys, Map.empty)
     assert(bc3.availableBalanceForSend == b)
     assert(bc3.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Right((ac4, revocation2)) = ac3.receiveCommit(commit2, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac4, revocation2)) = ac3.receiveCommit(commit2, alice.underlyingActor.channelKeys)
     assert(ac4.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac4.availableBalanceForReceive == b)
 
@@ -199,8 +200,8 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc4.availableBalanceForSend == b)
     assert(bc4.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val cmdFail = CMD_FAIL_HTLC(0, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(p, BlockHeight(42))))
-    val Right((bc5, fail: UpdateFailHtlc)) = bc4.sendFail(cmdFail, bob.underlyingActor.nodeParams.privateKey)
+    val cmdFail = CMD_FAIL_HTLC(0, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(p, BlockHeight(42))), None)
+    val Right((bc5, fail: UpdateFailHtlc)) = bc4.sendFail(cmdFail, bob.underlyingActor.nodeParams.privateKey, useAttributableFailures = false)
     assert(bc5.availableBalanceForSend == b)
     assert(bc5.availableBalanceForReceive == a - p - htlcOutputFee) // a's balance won't return to previous before she acknowledges the fail
 
@@ -208,11 +209,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac5.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac5.availableBalanceForReceive == b)
 
-    val Right((bc6, commit3)) = bc5.sendCommit(bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc6, commit3)) = bc5.sendCommit(bob.underlyingActor.channelKeys, Map.empty)
     assert(bc6.availableBalanceForSend == b)
     assert(bc6.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Right((ac6, revocation3)) = ac5.receiveCommit(commit3, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac6, revocation3)) = ac5.receiveCommit(commit3, alice.underlyingActor.channelKeys)
     assert(ac6.availableBalanceForSend == a)
     assert(ac6.availableBalanceForReceive == b)
 
@@ -220,11 +221,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc7.availableBalanceForSend == b)
     assert(bc7.availableBalanceForReceive == a)
 
-    val Right((ac7, commit4)) = ac6.sendCommit(alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac7, commit4)) = ac6.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac7.availableBalanceForSend == a)
     assert(ac7.availableBalanceForReceive == b)
 
-    val Right((bc8, revocation4)) = bc7.receiveCommit(commit4, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc8, revocation4)) = bc7.receiveCommit(commit4, bob.underlyingActor.channelKeys)
     assert(bc8.availableBalanceForSend == b)
     assert(bc8.availableBalanceForReceive == a)
 
@@ -281,11 +282,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac3.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b - p3)
 
-    val Right((ac4, commit1)) = ac3.sendCommit(alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac4, commit1)) = ac3.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac4.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac4.availableBalanceForReceive == b - p3)
 
-    val Right((bc4, revocation1)) = bc3.receiveCommit(commit1, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc4, revocation1)) = bc3.receiveCommit(commit1, bob.underlyingActor.channelKeys)
     assert(bc4.availableBalanceForSend == b - p3)
     assert(bc4.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
@@ -293,11 +294,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac5.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac5.availableBalanceForReceive == b - p3)
 
-    val Right((bc5, commit2)) = bc4.sendCommit(bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc5, commit2)) = bc4.sendCommit(bob.underlyingActor.channelKeys, Map.empty)
     assert(bc5.availableBalanceForSend == b - p3)
     assert(bc5.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
-    val Right((ac6, revocation2)) = ac5.receiveCommit(commit2, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac6, revocation2)) = ac5.receiveCommit(commit2, alice.underlyingActor.channelKeys)
     assert(ac6.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // alice has acknowledged b's hltc so it needs to pay the fee for it
     assert(ac6.availableBalanceForReceive == b - p3)
 
@@ -305,11 +306,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc6.availableBalanceForSend == b - p3)
     assert(bc6.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
-    val Right((ac7, commit3)) = ac6.sendCommit(alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac7, commit3)) = ac6.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac7.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
     assert(ac7.availableBalanceForReceive == b - p3)
 
-    val Right((bc7, revocation3)) = bc6.receiveCommit(commit3, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc7, revocation3)) = bc6.receiveCommit(commit3, bob.underlyingActor.channelKeys)
     assert(bc7.availableBalanceForSend == b - p3)
     assert(bc7.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
@@ -317,18 +318,18 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac8.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
     assert(ac8.availableBalanceForReceive == b - p3)
 
-    val cmdFulfill1 = CMD_FULFILL_HTLC(0, payment_preimage1)
-    val Right((bc8, fulfill1)) = bc7.sendFulfill(cmdFulfill1)
+    val cmdFulfill1 = CMD_FULFILL_HTLC(0, payment_preimage1, None)
+    val Right((bc8, fulfill1)) = bc7.sendFulfill(cmdFulfill1, bob.underlyingActor.nodeParams.privateKey, useAttributionData = false)
     assert(bc8.availableBalanceForSend == b + p1 - p3) // as soon as we have the fulfill, the balance increases
     assert(bc8.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
-    val cmdFail2 = CMD_FAIL_HTLC(1, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(p2, BlockHeight(42))))
-    val Right((bc9, fail2: UpdateFailHtlc)) = bc8.sendFail(cmdFail2, bob.underlyingActor.nodeParams.privateKey)
+    val cmdFail2 = CMD_FAIL_HTLC(1, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(p2, BlockHeight(42))), None)
+    val Right((bc9, fail2: UpdateFailHtlc)) = bc8.sendFail(cmdFail2, bob.underlyingActor.nodeParams.privateKey, useAttributableFailures = false)
     assert(bc9.availableBalanceForSend == b + p1 - p3)
     assert(bc9.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // a's balance won't return to previous before she acknowledges the fail
 
-    val cmdFulfill3 = CMD_FULFILL_HTLC(0, payment_preimage3)
-    val Right((ac9, fulfill3)) = ac8.sendFulfill(cmdFulfill3)
+    val cmdFulfill3 = CMD_FULFILL_HTLC(0, payment_preimage3, None)
+    val Right((ac9, fulfill3)) = ac8.sendFulfill(cmdFulfill3, alice.underlyingActor.nodeParams.privateKey, useAttributionData = false)
     assert(ac9.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3) // as soon as we have the fulfill, the balance increases
     assert(ac9.availableBalanceForReceive == b - p3)
 
@@ -344,11 +345,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc10.availableBalanceForSend == b + p1 - p3)
     assert(bc10.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3) // the fee for p3 disappears
 
-    val Right((ac12, commit4)) = ac11.sendCommit(alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac12, commit4)) = ac11.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac12.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
     assert(ac12.availableBalanceForReceive == b + p1 - p3)
 
-    val Right((bc11, revocation4)) = bc10.receiveCommit(commit4, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc11, revocation4)) = bc10.receiveCommit(commit4, bob.underlyingActor.channelKeys)
     assert(bc11.availableBalanceForSend == b + p1 - p3)
     assert(bc11.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
 
@@ -356,11 +357,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac13.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
     assert(ac13.availableBalanceForReceive == b + p1 - p3)
 
-    val Right((bc12, commit5)) = bc11.sendCommit(bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc12, commit5)) = bc11.sendCommit(bob.underlyingActor.channelKeys, Map.empty)
     assert(bc12.availableBalanceForSend == b + p1 - p3)
     assert(bc12.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
 
-    val Right((ac14, revocation5)) = ac13.receiveCommit(commit5, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac14, revocation5)) = ac13.receiveCommit(commit5, alice.underlyingActor.channelKeys)
     assert(ac14.availableBalanceForSend == a - p1 + p3)
     assert(ac14.availableBalanceForReceive == b + p1 - p3)
 
@@ -368,11 +369,11 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc13.availableBalanceForSend == b + p1 - p3)
     assert(bc13.availableBalanceForReceive == a - p1 + p3)
 
-    val Right((ac15, commit6)) = ac14.sendCommit(alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac15, commit6)) = ac14.sendCommit(alice.underlyingActor.channelKeys, Map.empty)
     assert(ac15.availableBalanceForSend == a - p1 + p3)
     assert(ac15.availableBalanceForReceive == b + p1 - p3)
 
-    val Right((bc14, revocation6)) = bc13.receiveCommit(commit6, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc14, revocation6)) = bc13.receiveCommit(commit6, bob.underlyingActor.channelKeys)
     assert(bc14.availableBalanceForSend == b + p1 - p3)
     assert(bc14.availableBalanceForReceive == a - p1 + p3)
 
@@ -409,7 +410,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("can receive availableForReceive") { f =>
     for (isInitiator <- Seq(true, false)) {
       val c = CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isInitiator)
-      val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None)
+      val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
       c.receiveAdd(add, feerates, feeConfNoMismatch)
     }
   }
@@ -460,14 +461,14 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 1 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
-        val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None)
+        val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
         c.receiveAdd(add, feerates, feeConfNoMismatch) match {
           case Right(cc) => c = cc
           case Left(e) => ignore(s"$t -> could not setup initial htlcs: $e")
         }
       }
       if (c.availableBalanceForReceive > 0.msat) {
-        val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, 1.0, None)
+        val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
         c.receiveAdd(add, feerates, feeConfNoMismatch) match {
           case Right(_) => ()
           case Left(e) => fail(s"$t -> $e")
@@ -478,8 +479,10 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("check if channel seed has been modified") { f =>
     val commitments = f.alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    assert(commitments.validateSeed(TestConstants.Alice.channelKeyManager))
-    assert(!commitments.validateSeed(new LocalChannelKeyManager(ByteVector32.fromValidHex("42" * 32), Block.RegtestGenesisBlock.hash)))
+    val aliceChannelKeys = f.alice.underlyingActor.channelKeys
+    assert(commitments.validateSeed(aliceChannelKeys))
+    val otherChannelKeys = TestConstants.Alice.channelKeyManager.channelKeys(ChannelConfig.standard, TestConstants.Alice.channelKeyManager.newFundingKeyPath(isChannelOpener = true))
+    assert(!commitments.validateSeed(otherChannelKeys))
   }
 }
 
@@ -487,22 +490,22 @@ object CommitmentsSpec {
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isOpener: Boolean = true, announcement_opt: Option[ChannelAnnouncement] = None): Commitments = {
     val channelReserve = (toLocal + toRemote).truncateToSatoshi * 0.01
-    val localParams = LocalParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, Long.MaxValue.msat, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, isOpener, isOpener, None, None, Features.empty)
-    val remoteParams = RemoteParams(randomKey().publicKey, dustLimit, UInt64.MaxValue, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
+    val localChannelParams = LocalChannelParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), Some(channelReserve), isOpener, isOpener, None, None, Features.empty)
+    val remoteChannelParams = RemoteChannelParams(randomKey().publicKey, Some(channelReserve), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
+    val commitParams = CommitParams(dustLimit, 1 msat, UInt64.MaxValue, 50, CltvExpiryDelta(144))
     val localFundingPubKey = randomKey().publicKey
     val remoteFundingPubKey = randomKey().publicKey
-    val fundingTx = Transaction(2, Nil, Seq(TxOut((toLocal + toRemote).truncateToSatoshi, Funding.makeFundingPubKeyScript(localFundingPubKey, remoteFundingPubKey))), 0)
-    val commitmentInput = Transactions.InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, Scripts.multiSig2of2(localFundingPubKey, remoteFundingPubKey))
-    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
+    val fundingTxOut = TxOut((toLocal + toRemote).truncateToSatoshi, Transactions.makeFundingScript(localFundingPubKey, remoteFundingPubKey, DefaultCommitmentFormat).pubkeyScript)
+    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toLocal, toRemote), randomTxId(), IndividualSignature(ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomTxId(), randomKey().publicKey)
     val localFundingStatus = announcement_opt match {
-      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(fundingTx, ann.shortChannelId, None, None)
+      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(Nil, fundingTxOut, ann.shortChannelId, None, None)
       case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
     }
     Commitments(
-      ChannelParams(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = announcement_opt.nonEmpty)),
+      ChannelParams(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localChannelParams, remoteChannelParams, ChannelFlags(announceChannel = announcement_opt.nonEmpty)),
       CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
-      List(Commitment(0, 0, remoteFundingPubKey, localFundingStatus, RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+      List(Commitment(0, 0, OutPoint(randomTxId(), 0), fundingTxOut.amount, remoteFundingPubKey, localFundingStatus, RemoteFundingStatus.Locked, DefaultCommitmentFormat, commitParams, localCommit, commitParams, remoteCommit, None)),
       inactive = Nil,
       Right(randomKey().publicKey),
       ShaChain.init,
@@ -512,22 +515,22 @@ object CommitmentsSpec {
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announcement_opt: Option[ChannelAnnouncement]): Commitments = {
     val channelReserve = (toLocal + toRemote).truncateToSatoshi * 0.01
-    val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, Long.MaxValue.msat, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
-    val remoteParams = RemoteParams(remoteNodeId, 0 sat, UInt64.MaxValue, Some(channelReserve), 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
+    val localChannelParams = LocalChannelParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), Some(channelReserve), isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
+    val remoteChannelParams = RemoteChannelParams(remoteNodeId, Some(channelReserve), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
+    val commitParams = CommitParams(0 sat, 1 msat, UInt64.MaxValue, 50, CltvExpiryDelta(144))
     val localFundingPubKey = randomKey().publicKey
     val remoteFundingPubKey = randomKey().publicKey
-    val fundingTx = Transaction(2, Nil, Seq(TxOut((toLocal + toRemote).truncateToSatoshi, Funding.makeFundingPubKeyScript(localFundingPubKey, remoteFundingPubKey))), 0)
-    val commitmentInput = Transactions.InputInfo(OutPoint(fundingTx, 0), fundingTx.txOut.head, Scripts.multiSig2of2(localFundingPubKey, remoteFundingPubKey))
-    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
+    val fundingTxOut = TxOut((toLocal + toRemote).truncateToSatoshi, Transactions.makeFundingScript(localFundingPubKey, remoteFundingPubKey, DefaultCommitmentFormat).pubkeyScript)
+    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toLocal, toRemote), randomTxId(), IndividualSignature(ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toRemote, toLocal), randomTxId(), randomKey().publicKey)
     val localFundingStatus = announcement_opt match {
-      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(fundingTx, ann.shortChannelId, None, None)
+      case Some(ann) => LocalFundingStatus.ConfirmedFundingTx(Nil, fundingTxOut, ann.shortChannelId, None, None)
       case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
     }
     Commitments(
-      ChannelParams(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = announcement_opt.nonEmpty)),
+      ChannelParams(randomBytes32(), ChannelConfig.standard, ChannelFeatures(), localChannelParams, remoteChannelParams, ChannelFlags(announceChannel = announcement_opt.nonEmpty)),
       CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
-      List(Commitment(0, 0, remoteFundingPubKey, localFundingStatus, RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+      List(Commitment(0, 0, OutPoint(randomTxId(), 0), fundingTxOut.amount, remoteFundingPubKey, localFundingStatus, RemoteFundingStatus.Locked, DefaultCommitmentFormat, commitParams, localCommit, commitParams, remoteCommit, None)),
       inactive = Nil,
       Right(randomKey().publicKey),
       ShaChain.init,

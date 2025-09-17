@@ -54,7 +54,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
 
   def createPaymentBlindedRoute(nodeId: PublicKey, sessionKey: PrivateKey = randomKey(), pathId: ByteVector = randomBytes32()): PaymentBlindedRoute = {
     val selfPayload = blindedRouteDataCodec.encode(TlvStream(PathId(pathId), PaymentConstraints(CltvExpiry(1234567), 0 msat), AllowedFeatures(Features.empty))).require.bytes
-    PaymentBlindedRoute(Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload)).route, PaymentInfo(1 msat, 2, CltvExpiryDelta(3), 4 msat, 5 msat, Features.empty))
+    PaymentBlindedRoute(Sphinx.RouteBlinding.create(sessionKey, Seq(nodeId), Seq(selfPayload)).route, PaymentInfo(1 msat, 2, CltvExpiryDelta(3), 4 msat, 5 msat, ByteVector.empty))
   }
 
   test("check invoice signature") {
@@ -70,7 +70,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     // changing fields makes the signature invalid
     val withModifiedUnknownTlv = Bolt12Invoice(invoice.records.copy(unknown = Set(GenericTlv(UInt64(7), hex"ade4"))))
     assert(!withModifiedUnknownTlv.checkSignature())
-    val withModifiedAmount = Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferAmount(amount) => OfferAmount(amount + 100.msat) case x => x }, invoice.records.unknown))
+    val withModifiedAmount = Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferAmount(amount) => OfferAmount(amount + 100) case x => x }, invoice.records.unknown))
     assert(!withModifiedAmount.checkSignature())
   }
 
@@ -92,7 +92,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features.empty, Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(invoice.validateFor(request, nodeKey.publicKey).isRight)
     // amount must match the request
-    val withOtherAmount = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferAmount(_) => OfferAmount(9000 msat) case x => x })), nodeKey)
+    val withOtherAmount = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferAmount(_) => OfferAmount(9000) case x => x })), nodeKey)
     assert(withOtherAmount.validateFor(request, nodeKey.publicKey).isLeft)
     // description must match the offer
     val withOtherDescription = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case OfferDescription(_) => OfferDescription("other description") case x => x })), nodeKey)
@@ -127,7 +127,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(request.quantity_opt.isEmpty) // when paying for a single item, the quantity field must not be present
     val invoice = Bolt12Invoice(request, randomBytes32(), nodeKey, 300 seconds, Features(BasicMultiPartPayment -> Optional), Seq(createPaymentBlindedRoute(nodeKey.publicKey)))
     assert(invoice.validateFor(request, nodeKey.publicKey).isRight)
-    val withInvalidFeatures = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case InvoiceFeatures(_) => InvoiceFeatures(Features(BasicMultiPartPayment -> Mandatory)) case x => x })), nodeKey)
+    val withInvalidFeatures = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case InvoiceFeatures(_) => InvoiceFeatures(Features(BasicMultiPartPayment -> Mandatory).toByteVector) case x => x })), nodeKey)
     assert(withInvalidFeatures.validateFor(request, nodeKey.publicKey).isLeft)
     val withAmountTooBig = signInvoice(Bolt12Invoice(TlvStream(invoice.records.records.map { case InvoiceRequestAmount(_) => InvoiceRequestAmount(20000 msat) case x => x })), nodeKey)
     assert(withAmountTooBig.validateFor(request, nodeKey.publicKey).isLeft)
@@ -148,7 +148,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
         InvoiceRequestAmount(15000 msat),
         InvoiceRequestPayerId(payerKey.publicKey),
         InvoiceRequestPayerNote("I am Batman"),
-        OfferFeatures(Features(VariableLengthOnion -> Mandatory))
+        OfferFeatures(Features(VariableLengthOnion -> Mandatory).toByteVector)
       )
       val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvs), invoiceRequestTlvCodec), payerKey)
       InvoiceRequest(TlvStream(tlvs + Signature(signature)))
@@ -188,7 +188,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
       InvoiceRequestAmount(1684 msat),
       InvoiceRequestPayerId(randomKey().publicKey),
       InvoicePaths(Seq(createPaymentBlindedRoute(randomKey().publicKey).route)),
-      InvoiceBlindedPay(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 765432 msat, Features.empty))),
+      InvoiceBlindedPay(Seq(PaymentInfo(0 msat, 0, CltvExpiryDelta(0), 0 msat, 765432 msat, ByteVector.empty))),
       InvoiceCreatedAt(TimestampSecond(123456789L)),
       InvoicePaymentHash(randomBytes32()),
       InvoiceAmount(1684 msat),
@@ -217,7 +217,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val features = Features.empty
     val issuer = "alice"
     val nodeKey = PrivateKey(hex"998cf8ecab46f949bb960813b79d3317cabf4193452a211795cd8af1b9a25d90")
-    val path = createPaymentBlindedRoute(nodeKey.publicKey, PrivateKey(hex"f0442c17bdd2cefe4a4ede210f163b068bb3fea6113ffacea4f322de7aa9737b"), hex"76030536ba732cdc4e7bb0a883750bab2e88cb3dddd042b1952c44b4849c86bb").copy(paymentInfo = PaymentInfo(2345 msat, 765, CltvExpiryDelta(324), 1000 msat, amount, Features.empty))
+    val path = createPaymentBlindedRoute(nodeKey.publicKey, PrivateKey(hex"f0442c17bdd2cefe4a4ede210f163b068bb3fea6113ffacea4f322de7aa9737b"), hex"76030536ba732cdc4e7bb0a883750bab2e88cb3dddd042b1952c44b4849c86bb").copy(paymentInfo = PaymentInfo(2345 msat, 765, CltvExpiryDelta(324), 1000 msat, amount, ByteVector.empty))
     val quantity = 57
     val payerKey = PublicKey(hex"024a8d96f4d13c4219f211b8a8e7b4ab7a898fd1b2e90274ca5a8737a9eda377f8")
     val payerNote = "I'm Bob"
@@ -229,9 +229,9 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val tlvs = TlvStream[InvoiceTlv](Set[InvoiceTlv](
       InvoiceRequestMetadata(payerInfo),
       OfferChains(Seq(chain)),
-      OfferAmount(amount),
+      OfferAmount(amount.toLong),
       OfferDescription(description),
-      OfferFeatures(Features.empty),
+      OfferFeatures(ByteVector.empty),
       OfferIssuer(issuer),
       OfferNodeId(nodeKey.publicKey),
       InvoiceRequestChain(chain),
@@ -246,7 +246,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
       InvoicePaymentHash(paymentHash),
       InvoiceAmount(amount),
       InvoiceFallbacks(fallbacks),
-      InvoiceFeatures(Features.empty),
+      InvoiceFeatures(ByteVector.empty),
       InvoiceNodeId(nodeKey.publicKey),
     ), Set(GenericTlv(UInt64(121), hex"010203"), GenericTlv(UInt64(313), hex"baba")))
     val signature = signSchnorr(Bolt12Invoice.signatureTag, rootHash(tlvs, invoiceTlvCodec), nodeKey)
@@ -339,7 +339,7 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     val preimage = ByteVector32(hex"99221825b86576e94391b179902be8b22c7cfa7c3d14aec6ae86657dfd9bd2a8")
     val offer = Offer(TlvStream[OfferTlv](
       OfferChains(Seq(Block.Testnet3GenesisBlock.hash)),
-      OfferAmount(100000 msat),
+      OfferAmount(100000),
       OfferDescription("offer with quantity"),
       OfferIssuer("alice@bigshop.com"),
       OfferQuantityMax(1000),
@@ -375,5 +375,12 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(invoice.nodeId == PublicKey(hex"024cc50d604f657094f8a2ff031ad6d888f9ac220a86b5949cdaaa5a5c03055d69"))
     assert(invoice.paymentHash == ByteVector32(hex"14805a7006b96286e7b0a3f618c1cd7f1059f76da766044c5bfc3fa31d5e9442"))
     assert(invoice.description.contains("yolo"))
+  }
+
+  test("invoice with non-minimally encoded feature bits"){
+    val encodedInvoice = "lni1qqsyzre2s0lc77w5h33ck6540xxsyjehjl66f9tfp83w85zcxqyhltczyqrzymjxzydqkkw24ufxqslttwlj3s608f0rx2slc7etw0833zgs7zqyqh67zqq2qqgwsqktzd0na8g54f2r8secsaemc7ww2d6spl397celwcv20egnau2z8gp83d0dg7gvtkkvklnqlvp0erhq9nh9928rexerg578wnyew6dj6xczq2nqtavvd94k7jq2slng76uk560g6qeu38ru2gjjtdd4w9jxfqcc5qpnvvduearw4k75xdsgrc9ntzs274hwumtk5zwlrcr8yzwn8q0ry40f6lcmarq2nqkz9j2anajrlpchwwfguypms9x0uptvcsspwzjp3vg8srqx27crkqe8v9nzqaktzwwy5szk0rsq9sq7vhqncvv63mseqsx9lzmjraxhfnhc6f9tgnm05v7x0s4dhzwac9gruy44n9yht645cd4jzcssyjvcf2ptqztsenmzyw0e6kpx209mmmpal9ptutxpeygerepwh5rc2qsqvgnwgcg35z6ee2h3yczraddm72xrfua9uve2rlrm9deu7xyfzr6jqsae4jsq2spsyqqqtqss9g4l2s06jx69u2vtvezfmh07puh8pzhp76yddr7yvjpt2q38puqx5r7sgacrnpvghfhfzdzm9rertx4egjnarr2plwp26yfzcnv4ef536h9nu8lq9xyejhphnyv97axrqwr982vvedhfzj3cn5uhdymxwejfh55p2putqvpeskyt5m53x3dj3u34n2u5ff7334qlhq4dzy3vfk2u56gatje7rlsqgllx5cs3433fgn37scpz5ysn7df4tcfvgw5hgn998qut5l63vvmlv85xj4gj9rs6ja6gj45ddfjvwrcq9qthepk3xtpy4x8tsmmaqhas3v8k6chxp4ds8367lgw3q4mtpm5zmlr84tx4xpshtaxa0es0kcjuah80xt23pm08qprase5e2euq8ndvymuzcdznh78qyg28lw65wve2fpphd5zpwy4v3gfpa245dgtmqkp34gg8s4tfxytnx5vxhclwzmpzdy80jlfyznklk9t0karg42yvxqey68py3t0yg5rew5jke2sr6l5akw3r4x4cyp5f9ty27yjqtsn5ucqywkk84sxudl89xdxw34kvvtq67pk64r3kmyzz5dum0c66sjh7a5ylr6u38ycdmdq5rm7pp5m87rmsg7ntkqr4dcateeafrchaw085my236hxg47745nsrdtmjvnhy4a9ppd95g5m3u40wa0pcnmlhcm99xd0flh0484vht6ysx5cg5nmjxzaqsqv33sgptsrgmfuqgwjuvw5v58k379638h6hda8tqvpk4aexfmj27jsskj6y2dc72hhwhsufalmudjjnxh5lmh6n6kt4azgqg7en2fg446vmtj2zgncc9wv4sa8zhyxm60zadqlf664d8mhdx6g5g6cls2glkqdmayuvypt7fuljtswlmz4w5e8nkkpzr8m6txz7gzvfcexj9dmdhuhsx35lnwnmzm52vq2wgr49g25dwk4jlh0n2yq6yufpewngg7llkgxwqpr5nlruajj55sel09axp2tmkhaf2hkh2lsjyth098l2r2kfg7u9440ymwswpwd20j9zdp562ejm0yy0x68q4knmd6a6g4nz0a2nm3842yw4pdx8udqggqkxa03jwmrzzuzwp2mn6az3exhunlqcpmphsks3cur22l3hvzn74vqy0kf70r6hd5cy2va94czl9g594856j287cefqej8qlre5ewyc5l02wtsx0hcjr4jhup6z4rj46lmrylsr034r5w2csnsgcy83yz848lafh5wue9aue8grnpvghfhfzdzm9rertx4egjnarr2plwp26yfzcnv4ef536h9nu8lq86u0a3w8zcxwy9hj9gvdwv8fhahpdauyzmuegpkefl3xc798mft7qvpeskyt5m53x3dj3u34n2u5ff7334qlhq4dzy3vfk2u56gatje7rlsqg0xlmw039msmmqtt4jqkgqts08ervu9dsx05qwzr67dazwklna9yjzdker5mhmeghxde2jlu5gvl4wrshvrg6x6a0j7hqsgpcc3ngm0ucvftuq6k8q0tpgxknk3d3t8nc9p9frafrfndz788hkaut704urzsj06t45qy8qk5hewf9p3sej3m2xrwyk6ny5hg8t24aq50a7re8evssrd0nmtrpjttuj04nlhs8ygteqepyc6sg5lsdajrc63xjp26j7surx83vx5u4326qfk6vw0sqhme6cw9247ef75ymtz4mp3esduvl07ykrnzzre3aq5jgqzrzcj59yjdcvp38nq7uvdqwmnhvy0h7t9062znl8ly02k9d02tyxev6mf6we8ztfjrdu73wc6gctxg5lmgj4a8v8z9lzqdfvlsmcwzyznagl929pqqqqyfjqqqqqpszqcqqqqqqqqqq3xqqqqqqz0490jqqqgqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpzvsqqqqqvqsxqqqqqqqqqqyfsqqqqqqnaftusqqzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqgnyqqqqqrqypsqqqqqqqqqpzvqqqqqqp4rw2vqqqsqqqqqqqqqqqqqqqqqqqqqqqqqzjqg6zm7ju2sgrmk0u67xstmskz34gfjfnjfxwvjltp3jsrd8rn40s7pgk8tzxwt64qgwu6egqtqggzfxvy4q4sp9cvea3z88uatqn98jaaas7ljs479nqujyv3usht6pu0qs8wdac52sykqfjnxg0xhva4fcv00hr4tqzjwkjnkayykkm9dnr97ladr5jjjx4xyjtun7ucye660akfv4nl9tupwnyemp0sasfxapvcw"
+    val invoice = Bolt12Invoice.fromString(encodedInvoice).get
+    assert(invoice.checkSignature())
+    assert(invoice.amount == 1000000000.msat)
   }
 }

@@ -21,6 +21,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
+import fr.acinq.eclair.db.OfferData
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
 import fr.acinq.eclair.payment.offer.OfferCreator.CreateOfferResult
@@ -48,7 +49,7 @@ object OfferCreator {
 
   // @formatter:off
   sealed trait CreateOfferResult
-  case class CreatedOffer(offer: Offer) extends CreateOfferResult
+  case class CreatedOffer(offerData: OfferData) extends CreateOfferResult
   case class CreateOfferError(reason: String) extends CreateOfferResult
   // @formatter:on
 
@@ -82,7 +83,7 @@ private class OfferCreator(context: ActorContext[OfferCreator.Command],
     } else {
       val tlvs: Set[OfferTlv] = Set(
         if (nodeParams.chainHash != Block.LivenetGenesisBlock.hash) Some(OfferChains(Seq(nodeParams.chainHash))) else None,
-        amount_opt.map(OfferAmount),
+        amount_opt.map(_.toLong).map(OfferAmount),
         description_opt.map(OfferDescription),
         expiry_opt.map(OfferAbsoluteExpiry),
         issuer_opt.map(OfferIssuer),
@@ -115,9 +116,13 @@ private class OfferCreator(context: ActorContext[OfferCreator.Command],
   }
 
   private def registerOffer(offer: Offer, nodeKey_opt: Option[PrivateKey], pathId_opt: Option[ByteVector32]): Behavior[Command] = {
-    nodeParams.db.offers.addOffer(offer, pathId_opt)
-    offerManager ! OfferManager.RegisterOffer(offer, nodeKey_opt, pathId_opt, defaultOfferHandler)
-    replyTo ! CreatedOffer(offer)
+    nodeParams.db.offers.addOffer(offer, pathId_opt) match {
+      case Some(offerData) =>
+        offerManager ! OfferManager.RegisterOffer(offer, nodeKey_opt, pathId_opt, defaultOfferHandler)
+        replyTo ! CreatedOffer(offerData)
+      case None =>
+        replyTo ! CreateOfferError("This offer is already registered")
+    }
     Behaviors.stopped
   }
 }

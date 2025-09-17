@@ -29,7 +29,7 @@ trait OffersDb {
    *
    * @param pathId_opt If the offer uses a blinded path, this is the corresponding pathId.
    */
-  def addOffer(offer: Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Unit
+  def addOffer(offer: Offer, pathId_opt: Option[ByteVector32], createdAt: TimestampMilli = TimestampMilli.now()): Option[OfferData]
 
   /**
    * Disable an offer. The offer is still stored but new invoice requests and new payment attempts for already emitted

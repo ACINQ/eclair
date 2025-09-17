@@ -17,9 +17,8 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.actor.ActorRef
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
@@ -40,7 +39,6 @@ import scala.concurrent.duration._
 
 class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  private val LargeChannel = "large_channel"
   private val FunderBelowCommitFees = "funder_below_commit_fees"
 
   case class FixtureParam(bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe, listener: TestProbe)
@@ -49,25 +47,18 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val setup = init(Alice.nodeParams, Bob.nodeParams, tags = test.tags)
     import setup._
 
-    val (fundingSatoshis, pushMsat) = if (test.tags.contains(FunderBelowCommitFees)) {
+    val channelParams = computeChannelParams(setup, test.tags)
+    val (fundingAmount, pushAmount) = if (test.tags.contains(FunderBelowCommitFees)) {
       (1_000_100 sat, (1_000_000 sat).toMilliSatoshi) // toLocal = 100 satoshis
-    } else if (test.tags.contains(LargeChannel)) {
-      (Btc(5).toSatoshi, TestConstants.initiatorPushAmount)
     } else {
       (TestConstants.fundingSatoshis, TestConstants.initiatorPushAmount)
     }
-
-    val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags(announceChannel = false)
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
-    val aliceInit = Init(aliceParams.initFeatures)
-    val bobInit = Init(bobParams.initFeatures)
     val listener = TestProbe()
     within(30 seconds) {
       bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(pushMsat), requireConfirmedInputs = false, requestFunding_opt = None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+      alice ! channelParams.initChannelAlice(fundingAmount, pushAmount_opt = Some(pushAmount))
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      bob ! channelParams.initChannelBob()
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -87,18 +78,6 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     val watchConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(watchConfirmed.minDepth == Bob.nodeParams.channelConf.minDepth)
-  }
-
-  test("recv FundingCreated (large channel)", Tag(LargeChannel)) { f =>
-    import f._
-    alice2bob.expectMsgType[FundingCreated]
-    alice2bob.forward(bob)
-    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    bob2alice.expectMsgType[FundingSigned]
-    bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
-    val watchConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
-    // when we are fundee, we use a higher min depth for wumbo channels
-    assert(watchConfirmed.minDepth > Bob.nodeParams.channelConf.minDepth)
   }
 
   test("recv FundingCreated (funder can't pay fees)", Tag(FunderBelowCommitFees)) { f =>

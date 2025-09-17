@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.fsm
 import fr.acinq.bitcoin.scalacompat.{Transaction, TxIn}
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
-import fr.acinq.eclair.blockchain.CurrentBlockHeight
+import fr.acinq.eclair.blockchain.{CurrentBlockHeight, NewTransaction}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
@@ -50,7 +50,14 @@ trait DualFundingHandlers extends CommonFundingHandlers {
         // Note that we don't use wallet.commit because we don't want to rollback on failure, since our peer may be able
         // to publish and we may be able to RBF.
         wallet.publishTransaction(fundingTx.signedTx).onComplete {
-          case Success(_) => context.system.eventStream.publish(TransactionPublished(dualFundedTx.fundingParams.channelId, remoteNodeId, fundingTx.signedTx, fundingTx.tx.localFees.truncateToSatoshi, "funding"))
+          case Success(_) =>
+            context.system.eventStream.publish(TransactionPublished(dualFundedTx.fundingParams.channelId, remoteNodeId, fundingTx.signedTx, fundingTx.tx.localFees.truncateToSatoshi, "funding"))
+            // We rely on Bitcoin Core ZMQ notifications to learn about transactions that appear in our mempool, but
+            // it doesn't provide strong guarantees that we'll always receive an event. This can be an issue for 0-conf
+            // funding transactions, where we end up delaying our channel_ready or splice_locked.
+            // If we've successfully published the transaction, we can emit the event ourselves instead of waiting for
+            // ZMQ: this is safe because duplicate events will be ignored.
+            context.system.eventStream.publish(NewTransaction(fundingTx.signedTx))
           case Failure(t) => log.warning("error while publishing funding tx: {}", t.getMessage) // tx may be published by our peer, we can't fail-fast
         }
     }
@@ -58,7 +65,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
 
   /** Return true if we should stop waiting for confirmations when receiving our peer's channel_ready. */
   def switchToZeroConf(remoteChannelReady: ChannelReady, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED): Boolean = {
-    if (d.commitments.params.minDepthDualFunding(nodeParams.channelConf.minDepth, d.latestFundingTx.sharedTx.tx).nonEmpty) {
+    if (!d.commitments.channelParams.zeroConf) {
       // We're not using zero-conf, but our peer decided to trust us anyway. We can skip waiting for confirmations if:
       //  - they provided a channel alias
       //  - there is a single version of the funding tx (otherwise we don't know which one to use)

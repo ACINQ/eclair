@@ -21,11 +21,11 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.balance.CheckBalance.{DetailedOnChainBalance, GlobalBalance, OffChainBalance}
-import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
-import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
+import fr.acinq.eclair.db.{IncomingPaymentStatus, OfferData, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.message.OnionMessages
@@ -34,8 +34,9 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, FeatureSupport, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -255,56 +256,40 @@ object KeyPathSerializer extends MinimalSerializer({
 })
 
 object TransactionWithInputInfoSerializer extends MinimalSerializer({
-  case x: HtlcSuccessTx => JObject(List(
+  case x: HtlcTx => JObject(List(
     JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString())),
     JField("paymentHash", JString(x.paymentHash.toString())),
     JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
-  ))
-  case x: HtlcTimeoutTx => JObject(List(
-    JField("txid", JString(x.tx.txid.value.toHex)),
-    JField("tx", JString(x.tx.toString())),
-    JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
-  ))
-  case x: ClaimHtlcSuccessTx => JObject(List(
-    JField("txid", JString(x.tx.txid.value.toHex)),
-    JField("tx", JString(x.tx.toString())),
-    JField("paymentHash", JString(x.paymentHash.toString())),
-    JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
+    JField("htlcExpiry", JLong(x.htlcExpiry.toLong))
   ))
   case x: ClaimHtlcTx => JObject(List(
     JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString())),
+    JField("paymentHash", JString(x.paymentHash.toString())),
     JField("htlcId", JLong(x.htlcId)),
-    JField("confirmBeforeBlock", JLong(x.confirmationTarget.confirmBefore.toLong))
+    JField("htlcExpiry", JLong(x.htlcExpiry.toLong))
+  ))
+  case x: HtlcPenaltyTx => JObject(List(
+    JField("txid", JString(x.tx.txid.value.toHex)),
+    JField("tx", JString(x.tx.toString())),
+    JField("paymentHash", JString(x.paymentHash.toString())),
+    JField("htlcExpiry", JLong(x.htlcExpiry.toLong))
   ))
   case x: ClosingTx =>
     val txFields = List(
       JField("txid", JString(x.tx.txid.value.toHex)),
       JField("tx", JString(x.tx.toString()))
     )
-    x.toLocalOutput match {
+    x.toLocalOutput_opt match {
       case Some(toLocal) =>
         val toLocalField = JField("toLocalOutput", JObject(List(
-          JField("index", JLong(toLocal.index)),
           JField("amount", JLong(toLocal.amount.toLong)),
           JField("publicKeyScript", JString(toLocal.publicKeyScript.toHex))
         )))
         JObject(txFields :+ toLocalField)
       case None => JObject(txFields)
     }
-  case x: ReplaceableTransactionWithInputInfo => JObject(List(
-    JField("txid", JString(x.tx.txid.value.toHex)),
-    JField("tx", JString(x.tx.toString())),
-    x.confirmationTarget match {
-      case ConfirmationTarget.Absolute(confirmBefore) => JField("confirmBeforeBlock", JLong(confirmBefore.toLong))
-      case ConfirmationTarget.Priority(priority) => JField("confirmPriority", JString(priority.toString))
-    }
-
-  ))
   case x: TransactionWithInputInfo => JObject(List(
     JField("txid", JString(x.tx.txid.value.toHex)),
     JField("tx", JString(x.tx.toString()))
@@ -331,17 +316,6 @@ object InputInfoSerializer extends ConvertClassSerializer[InputInfo](i => InputI
 object ColorSerializer extends MinimalSerializer({
   case c: Color => JString(c.toString)
 })
-
-// @formatter:off
-private case class CommitTxAndRemoteSigJson(commitTx: CommitTx, remoteSig: ByteVector64)
-private case class CommitTxAndRemotePartialSigJson(commitTx: CommitTx, remoteSig: RemoteSignature.PartialSignatureWithNonce)
-object CommitTxAndRemoteSigSerializer extends ConvertClassSerializer[CommitTxAndRemoteSig](
-  i => i.remoteSig match {
-    case f: RemoteSignature.FullSignature => CommitTxAndRemoteSigJson(i.commitTx, f.sig)
-    case p: RemoteSignature.PartialSignatureWithNonce => CommitTxAndRemotePartialSigJson(i.commitTx, p)
-    }
-)
-// @formatter:on
 
 // @formatter:off
 private sealed trait HopJson
@@ -492,6 +466,75 @@ object InvoiceSerializer extends MinimalSerializer({
     JObject(fieldList)
 })
 
+private case class BlindedRouteJson(firstNodeId: EncodedNodeId, length: Int)
+private case class OfferJson(chains: Option[Seq[String]],
+                             amount: Option[String],
+                             currency: Option[String],
+                             description: Option[String],
+                             expiry: Option[TimestampSecond],
+                             issuer: Option[String],
+                             nodeId: Option[PublicKey],
+                             paths: Option[Seq[BlindedRouteJson]],
+                             quantityMax: Option[Long],
+                             features: Option[Features[Feature]],
+                             metadata: Option[String],
+                             unknownTlvs: Option[Map[String, String]])
+object OfferSerializer extends ConvertClassSerializer[Offer](o => {
+  val fractionDigits = o.records.get[OfferTypes.OfferCurrency].map(_.currency.getDefaultFractionDigits()).getOrElse(3)
+  OfferJson(
+    chains = o.records.get[OfferTypes.OfferChains].map(_.chains.map(_.toString())),
+    amount = o.records.get[OfferTypes.OfferAmount].map(a =>
+      if (fractionDigits == 0) {
+        a.amount.toString
+      } else {
+        val one = scala.math.pow(10, fractionDigits).toInt
+        s"${a.amount / one}.%0${fractionDigits}d".format(a.amount % one)
+      }
+    ),
+    currency = if (o.records.get[OfferTypes.OfferAmount].isEmpty) {
+      None
+    } else {
+      Some(o.records.get[OfferTypes.OfferCurrency].map(_.currency.getCurrencyCode()).getOrElse("satoshi"))
+    },
+    description = o.records.get[OfferTypes.OfferDescription].map(_.description),
+    expiry = o.records.get[OfferTypes.OfferAbsoluteExpiry].map(_.absoluteExpiry),
+    issuer = o.records.get[OfferTypes.OfferIssuer].map(_.issuer),
+    nodeId = o.records.get[OfferTypes.OfferNodeId].map(_.publicKey),
+    paths = o.records.get[OfferTypes.OfferPaths].map(_.paths.map(p => BlindedRouteJson(p.firstNodeId, p.blindedHops.length))),
+    quantityMax = o.records.get[OfferTypes.OfferQuantityMax].map(_.max),
+    features = o.records.get[OfferTypes.OfferFeatures].map(f => Features(f.features)),
+    metadata = o.records.get[OfferTypes.OfferMetadata].map(_.data.toHex),
+    unknownTlvs = if (o.records.unknown.isEmpty) {
+      None
+    } else {
+      Some(o.records.unknown.map(tlv => tlv.tag.toString -> tlv.value.toHex).toMap)
+    }
+  )
+})
+
+private case class OfferDataJson(amountMsat: Option[MilliSatoshi],
+                                 description: Option[String],
+                                 issuer: Option[String],
+                                 nodeId: Option[PublicKey],
+                                 blindedPathFirstNodeId: Option[PublicKey],
+                                 createdAt: TimestampMilli,
+                                 expiry: Option[TimestampSecond],
+                                 disabled: Boolean,
+                                 disabledAt: Option[TimestampMilli],
+                                 encoded: String)
+object OfferDataSerializer extends ConvertClassSerializer[OfferData](o => OfferDataJson(
+  amountMsat = o.offer.amount,
+  description = o.offer.description,
+  issuer = o.offer.issuer,
+  nodeId = o.offer.nodeId,
+  blindedPathFirstNodeId = o.offer.contactInfos.collect { case OfferTypes.BlindedPath(path) => path.firstNodeId }.collectFirst { case p: EncodedNodeId.WithPublicKey => p.publicKey },
+  createdAt = o.createdAt,
+  expiry = o.offer.expiry,
+  disabled = o.disabled,
+  disabledAt = o.disabledAt_opt,
+  encoded = o.offer.encode()
+))
+
 object JavaUUIDSerializer extends MinimalSerializer({
   case id: UUID => JString(id.toString)
 })
@@ -542,7 +585,7 @@ object OriginSerializer extends MinimalSerializer({
         JField("expiry", JLong(htlc.add.cltvExpiry.toLong)),
         JField("receivedAt", JLong(htlc.receivedAt.toLong)),
       )
-    }.toList)
+    })
     case o: Upstream.Cold.Channel => JObject(
       JField("channelId", JString(o.originChannelId.toHex)),
       JField("htlcId", JLong(o.originHtlcId)),
@@ -554,18 +597,18 @@ object OriginSerializer extends MinimalSerializer({
         JField("htlcId", JLong(htlc.originHtlcId)),
         JField("amount", JLong(htlc.amountIn.toLong)),
       )
-    }.toList)
+    })
   }
 })
 
 // @formatter:off
-case class CommitmentJson(fundingTxIndex: Long, fundingTx: InputInfo, localFunding: LocalFundingStatus, remoteFunding: RemoteFundingStatus, localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit: Option[RemoteCommit])
-object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => CommitmentJson(c.fundingTxIndex, c.commitInput, c.localFundingStatus, c.remoteFundingStatus, c.localCommit, c.remoteCommit, c.nextRemoteCommit_opt.map(_.commit)))
+case class CommitmentJson(fundingTxIndex: Long, fundingInput: OutPoint, fundingAmount: Satoshi, localFunding: LocalFundingStatus, remoteFunding: RemoteFundingStatus, commitmentFormat: String, localCommitParams: CommitParams, localCommit: LocalCommit, remoteCommitParams: CommitParams, remoteCommit: RemoteCommit, nextRemoteCommit: Option[RemoteCommit])
+object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => CommitmentJson(c.fundingTxIndex, c.fundingInput, c.fundingAmount, c.localFundingStatus, c.remoteFundingStatus, c.commitmentFormat.toString, c.localCommitParams, c.localCommit, c.remoteCommitParams, c.remoteCommit, c.nextRemoteCommit_opt.map(_.commit)))
 // @formatter:on
 
 // @formatter:off
-private case class DetailedOnChainBalanceJson(total: Btc, confirmed: Map[OutPoint, Btc], unconfirmed: Map[OutPoint, Btc])
-object DetailedOnChainBalanceSerializer extends ConvertClassSerializer[DetailedOnChainBalance](b => DetailedOnChainBalanceJson(b.total, confirmed = b.confirmed, unconfirmed = b.unconfirmed))
+private case class DetailedOnChainBalanceJson(total: Btc, deeplyConfirmed: Map[OutPoint, Btc], recentlyConfirmed: Map[OutPoint, Btc], unconfirmed: Map[OutPoint, Btc])
+object DetailedOnChainBalanceSerializer extends ConvertClassSerializer[DetailedOnChainBalance](b => DetailedOnChainBalanceJson(b.total, deeplyConfirmed = b.deeplyConfirmed, recentlyConfirmed = b.recentlyConfirmed, unconfirmed = b.unconfirmed))
 private case class GlobalBalanceJson(total: Btc, onChain: DetailedOnChainBalance, offChain: OffChainBalance)
 object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b => GlobalBalanceJson(b.total, b.onChain, b.offChain))
 
@@ -718,7 +761,6 @@ object JsonSerializers {
     OpenChannelResponseSerializer +
     CommandResponseSerializer +
     InputInfoSerializer +
-    CommitTxAndRemoteSigSerializer +
     ColorSerializer +
     ThrowableSerializer +
     FailureMessageSerializer +
@@ -726,6 +768,8 @@ object JsonSerializers {
     NodeAddressSerializer +
     DirectedHtlcSerializer +
     InvoiceSerializer +
+    OfferSerializer +
+    OfferDataSerializer +
     JavaUUIDSerializer +
     OriginSerializer +
     ByteVector32KeySerializer +

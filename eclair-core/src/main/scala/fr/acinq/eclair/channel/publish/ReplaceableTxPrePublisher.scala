@@ -18,14 +18,11 @@ package fr.acinq.eclair.channel.publish
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Transaction}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Transaction, TxId}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
-import fr.acinq.eclair.channel.{FullCommitment, HtlcTxAndRemoteSig}
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.UpdateFulfillHtlc
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
@@ -43,71 +40,38 @@ object ReplaceableTxPrePublisher {
 
   // @formatter:off
   sealed trait Command
-  case class CheckPreconditions(replyTo: ActorRef[PreconditionsResult], cmd: TxPublisher.PublishReplaceableTx) extends Command
+  case class CheckPreconditions(replyTo: ActorRef[PreconditionsResult], txInfo: ForceCloseTransaction, commitTx: Transaction, concurrentCommitTxs: Set[TxId]) extends Command
 
   private case object ParentTxOk extends Command
-  private case object FundingTxNotFound extends RuntimeException with Command
-  private case object CommitTxAlreadyConfirmed extends RuntimeException with Command
-  private case object LocalCommitTxConfirmed extends Command
-  private case object LocalCommitTxPublished extends Command
-  private case object RemoteCommitTxConfirmed extends Command
-  private case object RemoteCommitTxPublished extends RuntimeException with Command
+  private case object FundingTxNotFound extends Command
+  private case object CommitTxRecentlyConfirmed extends Command
+  private case object CommitTxDeeplyConfirmed extends Command
+  private case object ConcurrentCommitAvailable extends Command
+  private case object ConcurrentCommitRecentlyConfirmed extends Command
+  private case object ConcurrentCommitDeeplyConfirmed extends Command
   private case object HtlcOutputAlreadySpent extends Command
   private case class UnknownFailure(reason: Throwable) extends Command
   // @formatter:on
 
   // @formatter:off
   sealed trait PreconditionsResult
-  case class PreconditionsOk(txWithWitnessData: ReplaceableTxWithWitnessData) extends PreconditionsResult
+  case object PreconditionsOk extends PreconditionsResult
   case class PreconditionsFailed(reason: TxPublisher.TxRejectedReason) extends PreconditionsResult
-
-  /** Replaceable transaction with all the witness data necessary to finalize. */
-  sealed trait ReplaceableTxWithWitnessData {
-    def txInfo: ReplaceableTransactionWithInputInfo
-    def updateTx(tx: Transaction): ReplaceableTxWithWitnessData
-  }
-  /** Replaceable transaction for which we may need to add wallet inputs. */
-  sealed trait ReplaceableTxWithWalletInputs extends ReplaceableTxWithWitnessData {
-    override def updateTx(tx: Transaction): ReplaceableTxWithWalletInputs
-  }
-  case class ClaimLocalAnchorWithWitnessData(txInfo: ClaimLocalAnchorOutputTx) extends ReplaceableTxWithWalletInputs {
-    override def updateTx(tx: Transaction): ClaimLocalAnchorWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
-  }
-  sealed trait HtlcWithWitnessData extends ReplaceableTxWithWalletInputs {
-    override def txInfo: HtlcTx
-    override def updateTx(tx: Transaction): HtlcWithWitnessData
-  }
-  case class HtlcSuccessWithWitnessData(txInfo: HtlcSuccessTx, remoteSig: ByteVector64, preimage: ByteVector32) extends HtlcWithWitnessData {
-    override def updateTx(tx: Transaction): HtlcSuccessWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
-  }
-  case class HtlcTimeoutWithWitnessData(txInfo: HtlcTimeoutTx, remoteSig: ByteVector64) extends HtlcWithWitnessData {
-    override def updateTx(tx: Transaction): HtlcTimeoutWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
-  }
-  sealed trait ClaimHtlcWithWitnessData extends ReplaceableTxWithWitnessData {
-    override def txInfo: ClaimHtlcTx
-    override def updateTx(tx: Transaction): ClaimHtlcWithWitnessData
-  }
-  case class ClaimHtlcSuccessWithWitnessData(txInfo: ClaimHtlcSuccessTx, preimage: ByteVector32) extends ClaimHtlcWithWitnessData {
-    override def updateTx(tx: Transaction): ClaimHtlcSuccessWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
-  }
-  case class LegacyClaimHtlcSuccessWithWitnessData(txInfo: LegacyClaimHtlcSuccessTx, preimage: ByteVector32) extends ClaimHtlcWithWitnessData {
-    override def updateTx(tx: Transaction): LegacyClaimHtlcSuccessWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
-  }
-  case class ClaimHtlcTimeoutWithWitnessData(txInfo: ClaimHtlcTimeoutTx) extends ClaimHtlcWithWitnessData {
-    override def updateTx(tx: Transaction): ClaimHtlcTimeoutWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
-  }
   // @formatter:on
 
   def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, txPublishContext: TxPublishContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(txPublishContext.mdc()) {
         Behaviors.receiveMessagePartial {
-          case CheckPreconditions(replyTo, cmd) =>
-            val prePublisher = new ReplaceableTxPrePublisher(nodeParams, replyTo, cmd, bitcoinClient, context)
-            cmd.txInfo match {
-              case localAnchorTx: Transactions.ClaimLocalAnchorOutputTx => prePublisher.checkAnchorPreconditions(localAnchorTx)
-              case htlcTx: Transactions.HtlcTx => prePublisher.checkHtlcPreconditions(htlcTx)
-              case claimHtlcTx: Transactions.ClaimHtlcTx => prePublisher.checkClaimHtlcPreconditions(claimHtlcTx)
+          case CheckPreconditions(replyTo, txInfo, commitTx, concurrentCommitTxs) =>
+            val prePublisher = new ReplaceableTxPrePublisher(nodeParams, replyTo, bitcoinClient, context)
+            txInfo match {
+              case _: ClaimLocalAnchorTx => prePublisher.checkLocalCommitAnchorPreconditions(commitTx)
+              case _: ClaimRemoteAnchorTx => prePublisher.checkRemoteCommitAnchorPreconditions(commitTx)
+              case _: SignedHtlcTx | _: ClaimHtlcTx => prePublisher.checkHtlcPreconditions(txInfo.desc, txInfo.input.outPoint, commitTx, concurrentCommitTxs)
+              case _ =>
+                replyTo ! PreconditionsOk
+                Behaviors.stopped
             }
         }
       }
@@ -118,7 +82,6 @@ object ReplaceableTxPrePublisher {
 
 private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
                                         replyTo: ActorRef[ReplaceableTxPrePublisher.PreconditionsResult],
-                                        cmd: TxPublisher.PublishReplaceableTx,
                                         bitcoinClient: BitcoinCoreClient,
                                         context: ActorContext[ReplaceableTxPrePublisher.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
@@ -126,235 +89,188 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
 
   private val log = context.log
 
-  private def checkAnchorPreconditions(localAnchorTx: ClaimLocalAnchorOutputTx): Behavior[Command] = {
-    // We verify that:
-    //  - our commit is not confirmed (if it is, no need to claim our anchor)
-    //  - their commit is not confirmed (if it is, no need to claim our anchor either)
-    //  - the local or remote commit tx is in the mempool (otherwise we can't claim our anchor)
-    val fundingOutpoint = cmd.commitment.commitInput.outPoint
+  /**
+   * We only claim our anchor output for our local commitment if:
+   *  - our local commitment is unconfirmed
+   *  - and we haven't seen a remote commitment (in which case it is more interesting to spend than the local commitment)
+   */
+  private def checkLocalCommitAnchorPreconditions(commitTx: Transaction): Behavior[Command] = {
+    val fundingOutpoint = commitTx.txIn.head.outPoint
     context.pipeToSelf(bitcoinClient.getTxConfirmations(fundingOutpoint.txid).flatMap {
       case Some(_) =>
         // The funding transaction was found, let's see if we can still spend it.
-        bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
-          case false => Future.failed(CommitTxAlreadyConfirmed)
-          case true if cmd.isLocalCommitAnchor =>
-            // We are trying to bump our local commitment. Let's check if the remote commitment is published: if it is,
-            // we will skip publishing our local commitment, because the remote commitment is more interesting (we don't
-            // have any CSV delays and don't need 2nd-stage HTLC transactions).
-            getRemoteCommitConfirmations(cmd.commitment).flatMap {
-              case Some(_) => Future.failed(RemoteCommitTxPublished)
-              // Otherwise, we must ensure our local commit tx is in the mempool before publishing the anchor transaction.
-              // If it's already published, this call will be a no-op.
-              case None => bitcoinClient.publishTransaction(cmd.commitTx)
-            }
+        bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = true).flatMap {
           case true =>
-            // We're trying to bump a remote commitment: we must make sure it is in our mempool first.
-            bitcoinClient.publishTransaction(cmd.commitTx)
+            // The funding output is unspent: let's publish our anchor transaction to get our local commit confirmed.
+            Future.successful(ParentTxOk)
+          case false =>
+            // The funding output is spent: we check whether our local commit is confirmed or in our mempool.
+            bitcoinClient.getTxConfirmations(commitTx.txid).transformWith {
+              case Success(Some(confirmations)) if confirmations >= nodeParams.channelConf.minDepth => Future.successful(CommitTxDeeplyConfirmed)
+              case Success(Some(confirmations)) if confirmations > 0 => Future.successful(CommitTxRecentlyConfirmed)
+              case Success(Some(0)) => Future.successful(ParentTxOk) // our commit tx is unconfirmed, let's publish our anchor transaction
+              case _ =>
+                // Our commit tx is unconfirmed and cannot be found in our mempool: this means that a remote commit is
+                // either confirmed or in our mempool. In that case, we don't want to use our local commit tx: the
+                // remote commit is more interesting to us because we won't have any CSV delays on our outputs.
+                Future.successful(ConcurrentCommitAvailable)
+            }
         }
       case None =>
         // If the funding transaction cannot be found (e.g. when using 0-conf), we should retry later.
-        Future.failed(FundingTxNotFound)
+        Future.successful(FundingTxNotFound)
     }) {
-      case Success(_) => ParentTxOk
-      case Failure(FundingTxNotFound) => FundingTxNotFound
-      case Failure(CommitTxAlreadyConfirmed) => CommitTxAlreadyConfirmed
-      case Failure(RemoteCommitTxPublished) => RemoteCommitTxPublished
-      case Failure(reason) if reason.getMessage.contains("rejecting replacement") => RemoteCommitTxPublished
+      case Success(result) => result
       case Failure(reason) => UnknownFailure(reason)
     }
     Behaviors.receiveMessagePartial {
       case ParentTxOk =>
-        replyTo ! PreconditionsOk(ClaimLocalAnchorWithWitnessData(localAnchorTx))
+        replyTo ! PreconditionsOk
         Behaviors.stopped
       case FundingTxNotFound =>
         log.debug("funding tx could not be found, we don't know yet if we need to claim our anchor")
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
         Behaviors.stopped
-      case CommitTxAlreadyConfirmed =>
-        log.debug("commit tx is already confirmed, no need to claim our anchor")
+      case CommitTxRecentlyConfirmed =>
+        log.debug("local commit tx was recently confirmed, let's check again later")
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
+        Behaviors.stopped
+      case CommitTxDeeplyConfirmed =>
+        log.debug("local commit tx is deeply confirmed, no need to claim our anchor")
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
         Behaviors.stopped
-      case RemoteCommitTxPublished =>
-        log.warn("not publishing local commit tx: we're using the remote commit tx instead")
+      case ConcurrentCommitAvailable =>
+        log.warn("not publishing local anchor for commitTxId={}: we will use the remote commit tx instead", commitTx.txid)
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
         Behaviors.stopped
       case UnknownFailure(reason) =>
-        log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway: ", reason)
+        log.error("could not check local anchor preconditions, proceeding anyway: ", reason)
         // If our checks fail, we don't want it to prevent us from trying to publish our commit tx.
-        replyTo ! PreconditionsOk(ClaimLocalAnchorWithWitnessData(localAnchorTx))
+        replyTo ! PreconditionsOk
         Behaviors.stopped
-    }
-  }
-
-  private def getRemoteCommitConfirmations(commitment: FullCommitment): Future[Option[Int]] = {
-    bitcoinClient.getTxConfirmations(commitment.remoteCommit.txid).transformWith {
-      // NB: this handles the case where the remote commit is in the mempool because we will get Some(0).
-      case Success(Some(remoteCommitConfirmations)) => Future.successful(Some(remoteCommitConfirmations))
-      case notFoundOrFailed => commitment.nextRemoteCommit_opt match {
-        case Some(nextRemoteCommit) => bitcoinClient.getTxConfirmations(nextRemoteCommit.commit.txid)
-        case None => Future.fromTry(notFoundOrFailed)
-      }
     }
   }
 
   /**
-   * We verify that:
-   *  - their commit is not confirmed: if it is, there is no need to publish our htlc transactions
-   *  - the HTLC output isn't already spent by a confirmed transaction (race between HTLC-timeout and HTLC-success)
+   * We only claim our anchor output for a remote commitment if:
+   *  - that remote commitment is unconfirmed
+   *  - there is no other commitment that is already confirmed
    */
-  private def checkHtlcOutput(commitment: FullCommitment, htlcTx: HtlcTx): Future[Command] = {
-    getRemoteCommitConfirmations(commitment).flatMap {
-      case Some(depth) if depth >= nodeParams.channelConf.minDepthScaled(commitment.capacity) => Future.successful(RemoteCommitTxConfirmed)
-      case Some(_) => Future.successful(RemoteCommitTxPublished)
-      case _ => bitcoinClient.isTransactionOutputSpent(htlcTx.input.outPoint.txid, htlcTx.input.outPoint.index.toInt).map {
-        case true => HtlcOutputAlreadySpent
-        case false => ParentTxOk
-      }
-    }
-  }
-
-  private def checkHtlcPreconditions(htlcTx: HtlcTx): Behavior[Command] = {
-    context.pipeToSelf(checkHtlcOutput(cmd.commitment, htlcTx)) {
-      case Success(result) => result
-      case Failure(reason) => UnknownFailure(reason)
-    }
-    Behaviors.receiveMessagePartial {
-      case ParentTxOk =>
-        // We make sure that if this is an htlc-success transaction, we have the preimage.
-        extractHtlcWitnessData(htlcTx, cmd.commitment) match {
-          case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
-          case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
-        }
-        Behaviors.stopped
-      case RemoteCommitTxPublished =>
-        log.info("cannot publish {}: remote commit has been published", cmd.desc)
-        // We keep retrying until the remote commit reaches min-depth to protect against reorgs.
-        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
-        Behaviors.stopped
-      case RemoteCommitTxConfirmed =>
-        log.warn("cannot publish {}: remote commit has been confirmed", cmd.desc)
-        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
-        Behaviors.stopped
-      case HtlcOutputAlreadySpent =>
-        log.warn("cannot publish {}: htlc output has already been spent", cmd.desc)
-        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
-        Behaviors.stopped
-      case UnknownFailure(reason) =>
-        log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway: ", reason)
-        // If our checks fail, we don't want it to prevent us from trying to publish our htlc transactions.
-        extractHtlcWitnessData(htlcTx, cmd.commitment) match {
-          case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
-          case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
-        }
-        Behaviors.stopped
-    }
-  }
-
-  private def extractHtlcWitnessData(htlcTx: HtlcTx, commitment: FullCommitment): Option[ReplaceableTxWithWitnessData] = {
-    htlcTx match {
-      case tx: HtlcSuccessTx =>
-        commitment.localCommit.htlcTxsAndRemoteSigs.collectFirst {
-          case HtlcTxAndRemoteSig(HtlcSuccessTx(input, _, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => remoteSig
-        } match {
-          case Some(remoteSig) =>
-            commitment.changes.localChanges.all.collectFirst {
-              case u: UpdateFulfillHtlc if Crypto.sha256(u.paymentPreimage) == tx.paymentHash => u.paymentPreimage
-            } match {
-              case Some(preimage) => Some(HtlcSuccessWithWitnessData(tx, remoteSig, preimage))
-              case None =>
-                log.error(s"preimage not found for htlcId=${tx.htlcId}, skipping...")
-                None
+  private def checkRemoteCommitAnchorPreconditions(commitTx: Transaction): Behavior[Command] = {
+    val fundingOutpoint = commitTx.txIn.head.outPoint
+    context.pipeToSelf(bitcoinClient.getTxConfirmations(fundingOutpoint.txid).flatMap {
+      case Some(_) =>
+        // The funding transaction was found, let's see if we can still spend it. Note that in this case, we only look
+        // at *confirmed* spending transactions (unlike the local commit case).
+        bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
+          case true =>
+            // The funding output is unspent, or spent by an *unconfirmed* transaction: let's publish our anchor
+            // transaction, we may be able to replace our local commit with this (more interesting) remote commit.
+            Future.successful(ParentTxOk)
+          case false =>
+            // The funding output is spent by a confirmed commit tx: we check the status of our anchor's commit tx.
+            bitcoinClient.getTxConfirmations(commitTx.txid).transformWith {
+              case Success(Some(confirmations)) if confirmations >= nodeParams.channelConf.minDepth => Future.successful(CommitTxDeeplyConfirmed)
+              case Success(_) => Future.successful(CommitTxRecentlyConfirmed)
+              // The spending tx is another commit tx: we can stop trying to publish this one.
+              case _ => Future.successful(ConcurrentCommitAvailable)
             }
-          case None =>
-            log.error(s"remote signature not found for htlcId=${tx.htlcId}, skipping...")
-            None
         }
-      case tx: HtlcTimeoutTx =>
-        commitment.localCommit.htlcTxsAndRemoteSigs.collectFirst {
-          case HtlcTxAndRemoteSig(HtlcTimeoutTx(input, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => remoteSig
-        } match {
-          case Some(remoteSig) => Some(HtlcTimeoutWithWitnessData(tx, remoteSig))
-          case None =>
-            log.error(s"remote signature not found for htlcId=${tx.htlcId}, skipping...")
-            None
-        }
-    }
-  }
-
-  /**
-   * We verify that:
-   *  - our commit is not confirmed: if it is, there is no need to publish our claim-htlc transactions
-   *  - the HTLC output isn't already spent by a confirmed transaction (race between HTLC-timeout and HTLC-success)
-   */
-  private def checkClaimHtlcOutput(commitment: FullCommitment, claimHtlcTx: ClaimHtlcTx): Future[Command] = {
-    bitcoinClient.getTxConfirmations(commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid).flatMap {
-      case Some(depth) if depth >= nodeParams.channelConf.minDepthScaled(commitment.capacity) => Future.successful(LocalCommitTxConfirmed)
-      case Some(_) => Future.successful(LocalCommitTxPublished)
-      case _ => bitcoinClient.isTransactionOutputSpent(claimHtlcTx.input.outPoint.txid, claimHtlcTx.input.outPoint.index.toInt).map {
-        case true => HtlcOutputAlreadySpent
-        case false => ParentTxOk
-      }
-    }
-  }
-
-  private def checkClaimHtlcPreconditions(claimHtlcTx: ClaimHtlcTx): Behavior[Command] = {
-    context.pipeToSelf(checkClaimHtlcOutput(cmd.commitment, claimHtlcTx)) {
+      case None =>
+        // If the funding transaction cannot be found (e.g. when using 0-conf), we should retry later.
+        Future.successful(FundingTxNotFound)
+    }) {
       case Success(result) => result
       case Failure(reason) => UnknownFailure(reason)
     }
     Behaviors.receiveMessagePartial {
       case ParentTxOk =>
-        // We verify that if this is a claim-htlc-success transaction, we have the preimage.
-        extractClaimHtlcWitnessData(claimHtlcTx, cmd.commitment) match {
-          case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
-          case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
-        }
+        replyTo ! PreconditionsOk
         Behaviors.stopped
-      case LocalCommitTxPublished =>
-        log.info("cannot publish {}: local commit has been published", cmd.desc)
-        // We keep retrying until the local commit reaches min-depth to protect against reorgs.
+      case FundingTxNotFound =>
+        log.debug("funding tx could not be found, we don't know yet if we need to claim our anchor")
         replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
         Behaviors.stopped
-      case LocalCommitTxConfirmed =>
-        log.warn("cannot publish {}: local commit has been confirmed", cmd.desc)
-        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
+      case CommitTxRecentlyConfirmed =>
+        log.debug("remote commit tx was recently confirmed, let's check again later")
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
         Behaviors.stopped
-      case HtlcOutputAlreadySpent =>
-        log.warn("cannot publish {}: htlc output has already been spent", cmd.desc)
-        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
+      case CommitTxDeeplyConfirmed =>
+        log.debug("remote commit tx is deeply confirmed, no need to claim our anchor")
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
+        Behaviors.stopped
+      case ConcurrentCommitAvailable =>
+        log.warn("not publishing remote anchor for commitTxId={}: a concurrent commit tx is confirmed", commitTx.txid)
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
         Behaviors.stopped
       case UnknownFailure(reason) =>
-        log.error(s"could not check ${cmd.desc} preconditions, proceeding anyway: ", reason)
-        // If our checks fail, we don't want it to prevent us from trying to publish our htlc transactions.
-        extractClaimHtlcWitnessData(claimHtlcTx, cmd.commitment) match {
-          case Some(txWithWitnessData) => replyTo ! PreconditionsOk(txWithWitnessData)
-          case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
-        }
+        log.error("could not check remote anchor preconditions, proceeding anyway: ", reason)
+        // If our checks fail, we don't want it to prevent us from trying to publish our commit tx.
+        replyTo ! PreconditionsOk
         Behaviors.stopped
     }
   }
 
-  private def extractClaimHtlcWitnessData(claimHtlcTx: ClaimHtlcTx, commitment: FullCommitment): Option[ReplaceableTxWithWitnessData] = {
-    claimHtlcTx match {
-      case tx: LegacyClaimHtlcSuccessTx =>
-        commitment.changes.localChanges.all.collectFirst {
-          case u: UpdateFulfillHtlc if u.id == tx.htlcId => u.paymentPreimage
-        } match {
-          case Some(preimage) => Some(LegacyClaimHtlcSuccessWithWitnessData(tx, preimage))
-          case None =>
-            log.error(s"preimage not found for legacy htlcId=${tx.htlcId}, skipping...")
-            None
+  /**
+   * We first verify that the commit tx we're spending may confirm: if a conflicting commit tx is already confirmed, our
+   * HTLC transaction has become obsolete. Then we check that the HTLC output that we're spending isn't already spent
+   * by a confirmed transaction, which may happen in case of a race between HTLC-timeout and HTLC-success.
+   */
+  private def checkHtlcPreconditions(desc: String, input: OutPoint, commitTx: Transaction, concurrentCommitTxs: Set[TxId]): Behavior[Command] = {
+    context.pipeToSelf(bitcoinClient.getTxConfirmations(commitTx.txid).flatMap {
+      case Some(_) =>
+        // If the HTLC output is already spent by a confirmed transaction, there is no need for RBF: either this is one
+        // of our transactions (which thus has a high enough feerate), or it was a race with our peer and we lost.
+        bitcoinClient.isTransactionOutputSpent(input.txid, input.index.toInt).map {
+          case true => HtlcOutputAlreadySpent
+          case false => ParentTxOk
         }
-      case tx: ClaimHtlcSuccessTx =>
-        commitment.changes.localChanges.all.collectFirst {
-          case u: UpdateFulfillHtlc if Crypto.sha256(u.paymentPreimage) == tx.paymentHash => u.paymentPreimage
-        } match {
-          case Some(preimage) => Some(ClaimHtlcSuccessWithWitnessData(tx, preimage))
-          case None =>
-            log.error(s"preimage not found for htlcId=${tx.htlcId}, skipping...")
-            None
+      case None =>
+        // The parent commitment is unconfirmed: we shouldn't try to publish this HTLC transaction if a concurrent
+        // commitment is deeply confirmed.
+        checkConcurrentCommits(concurrentCommitTxs.toSeq).map {
+          case Some(confirmations) if confirmations >= nodeParams.channelConf.minDepth => ConcurrentCommitDeeplyConfirmed
+          case Some(_) => ConcurrentCommitRecentlyConfirmed
+          case None => ParentTxOk
         }
-      case tx: ClaimHtlcTimeoutTx => Some(ClaimHtlcTimeoutWithWitnessData(tx))
+    }) {
+      case Success(result) => result
+      case Failure(reason) => UnknownFailure(reason)
+    }
+    Behaviors.receiveMessagePartial {
+      case ParentTxOk =>
+        replyTo ! PreconditionsOk
+        Behaviors.stopped
+      case ConcurrentCommitRecentlyConfirmed =>
+        log.debug("cannot publish {} spending commitTxId={}: concurrent commit tx was recently confirmed, let's check again later", desc, commitTx.txid)
+        // We keep retrying until the concurrent commit reaches min-depth to protect against reorgs.
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
+        Behaviors.stopped
+      case ConcurrentCommitDeeplyConfirmed =>
+        log.warn("cannot publish {} spending commitTxId={}: concurrent commit is deeply confirmed", desc, commitTx.txid)
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
+        Behaviors.stopped
+      case HtlcOutputAlreadySpent =>
+        log.warn("cannot publish {}: htlc output {} has already been spent", desc, input)
+        replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.ConflictingTxConfirmed)
+        Behaviors.stopped
+      case UnknownFailure(reason) =>
+        log.error(s"could not check $desc preconditions, proceeding anyway: ", reason)
+        // If our checks fail, we don't want it to prevent us from trying to publish our htlc transactions.
+        replyTo ! PreconditionsOk
+        Behaviors.stopped
+    }
+  }
+
+  /** Check the confirmation status of concurrent commitment transactions. */
+  private def checkConcurrentCommits(txIds: Seq[TxId]): Future[Option[Int]] = {
+    txIds.headOption match {
+      case Some(txId) =>
+        bitcoinClient.getTxConfirmations(txId).transformWith {
+          case Success(Some(confirmations)) => Future.successful(Some(confirmations))
+          case _ => checkConcurrentCommits(txIds.tail)
+        }
+      case None => Future.successful(None)
     }
   }
 

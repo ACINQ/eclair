@@ -22,6 +22,7 @@ import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1
 import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2
 import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3
 import fr.acinq.eclair.wire.internal.channel.version4.ChannelCodecs4
+import fr.acinq.eclair.wire.internal.channel.version5.ChannelCodecs5
 import grizzled.slf4j.Logging
 import scodec.Codec
 import scodec.codecs.{byte, discriminated}
@@ -67,7 +68,8 @@ object ChannelCodecs extends Logging {
    * More info here: https://github.com/scodec/scodec/issues/122
    */
   val channelDataCodec: Codec[PersistentChannelData] = discriminated[PersistentChannelData].by(byte)
-    .typecase(4, ChannelCodecs4.channelDataCodec)
+    .typecase(5, ChannelCodecs5.channelDataCodec)
+    .typecase(4, ChannelCodecs4.channelDataCodec.decodeOnly)
     .typecase(3, ChannelCodecs3.channelDataCodec.decodeOnly)
     .typecase(2, ChannelCodecs2.channelDataCodec.decodeOnly)
     .typecase(1, ChannelCodecs1.channelDataCodec.decodeOnly)

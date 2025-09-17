@@ -18,14 +18,13 @@ package fr.acinq.eclair.router
 
 import akka.actor.{ActorContext, ActorRef}
 import akka.event.DiagnosticLoggingAdapter
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.send._
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{InfiniteLoop, MessagePathWeight, NegativeProbability, PaymentPathWeight, WeightedPath}
+import fr.acinq.eclair.router.Graph._
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import kamon.tag.TagSet
@@ -225,9 +224,9 @@ object RouteCalculation {
       val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(amountToSend))
       KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
         val result = if (r.allowMultiPart) {
-          findMultiPartRoute(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend, maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, r.routeParams, currentBlockHeight, r.blip18InboundFees, r.excludePositiveInboundFees)
+          findMultiPartRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, r.routeParams, currentBlockHeight, r.blip18InboundFees, r.excludePositiveInboundFees)
         } else {
-          findRoute(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend, maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, r.routeParams, currentBlockHeight, r.blip18InboundFees, r.excludePositiveInboundFees)
+          findRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, r.routeParams, currentBlockHeight, r.blip18InboundFees, r.excludePositiveInboundFees)
         }
         result.map(routes => addFinalHop(r.target, routes)) match {
           case Success(routes) =>
@@ -255,17 +254,15 @@ object RouteCalculation {
     }
   }
 
-  def handleBlindedRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: BlindedRouteRequest)(implicit log: DiagnosticLoggingAdapter): Data = {
+  def handleBlindedRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: BlindedRouteRequest): Data = {
     val maxFee = r.routeParams.getMaxFee(r.amount)
-
     val boundaries: PaymentPathWeight => Boolean = { weight =>
       weight.amount - r.amount <= maxFee &&
         weight.length <= r.routeParams.boundaries.maxRouteLength &&
         weight.length <= ROUTE_MAX_LENGTH &&
         weight.cltv <= r.routeParams.boundaries.maxCltv
     }
-
-    val routes = Graph.routeBlindingPaths(d.graphWithBalances.graph, r.source, r.target, r.amount, r.ignore.channels, r.ignore.nodes, r.pathsToFind, r.routeParams.heuristics, currentBlockHeight, boundaries, r.excludePositiveInboundFees)
+    val routes = Graph.routeBlindingPaths(d.graphWithBalances, r.source, r.target, r.amount, r.ignore.channels, r.ignore.nodes, r.pathsToFind, r.routeParams.heuristics, currentBlockHeight, boundaries, r.excludePositiveInboundFees)
     if (routes.isEmpty) {
       r.replyTo ! PaymentRouteNotFound(RouteNotFound)
     } else {
@@ -279,7 +276,7 @@ object RouteCalculation {
       weight.length <= routeParams.maxRouteLength && weight.length <= ROUTE_MAX_LENGTH
     }
     log.info("finding route for onion messages {} -> {}", r.source, r.target)
-    Graph.dijkstraMessagePath(d.graphWithBalances.graph, r.source, r.target, r.ignoredNodes, boundaries, currentBlockHeight, routeParams.ratios) match {
+    Graph.dijkstraMessagePath(d.graphWithBalances, r.source, r.target, r.ignoredNodes, boundaries, currentBlockHeight, routeParams.ratios) match {
       case Some(path) =>
         val intermediateNodes = path.map(_.desc.a).drop(1)
         log.info("found route for onion messages {}", (r.source +: intermediateNodes :+ r.target).mkString(" -> "))
@@ -329,7 +326,7 @@ object RouteCalculation {
    * @param routeParams     a set of parameters that can restrict the route search
    * @return the computed routes to the destination @param targetNodeId
    */
-  def findRoute(g: DirectedGraph,
+  def findRoute(g: GraphWithBalanceEstimates,
                 localNodeId: PublicKey,
                 targetNodeId: PublicKey,
                 amount: MilliSatoshi,
@@ -346,7 +343,7 @@ object RouteCalculation {
     findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight, excludePositiveInboundFees) match {
       case Right(routes) => routes.map { route =>
         if (blip18InboundFees)
-          routeWithInboundFees(amount, route.path.map(graphEdgeToHop), g)
+          routeWithInboundFees(amount, route.path.map(graphEdgeToHop), g.graph)
         else
           Route(amount, route.path.map(graphEdgeToHop), None)
       }
@@ -378,7 +375,7 @@ object RouteCalculation {
   }
 
   @tailrec
-  private def findRouteInternal(g: DirectedGraph,
+  private def findRouteInternal(g: GraphWithBalanceEstimates,
                                 localNodeId: PublicKey,
                                 targetNodeId: PublicKey,
                                 amount: MilliSatoshi,
@@ -414,9 +411,12 @@ object RouteCalculation {
       Right(routes)
     } else if (routeParams.boundaries.maxRouteLength < ROUTE_MAX_LENGTH) {
       // if not found within the constraints we relax and repeat the search
-      val relaxedRouteParams = routeParams
-        .modify(_.boundaries.maxRouteLength).setTo(ROUTE_MAX_LENGTH)
-        .modify(_.boundaries.maxCltv).setTo(DEFAULT_ROUTE_MAX_CLTV)
+      val relaxedRouteParams = routeParams.copy(
+        boundaries = routeParams.boundaries.copy(
+          maxRouteLength = ROUTE_MAX_LENGTH,
+          maxCltv = DEFAULT_ROUTE_MAX_CLTV,
+        )
+      )
       findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, relaxedRouteParams, currentBlockHeight, excludePositiveInboundFees)
     } else {
       Left(RouteNotFound)
@@ -438,7 +438,7 @@ object RouteCalculation {
    * @param routeParams     a set of parameters that can restrict the route search
    * @return a set of disjoint routes to the destination @param targetNodeId with the payment amount split between them
    */
-  def findMultiPartRoute(g: DirectedGraph,
+  def findMultiPartRoute(g: GraphWithBalanceEstimates,
                          localNodeId: PublicKey,
                          targetNodeId: PublicKey,
                          amount: MilliSatoshi,
@@ -464,7 +464,7 @@ object RouteCalculation {
     }
   }
 
-  private def findMultiPartRouteInternal(g: DirectedGraph,
+  private def findMultiPartRouteInternal(g: GraphWithBalanceEstimates,
                                          localNodeId: PublicKey,
                                          targetNodeId: PublicKey,
                                          amount: MilliSatoshi,
@@ -481,7 +481,7 @@ object RouteCalculation {
     // When the recipient is a direct peer, we have complete visibility on our local channels so we can use more accurate MPP parameters.
     val routeParams1 = {
       case class DirectChannel(balance: MilliSatoshi, isEmpty: Boolean)
-      val directChannels = g.getEdgesBetween(localNodeId, targetNodeId).collect {
+      val directChannels = g.graph.getEdgesBetween(localNodeId, targetNodeId).collect {
         // We should always have balance information available for local channels.
         // NB: htlcMinimumMsat is set by our peer and may be 0 msat (even though it's not recommended).
         case GraphEdge(_, params, _, Some(balance)) => DirectChannel(balance, balance <= 0.msat || balance < params.htlcMinimum)
@@ -500,7 +500,7 @@ object RouteCalculation {
         split(amount, mutable.Queue(routes: _*), initializeUsedCapacity(pendingHtlcs), routeParams1) match {
           case Right(routes) if validateMultiPartRoute(amount, maxFee, routes, routeParams.includeLocalChannelCost) =>
             if (blip18InboundFees)
-              Right(routes.map(r => routeWithInboundFees(r.amount,  r.hops, g)))
+              Right(routes.map(r => routeWithInboundFees(r.amount,  r.hops, g.graph)))
             else
               Right(routes)
           case _ => Left(RouteNotFound)

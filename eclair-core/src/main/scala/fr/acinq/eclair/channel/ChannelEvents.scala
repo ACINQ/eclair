@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.ClosingType
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, LiquidityAds}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, HtlcFailureMessage, LiquidityAds, UpdateAddHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshi, RealShortChannelId, ShortChannelId}
 
 /**
@@ -62,7 +62,7 @@ case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, aliase
    * However we only include the real scid if option_scid_alias is disabled, because we otherwise want to hide it.
    */
   def scidsForRouting: Seq[ShortChannelId] = {
-    val canUseRealScid = !commitments.params.channelFeatures.hasFeature(Features.ScidAlias)
+    val canUseRealScid = !commitments.channelParams.channelFeatures.hasFeature(Features.ScidAlias)
     if (canUseRealScid) {
       announcement_opt.map(_.shortChannelId).toSeq :+ aliases.localAlias
     } else {
@@ -104,3 +104,11 @@ case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelI
 case class LocalCommitConfirmed(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, refundAtBlock: BlockHeight) extends ChannelEvent
 
 case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, commitments: Commitments) extends ChannelEvent
+
+case class OutgoingHtlcAdded(add: UpdateAddHtlc, remoteNodeId: PublicKey, upstream: Upstream.Hot, fee: MilliSatoshi)
+
+sealed trait OutgoingHtlcSettled
+
+case class OutgoingHtlcFailed(fail: HtlcFailureMessage) extends OutgoingHtlcSettled
+
+case class OutgoingHtlcFulfilled(fulfill: UpdateFulfillHtlc) extends OutgoingHtlcSettled

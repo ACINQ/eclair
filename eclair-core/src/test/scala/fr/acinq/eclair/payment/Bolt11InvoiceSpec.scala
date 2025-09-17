@@ -37,9 +37,9 @@ import scala.util.Success
 
 class Bolt11InvoiceSpec extends AnyFunSuite {
 
-  val priv = PrivateKey(hex"e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734")
-  val pub = priv.publicKey
-  val nodeId = pub
+  val priv: PrivateKey = PrivateKey(hex"e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734")
+  val pub: PublicKey = priv.publicKey
+  val nodeId: PublicKey = pub
   assert(nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
 
   // Copy of Bolt11Invoice.apply that doesn't strip unknown features
@@ -386,6 +386,24 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.sign(priv).toString == ref)
   }
 
+  test("On mainnet, with fallback (P2TR) address bc1pptdvg0d2nj99568qn6ssdy4cygnwuxgw2ukmnwgwz7jpqjz2kszse2s3lm") {
+    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqsfp4pptdvg0d2nj99568qn6ssdy4cygnwuxgw2ukmnwgwz7jpqjz2kszs9qrsgqy606dznq28exnydt2r4c29y56xjtn3sk4mhgjtl4pg2y4ar3249rq4ajlmj9jy8zvlzw7cr8mggqzm842xfr0v72rswzq9xvr4hknfsqwmn6xd"
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
+    assert(invoice.prefix == "lnbc")
+    assert(invoice.amount_opt.contains(2000000000 msat))
+    assert(invoice.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(invoice.fallbackAddress().contains("bc1pptdvg0d2nj99568qn6ssdy4cygnwuxgw2ukmnwgwz7jpqjz2kszse2s3lm"))
+    assert(invoice.sign(priv).toString == ref)
+  }
+
+  test("On mainnet, public-key recovery with high-S signature") {
+    val ref = "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7ck6q93dj32dlqnls087fxdwk8qakdyafkq3yap2r09nt4ndd0unm3z9u5t48y6ucv4r5sg7lk98c77ctvjczkspk5qprc90gx"
+    val Success(invoice) = Bolt11Invoice.fromString(ref)
+    assert(invoice.prefix == "lnbc")
+    assert(invoice.amount_opt.isEmpty)
+    assert(invoice.nodeId == PublicKey(hex"02d0139ce7427d6dfffd26a326c18be754ef1e64672b42694ba5b23ef6e6e7803d"))
+  }
+
   test("reject invalid invoices") {
     val refs = Seq(
       // Bech32 checksum is invalid.
@@ -404,8 +422,14 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       "lnbc2500000001p1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpusp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9qrsgq0lzc236j96a95uv0m3umg28gclm5lqxtqqwk32uuk4k6673k6n5kfvx3d2h8s295fad45fdhmusm8sjudfhlf6dcsxmfvkeywmjdkxcp99202x",
       // Missing payment secret.
       "lnbc1qqygh9qpp5s7zxqqqqqqqqqqqqpjqqqqqqqqqqqqqqqqqqcqpjqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqquqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzxqqqqqqqqqqqqqqqy6f523d",
+      // Missing payment secret.
+      "lnbc20m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqs9qrsgq7ea976txfraylvgzuxs8kgcw23ezlrszfnh8r6qtfpr6cxga50aj6txm9rxrydzd06dfeawfk6swupvz4erwnyutnjq7x39ymw6j38gp49qdkj",
       // Invalid signature public key recovery id.
-      "lnbc1qqqqpqqnp4qqqlftcw9qqqqqqqqqqqqygh9qpp5qpp5s7zxqqqqcqpjpqqygh9qpp5s7zxqqqqcqpjpqqlqqqqqqqqqqqqcqqpqqqqqqqqqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqlqqqcqpjptfqptfqptfqpqqqqqqqqqqqqqqqqqqq8ddm0a"
+      "lnbc1qqqqpqqnp4qqqlftcw9qqqqqqqqqqqqygh9qpp5qpp5s7zxqqqqcqpjpqqygh9qpp5s7zxqqqqcqpjpqqlqqqqqqqqqqqqcqqpqqqqqqqqqqqsqqqqqqqqdqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqlqqqcqpjptfqptfqptfqpqqqqqqqqqqqqqqqqqqq8ddm0a",
+      // Empty routing hint field.
+      "lnbc1p5q54jjpp5fe0dhqdt4m97psq0fv3wjlk95cclnatvuvq49xtnc8rzrp0dysusdqqcqzzsxqrrs0fppqy6uew5229e67r9xzzm9mjyfwseclstdgsp5rnanj9x5rnanj9xnq28hhgd6c7yxlmh6lta047h6lqqqqqqqqqqqrqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6qqqqqqqqqqqqqqqqqqq9kvnknh7ug5mttnqqqqqqqqq8849gwfhvnp9rqpe0cy97",
+      // Invalid min_final_expiry_delta_blocks.
+      "lnbc1p5q54jjpp5fe0dhqdt4m97psq0fv3wjlk95cclnatvuvq49xtnc8rzrp0d5susdqqcqg3vrywwwjsppqy6uew5229e67rzxzzm9mjyfwseclstdgsp5rnanj9xnq28hhgd6c7yxlmh6lta047h6lqqqqqqqqqqqrqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9kvnknh7ug5mttn2yu5ha6m98cpda2rtwu08849gwfhvnp9rqpqqqqqqqqqg58lts",
     )
     for (ref <- refs) {
       assert(Bolt11Invoice.fromString(ref).isFailure)
@@ -528,6 +552,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
   }
 
   test("feature bits to minimally-encoded feature bytes") {
+    // Invoice features are encoded as 5-bits chunks, which we decode to bytes.
     val testCases = Seq(
       (bin"   0010000100000101", hex"  2105"),
       (bin"   1010000100000101", hex"  a105"),
@@ -539,8 +564,24 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       (bin"1000110000000000110", hex"046006")
     )
 
-    for ((bitmask, featureBytes) <- testCases) {
-      assert(Features(bitmask).toByteVector == featureBytes)
+    for ((invoiceFeatureBits, featureBytes) <- testCases) {
+      assert(Features(invoiceFeatureBits).toByteVector == featureBytes)
+    }
+  }
+
+  test("feature bytes to minimally-encoded feature bits") {
+    // When encoding features into 5-bits chunks, we want to get rid of leading zeroes.
+    val testCases = Seq(
+      (bin"00010000", bin"10000"),
+      (bin"00100000", bin"0000100000"),
+      (bin"10010000", bin"0010010000"),
+      (bin"0000000100000000", bin"0100000000"),
+      (bin"0000001000000000", bin"1000000000"),
+      (bin"0000010000000000", bin"000010000000000"),
+    )
+
+    for ((featureBytes, invoiceFeatureBits) <- testCases) {
+      assert(features2bits(Features(featureBytes)) == invoiceFeatureBits)
     }
   }
 

@@ -1,19 +1,14 @@
 {
   "type" : "DATA_WAIT_FOR_CHANNEL_READY",
   "commitments" : {
-    "params" : {
+    "channelParams" : {
       "channelId" : "7d975ecb75e1497076150f745b83dace95a189eecb6172c20a9a4fe0f91b8d1d",
       "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
-      "channelFeatures" : [ "option_static_remotekey" ],
+      "channelFeatures" : [ ],
       "localParams" : {
         "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
         "fundingKeyPath" : [ 3266606892, 3454308995, 379409286, 2058386039, 150235166, 1337553882, 292124276, 1286028724, 2147483648 ],
-        "dustLimit" : 1000,
-        "maxHtlcValueInFlightMsat" : 1000000000,
         "initialRequestedChannelReserve_opt" : 20000,
-        "htlcMinimum" : 1000,
-        "toSelfDelay" : 144,
-        "maxAcceptedHtlcs" : 30,
         "isChannelOpener" : false,
         "paysCommitTxFees" : false,
         "walletStaticPaymentBasepoint" : "028feba10d0eafd0fad8fe20e6d9206e6bd30242826de05c63f459a00aced24b12",
@@ -37,12 +32,7 @@
       },
       "remoteParams" : {
         "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
-        "dustLimit" : 1100,
-        "maxHtlcValueInFlightMsat" : 500000000,
         "initialRequestedChannelReserve_opt" : 10000,
-        "htlcMinimum" : 0,
-        "toSelfDelay" : 144,
-        "maxAcceptedHtlcs" : 100,
         "revocationBasepoint" : "02e1a7010650cd5cd6fbf7505f5f213b36e5cc0d127064c74619c83dfa7434ce25",
         "paymentBasepoint" : "028feba10d0eafd0fad8fe20e6d9206e6bd30242826de05c63f459a00aced24b12",
         "delayedPaymentBasepoint" : "031723f6ffc8e552694f09d067844851f14357fb2a294fd94fd0b596ee808d2a17",
@@ -86,17 +76,22 @@
     },
     "active" : [ {
       "fundingTxIndex" : 0,
-      "fundingTx" : {
-        "outPoint" : "1d8d1bf9e04f9a0ac27261cbee89a195ceda835b740f15767049e175cb5e977d:0",
-        "amountSatoshis" : 1000000
-      },
+      "fundingInput" : "1d8d1bf9e04f9a0ac27261cbee89a195ceda835b740f15767049e175cb5e977d:0",
+      "fundingAmount" : 1000000,
       "localFunding" : {
         "status" : "confirmed",
-        "txid" : "1d8d1bf9e04f9a0ac27261cbee89a195ceda835b740f15767049e175cb5e977d",
         "shortChannelId" : "400000x42x0"
       },
       "remoteFunding" : {
         "status" : "not-locked"
+      },
+      "commitmentFormat" : "legacy",
+      "localCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 1000000000,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
       },
       "localCommit" : {
         "index" : 0,
@@ -106,14 +101,18 @@
           "toLocal" : 200000000,
           "toRemote" : 800000000
         },
-        "commitTxAndRemoteSig" : {
-          "commitTx" : {
-            "txid" : "d873d760728d9cf12d61c43360c383ab83799c9153f38c6012d9d6f6e6026df1",
-            "tx" : "02000000017d975ecb75e1497076150f745b83dace95a189eecb6172c20a9a4fe0f91b8d1d000000000036a2ab8002400d0300000000002200207d4136c71e1c702d6e56ea300e1a56298b70fc8e96d67e72cfab3a27d39c9bf2b8180c0000000000160014761879f7b274ce995f87150a02e75cc0c037e8e3ac678920"
-          },
-          "remoteSig" : "02b8ce0a760ae6052a0d6c5770ae626ae71ea1b64853f97bb2c784839264054c64dc8717789f804342cbd9c5a364b32f4cbd9e9a4f91f48127a58f95014f6663"
+        "txId" : "d873d760728d9cf12d61c43360c383ab83799c9153f38c6012d9d6f6e6026df1",
+        "remoteSig" : {
+          "sig" : "02b8ce0a760ae6052a0d6c5770ae626ae71ea1b64853f97bb2c784839264054c64dc8717789f804342cbd9c5a364b32f4cbd9e9a4f91f48127a58f95014f6663"
         },
-        "htlcTxsAndRemoteSigs" : [ ]
+        "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 500000000,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 144
       },
       "remoteCommit" : {
         "index" : 0,
@@ -123,7 +122,7 @@
           "toLocal" : 800000000,
           "toRemote" : 200000000
         },
-        "txid" : "ad28d946d13d331539d08da9d131311d1bec7308ddf072a59b07b2dc22779c3f",
+        "txId" : "ad28d946d13d331539d08da9d131311d1bec7308ddf072a59b07b2dc22779c3f",
         "remotePerCommitmentPoint" : "02e813fa8f4480fcbfa92d65037fe2d5d99cb72d6987381cf253d13f071a45f049"
       }
     } ],

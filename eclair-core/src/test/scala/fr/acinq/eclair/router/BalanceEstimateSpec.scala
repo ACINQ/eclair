@@ -338,20 +338,21 @@ class BalanceEstimateSpec extends AnyFunSuite {
     ))
 
     val graphWithBalances = GraphWithBalanceEstimates(g, 1 day)
+    val now = TimestampSecond.now()
     // NB: it doesn't matter which edge is selected, the balance estimation takes all existing edges into account.
     val edge_ab = makeEdge(a, b, 1, 10 sat)
     val edge_ba = makeEdge(b, a, 1, 10 sat)
     val edge_bc = makeEdge(b, c, 6, 10 sat)
-    assert(graphWithBalances.canSend(27500 msat, edge_ab) === 0.75 +- 0.01)
-    assert(graphWithBalances.canSend(55000 msat, edge_ab) === 0.5 +- 0.01)
-    assert(graphWithBalances.canSend(30000 msat, edge_ba) === 0.75 +- 0.01)
-    assert(graphWithBalances.canSend(60000 msat, edge_ba) === 0.5 +- 0.01)
-    assert(graphWithBalances.canSend(75000 msat, edge_bc) === 0.5 +- 0.01)
-    assert(graphWithBalances.canSend(100000 msat, edge_bc) === 0.33 +- 0.01)
+    assert(graphWithBalances.balances.get(edge_ab).canSend(27500 msat, now) === 0.75 +- 0.01)
+    assert(graphWithBalances.balances.get(edge_ab).canSend(55000 msat, now) === 0.5 +- 0.01)
+    assert(graphWithBalances.balances.get(edge_ba).canSend(30000 msat, now) === 0.75 +- 0.01)
+    assert(graphWithBalances.balances.get(edge_ba).canSend(60000 msat, now) === 0.5 +- 0.01)
+    assert(graphWithBalances.balances.get(edge_bc).canSend(75000 msat, now) === 0.5 +- 0.01)
+    assert(graphWithBalances.balances.get(edge_bc).canSend(100000 msat, now) === 0.33 +- 0.01)
     val unknownEdge = makeEdge(42, 40 sat)
-    assert(graphWithBalances.canSend(10000 msat, unknownEdge) === 0.75 +- 0.01)
-    assert(graphWithBalances.canSend(20000 msat, unknownEdge) === 0.5 +- 0.01)
-    assert(graphWithBalances.canSend(30000 msat, unknownEdge) === 0.25 +- 0.01)
+    assert(graphWithBalances.balances.get(unknownEdge).canSend(10000 msat, now) === 0.75 +- 0.01)
+    assert(graphWithBalances.balances.get(unknownEdge).canSend(20000 msat, now) === 0.5 +- 0.01)
+    assert(graphWithBalances.balances.get(unknownEdge).canSend(30000 msat, now) === 0.25 +- 0.01)
   }
 
 }

@@ -17,12 +17,14 @@
 package fr.acinq.eclair.channel.fsm
 
 import akka.actor.FSM
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Script}
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{ClosingComplete, HtlcSettlementMessage, LightningMessage, Shutdown, UpdateMessage}
 import scodec.bits.ByteVector
 
@@ -110,39 +112,53 @@ trait CommonHandlers {
     case d: DATA_NEGOTIATING_SIMPLE => d.localScriptPubKey
     case d: DATA_CLOSING => d.finalScriptPubKey
     case d =>
-      d.commitments.params.localParams.upfrontShutdownScript_opt match {
+      val allowAnySegwit = Features.canUseFeature(data.commitments.localChannelParams.initFeatures, data.commitments.remoteChannelParams.initFeatures, Features.ShutdownAnySegwit)
+      d.commitments.localChannelParams.upfrontShutdownScript_opt match {
         case Some(upfrontShutdownScript) =>
-          if (data.commitments.params.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
+          if (data.commitments.channelParams.channelFeatures.hasFeature(Features.UpfrontShutdownScript)) {
             // we have a shutdown script, and the option_upfront_shutdown_script is enabled: we have to use it
             upfrontShutdownScript
           } else {
             log.info("ignoring pre-generated shutdown script, because option_upfront_shutdown_script is disabled")
-            generateFinalScriptPubKey()
+            generateFinalScriptPubKey(allowAnySegwit)
           }
         case None =>
           // normal case: we don't pre-generate shutdown scripts
-          generateFinalScriptPubKey()
+          generateFinalScriptPubKey(allowAnySegwit)
       }
   }
 
-  private def generateFinalScriptPubKey(): ByteVector = {
-    val finalPubKey = wallet.getP2wpkhPubkey()
-    val finalScriptPubKey = Script.write(Script.pay2wpkh(finalPubKey))
-    log.info(s"using finalScriptPubkey=$finalScriptPubKey")
-    finalScriptPubKey
+  private def generateFinalScriptPubKey(allowAnySegwit: Boolean): ByteVector = {
+    val finalScriptPubkey = Helpers.Closing.MutualClose.generateFinalScriptPubKey(wallet, allowAnySegwit)
+    log.info("using finalScriptPubkey={}", finalScriptPubkey.toHex)
+    finalScriptPubkey
   }
 
-  def startSimpleClose(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]): (DATA_NEGOTIATING_SIMPLE, Option[ClosingComplete]) = {
+  def createShutdown(commitments: Commitments, finalScriptPubKey: ByteVector): Shutdown = {
+    commitments.latest.commitmentFormat match {
+      case _: SimpleTaprootChannelCommitmentFormat =>
+        // We create a fresh local closee nonce every time we send shutdown.
+        val localFundingPubKey = channelKeys.fundingKey(commitments.latest.fundingTxIndex).publicKey
+        val localCloseeNonce = NonceGenerator.signingNonce(localFundingPubKey, commitments.latest.remoteFundingPubKey, commitments.latest.fundingTxId)
+        localCloseeNonce_opt = Some(localCloseeNonce)
+        Shutdown(commitments.channelId, finalScriptPubKey, localCloseeNonce.publicNonce)
+      case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
+        Shutdown(commitments.channelId, finalScriptPubKey)
+    }
+  }
+
+  def startSimpleClose(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closeStatus: CloseStatus): (DATA_NEGOTIATING_SIMPLE, Option[ClosingComplete]) = {
     val localScript = localShutdown.scriptPubKey
     val remoteScript = remoteShutdown.scriptPubKey
-    val closingFeerate = closingFeerates.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates))
-    MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, keyManager, commitments.latest, localScript, remoteScript, closingFeerate) match {
+    val closingFeerate = closeStatus.feerates_opt.map(_.preferred).getOrElse(nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, maxClosingFeerateOverride_opt = None))
+    MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, channelKeys, commitments.latest, localScript, remoteScript, closingFeerate, remoteShutdown.closeeNonce_opt) match {
       case Left(f) =>
         log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
         val d = DATA_NEGOTIATING_SIMPLE(commitments, closingFeerate, localScript, remoteScript, Nil, Nil)
         (d, None)
-      case Right((closingTxs, closingComplete)) =>
+      case Right((closingTxs, closingComplete, closerNonces)) =>
         log.debug("signing local mutual close transactions: {}", closingTxs)
+        localCloserNonces_opt = Some(closerNonces)
         val d = DATA_NEGOTIATING_SIMPLE(commitments, closingFeerate, localScript, remoteScript, closingTxs :: Nil, Nil)
         (d, Some(closingComplete))
     }

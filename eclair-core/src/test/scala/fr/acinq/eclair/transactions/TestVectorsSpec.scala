@@ -20,12 +20,11 @@ import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelFeatures
-import fr.acinq.eclair.channel.Helpers.Funding
-import fr.acinq.eclair.crypto.Generators
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants}
+import fr.acinq.eclair.{ChannelTypeFeature, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants}
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -36,9 +35,16 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
   // @formatter:off
   def filename: String
-  def channelFeatures: ChannelFeatures
-  val commitmentFormat = channelFeatures.commitmentFormat
+  def channelFeatures: Set[ChannelTypeFeature]
   // @formatter:on
+
+  val commitmentFormat: CommitmentFormat = if (channelFeatures.contains(Features.AnchorOutputsZeroFeeHtlcTx)) {
+    ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
+  } else if (channelFeatures.contains(Features.AnchorOutputs)) {
+    UnsafeLegacyAnchorOutputsCommitmentFormat
+  } else {
+    DefaultCommitmentFormat
+  }
 
   val tests = {
     val tests = collection.mutable.HashMap.empty[String, Map[String, String]]
@@ -97,9 +103,9 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val funding_privkey = PrivateKey(hex"30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901")
     val funding_pubkey = funding_privkey.publicKey
     val per_commitment_point = PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
-    val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
-    val payment_privkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
-    val delayed_payment_privkey = Generators.derivePrivKey(delayed_payment_basepoint_secret, per_commitment_point)
+    val htlc_privkey = ChannelKeys.derivePerCommitmentKey(payment_basepoint_secret, per_commitment_point)
+    val payment_privkey = if (channelFeatures.contains(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
+    val delayed_payment_privkey = ChannelKeys.derivePerCommitmentKey(delayed_payment_basepoint_secret, per_commitment_point)
     val revocation_pubkey = PublicKey(hex"0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19")
     val feerate_per_kw = 15000
   }
@@ -114,9 +120,28 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val revocation_basepoint = revocation_basepoint_secret.publicKey
     val funding_privkey = PrivateKey(hex"1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301")
     val funding_pubkey = funding_privkey.publicKey
-    val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
-    val payment_privkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
+    val htlc_privkey = ChannelKeys.derivePerCommitmentKey(payment_basepoint_secret, Local.per_commitment_point)
+    val payment_privkey = if (channelFeatures.contains(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
   }
+
+  // Keys used by the local node to spend outputs of its local commitment.
+  val localCommitmentKeys = LocalCommitmentKeys(
+    ourDelayedPaymentKey = Local.delayed_payment_privkey,
+    theirPaymentPublicKey = Remote.payment_privkey.publicKey,
+    ourPaymentBasePoint = Local.payment_basepoint,
+    ourHtlcKey = Local.htlc_privkey,
+    theirHtlcPublicKey = Remote.htlc_privkey.publicKey,
+    revocationPublicKey = Local.revocation_pubkey
+  )
+  // Keys used by the remote node to spend outputs of our local commitment.
+  val remoteCommitmentKeys = RemoteCommitmentKeys(
+    ourPaymentKey = Right(Remote.payment_privkey),
+    theirDelayedPaymentPublicKey = Local.delayed_payment_privkey.publicKey,
+    ourPaymentBasePoint = Remote.payment_basepoint,
+    ourHtlcKey = Remote.htlc_privkey,
+    theirHtlcPublicKey = Local.htlc_privkey.publicKey,
+    revocationPublicKey = Local.revocation_pubkey
+  )
 
   val coinbaseTx = Transaction.read("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0100f2052a010000001976a9143ca33c2e4446f4a305f23c80df8ad1afdcf652f988ac00000000")
 
@@ -124,7 +149,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   val fundingAmount = fundingTx.txOut(0).amount
   logger.info(s"# funding-tx: $fundingTx}")
 
-  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey)
+  val fundingScript = makeFundingScript(Local.funding_pubkey, Remote.funding_pubkey, commitmentFormat).asInstanceOf[RedeemInfo.SegwitV0]
+  val commitmentInput = makeFundingInputInfo(fundingTx.txid, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey, commitmentFormat)
 
   val obscured_tx_number = Transactions.obscuredCommitTxNumber(42, localIsChannelOpener = true, Local.payment_basepoint, Remote.payment_basepoint)
   assert(obscured_tx_number == (0x2bb038521914L ^ 42L))
@@ -140,8 +166,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   logger.info(s"remotekey: ${Remote.payment_privkey.publicKey}")
   logger.info(s"local_delayedkey: ${Local.delayed_payment_privkey.publicKey}")
   logger.info(s"local_revocation_key: ${Local.revocation_pubkey}")
-  logger.info(s"# funding wscript = ${commitmentInput.redeemScript}")
-  assert(commitmentInput.redeemScript == hex"5221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae")
+  logger.info(s"# funding wscript = ${fundingScript.redeemScript}")
+  assert(fundingScript.redeemScript == hex"5221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae")
 
   val paymentPreimages = Seq(
     ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"),
@@ -153,17 +179,17 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   )
 
   val htlcs = Seq[DirectedHtlc](
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket, None, 1.0, None)),
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket, None, 1.0, None)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket, None, 1.0, None)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket, None, 1.0, None)),
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket, None, 1.0, None)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 5000001.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(505), TestConstants.emptyOnionPacket, None, 1.0, None)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 3, 5000000.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(506), TestConstants.emptyOnionPacket, None, 1.0, None))
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 5000001.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(505), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 3, 5000000.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(506), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None))
   )
   val htlcScripts = htlcs.map {
-    case OutgoingHtlc(add) => Scripts.htlcOffered(Local.htlc_privkey.publicKey, Remote.htlc_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash), commitmentFormat)
-    case IncomingHtlc(add) => Scripts.htlcReceived(Local.htlc_privkey.publicKey, Remote.htlc_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash), add.cltvExpiry, commitmentFormat)
+    case OutgoingHtlc(add) => Scripts.htlcOffered(localCommitmentKeys.publicKeys, add.paymentHash, commitmentFormat)
+    case IncomingHtlc(add) => Scripts.htlcReceived(localCommitmentKeys.publicKeys, add.paymentHash, add.cltvExpiry, commitmentFormat)
   }
   val defaultHtlcs = htlcs.take(5) // most test cases only use the first 5 htlcs
 
@@ -179,7 +205,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"htlc $i payment_preimage: ${if (i < paymentPreimages.size) paymentPreimages(i) else paymentPreimages.last}")
   }
 
-  def run(name: String, specHtlcs: Set[DirectedHtlc]): (CommitTx, Seq[TransactionWithInputInfo]) = {
+  def run(name: String, specHtlcs: Set[DirectedHtlc]): (Transaction, Seq[Transaction]) = {
     logger.info(s"name: $name")
     val spec = CommitmentSpec(specHtlcs, getFeerate(name), getToLocal(name), getToRemote(name))
     val dustLimit = getDustLimit(name).getOrElse(Local.dustLimit)
@@ -188,19 +214,15 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"local_feerate_per_kw: ${spec.commitTxFeerate}")
 
     val outputs = Transactions.makeCommitTxOutputs(
-      localPaysCommitTxFees = true,
-      localDustLimit = dustLimit,
-      localRevocationPubkey = Local.revocation_pubkey,
-      toLocalDelay = Local.toSelfDelay,
-      localDelayedPaymentPubkey = Local.delayed_payment_privkey.publicKey,
-      remotePaymentPubkey = Remote.payment_privkey.publicKey,
-      localHtlcPubkey = Local.htlc_privkey.publicKey,
-      remoteHtlcPubkey = Remote.htlc_privkey.publicKey,
-      localFundingPubkey = Local.funding_pubkey,
-      remoteFundingPubkey = Remote.funding_pubkey,
+      Local.funding_pubkey,
+      Remote.funding_pubkey,
+      localCommitmentKeys.publicKeys,
+      payCommitTxFees = true,
+      dustLimit,
+      Local.toSelfDelay,
       spec,
-      commitmentFormat)
-
+      commitmentFormat
+    )
     val commitTx = {
       val tx = Transactions.makeCommitTx(
         commitTxInput = commitmentInput,
@@ -209,111 +231,111 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         remotePaymentBasePoint = Remote.payment_basepoint,
         localIsChannelOpener = true,
         outputs = outputs)
-      val local_sig = tx.sign(Local.funding_privkey, TxOwner.Local, commitmentFormat)
-      logger.info(s"# local_signature = ${Scripts.der(local_sig).dropRight(1).toHex}")
-      val remote_sig = tx.sign(Remote.funding_privkey, TxOwner.Remote, commitmentFormat)
-      logger.info(s"remote_signature: ${Scripts.der(remote_sig).dropRight(1).toHex}")
-      Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
+      val local_sig = tx.sign(Local.funding_privkey, Remote.funding_pubkey)
+      logger.info(s"# local_signature = ${Scripts.der(local_sig.sig).dropRight(1).toHex}")
+      val remote_sig = tx.sign(Remote.funding_privkey, Local.funding_pubkey)
+      logger.info(s"remote_signature: ${Scripts.der(remote_sig.sig).dropRight(1).toHex}")
+      tx.aggregateSigs(Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
     val baseFee = Transactions.commitTxFeeMsat(dustLimit, spec, commitmentFormat)
     logger.info(s"# base commitment transaction fee = ${baseFee.toLong}")
-    val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
+    val actualFee = fundingAmount - commitTx.txOut.map(_.amount).sum
     logger.info(s"# actual commitment transaction fee = ${actualFee.toLong}")
-    commitTx.tx.txOut.foreach(txOut => {
+    commitTx.txOut.foreach(txOut => {
       txOut.publicKeyScript.length match {
         case 22 => logger.info(s"# to-remote amount ${txOut.amount.toLong} P2WPKH(${Remote.payment_privkey.publicKey})")
         case 34 =>
           val index = htlcScripts.indexWhere(s => Script.write(Script.pay2wsh(s)) == txOut.publicKeyScript)
-          if (index == -1) logger.info(s"# to-local amount ${txOut.amount.toLong} wscript ${Script.write(Scripts.toLocalDelayed(Local.revocation_pubkey, Local.toSelfDelay, Local.delayed_payment_privkey.publicKey))}")
+          if (index == -1) logger.info(s"# to-local amount ${txOut.amount.toLong} wscript ${Script.write(Scripts.toLocalDelayed(localCommitmentKeys.publicKeys, Local.toSelfDelay))}")
           else logger.info(s"# HTLC #${if (htlcs(index).isInstanceOf[OutgoingHtlc]) "offered" else "received"} amount ${txOut.amount.toLong} wscript ${Script.write(htlcScripts(index))}")
       }
     })
 
-    assert(Transactions.getCommitTxNumber(commitTx.tx, localIsChannelOpener = true, Local.payment_basepoint, Remote.payment_basepoint) == Local.commitTxNumber)
-    Transaction.correctlySpends(commitTx.tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    logger.info(s"output commit_tx: ${commitTx.tx}")
+    assert(Transactions.getCommitTxNumber(commitTx, localIsChannelOpener = true, Local.payment_basepoint, Remote.payment_basepoint) == Local.commitTxNumber)
+    Transaction.correctlySpends(commitTx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    logger.info(s"output commit_tx: $commitTx")
 
     val unsignedHtlcTxs = Transactions.makeHtlcTxs(
-      commitTx.tx,
-      dustLimit,
-      Local.revocation_pubkey,
-      Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
-      spec.htlcTxFeerate(commitmentFormat),
+      commitTx,
       outputs,
-      commitmentFormat)
-
+      commitmentFormat
+    )
     val htlcTxs: Seq[TransactionWithInputInfo] = unsignedHtlcTxs.sortBy(_.input.outPoint.index)
     logger.info(s"num_htlcs: ${htlcTxs.length}")
 
     val signedTxs = htlcTxs.collect {
-      case tx: HtlcSuccessTx =>
-        val localSig = tx.sign(Local.htlc_privkey, TxOwner.Local, commitmentFormat)
-        val remoteSig = tx.sign(Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
-        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.asInstanceOf[InputInfo.SegwitInput].redeemScript))
+      case tx: UnsignedHtlcSuccessTx =>
+        val remoteSig = tx.localSig(remoteCommitmentKeys)
+        val htlcIndex = tx.redeemInfo(localCommitmentKeys.publicKeys) match {
+          case redeemInfo: RedeemInfo.SegwitV0 => htlcScripts.indexOf(Script.parse(redeemInfo.redeemScript))
+          case _: RedeemInfo.Taproot => ???
+        }
         val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
-        val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage, commitmentFormat)
-        Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val tx1 = tx.addRemoteSig(localCommitmentKeys, remoteSig, preimage).sign()
+        Transaction.correctlySpends(tx1, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-success for htlc #$htlcIndex)")
         logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")
-        logger.info(s"# local_htlc_signature = ${Scripts.der(localSig).dropRight(1).toHex}")
-        logger.info(s"htlc_success_tx (htlc #$htlcIndex): ${tx1.tx}")
+        logger.info(s"# local_htlc_signature = ${Scripts.der(tx.addRemoteSig(localCommitmentKeys, remoteSig, preimage).localSig(WalletInputs(Nil, None))).dropRight(1).toHex}")
+        logger.info(s"htlc_success_tx (htlc #$htlcIndex): $tx1")
         tx1
-      case tx: HtlcTimeoutTx =>
-        val localSig = tx.sign(Local.htlc_privkey, TxOwner.Local, commitmentFormat)
-        val remoteSig = tx.sign(Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
-        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.asInstanceOf[InputInfo.SegwitInput].redeemScript))
-        val tx1 = Transactions.addSigs(tx, localSig, remoteSig, commitmentFormat)
-        Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      case tx: UnsignedHtlcTimeoutTx =>
+        val remoteSig = tx.localSig(remoteCommitmentKeys)
+        val htlcIndex = tx.redeemInfo(localCommitmentKeys.publicKeys) match {
+          case redeemInfo: RedeemInfo.SegwitV0 => htlcScripts.indexOf(Script.parse(redeemInfo.redeemScript))
+          case _: RedeemInfo.Taproot => ???
+        }
+        val tx1 = tx.addRemoteSig(localCommitmentKeys, remoteSig).sign()
+        Transaction.correctlySpends(tx1, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-timeout for htlc #$htlcIndex)")
         logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")
-        logger.info(s"# local_htlc_signature = ${Scripts.der(localSig).dropRight(1).toHex}")
-        logger.info(s"htlc_timeout_tx (htlc #$htlcIndex): ${tx1.tx}")
+        logger.info(s"# local_htlc_signature = ${Scripts.der(tx.addRemoteSig(localCommitmentKeys, remoteSig).localSig(WalletInputs(Nil, None))).dropRight(1).toHex}")
+        logger.info(s"htlc_timeout_tx (htlc #$htlcIndex): $tx1")
         tx1
     }
 
     (commitTx, signedTxs)
   }
 
-  def verifyHtlcTxs(name: String, htlcTxs: Seq[TransactionWithInputInfo]): Unit = {
+  def verifyHtlcTxs(name: String, htlcTxs: Seq[Transaction]): Unit = {
     val check = (0 to 4).flatMap(i =>
       tests(name).get(s"htlc_success_tx (htlc #$i)").toSeq ++ tests(name).get(s"htlc_timeout_tx (htlc #$i)").toSeq
     ).toSet.map((tx: String) => Transaction.read(tx))
-    assert(htlcTxs.map(_.tx).toSet == check)
+    assert(htlcTxs.toSet == check)
   }
 
   test("simple commitment tx with no HTLCs") {
     val name = "simple commitment tx with no HTLCs"
     val (commitTx, _) = run(name, Set.empty[DirectedHtlc])
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
   }
 
   test("simple commitment tx with no HTLCs and single anchor") {
     val name = "simple commitment tx with no HTLCs and single anchor"
     if (commitmentFormat.isInstanceOf[AnchorOutputsCommitmentFormat]) {
       val (commitTx, _) = run(name, Set.empty[DirectedHtlc])
-      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
     }
   }
 
   test("commitment tx with all five HTLCs untrimmed (minimum feerate)") {
     val name = "commitment tx with all five HTLCs untrimmed (minimum feerate)"
     val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with seven outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with seven outputs untrimmed (maximum feerate)"
     val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with six outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with six outputs untrimmed (minimum feerate)"
     val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
@@ -321,7 +343,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
       val name = "commitment tx with six outputs untrimmed (maximum feerate)"
       val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
       verifyHtlcTxs(name, htlcTxs)
     }
   }
@@ -330,7 +352,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
       val name = "commitment tx with five outputs untrimmed (minimum feerate)"
       val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
       verifyHtlcTxs(name, htlcTxs)
     }
   }
@@ -339,7 +361,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
       val name = "commitment tx with five outputs untrimmed (maximum feerate)"
       val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
       verifyHtlcTxs(name, htlcTxs)
     }
   }
@@ -347,7 +369,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   test("commitment tx with four outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with four outputs untrimmed (minimum feerate)"
     val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
@@ -355,7 +377,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
       val name = "commitment tx with four outputs untrimmed (maximum feerate)"
       val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
       verifyHtlcTxs(name, htlcTxs)
     }
   }
@@ -363,7 +385,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   test("commitment tx with three outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with three outputs untrimmed (minimum feerate)"
     val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
@@ -371,7 +393,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
       val name = "commitment tx with three outputs untrimmed (maximum feerate)"
       val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
       verifyHtlcTxs(name, htlcTxs)
     }
   }
@@ -379,7 +401,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   test("commitment tx with two outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with two outputs untrimmed (minimum feerate)"
     val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
@@ -387,7 +409,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
       val name = "commitment tx with two outputs untrimmed (maximum feerate)"
       val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
       verifyHtlcTxs(name, htlcTxs)
     }
   }
@@ -395,7 +417,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   test("commitment tx with one output untrimmed (minimum feerate)") {
     val name = "commitment tx with one output untrimmed (minimum feerate)"
     val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
@@ -403,7 +425,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     if (commitmentFormat != ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) {
       val name = "commitment tx with fee greater than funder amount"
       val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
-      assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+      assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
       verifyHtlcTxs(name, htlcTxs)
     }
   }
@@ -412,12 +434,12 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val name = "commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage"
     val someHtlcs = Seq(htlcs(1), htlcs(6), htlcs(5))
     val (commitTx, htlcTxs) = run(name, someHtlcs.toSet[DirectedHtlc])
-    assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    assert(commitTx == Transaction.read(tests(name)("output commit_tx")))
 
     assert(htlcTxs.size == 3) // one htlc-success-tx + two htlc-timeout-tx
-    assert(htlcTxs(0).tx == Transaction.read(tests(name)("htlc_success_tx (htlc #1)")))
-    assert(htlcTxs(1).tx == Transaction.read(tests(name)("htlc_timeout_tx (htlc #6)")))
-    assert(htlcTxs(2).tx == Transaction.read(tests(name)("htlc_timeout_tx (htlc #5)")))
+    assert(htlcTxs(0) == Transaction.read(tests(name)("htlc_success_tx (htlc #1)")))
+    assert(htlcTxs(1) == Transaction.read(tests(name)("htlc_timeout_tx (htlc #6)")))
+    assert(htlcTxs(2) == Transaction.read(tests(name)("htlc_timeout_tx (htlc #5)")))
   }
 
 }
@@ -425,27 +447,27 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 class DefaultCommitmentTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-default-commitment-format.txt"
-  override def channelFeatures: ChannelFeatures = ChannelFeatures()
+  override def channelFeatures: Set[ChannelTypeFeature] = Set.empty
   // @formatter:on
 }
 
 class StaticRemoteKeyTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-static-remotekey-format.txt"
-  override def channelFeatures: ChannelFeatures = ChannelFeatures(Features.StaticRemoteKey)
+  override def channelFeatures: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey)
   // @formatter:on
 }
 
 class AnchorOutputsTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-anchor-outputs-format.txt"
-  override def channelFeatures: ChannelFeatures = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
+  override def channelFeatures: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputs)
   // @formatter:on
 }
 
 class AnchorOutputsZeroFeeHtlcTxTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-anchor-outputs-zero-fee-htlc-tx-format.txt"
-  override def channelFeatures: ChannelFeatures = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
+  override def channelFeatures: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
   // @formatter:on
 }

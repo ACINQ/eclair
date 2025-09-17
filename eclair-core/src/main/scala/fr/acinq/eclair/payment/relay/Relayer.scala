@@ -28,6 +28,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.reputation.{Reputation, ReputationRecorder}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair._
 import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams, RealShortChannelId}
@@ -50,7 +51,7 @@ import scala.util.Random
  * It also receives channel HTLC events (fulfill / failed) and relays those to the appropriate handlers.
  * It also maintains an up-to-date view of local channel balances.
  */
-class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None) extends Actor with DiagnosticActorLogging {
+class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, reputationRecorder_opt: Option[typed.ActorRef[ReputationRecorder.Command]], initialized: Option[Promise[Done]] = None) extends Actor with DiagnosticActorLogging {
 
   import Relayer._
 
@@ -58,25 +59,26 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
   implicit def implicitLog: LoggingAdapter = log
 
   private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, register, initialized), "post-restart-htlc-cleaner")
-  private val channelRelayer = context.spawn(Behaviors.supervise(ChannelRelayer(nodeParams, register)).onFailure(SupervisorStrategy.resume), "channel-relayer")
-  private val nodeRelayer = context.spawn(Behaviors.supervise(NodeRelayer(nodeParams, register, NodeRelay.SimpleOutgoingPaymentFactory(nodeParams, router, register), router)).onFailure(SupervisorStrategy.resume), name = "node-relayer")
+  private val channelRelayer = context.spawn(Behaviors.supervise(ChannelRelayer(nodeParams, register, reputationRecorder_opt)).onFailure(SupervisorStrategy.resume), "channel-relayer")
+  private val nodeRelayer = context.spawn(Behaviors.supervise(NodeRelayer(nodeParams, register, NodeRelay.SimpleOutgoingPaymentFactory(nodeParams, router, register, reputationRecorder_opt), router)).onFailure(SupervisorStrategy.resume), name = "node-relayer")
 
   def receive: Receive = {
     case init: PostRestartHtlcCleaner.Init => postRestartCleaner forward init
-    case RelayForward(add, originNode) =>
+    case RelayForward(add, originNode, incomingChannelOccupancy) =>
       log.debug(s"received forwarding request for htlc #${add.id} from channelId=${add.channelId}")
       IncomingPaymentPacket.decrypt(add, nodeParams.privateKey, nodeParams.features) match {
         case Right(p: IncomingPaymentPacket.FinalPacket) =>
           log.debug(s"forwarding htlc #${add.id} to payment-handler")
           paymentHandler forward p
         case Right(r: IncomingPaymentPacket.ChannelRelayPacket) =>
-          channelRelayer ! ChannelRelayer.Relay(r, originNode)
+          channelRelayer ! ChannelRelayer.Relay(r, originNode, incomingChannelOccupancy)
         case Right(r: IncomingPaymentPacket.NodeRelayPacket) =>
           if (!nodeParams.enableTrampolinePayment) {
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=trampoline disabled")
-            PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(RequiredNodeFeatureMissing()), commit = true))
+            val attribution = FailureAttributionData(htlcReceivedAt = r.receivedAt, trampolineReceivedAt_opt = None)
+            PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(RequiredNodeFeatureMissing()), Some(attribution), commit = true))
           } else {
-            nodeRelayer ! NodeRelayer.Relay(r, originNode)
+            nodeRelayer ! NodeRelayer.Relay(r, originNode, incomingChannelOccupancy)
           }
         case Left(badOnion: BadOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
@@ -85,7 +87,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
               // We are the introduction point of a blinded path: we add a non-negligible delay to make it look like it
               // could come from a downstream node.
               val delay = Some(500.millis + Random.nextLong(1500).millis)
-              CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(InvalidOnionBlinding(badOnion.onionHash)), delay, commit = true)
+              val attribution = FailureAttributionData(htlcReceivedAt = TimestampMilli.now(), trampolineReceivedAt_opt = None)
+              CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(InvalidOnionBlinding(badOnion.onionHash)), Some(attribution), delay, commit = true)
             case _ =>
               CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)
           }
@@ -93,7 +96,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
         case Left(failure) =>
           log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=$failure")
-          val cmdFail = CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(failure), commit = true)
+          val attribution = FailureAttributionData(htlcReceivedAt = TimestampMilli.now(), trampolineReceivedAt_opt = None)
+          val cmdFail = CMD_FAIL_HTLC(add.id, FailureReason.LocalFailure(failure), Some(attribution), commit = true)
           PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
       }
 
@@ -114,7 +118,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
   override def mdc(currentMessage: Any): MDC = {
     val paymentHash_opt = currentMessage match {
-      case RelayForward(add, _) => Some(add.paymentHash)
+      case RelayForward(add, _, _) => Some(add.paymentHash)
       case addFailed: RES_ADD_FAILED[_] => Some(addFailed.c.paymentHash)
       case addCompleted: RES_ADD_SETTLED[_, _] => Some(addCompleted.htlc.paymentHash)
       case _ => None
@@ -126,8 +130,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
 object Relayer extends Logging {
 
-  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None): Props =
-    Props(new Relayer(nodeParams, router, register, paymentHandler, initialized))
+  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, reputationRecorder_opt: Option[typed.ActorRef[ReputationRecorder.Command]], initialized: Option[Promise[Done]] = None): Props =
+    Props(new Relayer(nodeParams, router, register, paymentHandler, reputationRecorder_opt, initialized))
 
   // @formatter:off
   case class RelayFees(feeBase: MilliSatoshi, feeProportionalMillionths: Long)
@@ -158,7 +162,8 @@ object Relayer extends Logging {
                          privateChannelFees: RelayFees,
                          minTrampolineFees: RelayFees,
                          enforcementDelay: FiniteDuration,
-                         asyncPaymentsParams: AsyncPaymentsParams) {
+                         asyncPaymentsParams: AsyncPaymentsParams,
+                         peerReputationConfig: Reputation.Config) {
     def defaultFees(announceChannel: Boolean): RelayFees = {
       if (announceChannel) {
         publicChannelFees
@@ -168,7 +173,7 @@ object Relayer extends Logging {
     }
   }
 
-  case class RelayForward(add: UpdateAddHtlc, originNode: PublicKey)
+  case class RelayForward(add: UpdateAddHtlc, originNode: PublicKey, incomingChannelOccupancy: Double)
   case class ChannelBalance(remoteNodeId: PublicKey, realScid: Option[RealShortChannelId], aliases: ShortIdAliases, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean, isEnabled: Boolean)
 
   sealed trait OutgoingChannelParams {

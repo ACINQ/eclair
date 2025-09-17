@@ -17,6 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ScriptWitness
+import fr.acinq.eclair.channel.ChannelSpendSignature
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.{Features, InitFeature, KamonExt}
@@ -233,7 +234,7 @@ object LightningMessageCodecs {
       ("closeeScriptPubKey" | varsizebinarydata) ::
       ("fees" | satoshi) ::
       ("lockTime" | uint32) ::
-      ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingComplete]
+      ("tlvStream" | ClosingCompleteTlv.closingCompleteTlvCodec)).as[ClosingComplete]
 
   val closingSigCodec: Codec[ClosingSig] = (
     ("channelId" | bytes32) ::
@@ -241,7 +242,7 @@ object LightningMessageCodecs {
       ("closeeScriptPubKey" | varsizebinarydata) ::
       ("fees" | satoshi) ::
       ("lockTime" | uint32) ::
-      ("tlvStream" | ClosingTlv.closingTlvCodec)).as[ClosingSig]
+      ("tlvStream" | ClosingSigTlv.closingSigTlvCodec)).as[ClosingSig]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
@@ -273,7 +274,7 @@ object LightningMessageCodecs {
 
   val commitSigCodec: Codec[CommitSig] = (
     ("channelId" | bytes32) ::
-      ("signature" | bytes64) ::
+      ("signature" | bytes64.as[ChannelSpendSignature.IndividualSignature]) ::
       ("htlcSignatures" | listofsignatures) ::
       ("tlvStream" | CommitSigTlv.commitSigTlvCodec)).as[CommitSig]
 
@@ -471,7 +472,8 @@ object LightningMessageCodecs {
   val willFailHtlcCodec: Codec[WillFailHtlc] = (
     ("id" | bytes32) ::
       ("paymentHash" | bytes32) ::
-      ("reason" | varsizebinarydata)).as[WillFailHtlc]
+      ("reason" | varsizebinarydata) ::
+      ("tlvStream" | UpdateFailHtlcTlv.updateFailHtlcTlvCodec)).as[WillFailHtlc]
 
   val willFailMalformedHtlcCodec: Codec[WillFailMalformedHtlc] = (
     ("id" | bytes32) ::

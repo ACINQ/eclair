@@ -28,8 +28,9 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
-import fr.acinq.eclair.wire.protocol.{FailureMessage, FailureReason, InvalidOnionBlinding, TemporaryNodeFailure, UpdateAddHtlc}
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CustomCommitmentsPlugin, Feature, Features, Logs, MilliSatoshiLong, NodeParams, TimestampMilli}
+import kamon.metric.{Gauge, Metric}
 
 import scala.concurrent.Promise
 import scala.util.Try
@@ -72,7 +73,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
         val nonStandardIncomingHtlcs: Seq[IncomingHtlc] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getIncomingHtlcs(nodeParams, log) }.flatten
         val htlcsIn: Seq[IncomingHtlc] = getIncomingHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.features) ++ nonStandardIncomingHtlcs
         val nonStandardRelayedOutHtlcs: Map[Origin.Cold, Set[(ByteVector32, Long)]] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn, nodeParams, log) }.flatten.toMap
-        val relayedOut: Map[Origin.Cold, Set[(ByteVector32, Long)]] = getHtlcsRelayedOut(channels, htlcsIn) ++ nonStandardRelayedOutHtlcs
+        val relayedOut: Map[Origin.Cold, Set[(ByteVector32, Long)]] = getHtlcsRelayedOut(nodeParams, channels, htlcsIn) ++ nonStandardRelayedOutHtlcs
 
         val settledHtlcs: Set[(ByteVector32, Long)] = nodeParams.db.pendingCommands.listSettlementCommands().map { case (channelId, cmd) => (channelId, cmd.id) }.toSet
         val notRelayed = htlcsIn.filterNot(htlcIn => {
@@ -117,7 +118,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                 Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = false).increment()
                 if (e.currentState != CLOSED) {
                   log.info(s"fulfilling broken htlc=$htlc")
-                  channel ! CMD_FULFILL_HTLC(htlc.id, preimage, commit = true)
+                  channel ! CMD_FULFILL_HTLC(htlc.id, preimage, None, commit = true)
                 } else {
                   log.info(s"got preimage but upstream channel is closed for htlc=$htlc")
                 }
@@ -136,7 +137,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                       val failure = InvalidOnionBlinding(ByteVector32.Zeroes)
                       CMD_FAIL_MALFORMED_HTLC(htlc.id, failure.onionHash, failure.code, commit = true)
                     case None =>
-                      CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(TemporaryNodeFailure()), commit = true)
+                      CMD_FAIL_HTLC(htlc.id, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true)
                   }
                   channel ! cmd
                 } else {
@@ -177,7 +178,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
           val feesPaid = 0.msat // fees are unknown since we lost the reference to the payment
           nodeParams.db.payments.getOutgoingPayment(id) match {
             case Some(p) =>
-              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
+              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil, None))
               // If all downstream HTLCs are now resolved, we can emit the payment event.
               val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
               if (!payments.exists(p => p.status == OutgoingPaymentStatus.Pending)) {
@@ -185,7 +186,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                   case OutgoingPayment(id, _, _, _, _, amount, _, _, _, _, _, OutgoingPaymentStatus.Succeeded(_, feesPaid, _, completedAt)) =>
                     PaymentSent.PartialPayment(id, amount, feesPaid, ByteVector32.Zeroes, None, completedAt)
                 }
-                val sent = PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, succeeded)
+                val sent = PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, succeeded, None)
                 log.info(s"payment id=${sent.id} paymentHash=${sent.paymentHash} successfully sent (amount=${sent.recipientAmount})")
                 context.system.eventStream.publish(sent)
               }
@@ -196,7 +197,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
               val dummyFinalAmount = fulfilledHtlc.amountMsat
               val dummyNodeId = nodeParams.nodeId
               nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id, id, None, fulfilledHtlc.paymentHash, PaymentType.Standard, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Pending))
-              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(id, fulfilledHtlc.paymentHash, paymentPreimage, dummyFinalAmount, dummyNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
+              nodeParams.db.payments.updateOutgoingPayment(PaymentSent(id, fulfilledHtlc.paymentHash, paymentPreimage, dummyFinalAmount, dummyNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil, None))
           }
           // There can never be more than one pending downstream HTLC for a given local origin (a multi-part payment is
           // instead spread across multiple local origins) so we can now forget this origin.
@@ -207,7 +208,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
           if (relayedOut != Set((fulfilledHtlc.channelId, fulfilledHtlc.id))) {
             log.error(s"unexpected channel relay downstream HTLCs: expected (${fulfilledHtlc.channelId},${fulfilledHtlc.id}), found $relayedOut")
           }
-          PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, originChannelId, CMD_FULFILL_HTLC(originHtlcId, paymentPreimage, commit = true))
+          PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, originChannelId, CMD_FULFILL_HTLC(originHtlcId, paymentPreimage, None, commit = true))
           // We don't know when we received this HTLC so we just pretend that we received it just now.
           context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, fulfilledHtlc.amountMsat, fulfilledHtlc.paymentHash, originChannelId, fulfilledHtlc.channelId, TimestampMilli.now(), TimestampMilli.now()))
           Metrics.PendingRelayedOut.decrement()
@@ -218,7 +219,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
             log.info(s"received preimage for paymentHash=${fulfilledHtlc.paymentHash}: fulfilling ${originHtlcs.length} HTLCs upstream")
             originHtlcs.foreach { case Upstream.Cold.Channel(channelId, htlcId, _) =>
               Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = true).increment()
-              PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, commit = true))
+              PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, None, commit = true))
             }
           }
           val relayedOut1 = relayedOut diff Set((fulfilledHtlc.channelId, fulfilledHtlc.id))
@@ -269,7 +270,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                     val failure = InvalidOnionBlinding(ByteVector32.Zeroes)
                     CMD_FAIL_MALFORMED_HTLC(originHtlcId, failure.onionHash, failure.code, commit = true)
                   case None =>
-                    ChannelRelay.translateRelayFailure(originHtlcId, fail)
+                    ChannelRelay.translateRelayFailure(originHtlcId, fail, None)
                 }
                 PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, originChannelId, cmd)
               case Upstream.Cold.Trampoline(originHtlcs) =>
@@ -278,7 +279,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
                   Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
                   // We don't bother decrypting the downstream failure to forward a more meaningful error upstream, it's
                   // very likely that it won't be actionable anyway because of our node restart.
-                  PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(TemporaryNodeFailure()), commit = true))
+                  PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true))
                 }
             }
           }
@@ -306,7 +307,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
 object PostRestartHtlcCleaner {
 
-  def props(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new PostRestartHtlcCleaner(nodeParams, register, initialized))
+  def props(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None): Props = Props(new PostRestartHtlcCleaner(nodeParams, register, initialized))
 
   case class Init(channels: Seq[PersistentChannelData])
 
@@ -320,10 +321,10 @@ object PostRestartHtlcCleaner {
     val Hint = "hint"
 
     private val pending = Kamon.gauge("payment.broken-htlcs.pending", "Broken HTLCs because of a node restart")
-    val PendingNotRelayed = pending.withTag(Relayed, value = false)
-    val PendingRelayedOut = pending.withTag(Relayed, value = true)
-    val Resolved = Kamon.gauge("payment.broken-htlcs.resolved", "Broken HTLCs resolved after a node restart")
-    val Unhandled = Kamon.gauge("payment.broken-htlcs.unhandled", "Broken HTLCs that we don't know how to handle")
+    val PendingNotRelayed: Gauge = pending.withTag(Relayed, value = false)
+    val PendingRelayedOut: Gauge = pending.withTag(Relayed, value = true)
+    val Resolved: Metric.Gauge = Kamon.gauge("payment.broken-htlcs.resolved", "Broken HTLCs resolved after a node restart")
+    val Unhandled: Metric.Gauge = Kamon.gauge("payment.broken-htlcs.unhandled", "Broken HTLCs that we don't know how to handle")
 
   }
 
@@ -403,11 +404,11 @@ object PostRestartHtlcCleaner {
       .toMap
 
   /** @return pending outgoing HTLCs, grouped by their upstream origin. */
-  private def getHtlcsRelayedOut(channels: Seq[PersistentChannelData], htlcsIn: Seq[IncomingHtlc])(implicit log: LoggingAdapter): Map[Origin.Cold, Set[(ByteVector32, Long)]] = {
+  private def getHtlcsRelayedOut(nodeParams: NodeParams, channels: Seq[PersistentChannelData], htlcsIn: Seq[IncomingHtlc])(implicit log: LoggingAdapter): Map[Origin.Cold, Set[(ByteVector32, Long)]] = {
     val htlcsOut = channels
       .collect { case c: ChannelDataWithCommitments => c }
       .flatMap { c =>
-        // Filter out HTLCs that will never reach the blockchain or have already been timed-out on-chain.
+        // Filter out HTLCs that will never reach the blockchain or have already been settled on-chain.
         val htlcsToIgnore: Set[Long] = c match {
           case d: DATA_CLOSING =>
             val closingType_opt = Closing.isClosingTypeAlreadyKnown(d)
@@ -415,23 +416,27 @@ object PostRestartHtlcCleaner {
               case Some(c: Closing.LocalClose) => Closing.overriddenOutgoingHtlcs(d, c.localCommitPublished.commitTx)
               case Some(c: Closing.RemoteClose) => Closing.overriddenOutgoingHtlcs(d, c.remoteCommitPublished.commitTx)
               case Some(c: Closing.RevokedClose) => Closing.overriddenOutgoingHtlcs(d, c.revokedCommitPublished.commitTx)
-              case _ => Set.empty[UpdateAddHtlc]
+              case Some(c: Closing.RecoveryClose) => Closing.overriddenOutgoingHtlcs(d, c.remoteCommitPublished.commitTx)
+              case Some(_: Closing.MutualClose) => Set.empty[UpdateAddHtlc]
+              case None => Set.empty[UpdateAddHtlc]
             }).map(_.id)
-            val irrevocablySpent = closingType_opt match {
-              case Some(c: Closing.LocalClose) => c.localCommitPublished.irrevocablySpent.values.toSeq
-              case Some(c: Closing.RemoteClose) => c.remoteCommitPublished.irrevocablySpent.values.toSeq
-              case Some(c: Closing.RevokedClose) => c.revokedCommitPublished.irrevocablySpent.values.toSeq
-              case _ => Nil
+            val confirmedTxs = closingType_opt match {
+              case Some(c: Closing.LocalClose) => c.localCommitPublished.irrevocablySpent.values.toSet
+              case Some(c: Closing.RemoteClose) => c.remoteCommitPublished.irrevocablySpent.values.toSet
+              case Some(c: Closing.RevokedClose) => c.revokedCommitPublished.irrevocablySpent.values.toSet
+              case Some(c: Closing.RecoveryClose) => c.remoteCommitPublished.irrevocablySpent.values.toSet
+              case Some(_: Closing.MutualClose) => Set.empty
+              case None => Set.empty
             }
+            val channelKeys = nodeParams.channelKeyManager.channelKeys(d.commitments.channelParams.channelConfig, d.commitments.localChannelParams.fundingKeyPath)
             val timedOutHtlcs: Set[Long] = (closingType_opt match {
-              case Some(c: Closing.LocalClose) =>
-                val confirmedTxs = c.localCommitPublished.commitTx +: irrevocablySpent.filter(tx => Closing.isHtlcTimeout(tx, c.localCommitPublished))
-                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.params.localParams.dustLimit, tx))
-              case Some(c: Closing.RemoteClose) =>
-                val confirmedTxs = c.remoteCommitPublished.commitTx +: irrevocablySpent.filter(tx => Closing.isClaimHtlcTimeout(tx, c.remoteCommitPublished))
-                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.commitments.params.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.params.remoteParams.dustLimit, tx))
-              case _ => Seq.empty[UpdateAddHtlc]
-            }).map(_.id).toSet
+              case Some(c: Closing.LocalClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.localCommit, tx))
+              case Some(c: Closing.RemoteClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.remoteCommit, tx))
+              case Some(_: Closing.RevokedClose) => Set.empty // revoked commitments are handled using [[overriddenOutgoingHtlcs]] above
+              case Some(_: Closing.RecoveryClose) => Set.empty // we lose htlc outputs in dataloss protection scenarios (future remote commit)
+              case Some(_: Closing.MutualClose) => Set.empty
+              case None => Set.empty
+            }).map(_.id)
             overriddenHtlcs ++ timedOutHtlcs
           case _ => Set.empty
         }

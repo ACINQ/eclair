@@ -32,25 +32,24 @@ object Monitoring {
 
   object Tags {
     val BalanceType = "type"
-    val OffchainState = "state"
+    val OffChainState = "state"
     val DiffSign = "sign"
     val UtxoStatus = "status"
 
     object BalanceTypes {
-      val OnchainConfirmed = "onchain.confirmed"
-      val OnchainUnconfirmed = "onchain.unconfirmed"
-      val Offchain = "offchain"
+      val OnChainDeeplyConfirmed = "onchain.deeply-confirmed"
+      val OnChainRecentlyConfirmed = "onchain.recently-confirmed"
+      val OnChainUnconfirmed = "onchain.unconfirmed"
+      val OffChain = "offchain"
     }
 
-    object OffchainStates {
+    object OffChainStates {
       val waitForFundingConfirmed = "waitForFundingConfirmed"
       val waitForChannelReady = "waitForChannelReady"
       val normal = "normal"
       val shutdown = "shutdown"
       val negotiating = "negotiating"
-      val closingLocal = "closing-local"
-      val closingRemote = "closing-remote"
-      val closingUnknown = "closing-unknown"
+      val closing = "closing"
       val waitForPublishFutureCommitment = "waitForPublishFutureCommitment"
     }
 

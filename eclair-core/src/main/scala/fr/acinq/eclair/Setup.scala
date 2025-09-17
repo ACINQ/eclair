@@ -23,13 +23,14 @@ import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy, typed}
 import akka.pattern.after
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BlockId, ByteVector32, Satoshi, Script, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BlockId, ByteVector32, Satoshi, Script, ScriptElt, addressToPublicKeyScript}
+import fr.acinq.eclair.NodeParams.hashFromChain
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
-import fr.acinq.eclair.blockchain.bitcoind.{OnchainPubkeyRefresher, ZmqWatcher}
+import fr.acinq.eclair.blockchain.bitcoind.{OnChainAddressRefresher, ZmqWatcher}
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.channel.fsm.Channel
@@ -44,6 +45,7 @@ import fr.acinq.eclair.payment.offer.{DefaultOfferHandler, OfferManager}
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{AsyncPaymentTriggerer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
+import fr.acinq.eclair.reputation.ReputationRecorder
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
 import fr.acinq.eclair.wire.protocol.NodeAddress
@@ -97,11 +99,18 @@ class Setup(val datadir: File,
   val config = system.settings.config.getConfig("eclair")
   val Seeds(nodeSeed, channelSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
   val chain = config.getString("chain")
+  val chainCheckTx = chain match {
+    case "mainnet" => Some("2157b554dcfda405233906e461ee593875ae4b1b97615872db6a25130ecc1dd6") // coinbase of #500000
+    case "testnet" => Some("8f38a0dd41dc0ae7509081e262d791f8d53ed6f884323796d5ec7b0966dd3825") // coinbase of #1500000
+    case "testnet4" => Some("5c50d460b3b98ea0c70baa0f50d1f0cc6ffa553788b4a7e23918bcdd558828fa") // coinbase of #40000
+    case "signet" => if (config.hasPath("bitcoind.signet-check-tx") && config.getString("bitcoind.signet-check-tx").nonEmpty) Some(config.getString("bitcoind.signet-check-tx")) else None
+    case "regtest" => None
+  }
 
   val chaindir = new File(datadir, chain)
   chaindir.mkdirs()
-  val nodeKeyManager = new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
-  val channelKeyManager = new LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
+  val nodeKeyManager = LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
+  val channelKeyManager = LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
 
   /**
    * This counter holds the current blockchain height.
@@ -156,12 +165,9 @@ class Setup(val datadir: File,
             .filter(value => (value \ "spendable").extract[Boolean])
             .map(value => (value \ "address").extract[String])
         }
-      _ <- chain match {
-        case "mainnet" => bitcoinClient.invoke("getrawtransaction", "2157b554dcfda405233906e461ee593875ae4b1b97615872db6a25130ecc1dd6") // coinbase of #500000
-        case "testnet" => bitcoinClient.invoke("getrawtransaction", "8f38a0dd41dc0ae7509081e262d791f8d53ed6f884323796d5ec7b0966dd3825") // coinbase of #1500000
-        case "testnet4" => bitcoinClient.invoke("getrawtransaction", "5c50d460b3b98ea0c70baa0f50d1f0cc6ffa553788b4a7e23918bcdd558828fa") // coinbase of #40000
-        case "signet" => bitcoinClient.invoke("getrawtransaction", "ff1027486b628b2d160859205a3401fb2ee379b43527153b0b50a92c17ee7955") // coinbase of #5000
-        case "regtest" => Future.successful(())
+      _ <- chainCheckTx match {
+        case Some(txid) => bitcoinClient.invoke("getrawtransaction", txid)
+        case None => Future.successful(())
       }
     } yield BitcoinStatus(bitcoinVersion, chainHash, ibd, progress, blocks, headers, unspentAddresses)
 
@@ -177,6 +183,7 @@ class Setup(val datadir: File,
     }
 
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      chainHash = hashFromChain(chain),
       rpcAuthMethod = rpcAuthMethod,
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"),
@@ -230,11 +237,11 @@ class Setup(val datadir: File,
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
-          minimum = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.minimum")))),
-          slow = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.slow")))),
-          medium = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.medium")))),
-          fast = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.fast")))),
-          fastest = FeeratePerKB(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.fastest")))),
+          minimum = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.minimum"))).perKB,
+          slow = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.slow"))).perKB,
+          medium = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.medium"))).perKB,
+          fast = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.fast"))).perKB,
+          fastest = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.default-feerates.fastest"))).perKB,
         )
         feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
         confDefaultFeerates
@@ -262,6 +269,7 @@ class Setup(val datadir: File,
       _ <- feeratesRetrieved.future
 
       finalPubkey = new AtomicReference[PublicKey](null)
+      finalPubkeyScript = new AtomicReference[Seq[ScriptElt]](null)
       pubkeyRefreshDelay = FiniteDuration(config.getDuration("bitcoind.final-pubkey-refresh-delay").getSeconds, TimeUnit.SECONDS)
       // there are 3 possibilities regarding onchain key management:
       // 1) there is no `eclair-signer.conf` file in Eclair's data directory, Eclair will not manage Bitcoin core keys, and Eclair's API will not return bitcoin core descriptors. This is the default mode.
@@ -270,18 +278,27 @@ class Setup(val datadir: File,
       // This is how you would create a new bitcoin wallet whose private keys are managed by Eclair.
       // 3) there is an `eclair-signer.conf` file in Eclair's data directory, and the name of the wallet set in `eclair-signer.conf` matches the `eclair.bitcoind.wallet` setting in `eclair.conf`.
       // Eclair will assume that this is a watch-only bitcoin wallet that has been created from descriptors generated by Eclair, and will manage its private keys, and here we pass the onchain key manager to our bitcoin client.
-      bitcoinClient = new BitcoinCoreClient(bitcoin, nodeParams.liquidityAdsConfig.lockUtxos, if (bitcoin.wallet == onChainKeyManager_opt.map(_.walletName)) onChainKeyManager_opt else None) with OnchainPubkeyCache {
-        val refresher: typed.ActorRef[OnchainPubkeyRefresher.Command] = system.spawn(Behaviors.supervise(OnchainPubkeyRefresher(this, finalPubkey, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
+      bitcoinClient = new BitcoinCoreClient(bitcoin, nodeParams.liquidityAdsConfig.lockUtxos, if (bitcoin.wallet == onChainKeyManager_opt.map(_.walletName)) onChainKeyManager_opt else None) with OnChainPubkeyCache {
+        val refresher: typed.ActorRef[OnChainAddressRefresher.Command] = system.spawn(Behaviors.supervise(OnChainAddressRefresher(this, finalPubkey, finalPubkeyScript, pubkeyRefreshDelay)).onFailure(typed.SupervisorStrategy.restart), name = "onchain-address-manager")
 
         override def getP2wpkhPubkey(renew: Boolean): PublicKey = {
           val key = finalPubkey.get()
-          if (renew) refresher ! OnchainPubkeyRefresher.Renew
+          if (renew) refresher ! OnChainAddressRefresher.RenewPubkey
           key
+        }
+
+        override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = {
+          val script = finalPubkeyScript.get()
+          if (renew) refresher ! OnChainAddressRefresher.RenewPubkeyScript
+          script
         }
       }
       _ = if (bitcoinClient.useEclairSigner) logger.info("using eclair to sign bitcoin core transactions")
       initialPubkey <- bitcoinClient.getP2wpkhPubkey()
       _ = finalPubkey.set(initialPubkey)
+      // We use the default address type configured on the Bitcoin Core node.
+      initialPubkeyScript <- bitcoinClient.getReceivePublicKeyScript(addressType_opt = None)
+      _ = finalPubkeyScript.set(initialPubkeyScript)
 
       // If we started funding a transaction and restarted before signing it, we may have utxos that stay locked forever.
       // We want to do something about it: we can unlock them automatically, or let the node operator decide what to do.
@@ -363,7 +380,12 @@ class Setup(val datadir: File,
       paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler", SupervisorStrategy.Resume))
       triggerer = system.spawn(Behaviors.supervise(AsyncPaymentTriggerer()).onFailure(typed.SupervisorStrategy.resume), name = "async-payment-triggerer")
       peerReadyManager = system.spawn(Behaviors.supervise(PeerReadyManager()).onFailure(typed.SupervisorStrategy.restart), name = "peer-ready-manager")
-      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
+      reputationRecorder_opt = if (nodeParams.relayParams.peerReputationConfig.enabled) {
+        Some(system.spawn(Behaviors.supervise(ReputationRecorder(nodeParams.relayParams.peerReputationConfig)).onFailure(typed.SupervisorStrategy.resume), name = "reputation-recorder"))
+      } else {
+        None
+      }
+      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler, reputationRecorder_opt, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
       _ = relayer ! PostRestartHtlcCleaner.Init(channels)
       // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
       // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
@@ -382,7 +404,7 @@ class Setup(val datadir: File,
 
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
 
-      balanceActor = system.spawn(BalanceActor(nodeParams.db, bitcoinClient, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
+      balanceActor = system.spawn(BalanceActor(bitcoinClient, nodeParams.channelConf.minDepth, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
 
       postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard, router.toTyped, register, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
 
@@ -472,7 +494,7 @@ case class Kit(nodeParams: NodeParams,
                postman: typed.ActorRef[Postman.Command],
                offerManager: typed.ActorRef[OfferManager.Command],
                defaultOfferHandler: typed.ActorRef[OfferManager.HandlerCommand],
-               wallet: OnChainWallet with OnchainPubkeyCache)
+               wallet: OnChainWallet with OnChainPubkeyCache)
 
 object Kit {
 

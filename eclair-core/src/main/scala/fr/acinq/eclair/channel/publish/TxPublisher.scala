@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.ConfirmationTarget
 import fr.acinq.eclair.channel.FullCommitment
-import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
+import fr.acinq.eclair.transactions.Transactions.ForceCloseTransaction
 import fr.acinq.eclair.{BlockHeight, Logs, NodeParams}
 
 import java.util.UUID
@@ -80,29 +80,25 @@ object TxPublisher {
    * NB: the parent tx should only be provided when it's being concurrently published, it's unnecessary when it is
    * confirmed or when the tx has a relative delay.
    *
-   * @param amount amount we are claiming with this transaction.
    * @param fee the fee that we're actually paying: it must be set to the mining fee, unless our peer is paying it (in
    *            which case it must be set to zero here).
    */
-  case class PublishFinalTx(tx: Transaction, input: OutPoint, amount: Satoshi, desc: String, fee: Satoshi, parentTx_opt: Option[TxId]) extends PublishTx
+  case class PublishFinalTx(tx: Transaction, input: OutPoint, desc: String, fee: Satoshi, parentTx_opt: Option[TxId]) extends PublishTx
   object PublishFinalTx {
-    def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[TxId]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.amountIn, txInfo.desc, fee, parentTx_opt)
+    def apply(txInfo: ForceCloseTransaction, parentTx_opt: Option[TxId]): PublishFinalTx = PublishFinalTx(txInfo.sign(), txInfo.input.outPoint, txInfo.desc, txInfo.fee, parentTx_opt)
   }
 
   /**
    * Publish an unsigned transaction that can be RBF-ed.
    *
-   * @param commitTx commitment transaction that this transaction is spending.
+   * @param txInfo transaction to publish.
+   * @param commitTx signed commitment transaction from which [[txInfo]] is a descendant.
+   * @param commitment commitment matching the provided [[commitTx]].
+   * @param confirmationTarget confirmation target for this transaction used to choose its feerate and RBF attempts.
    */
-  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitment: FullCommitment, commitTx: Transaction) extends PublishTx {
-    override def input: OutPoint = txInfo.input.outPoint
-    override def desc: String = txInfo.desc
-
-    /** True if we're trying to bump our local commit with an anchor transaction. */
-    lazy val isLocalCommitAnchor = txInfo match {
-      case txInfo: ClaimLocalAnchorOutputTx => txInfo.input.outPoint.txid == commitment.localCommit.commitTxAndRemoteSig.commitTx.tx.txid
-      case _ => false
-    }
+  case class PublishReplaceableTx(txInfo: ForceCloseTransaction, commitTx: Transaction, commitment: FullCommitment, confirmationTarget: ConfirmationTarget) extends PublishTx {
+    override val input: OutPoint = txInfo.input.outPoint
+    override val desc: String = txInfo.desc
   }
 
   sealed trait PublishTxResult extends Command { def cmd: PublishTx }
@@ -136,7 +132,7 @@ object TxPublisher {
   // @formatter:on
 
   // @formatter:off
-  case class ChannelContext(remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {
+  private case class ChannelContext(remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {
     def mdc(): Map[String, String] = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = channelId_opt)
   }
   case class TxPublishContext(id: UUID, remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {
@@ -232,13 +228,10 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         }
 
       case cmd: PublishReplaceableTx =>
-        val proposedConfirmationTarget = cmd.txInfo.confirmationTarget
+        val proposedConfirmationTarget = cmd.confirmationTarget
         val attempts = pending.getOrElse(cmd.input, PublishAttempts.empty)
         attempts.replaceableAttempt_opt match {
           case Some(currentAttempt) =>
-            if (currentAttempt.cmd.txInfo.tx.txOut.headOption.map(_.publicKeyScript) != cmd.txInfo.tx.txOut.headOption.map(_.publicKeyScript)) {
-              log.error("replaceable {} sends to a different address than the previous attempt, this should not happen: proposed={}, previous={}", currentAttempt.cmd.desc, cmd.txInfo, currentAttempt.cmd.txInfo)
-            }
             val currentConfirmationTarget = currentAttempt.confirmationTarget
 
             def updateConfirmationTarget() = {

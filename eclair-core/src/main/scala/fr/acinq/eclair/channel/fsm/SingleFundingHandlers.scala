@@ -79,7 +79,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
             // if we are funder, we never give up
             // we cannot correctly set the fee, but it was correctly set when we initially published the transaction
             log.debug("republishing the funding tx...")
-            txPublisher ! PublishFinalTx(fundingTx, fundingTx.txIn.head.outPoint, 0 sat, "funding", 0 sat, None)
+            txPublisher ! PublishFinalTx(fundingTx, fundingTx.txIn.head.outPoint, "funding", 0 sat, None)
             // we also check if the funding tx has been double-spent
             checkDoubleSpent(fundingTx)
             context.system.scheduler.scheduleOnce(1 day, blockchain.toClassic, GetTxWithMeta(self, txid))
@@ -112,23 +112,6 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
     val error = Error(d.channelId, exc.getMessage)
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(exc), isFatal = true))
     goto(CLOSED) sending error
-  }
-
-  def singleFundingMinDepth(d: ChannelDataWithCommitments): Long = {
-    val minDepth_opt = if (d.commitments.params.localParams.isChannelOpener) {
-      d.commitments.params.minDepthFunder(nodeParams.channelConf.minDepth)
-    } else {
-      // When we're not the channel initiator we scale the min_depth confirmations depending on the funding amount.
-      d.commitments.params.minDepthFundee(nodeParams.channelConf.minDepth, d.commitments.latest.commitInput.txOut.amount)
-    }
-    val minDepth = minDepth_opt.getOrElse {
-      val defaultMinDepth = nodeParams.channelConf.minDepth
-      // If we are in state WAIT_FOR_FUNDING_CONFIRMED, then the computed minDepth should be > 0, otherwise we would
-      // have skipped this state. Maybe the computation method was changed and eclair was restarted?
-      log.warning("min_depth should be defined since we're waiting for the funding tx to confirm, using default minDepth={}", defaultMinDepth)
-      defaultMinDepth.toLong
-    }
-    minDepth
   }
 
 }

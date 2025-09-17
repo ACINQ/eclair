@@ -36,17 +36,15 @@ object FeatureSupport {
 
 /** Not a sealed trait, so it can be extended by plugins. */
 trait Feature {
-
   def rfcName: String
   def mandatory: Int
   def optional: Int = mandatory + 1
-
   def supportBit(support: FeatureSupport): Int = support match {
     case Mandatory => mandatory
     case Optional => optional
   }
 
-  override def toString = rfcName
+  override def toString: String = rfcName
 }
 
 /** Feature scope as defined in Bolt 9. */
@@ -68,11 +66,9 @@ trait Bolt12Feature extends InvoiceFeature
  */
 trait PermanentChannelFeature extends InitFeature // <- not in the spec
 /**
- * Permanent channel feature negotiated in the channel type. Those features take precedence over permanent channel
- * features negotiated in init messages. For example, if the channel type is option_static_remotekey, then even if
- * the option_anchor_outputs feature is supported by both peers, it won't apply to the channel.
+ * Features that can be included in the [[fr.acinq.eclair.wire.protocol.ChannelTlv.ChannelTypeTlv]].
  */
-trait ChannelTypeFeature extends PermanentChannelFeature
+trait ChannelTypeFeature extends InitFeature
 // @formatter:on
 
 case class UnknownFeature(bitIndex: Int)
@@ -259,6 +255,7 @@ object Features {
     val mandatory = 26
   }
 
+  // Note that this is a permanent channel feature because it permanently affects the channel reserve, which is set at 1%.
   case object DualFunding extends Feature with InitFeature with NodeFeature with PermanentChannelFeature {
     val rfcName = "option_dual_fund"
     val mandatory = 28
@@ -268,6 +265,11 @@ object Features {
   case object Quiescence extends Feature with InitFeature {
     val rfcName = "option_quiesce"
     val mandatory = 34
+  }
+
+  case object AttributionData extends Feature with InitFeature with NodeFeature with Bolt11Feature {
+    val rfcName = "option_attribution_data"
+    val mandatory = 36
   }
 
   case object OnionMessages extends Feature with InitFeature with NodeFeature {
@@ -285,7 +287,7 @@ object Features {
     val mandatory = 44
   }
 
-  case object ScidAlias extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+  case object ScidAlias extends Feature with InitFeature with NodeFeature with ChannelTypeFeature with PermanentChannelFeature {
     val rfcName = "option_scid_alias"
     val mandatory = 46
   }
@@ -295,7 +297,7 @@ object Features {
     val mandatory = 48
   }
 
-  case object ZeroConf extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+  case object ZeroConf extends Feature with InitFeature with NodeFeature with ChannelTypeFeature with PermanentChannelFeature {
     val rfcName = "option_zeroconf"
     val mandatory = 50
   }
@@ -339,6 +341,16 @@ object Features {
     val mandatory = 154
   }
 
+  case object SimpleTaprootChannelsPhoenix extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot_phoenix"
+    val mandatory = 564
+  }
+
+  case object SimpleTaprootChannelsStaging extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot_staging"
+    val mandatory = 180
+  }
+
   /**
    * Activate this feature to provide on-the-fly funding to remote nodes, as specified in bLIP 36: https://github.com/lightning/blips/blob/master/blip-0036.md.
    * TODO: add NodeFeature once bLIP is merged.
@@ -373,6 +385,7 @@ object Features {
     ShutdownAnySegwit,
     DualFunding,
     Quiescence,
+    AttributionData,
     OnionMessages,
     ProvideStorage,
     ChannelType,
@@ -381,6 +394,8 @@ object Features {
     ZeroConf,
     KeySend,
     SimpleClose,
+    SimpleTaprootChannelsPhoenix,
+    SimpleTaprootChannelsStaging,
     WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
@@ -400,6 +415,7 @@ object Features {
     TrampolinePaymentPrototype -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil),
     SimpleClose -> (ShutdownAnySegwit :: Nil),
+    SimpleTaprootChannelsPhoenix -> (ChannelType :: SimpleClose :: Nil),
     AsyncPaymentPrototype -> (TrampolinePaymentPrototype :: Nil),
     OnTheFlyFunding -> (SplicePrototype :: Nil),
     FundingFeeCredit -> (OnTheFlyFunding :: Nil)

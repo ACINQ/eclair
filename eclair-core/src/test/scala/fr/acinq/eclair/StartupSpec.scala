@@ -39,8 +39,8 @@ class StartupSpec extends AnyFunSuite {
   def makeNodeParamsWithDefaults(conf: Config): NodeParams = {
     val blockCount = new AtomicLong(0)
     val feerates = new AtomicReference(FeeratesPerKw.single(feeratePerKw))
-    val nodeKeyManager = new LocalNodeKeyManager(randomBytes32(), chainHash = Block.Testnet3GenesisBlock.hash)
-    val channelKeyManager = new LocalChannelKeyManager(randomBytes32(), chainHash = Block.Testnet3GenesisBlock.hash)
+    val nodeKeyManager = LocalNodeKeyManager(randomBytes32(), chainHash = Block.Testnet3GenesisBlock.hash)
+    val channelKeyManager = LocalChannelKeyManager(randomBytes32(), chainHash = Block.Testnet3GenesisBlock.hash)
     val db = TestDatabases.inMemoryDb()
     NodeParams.makeNodeParams(conf, UUID.fromString("01234567-0123-4567-89ab-0123456789ab"), nodeKeyManager, channelKeyManager, None, None, db, blockCount, feerates)
   }
@@ -340,9 +340,9 @@ class StartupSpec extends AnyFunSuite {
     )
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")) == FeerateTolerance(0.1, 15.0, FeeratePerKw(FeeratePerByte(15 sat)), DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b")) == FeerateTolerance(0.75, 5.0, FeeratePerKw(FeeratePerByte(5 sat)), DustTolerance(40_000 sat, closeOnUpdateFeeOverflow = false)))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7")) == FeerateTolerance(0.5, 10.0, FeeratePerKw(FeeratePerByte(10 sat)), DustTolerance(50_000 sat, closeOnUpdateFeeOverflow = false)))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")) == FeerateTolerance(0.1, 15.0, FeeratePerByte(15 sat).perKw, DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"03462779ad4aad39514614751a71085f2f10e1c7a593e4e030efb5b8721ce55b0b")) == FeerateTolerance(0.75, 5.0, FeeratePerByte(5 sat).perKw, DustTolerance(40_000 sat, closeOnUpdateFeeOverflow = false)))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7")) == FeerateTolerance(0.5, 10.0, FeeratePerByte(10 sat).perKw, DustTolerance(50_000 sat, closeOnUpdateFeeOverflow = false)))
   }
 
   test("NodeParams should fail if htlc-minimum-msat is set to 0") {

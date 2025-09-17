@@ -489,9 +489,14 @@
     "bolt12": "lno1qcqcqzs9g9xyjs69zcssyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqsz"
   },
   {
-    "description": "Malformed: invalid currency UTF-8",
+    "description": "Malformed: invalid currency UTF-8 (2-letter code)",
     "valid": false,
     "bolt12": "lno1qcpgqsg2q4q5cj2rg5tzzqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqg"
+  },
+  {
+    "description": "Malformed: invalid currency UTF-8 (3-letter code)",
+    "valid": false,
+    "bolt12": "lno1qcplllhapqpq86q2q4qkc6trv5tzzq6muh550qsfva9fdes0ruph7ctk2s8aqq06r4jxj3msc448wzwy9s"
   },
   {
     "description": "Malformed: truncated description UTF-8",
@@ -572,6 +577,11 @@
     "description": "Missing offer_description, but has offer_amount",
     "valid": false,
     "bolt12": "lno1pqpzwyqkyypwa3eyt44h6txtxquqh7lz5djge4afgfjn7k4rgrkuag0jsd5xvxg"
+  },
+  {
+    "description": "Missing offer_amount with offer_currency",
+    "valid": false,
+    "bolt12": "lno1qcp4256ypgx9getnwss8vetrw3hhyuckyypwa3eyt44h6txtxquqh7lz5djge4afgfjn7k4rgrkuag0jsd5xvxg"
   },
   {
     "description": "Missing offer_issuer_id and no offer_path",

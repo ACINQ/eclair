@@ -18,6 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.eventstream.EventStream.Publish
+import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxId, TxOut}
@@ -50,16 +51,16 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
   val channelIdAtLimit2: ByteVector32 = ByteVector32(hex"0999999990000000000000000000000000000000000000000000000000000000")
 
   // This peer is whitelisted and starts tests with pending channels at the rate-limit (which should be ignored because it is whitelisted).
-  val peerOnWhitelistAtLimit = randomKey().publicKey
+  val peerOnWhitelistAtLimit: PublicKey = randomKey().publicKey
   // The following two peers start tests already at their rate-limit.
   val peerAtLimit1: PublicKey = randomKey().publicKey
   val peerAtLimit2: PublicKey = randomKey().publicKey
-  val peersAtLimit = Seq(peerAtLimit1, peerAtLimit2)
+  val peersAtLimit: Seq[PublicKey] = Seq(peerAtLimit1, peerAtLimit2)
   // The following two peers start tests with one available slot before reaching the rate-limit.
   val peerBelowLimit1: PublicKey = randomKey().publicKey
   val peerBelowLimit2: PublicKey = randomKey().publicKey
-  val peersBelowLimit = Seq(peerBelowLimit1, peerBelowLimit2)
-  val publicPeers = Seq(peerOnWhitelistAtLimit, peerAtLimit1, peerAtLimit2, peerBelowLimit1, peerBelowLimit2)
+  val peersBelowLimit: Seq[PublicKey] = Seq(peerBelowLimit1, peerBelowLimit2)
+  val publicPeers: Seq[PublicKey] = Seq(peerOnWhitelistAtLimit, peerAtLimit1, peerAtLimit2, peerBelowLimit1, peerBelowLimit2)
   // This peer has one pending private channel.
   val privatePeer1: PublicKey = randomKey().publicKey
   // This peer has one private channel that isn't pending.
@@ -72,7 +73,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     val probe = TestProbe[PendingChannelsRateLimiter.Response]()
     val nodeParams = TestConstants.Alice.nodeParams.copy(channelConf = TestConstants.Alice.nodeParams.channelConf.copy(maxPendingChannelsPerPeer = maxPendingChannelsPerPeer, maxTotalPendingChannelsPrivateNodes = maxTotalPendingChannelsPrivateNodes, channelOpenerWhitelist = Set(peerOnWhitelistAtLimit)))
     val tx = Transaction.read("010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000")
-    val closingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(10_000 sat, Nil), Nil), tx, None)
+    val closingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(10_000 sat, Nil)), tx, None)
     val channelsOnWhitelistAtLimit: Seq[PersistentChannelData] = Seq(
       DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerOnWhitelistAtLimit, randomBytes32()), BlockHeight(0), None, Left(FundingCreated(randomBytes32(), TxId(ByteVector32.Zeroes), 3, randomBytes64()))),
       DATA_WAIT_FOR_CHANNEL_READY(commitments(peerOnWhitelistAtLimit, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None)),
@@ -90,13 +91,13 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     )
     val channelsBelowLimit2 = Seq(
       DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments(peerBelowLimit2, channelIdBelowLimit2), ShortIdAliases(ShortChannelId.generateLocalAlias(), None)),
-      DATA_NORMAL(commitments(peerBelowLimit2, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None), None, null, None, None, None, SpliceStatus.NoSplice),
-      DATA_SHUTDOWN(commitments(peerBelowLimit2, randomBytes32()), Shutdown(randomBytes32(), ByteVector.empty), Shutdown(randomBytes32(), ByteVector.empty), None),
+      DATA_NORMAL(commitments(peerBelowLimit2, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None), None, null, SpliceStatus.NoSplice, None, None, None),
+      DATA_SHUTDOWN(commitments(peerBelowLimit2, randomBytes32()), Shutdown(randomBytes32(), ByteVector.empty), Shutdown(randomBytes32(), ByteVector.empty), CloseStatus.Initiator(None)),
       DATA_CLOSING(commitments(peerBelowLimit2, randomBytes32()), BlockHeight(0), ByteVector.empty, List(), List(closingTx))
     )
     val privateChannels = Seq(
       DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments(privatePeer1, channelIdPrivate1), ShortIdAliases(ShortChannelId.generateLocalAlias(), None)),
-      DATA_NORMAL(commitments(privatePeer2, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None), None, null, None, None, None, SpliceStatus.NoSplice),
+      DATA_NORMAL(commitments(privatePeer2, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None), None, null, SpliceStatus.NoSplice, None, None, None),
     )
     val initiatorChannels = Seq(
       DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(peerBelowLimit1, randomBytes32(), isOpener = true), BlockHeight(0), None, Left(FundingCreated(channelIdAtLimit1, TxId(ByteVector32.Zeroes), 3, randomBytes64()))),
@@ -114,8 +115,9 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
 
   def commitments(remoteNodeId: PublicKey, channelId: ByteVector32, isOpener: Boolean = false): Commitments = {
     val ann = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(42), TestConstants.Alice.nodeParams.nodeId, remoteNodeId, randomKey().publicKey, randomKey().publicKey, randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64())
-    val commitments = CommitmentsSpec.makeCommitments(500_000 msat, 400_000 msat, TestConstants.Alice.nodeParams.nodeId, remoteNodeId, announcement_opt = Some(ann))
-    commitments.copy(params = commitments.params.copy(channelId = channelId, localParams = commitments.params.localParams.copy(isChannelOpener = isOpener)))
+    CommitmentsSpec.makeCommitments(500_000 msat, 400_000 msat, TestConstants.Alice.nodeParams.nodeId, remoteNodeId, announcement_opt = Some(ann))
+      .modify(_.channelParams.channelId).setTo(channelId)
+      .modify(_.channelParams.localParams.isChannelOpener).setTo(isOpener)
   }
 
   def processRestoredChannels(f: FixtureParam, restoredChannels: Seq[PersistentChannelData]): Unit = {
@@ -318,8 +320,8 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     val channels = Seq(
       DATA_WAIT_FOR_CHANNEL_READY(commitments(randomKey().publicKey, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None)),
       DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments(randomKey().publicKey, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None)),
-      DATA_NORMAL(commitments(randomKey().publicKey, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None), None, null, None, None, None, SpliceStatus.NoSplice),
-      DATA_SHUTDOWN(commitments(randomKey().publicKey, randomBytes32()), Shutdown(randomBytes32(), ByteVector.empty), Shutdown(randomBytes32(), ByteVector.empty), None),
+      DATA_NORMAL(commitments(randomKey().publicKey, randomBytes32()), ShortIdAliases(ShortChannelId.generateLocalAlias(), None), None, null, SpliceStatus.NoSplice, None, None, None),
+      DATA_SHUTDOWN(commitments(randomKey().publicKey, randomBytes32()), Shutdown(randomBytes32(), ByteVector.empty), Shutdown(randomBytes32(), ByteVector.empty), CloseStatus.Initiator(None)),
       DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments(randomKey().publicKey, randomBytes32()), BlockHeight(0), None, Left(FundingCreated(randomBytes32(), TxId(ByteVector32.Zeroes), 3, randomBytes64()))),
     )
     val limiter = testKit.spawn(PendingChannelsRateLimiter(nodeParams, router.ref, channels))

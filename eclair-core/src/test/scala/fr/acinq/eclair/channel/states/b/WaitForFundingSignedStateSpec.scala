@@ -16,21 +16,22 @@
 
 package fr.acinq.eclair.channel.states.b
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
+import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, Error, FundingCreated, FundingSigned, Init, OpenChannel}
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, Error, FundingCreated, FundingSigned, OpenChannel}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -50,27 +51,18 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val setup = init(Alice.nodeParams, Bob.nodeParams, tags = test.tags)
     import setup._
 
-    val (fundingSatoshis, pushMsat) = if (test.tags.contains(LargeChannel)) {
+    val channelParams = computeChannelParams(setup, test.tags)
+    val (fundingAmount, pushAmount) = if (test.tags.contains(LargeChannel)) {
       (Btc(5).toSatoshi, TestConstants.initiatorPushAmount)
     } else {
       (TestConstants.fundingSatoshis, TestConstants.initiatorPushAmount)
     }
-
-    val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags(announceChannel = false)
-    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags, channelFlags)
-    val commitFeerate = channelType.commitmentFormat match {
-      case Transactions.DefaultCommitmentFormat => TestConstants.feeratePerKw
-      case _: Transactions.AnchorOutputsCommitmentFormat => TestConstants.anchorOutputsFeeratePerKw
-    }
-    val aliceInit = Init(aliceParams.initFeatures)
-    val bobInit = Init(bobParams.initFeatures)
     val listener = TestProbe()
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingSatoshis, dualFunded = false, commitFeerate, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(pushMsat), requireConfirmedInputs = false, requestFunding_opt = None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
+      alice ! channelParams.initChannelAlice(fundingAmount, pushAmount_opt = Some(pushAmount))
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      bob ! channelParams.initChannelBob()
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -111,6 +103,23 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Created]
   }
 
+  test("recv FundingSigned with valid signature (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    val listener = TestProbe()
+    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+    val fundingSigned = bob2alice.expectMsgType[FundingSigned]
+    assert(fundingSigned.sigOrPartialSig.isInstanceOf[PartialSignatureWithNonce])
+    bob2alice.forward(alice, fundingSigned)
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
+    val fundingTxId = watchConfirmed.txId
+    assert(watchConfirmed.minDepth == 6)
+    val txPublished = listener.expectMsgType[TransactionPublished]
+    assert(txPublished.tx.txid == fundingTxId)
+    assert(txPublished.miningFee > 0.sat)
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Created]
+  }
+
   test("recv FundingSigned with valid signature (wumbo)", Tag(LargeChannel)) { f =>
     import f._
     bob2alice.expectMsgType[FundingSigned]
@@ -125,6 +134,16 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
     // sending an invalid sig
     alice ! FundingSigned(ByteVector32.Zeroes, ByteVector64.Zeroes)
+    awaitCond(alice.stateName == CLOSED)
+    alice2bob.expectMsgType[Error]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
+    listener.expectMsgType[ChannelAborted]
+  }
+
+  test("recv FundingSigned with invalid signature (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    // sending an invalid partial sig
+    alice ! FundingSigned(ByteVector32.Zeroes, PartialSignatureWithNonce(randomBytes32(), NonceGenerator.signingNonce(randomKey().publicKey, randomKey().publicKey, randomTxId()).publicNonce))
     awaitCond(alice.stateName == CLOSED)
     alice2bob.expectMsgType[Error]
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]

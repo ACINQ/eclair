@@ -125,7 +125,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
         case ChannelStateChanged(_, channelId, _, remoteNodeId, WAIT_FOR_CHANNEL_READY | WAIT_FOR_DUAL_FUNDING_READY, NORMAL, Some(commitments)) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Created).increment()
           val event = ChannelEvent.EventType.Created
-          auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.latest.capacity, commitments.params.localParams.isChannelOpener, !commitments.announceChannel, event))
+          auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.latest.capacity, commitments.localChannelParams.isChannelOpener, !commitments.announceChannel, event))
           channelsDb.updateChannelMeta(channelId, event)
         case ChannelStateChanged(_, _, _, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
         case ChannelStateChanged(_, channelId, _, _, OFFLINE, SYNCING, _) =>
@@ -139,7 +139,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
       ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closed).increment()
       val event = ChannelEvent.EventType.Closed(e.closingType)
       val capacity = e.commitments.latest.capacity
-      auditDb.add(ChannelEvent(e.channelId, e.commitments.params.remoteParams.nodeId, capacity, e.commitments.params.localParams.isChannelOpener, !e.commitments.announceChannel, event))
+      auditDb.add(ChannelEvent(e.channelId, e.commitments.remoteNodeId, capacity, e.commitments.localChannelParams.isChannelOpener, !e.commitments.announceChannel, event))
       channelsDb.updateChannelMeta(e.channelId, event)
 
     case u: ChannelUpdateParametersChanged =>

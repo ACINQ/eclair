@@ -23,13 +23,16 @@ import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.reputation.Reputation
+import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong, randomKey}
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuiteLike
-import scodec.bits.HexStringSyntax
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
 import scala.concurrent.duration._
@@ -37,16 +40,6 @@ import scala.concurrent.duration._
 class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsBase {
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
-
-  test("scale funding tx min depth according to funding amount") {
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(1)) == 5)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 6, Btc(1)) == 6) // 5 conf would be enough but we use min-depth=6
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(3.125)) == 11) // we use scaling_factor=10 and a fixed block reward of 3.125BTC
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(6.25)) == 21)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(10)) == 33)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(25)) == 81)
-    assert(ChannelParams.minDepthScaled(defaultMinDepth = 3, Btc(50)) == 161)
-  }
 
   test("compute refresh delay") {
     import org.scalatest.matchers.should.Matchers._
@@ -57,7 +50,15 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     Helpers.nextChannelUpdateRefresh(TimestampSecond.now()).toSeconds should equal(10 * 24 * 3600L +- 100)
   }
 
-  case class Fixture(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceCommitPublished: LocalCommitPublished, aliceHtlcs: Set[UpdateAddHtlc], bob: TestFSMRef[ChannelState, ChannelData, Channel], bobCommitPublished: RemoteCommitPublished, bobHtlcs: Set[UpdateAddHtlc], probe: TestProbe)
+  case class Fixture(alice: TestFSMRef[ChannelState, ChannelData, Channel],
+                     aliceHtlcs: Set[UpdateAddHtlc],
+                     aliceHtlcSuccessTxs: Seq[HtlcSuccessTx],
+                     aliceHtlcTimeoutTxs: Seq[HtlcTimeoutTx],
+                     bob: TestFSMRef[ChannelState, ChannelData, Channel],
+                     bobHtlcs: Set[UpdateAddHtlc],
+                     bobClaimHtlcSuccessTxs: Seq[ClaimHtlcSuccessTx],
+                     bobClaimHtlcTimeoutTxs: Seq[ClaimHtlcTimeoutTx],
+                     probe: TestProbe)
 
   def setupHtlcs(testTags: Set[String] = Set.empty): Fixture = {
     val probe = TestProbe()
@@ -68,141 +69,109 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     awaitCond(bob.stateName == NORMAL)
     // We have two identical HTLCs (MPP):
     val (_, htlca1a) = addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
-    val aliceMppCmd = CMD_ADD_HTLC(TestProbe().ref, 15_000_000 msat, htlca1a.paymentHash, htlca1a.cltvExpiry, htlca1a.onionRoutingPacket, None, 1.0, None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
+    val aliceMppCmd = CMD_ADD_HTLC(TestProbe().ref, 15_000_000 msat, htlca1a.paymentHash, htlca1a.cltvExpiry, htlca1a.onionRoutingPacket, None, Reputation.Score.max, None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
     val htlca1b = addHtlc(aliceMppCmd, alice, bob, alice2bob, bob2alice)
     val (ra2, htlca2) = addHtlc(16_000_000 msat, alice, bob, alice2bob, bob2alice)
     addHtlc(500_000 msat, alice, bob, alice2bob, bob2alice) // below dust
     crossSign(alice, bob, alice2bob, bob2alice)
     // We have two identical HTLCs (MPP):
     val (_, htlcb1a) = addHtlc(17_000_000 msat, bob, alice, bob2alice, alice2bob)
-    val bobMppCmd = CMD_ADD_HTLC(TestProbe().ref, 17_000_000 msat, htlcb1a.paymentHash, htlcb1a.cltvExpiry, htlcb1a.onionRoutingPacket, None, 1.0, None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
+    val bobMppCmd = CMD_ADD_HTLC(TestProbe().ref, 17_000_000 msat, htlcb1a.paymentHash, htlcb1a.cltvExpiry, htlcb1a.onionRoutingPacket, None, Reputation.Score.max, None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
     val htlcb1b = addHtlc(bobMppCmd, bob, alice, bob2alice, alice2bob)
     val (rb2, htlcb2) = addHtlc(18_000_000 msat, bob, alice, bob2alice, alice2bob)
     addHtlc(400_000 msat, bob, alice, bob2alice, alice2bob) // below dust
     crossSign(bob, alice, bob2alice, alice2bob)
 
     // Alice and Bob both know the preimage for only one of the two HTLCs they received.
-    alice ! CMD_FULFILL_HTLC(htlcb2.id, rb2, replyTo_opt = Some(probe.ref))
+    alice ! CMD_FULFILL_HTLC(htlcb2.id, rb2, None, replyTo_opt = Some(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
-    bob ! CMD_FULFILL_HTLC(htlca2.id, ra2, replyTo_opt = Some(probe.ref))
+    bob ! CMD_FULFILL_HTLC(htlca2.id, ra2, None, replyTo_opt = Some(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
 
     // Alice publishes her commitment.
     alice ! CMD_FORCECLOSE(probe.ref)
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
+    val commitTx = alice2blockchain.expectFinalTxPublished("commit-tx")
     awaitCond(alice.stateName == CLOSING)
 
-    // Bob detects it.
-    bob ! WatchFundingSpentTriggered(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.commitTx)
+    val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    lcp.anchorOutput_opt.foreach(_ => alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx])
+    lcp.localOutput_opt.foreach(_ => alice2blockchain.expectFinalTxPublished("local-main-delayed"))
+    // Alice is missing the preimage for 2 of the HTLCs she received.
+    assert(lcp.htlcOutputs.size == 6)
+    val htlcTxs = (0 until 4).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx]).map(_.txInfo).collect { case tx: SignedHtlcTx => tx }
+    alice2blockchain.expectWatchTxConfirmed(commitTx.tx.txid)
+    val htlcTimeoutTxs = htlcTxs.collect { case tx: HtlcTimeoutTx => tx }
+    assert(htlcTimeoutTxs.length == 3)
+    assert(lcp.outgoingHtlcs.values.toSet == htlcTimeoutTxs.map(_.htlcId).toSet)
+    val htlcSuccessTxs = htlcTxs.collect { case tx: HtlcSuccessTx => tx }
+    assert(htlcSuccessTxs.length == 1)
+    assert(lcp.incomingHtlcs.values.toSet.contains(htlcSuccessTxs.head.htlcId))
+
+    // Bob detects Alice's force-close.
+    bob ! WatchFundingSpentTriggered(commitTx.tx)
     awaitCond(bob.stateName == CLOSING)
 
-    val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
-    assert(lcp.htlcTxs.size == 6)
-    val htlcTimeoutTxs = getHtlcTimeoutTxs(lcp)
-    assert(htlcTimeoutTxs.length == 3)
-    val htlcSuccessTxs = getHtlcSuccessTxs(lcp)
-    assert(htlcSuccessTxs.length == 1)
-
     val rcp = bob.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
-    assert(rcp.claimHtlcTxs.size == 6)
-    val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(rcp)
+    rcp.anchorOutput_opt.foreach(_ => bob2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx])
+    rcp.localOutput_opt.foreach(_ => bob2blockchain.expectFinalTxPublished("remote-main-delayed"))
+    // Bob is missing the preimage for 2 of the HTLCs she received.
+    assert(rcp.htlcOutputs.size == 6)
+    val claimHtlcTxs = (0 until 4).map(_ => bob2blockchain.expectMsgType[PublishReplaceableTx])
+    bob2blockchain.expectWatchTxConfirmed(commitTx.tx.txid)
+    val claimHtlcTimeoutTxs = claimHtlcTxs.map(_.txInfo).collect { case tx: ClaimHtlcTimeoutTx => tx }
     assert(claimHtlcTimeoutTxs.length == 3)
-    val claimHtlcSuccessTxs = getClaimHtlcSuccessTxs(rcp)
+    assert(rcp.outgoingHtlcs.values.toSet == claimHtlcTimeoutTxs.map(_.htlcId).toSet)
+    val claimHtlcSuccessTxs = claimHtlcTxs.map(_.txInfo).collect { case tx: ClaimHtlcSuccessTx => tx }
     assert(claimHtlcSuccessTxs.length == 1)
+    assert(rcp.incomingHtlcs.values.toSet.contains(claimHtlcSuccessTxs.head.htlcId))
 
-    Fixture(alice, lcp, Set(htlca1a, htlca1b, htlca2), bob, rcp, Set(htlcb1a, htlcb1b, htlcb2), probe)
-  }
-
-  def identifyHtlcs(f: Fixture): Unit = {
-    import f._
-
-    val htlcTimeoutTxs = getHtlcTimeoutTxs(aliceCommitPublished)
-    val htlcSuccessTxs = getHtlcSuccessTxs(aliceCommitPublished)
-    val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(bobCommitPublished)
-    val claimHtlcSuccessTxs = getClaimHtlcSuccessTxs(bobCommitPublished)
-
-    // Valid txs should be detected:
-    htlcTimeoutTxs.foreach(tx => assert(Closing.isHtlcTimeout(tx.tx, aliceCommitPublished)))
-    htlcSuccessTxs.foreach(tx => assert(Closing.isHtlcSuccess(tx.tx, aliceCommitPublished)))
-    claimHtlcTimeoutTxs.foreach(tx => assert(Closing.isClaimHtlcTimeout(tx.tx, bobCommitPublished)))
-    claimHtlcSuccessTxs.foreach(tx => assert(Closing.isClaimHtlcSuccess(tx.tx, bobCommitPublished)))
-
-    // Invalid txs should be rejected:
-    htlcSuccessTxs.foreach(tx => assert(!Closing.isHtlcTimeout(tx.tx, aliceCommitPublished)))
-    claimHtlcTimeoutTxs.foreach(tx => assert(!Closing.isHtlcTimeout(tx.tx, aliceCommitPublished)))
-    claimHtlcSuccessTxs.foreach(tx => assert(!Closing.isHtlcTimeout(tx.tx, aliceCommitPublished)))
-    htlcTimeoutTxs.foreach(tx => assert(!Closing.isHtlcSuccess(tx.tx, aliceCommitPublished)))
-    claimHtlcTimeoutTxs.foreach(tx => assert(!Closing.isHtlcSuccess(tx.tx, aliceCommitPublished)))
-    claimHtlcSuccessTxs.foreach(tx => assert(!Closing.isHtlcSuccess(tx.tx, aliceCommitPublished)))
-    htlcTimeoutTxs.foreach(tx => assert(!Closing.isClaimHtlcTimeout(tx.tx, bobCommitPublished)))
-    htlcSuccessTxs.foreach(tx => assert(!Closing.isClaimHtlcTimeout(tx.tx, bobCommitPublished)))
-    claimHtlcSuccessTxs.foreach(tx => assert(!Closing.isClaimHtlcTimeout(tx.tx, bobCommitPublished)))
-    htlcTimeoutTxs.foreach(tx => assert(!Closing.isClaimHtlcSuccess(tx.tx, bobCommitPublished)))
-    htlcSuccessTxs.foreach(tx => assert(!Closing.isClaimHtlcSuccess(tx.tx, bobCommitPublished)))
-    claimHtlcTimeoutTxs.foreach(tx => assert(!Closing.isClaimHtlcSuccess(tx.tx, bobCommitPublished)))
-  }
-
-  test("identify htlc txs") {
-    identifyHtlcs(setupHtlcs())
-  }
-
-  test("identify htlc txs (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) {
-    identifyHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputs)))
-  }
-
-  test("identify htlc txs (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) {
-    identifyHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)))
+    Fixture(alice, Set(htlca1a, htlca1b, htlca2), htlcSuccessTxs, htlcTimeoutTxs, bob, Set(htlcb1a, htlcb1b, htlcb2), claimHtlcSuccessTxs, claimHtlcTimeoutTxs, probe)
   }
 
   def findTimedOutHtlcs(f: Fixture): Unit = {
     import f._
 
-    val dustLimit = alice.underlyingActor.nodeParams.channelConf.dustLimit
-    val commitmentFormat = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.params.commitmentFormat
-    val localCommit = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.localCommit
-    val remoteCommit = bob.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.remoteCommit
+    val localKeys = alice.underlyingActor.channelKeys
+    val localCommitment = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.latest
+    val localCommit = localCommitment.localCommit
+    val remoteKeys = bob.underlyingActor.channelKeys
+    val remoteCommitment = bob.stateData.asInstanceOf[DATA_CLOSING].commitments.latest
+    val remoteCommit = remoteCommitment.remoteCommit
 
-    val htlcTimeoutTxs = getHtlcTimeoutTxs(aliceCommitPublished)
-    val htlcSuccessTxs = getHtlcSuccessTxs(aliceCommitPublished)
     // Claim-HTLC txs can be modified to pay more (or less) fees by changing the output amount.
-    val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(bobCommitPublished)
-    val claimHtlcTimeoutTxsModifiedFees = claimHtlcTimeoutTxs.map(tx => tx.modify(_.tx.txOut).setTo(Seq(tx.tx.txOut.head.copy(amount = 5000 sat))))
-    val claimHtlcSuccessTxs = getClaimHtlcSuccessTxs(bobCommitPublished)
-    val claimHtlcSuccessTxsModifiedFees = claimHtlcSuccessTxs.map(tx => tx.modify(_.tx.txOut).setTo(Seq(tx.tx.txOut.head.copy(amount = 5000 sat))))
+    val bobClaimHtlcTimeoutTxsModifiedFees = bobClaimHtlcTimeoutTxs.map(tx => tx.modify(_.tx.txOut).setTo(Seq(tx.tx.txOut.head.copy(amount = 5000 sat))))
+    val bobClaimHtlcSuccessTxsModifiedFees = bobClaimHtlcSuccessTxs.map(tx => tx.modify(_.tx.txOut).setTo(Seq(tx.tx.txOut.head.copy(amount = 5000 sat))))
 
-    val aliceTimedOutHtlcs = htlcTimeoutTxs.map(htlcTimeout => {
-      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, aliceCommitPublished, dustLimit, htlcTimeout.tx)
+    val aliceTimedOutHtlcs = aliceHtlcTimeoutTxs.map(htlcTimeout => {
+      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, htlcTimeout.tx)
       assert(timedOutHtlcs.size == 1)
       timedOutHtlcs.head
     })
     assert(aliceTimedOutHtlcs.toSet == aliceHtlcs)
 
-    val bobTimedOutHtlcs = claimHtlcTimeoutTxs.map(claimHtlcTimeout => {
-      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, bobCommitPublished, dustLimit, claimHtlcTimeout.tx)
+    val bobTimedOutHtlcs = bobClaimHtlcTimeoutTxs.map(claimHtlcTimeout => {
+      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, claimHtlcTimeout.tx)
       assert(timedOutHtlcs.size == 1)
       timedOutHtlcs.head
     })
     assert(bobTimedOutHtlcs.toSet == bobHtlcs)
 
-    val bobTimedOutHtlcs2 = claimHtlcTimeoutTxsModifiedFees.map(claimHtlcTimeout => {
-      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, bobCommitPublished, dustLimit, claimHtlcTimeout.tx)
+    val bobTimedOutHtlcs2 = bobClaimHtlcTimeoutTxsModifiedFees.map(claimHtlcTimeout => {
+      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, claimHtlcTimeout.tx)
       assert(timedOutHtlcs.size == 1)
       timedOutHtlcs.head
     })
     assert(bobTimedOutHtlcs2.toSet == bobHtlcs)
 
-    htlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, aliceCommitPublished, dustLimit, htlcSuccess.tx).isEmpty))
-    htlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, bobCommitPublished, dustLimit, htlcSuccess.tx).isEmpty))
-    claimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, aliceCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
-    claimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, aliceCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
-    claimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, bobCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
-    claimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, bobCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
-    htlcTimeoutTxs.foreach(htlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, bobCommitPublished, dustLimit, htlcTimeout.tx).isEmpty))
-    claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, aliceCommitPublished, dustLimit, claimHtlcTimeout.tx).isEmpty))
-  }
-
-  test("find timed out htlcs") {
-    findTimedOutHtlcs(setupHtlcs())
+    aliceHtlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, htlcSuccess.sign()).isEmpty))
+    aliceHtlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, htlcSuccess.sign()).isEmpty))
+    bobClaimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, claimHtlcSuccess.sign()).isEmpty))
+    bobClaimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, claimHtlcSuccess.sign()).isEmpty))
+    bobClaimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, claimHtlcSuccess.sign()).isEmpty))
+    bobClaimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, claimHtlcSuccess.sign()).isEmpty))
+    aliceHtlcTimeoutTxs.foreach(htlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(remoteKeys, remoteCommitment, remoteCommit, htlcTimeout.sign()).isEmpty))
+    bobClaimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, claimHtlcTimeout.sign()).isEmpty))
   }
 
   test("find timed out htlcs (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) {
@@ -229,7 +198,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     )
 
     def toClosingTx(txOut: Seq[TxOut]): ClosingTx = {
-      ClosingTx(InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(1000 sat, Nil), Nil), Transaction(2, Nil, txOut, 0), None)
+      ClosingTx(InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(1000 sat, Nil)), Transaction(2, Nil, txOut, 0), None)
     }
 
     assert(Closing.MutualClose.checkClosingDustAmounts(toClosingTx(allOutputsAboveDust)))
@@ -249,7 +218,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
       Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800"),
       Transaction.read("010000000235a2f5c4fd48672534cce1ac063047edc38683f43c5a883f815d6026cb5f8321020000006a47304402206be5fd61b1702599acf51941560f0a1e1965aa086634b004967747f79788bd6e022002f7f719a45b8b5e89129c40a9d15e4a8ee1e33be3a891cf32e859823ecb7a510121024756c5adfbc0827478b0db042ce09d9b98e21ad80d036e73bd8e7f0ecbc254a2ffffffffb2387d3125bb8c84a2da83f4192385ce329283661dfc70191f4112c67ce7b4d0000000006b483045022100a2c737eab1c039f79238767ccb9bb3e81160e965ef0fc2ea79e8360c61b7c9f702202348b0f2c0ea2a757e25d375d9be183200ce0a79ec81d6a4ebb2ae4dc31bc3c9012102db16a822e2ec3706c58fc880c08a3617c61d8ef706cc8830cfe4561d9a5d52f0ffffffff01808d5b00000000001976a9141210c32def6b64d0d77ba8d99adeb7e9f91158b988ac00000000"),
       Transaction.read("0100000001b14ba6952c83f6f8c382befbf4e44270f13e479d5a5ff3862ac3a112f103ff2a010000006b4830450221008b097fd69bfa3715fc5e119a891933c091c55eabd3d1ddae63a1c2cc36dc9a3e02205666d5299fa403a393bcbbf4b05f9c0984480384796cdebcf69171674d00809c01210335b592484a59a44f40998d65a94f9e2eecca47e8d1799342112a59fc96252830ffffffff024bf308000000000017a914440668d018e5e0ba550d6e042abcf726694f515c8798dd1801000000001976a91453a503fe151dd32e0503bd9a2fbdbf4f9a3af1da88ac00000000")
-    ).map(tx => ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(10_000 sat, Nil), Nil), tx, None))
+    ).map(tx => ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(10_000 sat, Nil)), tx, None))
 
     // only mutual close
     assert(Closing.isClosingTypeAlreadyKnown(
@@ -276,10 +245,11 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = Some(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx)),
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = Some(tx3.input.outPoint),
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = None,
@@ -298,10 +268,11 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = Some(ClaimLocalDelayedOutputTx(tx3.input, tx3.tx)),
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = Some(tx3.input.outPoint),
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map(tx2.input.outPoint -> tx2.tx)
         )),
         remoteCommitPublished = None,
@@ -320,17 +291,19 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = None,
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx3.tx,
-          claimMainOutputTx = None,
-          claimHtlcTxs = Map.empty,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map.empty
         )),
         nextRemoteCommitPublished = None,
@@ -348,17 +321,19 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = None,
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx3.tx,
-          claimMainOutputTx = None,
-          claimHtlcTxs = Map.empty,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map(tx3.input.outPoint -> tx3.tx)
         )),
         nextRemoteCommitPublished = None,
@@ -378,24 +353,27 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2.tx,
-          claimMainDelayedOutputTx = None,
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx3.tx,
-          claimMainOutputTx = None,
-          claimHtlcTxs = Map.empty,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map.empty
         )),
         nextRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4.tx,
-          claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
-          claimHtlcTxs = Map.empty,
-          claimAnchorTxs = Nil,
+          localOutput_opt = Some(tx5.input.outPoint),
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map(tx4.input.outPoint -> tx4.tx)
         )),
         futureRemoteCommitPublished = None,
@@ -415,9 +393,10 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         nextRemoteCommitPublished = None,
         futureRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4.tx,
-          claimMainOutputTx = Some(ClaimRemoteDelayedOutputTx(tx5.input, tx5.tx)),
-          claimHtlcTxs = Map.empty,
-          claimAnchorTxs = Nil,
+          localOutput_opt = Some(tx5.input.outPoint),
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map.empty
         )),
         revokedCommitPublished = Nil)
@@ -436,9 +415,10 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         nextRemoteCommitPublished = None,
         futureRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4.tx,
-          claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
-          claimHtlcTxs = Map.empty,
-          claimAnchorTxs = Nil,
+          localOutput_opt = Some(tx5.input.outPoint),
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
           irrevocablySpent = Map(tx4.input.outPoint -> tx4.tx)
         )),
         revokedCommitPublished = Nil)
@@ -454,10 +434,11 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx1.tx,
-          claimMainDelayedOutputTx = None,
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = None,
@@ -466,26 +447,26 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         revokedCommitPublished =
           RevokedCommitPublished(
             commitTx = tx2.tx,
-            claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx3.input, tx3.tx)),
-            mainPenaltyTx = None,
-            htlcPenaltyTxs = Nil,
-            claimHtlcDelayedPenaltyTxs = Nil,
+            localOutput_opt = Some(tx3.input.outPoint),
+            remoteOutput_opt = None,
+            htlcOutputs = Set.empty,
+            htlcDelayedOutputs = Set.empty,
             irrevocablySpent = Map.empty
           ) ::
             RevokedCommitPublished(
               commitTx = tx4.tx,
-              claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
-              mainPenaltyTx = None,
-              htlcPenaltyTxs = Nil,
-              claimHtlcDelayedPenaltyTxs = Nil,
+              localOutput_opt = Some(tx5.input.outPoint),
+              remoteOutput_opt = None,
+              htlcOutputs = Set.empty,
+              htlcDelayedOutputs = Set.empty,
               irrevocablySpent = Map.empty
             ) ::
             RevokedCommitPublished(
               commitTx = tx6.tx,
-              claimMainOutputTx = None,
-              mainPenaltyTx = None,
-              htlcPenaltyTxs = Nil,
-              claimHtlcDelayedPenaltyTxs = Nil,
+              localOutput_opt = None,
+              remoteOutput_opt = None,
+              htlcOutputs = Set.empty,
+              htlcDelayedOutputs = Set.empty,
               irrevocablySpent = Map.empty
             ) :: Nil
       )
@@ -501,10 +482,11 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx1.tx,
-          claimMainDelayedOutputTx = None,
-          htlcTxs = Map.empty,
-          claimHtlcDelayedTxs = Nil,
-          claimAnchorTxs = Nil,
+          localOutput_opt = None,
+          anchorOutput_opt = None,
+          incomingHtlcs = Map.empty,
+          outgoingHtlcs = Map.empty,
+          htlcDelayedOutputs = Set.empty,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = None,
@@ -513,26 +495,26 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
         revokedCommitPublished =
           RevokedCommitPublished(
             commitTx = tx2.tx,
-            claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx3.input, tx3.tx)),
-            mainPenaltyTx = None,
-            htlcPenaltyTxs = Nil,
-            claimHtlcDelayedPenaltyTxs = Nil,
+            localOutput_opt = Some(tx3.input.outPoint),
+            remoteOutput_opt = None,
+            htlcOutputs = Set.empty,
+            htlcDelayedOutputs = Set.empty,
             irrevocablySpent = Map.empty
           ) ::
             RevokedCommitPublished(
               commitTx = tx4.tx,
-              claimMainOutputTx = Some(ClaimP2WPKHOutputTx(tx5.input, tx5.tx)),
-              mainPenaltyTx = None,
-              htlcPenaltyTxs = Nil,
-              claimHtlcDelayedPenaltyTxs = Nil,
+              localOutput_opt = Some(tx5.input.outPoint),
+              remoteOutput_opt = None,
+              htlcOutputs = Set.empty,
+              htlcDelayedOutputs = Set.empty,
               irrevocablySpent = Map(tx4.input.outPoint -> tx4.tx)
             ) ::
             RevokedCommitPublished(
               commitTx = tx6.tx,
-              claimMainOutputTx = None,
-              mainPenaltyTx = None,
-              htlcPenaltyTxs = Nil,
-              claimHtlcDelayedPenaltyTxs = Nil,
+              localOutput_opt = None,
+              remoteOutput_opt = None,
+              htlcOutputs = Set.empty,
+              htlcDelayedOutputs = Set.empty,
               irrevocablySpent = Map.empty
             ) :: Nil
       )

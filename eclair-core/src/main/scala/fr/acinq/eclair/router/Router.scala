@@ -28,7 +28,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
@@ -266,7 +266,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(WatchExternalChannelSpentTriggered(shortChannelId, spendingTx), d) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
       val fundingTxId = d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)).get.fundingTxId
       log.info("funding tx txId={} of channelId={} has been spent by txId={}: waiting for the spending tx to have enough confirmations before removing the channel from the graph", fundingTxId, shortChannelId, spendingTx.txid)
-      watcher ! WatchTxConfirmed(self, spendingTx.txid, ANNOUNCEMENTS_MINCONF * 2)
+      watcher ! WatchTxConfirmed(self, spendingTx.txid, nodeParams.routerConf.channelSpentSpliceDelay)
       stay() using d.copy(spentChannels = d.spentChannels.updated(spendingTx.txid, d.spentChannels.getOrElse(spendingTx.txid, Set.empty) + shortChannelId))
 
     case Event(WatchTxConfirmedTriggered(_, _, spendingTx), d) =>
@@ -345,9 +345,6 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
 object Router {
 
-  // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
-  val ANNOUNCEMENTS_MINCONF = 6
-
   def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
   case class SearchBoundaries(maxFeeFlat: MilliSatoshi,
@@ -367,7 +364,7 @@ object Router {
       heuristics = heuristics,
       mpp = mpp,
       experimentName = experimentName,
-      includeLocalChannelCost = false,
+      includeLocalChannelCost = false
     )
   }
 
@@ -382,6 +379,7 @@ object Router {
   }
 
   case class RouterConf(watchSpentWindow: FiniteDuration,
+                        channelSpentSpliceDelay: Int,
                         channelExcludeDuration: FiniteDuration,
                         routerBroadcastInterval: FiniteDuration,
                         syncConf: SyncConf,
@@ -843,4 +841,6 @@ object Router {
 
   /** We have tried to relay this amount from this channel and it failed. */
   case class ChannelCouldNotRelay(amount: MilliSatoshi, hop: ChannelHop)
+
+  case class ReportedHoldTimes(holdTimes: Seq[Sphinx.HoldTime])
 }

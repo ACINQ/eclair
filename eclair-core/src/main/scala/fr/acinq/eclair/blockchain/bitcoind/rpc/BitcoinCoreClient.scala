@@ -19,11 +19,12 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.bitcoin.{Bech32, Block, SigHash}
+import fr.acinq.bitcoin.{Block, SigHash}
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType.P2wpkh
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.crypto.keymanager.OnChainKeyManager
 import fr.acinq.eclair.transactions.Transactions
@@ -262,7 +263,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
 
   def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean = true, changePosition: Option[Int] = None, externalInputsWeight: Map[OutPoint, Long] = Map.empty, minInputConfirmations_opt: Option[Int] = None, feeBudget_opt: Option[Satoshi] = None)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
     val options = FundTransactionOptions(
-      feeRate = BigDecimal(FeeratePerKB(feeRate).toLong).bigDecimal.scaleByPowerOfTen(-8),
+      feeRate = BigDecimal(feeRate.perKB.toLong).bigDecimal.scaleByPowerOfTen(-8),
       replaceable = replaceable,
       // We must either *always* lock inputs selected for funding or *never* lock them, otherwise locking wouldn't work
       // at all, as the following scenario highlights:
@@ -356,7 +357,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
 
     for {
       // TODO: we should check that mempoolMinFee is not dangerously high
-      feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
+      feerate <- mempoolMinFee().map(minFee => minFee.perKw.max(targetFeerate))
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
       FundTransactionResponse(tx, fee, _) <- fundTransaction(partialFundingTx, feerate, feeBudget_opt = feeBudget_opt)
       lockedUtxos = tx.txIn.map(_.outPoint)
@@ -393,15 +394,15 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         getTxOutputs(outpoints).transformWith {
           case Failure(ex) => Future.failed(new IllegalArgumentException("some outpoints are invalid or cannot be resolved", ex))
           case Success(txOutputs) =>
-            getP2wpkhPubkeyHashForChange().transformWith {
+            getChangePublicKeyScript().transformWith {
               case Failure(ex) => Future.failed(new IllegalArgumentException("change address generation failed", ex))
-              case Success(changePubkeyHash) =>
+              case Success(changePubkeyScript) =>
                 val amountIn = txOutputs.values.map(_.amount).sum
                 // We build a transaction spending all the inputs provided to a single change output. Our  inputs are
                 // using either p2wpkh or p2tr: p2tr inputs are slightly smaller, but we don't bother doing an exact
                 // calculation and always use the weight of p2wpkh inputs for simplicity.
                 val p2wpkhInputWeight = 272
-                val txWeight = p2wpkhInputWeight * outpoints.size + Transaction(2, Nil, Seq(TxOut(amountIn, Script.pay2wpkh(changePubkeyHash))), 0).weight()
+                val txWeight = p2wpkhInputWeight * outpoints.size + Transaction(2, Nil, Seq(TxOut(amountIn, changePubkeyScript)), 0).weight()
                 val totalWeight = mempoolPackage.values.map(_.weight).sum + txWeight
                 val targetFees = Transactions.weight2fee(targetFeerate, totalWeight.toInt)
                 val currentFees = mempoolPackage.values.map(_.fees).sum
@@ -411,7 +412,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
                 } else if (amountIn <= missingFees + 660.sat) {
                   Future.failed(new IllegalArgumentException("input amount is not sufficient to cover the target feerate"))
                 } else {
-                  val unsignedTx = Transaction(2, outpoints.toSeq.map(o => TxIn(o, Seq.empty, 0)), Seq(TxOut(amountIn - missingFees, Script.pay2wpkh(changePubkeyHash))), 0)
+                  val unsignedTx = Transaction(2, outpoints.toSeq.map(o => TxIn(o, Seq.empty, 0)), Seq(TxOut(amountIn - missingFees, changePubkeyScript)), 0)
                   signPsbt(new Psbt(unsignedTx), unsignedTx.txIn.indices, unsignedTx.txOut.indices).transformWith {
                     case Failure(ex) => Future.failed(new IllegalArgumentException("tx signing failed", ex))
                     case Success(response) => response.finalTx_opt match {
@@ -497,6 +498,25 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         getRawTransaction(tx.txid).map(_ => tx.txid).recoverWith { case _ => Future.failed(e) }
     }
 
+  /**
+   * Publish a 1-parent-1-child transaction package, which allows replacing a conflicting parent transaction that has
+   * the same (or a higher) feerate by leveraging CPFP. The child transaction cannot have other unconfirmed parents.
+   */
+  def publishPackage(parentTx: Transaction, childTx: Transaction)(implicit ec: ExecutionContext): Future[TxId] = {
+    rpcClient.invoke("submitpackage", Seq(parentTx, childTx).map(_.toString())).flatMap(json => {
+      val JString(msg) = json \ "package_msg"
+      if (msg == "success") {
+        // All transactions were accepted into or are already in the mempool.
+        Future.successful(childTx.txid)
+      } else {
+        val childError = (json \ "tx-results" \ childTx.wtxid.toHex \ "error").extractOpt[String]
+        val parentError = (json \ "tx-results" \ parentTx.wtxid.toHex \ "error").extractOpt[String]
+        val error = childError.orElse(parentError).getOrElse("unknown failure")
+        Future.failed(new IllegalArgumentException(error))
+      }
+    })
+  }
+
   override def abandon(txId: TxId)(implicit ec: ExecutionContext): Future[Boolean] = {
     rpcClient.invoke("abandontransaction", txId).map(_ => true).recover(_ => false)
   }
@@ -564,22 +584,56 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
     }
   }
 
-  def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = for {
-    JString(address) <- rpcClient.invoke("getnewaddress", label)
-    _ <- extractPublicKey(address)
-  } yield address
+  /**
+   * @param addressType_opt optional address type: if not specified, then the default address type configured with the
+   *                        bitcoin node's `addresstype` option will be used.
+   * @return a new receive address
+   */
+  def getReceiveAddress(addressType_opt: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = for {
+    // The first (unused) argument is the address label.
+    JString(address) <- rpcClient.invoke("getnewaddress", "", addressType_opt.map(_.bitcoinCoreName))
+    verifiedAddress <- verifyAddress(address)
+  } yield verifiedAddress
+
+  /** Check that when we manage private keys we can re-compute the address we got from Bitcoin Core. */
+  private def verifyAddress(address: String)(implicit ec: ExecutionContext): Future[String] = {
+    onChainKeyManager_opt match {
+      case Some(keyManager) => rpcClient.invoke("getaddressinfo", address).flatMap { addressInfo =>
+        val JString(keyPath) = addressInfo \ "hdkeypath"
+        val (_, computed) = keyManager.derivePublicKey(DeterministicWallet.KeyPath(keyPath))
+        if (computed != address) {
+          Future.failed(new RuntimeException("cannot recompute address generated by bitcoin core"))
+        } else {
+          Future.successful(address)
+        }
+      }
+      case None => Future.successful(address)
+    }
+  }
+
+  def getReceivePublicKeyScript(addressType_opt: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]] = getReceiveAddress(addressType_opt).flatMap { address =>
+    addressToPublicKeyScript(rpcClient.chainHash, address) match {
+      case Left(f) => Future.failed(new RuntimeException(s"cannot convert $address to a public key script: ${f.getMessage}"))
+      case Right(script) => Future.successful(script)
+    }
+  }
+
+  def getChangeAddress(addressType_opt: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[String] = for {
+    JString(address) <- rpcClient.invoke("getrawchangeaddress", addressType_opt.map(_.bitcoinCoreName))
+    verifiedAddress <- verifyAddress(address)
+  } yield verifiedAddress
+
+  def getChangePublicKeyScript(addressType_opt: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]] = getChangeAddress(addressType_opt).flatMap { address =>
+    addressToPublicKeyScript(rpcClient.chainHash, address) match {
+      case Left(f) => Future.failed(new RuntimeException(s"cannot convert $address to a public key script: ${f.getMessage}"))
+      case Right(script) => Future.successful(script)
+    }
+  }
 
   def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = for {
-    JString(address) <- rpcClient.invoke("getnewaddress", "", "bech32")
+    address <- getReceiveAddress(Some(P2wpkh))
     pubKey <- extractPublicKey(address)
   } yield pubKey
-
-  /** @return the public key hash of a bech32 raw change address. */
-  def getP2wpkhPubkeyHashForChange()(implicit ec: ExecutionContext): Future[ByteVector] = for {
-    JString(changeAddress) <- rpcClient.invoke("getrawchangeaddress", "bech32")
-    _ <- extractPublicKey(changeAddress)
-    pubkeyHash = ByteVector.view(Bech32.decodeWitnessAddress(changeAddress).getThird)
-  } yield pubkeyHash
 
   /**
    * Ask Bitcoin Core to fund and broadcast a tx that sends funds to a given pubkey script.
@@ -609,7 +663,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       actualFeerate = Transactions.fee2rate(actualFees, signedTx.weight())
       maxFeerate = feeratePerKw * 1.5
       _ = require(actualFeerate < maxFeerate, s"actual feerate $actualFeerate is more than 50% above requested feerate $feeratePerKw")
-      txid <- publishTransaction(signedTx)
+      txid <-  unlockIfFails(lockedOutputs)(publishTransaction(signedTx))
     } yield txid
   }
 
@@ -793,4 +847,21 @@ object BitcoinCoreClient {
    * @param descriptors list of wallet descriptors
    */
   case class Descriptors(wallet_name: String, descriptors: Seq[Descriptor])
+
+  /**
+   * Address type, as managed by Bitcoin Core wallets.
+   * We only define values for the types that we actually use.
+   */
+  sealed trait AddressType {
+    /** Name of this address type as used by Bitcoin Core in configuration files and RPC calls. */
+    def bitcoinCoreName: String
+  }
+
+  object AddressType {
+    // @formatter:off
+    case object P2wpkh extends AddressType { override def bitcoinCoreName: String = "bech32" }
+    case object P2tr extends AddressType { override def bitcoinCoreName: String = "bech32m" }
+    // @formatter:on
+  }
+
 }

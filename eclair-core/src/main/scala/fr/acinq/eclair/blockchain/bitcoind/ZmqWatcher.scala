@@ -88,7 +88,7 @@ object ZmqWatcher {
     /** TxId of the transaction to watch. */
     def txId: TxId
     /** Number of confirmations. */
-    def minDepth: Long
+    def minDepth: Int
   }
 
   /**
@@ -140,17 +140,16 @@ object ZmqWatcher {
   case class WatchPublished(replyTo: ActorRef[WatchPublishedTriggered], txId: TxId) extends Watch[WatchPublishedTriggered]
   case class WatchPublishedTriggered(tx: Transaction) extends WatchTriggered
 
-  case class WatchFundingConfirmed(replyTo: ActorRef[WatchFundingConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchFundingConfirmedTriggered]
+  case class WatchFundingConfirmed(replyTo: ActorRef[WatchFundingConfirmedTriggered], txId: TxId, minDepth: Int) extends WatchConfirmed[WatchFundingConfirmedTriggered]
   case class WatchFundingConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class RelativeDelay(parentTxId: TxId, delay: Long)
-  case class WatchTxConfirmed(replyTo: ActorRef[WatchTxConfirmedTriggered], txId: TxId, minDepth: Long, delay_opt: Option[RelativeDelay] = None) extends WatchConfirmed[WatchTxConfirmedTriggered]
+  case class WatchTxConfirmed(replyTo: ActorRef[WatchTxConfirmedTriggered], txId: TxId, minDepth: Int) extends WatchConfirmed[WatchTxConfirmedTriggered]
   case class WatchTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class WatchParentTxConfirmed(replyTo: ActorRef[WatchParentTxConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchParentTxConfirmedTriggered]
+  case class WatchParentTxConfirmed(replyTo: ActorRef[WatchParentTxConfirmedTriggered], txId: TxId, minDepth: Int) extends WatchConfirmed[WatchParentTxConfirmedTriggered]
   case class WatchParentTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
-  case class WatchAlternativeCommitTxConfirmed(replyTo: ActorRef[WatchAlternativeCommitTxConfirmedTriggered], txId: TxId, minDepth: Long) extends WatchConfirmed[WatchAlternativeCommitTxConfirmedTriggered]
+  case class WatchAlternativeCommitTxConfirmed(replyTo: ActorRef[WatchAlternativeCommitTxConfirmedTriggered], txId: TxId, minDepth: Int) extends WatchConfirmed[WatchAlternativeCommitTxConfirmedTriggered]
   case class WatchAlternativeCommitTxConfirmedTriggered(blockHeight: BlockHeight, txIndex: Int, tx: Transaction) extends WatchConfirmedTriggered
 
   private sealed trait AddWatchResult
@@ -463,10 +462,10 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
 
   private def checkConfirmed(w: WatchConfirmed[_ <: WatchConfirmedTriggered], currentHeight: BlockHeight): Future[Unit] = {
     log.debug("checking confirmations of txid={}", w.txId)
-    // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
-    // matter because this only happens once, when the watched transaction has reached min_depth
     client.getTxConfirmations(w.txId).flatMap {
       case Some(confirmations) if confirmations >= w.minDepth =>
+        // NB: this is very inefficient since internally we call `getrawtransaction` three times, but it doesn't really
+        // matter because this only happens once, when the watched transaction has reached min_depth
         client.getTransaction(w.txId).flatMap { tx =>
           client.getTransactionShortId(w.txId).map {
             case (height, index) => w match {
@@ -483,27 +482,11 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         context.self ! SetWatchHint(w, CheckAfterBlock(currentHeight + w.minDepth - confirmations))
         Future.successful(())
       case None =>
-        w match {
-          case WatchTxConfirmed(_, _, _, Some(relativeDelay)) =>
-            log.debug("txId={} has a relative delay of {} blocks, checking parentTxId={}", w.txId, relativeDelay.delay, relativeDelay.parentTxId)
-            // Note how we add one block to avoid an off-by-one:
-            //  - if the parent is confirmed at block P
-            //  - the CSV delay is D and the minimum depth is M
-            //  - the first block that can include the child is P + D
-            //  - the first block at which we can reach minimum depth is P + D + M
-            //  - if we are currently at block P + N, the parent has C = N + 1 confirmations
-            //  - we want to check at block P + N + D + M + 1 - C = P + N + D + M + 1 - (N + 1) = P + D + M
-            val delay = relativeDelay.delay + w.minDepth + 1
-            client.getTxConfirmations(relativeDelay.parentTxId).map(_.getOrElse(0)).collect {
-              case confirmations if confirmations < delay => context.self ! SetWatchHint(w, CheckAfterBlock(currentHeight + delay - confirmations))
-            }
-          case _ =>
-            // The transaction is unconfirmed: we don't need to check again at every new block: we can check only once
-            // every minDepth blocks, which is more efficient. If the transaction is included at the current height in
-            // a reorg, we will trigger the watch one block later than expected, but this is fine.
-            context.self ! SetWatchHint(w, CheckAfterBlock(currentHeight + w.minDepth))
-            Future.successful(())
-        }
+        // The transaction is unconfirmed: we don't need to check again at every new block: we can check only once
+        // every minDepth blocks, which is more efficient. If the transaction is included at the current height in
+        // a reorg, we will trigger the watch one block later than expected, but this is fine.
+        context.self ! SetWatchHint(w, CheckAfterBlock(currentHeight + w.minDepth))
+        Future.successful(())
     }
   }
 

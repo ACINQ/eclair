@@ -19,9 +19,9 @@ package fr.acinq.eclair
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee._
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel.{ChannelConf, RemoteRbfLimits, UnhandledExceptionStrategy}
-import fr.acinq.eclair.channel.{ChannelFlags, LocalParams, Origin, Upstream}
-import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.crypto.keymanager._
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner
 import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{OpenChannelInterceptor, PeerConnection, PeerReadyNotifier}
@@ -30,8 +30,9 @@ import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.{MessageWeightRatios, PaymentWeightRatios}
-import fr.acinq.eclair.router.{PathFindingExperimentConf, Router}
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.router.{PathFindingExperimentConf, Router}
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Tag
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -57,7 +58,7 @@ object TestConstants {
     paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalance)
   )
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
-  val emptyOrigin = Origin.Hot(ActorRef.noSender, Upstream.Local(UUID.randomUUID()))
+  val emptyOrigin: Origin.Hot = Origin.Hot(ActorRef.noSender, Upstream.Local(UUID.randomUUID()))
 
   case object TestFeature extends Feature with InitFeature with NodeFeature {
     val rfcName = "test_feature"
@@ -81,8 +82,11 @@ object TestConstants {
 
   object Alice {
     val seed: ByteVector32 = ByteVector32(hex"b4acd47335b25ab7b84b8c020997b12018592bb4631b868762154d77fa8b93a3") // 02aaaa...
-    val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
-    val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val nodeKeyManager: NodeKeyManager = LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val channelKeyManager: ChannelKeyManager = LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    private val fundingKeyPath = channelKeyManager.newFundingKeyPath(isChannelOpener = true)
+
+    def channelKeys(channelConfig: ChannelConfig = ChannelConfig.standard): ChannelKeys = channelKeyManager.channelKeys(channelConfig, fundingKeyPath)
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams: NodeParams = NodeParams(
@@ -110,6 +114,7 @@ object TestConstants {
           Features.Quiescence -> FeatureSupport.Optional,
           Features.SplicePrototype -> FeatureSupport.Optional,
           Features.ProvideStorage -> FeatureSupport.Optional,
+          Features.ChannelType -> FeatureSupport.Mandatory
         ),
         unknown = Set(UnknownFeature(TestFeature.optional))
       ),
@@ -154,6 +159,7 @@ object TestConstants {
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
+        maxClosingFeerate = FeeratePerKw(15_000 sat),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         anchorWithoutHtlcsMaxFee = 100_000.sat,
@@ -173,7 +179,9 @@ object TestConstants {
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
         enforcementDelay = 10 minutes,
-        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144))),
+        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
+        peerReputationConfig = Reputation.Config(enabled = true, 1 day, 10 minutes),
+      ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
@@ -195,6 +203,7 @@ object TestConstants {
       ),
       routerConf = RouterConf(
         watchSpentWindow = 1 second,
+        channelSpentSpliceDelay = 12,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
         syncConf = Router.SyncConf(
@@ -253,7 +262,7 @@ object TestConstants {
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
-    def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
+    def channelParams: LocalChannelParams = OpenChannelInterceptor.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
       None,
@@ -261,17 +270,20 @@ object TestConstants {
       isChannelOpener = true,
       paysCommitTxFees = true,
       dualFunded = false,
-      fundingSatoshis,
-      unlimitedMaxHtlcValueInFlight = false,
+      fundingSatoshis
     ).copy(
+      fundingKeyPath = fundingKeyPath,
       initialRequestedChannelReserve_opt = Some(10_000 sat) // Bob will need to keep that much satoshis in his balance
     )
   }
 
   object Bob {
     val seed: ByteVector32 = ByteVector32(hex"7620226fec887b0b2ebe76492e5a3fd3eb0e47cd3773263f6a81b59a704dc492") // 02bbbb...
-    val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
-    val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val nodeKeyManager: NodeKeyManager = LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val channelKeyManager: ChannelKeyManager = LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    private val fundingKeyPath = channelKeyManager.newFundingKeyPath(isChannelOpener = false)
+
+    def channelKeys(channelConfig: ChannelConfig = ChannelConfig.standard): ChannelKeys = channelKeyManager.channelKeys(channelConfig, fundingKeyPath)
 
     def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
@@ -297,6 +309,7 @@ object TestConstants {
         Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Optional,
         Features.Quiescence -> FeatureSupport.Optional,
         Features.SplicePrototype -> FeatureSupport.Optional,
+        Features.ChannelType -> FeatureSupport.Mandatory
       ),
       pluginParams = Nil,
       overrideInitFeatures = Map.empty,
@@ -317,8 +330,8 @@ object TestConstants {
         maxChannelSpentRescanBlocks = 144,
         htlcMinimum = 1000 msat,
         minDepth = 3,
-        toRemoteDelay = CltvExpiryDelta(144),
-        maxToLocalDelay = CltvExpiryDelta(1000),
+        toRemoteDelay = CltvExpiryDelta(720),
+        maxToLocalDelay = CltvExpiryDelta(2016),
         reserveToFundingRatio = 0.01, // note: not used (overridden below)
         maxReserveToFundingRatio = 0.05,
         unhandledExceptionStrategy = UnhandledExceptionStrategy.LocalClose,
@@ -339,6 +352,7 @@ object TestConstants {
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
+        maxClosingFeerate = FeeratePerKw(15_000 sat),
         safeUtxosThreshold = 0,
         spendAnchorWithoutHtlcs = true,
         anchorWithoutHtlcsMaxFee = 100_000.sat,
@@ -358,7 +372,9 @@ object TestConstants {
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
         enforcementDelay = 10 minutes,
-        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144))),
+        asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
+        peerReputationConfig = Reputation.Config(enabled = true, 2 day, 20 minutes),
+      ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
@@ -380,6 +396,7 @@ object TestConstants {
       ),
       routerConf = RouterConf(
         watchSpentWindow = 1 second,
+        channelSpentSpliceDelay = 12,
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
         syncConf = Router.SyncConf(
@@ -438,7 +455,7 @@ object TestConstants {
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
-    def channelParams: LocalParams = OpenChannelInterceptor.makeChannelParams(
+    def channelParams: LocalChannelParams = OpenChannelInterceptor.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
       None,
@@ -446,9 +463,9 @@ object TestConstants {
       isChannelOpener = false,
       paysCommitTxFees = false,
       dualFunded = false,
-      fundingSatoshis,
-      unlimitedMaxHtlcValueInFlight = false,
+      fundingSatoshis
     ).copy(
+      fundingKeyPath = fundingKeyPath,
       initialRequestedChannelReserve_opt = Some(20_000 sat) // Alice will need to keep that much satoshis in her balance
     )
   }

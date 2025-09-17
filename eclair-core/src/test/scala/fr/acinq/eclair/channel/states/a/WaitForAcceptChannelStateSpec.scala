@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.channel.states.a
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, SatoshiLong}
+import com.softwaremill.quicklens.ModifyPimp
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, TxId}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.NoOpOnChainWallet
 import fr.acinq.eclair.channel._
@@ -26,9 +26,9 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, PhoenixSimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, OpenChannel, TlvStream}
+import fr.acinq.eclair.{CltvExpiryDelta, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -43,7 +43,6 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
 
   private val HighRemoteDustLimit = "high_remote_dust_limit"
   private val StandardChannelType = "standard_channel_type"
-  private val LargeChannel = "large_channel"
 
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, listener: TestProbe)
 
@@ -51,23 +50,16 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import com.softwaremill.quicklens._
 
     val aliceNodeParams = Alice.nodeParams.modify(_.channelConf.maxRemoteDustLimit).setToIf(test.tags.contains(HighRemoteDustLimit))(15_000 sat)
-
     val setup = init(aliceNodeParams, Bob.nodeParams, wallet_opt = Some(new NoOpOnChainWallet()), test.tags)
     import setup._
 
-    val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags(announceChannel = false)
-    val (aliceParams, bobParams, defaultChannelType) = computeFeatures(setup, test.tags, channelFlags)
-    val channelType = if (test.tags.contains(StandardChannelType)) ChannelTypes.Standard() else defaultChannelType
-    val commitTxFeerate = if (channelType.isInstanceOf[ChannelTypes.AnchorOutputs] || channelType.isInstanceOf[ChannelTypes.AnchorOutputsZeroFeeHtlcTx]) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
-    val aliceInit = Init(aliceParams.initFeatures)
-    val bobInit = Init(bobParams.initFeatures)
+    val channelParams = computeChannelParams(setup, test.tags)
+      .modify(_.channelType).setToIf(test.tags.contains(StandardChannelType))(ChannelTypes.Standard())
     val listener = TestProbe()
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
-      val fundingAmount = if (test.tags.contains(LargeChannel)) Btc(5).toSatoshi else TestConstants.fundingSatoshis
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, fundingAmount, dualFunded = false, commitTxFeerate, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType, replyTo = aliceOpenReplyTo.ref.toTyped)
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
+      alice ! channelParams.initChannelAlice(TestConstants.fundingSatoshis, pushAmount_opt = Some(TestConstants.initiatorPushAmount))
+      bob ! channelParams.initChannelBob()
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)
@@ -92,7 +84,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputs()))
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].params.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat)
     aliceOpenReplyTo.expectNoMessage()
   }
 
@@ -102,7 +94,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].params.commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     aliceOpenReplyTo.expectNoMessage()
   }
 
@@ -112,23 +104,34 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true)))
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].params.commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     aliceOpenReplyTo.expectNoMessage()
   }
 
-  test("recv AcceptChannel (channel type not set)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+  test("recv AcceptChannel (simple taproot channels phoenix)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputs()))
-    // Alice explicitly asked for an anchor output channel. Bob doesn't support explicit channel type negotiation but
-    // they both activated anchor outputs so it is the default choice anyway.
-    bob2alice.forward(alice, accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty))))
+    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    assert(accept.commitNonce_opt.isDefined)
+    bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].params.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].commitmentFormat == PhoenixSimpleTaprootChannelCommitmentFormat)
     aliceOpenReplyTo.expectNoMessage()
   }
 
-  test("recv AcceptChannel (channel type not set but feature bit set)", Tag(ChannelStateTestsTags.ChannelType), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv AcceptChannel (simple taproot channels outputs, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    assert(accept.commitNonce_opt.isDefined)
+    bob2alice.forward(alice, accept.copy(tlvStream = accept.tlvStream.copy(records = accept.tlvStream.records.filterNot(_.isInstanceOf[ChannelTlv.NextLocalNonceTlv]))))
+    alice2bob.expectMsg(Error(accept.temporaryChannelId, MissingCommitNonce(accept.temporaryChannelId, TxId(ByteVector32.Zeroes), 0).getMessage))
+    listener.expectMsgType[ChannelAborted]
+    awaitCond(alice.stateName == CLOSED)
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
+  }
+
+  test("recv AcceptChannel (channel type not set but feature bit set)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
@@ -146,42 +149,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(accept.channelType_opt.contains(ChannelTypes.Standard()))
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].params.commitmentFormat == DefaultCommitmentFormat)
-    aliceOpenReplyTo.expectNoMessage()
-  }
-
-  test("recv AcceptChannel (non-default channel type not set)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(StandardChannelType)) { f =>
-    import f._
-    val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.Standard()))
-    // Alice asked for a standard channel whereas they both support anchor outputs. Bob doesn't support explicit channel
-    // type negotiation so Alice needs to abort because the channel types won't match.
-    bob2alice.forward(alice, accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty))))
-    alice2bob.expectMsg(Error(accept.temporaryChannelId, "invalid channel_type=anchor_outputs_zero_fee_htlc_tx, expected channel_type=standard"))
-    listener.expectMsgType[ChannelAborted]
-    awaitCond(alice.stateName == CLOSED)
-    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
-  }
-
-  test("recv AcceptChannel (anchor outputs channel type without enabling the feature)") { () =>
-    val setup = init(Alice.nodeParams, Bob.nodeParams, wallet_opt = Some(new NoOpOnChainWallet()))
-    import setup._
-
-    val channelConfig = ChannelConfig.standard
-    val channelFlags = ChannelFlags(announceChannel = false)
-    // Bob advertises support for anchor outputs, but Alice doesn't.
-    val aliceParams = Alice.channelParams
-    val bobParams = Bob.channelParams.copy(initFeatures = Features(Features.StaticRemoteKey -> FeatureSupport.Optional, Features.AnchorOutputs -> FeatureSupport.Optional))
-    alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, aliceParams, alice2bob.ref, Init(bobParams.initFeatures), channelFlags, channelConfig, ChannelTypes.AnchorOutputs(), replyTo = aliceOpenReplyTo.ref.toTyped)
-    bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobParams, bob2alice.ref, Init(bobParams.initFeatures), channelConfig, ChannelTypes.AnchorOutputs())
-    val open = alice2bob.expectMsgType[OpenChannel]
-    assert(open.channelType_opt.contains(ChannelTypes.AnchorOutputs()))
-    alice2bob.forward(bob, open)
-    val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputs()))
-    bob2alice.forward(alice, accept)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].params.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].commitmentFormat == DefaultCommitmentFormat)
     aliceOpenReplyTo.expectNoMessage()
   }
 
@@ -298,42 +266,39 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
-  test("recv AcceptChannel (large channel)", Tag(LargeChannel)) { f =>
-    import f._
-    val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.minimumDepth == 17) // with large channel tag we create a 5BTC channel
-    bob2alice.forward(alice, accept)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    aliceOpenReplyTo.expectNoMessage()
-  }
-
   test("recv AcceptChannel (upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.upfrontShutdownScript_opt.contains(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].params.localParams.upfrontShutdownScript_opt.get))
+    assert(accept.upfrontShutdownScript_opt.contains(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelParams.localParams.upfrontShutdownScript_opt.get))
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].params.remoteParams.upfrontShutdownScript_opt == accept.upfrontShutdownScript_opt)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].channelParams.remoteParams.upfrontShutdownScript_opt == accept.upfrontShutdownScript_opt)
     aliceOpenReplyTo.expectNoMessage()
   }
 
   test("recv AcceptChannel (empty upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.upfrontShutdownScript_opt.contains(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].params.localParams.upfrontShutdownScript_opt.get))
-    val accept1 = accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty)))
+    assert(accept.upfrontShutdownScript_opt.contains(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelParams.localParams.upfrontShutdownScript_opt.get))
+    val accept1 = accept
+      .modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelTlv.UpfrontShutdownScriptTlv]))
+      .modify(_.tlvStream.records).using(_ + ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty))
     bob2alice.forward(alice, accept1)
+    alice2bob.expectNoMessage(100 millis)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].params.remoteParams.upfrontShutdownScript_opt.isEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].channelParams.remoteParams.upfrontShutdownScript_opt.isEmpty)
     aliceOpenReplyTo.expectNoMessage()
   }
 
   test("recv AcceptChannel (invalid upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    val accept1 = accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.fromValidHex("deadbeef"))))
+    val accept1 = accept
+      .modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelTlv.UpfrontShutdownScriptTlv]))
+      .modify(_.tlvStream.records).using(_ + ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.fromValidHex("deadbeef")))
     bob2alice.forward(alice, accept1)
     listener.expectMsgType[ChannelAborted]
+    alice2bob.expectMsg(Error(accept.temporaryChannelId, "invalid final script"))
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }

@@ -24,10 +24,11 @@ import org.scalatest.funsuite.AnyFunSuite
 class OnChainFeeConfSpec extends AnyFunSuite {
 
   private val defaultFeeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium)
+  private val defaultMaxClosingFeerate = FeeratePerKw(10_000 sat)
   private val defaultFeerateTolerance = FeerateTolerance(0.5, 2.0, FeeratePerKw(2500 sat), DustTolerance(15000 sat, closeOnUpdateFeeOverflow = false))
 
   test("should update fee when diff ratio exceeded") {
-    val feeConf = OnChainFeeConf(defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feeConf = OnChainFeeConf(defaultFeeTargets, defaultMaxClosingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(1000 sat)))
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(900 sat)))
     assert(!feeConf.shouldUpdateFee(FeeratePerKw(1000 sat), FeeratePerKw(1100 sat)))
@@ -37,13 +38,13 @@ class OnChainFeeConfSpec extends AnyFunSuite {
 
   test("get commitment feerate") {
     val commitmentFormat = DefaultCommitmentFormat
-    val feeConf = OnChainFeeConf(defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feeConf = OnChainFeeConf(defaultFeeTargets, defaultMaxClosingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
 
     val feerates1 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = FeeratePerKw(5000 sat))
-    assert(feeConf.getCommitmentFeerate(feerates1, randomKey().publicKey, commitmentFormat, 100000 sat) == FeeratePerKw(5000 sat))
+    assert(feeConf.getCommitmentFeerate(feerates1, randomKey().publicKey, commitmentFormat) == FeeratePerKw(5000 sat))
 
     val feerates2 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = FeeratePerKw(4000 sat))
-    assert(feeConf.getCommitmentFeerate(feerates2, randomKey().publicKey, commitmentFormat, 100000 sat) == FeeratePerKw(4000 sat))
+    assert(feeConf.getCommitmentFeerate(feerates2, randomKey().publicKey, commitmentFormat) == FeeratePerKw(4000 sat))
   }
 
   test("get commitment feerate (anchor outputs)") {
@@ -51,37 +52,51 @@ class OnChainFeeConfSpec extends AnyFunSuite {
     val defaultMaxCommitFeerate = defaultFeerateTolerance.anchorOutputMaxCommitFeerate
     val overrideNodeId = randomKey().publicKey
     val overrideMaxCommitFeerate = defaultMaxCommitFeerate * 2
-    val feeConf = OnChainFeeConf(defaultFeeTargets, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map(overrideNodeId -> defaultFeerateTolerance.copy(anchorOutputMaxCommitFeerate = overrideMaxCommitFeerate)))
+    val feeConf = OnChainFeeConf(defaultFeeTargets, defaultMaxClosingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map(overrideNodeId -> defaultFeerateTolerance.copy(anchorOutputMaxCommitFeerate = overrideMaxCommitFeerate)))
 
     val feerates1 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = defaultMaxCommitFeerate / 2, minimum = FeeratePerKw(250 sat))
-    assert(feeConf.getCommitmentFeerate(feerates1, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat, 100000 sat) == defaultMaxCommitFeerate / 2)
-    assert(feeConf.getCommitmentFeerate(feerates1, defaultNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, 100000 sat) == defaultMaxCommitFeerate / 2)
+    assert(feeConf.getCommitmentFeerate(feerates1, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat) == defaultMaxCommitFeerate / 2)
+    assert(feeConf.getCommitmentFeerate(feerates1, defaultNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == defaultMaxCommitFeerate / 2)
 
     val feerates2 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = defaultMaxCommitFeerate * 2, minimum = FeeratePerKw(250 sat))
-    assert(feeConf.getCommitmentFeerate(feerates2, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat, 100000 sat) == defaultMaxCommitFeerate)
-    assert(feeConf.getCommitmentFeerate(feerates2, defaultNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, 100000 sat) == defaultMaxCommitFeerate)
-    assert(feeConf.getCommitmentFeerate(feerates2, overrideNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat, 100000 sat) == overrideMaxCommitFeerate)
-    assert(feeConf.getCommitmentFeerate(feerates2, overrideNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, 100000 sat) == overrideMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(feerates2, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat) == defaultMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(feerates2, defaultNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == defaultMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(feerates2, overrideNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat) == overrideMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(feerates2, overrideNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == overrideMaxCommitFeerate)
 
     val feerates3 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = defaultMaxCommitFeerate / 2, minimum = FeeratePerKw(250 sat))
-    assert(feeConf.getCommitmentFeerate(feerates3, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat, 100000 sat) == defaultMaxCommitFeerate / 2)
-    assert(feeConf.getCommitmentFeerate(feerates3, defaultNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, 100000 sat) == defaultMaxCommitFeerate / 2)
+    assert(feeConf.getCommitmentFeerate(feerates3, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat) == defaultMaxCommitFeerate / 2)
+    assert(feeConf.getCommitmentFeerate(feerates3, defaultNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == defaultMaxCommitFeerate / 2)
 
     val feerates4 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = defaultMaxCommitFeerate * 1.5, minimum = FeeratePerKw(250 sat))
-    assert(feeConf.getCommitmentFeerate(feerates4, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat, 100000 sat) == defaultMaxCommitFeerate)
-    assert(feeConf.getCommitmentFeerate(feerates4, defaultNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, 100000 sat) == defaultMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(feerates4, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat) == defaultMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(feerates4, defaultNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == defaultMaxCommitFeerate)
 
     val feerates5 = FeeratesPerKw.single(FeeratePerKw(25000 sat)).copy(minimum = FeeratePerKw(10000 sat))
-    assert(feeConf.getCommitmentFeerate(feerates5, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat, 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
-    assert(feeConf.getCommitmentFeerate(feerates5, defaultNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
-    assert(feeConf.getCommitmentFeerate(feerates5, overrideNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat, 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
-    assert(feeConf.getCommitmentFeerate(feerates5, overrideNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(feerates5, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(feerates5, defaultNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(feerates5, overrideNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(feerates5, overrideNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == FeeratePerKw(10000 sat) * 1.25)
 
     val feerates6 = FeeratesPerKw.single(FeeratePerKw(25000 sat)).copy(minimum = FeeratePerKw(10000 sat))
-    assert(feeConf.getCommitmentFeerate(feerates6, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat, 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
-    assert(feeConf.getCommitmentFeerate(feerates6, defaultNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
-    assert(feeConf.getCommitmentFeerate(feerates6, overrideNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat, 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
-    assert(feeConf.getCommitmentFeerate(feerates6, overrideNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, 100000 sat) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(feerates6, defaultNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(feerates6, defaultNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(feerates6, overrideNodeId, UnsafeLegacyAnchorOutputsCommitmentFormat) == FeeratePerKw(10000 sat) * 1.25)
+    assert(feeConf.getCommitmentFeerate(feerates6, overrideNodeId, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == FeeratePerKw(10000 sat) * 1.25)
+  }
+
+  test("get closing feerate") {
+    val maxClosingFeerate = FeeratePerKw(2500 sat)
+    val feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Fast)
+    val feeConf = OnChainFeeConf(feeTargets, maxClosingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
+    val feerates1 = FeeratesPerKw.single(FeeratePerKw(1000 sat)).copy(fast = FeeratePerKw(1500 sat))
+    assert(feeConf.getClosingFeerate(feerates1, None) == FeeratePerKw(1500 sat))
+    val feerates2 = FeeratesPerKw.single(FeeratePerKw(1000 sat)).copy(fast = FeeratePerKw(500 sat))
+    assert(feeConf.getClosingFeerate(feerates2, None) == FeeratePerKw(500 sat))
+    val feerates3 = FeeratesPerKw.single(FeeratePerKw(1000 sat)).copy(fast = FeeratePerKw(3000 sat))
+    assert(feeConf.getClosingFeerate(feerates3, None) == maxClosingFeerate)
+    assert(feeConf.getClosingFeerate(feerates3, maxClosingFeerateOverride_opt = Some(FeeratePerKw(2600 sat))) == FeeratePerKw(2600 sat))
+    assert(feeConf.getClosingFeerate(feerates3, maxClosingFeerateOverride_opt = Some(FeeratePerKw(2400 sat))) == FeeratePerKw(2400 sat))
   }
 
   test("fee difference too high") {

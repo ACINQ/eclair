@@ -22,24 +22,26 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, Btc, ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxHash, TxId, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.balance.CheckBalance
-import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, GlobalBalance, MainAndHtlcBalance, PossiblyPublishedMainAndHtlcBalance, PossiblyPublishedMainBalance}
-import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
-import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.balance.CheckBalance.{GlobalBalance, MainAndHtlcBalance}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
+import fr.acinq.eclair.db.OfferData
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.{Invoice, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc}
+import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc, Transactions}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs
+import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferTlv}
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.AnyFunSuiteLike
 import org.scalatest.matchers.should.Matchers
 import scodec.bits._
 
 import java.net.InetAddress
-import java.util.UUID
+import java.util.{Currency, UUID}
 
 class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Matchers {
 
@@ -119,10 +121,12 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val probe = TestProbe()(system)
     val dummyPublicKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101").publicKey
     val dummyBytes32 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
-    val localParams = LocalParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), 546 sat, Long.MaxValue.msat, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
-    val remoteParams = RemoteParams(dummyPublicKey, 546 sat, UInt64.MaxValue, Some(1000 sat), 1 msat, CltvExpiryDelta(144), 50, dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
-    val commitmentInput = Funding.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey)
-    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil)
+    val localChannelParams = LocalChannelParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), Some(1000 sat), isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
+    val localCommitParams = CommitParams(546 sat, 1 msat, UInt64(Long.MaxValue), 50, CltvExpiryDelta(144))
+    val remoteChannelParams = RemoteChannelParams(dummyPublicKey, Some(1000 sat), dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
+    val remoteCommitParams = CommitParams(546 sat, 1 msat, UInt64.MaxValue, 50, CltvExpiryDelta(144))
+    val commitmentInput = Transactions.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey, DefaultCommitmentFormat)
+    val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), TxId(dummyBytes32), IndividualSignature(ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 50_000_000 msat, 100_000_000 msat), TxId(dummyBytes32), dummyPublicKey)
     val channelInfo = RES_GET_CHANNEL_INFO(
       PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"),
@@ -131,9 +135,9 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
       NORMAL,
       DATA_NORMAL(
         Commitments(
-          ChannelParams(dummyBytes32, ChannelConfig.standard, ChannelFeatures(), localParams, remoteParams, ChannelFlags(announceChannel = true)),
+          ChannelParams(dummyBytes32, ChannelConfig.standard, ChannelFeatures(), localChannelParams, remoteChannelParams, ChannelFlags(announceChannel = true)),
           CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
-          List(Commitment(0, 0, dummyPublicKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, localCommit, remoteCommit, None)),
+          List(Commitment(0, 0, commitmentInput.outPoint, 150_000 sat, dummyPublicKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, DefaultCommitmentFormat, localCommitParams, localCommit, remoteCommitParams, remoteCommit, None)),
           inactive = Nil,
           Right(dummyPublicKey),
           ShaChain.init,
@@ -142,7 +146,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         ShortIdAliases(Alias(42), None),
         None,
         ChannelUpdate(ByteVector64(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 100 msat, 0, 2_000_000 msat),
-        None, None, None, SpliceStatus.NoSplice
+        SpliceStatus.NoSplice, None, None, None
       )
     )
     val expected =
@@ -153,31 +157,21 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         | "data": {
         |   "type": "DATA_NORMAL",
         |   "commitments": {
-        |     "params": {
+        |     "channelParams": {
         |       "channelId": "0202020202020202020202020202020202020202020202020202020202020202",
         |       "channelConfig": ["funding_pubkey_based_channel_keypath"],
         |       "channelFeatures": [],
         |       "localParams": {
         |         "nodeId": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
         |         "fundingKeyPath": [42],
-        |         "dustLimit": 546,
-        |         "maxHtlcValueInFlightMsat": 9223372036854775807,
         |         "initialRequestedChannelReserve_opt": 1000,
-        |         "htlcMinimum": 1,
-        |         "toSelfDelay": 144,
-        |         "maxAcceptedHtlcs": 50,
         |         "isChannelOpener": true,
         |         "paysCommitTxFees" : true,
         |         "initFeatures": { "activated": {}, "unknown": [] }
         |       },
         |       "remoteParams": {
         |         "nodeId": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
-        |         "dustLimit": 546,
-        |         "maxHtlcValueInFlightMsat": 18446744073709551615,
         |         "initialRequestedChannelReserve_opt": 1000,
-        |         "htlcMinimum": 1,
-        |         "toSelfDelay": 144,
-        |         "maxAcceptedHtlcs": 50,
         |         "revocationBasepoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
         |         "paymentBasepoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
         |         "delayedPaymentBasepoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f",
@@ -198,19 +192,38 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |     "active": [
         |       {
         |         "fundingTxIndex": 0,
-        |         "fundingTx": { "outPoint": "0202020202020202020202020202020202020202020202020202020202020202:0", "amountSatoshis": 150000 },
+        |         "fundingInput": "0202020202020202020202020202020202020202020202020202020202020202:0",
+        |         "fundingAmount": 150000,
         |         "localFunding": { "status":"unconfirmed" },
         |         "remoteFunding": { "status":"locked" },
+        |         "commitmentFormat": "legacy",
+        |         "localCommitParams": {
+        |           "dustLimit": 546,
+        |           "htlcMinimum": 1,
+        |           "maxHtlcValueInFlight": 9223372036854775807,
+        |           "maxAcceptedHtlcs": 50,
+        |           "toSelfDelay": 144
+        |         },
         |         "localCommit": {
         |           "index": 0,
         |           "spec": { "htlcs": [], "commitTxFeerate": 2500, "toLocal": 100000000, "toRemote": 50000000 },
-        |           "commitTxAndRemoteSig": { "commitTx": { "txid": "4ebd325a4b394cff8c57e8317ccf5a8d0e2bdf1b8526f8aad6c8e43d8240621a", "tx": "02000000000000000000" },"remoteSig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
-        |           "htlcTxsAndRemoteSigs": []
+        |           "txId": "0202020202020202020202020202020202020202020202020202020202020202",
+        |           "remoteSig": {
+        |             "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        |           },
+        |           "htlcRemoteSigs": []
+        |         },
+        |         "remoteCommitParams": {
+        |           "dustLimit": 546,
+        |           "htlcMinimum": 1,
+        |           "maxHtlcValueInFlight": 18446744073709551615,
+        |           "maxAcceptedHtlcs": 50,
+        |           "toSelfDelay": 144
         |         },
         |         "remoteCommit": {
         |           "index": 0,
         |           "spec": { "htlcs": [], "commitTxFeerate": 2500, "toLocal": 50000000, "toRemote": 100000000 },
-        |           "txid": "0202020202020202020202020202020202020202020202020202020202020202",
+        |           "txId": "0202020202020202020202020202020202020202020202020202020202020202",
         |           "remotePerCommitmentPoint": "031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"
         |         }
         |       }
@@ -255,7 +268,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         hmac = ByteVector32(hex"9442626f72c475963dbddf8a57ab2cef3013eb3d6a5e8afbea9e631dac4481f5")
       ),
       pathKey_opt = None,
-      confidence = 0.7,
+      endorsement = 6,
       fundingFee_opt = None,
     )
 
@@ -286,7 +299,6 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val inputInfo = InputInfo(
       outPoint = OutPoint(TxHash.fromValidHex("345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 42),
       txOut = TxOut(456651 sat, hex"3c7a66997c681a3de1bae56438abeee4fc50a16554725a430ade1dc8db6bdd76704d45c6151c4051d710cf487e63"),
-      redeemScript = hex"00dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773"
     )
     JsonSerializers.serialization.write(inputInfo)(JsonSerializers.formats) shouldBe """{"outPoint":"9f0b9c0ce92c175ca4e78acfd13a718099c73818b6d3140cfe6f04ec052b5b34:42","amountSatoshis":456651}"""
   }
@@ -331,30 +343,64 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     JsonSerializers.serialization.write(pr)(JsonSerializers.formats) shouldBe """{"amount":456001234,"nodeId":"03c48ac97e09f3cbbaeb35b02aaa6d072b57726841a34d25952157caca60a1caf5","paymentHash":"2cb0e7b052366787450c33daf6d2f2c3cb6132221326e1c1b49ac97fdd7eb720","description":"minimal offer","features":{"activated":{},"unknown":[]},"blindedPaths":[{"introductionNodeId":"03c48ac97e09f3cbbaeb35b02aaa6d072b57726841a34d25952157caca60a1caf5","blindedNodeIds":["031fca650042031dcb777156ef66806c73b01a7f52c4e73c89a0d15823a1ac6237"]}],"createdAt":1665412681,"expiresAt":1665412981,"serialized":"lni1qqsf4h8fsnpjkj057gjg9c3eqhv889440xh0z6f5kng9vsaad8pgq7sgqsdjuqsqpgxk66twd9kkzmpqdanxvetjzcss83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh42qsxlc5vp2m0rvmjcxn2y34wv0m5lyc7sdj7zksgn35dvxgqqqqqqqzjqsdjupkjtqssx05572ha26x39rczan5yft22pgwa72jw8gytavkm5ydn7yf5kpgh5zsq83y2e9lqnu7tht4ntvp24fksw26hwf5yrg6dyk2jz472efs2rjh4q2rd3ny0elv9m7mh38xxwe6ypfheeqeqlwgft05r6dhc50gtw0nv2qgrrl9x2qzzqvwukam32mhkdqrvwwcp5l6jcnnnezdq69vz8gdvvgmsqwk3efqf3f6gmf0ul63940awz429rdhhsts86s0r30e5nffwhrqw90xgxf7f60sm7tcclvyqwz7cer5q9223madstdy2p5q6y8qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqf2qheqqqqq2gprrgshynfszqyk2sgpvkrnmq53kv7r52rpnmtmd9ukredsnygsnymsurdy6e9la6l4hyz4qgxewqmftqggrcj9vjlsf709m46e4kq425mg89dthy6zp5dxjt9fp2l9v5c9pet6lqsx4k5r7rsld3hhe87psyy5cnhhzt4dz838f75734mted7pdsrflpvys23tkafmhctf3musnsaa42h6qjdggyqlhtevutzzpzlnwd8alq"}"""
   }
 
+  test("Bolt 12 offer") {
+    val minimalOffer = Offer(TlvStream[OfferTlv](OfferTypes.OfferNodeId(PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"))))
+    JsonSerializers.serialization.write(minimalOffer)(JsonSerializers.formats) shouldBe """{"nodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"}"""
+
+    val ref = "lno1pqzqzltcgq9q6urvv4shxefqv3hkuct5v58qxrp4qqfquctvd93k2srpvd5kuufwvdh3vggzg2hd49ueds8phzcahvh4p2m3pnen649dza2h3k6gxpaequr8fhtq"
+    val offer = Offer.decode(ref).get
+    JsonSerializers.serialization.write(offer)(JsonSerializers.formats) shouldBe """{"amount":"25000.000","currency":"satoshi","description":"please donate","expiry":{"iso":"1970-01-10T06:13:20Z","unix":800000},"issuer":"alice@acinq.co","nodeId":"0242aeda97996c0e1b8b1dbb2f50ab710cf33d54ad175578db48307b9070674dd6"}"""
+
+    val bigOffer = Offer(TlvStream(Set[OfferTlv](
+      OfferTypes.OfferChains(Seq(Block.Testnet4GenesisBlock.hash)),
+      OfferTypes.OfferMetadata(hex"d5f4a6"),
+      OfferTypes.OfferCurrency(Currency.getInstance("EUR")),
+      OfferTypes.OfferAmount(86205),
+      OfferTypes.OfferDescription("offer with a lot of fields in it"),
+      OfferTypes.OfferFeatures(Features(Features.ProvideStorage -> FeatureSupport.Mandatory).toByteVector),
+      OfferTypes.OfferAbsoluteExpiry(TimestampSecond(3600)),
+      OfferTypes.OfferPaths(Seq(Sphinx.RouteBlinding.BlindedRoute(EncodedNodeId.WithPublicKey.Plain(PublicKey(hex"022812e3a3760ac989b8749ee9fc70fd12e4d7f3cad5e3e2bf572e9e4eaaa7b7d9")), PublicKey(hex"028a2b20b2debdfd97de08f6e2374f2946116492f358b78acf9eac05f6fdac632d"), Seq(Sphinx.RouteBlinding.BlindedHop(PublicKey(hex"031b27d9e97dbb0ef87c48bb0231c96c6bca1ee54b0e0cfe869ad2388ce247719f"), hex"def5"))))),
+      OfferTypes.OfferIssuer("bob@bobcorp.com"),
+      OfferTypes.OfferQuantityMax(5),
+      OfferTypes.OfferNodeId(PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")),
+    ), Set(GenericTlv(UInt64(71), hex"bd4e85ce"))))
+    JsonSerializers.serialization.write(bigOffer)(JsonSerializers.formats) shouldBe """{"chains":["43f08bdab050e35b567c864b91f47f50ae725ae2de53bcfbbaf284da00000000"],"amount":"862.05","currency":"EUR","description":"offer with a lot of fields in it","expiry":{"iso":"1970-01-01T01:00:00Z","unix":3600},"issuer":"bob@bobcorp.com","nodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","paths":[{"firstNodeId":{"publicKey":"022812e3a3760ac989b8749ee9fc70fd12e4d7f3cad5e3e2bf572e9e4eaaa7b7d9"},"length":1}],"quantityMax":5,"features":{"activated":{"option_provide_storage":"mandatory"},"unknown":[]},"metadata":"d5f4a6","unknownTlvs":{"71":"bd4e85ce"}}"""
+  }
+
+  test("Bolt 12 offer data") {
+    val ref = "lno1pqzqzltcgq9q6urvv4shxefqv3hkuct5v58qxrp4qqfquctvd93k2srpvd5kuufwvdh3vggzg2hd49ueds8phzcahvh4p2m3pnen649dza2h3k6gxpaequr8fhtq"
+    val offer = OfferData(Offer.decode(ref).get, None, createdAt = TimestampMilli(100), disabledAt_opt = None)
+    JsonSerializers.serialization.write(offer)(JsonSerializers.formats) shouldBe """{"amountMsat":25000000,"description":"please donate","issuer":"alice@acinq.co","nodeId":"0242aeda97996c0e1b8b1dbb2f50ab710cf33d54ad175578db48307b9070674dd6","createdAt":{"iso":"1970-01-01T00:00:00.100Z","unix":0},"expiry":{"iso":"1970-01-10T06:13:20Z","unix":800000},"disabled":false,"encoded":"lno1pqzqzltcgq9q6urvv4shxefqv3hkuct5v58qxrp4qqfquctvd93k2srpvd5kuufwvdh3vggzg2hd49ueds8phzcahvh4p2m3pnen649dza2h3k6gxpaequr8fhtq"}"""
+    val disabledOffer = offer.copy(disabledAt_opt = Some(TimestampMilli(200)))
+    JsonSerializers.serialization.write(disabledOffer)(JsonSerializers.formats) shouldBe """{"amountMsat":25000000,"description":"please donate","issuer":"alice@acinq.co","nodeId":"0242aeda97996c0e1b8b1dbb2f50ab710cf33d54ad175578db48307b9070674dd6","createdAt":{"iso":"1970-01-01T00:00:00.100Z","unix":0},"expiry":{"iso":"1970-01-10T06:13:20Z","unix":800000},"disabled":true,"disabledAt":{"iso":"1970-01-01T00:00:00.200Z","unix":0},"encoded":"lno1pqzqzltcgq9q6urvv4shxefqv3hkuct5v58qxrp4qqfquctvd93k2srpvd5kuufwvdh3vggzg2hd49ueds8phzcahvh4p2m3pnen649dza2h3k6gxpaequr8fhtq"}"""
+    val pathId = ByteVector32.fromValidHex("5d370c0e1c64280acce1638bc6f225360d8219e572394e8077b4bb07da867926")
+    val privateRef = "lno1pqzqzltcgq9pwurvv4shxefqv3hkuct5v5s8qunfweshgetv0yggwqunzcwg835jzj83htxa3gh850kht0epmvl82skjqfdgwuwxukmv4ypp7yufyhnq0tygxh2g98tdjx2hzerf2rs4dqum8xlcd5eu56s0s3cpqtas0eecjjn25r5jstankpp7rw4wr3wtefyjffhsnmr4ekjfzw2dcqpp8g9rm5cmsv02e6jmfe40hg6uxnwkalt5cc2l0zx8ju7xazfycrw5j"
+    val privateOffer = OfferData(Offer.decode(privateRef).get, Some(pathId), createdAt = TimestampMilli(150), disabledAt_opt = None)
+    JsonSerializers.serialization.write(privateOffer)(JsonSerializers.formats) shouldBe """{"amountMsat":25000000,"description":"please donate privately","blindedPathFirstNodeId":"0393161c83c692148f1bacdd8a2e7a3ed75bf21db3e7542d2025a8771c6e5b6ca9","createdAt":{"iso":"1970-01-01T00:00:00.150Z","unix":0},"disabled":false,"encoded":"lno1pqzqzltcgq9pwurvv4shxefqv3hkuct5v5s8qunfweshgetv0yggwqunzcwg835jzj83htxa3gh850kht0epmvl82skjqfdgwuwxukmv4ypp7yufyhnq0tygxh2g98tdjx2hzerf2rs4dqum8xlcd5eu56s0s3cpqtas0eecjjn25r5jstankpp7rw4wr3wtefyjffhsnmr4ekjfzw2dcqpp8g9rm5cmsv02e6jmfe40hg6uxnwkalt5cc2l0zx8ju7xazfycrw5j"}"""
+  }
+
   test("GlobalBalance serializer") {
     val gb = GlobalBalance(
       onChain = CheckBalance.DetailedOnChainBalance(
-        confirmed = Map(OutPoint(TxId.fromValidHex("9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3) -> Btc(1.4)),
+        deeplyConfirmed = Map(OutPoint(TxId.fromValidHex("9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3) -> Btc(1.4)),
+        recentlyConfirmed = Map(OutPoint(TxId.fromValidHex("4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2"), 5) -> Btc(0.7)),
         unconfirmed = Map(OutPoint(TxId.fromValidHex("345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 1) -> Btc(0.05)),
-        utxos = Seq.empty
+        utxos = Seq.empty,
+        recentlySpentInputs = Set.empty,
       ),
-      offChain = CheckBalance.OffChainBalance(normal = MainAndHtlcBalance(
-        toLocal = Btc(0.2),
-        htlcs = Btc(0.05)
-      ), closing = ClosingBalance(
-        localCloseBalance = PossiblyPublishedMainAndHtlcBalance(
-          toLocal = Map(OutPoint(TxId.fromValidHex("4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2"), 0) -> Btc(0.1)),
-          htlcs = Map(OutPoint(TxId.fromValidHex("94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71"), 1) -> Btc(0.03), OutPoint(TxId.fromValidHex("a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13"), 3) -> Btc(0.06)),
-          htlcsUnpublished = Btc(0.01)),
-        mutualCloseBalance = PossiblyPublishedMainBalance(
-          toLocal = Map(OutPoint(TxId.fromValidHex("7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247"), 4) -> Btc(0.1)))
-      )
+      offChain = CheckBalance.OffChainBalance(
+        normal = MainAndHtlcBalance(
+          toLocal = Btc(0.2),
+          htlcs = Btc(0.05)
+        ),
+        closing = MainAndHtlcBalance(
+          toLocal = Btc(0.3),
+          htlcs = Btc(0.07)
+        )
       ),
       channels = Map.empty, // not used by json serializer
-      knownPreimages = Set.empty, // not used by json serializer
-
     )
-    JsonSerializers.serialization.write(gb)(JsonSerializers.formats) shouldBe """{"total":2.0,"onChain":{"total":1.45,"confirmed":{"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692:3":1.4},"unconfirmed":{"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f:1":0.05}},"offChain":{"waitForFundingConfirmed":0.0,"waitForChannelReady":0.0,"normal":{"toLocal":0.2,"htlcs":0.05},"shutdown":{"toLocal":0.0,"htlcs":0.0},"negotiating":0.0,"closing":{"localCloseBalance":{"toLocal":{"4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2:0":0.1},"htlcs":{"94b70cec5a98d67d17c6e3de5c7697f8a6cab4f698df91e633ce35efa3574d71:1":0.03,"a844edd41ce8503864f3c95d89d850b177a09d7d35e950a7d27c14abb63adb13:3":0.06},"htlcsUnpublished":0.01},"remoteCloseBalance":{"toLocal":{},"htlcs":{},"htlcsUnpublished":0.0},"mutualCloseBalance":{"toLocal":{"7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247:4":0.1}},"unknownCloseBalance":{"toLocal":0.0,"htlcs":0.0}},"waitForPublishFutureCommitment":0.0}}"""
+    JsonSerializers.serialization.write(gb)(JsonSerializers.formats) shouldBe """{"total":2.77,"onChain":{"total":2.15,"deeplyConfirmed":{"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692:3":1.4},"recentlyConfirmed":{"4d176ad844c363bed59edf81962b008faa6194c3b3757ffcd26ba60f95716db2:5":0.7},"unconfirmed":{"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f:1":0.05}},"offChain":{"waitForFundingConfirmed":0.0,"waitForChannelReady":0.0,"normal":{"toLocal":0.2,"htlcs":0.05},"shutdown":{"toLocal":0.0,"htlcs":0.0},"negotiating":{"toLocal":0.0,"htlcs":0.0},"closing":{"toLocal":0.3,"htlcs":0.07},"waitForPublishFutureCommitment":0.0}}"""
   }
 
   test("type hints") {
@@ -369,43 +415,43 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
 
   test("TransactionWithInputInfo serializer") {
     // the input info is ignored when serializing to JSON
-    val dummyInputInfo = InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(Satoshi(0), Nil), Nil)
+    val dummyInputInfo = InputInfo(OutPoint(TxId(ByteVector32.Zeroes), 0), TxOut(Satoshi(0), Nil))
 
     val htlcSuccessTx = Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800")
-    val htlcSuccessTxInfo = HtlcSuccessTx(dummyInputInfo, htlcSuccessTx, ByteVector32.One, 3, ConfirmationTarget.Absolute(BlockHeight(1105)))
+    val htlcSuccessTxInfo = UnsignedHtlcSuccessTx(dummyInputInfo, htlcSuccessTx, ByteVector32.One, 3, CltvExpiry(1105), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val htlcSuccessJson =
       s"""{
          |  "txid": "${htlcSuccessTx.txid.value.toHex}",
          |  "tx": "0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800",
          |  "paymentHash": "0100000000000000000000000000000000000000000000000000000000000000",
          |  "htlcId": 3,
-         |  "confirmBeforeBlock": 1105
+         |  "htlcExpiry": 1105
          |}
     """.stripMargin
     assertJsonEquals(JsonSerializers.serialization.write(htlcSuccessTxInfo)(JsonSerializers.formats), htlcSuccessJson)
 
     val claimHtlcTimeoutTx = Transaction.read("010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000")
-    val claimHtlcTimeoutTxInfo = ClaimHtlcTimeoutTx(dummyInputInfo, claimHtlcTimeoutTx, 2, ConfirmationTarget.Absolute(BlockHeight(144)))
+    val claimHtlcTimeoutTxInfo = ClaimHtlcTimeoutTx(null, dummyInputInfo, claimHtlcTimeoutTx, ByteVector32.One, 2, CltvExpiry(144), ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val claimHtlcTimeoutJson =
       s"""{
          |  "txid": "${claimHtlcTimeoutTx.txid.value.toHex}",
          |  "tx": "010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000",
+         |  "paymentHash": "0100000000000000000000000000000000000000000000000000000000000000",
          |  "htlcId": 2,
-         |  "confirmBeforeBlock": 144
+         |  "htlcExpiry": 144
          |}
     """.stripMargin
     assertJsonEquals(JsonSerializers.serialization.write(claimHtlcTimeoutTxInfo)(JsonSerializers.formats), claimHtlcTimeoutJson)
 
     val closingTx = Transaction.read("0100000001be43e9788523ed4de0b24a007a90009bc25e667ddac0e9ee83049be03e220138000000006b483045022100f74dd6ad3e6a00201d266a0ed860a6379c6e68b473970423f3fc8a15caa1ea0f022065b4852c9da230d9e036df743cb743601ca5229e1cb610efdd99769513f2a2260121020636de7755830fb4a3f136e97ecc6c58941611957ba0364f01beae164b945b2fffffffff0150f80c000000000017a9146809053148799a10480eada3d56d15edf4a648c88700000000")
-    val closingTxWithLocalOutput = ClosingTx(dummyInputInfo, closingTx, Some(OutputInfo(1, Satoshi(15000), hex"deadbeef")))
+    val closingTxWithLocalOutput = ClosingTx(dummyInputInfo, closingTx, Some(0))
     val closingTxWithLocalOutputJson =
       s"""{
          |  "txid": "${closingTx.txid.value.toHex}",
          |  "tx": "0100000001be43e9788523ed4de0b24a007a90009bc25e667ddac0e9ee83049be03e220138000000006b483045022100f74dd6ad3e6a00201d266a0ed860a6379c6e68b473970423f3fc8a15caa1ea0f022065b4852c9da230d9e036df743cb743601ca5229e1cb610efdd99769513f2a2260121020636de7755830fb4a3f136e97ecc6c58941611957ba0364f01beae164b945b2fffffffff0150f80c000000000017a9146809053148799a10480eada3d56d15edf4a648c88700000000",
          |  "toLocalOutput": {
-         |    "index": 1,
-         |    "amount": 15000,
-         |    "publicKeyScript": "deadbeef"
+         |    "amount": 850000,
+         |    "publicKeyScript": "a9146809053148799a10480eada3d56d15edf4a648c887"
          |  }
          |}
     """.stripMargin
@@ -470,7 +516,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   /** utility method that strips line breaks in the expected json */
-  def assertJsonEquals(actual: String, expected: String) = {
+  def assertJsonEquals(actual: String, expected: String): Unit = {
     val cleanedExpected = expected
       .replace("\n", "")
       .replace("\r", "")

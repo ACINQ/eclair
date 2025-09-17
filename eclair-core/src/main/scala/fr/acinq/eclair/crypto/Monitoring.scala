@@ -22,21 +22,10 @@ import kamon.metric.MeasurementUnit
 object Monitoring {
 
   object Metrics {
-    val SignTxCount = Kamon.counter("crypto.keymanager.sign.count")
-    val SignTxDuration = Kamon.timer("crypto.keymanager.sign.duration")
     val MessageSize = Kamon.histogram("messages.size", MeasurementUnit.information.bytes)
   }
 
   object Tags {
-    val TxOwner = "txOwner"
-    val TxType = "txType"
-
-    object TxTypes {
-      val CommitTx = "commit"
-      val HtlcTx = "htlc"
-      val RevokedTx = "revoked"
-    }
-
     val MessageDirection = "direction"
 
     object MessageDirections {

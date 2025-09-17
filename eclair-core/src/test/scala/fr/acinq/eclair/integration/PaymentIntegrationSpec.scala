@@ -110,7 +110,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }, max = 20 seconds, interval = 1 second)
 
     // confirming the funding tx
-    generateBlocks(6)
+    generateBlocks(8)
 
     within(60 seconds) {
       var count = 0
@@ -158,8 +158,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("send an HTLC A->D") {
-    val (sender, eventListener) = (TestProbe(), TestProbe())
+    val (sender, eventListener, holdTimesRecorder) = (TestProbe(), TestProbe(), TestProbe())
     nodes("D").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
+    nodes("A").system.eventStream.subscribe(holdTimesRecorder.ref, classOf[Router.ReportedHoldTimes])
 
     // first we retrieve a payment hash from D
     val amountMsat = 4200000.msat
@@ -174,6 +175,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(ps.id == paymentId)
     assert(Crypto.sha256(ps.paymentPreimage) == invoice.paymentHash)
     eventListener.expectMsg(PaymentMetadataReceived(invoice.paymentHash, invoice.paymentMetadata.get))
+
+    assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B", "C", "D").map(nodes(_).nodeParams.nodeId))
   }
 
   test("send an HTLC A->D with an invalid expiry delta for B") {
@@ -243,7 +246,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("send an HTLC A->D with an unknown payment hash") {
-    val sender = TestProbe()
+    val (sender, holdTimesRecorder) = (TestProbe(), TestProbe())
+    nodes("A").system.eventStream.subscribe(holdTimesRecorder.ref, classOf[Router.ReportedHoldTimes])
+
     val amount = 100000000 msat
     val unknownInvoice = Bolt11Invoice(Block.RegtestGenesisBlock.hash, Some(amount), randomBytes32(), nodes("D").nodeParams.privateKey, Left("test"), finalCltvExpiryDelta)
     val invoice = SendPaymentToNode(sender.ref, amount, unknownInvoice, Nil, routeParams = integrationTestRouteParams, maxAttempts = 5)
@@ -256,6 +261,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(failed.paymentHash == invoice.paymentHash)
     assert(failed.failures.size == 1)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(amount, getBlockHeight())))
+
+    assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B", "C", "D").map(nodes(_).nodeParams.nodeId))
   }
 
   test("send an HTLC A->D with a lower amount than requested") {
@@ -327,7 +334,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("send an HTLC A->B->G->C using heuristics to select the route") {
-    val sender = TestProbe()
+    val (sender, holdTimesRecorder) = (TestProbe(), TestProbe())
+    nodes("A").system.eventStream.subscribe(holdTimesRecorder.ref, classOf[Router.ReportedHoldTimes])
     // first we retrieve a payment hash from C
     val amountMsat = 2000.msat
     sender.send(nodes("C").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("Change from coffee")))
@@ -338,6 +346,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent]
     ps.parts.foreach(part => assert(part.route.getOrElse(Nil).exists(_.nodeId == nodes("G").nodeParams.nodeId)))
+
+    assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B", "G", "C").map(nodes(_).nodeParams.nodeId))
   }
 
   test("send a multi-part payment B->D") {
@@ -370,7 +380,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     awaitCond(nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now()).nonEmpty)
     val sent = nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now())
     assert(sent.length == 1, sent)
-    assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) == paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
+    assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) == paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp), remainingAttribution_opt = None), sent)
 
     awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
@@ -463,7 +473,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
   test("send a trampoline payment B->F1 (via trampoline G)") {
     val start = TimestampMilli.now()
-    val sender = TestProbe()
+    val (sender, holdTimesRecorderB, holdTimesRecorderG) = (TestProbe(), TestProbe(), TestProbe())
+    nodes("B").system.eventStream.subscribe(holdTimesRecorderB.ref, classOf[Router.ReportedHoldTimes])
+    nodes("G").system.eventStream.subscribe(holdTimesRecorderG.ref, classOf[Router.ReportedHoldTimes])
     val amount = 4_000_000_000L.msat
     sender.send(nodes("F").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("like trampoline much?")))
     val invoice = sender.expectMsgType[Bolt11Invoice]
@@ -492,6 +504,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == invoice.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < paymentSent.feesPaid, relayed)
+
+    assert(holdTimesRecorderG.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("C", "F").map(nodes(_).nodeParams.nodeId))
+    assert(holdTimesRecorderB.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("G").map(nodes(_).nodeParams.nodeId))
   }
 
   test("send a trampoline payment D->B (via trampoline C)") {
@@ -567,7 +582,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("send a trampoline payment B->D (temporary local failure at trampoline)") {
-    val sender = TestProbe()
+    val (sender, holdTimesRecorder) = (TestProbe(), TestProbe())
 
     // We put most of the capacity C <-> D on D's side.
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(8_000_000_000L msat), Left("plz send everything")))
@@ -583,16 +598,22 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(invoice.features.hasFeature(Features.BasicMultiPartPayment))
     assert(invoice.features.hasFeature(Features.TrampolinePaymentPrototype))
 
+    nodes("B").system.eventStream.subscribe(holdTimesRecorder.ref, classOf[Router.ReportedHoldTimes])
     val payment = SendTrampolinePayment(sender.ref, invoice, nodes("C").nodeParams.nodeId, routeParams = integrationTestRouteParams)
     sender.send(nodes("B").paymentInitiator, payment)
     val paymentId = sender.expectMsgType[UUID]
     val paymentFailed = sender.expectMsgType[PaymentFailed](max = 30 seconds)
     assert(paymentFailed.id == paymentId, paymentFailed)
     assert(paymentFailed.paymentHash == invoice.paymentHash, paymentFailed)
+
+    assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("C").map(nodes(_).nodeParams.nodeId))
   }
 
   test("send a trampoline payment A->D (temporary remote failure at trampoline)") {
-    val sender = TestProbe()
+    val (sender, holdTimesRecorderA, holdTimesRecorderB) = (TestProbe(), TestProbe(), TestProbe())
+    nodes("A").system.eventStream.subscribe(holdTimesRecorderA.ref, classOf[Router.ReportedHoldTimes])
+    nodes("B").system.eventStream.subscribe(holdTimesRecorderB.ref, classOf[Router.ReportedHoldTimes])
+
     val amount = 1_800_000_000L.msat // B can forward to C, but C doesn't have that much outgoing capacity to D
     sender.send(nodes("D").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amount), Left("I iz not Satoshi")))
     val invoice = sender.expectMsgType[Bolt11Invoice]
@@ -605,6 +626,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val paymentFailed = sender.expectMsgType[PaymentFailed](max = 30 seconds)
     assert(paymentFailed.id == paymentId, paymentFailed)
     assert(paymentFailed.paymentHash == invoice.paymentHash, paymentFailed)
+
+    assert(holdTimesRecorderB.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("C").map(nodes(_).nodeParams.nodeId))
+    assert(holdTimesRecorderA.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B").map(nodes(_).nodeParams.nodeId))
   }
 
   test("send a blinded payment B->D with many blinded routes") {
@@ -765,7 +789,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val offerHandler = TypedProbe[HandlerCommand]()(nodes("D").system.toTyped)
     nodes("D").offerManager ! RegisterOffer(offer, Some(nodes("D").nodeParams.privateKey), None, offerHandler.ref)
 
-    val sender = TestProbe()
+    val (sender, holdTimesRecorderA, holdTimesRecorderB) = (TestProbe(), TestProbe(), TestProbe())
+    nodes("A").system.eventStream.subscribe(holdTimesRecorderA.ref, classOf[Router.ReportedHoldTimes])
+    nodes("B").system.eventStream.subscribe(holdTimesRecorderB.ref, classOf[Router.ReportedHoldTimes])
     val alice = new EclairImpl(nodes("A"))
     alice.payOfferTrampoline(offer, amount, 1, nodes("B").nodeParams.nodeId, maxAttempts_opt = Some(1))(30 seconds).pipeTo(sender.ref)
 
@@ -788,6 +814,9 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingBlindedPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(paymentSent.paymentHash)
     assert(receivedAmount >= amount)
+
+    assert(holdTimesRecorderB.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("C").map(nodes(_).nodeParams.nodeId))
+    assert(holdTimesRecorderA.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B").map(nodes(_).nodeParams.nodeId))
   }
 
   test("send to compact route") {

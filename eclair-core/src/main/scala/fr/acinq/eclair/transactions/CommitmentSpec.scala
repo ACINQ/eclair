@@ -16,27 +16,46 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.scalacompat.SatoshiLong
+import fr.acinq.bitcoin.scalacompat.{LexicographicalOrdering, SatoshiLong, TxOut}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, PhoenixSimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol._
 
 /**
  * Created by PM on 07/12/2016.
  */
 
-sealed trait CommitmentOutput
+sealed trait CommitmentOutput {
+  val txOut: TxOut
+}
 
 object CommitmentOutput {
   // @formatter:off
-  case object ToLocal extends CommitmentOutput
-  case object ToRemote extends CommitmentOutput
-  case object ToLocalAnchor extends CommitmentOutput
-  case object ToRemoteAnchor extends CommitmentOutput
-  case class InHtlc(incomingHtlc: IncomingHtlc) extends CommitmentOutput
-  case class OutHtlc(outgoingHtlc: OutgoingHtlc) extends CommitmentOutput
+  case class ToLocal(txOut: TxOut) extends CommitmentOutput
+  case class ToRemote(txOut: TxOut) extends CommitmentOutput
+  case class ToLocalAnchor(txOut: TxOut) extends CommitmentOutput
+  case class ToRemoteAnchor(txOut: TxOut) extends CommitmentOutput
+  // If there is an output for an HTLC in the commit tx, there is also a 2nd-level HTLC tx.
+  case class InHtlc(htlc: IncomingHtlc, txOut: TxOut, htlcDelayedOutput: TxOut) extends CommitmentOutput
+  case class OutHtlc(htlc: OutgoingHtlc, txOut: TxOut, htlcDelayedOutput: TxOut) extends CommitmentOutput
   // @formatter:on
+
+  def isLessThan(a: CommitmentOutput, b: CommitmentOutput): Boolean = (a, b) match {
+    // Outgoing HTLCs that have the same payment_hash will have the same script. If they also have the same amount, they
+    // will produce exactly the same output: in that case, we must sort them using their expiry (see Bolt 3).
+    // If they also have the same expiry, it doesn't really matter how we sort them, but in order to provide a fully
+    // deterministic ordering (which is useful for tests), we sort them by htlc_id, which cannot be equal.
+    case (a: OutHtlc, b: OutHtlc) if a.txOut == b.txOut && a.htlc.add.cltvExpiry == b.htlc.add.cltvExpiry => a.htlc.add.id <= b.htlc.add.id
+    case (a: OutHtlc, b: OutHtlc) if a.txOut == b.txOut => a.htlc.add.cltvExpiry <= b.htlc.add.cltvExpiry
+    // Incoming HTLCs that have the same payment_hash *and* expiry will have the same script. If they also have the same
+    // amount, they will produce exactly the same output: just like offered HTLCs, it doesn't really matter how we sort
+    // them, but we use the htlc_id to provide a fully deterministic ordering. Note that the expiry is included in the
+    // script, so HTLCs with different expiries will have different scripts, and will thus be sorted by script as required
+    // by Bolt 3.
+    case (a: InHtlc, b: InHtlc) if a.txOut == b.txOut => a.htlc.add.id <= b.htlc.add.id
+    case _ => LexicographicalOrdering.isLessThan(a.txOut, b.txOut)
+  }
 }
 
 sealed trait DirectedHtlc {
@@ -74,8 +93,9 @@ case class OutgoingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 final case class CommitmentSpec(htlcs: Set[DirectedHtlc], commitTxFeerate: FeeratePerKw, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
 
   def htlcTxFeerate(commitmentFormat: CommitmentFormat): FeeratePerKw = commitmentFormat match {
-    case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat => FeeratePerKw(0 sat)
-    case _ => commitTxFeerate
+    case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat => FeeratePerKw(0 sat)
+    case UnsafeLegacyAnchorOutputsCommitmentFormat | PhoenixSimpleTaprootChannelCommitmentFormat => commitTxFeerate
+    case DefaultCommitmentFormat => commitTxFeerate
   }
 
   def findIncomingHtlcById(id: Long): Option[IncomingHtlc] = htlcs.collectFirst { case htlc: IncomingHtlc if htlc.add.id == id => htlc }

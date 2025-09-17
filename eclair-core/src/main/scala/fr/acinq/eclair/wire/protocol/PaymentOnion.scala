@@ -532,6 +532,22 @@ object PaymentOnion {
     }
   }
 
+  /**
+   * A payload used when creating test payments to a first trampoline node without using MPP, since the spec allows it.
+   * We never use this class to decode incoming payments though: we will instead insert a dummy [[PaymentData]] entry
+   * when decrypting the onion to avoid duplicating code and data. This class is thus only used to allow creating such
+   * payloads.
+   */
+  case class TrampolineWithoutMppPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends PerHopPayload {
+    require(records.get[TrampolineOnion].nonEmpty, "trampoline onion must be included")
+  }
+
+  object TrampolineWithoutMppPayload {
+    def create(amount: MilliSatoshi, expiry: CltvExpiry, trampolinePacket: OnionRoutingPacket): TrampolineWithoutMppPayload = {
+      TrampolineWithoutMppPayload(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), TrampolineOnion(trampolinePacket)))
+    }
+  }
+
 }
 
 object PaymentOnionCodecs {

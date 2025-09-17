@@ -90,6 +90,7 @@ trait BitcoindService extends Logging {
 
   def startBitcoind(useCookie: Boolean = false,
                     defaultAddressType_opt: Option[String] = None,
+                    changeAddressType_opt: Option[String] = None,
                     mempoolSize_opt: Option[Int] = None, // mempool size in MB
                     mempoolMinFeerate_opt: Option[FeeratePerByte] = None, // transactions below this feerate won't be accepted in the mempool
                     startupFlags: String = ""): Unit = {
@@ -103,9 +104,9 @@ trait BitcoindService extends Logging {
           .replace("28334", bitcoindZmqBlockPort.toString)
           .replace("28335", bitcoindZmqTxPort.toString)
           .appendedAll(defaultAddressType_opt.map(addressType => s"addresstype=$addressType\n").getOrElse(""))
-          .appendedAll(defaultAddressType_opt.map(addressType => s"changetype=$addressType\n").getOrElse(""))
+          .appendedAll(changeAddressType_opt.map(addressType => s"changetype=$addressType\n").getOrElse(""))
           .appendedAll(mempoolSize_opt.map(mempoolSize => s"maxmempool=$mempoolSize\n").getOrElse(""))
-          .appendedAll(mempoolMinFeerate_opt.map(mempoolMinFeerate => s"minrelaytxfee=${FeeratePerKB(mempoolMinFeerate).feerate.toBtc.toBigDecimal}\n").getOrElse(""))
+          .appendedAll(mempoolMinFeerate_opt.map(mempoolMinFeerate => s"minrelaytxfee=${mempoolMinFeerate.perKB.feerate.toBtc.toBigDecimal}\n").getOrElse(""))
         if (useCookie) {
           defaultConf
             .replace("rpcuser=foo", "")
@@ -123,7 +124,7 @@ trait BitcoindService extends Logging {
     } else {
       UserPassword("foo", "bar")
     }
-    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
+    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(Block.RegtestGenesisBlock.hash, rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
     bitcoincli = system.actorOf(Props(new Actor {
       override def receive: Receive = {
         case BitcoinReq(method) => bitcoinrpcclient.invoke(method).pipeTo(sender())
@@ -217,7 +218,7 @@ trait BitcoindService extends Logging {
   def createWallet(walletName: String, sender: TestProbe = TestProbe()): BitcoinJsonRPCClient = {
     sender.send(bitcoincli, BitcoinReq("createwallet", walletName))
     sender.expectMsgType[JValue]
-    new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
+    new BasicBitcoinJsonRPCClient(Block.RegtestGenesisBlock.hash, rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
   }
 
   def getNewAddress(sender: TestProbe = TestProbe(), rpcClient: BitcoinJsonRPCClient = bitcoinrpcclient, addressType_opt: Option[String] = None): String = {
@@ -247,7 +248,7 @@ trait BitcoindService extends Logging {
     val tx = Transaction(version = 2, Nil, TxOut(amountSat, addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).toOption.get) :: Nil, lockTime = 0)
     val client = makeBitcoinCoreClient()
     val f = for {
-      funded <- client.fundTransaction(tx, FeeratePerKw(FeeratePerByte(Satoshi(10))), replaceable = true)
+      funded <- client.fundTransaction(tx, FeeratePerByte(Satoshi(10)).perKw, replaceable = true)
       signed <- client.signPsbt(new Psbt(funded.tx), funded.tx.txIn.indices, Nil)
       txid <- client.publishTransaction(signed.finalTx_opt.toOption.get)
       tx <- client.getTransaction(txid)

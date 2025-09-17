@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{BlockId, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.TimestampMilli
 import fr.acinq.eclair.blockchain.NewBlock
-import fr.acinq.eclair.channel.ChannelSignatureReceived
+import fr.acinq.eclair.channel.{ChannelSignatureReceived, ChannelSpendSignature}
 import fr.acinq.eclair.io.PeerConnected
 import fr.acinq.eclair.payment.ChannelPaymentRelayed
 import fr.acinq.eclair.router.NodeUpdated
@@ -50,7 +50,7 @@ object WeakEntropyPool {
   private case class WrappedNewBlock(blockId: BlockId) extends Command
   private case class WrappedPaymentRelayed(paymentHash: ByteVector32, relayedAt: TimestampMilli) extends Command
   private case class WrappedPeerConnected(nodeId: PublicKey) extends Command
-  private case class WrappedChannelSignature(wtxid: ByteVector32) extends Command
+  private case class WrappedChannelSignature(sig: ChannelSpendSignature) extends Command
   private case class WrappedNodeUpdated(sig: ByteVector64) extends Command
   // @formatter:on
 
@@ -60,7 +60,7 @@ object WeakEntropyPool {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelPaymentRelayed](e => WrappedPaymentRelayed(e.paymentHash, e.timestamp)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerConnected](e => WrappedPeerConnected(e.nodeId)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NodeUpdated](e => WrappedNodeUpdated(e.ann.signature)))
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelSignatureReceived](e => WrappedChannelSignature(e.commitments.latest.localCommit.commitTxAndRemoteSig.commitTx.tx.wtxid)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelSignatureReceived](e => WrappedChannelSignature(e.commitments.latest.localCommit.remoteSig)))
       Behaviors.withTimers { timers =>
         timers.startTimerWithFixedDelay(FlushEntropy, 30 seconds)
         collecting(collector, None)
@@ -87,7 +87,10 @@ object WeakEntropyPool {
 
       case WrappedNodeUpdated(sig) => collecting(collector, collect(entropy_opt, sig ++ ByteVector.fromLong(System.currentTimeMillis())))
 
-      case WrappedChannelSignature(wtxid) => collecting(collector, collect(entropy_opt, wtxid ++ ByteVector.fromLong(System.currentTimeMillis())))
+      case WrappedChannelSignature(sig) => sig match {
+        case ChannelSpendSignature.IndividualSignature(sig) => collecting(collector, collect(entropy_opt, sig ++ ByteVector.fromLong(System.currentTimeMillis())))
+        case ChannelSpendSignature.PartialSignatureWithNonce(partialSig, _) => collecting(collector, collect(entropy_opt, partialSig ++ ByteVector.fromLong(System.currentTimeMillis())))
+      }
     }
   }
 

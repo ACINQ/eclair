@@ -22,13 +22,15 @@ import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.BasicMultiPartPayment
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedHop, BlindedRoute}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.varintoverflow
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceRequestTlvCodec, offerTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.{BlockHeight, EncodedNodeId, Features, MilliSatoshiLong, RealShortChannelId, randomBytes32, randomKey}
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
+import scodec.codecs.{utf8, variableSizeBytesLong}
 
 import java.io.File
 import scala.io.Source
@@ -65,7 +67,7 @@ class OfferTypesSpec extends AnyFunSuite {
   test("offer with amount and quantity") {
     val offer = Offer(TlvStream[OfferTlv](
       OfferChains(Seq(Block.Testnet3GenesisBlock.hash)),
-      OfferAmount(50 msat),
+      OfferAmount(50),
       OfferDescription("offer with quantity"),
       OfferIssuer("alice@bigshop.com"),
       OfferQuantityMax(0),
@@ -131,7 +133,7 @@ class OfferTypesSpec extends AnyFunSuite {
 
   test("check that invoice request matches offer (chain compatibility)") {
     {
-      val offer = Offer(TlvStream(OfferAmount(100 msat), OfferDescription("offer without chains"), OfferNodeId(randomKey().publicKey)))
+      val offer = Offer(TlvStream(OfferAmount(100), OfferDescription("offer without chains"), OfferNodeId(randomKey().publicKey)))
       val payerKey = randomKey()
       val request = {
         val tlvs: Set[InvoiceRequestTlv] = offer.records.records ++ Set(
@@ -152,7 +154,7 @@ class OfferTypesSpec extends AnyFunSuite {
     }
     {
       val (chain1, chain2) = (BlockHash(randomBytes32()), BlockHash(randomBytes32()))
-      val offer = Offer(TlvStream(OfferChains(Seq(chain1, chain2)), OfferAmount(100 msat), OfferDescription("offer with chains"), OfferNodeId(randomKey().publicKey)))
+      val offer = Offer(TlvStream(OfferChains(Seq(chain1, chain2)), OfferAmount(100), OfferDescription("offer with chains"), OfferNodeId(randomKey().publicKey)))
       val payerKey = randomKey()
       val request1 = InvoiceRequest(offer, 100 msat, 1, Features.empty, payerKey, chain1)
       assert(request1.isValid)
@@ -169,7 +171,7 @@ class OfferTypesSpec extends AnyFunSuite {
 
   test("check that invoice request matches offer (multiple items)") {
     val offer = Offer(TlvStream(
-      OfferAmount(500 msat),
+      OfferAmount(500),
       OfferDescription("offer for multiple items"),
       OfferNodeId(randomKey().publicKey),
       OfferQuantityMax(10),
@@ -314,13 +316,8 @@ class OfferTypesSpec extends AnyFunSuite {
     val testVectors = JsonMethods.parse(src.mkString).extract[Seq[TestVector]]
     src.close()
     for (vector <- testVectors) {
-      if (vector.description == "with currency") {
-        // We don't support currency conversion yet.
-        assert(Offer.decode(vector.bolt12).isFailure)
-      } else {
-        val offer = Offer.decode(vector.bolt12)
-        assert((offer.isSuccess && offer.get.features.unknown.forall(_.bitIndex % 2 == 1)) == vector.valid, vector.description)
-      }
+      val offer = Offer.decode(vector.bolt12)
+      assert((offer.isSuccess && offer.get.features.unknown.forall(_.bitIndex % 2 == 1)) == vector.valid, vector.description)
     }
   }
 
@@ -335,5 +332,22 @@ class OfferTypesSpec extends AnyFunSuite {
     for (vector <- testVectors) {
       assert(Offer.decode(vector.string).isSuccess == vector.valid, vector.comment)
     }
+  }
+
+  test("offer currency") {
+    def encode(s: String): BitVector = variableSizeBytesLong(varintoverflow, utf8).encode(s).require
+
+    assert(OfferCodecs.offerCurrency.decode(encode("EUR")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("USD")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("CHF")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("JOD")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("CNY")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("GBP")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("JPY")).isSuccessful)
+    assert(OfferCodecs.offerCurrency.decode(encode("EURO")).isFailure)
+    assert(OfferCodecs.offerCurrency.decode(encode("eur")).isFailure)
+    assert(OfferCodecs.offerCurrency.decode(encode("BTC")).isFailure)
+    assert(OfferCodecs.offerCurrency.decode(encode("XAU")).isFailure)
+    assert(OfferCodecs.offerCurrency.decode(hex"ffffff".bits).isFailure)
   }
 }

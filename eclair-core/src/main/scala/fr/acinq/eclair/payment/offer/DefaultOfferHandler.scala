@@ -19,7 +19,6 @@ package fr.acinq.eclair.payment.offer
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.{ActorRef, typed}
-import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.payment.offer.OfferManager.InvoiceRequestActor
@@ -83,9 +82,13 @@ object DefaultOfferHandler {
         Behaviors.withMdc(Logs.mdc(category_opt = Some(LogCategory.PAYMENT), offerId_opt = Some(invoiceRequest.offer.offerId))) {
           Behaviors.receiveMessagePartial {
             case GetPaymentPaths(replyTo, blindedPathFirstNodeId) =>
-              val routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
-                .modify(_.boundaries.maxRouteLength).setTo(nodeParams.offersConfig.paymentPathLength)
-                .modify(_.boundaries.maxCltv).setTo(nodeParams.offersConfig.paymentPathCltvExpiryDelta)
+              val defaultRouteParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
+              val routeParams = defaultRouteParams.copy(boundaries = Router.SearchBoundaries(
+                maxFeeFlat = defaultRouteParams.boundaries.maxFeeFlat,
+                maxFeeProportional = defaultRouteParams.boundaries.maxFeeProportional,
+                maxRouteLength = nodeParams.offersConfig.paymentPathLength,
+                maxCltv = nodeParams.offersConfig.paymentPathCltvExpiryDelta
+              ))
               router ! BlindedRouteRequest(context.messageAdapter(WrappedRouteResponse), blindedPathFirstNodeId, nodeParams.nodeId, invoiceRequest.amount, routeParams, nodeParams.offersConfig.paymentPathCount, blip18InboundFees = nodeParams.routerConf.blip18InboundFees, excludePositiveInboundFees = nodeParams.routerConf.excludePositiveInboundFees)
               waitForRoute(nodeParams, replyTo, invoiceRequest, blindedPathFirstNodeId, context)
           }

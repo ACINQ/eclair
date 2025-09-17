@@ -4,17 +4,18 @@ import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestActor, TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.fsm.Channel
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
-import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.{ChannelReestablish, ChannelUpdate, CommitSig, Error, Init, RevokeAndAck}
 import fr.acinq.eclair.{TestKitBaseClass, _}
-import org.scalatest.{Outcome, Tag}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
 
@@ -59,7 +60,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     alice.stop()
 
     // we restart Alice
-    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(Alice.nodeParams, Alice.channelKeys(), wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     newAlice ! INPUT_RESTORED(oldStateData)
 
     // then we reconnect them
@@ -68,7 +69,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
 
     // peers exchange channel_reestablish messages
     alice2bob.expectMsgType[ChannelReestablish]
-    val ce = bob2alice.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
 
     // alice then realizes it has an old state...
     bob2alice.forward(newAlice)
@@ -80,19 +81,20 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     awaitCond(newAlice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
 
     // bob is nice and publishes its commitment
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager).tx
+    val bobCommitTx = bob.signCommitTx()
 
     // actual tests starts here: let's see what we can do with Bob's commit tx
     sender.send(newAlice, WatchFundingSpentTriggered(bobCommitTx))
 
     // from Bob's commit tx we can extract both funding public keys
     val OP_2 :: OP_PUSHDATA(pub1, _) :: OP_PUSHDATA(pub2, _) :: OP_2 :: OP_CHECKMULTISIG :: Nil = Script.parse(bobCommitTx.txIn(0).witness.stack.last)
+    assert(Set(pub1, pub2).map(PublicKey(_)) == Set(Alice.channelKeys().fundingKey(0).publicKey, Bob.channelKeys().fundingKey(0).publicKey))
     // from Bob's commit tx we can also extract our p2wpkh output
     val ourOutput = bobCommitTx.txOut.find(_.publicKeyScript.length == 22).get
     val OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil = Script.parse(ourOutput.publicKeyScript)
 
     // check that our output in Bob's commit tx sends to our static payment point
-    val Some(ourStaticPaymentPoint) = oldStateData.asInstanceOf[DATA_NORMAL].commitments.params.localParams.walletStaticPaymentBasepoint
+    val Some(ourStaticPaymentPoint) = oldStateData.asInstanceOf[DATA_NORMAL].commitments.localChannelParams.walletStaticPaymentBasepoint
     assert(pubKeyHash == ourStaticPaymentPoint.hash160)
   }
 
@@ -134,7 +136,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     alice.stop()
 
     // we restart Alice
-    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(Alice.nodeParams, Alice.channelKeys(), wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     newAlice ! INPUT_RESTORED(oldStateData)
 
     newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
@@ -186,8 +188,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
         .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setTo(2345)
         .modify(_.channelConf.expiryDelta).setTo(CltvExpiryDelta(147)),
     ) foreach { newConfig =>
-
-      val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+      val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, Alice.channelKeys(), wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
       newAlice ! INPUT_RESTORED(oldStateData)
 
       val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]

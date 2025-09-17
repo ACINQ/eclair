@@ -47,7 +47,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice {
   val description: Option[String] = invoiceRequest.offer.description
   override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
-  override val features: Features[InvoiceFeature] = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features.empty)
+  override val features: Features[InvoiceFeature] = records.get[InvoiceFeatures].map(f => Features(f.features).invoiceFeatures()).getOrElse(Features.empty)
   val blindedPaths: Seq[PaymentBlindedRoute] = records.get[InvoicePaths].get.paths.zip(records.get[InvoiceBlindedPay].get.paymentInfo).map { case (route, info) => PaymentBlindedRoute(route, info) }
   val fallbacks: Option[Seq[FallbackAddress]] = records.get[InvoiceFallbacks].map(_.addresses)
   val signature: ByteVector64 = records.get[Signature].get.signature
@@ -114,7 +114,7 @@ object Bolt12Invoice {
       Some(InvoiceRelativeExpiry(invoiceExpiry.toSeconds)),
       Some(InvoicePaymentHash(Crypto.sha256(preimage))),
       Some(InvoiceAmount(amount)),
-      if (!features.isEmpty) Some(InvoiceFeatures(features.unscoped())) else None,
+      if (!features.isEmpty) Some(InvoiceFeatures(features.unscoped().toByteVector)) else None,
       Some(InvoiceNodeId(nodeKey.publicKey)),
     ).flatten ++ additionalTlvs
     val signature = signSchnorr(signatureTag, rootHash(TlvStream(tlvs, request.records.unknown ++ customTlvs), OfferCodecs.invoiceTlvCodec), nodeKey)
@@ -167,7 +167,7 @@ case class MinimalBolt12Invoice(records: TlvStream[InvoiceTlv]) extends Invoice 
   val description: Option[String] = records.get[OfferDescription].map(_.description)
   override val createdAt: TimestampSecond = records.get[InvoiceCreatedAt].get.timestamp
   override val relativeExpiry: FiniteDuration = FiniteDuration(records.get[InvoiceRelativeExpiry].map(_.seconds).getOrElse(Bolt12Invoice.DEFAULT_EXPIRY_SECONDS), TimeUnit.SECONDS)
-  override val features: Features[InvoiceFeature] = records.get[InvoiceFeatures].map(_.features.invoiceFeatures()).getOrElse(Features[InvoiceFeature](Features.BasicMultiPartPayment -> FeatureSupport.Optional))
+  override val features: Features[InvoiceFeature] = records.get[InvoiceFeatures].map(f => Features(f.features).invoiceFeatures()).getOrElse(Features[InvoiceFeature](Features.BasicMultiPartPayment -> FeatureSupport.Optional))
 
   override def toString: String = {
     val data = OfferCodecs.invoiceTlvCodec.encode(records).require.bytes

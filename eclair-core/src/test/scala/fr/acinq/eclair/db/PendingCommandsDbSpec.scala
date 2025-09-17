@@ -18,13 +18,15 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC, HtlcSettlementCommand}
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.Attribution
 import fr.acinq.eclair.db.pg.PgPendingCommandsDb
 import fr.acinq.eclair.db.sqlite.SqlitePendingCommandsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{setVersion, using}
-import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.wire.internal.CommandCodecs.cmdCodec
 import fr.acinq.eclair.wire.protocol.{FailureMessageCodecs, FailureReason, UnknownNextPeer}
+import fr.acinq.eclair.{TimestampMilli, randomBytes, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.util.Random
@@ -51,18 +53,20 @@ class PendingCommandsDbSpec extends AnyFunSuite {
 
       val channelId1 = randomBytes32()
       val channelId2 = randomBytes32()
-      val msg0 = CMD_FULFILL_HTLC(0, randomBytes32())
-      val msg1 = CMD_FULFILL_HTLC(1, randomBytes32())
-      val msg2 = CMD_FAIL_HTLC(2, FailureReason.EncryptedDownstreamFailure(randomBytes32()))
-      val msg3 = CMD_FAIL_HTLC(3, FailureReason.EncryptedDownstreamFailure(randomBytes32()))
+      val msg0 = CMD_FULFILL_HTLC(0, randomBytes32(), None)
+      val msg1 = CMD_FULFILL_HTLC(1, randomBytes32(), Some(FulfillAttributionData(TimestampMilli(600), None, Some(randomBytes(Attribution.totalLength)))))
+      val msg2 = CMD_FAIL_HTLC(2, FailureReason.EncryptedDownstreamFailure(randomBytes32(), None), None)
+      val msg3 = CMD_FAIL_HTLC(3, FailureReason.EncryptedDownstreamFailure(randomBytes32(), Some(randomBytes(Sphinx.Attribution.totalLength))), Some(FailureAttributionData(TimestampMilli(500), Some(TimestampMilli(550)))))
       val msg4 = CMD_FAIL_MALFORMED_HTLC(4, randomBytes32(), FailureMessageCodecs.BADONION)
 
       assert(db.listSettlementCommands(channelId1).toSet == Set.empty)
       db.addSettlementCommand(channelId1, msg0)
       db.addSettlementCommand(channelId1, msg0) // duplicate
+      db.addSettlementCommand(channelId1, CMD_FAIL_HTLC(msg0.id, FailureReason.EncryptedDownstreamFailure(randomBytes32(), None), None)) // conflicting command
       db.addSettlementCommand(channelId1, msg1)
       db.addSettlementCommand(channelId1, msg2)
       db.addSettlementCommand(channelId1, msg3)
+      db.addSettlementCommand(channelId1, CMD_FULFILL_HTLC(msg3.id, randomBytes32(), None)) // conflicting command
       db.addSettlementCommand(channelId1, msg4)
       db.addSettlementCommand(channelId2, msg0) // same messages but for different channel
       db.addSettlementCommand(channelId2, msg1)
@@ -71,6 +75,8 @@ class PendingCommandsDbSpec extends AnyFunSuite {
       assert(db.listSettlementCommands().toSet == Set((channelId1, msg0), (channelId1, msg1), (channelId1, msg2), (channelId1, msg3), (channelId1, msg4), (channelId2, msg0), (channelId2, msg1)))
       db.removeSettlementCommand(channelId1, msg1.id)
       assert(db.listSettlementCommands().toSet == Set((channelId1, msg0), (channelId1, msg2), (channelId1, msg3), (channelId1, msg4), (channelId2, msg0), (channelId2, msg1)))
+      db.removeSettlementCommand(channelId1, msg0.id)
+      assert(db.listSettlementCommands().toSet == Set((channelId1, msg2), (channelId1, msg3), (channelId1, msg4), (channelId2, msg0), (channelId2, msg1)))
     }
   }
 
@@ -134,8 +140,8 @@ object PendingCommandsDbSpec {
     val channelId = randomBytes32()
     val cmds = (0 until Random.nextInt(5)).map { _ =>
       Random.nextInt(2) match {
-        case 0 => CMD_FULFILL_HTLC(Random.nextLong(100_000), randomBytes32())
-        case 1 => CMD_FAIL_HTLC(Random.nextLong(100_000), FailureReason.LocalFailure(UnknownNextPeer()))
+        case 0 => CMD_FULFILL_HTLC(Random.nextLong(100_000), randomBytes32(), None)
+        case 1 => CMD_FAIL_HTLC(Random.nextLong(100_000), FailureReason.LocalFailure(UnknownNextPeer()), None)
       }
     }
     cmds.map(cmd => TestCase(channelId, cmd))

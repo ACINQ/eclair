@@ -16,13 +16,17 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.TxId
 import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tu16}
-import scodec.{Attempt, Codec, Err}
-import scodec.bits.HexStringSyntax
+import scodec.bits.{ByteVector, HexStringSyntax}
 import scodec.codecs._
+import scodec.{Attempt, Codec, Err}
 
 /**
  * Created by t-bast on 19/07/2021.
@@ -55,13 +59,25 @@ object UpdateAddHtlcTlv {
 sealed trait UpdateFulfillHtlcTlv extends Tlv
 
 object UpdateFulfillHtlcTlv {
-  val updateFulfillHtlcTlvCodec: Codec[TlvStream[UpdateFulfillHtlcTlv]] = tlvStream(discriminated[UpdateFulfillHtlcTlv].by(varint))
+  case class AttributionData(data: ByteVector) extends UpdateFulfillHtlcTlv
+
+  private val attributionData: Codec[AttributionData] = (("length" | constant(hex"fd0398")) :: ("data" | bytes(Sphinx.Attribution.totalLength))).as[AttributionData]
+
+  val updateFulfillHtlcTlvCodec: Codec[TlvStream[UpdateFulfillHtlcTlv]] = tlvStream(discriminated[UpdateFulfillHtlcTlv].by(varint)
+    .typecase(UInt64(1), attributionData)
+  )
 }
 
 sealed trait UpdateFailHtlcTlv extends Tlv
 
 object UpdateFailHtlcTlv {
-  val updateFailHtlcTlvCodec: Codec[TlvStream[UpdateFailHtlcTlv]] = tlvStream(discriminated[UpdateFailHtlcTlv].by(varint))
+  case class AttributionData(data: ByteVector) extends UpdateFailHtlcTlv
+
+  private val attributionData: Codec[AttributionData] = (("length" | constant(hex"fd0398")) :: ("data" | bytes(Sphinx.Attribution.totalLength))).as[AttributionData]
+
+  val updateFailHtlcTlvCodec: Codec[TlvStream[UpdateFailHtlcTlv]] = tlvStream(discriminated[UpdateFailHtlcTlv].by(varint)
+    .typecase(UInt64(1), attributionData)
+  )
 }
 
 sealed trait UpdateFailMalformedHtlcTlv extends Tlv
@@ -81,7 +97,15 @@ object CommitSigTlv {
     val codec: Codec[BatchTlv] = tlvField(tu16)
   }
 
+  /** Partial signature signature for the current commitment transaction, along with the signing nonce used (when using taproot channels). */
+  case class PartialSignatureWithNonceTlv(partialSigWithNonce: PartialSignatureWithNonce) extends CommitSigTlv
+
+  object PartialSignatureWithNonceTlv {
+    val codec: Codec[PartialSignatureWithNonceTlv] = tlvField(partialSignatureWithNonce)
+  }
+
   val commitSigTlvCodec: Codec[TlvStream[CommitSigTlv]] = tlvStream(discriminated[CommitSigTlv].by(varint)
+    .typecase(UInt64(2), PartialSignatureWithNonceTlv.codec)
     .typecase(UInt64(0x47010005), BatchTlv.codec)
   )
 
@@ -90,5 +114,19 @@ object CommitSigTlv {
 sealed trait RevokeAndAckTlv extends Tlv
 
 object RevokeAndAckTlv {
-  val revokeAndAckTlvCodec: Codec[TlvStream[RevokeAndAckTlv]] = tlvStream(discriminated[RevokeAndAckTlv].by(varint))
+
+  /**
+   * Verification nonces used for the next commitment transaction, when using taproot channels.
+   * There must be a nonce for each active commitment (when there are pending splices or RBF attempts), indexed by the
+   * corresponding fundingTxId.
+   */
+  case class NextLocalNoncesTlv(nonces: Seq[(TxId, IndividualNonce)]) extends RevokeAndAckTlv
+
+  object NextLocalNoncesTlv {
+    val codec: Codec[NextLocalNoncesTlv] = tlvField(list(txIdAsHash ~ publicNonce).xmap[Seq[(TxId, IndividualNonce)]](_.toSeq, _.toList))
+  }
+
+  val revokeAndAckTlvCodec: Codec[TlvStream[RevokeAndAckTlv]] = tlvStream(discriminated[RevokeAndAckTlv].by(varint)
+    .typecase(UInt64(22), NextLocalNoncesTlv.codec)
+  )
 }

@@ -1,19 +1,14 @@
 {
   "type" : "DATA_NORMAL",
   "commitments" : {
-    "params" : {
+    "channelParams" : {
       "channelId" : "5986f644357956c1674f385e0878fb7bb44ab3d57ea9911fab98af8a71e1ad1b",
       "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
-      "channelFeatures" : [ "option_static_remotekey" ],
+      "channelFeatures" : [ ],
       "localParams" : {
         "nodeId" : "03933884aaf1d6b108397e5efe5c86bcf2d8ca8d2f700eda99db9214fc2712b134",
         "fundingKeyPath" : [ 2353764507, 3184449568, 2809819526, 3258060413, 392846475, 1545000620, 720603293, 1808318336, 2147483649 ],
-        "dustLimit" : 546,
-        "maxHtlcValueInFlightMsat" : 20000000000,
         "initialRequestedChannelReserve_opt" : 150000,
-        "htlcMinimum" : 1,
-        "toSelfDelay" : 720,
-        "maxAcceptedHtlcs" : 30,
         "isChannelOpener" : true,
         "paysCommitTxFees" : true,
         "upfrontShutdownScript_opt" : "00148061b7fbd2d84ed1884177ea785faecb2080b103",
@@ -35,12 +30,7 @@
       },
       "remoteParams" : {
         "nodeId" : "027455aef8453d92f4706b560b61527cc217ddf14da41770e8ed6607190a1851b8",
-        "dustLimit" : 573,
-        "maxHtlcValueInFlightMsat" : 14850000000,
         "initialRequestedChannelReserve_opt" : 150000,
-        "htlcMinimum" : 1,
-        "toSelfDelay" : 1802,
-        "maxAcceptedHtlcs" : 483,
         "revocationBasepoint" : "0343bf4bfbaea5c100f1f2bf1cdf82a0ef97c9a0069a2aec631e7c3084ba929b75",
         "paymentBasepoint" : "03c54e7d5ccfc13f1a6c7a441ffcfac86248574d1bc0fe9773836f4c724ea7b2bd",
         "delayedPaymentBasepoint" : "03765aaac2e8fa6dbce7de5143072e9d9d5e96a1fd451d02fe4ff803f413f303f8",
@@ -81,15 +71,21 @@
     },
     "active" : [ {
       "fundingTxIndex" : 0,
-      "fundingTx" : {
-        "outPoint" : "1bade1718aaf98ab1f91a97ed5b34ab47bfb78085e384f67c156793544f68659:0",
-        "amountSatoshis" : 15000000
-      },
+      "fundingInput" : "1bade1718aaf98ab1f91a97ed5b34ab47bfb78085e384f67c156793544f68659:0",
+      "fundingAmount" : 15000000,
       "localFunding" : {
         "status" : "unconfirmed"
       },
       "remoteFunding" : {
         "status" : "locked"
+      },
+      "commitmentFormat" : "legacy",
+      "localCommitParams" : {
+        "dustLimit" : 546,
+        "htlcMinimum" : 1,
+        "maxHtlcValueInFlight" : 20000000000,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 1802
       },
       "localCommit" : {
         "index" : 4,
@@ -99,14 +95,18 @@
           "toLocal" : 15000000000,
           "toRemote" : 0
         },
-        "commitTxAndRemoteSig" : {
-          "commitTx" : {
-            "txid" : "fa747ecb6f718c6831cc7148cf8d65c3468d2bb6c202605e2b82d2277491222f",
-            "tx" : "02000000015986f644357956c1674f385e0878fb7bb44ab3d57ea9911fab98af8a71e1ad1b0000000000c2d6178001f8d5e4000000000022002080f1dfe71a865b605593e169677c952aaa1196fc2f541ef7d21c3b1006527b61d7782c20"
-          },
-          "remoteSig" : "871afd240e20a171b9cba46f20555f848c5850f94ec7da7b33b9eeaf6af6653c119cda8cbf5f80986d6a4f0db2590c734d1de399a7060a477b5d94df0183625b"
+        "txId" : "fa747ecb6f718c6831cc7148cf8d65c3468d2bb6c202605e2b82d2277491222f",
+        "remoteSig" : {
+          "sig" : "871afd240e20a171b9cba46f20555f848c5850f94ec7da7b33b9eeaf6af6653c119cda8cbf5f80986d6a4f0db2590c734d1de399a7060a477b5d94df0183625b"
         },
-        "htlcTxsAndRemoteSigs" : [ ]
+        "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 573,
+        "htlcMinimum" : 1,
+        "maxHtlcValueInFlight" : 14850000000,
+        "maxAcceptedHtlcs" : 483,
+        "toSelfDelay" : 720
       },
       "remoteCommit" : {
         "index" : 4,
@@ -116,7 +116,7 @@
           "toLocal" : 0,
           "toRemote" : 15000000000
         },
-        "txid" : "b5f2287b2d5edf4df5602a3c287db3b938c3f1a943e40715886db5bd400f95d8",
+        "txId" : "b5f2287b2d5edf4df5602a3c287db3b938c3f1a943e40715886db5bd400f95d8",
         "remotePerCommitmentPoint" : "02e7e1abac1feb54ee3ac2172c9e2231f77765df57664fb44a6dc2e4aa9e6a9a6a"
       }
     } ],

@@ -1,19 +1,14 @@
 {
   "type" : "DATA_WAIT_FOR_CHANNEL_READY",
   "commitments" : {
-    "params" : {
+    "channelParams" : {
       "channelId" : "83a6dea8adf975b60df17738937034a2f96cb8b784da01e2934e9e172244317d",
       "channelConfig" : [ "funding_pubkey_based_channel_keypath" ],
       "channelFeatures" : [ ],
       "localParams" : {
         "nodeId" : "02aaaa00ce2f18a967dc4f25f414e671ba6585f8ef0b8c5fb812c21064f55a2eaa",
         "fundingKeyPath" : [ 303987973, 3198768511, 3783619274, 2277156978, 1699864653, 63358126, 3265052696, 516813756, 2147483649 ],
-        "dustLimit" : 1100,
-        "maxHtlcValueInFlightMsat" : 500000000,
         "initialRequestedChannelReserve_opt" : 10000,
-        "htlcMinimum" : 0,
-        "toSelfDelay" : 144,
-        "maxAcceptedHtlcs" : 100,
         "isChannelOpener" : true,
         "paysCommitTxFees" : true,
         "upfrontShutdownScript_opt" : "0014c59265957886e166f37c863dca15b49aa42d75b4",
@@ -32,12 +27,7 @@
       },
       "remoteParams" : {
         "nodeId" : "02bbbb671d15145722fb8c28d732cddb249bcc6652ed2b297ff1f77a18371b1e63",
-        "dustLimit" : 1000,
-        "maxHtlcValueInFlightMsat" : 1000000000,
         "initialRequestedChannelReserve_opt" : 20000,
-        "htlcMinimum" : 1000,
-        "toSelfDelay" : 144,
-        "maxAcceptedHtlcs" : 30,
         "revocationBasepoint" : "033b164d14b54f08a951f9e40fb84e637021f376c9ae2907975f9ff0795431205d",
         "paymentBasepoint" : "03759da3f6bdcc2f595e1a98eb4803729743ab8608e28788cfe96726b5328c214c",
         "delayedPaymentBasepoint" : "03abc3ae99fac104e94f79cafcd70247cc336cdc21a53d4c3a4c321b54e20902e7",
@@ -76,15 +66,21 @@
     },
     "active" : [ {
       "fundingTxIndex" : 0,
-      "fundingTx" : {
-        "outPoint" : "7d314422179e4e93e201da84b7b86cf9a23470933877f10db675f9ada8dea683:0",
-        "amountSatoshis" : 1000000
-      },
+      "fundingInput" : "7d314422179e4e93e201da84b7b86cf9a23470933877f10db675f9ada8dea683:0",
+      "fundingAmount" : 1000000,
       "localFunding" : {
         "status" : "unconfirmed"
       },
       "remoteFunding" : {
         "status" : "locked"
+      },
+      "commitmentFormat" : "legacy",
+      "localCommitParams" : {
+        "dustLimit" : 1100,
+        "htlcMinimum" : 0,
+        "maxHtlcValueInFlight" : 500000000,
+        "maxAcceptedHtlcs" : 100,
+        "toSelfDelay" : 144
       },
       "localCommit" : {
         "index" : 0,
@@ -94,14 +90,18 @@
           "toLocal" : 800000000,
           "toRemote" : 200000000
         },
-        "commitTxAndRemoteSig" : {
-          "commitTx" : {
-            "txid" : "a591186503570022767b96fc4e02448e2c2d95f9e83f06c526f810886b02dedd",
-            "tx" : "020000000183a6dea8adf975b60df17738937034a2f96cb8b784da01e2934e9e172244317d0000000000fc10bb8002400d03000000000016001434b58af5c6bf8472898ef7ed44f65bce2e4a6101b8180c00000000002200206bf6eeedf2e93dee452c92c0c1e2421cc064bf8f70b432c6e36459215576d24decab0320"
-          },
-          "remoteSig" : "8ccca40bbf6c859ceb2d5288153801426e19f8b119c2d1d4ba6d82511c7816aa0eaa8e41eafb179818d1ba7b0cfdce2da5fa002921df00a1fb4e1458d0b9042c"
+        "txId" : "a591186503570022767b96fc4e02448e2c2d95f9e83f06c526f810886b02dedd",
+        "remoteSig" : {
+          "sig" : "8ccca40bbf6c859ceb2d5288153801426e19f8b119c2d1d4ba6d82511c7816aa0eaa8e41eafb179818d1ba7b0cfdce2da5fa002921df00a1fb4e1458d0b9042c"
         },
-        "htlcTxsAndRemoteSigs" : [ ]
+        "htlcRemoteSigs" : [ ]
+      },
+      "remoteCommitParams" : {
+        "dustLimit" : 1000,
+        "htlcMinimum" : 1000,
+        "maxHtlcValueInFlight" : 1000000000,
+        "maxAcceptedHtlcs" : 30,
+        "toSelfDelay" : 144
       },
       "remoteCommit" : {
         "index" : 0,
@@ -111,7 +111,7 @@
           "toLocal" : 200000000,
           "toRemote" : 800000000
         },
-        "txid" : "839b92423077adb38eeaa118dd6ba0e6daf8c1e0add666ddd18f57b517a2d750",
+        "txId" : "839b92423077adb38eeaa118dd6ba0e6daf8c1e0add666ddd18f57b517a2d750",
         "remotePerCommitmentPoint" : "0324b50221ad635b97f597802fbe5b2d6414fdf41f224ac1869d3772314e9fbfa5"
       }
     } ],

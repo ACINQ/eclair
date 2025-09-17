@@ -20,10 +20,10 @@ import akka.actor.{ActorRef, PossiblyHarmful, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
-import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureReason, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
@@ -91,6 +91,12 @@ case object ERR_INFORMATION_LEAK extends ChannelState
       8888888888     Y8P     8888888888 888    Y888     888     "Y8888P"
  */
 
+case class ProposedCommitParams(localDustLimit: Satoshi,
+                                localHtlcMinimum: MilliSatoshi,
+                                localMaxHtlcValueInFlight: UInt64,
+                                localMaxAcceptedHtlcs: Int,
+                                toRemoteDelay: CltvExpiryDelta)
+
 case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         fundingAmount: Satoshi,
                                         dualFunded: Boolean,
@@ -100,7 +106,8 @@ case class INPUT_INIT_CHANNEL_INITIATOR(temporaryChannelId: ByteVector32,
                                         pushAmount_opt: Option[MilliSatoshi],
                                         requireConfirmedInputs: Boolean,
                                         requestFunding_opt: Option[LiquidityAds.RequestFunding],
-                                        localParams: LocalParams,
+                                        localChannelParams: LocalChannelParams,
+                                        proposedCommitParams: ProposedCommitParams,
                                         remote: ActorRef,
                                         remoteInit: Init,
                                         channelFlags: ChannelFlags,
@@ -114,7 +121,8 @@ case class INPUT_INIT_CHANNEL_NON_INITIATOR(temporaryChannelId: ByteVector32,
                                             dualFunded: Boolean,
                                             pushAmount_opt: Option[MilliSatoshi],
                                             requireConfirmedInputs: Boolean,
-                                            localParams: LocalParams,
+                                            localChannelParams: LocalChannelParams,
+                                            proposedCommitParams: ProposedCommitParams,
                                             remote: ActorRef,
                                             remoteInit: Init,
                                             channelConfig: ChannelConfig,
@@ -139,12 +147,19 @@ case class INPUT_RESTORED(data: PersistentChannelData)
 sealed trait Upstream { def amountIn: MilliSatoshi }
 object Upstream {
   /** We haven't restarted and have full information about the upstream parent(s). */
-  sealed trait Hot extends Upstream
+  sealed trait Hot extends Upstream {
+    /**
+     * Occupancy of the incoming channel (both slot and value occupancy combined) that will be compared to the outgoing confidence.
+     */
+    def incomingChannelOccupancy: Double
+  }
   object Hot {
     /** Our node is forwarding a single incoming HTLC. */
-    case class Channel(add: UpdateAddHtlc, receivedAt: TimestampMilli, receivedFrom: PublicKey) extends Hot {
+    case class Channel(add: UpdateAddHtlc, receivedAt: TimestampMilli, receivedFrom: PublicKey, incomingChannelOccupancy: Double) extends Hot {
       override val amountIn: MilliSatoshi = add.amountMsat
       val expiryIn: CltvExpiry = add.cltvExpiry
+
+      override def toString: String = s"Channel(amountIn=$amountIn, receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, endorsement=${add.endorsement}, incomingChannelOccupancy=$incomingChannelOccupancy)"
     }
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
     case class Trampoline(received: List[Channel]) extends Hot {
@@ -152,6 +167,10 @@ object Upstream {
       // We must use the lowest expiry of the incoming HTLC set.
       val expiryIn: CltvExpiry = received.map(_.add.cltvExpiry).min
       val receivedAt: TimestampMilli = received.map(_.receivedAt).max
+
+      override def incomingChannelOccupancy: Double = received.map(_.incomingChannelOccupancy).max
+
+      override def toString: String = s"Trampoline(${received.map(_.toString).mkString(",")})"
     }
   }
 
@@ -160,7 +179,7 @@ object Upstream {
   object Cold {
     def apply(hot: Hot): Cold = hot match {
       case Local(id) => Local(id)
-      case Hot.Channel(add, _, _) => Cold.Channel(add.channelId, add.id, add.amountMsat)
+      case Hot.Channel(add, _, _, _) => Cold.Channel(add.channelId, add.id, add.amountMsat)
       case Hot.Trampoline(received) => Cold.Trampoline(received.map(r => Cold.Channel(r.add.channelId, r.add.id, r.add.amountMsat)))
     }
 
@@ -175,7 +194,10 @@ object Upstream {
   }
 
   /** Our node is the origin of the payment: there are no matching upstream HTLCs. */
-  case class Local(id: UUID) extends Hot with Cold { override val amountIn: MilliSatoshi = 0 msat }
+  case class Local(id: UUID) extends Hot with Cold {
+    override val amountIn: MilliSatoshi = 0 msat
+    override def incomingChannelOccupancy: Double = 0.0
+  }
 }
 
 /**
@@ -208,14 +230,17 @@ final case class CMD_ADD_HTLC(replyTo: ActorRef,
                               cltvExpiry: CltvExpiry,
                               onion: OnionRoutingPacket,
                               nextPathKey_opt: Option[PublicKey],
-                              confidence: Double,
+                              reputationScore: Reputation.Score,
                               fundingFee_opt: Option[LiquidityAds.FundingFee],
                               origin: Origin.Hot,
                               commit: Boolean = false) extends HasReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
 
+case class FailureAttributionData(htlcReceivedAt: TimestampMilli, trampolineReceivedAt_opt: Option[TimestampMilli])
+case class FulfillAttributionData(htlcReceivedAt: TimestampMilli, trampolineReceivedAt_opt: Option[TimestampMilli], downstreamAttribution_opt: Option[ByteVector])
+
 sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent { def id: Long }
-final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
-final case class CMD_FAIL_HTLC(id: Long, reason: FailureReason, delay_opt: Option[FiniteDuration] = None, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
+final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, attribution_opt: Option[FulfillAttributionData], commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
+final case class CMD_FAIL_HTLC(id: Long, reason: FailureReason, attribution_opt: Option[FailureAttributionData], delay_opt: Option[FiniteDuration] = None, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
 final case class CMD_SIGN(replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand with ForbiddenCommandWhenQuiescent
@@ -227,7 +252,7 @@ final case class ClosingFeerates(preferred: FeeratePerKw, min: FeeratePerKw, max
 
 sealed trait CloseCommand extends HasReplyToCommand
 final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], feerates: Option[ClosingFeerates]) extends CloseCommand with ForbiddenCommandDuringQuiescenceNegotiation with ForbiddenCommandWhenQuiescent
-final case class CMD_FORCECLOSE(replyTo: ActorRef, resetFundingTxIndex_opt: Option[Int] = None) extends CloseCommand
+final case class CMD_FORCECLOSE(replyTo: ActorRef, maxClosingFeerate_opt: Option[FeeratePerKw] = None, resetFundingTxIndex_opt: Option[Int] = None) extends CloseCommand
 final case class CMD_BUMP_FORCE_CLOSE_FEE(replyTo: akka.actor.typed.ActorRef[CommandResponse[CMD_BUMP_FORCE_CLOSE_FEE]], confirmationTarget: ConfirmationTarget) extends Command
 
 sealed trait ChannelFundingCommand extends Command {
@@ -235,7 +260,7 @@ sealed trait ChannelFundingCommand extends Command {
 }
 case class SpliceIn(additionalLocalFunding: Satoshi, pushAmount: MilliSatoshi = 0 msat)
 case class SpliceOut(amount: Satoshi, scriptPubKey: ByteVector)
-final case class CMD_SPLICE(replyTo: akka.actor.typed.ActorRef[CommandResponse[ChannelFundingCommand]], spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut], requestFunding_opt: Option[LiquidityAds.RequestFunding]) extends ChannelFundingCommand {
+final case class CMD_SPLICE(replyTo: akka.actor.typed.ActorRef[CommandResponse[ChannelFundingCommand]], spliceIn_opt: Option[SpliceIn], spliceOut_opt: Option[SpliceOut], requestFunding_opt: Option[LiquidityAds.RequestFunding], channelType_opt:Option[ChannelType]) extends ChannelFundingCommand {
   require(spliceIn_opt.isDefined || spliceOut_opt.isDefined, "there must be a splice-in or a splice-out")
   val additionalLocalFunding: Satoshi = spliceIn_opt.map(_.additionalLocalFunding).getOrElse(0 sat)
   val pushAmount: MilliSatoshi = spliceIn_opt.map(_.pushAmount).getOrElse(0 msat)
@@ -277,7 +302,7 @@ final case class RES_ADD_FAILED[+T <: ChannelException](c: CMD_ADD_HTLC, t: T, c
 sealed trait HtlcResult
 object HtlcResult {
   sealed trait Fulfill extends HtlcResult { def paymentPreimage: ByteVector32 }
-  case class RemoteFulfill(fulfill: UpdateFulfillHtlc) extends Fulfill { override val paymentPreimage = fulfill.paymentPreimage }
+  case class RemoteFulfill(fulfill: UpdateFulfillHtlc) extends Fulfill { override val paymentPreimage: ByteVector32 = fulfill.paymentPreimage }
   case class OnChainFulfill(paymentPreimage: ByteVector32) extends Fulfill
   sealed trait Fail extends HtlcResult
   case class RemoteFail(fail: UpdateFailHtlc) extends Fail
@@ -308,111 +333,87 @@ final case class RES_GET_CHANNEL_INFO(nodeId: PublicKey, channelId: ByteVector32
 
 case class ClosingTxProposed(unsignedTx: ClosingTx, localClosingSigned: ClosingSigned)
 
+/**
+ * When a commitment is published, we keep track of all outputs that can be spent (even if we don't yet have the data
+ * to spend them, for example the preimage for received HTLCs). Once all of those outputs have been spent by a confirmed
+ * transaction, the channel close is complete.
+ *
+ * Note that we only store transactions after they have been confirmed: we're using RBF to get transactions confirmed,
+ * and it would be wasteful to store previous versions of the transactions that have been replaced.
+ */
 sealed trait CommitPublished {
   /** Commitment tx. */
   def commitTx: Transaction
-  /** Map of relevant outpoints that have been spent and the confirmed transaction that spends them. */
+  /** Our main output, if we had some balance in the channel. */
+  def localOutput_opt: Option[OutPoint]
+  /** Our anchor output, if one is available to CPFP the [[commitTx]]. */
+  def anchorOutput_opt: Option[OutPoint]
+  /**
+   * Outputs corresponding to HTLCs that we may be able to claim (even when we don't have the preimage yet).
+   * Note that some HTLC outputs of the [[commitTx]] may not be included, if we know that we will never claim them
+   * (such as HTLCs that we didn't relay or that were failed downstream).
+   */
+  def htlcOutputs: Set[OutPoint]
+  /** Map of outpoints that have been spent and the confirmed transaction that spends them. */
   def irrevocablySpent: Map[OutPoint, Transaction]
-
+  /** Returns true if the commitment transaction is confirmed. */
   def isConfirmed: Boolean = {
     // NB: if multiple transactions end up in the same block, the first confirmation we receive may not be the commit tx.
     // However if the confirmed tx spends from the commit tx, we know that the commit tx is already confirmed and we know
     // the type of closing.
     irrevocablySpent.values.exists(tx => tx.txid == commitTx.txid) || irrevocablySpent.keys.exists(_.txid == commitTx.txid)
   }
+  /**
+   * Returns true when all outputs that can be claimed have been spent: we can forget the channel at that point.
+   * Note that some of those outputs may be claimed by our peer (e.g. HTLCs that reached their expiry).
+   */
+  def isDone: Boolean
 }
 
 /**
  * Details about a force-close where we published our commitment.
  *
- * @param claimMainDelayedOutputTx tx claiming our main output (if we have one).
- * @param htlcTxs                  txs claiming HTLCs. There will be one entry for each pending HTLC. The value will be
- *                                 None only for incoming HTLCs for which we don't have the preimage (we can't claim them yet).
- * @param claimHtlcDelayedTxs      3rd-stage txs (spending the output of HTLC txs).
- * @param claimAnchorTxs           txs spending anchor outputs to bump the feerate of the commitment tx (if applicable).
- *                                 We currently only claim our local anchor, but it would be nice to claim both when it
- *                                 is economical to do so to avoid polluting the utxo set.
+ * @param htlcDelayedOutputs when an HTLC transaction confirms, we must claim its output using a 3rd-stage delayed
+ *                           transaction. An entry containing the corresponding output must be added to this set to
+ *                           ensure that we don't forget the channel too soon, and correctly wait until we've spent it.
  */
-case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[HtlcTx]], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
-  /**
-   * A local commit is considered done when:
-   * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
-   * - all 3rd stage txs (txs spending htlc txs) have been confirmed
-   */
-  def isDone: Boolean = {
-    val confirmedTxs = irrevocablySpent.values.map(_.txid).toSet
-    // is the commitment tx confirmed (we need to check this because we may not have any outputs)?
-    val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
-    // is our main output confirmed (if we have one)?
-    val isMainOutputConfirmed = claimMainDelayedOutputTx.forall(tx => irrevocablySpent.contains(tx.input.outPoint))
-    // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
-    val allHtlcsSpent = (htlcTxs.keySet -- irrevocablySpent.keys).isEmpty
-    // are all outputs from htlc txs spent?
-    val unconfirmedHtlcDelayedTxs = claimHtlcDelayedTxs.map(_.input.outPoint)
-      // only the txs which parents are already confirmed may get confirmed (note that this eliminates outputs that have been double-spent by a competing tx)
-      .filter(input => confirmedTxs.contains(input.txid))
-      // has the tx already been confirmed?
-      .filterNot(input => irrevocablySpent.contains(input))
-    isCommitTxConfirmed && isMainOutputConfirmed && allHtlcsSpent && unconfirmedHtlcDelayedTxs.isEmpty
+case class LocalCommitPublished(commitTx: Transaction, localOutput_opt: Option[OutPoint], anchorOutput_opt: Option[OutPoint], incomingHtlcs: Map[OutPoint, Long], outgoingHtlcs: Map[OutPoint, Long], htlcDelayedOutputs: Set[OutPoint], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+  override val htlcOutputs: Set[OutPoint] = incomingHtlcs.keySet ++ outgoingHtlcs.keySet
+  override val isDone: Boolean = {
+    val mainOutputSpent = localOutput_opt.forall(o => irrevocablySpent.contains(o))
+    val allHtlcsSpent = (htlcOutputs -- irrevocablySpent.keySet).isEmpty
+    val allHtlcTxsSpent = (htlcDelayedOutputs -- irrevocablySpent.keySet).isEmpty
+    isConfirmed && mainOutputSpent && allHtlcsSpent && allHtlcTxsSpent
   }
 }
 
 /**
- * Details about a force-close where they published their commitment.
- *
- * @param claimMainOutputTx tx claiming our main output (if we have one).
- * @param claimHtlcTxs      txs claiming HTLCs. There will be one entry for each pending HTLC. The value will be None
- *                          only for incoming HTLCs for which we don't have the preimage (we can't claim them yet).
- * @param claimAnchorTxs    txs spending anchor outputs to bump the feerate of the commitment tx (if applicable).
- *                          We currently only claim our local anchor, but it would be nice to claim both when it is
- *                          economical to do so to avoid polluting the utxo set.
+ * Details about a force-close where they published their commitment (current or next).
  */
-case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], claimHtlcTxs: Map[OutPoint, Option[ClaimHtlcTx]], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
-  /**
-   * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
-   * (even if the spending tx was not ours).
-   */
-  def isDone: Boolean = {
-    val confirmedTxs = irrevocablySpent.values.map(_.txid).toSet
-    // is the commitment tx confirmed (we need to check this because we may not have any outputs)?
-    val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
-    // is our main output confirmed (if we have one)?
-    val isMainOutputConfirmed = claimMainOutputTx.forall(tx => irrevocablySpent.contains(tx.input.outPoint))
-    // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
-    val allHtlcsSpent = (claimHtlcTxs.keySet -- irrevocablySpent.keys).isEmpty
-    isCommitTxConfirmed && isMainOutputConfirmed && allHtlcsSpent
+case class RemoteCommitPublished(commitTx: Transaction, localOutput_opt: Option[OutPoint], anchorOutput_opt: Option[OutPoint], incomingHtlcs: Map[OutPoint, Long], outgoingHtlcs: Map[OutPoint, Long], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+  override val htlcOutputs: Set[OutPoint] = incomingHtlcs.keySet ++ outgoingHtlcs.keySet
+  override val isDone: Boolean = {
+    val mainOutputSpent = localOutput_opt.forall(o => irrevocablySpent.contains(o))
+    val allHtlcsSpent = (htlcOutputs -- irrevocablySpent.keySet).isEmpty
+    isConfirmed && mainOutputSpent && allHtlcsSpent
   }
 }
 
 /**
  * Details about a force-close where they published one of their revoked commitments.
+ * In that case, we're able to spend every output of the commitment transaction (if economical).
  *
- * @param claimMainOutputTx          tx claiming our main output (if we have one).
- * @param mainPenaltyTx              penalty tx claiming their main output (if they have one).
- * @param htlcPenaltyTxs             penalty txs claiming every HTLC output.
- * @param claimHtlcDelayedPenaltyTxs penalty txs claiming the output of their HTLC txs (if they managed to get them confirmed before our htlcPenaltyTxs).
+ * @param htlcDelayedOutputs if our peer manages to get some of their HTLC transactions confirmed before our penalty
+ *                           transactions, we must spend the output(s) of their HTLC transactions.
  */
-case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], mainPenaltyTx: Option[MainPenaltyTx], htlcPenaltyTxs: List[HtlcPenaltyTx], claimHtlcDelayedPenaltyTxs: List[ClaimHtlcDelayedOutputPenaltyTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
-  /**
-   * A revoked commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
-   * (even if the spending tx was not ours).
-   */
-  def isDone: Boolean = {
-    val confirmedTxs = irrevocablySpent.values.map(_.txid).toSet
-    // is the commitment tx confirmed (we need to check this because we may not have any outputs)?
-    val isCommitTxConfirmed = confirmedTxs.contains(commitTx.txid)
-    // are there remaining spendable outputs from the commitment tx?
-    val unspentCommitTxOutputs = {
-      val commitOutputsSpendableByUs = (claimMainOutputTx.toSeq ++ mainPenaltyTx.toSeq ++ htlcPenaltyTxs).map(_.input.outPoint)
-      commitOutputsSpendableByUs.toSet -- irrevocablySpent.keys
-    }
-    // are all outputs from htlc txs spent?
-    val unconfirmedHtlcDelayedTxs = claimHtlcDelayedPenaltyTxs.map(_.input.outPoint)
-      // only the txs which parents are already confirmed may get confirmed (note that this eliminates outputs that have been double-spent by a competing tx)
-      .filter(input => confirmedTxs.contains(input.txid))
-      // if one of the tx inputs has been spent, the tx has already been confirmed or a competing tx has been confirmed
-      .filterNot(input => irrevocablySpent.contains(input))
-    isCommitTxConfirmed && unspentCommitTxOutputs.isEmpty && unconfirmedHtlcDelayedTxs.isEmpty
+case class RevokedCommitPublished(commitTx: Transaction, localOutput_opt: Option[OutPoint], remoteOutput_opt: Option[OutPoint], htlcOutputs: Set[OutPoint], htlcDelayedOutputs: Set[OutPoint], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+  // We don't use the anchor output, we can CPFP the commitment with any other output.
+  override val anchorOutput_opt: Option[OutPoint] = None
+  override val isDone: Boolean = {
+    val mainOutputsSpent = (localOutput_opt.toSeq ++ remoteOutput_opt.toSeq).forall(o => irrevocablySpent.contains(o))
+    val allHtlcsSpent = (htlcOutputs -- irrevocablySpent.keySet).isEmpty
+    val allHtlcTxsSpent = (htlcDelayedOutputs -- irrevocablySpent.keySet).isEmpty
+    isConfirmed && mainOutputsSpent && allHtlcsSpent && allHtlcTxsSpent
   }
 }
 
@@ -428,6 +429,7 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
 case class ShortIdAliases(localAlias: Alias, remoteAlias_opt: Option[Alias])
 
 sealed trait LocalFundingStatus {
+  /** While the transaction is unconfirmed, we keep the funding transaction (if available) to allow rebroadcasting. */
   def signedTx_opt: Option[Transaction]
   /** We store local signatures for the purpose of retransmitting if the funding/splicing flow is interrupted. */
   def localSigs_opt: Option[TxSignatures]
@@ -456,8 +458,8 @@ object LocalFundingStatus {
   case class ZeroconfPublishedFundingTx(tx: Transaction, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends UnconfirmedFundingTx with Locked {
     override val signedTx_opt: Option[Transaction] = Some(tx)
   }
-  case class ConfirmedFundingTx(tx: Transaction, shortChannelId: RealShortChannelId, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
-    override val signedTx_opt: Option[Transaction] = Some(tx)
+  case class ConfirmedFundingTx(spentInputs: Seq[OutPoint], txOut: TxOut, shortChannelId: RealShortChannelId, localSigs_opt: Option[TxSignatures], liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends LocalFundingStatus with Locked {
+    override val signedTx_opt: Option[Transaction] = None
   }
 }
 
@@ -479,6 +481,14 @@ object DualFundingStatus {
   case class RbfWaitingForSigs(signingSession: InteractiveTxSigningSession.WaitingForSigs) extends DualFundingStatus
   /** The RBF attempt was aborted by us, we're waiting for our peer to ack. */
   case object RbfAborted extends DualFundingStatus
+}
+
+sealed trait CloseStatus {
+  def feerates_opt: Option[ClosingFeerates]
+}
+object CloseStatus {
+  final case class Initiator(override val feerates_opt: Option[ClosingFeerates]) extends CloseStatus
+  final case class NonInitiator(override val feerates_opt: Option[ClosingFeerates]) extends CloseStatus
 }
 
 /** We're waiting for the channel to be quiescent. */
@@ -536,6 +546,7 @@ case object Nothing extends TransientChannelData {
 
 sealed trait PersistentChannelData extends ChannelData {
   def remoteNodeId: PublicKey
+  def channelParams: ChannelParams
 }
 sealed trait ChannelDataWithoutCommitments extends PersistentChannelData {
   val channelId: ByteVector32 = channelParams.channelId
@@ -545,6 +556,7 @@ sealed trait ChannelDataWithoutCommitments extends PersistentChannelData {
 sealed trait ChannelDataWithCommitments extends PersistentChannelData {
   val channelId: ByteVector32 = commitments.channelId
   val remoteNodeId: PublicKey = commitments.remoteNodeId
+  val channelParams: ChannelParams = commitments.channelParams
   def commitments: Commitments
 }
 
@@ -554,24 +566,35 @@ final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_CHANNEL_NON_I
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_CHANNEL_INITIATOR, lastSent: OpenChannel) extends TransientChannelData {
   val channelId: ByteVector32 = initFunder.temporaryChannelId
 }
-final case class DATA_WAIT_FOR_FUNDING_INTERNAL(params: ChannelParams,
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL(channelParams: ChannelParams,
+                                                channelType: SupportedChannelType,
+                                                localCommitParams: CommitParams,
+                                                remoteCommitParams: CommitParams,
                                                 fundingAmount: Satoshi,
                                                 pushAmount: MilliSatoshi,
                                                 commitTxFeerate: FeeratePerKw,
                                                 remoteFundingPubKey: PublicKey,
                                                 remoteFirstPerCommitmentPoint: PublicKey,
                                                 replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) extends TransientChannelData {
-  val channelId: ByteVector32 = params.channelId
+  val channelId: ByteVector32 = channelParams.channelId
+  val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 }
-final case class DATA_WAIT_FOR_FUNDING_CREATED(params: ChannelParams,
+final case class DATA_WAIT_FOR_FUNDING_CREATED(channelParams: ChannelParams,
+                                               channelType: SupportedChannelType,
+                                               localCommitParams: CommitParams,
+                                               remoteCommitParams: CommitParams,
                                                fundingAmount: Satoshi,
                                                pushAmount: MilliSatoshi,
                                                commitTxFeerate: FeeratePerKw,
                                                remoteFundingPubKey: PublicKey,
                                                remoteFirstPerCommitmentPoint: PublicKey) extends TransientChannelData {
-  val channelId: ByteVector32 = params.channelId
+  val channelId: ByteVector32 = channelParams.channelId
+  val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 }
-final case class DATA_WAIT_FOR_FUNDING_SIGNED(params: ChannelParams,
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelParams: ChannelParams,
+                                              channelType: SupportedChannelType,
+                                              localCommitParams: CommitParams,
+                                              remoteCommitParams: CommitParams,
                                               remoteFundingPubKey: PublicKey,
                                               fundingTx: Transaction,
                                               fundingTxFee: Satoshi,
@@ -580,7 +603,8 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(params: ChannelParams,
                                               remoteCommit: RemoteCommit,
                                               lastSent: FundingCreated,
                                               replyTo: akka.actor.typed.ActorRef[Peer.OpenChannelResponse]) extends TransientChannelData {
-  val channelId: ByteVector32 = params.channelId
+  val channelId: ByteVector32 = channelParams.channelId
+  val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 }
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  waitingSince: BlockHeight, // how long have we been waiting for the funding tx to confirm
@@ -598,6 +622,8 @@ final case class DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL(init: INPUT_INIT_CHANN
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CREATED(channelId: ByteVector32,
                                                     channelParams: ChannelParams,
+                                                    localCommitParams: CommitParams,
+                                                    remoteCommitParams: CommitParams,
                                                     secondRemotePerCommitmentPoint: PublicKey,
                                                     localPushAmount: MilliSatoshi,
                                                     remotePushAmount: MilliSatoshi,
@@ -608,8 +634,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(channelParams: ChannelParams,
                                                    secondRemotePerCommitmentPoint: PublicKey,
                                                    localPushAmount: MilliSatoshi,
                                                    remotePushAmount: MilliSatoshi,
-                                                   signingSession: InteractiveTxSigningSession.WaitingForSigs,
-                                                   remoteChannelData_opt: Option[ByteVector]) extends ChannelDataWithoutCommitments
+                                                   signingSession: InteractiveTxSigningSession.WaitingForSigs) extends ChannelDataWithoutCommitments
 final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       localPushAmount: MilliSatoshi,
                                                       remotePushAmount: MilliSatoshi,
@@ -617,9 +642,9 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments: Commitments,
                                                       lastChecked: BlockHeight, // last time we checked if the channel was double-spent
                                                       status: DualFundingStatus,
                                                       deferred: Option[ChannelReady]) extends ChannelDataWithCommitments {
-  def allFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = commitments.active.map(_.localFundingStatus).collect { case fundingTx: DualFundedUnconfirmedFundingTx => fundingTx }
-  def latestFundingTx: DualFundedUnconfirmedFundingTx = commitments.latest.localFundingStatus.asInstanceOf[DualFundedUnconfirmedFundingTx]
-  def previousFundingTxs: Seq[DualFundedUnconfirmedFundingTx] = allFundingTxs diff Seq(latestFundingTx)
+  def allFundingTxs: Seq[LocalFundingStatus.DualFundedUnconfirmedFundingTx] = commitments.active.map(_.localFundingStatus).collect { case fundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx => fundingTx }
+  def latestFundingTx: LocalFundingStatus.DualFundedUnconfirmedFundingTx = commitments.latest.localFundingStatus.asInstanceOf[LocalFundingStatus.DualFundedUnconfirmedFundingTx]
+  def previousFundingTxs: Seq[LocalFundingStatus.DualFundedUnconfirmedFundingTx] = allFundingTxs diff Seq(latestFundingTx)
 }
 final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments, aliases: ShortIdAliases) extends ChannelDataWithCommitments
 
@@ -627,22 +652,22 @@ final case class DATA_NORMAL(commitments: Commitments,
                              aliases: ShortIdAliases,
                              lastAnnouncement_opt: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
+                             spliceStatus: SpliceStatus,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],
-                             closingFeerates: Option[ClosingFeerates],
-                             spliceStatus: SpliceStatus) extends ChannelDataWithCommitments {
+                             closeStatus_opt: Option[CloseStatus]) extends ChannelDataWithCommitments {
   val lastAnnouncedCommitment_opt: Option[AnnouncedCommitment] = lastAnnouncement_opt.flatMap(ann => commitments.resolveCommitment(ann.shortChannelId).map(c => AnnouncedCommitment(c, ann)))
   val lastAnnouncedFundingTxId_opt: Option[TxId] = lastAnnouncedCommitment_opt.map(_.fundingTxId)
   val isNegotiatingQuiescence: Boolean = spliceStatus.isNegotiatingQuiescence
   val isQuiescent: Boolean = spliceStatus.isQuiescent
 }
-final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]) extends ChannelDataWithCommitments
+final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closeStatus: CloseStatus) extends ChannelDataWithCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
                                   bestUnpublishedClosingTx_opt: Option[ClosingTx]) extends ChannelDataWithCommitments {
   require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
-  require(!commitments.params.localParams.paysClosingFees || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
+  require(!commitments.localChannelParams.paysClosingFees || closingTxProposed.forall(_.nonEmpty), "initiator must have at least one closing signature for every negotiation attempt because it initiates the closing")
 }
 final case class DATA_NEGOTIATING_SIMPLE(commitments: Commitments,
                                          lastClosingFeerate: FeeratePerKw,
@@ -663,52 +688,52 @@ final case class DATA_CLOSING(commitments: Commitments,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
-                              revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends ChannelDataWithCommitments {
+                              revokedCommitPublished: List[RevokedCommitPublished] = Nil,
+                              maxClosingFeerate_opt: Option[FeeratePerKw] = None) extends ChannelDataWithCommitments {
   val spendingTxs: List[Transaction] = mutualClosePublished.map(_.tx) ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
   require(spendingTxs.nonEmpty, "there must be at least one tx published in this state")
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends ChannelDataWithCommitments
 
-/**
- * @param initFeatures current connection features, or last features used if the channel is disconnected. Note that these
- *                     features are updated at each reconnection and may be different from the channel permanent features
- *                     (see [[ChannelFeatures]]).
- */
-case class LocalParams(nodeId: PublicKey,
-                       fundingKeyPath: DeterministicWallet.KeyPath,
-                       dustLimit: Satoshi,
-                       maxHtlcValueInFlightMsat: MilliSatoshi,
-                       initialRequestedChannelReserve_opt: Option[Satoshi],
-                       htlcMinimum: MilliSatoshi,
-                       toSelfDelay: CltvExpiryDelta,
-                       maxAcceptedHtlcs: Int,
-                       isChannelOpener: Boolean,
-                       paysCommitTxFees: Boolean,
-                       upfrontShutdownScript_opt: Option[ByteVector],
-                       walletStaticPaymentBasepoint: Option[PublicKey],
-                       initFeatures: Features[InitFeature]) {
+/** Local params that apply for the channel's lifetime. */
+case class LocalChannelParams(nodeId: PublicKey,
+                              fundingKeyPath: DeterministicWallet.KeyPath,
+                              // Channel reserve applied to the remote peer, if we're not using [[Features.DualFunding]] (in
+                              // which case the reserve is set to 1%). If the channel is spliced, this initial value will be
+                              // ignored in favor of a 1% reserve of the resulting capacity.
+                              initialRequestedChannelReserve_opt: Option[Satoshi],
+                              isChannelOpener: Boolean,
+                              paysCommitTxFees: Boolean,
+                              upfrontShutdownScript_opt: Option[ByteVector],
+                              walletStaticPaymentBasepoint: Option[PublicKey],
+                              // Current connection features, or last features used if the channel is disconnected. Note that
+                              // these features are updated at each reconnection and may be different from the channel permanent
+                              // features (see [[ChannelFeatures]]).
+                              initFeatures: Features[InitFeature]) {
   // The node responsible for the commit tx fees is also the node paying the mutual close fees.
   // The other node's balance may be empty, which wouldn't allow them to pay the closing fees.
   val paysClosingFees: Boolean = paysCommitTxFees
 }
 
-/**
- * @param initFeatures see [[LocalParams.initFeatures]]
- */
-case class RemoteParams(nodeId: PublicKey,
-                        dustLimit: Satoshi,
-                        maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                        initialRequestedChannelReserve_opt: Option[Satoshi],
+/** Remote params that apply for the channel's lifetime. */
+case class RemoteChannelParams(nodeId: PublicKey,
+                               // See comment in LocalChannelParams for details.
+                               initialRequestedChannelReserve_opt: Option[Satoshi],
+                               revocationBasepoint: PublicKey,
+                               paymentBasepoint: PublicKey,
+                               delayedPaymentBasepoint: PublicKey,
+                               htlcBasepoint: PublicKey,
+                               // See comment in LocalChannelParams for details.
+                               initFeatures: Features[InitFeature],
+                               upfrontShutdownScript_opt: Option[ByteVector])
+
+/** Configuration parameters that apply to local or remote commitment transactions, and may be updated dynamically. */
+case class CommitParams(dustLimit: Satoshi,
                         htlcMinimum: MilliSatoshi,
-                        toSelfDelay: CltvExpiryDelta,
+                        maxHtlcValueInFlight: UInt64,
                         maxAcceptedHtlcs: Int,
-                        revocationBasepoint: PublicKey,
-                        paymentBasepoint: PublicKey,
-                        delayedPaymentBasepoint: PublicKey,
-                        htlcBasepoint: PublicKey,
-                        initFeatures: Features[InitFeature],
-                        upfrontShutdownScript_opt: Option[ByteVector])
+                        toSelfDelay: CltvExpiryDelta)
 
 /**
  * The [[nonInitiatorPaysCommitFees]] parameter is set to true when the sender wants the receiver to pay the commitment transaction fees.

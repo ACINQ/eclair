@@ -1102,7 +1102,7 @@ class RouterSpec extends BaseRouterSpec {
     }
 
     // The second channel is announced and moves from the private channels to the public channels.
-    val fundingConfirmed = LocalFundingStatus.ConfirmedFundingTx(Transaction(2, Nil, TxOut(100_000 sat, Nil) :: Nil, 0), scid2, None, None)
+    val fundingConfirmed = LocalFundingStatus.ConfirmedFundingTx(Nil, TxOut(100_000 sat, Nil), scid2, None, None)
     val commitments3 = commitments2.updateLocalFundingStatus(commitments2.latest.fundingTxId, fundingConfirmed, None)(akka.event.NoLogging).toOption.get._1
     assert(commitments3.channelId == commitments2.channelId)
     sender.send(router, LocalChannelUpdate(sender.ref, commitments3.channelId, aliases2, x.publicKey, Some(AnnouncedCommitment(commitments3.latest.commitment, announcement2)), update2, commitments3))

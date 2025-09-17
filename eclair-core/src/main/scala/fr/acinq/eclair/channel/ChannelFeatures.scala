@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeature, PermanentChannelFeature}
 
 /**
@@ -25,21 +25,9 @@ import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeatur
 
 /**
  * Subset of Bolt 9 features used to configure a channel and applicable over the lifetime of that channel.
- * Even if one of these features is later disabled at the connection level, it will still apply to the channel until the
- * channel is upgraded or closed.
+ * Even if one of these features is later disabled at the connection level, it will still apply to the channel.
  */
 case class ChannelFeatures(features: Set[PermanentChannelFeature]) {
-
-  /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
-  val paysDirectlyToWallet: Boolean = hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs) && !hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)
-  /** Legacy option_anchor_outputs is used for Phoenix, because Phoenix doesn't have an on-chain wallet to pay for fees. */
-  val commitmentFormat: CommitmentFormat = if (hasFeature(Features.AnchorOutputs)) {
-    UnsafeLegacyAnchorOutputsCommitmentFormat
-  } else if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
-    ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
-  } else {
-    DefaultCommitmentFormat
-  }
 
   def hasFeature(feature: PermanentChannelFeature): Boolean = features.contains(feature)
 
@@ -51,19 +39,20 @@ object ChannelFeatures {
 
   def apply(features: PermanentChannelFeature*): ChannelFeatures = ChannelFeatures(Set.from(features))
 
-  /** Enrich the channel type with other permanent features that will be applied to the channel. */
+  /** Configure permanent channel features based on local and remote feature. */
   def apply(channelType: SupportedChannelType, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean): ChannelFeatures = {
-    val additionalPermanentFeatures = Features.knownFeatures.collect {
+    val permanentFeatures = Features.knownFeatures.collect {
       // If we both support 0-conf or scid_alias, we use it even if it wasn't in the channel-type.
+      // Note that we cannot use scid_alias if the channel is announced.
       case Features.ScidAlias if Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias) && !announceChannel => Some(Features.ScidAlias)
+      case Features.ScidAlias => None
       case Features.ZeroConf if Features.canUseFeature(localFeatures, remoteFeatures, Features.ZeroConf) => Some(Features.ZeroConf)
-      // Other channel-type features are negotiated in the channel-type, we ignore their value from the init message.
-      case _: ChannelTypeFeature => None
-      // We add all other permanent channel features that aren't negotiated as part of the channel-type.
+      // We add all other permanent channel features that we both support.
       case f: PermanentChannelFeature if Features.canUseFeature(localFeatures, remoteFeatures, f) => Some(f)
     }.flatten
-    val allPermanentFeatures = channelType.features.toSeq ++ additionalPermanentFeatures
-    ChannelFeatures(allPermanentFeatures: _*)
+    // Some permanent features can be negotiated as part of the channel-type.
+    val channelTypeFeatures = channelType.features.collect { case f: PermanentChannelFeature => f }
+    ChannelFeatures(permanentFeatures ++ channelTypeFeatures)
   }
 
 }
@@ -129,6 +118,29 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
+  case class SimpleTaprootChannelsPhoenix(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+    /** Known channel-type features */
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.SimpleTaprootChannelsPhoenix),
+    ).flatten
+    override def paysDirectlyToWallet: Boolean = false
+    override def commitmentFormat: CommitmentFormat = PhoenixSimpleTaprootChannelCommitmentFormat
+    override def toString: String = s"simple_taproot_channel_phoenix${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+  }
+  case class SimpleTaprootChannelsStaging(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+    /** Known channel-type features */
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.SimpleTaprootChannelsStaging),
+    ).flatten
+    override def paysDirectlyToWallet: Boolean = false
+    override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
+    override def toString: String = s"simple_taproot_channel_staging${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+  }
+
   case class UnsupportedChannelType(featureBits: Features[InitFeature]) extends ChannelType {
     override def features: Set[InitFeature] = featureBits.activated.keySet
     override def toString: String = s"0x${featureBits.toByteVector.toHex}"
@@ -151,7 +163,16 @@ object ChannelTypes {
     AnchorOutputsZeroFeeHtlcTx(),
     AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
-    AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true))
+    AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
+    SimpleTaprootChannelsPhoenix(),
+    SimpleTaprootChannelsPhoenix(zeroConf = true),
+    SimpleTaprootChannelsPhoenix(scidAlias = true),
+    SimpleTaprootChannelsPhoenix(scidAlias = true, zeroConf = true),
+    SimpleTaprootChannelsStaging(),
+    SimpleTaprootChannelsStaging(zeroConf = true),
+    SimpleTaprootChannelsStaging(scidAlias = true),
+    SimpleTaprootChannelsStaging(scidAlias = true, zeroConf = true),
+  )
     .map(channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType)
     .toMap
 
@@ -164,7 +185,11 @@ object ChannelTypes {
 
     val scidAlias = canUse(Features.ScidAlias) && !announceChannel // alias feature is incompatible with public channel
     val zeroConf = canUse(Features.ZeroConf)
-    if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
+    if (canUse(Features.SimpleTaprootChannelsStaging)) {
+      SimpleTaprootChannelsStaging(scidAlias, zeroConf)
+    } else if (canUse(Features.SimpleTaprootChannelsPhoenix)) {
+      SimpleTaprootChannelsPhoenix(scidAlias, zeroConf)
+    } else if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
       AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputs)) {
       AnchorOutputs(scidAlias, zeroConf)

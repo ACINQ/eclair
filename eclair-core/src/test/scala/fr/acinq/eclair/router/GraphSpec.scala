@@ -29,6 +29,8 @@ import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong,
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
 import org.scalatest.funsuite.AnyFunSuite
 
+import scala.concurrent.duration.DurationInt
+
 class GraphSpec extends AnyFunSuite {
 
   val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f, priv_g, priv_h) = (randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
@@ -260,9 +262,9 @@ class GraphSpec extends AnyFunSuite {
     val edgeDE = makeEdge(6L, d, e, 9 msat, 0, capacity = 200000 sat)
     val graph = DirectedGraph(Seq(edgeAB, edgeBC, edgeCD, edgeDC, edgeCE, edgeDE))
 
-    val path :: Nil = yenKshortestPaths(graph, a, e, 100000000 msat,
+    val path :: Nil = yenKshortestPaths(GraphWithBalanceEstimates(graph, 1 day), a, e, 100000000 msat,
       Set.empty, Set.empty, Set.empty, 1,
-      HeuristicsConstants(1.0E-8, RelayFees(2000 msat, 500), RelayFees(50 msat, 20), useLogProbability = true),
+      HeuristicsConstants(1.0E-8, RelayFees(2000 msat, 500), RelayFees(50 msat, 20), useLogProbability = true, usePastRelaysData = false),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(path.path == Seq(edgeAB, edgeBC, edgeCE))
   }
@@ -284,7 +286,7 @@ class GraphSpec extends AnyFunSuite {
     val edgeDE = makeEdge(6L, d, e, 1 msat, 0, capacity = 200000 sat)
     val graph = DirectedGraph(Seq(edgeAB, edgeBC, edgeCD, edgeDC, edgeCE, edgeDE))
 
-    val paths = yenKshortestPaths(graph, a, e, 90000000 msat,
+    val paths = yenKshortestPaths(GraphWithBalanceEstimates(graph, 1 day), a, e, 90000000 msat,
       Set.empty, Set.empty, Set.empty, 2,
       PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
@@ -310,7 +312,7 @@ class GraphSpec extends AnyFunSuite {
     val edgeDE = makeEdge(6L, d, e, 1 msat, 0, capacity = 200000 sat)
     val graph = DirectedGraph(Seq(edgeAB, edgeBC, edgeCD, edgeDC, edgeCE, edgeDE))
 
-    val paths = yenKshortestPaths(graph, a, e, 90000000 msat,
+    val paths = yenKshortestPaths(GraphWithBalanceEstimates(graph, 1 day), a, e, 90000000 msat,
       Set.empty, Set.empty, Set.empty, 2,
       PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
@@ -343,7 +345,7 @@ class GraphSpec extends AnyFunSuite {
     val edgeGH = makeEdge(9L, g, h, 2 msat, 0, capacity = 100000 sat, minHtlc = 1000 msat)
     val graph = DirectedGraph(Seq(edgeCD, edgeDF, edgeCE, edgeED, edgeEF, edgeFG, edgeFH, edgeEG, edgeGH))
 
-    val paths = yenKshortestPaths(graph, c, h, 10000000 msat,
+    val paths = yenKshortestPaths(GraphWithBalanceEstimates(graph, 1 day), c, h, 10000000 msat,
       Set.empty, Set.empty, Set.empty, 3,
       PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
@@ -384,7 +386,7 @@ class GraphSpec extends AnyFunSuite {
     val edgeCB = makeEdge(3L, c, b, 2 msat, 4, capacity = 100000 sat, minHtlc = 1000 msat)
     val graph = DirectedGraph(Seq(edgeAB, edgeAC, edgeCB))
 
-    val paths = yenKshortestPaths(graph, a, b, 10000000 msat,
+    val paths = yenKshortestPaths(GraphWithBalanceEstimates(graph, 1 day), a, b, 10000000 msat,
       Set.empty, Set.empty, Set.empty, 1,
       PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
@@ -417,7 +419,7 @@ class GraphSpec extends AnyFunSuite {
       // All nodes can relay messages, same weight for each channel.
       val boundaries = (w: MessagePathWeight) => w.length <= 8
       val wr = MessageWeightRatios(1.0, 0.0, 0.0)
-      val Some(path) = dijkstraMessagePath(graph, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      val Some(path) = dijkstraMessagePath(GraphWithBalanceEstimates(graph, 1 day), a, d, Set.empty, boundaries, BlockHeight(793397), wr)
       assert(path.map(_.desc.shortChannelId.toLong) == Seq(4, 5))
     }
     {
@@ -426,7 +428,7 @@ class GraphSpec extends AnyFunSuite {
       val wr = MessageWeightRatios(1.0, 0.0, 0.0)
       val g = graph.addOrUpdateVertex(makeNodeAnnouncement(priv_a, "A", Color(0, 0, 0), Nil, Features.empty))
         .addOrUpdateVertex(makeNodeAnnouncement(priv_d, "D", Color(0, 0, 0), Nil, Features.empty))
-      val Some(path) = dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      val Some(path) = dijkstraMessagePath(GraphWithBalanceEstimates(g, 1 day), a, d, Set.empty, boundaries, BlockHeight(793397), wr)
       assert(path.map(_.desc.shortChannelId.toLong) == Seq(4, 5))
     }
     {
@@ -434,28 +436,28 @@ class GraphSpec extends AnyFunSuite {
       val boundaries = (w: MessagePathWeight) => w.length <= 8
       val wr = MessageWeightRatios(1.0, 0.0, 0.0)
       val g = graph.addOrUpdateVertex(makeNodeAnnouncement(priv_e, "E", Color(0, 0, 0), Nil, Features.empty))
-      val Some(path) = dijkstraMessagePath(g, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      val Some(path) = dijkstraMessagePath(GraphWithBalanceEstimates(g, 1 day), a, d, Set.empty, boundaries, BlockHeight(793397), wr)
       assert(path.map(_.desc.shortChannelId.toLong) == Seq(1, 2, 3))
     }
     {
       // Prefer high-capacity channels.
       val boundaries = (w: MessagePathWeight) => w.length <= 8
       val wr = MessageWeightRatios(0.0, 0.0, 1.0)
-      val Some(path) = dijkstraMessagePath(graph, a, d, Set.empty, boundaries, BlockHeight(793397), wr)
+      val Some(path) = dijkstraMessagePath(GraphWithBalanceEstimates(graph, 1 day), a, d, Set.empty, boundaries, BlockHeight(793397), wr)
       assert(path.map(_.desc.shortChannelId.toLong) == Seq(1, 2, 3))
     }
     {
       // We ignore E.
       val boundaries = (w: MessagePathWeight) => w.length <= 8
       val wr = MessageWeightRatios(1.0, 0.0, 0.0)
-      val Some(path) = dijkstraMessagePath(graph, a, d, Set(e), boundaries, BlockHeight(793397), wr)
+      val Some(path) = dijkstraMessagePath(GraphWithBalanceEstimates(graph, 1 day), a, d, Set(e), boundaries, BlockHeight(793397), wr)
       assert(path.map(_.desc.shortChannelId.toLong) == Seq(1, 2, 3))
     }
     {
       // Target not in graph.
       val boundaries = (w: MessagePathWeight) => w.length <= 8
       val wr = MessageWeightRatios(1.0, 0.0, 0.0)
-      assert(dijkstraMessagePath(graph, a, f, Set.empty, boundaries, BlockHeight(793397), wr).isEmpty)
+      assert(dijkstraMessagePath(GraphWithBalanceEstimates(graph, 1 day), a, f, Set.empty, boundaries, BlockHeight(793397), wr).isEmpty)
     }
   }
 
@@ -522,13 +524,13 @@ class GraphSpec extends AnyFunSuite {
       .addOrUpdateVertex(makeNodeAnnouncement(priv_h, "H", Color(0, 0, 0), Nil, Features(Features.RouteBlinding -> FeatureSupport.Optional)))
 
     {
-      val paths = routeBlindingPaths(graph, a, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)), BlockHeight(793397), _ => true, false)
+      val paths = routeBlindingPaths(GraphWithBalanceEstimates(graph, 1 day), a, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)), BlockHeight(793397), _ => true, false)
       assert(paths.length == 2)
       assert(paths(0).path.map(_.desc.a) == Seq(a, b))
       assert(paths(1).path.map(_.desc.a) == Seq(a, e, f))
     }
     {
-      val paths = routeBlindingPaths(graph, c, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)), BlockHeight(793397), _ => true, false)
+      val paths = routeBlindingPaths(GraphWithBalanceEstimates(graph, 1 day), c, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)), BlockHeight(793397), _ => true, false)
       assert(paths.length == 1)
       assert(paths(0).path.map(_.desc.a) == Seq(c, a, b))
     }

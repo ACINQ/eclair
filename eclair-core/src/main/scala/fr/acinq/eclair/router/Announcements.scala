@@ -22,7 +22,7 @@ import fr.acinq.eclair.channel.ChannelParams
 import fr.acinq.eclair.payment.relay.Relayer.{InboundFees, RelayFees}
 import fr.acinq.eclair.wire.protocol.ChannelUpdateTlv.Blip18InboundFee
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, NodeFeature, NodeParams, RealShortChannelId, ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, NodeFeature, RealShortChannelId, ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
 import scodec.bits.ByteVector
 import shapeless.HNil
 
@@ -122,10 +122,6 @@ object Announcements {
       u1.cltvExpiryDelta == u2.cltvExpiryDelta &&
       u1.htlcMinimumMsat == u2.htlcMinimumMsat &&
       u1.htlcMaximumMsat == u2.htlcMaximumMsat
-
-  def makeChannelUpdate(nodeParams: NodeParams, remoteNodeId: PublicKey, scid: ShortChannelId, params: ChannelParams, relayFees: RelayFees, maxHtlcAmount: MilliSatoshi, enable: Boolean, inboundFees_opt: Option[InboundFees]): ChannelUpdate = {
-    makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, scid, nodeParams.channelConf.expiryDelta, params.remoteParams.htlcMinimum, relayFees.feeBase, relayFees.feeProportionalMillionths, maxHtlcAmount, isPrivate = !params.announceChannel, enable, inboundFees_opt = inboundFees_opt)
-  }
 
   def makeChannelUpdate(chainHash: BlockHash, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, isPrivate: Boolean = false, enable: Boolean = true, timestamp: TimestampSecond = TimestampSecond.now(), inboundFees_opt: Option[InboundFees] = None): ChannelUpdate = {
     val messageFlags = ChannelUpdate.MessageFlags(isPrivate)
