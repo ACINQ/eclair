@@ -27,7 +27,7 @@ import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.ChaCha20Poly1305Error
 import fr.acinq.eclair.crypto.Noise._
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, LightningMessage, Ping, Pong, RoutingMessage}
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs, getSimpleClassName}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
@@ -102,10 +102,14 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
       case Attempt.Successful(DecodeResult(message, _)) =>
         logMessage(message, "IN")
         Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.IN).record(plaintext.size)
-        listener ! message
         if (message.isInstanceOf[Ping]) {
           pendingPings += 1
+          if (pendingPings > 1) {
+            // We will kill the connection anyway, no need to process remaining messages
+            return m
+          }
         }
+        listener ! message
         m += (message -> (m.getOrElse(message, 0) + 1))
       case Attempt.Failure(err) =>
         log.warning("cannot deserialize {}: {}", plaintext.toHex, err.message)
