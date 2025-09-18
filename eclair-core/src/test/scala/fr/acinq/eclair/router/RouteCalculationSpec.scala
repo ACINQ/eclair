@@ -882,18 +882,18 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     // A -> E -> F -> D is more expensive but has a total CLTV < 2016
     val g = GraphWithBalanceEstimates(DirectedGraph(List(
       makeEdge(1, a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeEdge(4, a, e, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(4, a, e, feeBase = 100 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
       makeEdge(2, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(1000)),
       makeEdge(3, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(900)),
-      makeEdge(5, e, f, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
-      makeEdge(6, f, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144))
+      makeEdge(5, e, f, feeBase = 100 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144)),
+      makeEdge(6, f, d, feeBase = 100 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(144))
     )), 1 day)
 
     val Success(routeScoreOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = PaymentWeightRatios(
-      baseFactor = 0.01,
-      ageFactor = 0.33,
-      cltvDeltaFactor = 0.33,
-      capacityFactor = 0.33,
+      baseFactor = 0.2,
+      ageFactor = 0.4,
+      cltvDeltaFactor = 0,
+      capacityFactor = 0.4,
       hopFees = RelayFees(0 msat, 0),
     )), currentBlockHeight = BlockHeight(400000))
 

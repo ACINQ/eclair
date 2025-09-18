@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.{Btc, MilliBtc, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.Invoice
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, NodeAnnouncement}
 
@@ -102,8 +102,7 @@ object Graph {
       val totalAmount = if (edge.desc.a == sender && !includeLocalChannelCost) prev.amount else addEdgeFees(edge, prev.amount)
       val fee = totalAmount - prev.amount
       val totalFees = prev.fees + fee
-      val cltv = if (edge.desc.a == sender && !includeLocalChannelCost) CltvExpiryDelta(0) else edge.params.cltvExpiryDelta
-      val totalCltv = prev.cltv + cltv
+      val totalCltv = prev.cltv + edge.params.cltvExpiryDelta
       val hopCost = if (edge.desc.a == sender) 0 msat else nodeFee(hopFees, prev.amount)
       import RoutingHeuristics._
 
@@ -153,8 +152,7 @@ object Graph {
       val totalAmount = if (edge.desc.a == sender && !includeLocalChannelCost) prev.amount else addEdgeFees(edge, prev.amount)
       val fee = totalAmount - prev.amount
       val totalFees = prev.fees + fee
-      val cltv = if (edge.desc.a == sender && !includeLocalChannelCost) CltvExpiryDelta(0) else edge.params.cltvExpiryDelta
-      val totalCltv = prev.cltv + cltv
+      val totalCltv = prev.cltv + edge.params.cltvExpiryDelta
       val hopCost = nodeFee(hopFees, prev.amount)
       val totalHopsCost = prev.virtualFees + hopCost
       // If we know the balance of the channel, then we will check separately that it can relay the payment.
@@ -172,7 +170,7 @@ object Graph {
       val totalSuccessProbability = prev.successProbability * successProbability
       val failureCost = nodeFee(failureFees, totalAmount)
       val richWeight = if (useLogProbability) {
-        val riskCost = totalAmount.toLong * cltv.toInt * lockedFundsRisk
+        val riskCost = totalAmount.toLong * edge.params.cltvExpiryDelta.toInt * lockedFundsRisk
         val weight = prev.weight + fee.toLong + hopCost.toLong + riskCost - failureCost.toLong * math.log(successProbability)
         PaymentPathWeight(totalAmount, prev.length + 1, totalCltv, totalSuccessProbability, totalFees, totalHopsCost, weight)
       } else {
