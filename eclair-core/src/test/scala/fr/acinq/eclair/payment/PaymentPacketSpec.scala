@@ -35,7 +35,7 @@ import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelHopFromUpdate}
 import fr.acinq.eclair.router.BlindedRouteCreation
 import fr.acinq.eclair.router.Router.{NodeHop, Route}
-import fr.acinq.eclair.transactions.Transactions.DefaultCommitmentFormat
+import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
 import fr.acinq.eclair.wire.protocol._
@@ -758,7 +758,7 @@ object PaymentPacketSpec {
       case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
     }
     val channelFlags = ChannelFlags(announceChannel = announcement_opt.nonEmpty)
-    val commitmentFormat = DefaultCommitmentFormat
+    val commitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     new Commitments(
       ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localChannelParams, remoteChannelParams, channelFlags),
       CommitmentChanges(localChanges, remoteChanges, 0, 0),

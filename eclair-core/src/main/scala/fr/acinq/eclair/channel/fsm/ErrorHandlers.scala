@@ -46,7 +46,7 @@ trait ErrorHandlers extends CommonHandlers {
   def handleFastClose(c: CloseCommand, channelId: ByteVector32) = {
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
     replyTo ! RES_SUCCESS(c, channelId)
-    goto(CLOSED)
+    goto(CLOSED) using IgnoreClosedData
   }
 
   def handleMutualClose(closingTx: ClosingTx, d: Either[DATA_NEGOTIATING, DATA_CLOSING]) = {
@@ -100,7 +100,7 @@ trait ErrorHandlers extends CommonHandlers {
         cause match {
           case _: InvalidFundingTx =>
             // invalid funding tx in the single-funding case: we just close the channel
-            goto(CLOSED)
+            goto(CLOSED) using IgnoreClosedData
           case _: ChannelException =>
             // known channel exception: we force close using our current commitment
             spendLocalCurrent(dd, maxClosingFeerate_opt) sending error
@@ -125,8 +125,9 @@ trait ErrorHandlers extends CommonHandlers {
             }
         }
       // When there is no commitment yet, we just send an error to our peer and go to CLOSED state.
-      case _: ChannelDataWithoutCommitments => goto(CLOSED) sending error
-      case _: TransientChannelData => goto(CLOSED) sending error
+      case _: ChannelDataWithoutCommitments => goto(CLOSED) using IgnoreClosedData sending error
+      case _: TransientChannelData => goto(CLOSED) using IgnoreClosedData sending error
+      case _: ClosedData => stay()
     }
   }
 
@@ -165,8 +166,9 @@ trait ErrorHandlers extends CommonHandlers {
       // When there is no commitment yet, we just go to CLOSED state in case an error occurs.
       case waitForDualFundingSigned: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED =>
         rollbackFundingAttempt(waitForDualFundingSigned.signingSession.fundingTx.tx, Nil)
-        goto(CLOSED)
-      case _: TransientChannelData => goto(CLOSED)
+        goto(CLOSED) using IgnoreClosedData
+      case _: TransientChannelData => goto(CLOSED) using IgnoreClosedData
+      case _: ClosedData => stay()
     }
   }
 
@@ -238,10 +240,7 @@ trait ErrorHandlers extends CommonHandlers {
       case _ => None
     }
     val publishMainDelayedTx_opt = txs.mainDelayedTx_opt.map(tx => PublishFinalTx(tx, None))
-    val publishHtlcTxs = txs.htlcTxs.map(htlcTx => commitment.commitmentFormat match {
-      case DefaultCommitmentFormat => PublishFinalTx(htlcTx, Some(lcp.commitTx.txid))
-      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => PublishReplaceableTx(htlcTx, lcp.commitTx, commitment, Closing.confirmationTarget(htlcTx))
-    })
+    val publishHtlcTxs = txs.htlcTxs.map(htlcTx => PublishReplaceableTx(htlcTx, lcp.commitTx, commitment, Closing.confirmationTarget(htlcTx)))
     val publishQueue = Seq(publishCommitTx) ++ publishAnchorTx_opt ++ publishMainDelayedTx_opt ++ publishHtlcTxs
     publishIfNeeded(publishQueue, lcp.irrevocablySpent)
 

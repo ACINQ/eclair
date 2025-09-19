@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{ClosingComplete, HtlcSettlementMessage, LightningMessage, Shutdown, UpdateMessage}
 import scodec.bits.ByteVector
 
@@ -59,7 +59,7 @@ trait CommonHandlers {
           nodeParams.db.channels.addOrUpdateChannel(d)
           context.system.eventStream.publish(ChannelPersisted(self, remoteNodeId, d.channelId, d))
           state
-        case _: TransientChannelData =>
+        case _: TransientChannelData | _: ClosedData =>
           log.error(s"can't store data=${state.stateData} in state=${state.stateName}")
           state
       }
@@ -142,7 +142,7 @@ trait CommonHandlers {
         val localCloseeNonce = NonceGenerator.signingNonce(localFundingPubKey, commitments.latest.remoteFundingPubKey, commitments.latest.fundingTxId)
         localCloseeNonce_opt = Some(localCloseeNonce)
         Shutdown(commitments.channelId, finalScriptPubKey, localCloseeNonce.publicNonce)
-      case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
+      case _: AnchorOutputsCommitmentFormat =>
         Shutdown(commitments.channelId, finalScriptPubKey)
     }
   }

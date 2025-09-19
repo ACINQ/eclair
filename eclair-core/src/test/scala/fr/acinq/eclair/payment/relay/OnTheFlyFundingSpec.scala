@@ -78,8 +78,8 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       assert(peerInfo.state == Peer.CONNECTED)
     }
 
-    def openChannel(fundingAmount: Satoshi): ByteVector32 = {
-      peer ! Peer.OpenChannel(remoteNodeId, fundingAmount, None, None, None, None, None, None, None)
+    def openChannel(fundingAmount: Satoshi, channelType: SupportedChannelType = ChannelTypes.AnchorOutputsZeroFeeHtlcTx()): ByteVector32 = {
+      peer ! Peer.OpenChannel(remoteNodeId, fundingAmount, Some(channelType), None, None, None, None, None, None)
       val temporaryChannelId = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR].temporaryChannelId
       val channelId = randomBytes32()
       peer ! ChannelIdAssigned(channel.ref, remoteNodeId, temporaryChannelId, channelId)

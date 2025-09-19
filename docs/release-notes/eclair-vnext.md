@@ -11,6 +11,21 @@
 We remove the code used to deserialize channel data from versions of eclair prior to v0.13.
 Node operators running a version of `eclair` older than v0.13 must first upgrade to v0.13 to migrate their channel data, and then upgrade to the latest version.
 
+### Move closed channels to dedicated database table
+
+We previously kept closed channels in the same database table as active channels, with a flag indicating that it was closed.
+This creates performance issues for nodes with a large history of channels, and creates backwards-compatibility issues when changing the channel data format.
+
+We now store closed channels in a dedicated table, where we only keep relevant information regarding the channel.
+When restarting your node, the channels table will automatically be cleaned up and closed channels will move to the new table.
+This may take some time depending on your channels history, but will only happen once.
+
+### Remove support for non-anchor channels
+
+We remove the code used to support legacy channels that don't use anchor outputs or taproot.
+If you still have such channels, you MUST NOT update to this version of eclair.
+You must instead close those channels, and will only be able to update eclair once they have been successfully closed.
+
 ### Update minimal version of Bitcoin Core
 
 With this release, eclair requires using Bitcoin Core 29.1.
@@ -22,7 +37,7 @@ Newer versions of Bitcoin Core may be used, but have not been extensively tested
 
 ### API changes
 
-<insert changes>
+- the `closedchannels` API now returns human-readable channel data
 
 ### Miscellaneous improvements and bug fixes
 

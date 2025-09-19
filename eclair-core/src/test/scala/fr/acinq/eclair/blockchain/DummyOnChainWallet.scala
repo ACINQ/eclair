@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL
 import fr.acinq.bitcoin.psbt.{KeyPathWithMaster, Psbt, TaprootBip32DerivationPath}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector64, Crypto, KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, ScriptElt, ScriptWitness, Transaction, TxId, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector64, KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, ScriptElt, ScriptWitness, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType
@@ -36,7 +36,7 @@ import scala.util.{Failure, Random, Success}
 /**
  * Created by PM on 06/07/2017.
  */
-class DummyOnChainWallet extends OnChainWallet with OnChainPubkeyCache {
+class DummyOnChainWallet extends OnChainWallet with OnChainAddressCache {
 
   import DummyOnChainWallet._
 
@@ -51,8 +51,6 @@ class DummyOnChainWallet extends OnChainWallet with OnChainPubkeyCache {
     case Some(AddressType.P2tr) => Script.pay2tr(dummyReceivePubkey.xOnly)
     case _ => Script.pay2wpkh(dummyReceivePubkey)
   })
-
-  override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
   override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, changePosition: Option[Int], externalInputsWeight: Map[OutPoint, Long], minInputConfirmations_opt: Option[Int], feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
     funded += (tx.txid -> tx)
@@ -92,12 +90,10 @@ class DummyOnChainWallet extends OnChainWallet with OnChainPubkeyCache {
 
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(false)
 
-  override def getP2wpkhPubkey(renew: Boolean): PublicKey = dummyReceivePubkey
-
   override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = Script.pay2tr(dummyReceivePubkey.xOnly)
 }
 
-class SingleKeyOnChainWallet extends OnChainWallet with OnChainPubkeyCache {
+class SingleKeyOnChainWallet extends OnChainWallet with OnChainAddressCache {
 
   import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 
@@ -123,8 +119,6 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainPubkeyCache {
     case Some(AddressType.P2wpkh) => p2wpkhScript
     case _ => p2trScript
   })
-
-  override def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(p2wpkhPublicKey)
 
   override def fundTransaction(tx: Transaction, feeRate: FeeratePerKw, replaceable: Boolean, changePosition: Option[Int], externalInputsWeight: Map[OutPoint, Long], minInputConfirmations_opt: Option[Int], feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[FundTransactionResponse] = synchronized {
     val currentAmountIn = tx.txIn.flatMap(txIn => inputs.find(_.txid == txIn.outPoint.txid).flatMap(_.txOut.lift(txIn.outPoint.index.toInt))).map(_.amount).sum
@@ -230,8 +224,6 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainPubkeyCache {
   }
 
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(doubleSpent.contains(tx.txid))
-
-  override def getP2wpkhPubkey(renew: Boolean): PublicKey = p2wpkhPublicKey
 
   override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = p2trScript
 }

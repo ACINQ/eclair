@@ -183,7 +183,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     sender.expectMsgType[ConnectionResult.Connected]
   }
 
-  def openChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, funding: Satoshi, channelType_opt: Option[SupportedChannelType] = None)(implicit system: ActorSystem): OpenChannelResponse.Created = {
+  def openChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, funding: Satoshi, channelType_opt: Option[SupportedChannelType] = Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))(implicit system: ActorSystem): OpenChannelResponse.Created = {
     val sender = TestProbe("sender")
     sender.send(node1.switchboard, Peer.OpenChannel(node2.nodeParams.nodeId, funding, channelType_opt, None, None, None, None, None, None))
     sender.expectMsgType[OpenChannelResponse.Created]

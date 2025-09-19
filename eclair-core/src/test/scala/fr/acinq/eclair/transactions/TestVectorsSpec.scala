@@ -40,10 +40,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
   val commitmentFormat: CommitmentFormat = if (channelFeatures.contains(Features.AnchorOutputsZeroFeeHtlcTx)) {
     ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
-  } else if (channelFeatures.contains(Features.AnchorOutputs)) {
-    UnsafeLegacyAnchorOutputsCommitmentFormat
   } else {
-    DefaultCommitmentFormat
+    UnsafeLegacyAnchorOutputsCommitmentFormat
   }
 
   val tests = {
@@ -442,20 +440,6 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     assert(htlcTxs(2) == Transaction.read(tests(name)("htlc_timeout_tx (htlc #5)")))
   }
 
-}
-
-class DefaultCommitmentTestVectorSpec extends TestVectorsSpec {
-  // @formatter:off
-  override def filename: String = "/bolt3-tx-test-vectors-default-commitment-format.txt"
-  override def channelFeatures: Set[ChannelTypeFeature] = Set.empty
-  // @formatter:on
-}
-
-class StaticRemoteKeyTestVectorSpec extends TestVectorsSpec {
-  // @formatter:off
-  override def filename: String = "/bolt3-tx-test-vectors-static-remotekey-format.txt"
-  override def channelFeatures: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey)
-  // @formatter:on
 }
 
 class AnchorOutputsTestVectorSpec extends TestVectorsSpec {

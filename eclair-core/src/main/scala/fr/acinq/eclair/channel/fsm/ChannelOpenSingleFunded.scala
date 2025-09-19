@@ -32,7 +32,7 @@ import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentK
 import fr.acinq.eclair.crypto.{NonceGenerator, ShaChain}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AcceptChannelTlv, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, OpenChannelTlv, TlvStream}
 import fr.acinq.eclair.{MilliSatoshiLong, randomKey, toLongId}
 import scodec.bits.ByteVector
@@ -79,7 +79,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       val localShutdownScript = input.localChannelParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
       val localNonce = input.channelType.commitmentFormat match {
         case _: SimpleTaprootChannelCommitmentFormat => Some(NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0).publicNonce)
-        case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => None
+        case _: AnchorOutputsCommitmentFormat => None
       }
       val open = OpenChannel(
         chainHash = nodeParams.chainHash,
@@ -134,7 +134,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val localShutdownScript = d.initFundee.localChannelParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
           val localNonce = d.initFundee.channelType.commitmentFormat match {
             case _: SimpleTaprootChannelCommitmentFormat => Some(NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0).publicNonce)
-            case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => None
+            case _: AnchorOutputsCommitmentFormat => None
           }
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localCommitParams.dustLimit,
@@ -163,7 +163,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(e: Error, d: DATA_WAIT_FOR_OPEN_CHANNEL) => handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
+    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED) using IgnoreClosedData
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
@@ -203,11 +203,11 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
       d.initFunder.replyTo ! OpenChannelResponse.Disconnected
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
       d.initFunder.replyTo ! OpenChannelResponse.TimedOut
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
@@ -233,7 +233,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                   }
                 case None => Left(MissingCommitNonce(d.channelId, NonceGenerator.dummyFundingTxId, commitmentNumber = 0))
               }
-            case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => Right(remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey))
+            case _: AnchorOutputsCommitmentFormat => Right(remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey))
           }
           localSigOfRemoteTx match {
             case Left(f) => handleLocalError(f, d, None)
@@ -264,11 +264,11 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
       d.replyTo ! OpenChannelResponse.Disconnected
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
       d.replyTo ! OpenChannelResponse.TimedOut
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData
   })
 
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
@@ -303,7 +303,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                       }
                     case None => Left(MissingCommitNonce(channelId, NonceGenerator.dummyFundingTxId, commitmentNumber = 0))
                   }
-                case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => Right(remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey))
+                case _: AnchorOutputsCommitmentFormat => Right(remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey))
               }
               localSigOfRemoteTx match {
                 case Left(f) => handleLocalError(f, d, Some(fc))
@@ -346,7 +346,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_CREATED) => handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
+    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED) using IgnoreClosedData
   })
 
   when(WAIT_FOR_FUNDING_SIGNED)(handleExceptions {
@@ -414,13 +414,13 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
       d.replyTo ! OpenChannelResponse.Disconnected
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
       d.replyTo ! OpenChannelResponse.TimedOut
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData
   })
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
