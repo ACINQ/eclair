@@ -700,8 +700,8 @@ final case class DATA_CLOSING(commitments: Commitments,
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends ChannelDataWithCommitments
 
 /** We use this class when a channel shouldn't be stored in the DB (e.g. because it never confirmed). */
-case object IgnoreClosedData extends ClosedData {
-  val channelId: ByteVector32 = ByteVector32.Zeroes
+case class IgnoreClosedData(previousData: ChannelData) extends ClosedData {
+  val channelId: ByteVector32 = previousData.channelId
 }
 
 /**

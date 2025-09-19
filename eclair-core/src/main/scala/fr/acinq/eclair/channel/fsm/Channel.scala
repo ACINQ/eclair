@@ -384,7 +384,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>
           log.info("we have nothing at stake, going straight to CLOSED")
           context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, closing.channelId))
-          goto(CLOSED) using IgnoreClosedData
+          goto(CLOSED) using IgnoreClosedData(closing)
         case closing: DATA_CLOSING =>
           val localPaysClosingFees = closing.commitments.localChannelParams.paysClosingFees
           val closingType_opt = Closing.isClosingTypeAlreadyKnown(closing)
@@ -2368,7 +2368,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case d: DATA_CLOSED =>
           log.info(s"moving channelId=${d.channelId} to the closed channels DB")
           nodeParams.db.channels.removeChannel(d.channelId, Some(d))
-        case _: PersistentChannelData | IgnoreClosedData =>
+        case _: PersistentChannelData | _: IgnoreClosedData =>
           log.info("deleting database record for channelId={}", stateData.channelId)
           nodeParams.db.channels.removeChannel(stateData.channelId, None)
         case _: TransientChannelData => // nothing was stored in the DB
