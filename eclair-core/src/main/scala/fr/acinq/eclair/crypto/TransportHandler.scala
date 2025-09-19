@@ -27,7 +27,7 @@ import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.ChaCha20Poly1305Error
 import fr.acinq.eclair.crypto.Noise._
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, LightningMessage, RoutingMessage}
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs, getSimpleClassName}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
@@ -92,6 +92,9 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
     makeReader(keyPair)
   }
 
+  /** We keep track of pending pings to defend against ping flooding. */
+  private var pendingPings = 0
+
   private def decodeAndSendToListener(listener: ActorRef, plaintextMessages: Seq[ByteVector]): Map[LightningMessage, Int] = {
     log.debug("decoding {} plaintext messages", plaintextMessages.size)
     var m = Map.empty[LightningMessage, Int]
@@ -99,6 +102,13 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
       case Attempt.Successful(DecodeResult(message, _)) =>
         logMessage(message, "IN")
         Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.IN).record(plaintext.size)
+        if (message.isInstanceOf[Ping]) {
+          pendingPings += 1
+          if (pendingPings > 1) {
+            // We will kill the connection anyway, no need to process remaining messages
+            return m
+          }
+        }
         listener ! message
         m += (message -> (m.getOrElse(message, 0) + 1))
       case Attempt.Failure(err) =>
@@ -106,6 +116,18 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
     })
     log.debug("decoded {} messages", m.values.sum)
     m
+  }
+
+  private def encodeAndSendToPeer(encryptor: Encryptor, t: LightningMessage): Encryptor = {
+    if (t.isInstanceOf[Pong]) {
+      pendingPings -= 1
+    }
+    logMessage(t, "OUT")
+    val blob = codec.encode(t).require.toByteVector
+    Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.OUT).record(blob.size)
+    val (enc1, ciphertext) = encryptor.encrypt(blob)
+    connection ! Tcp.Write(buf(ciphertext), WriteAck)
+    enc1
   }
 
   startWith(Handshake, HandshakeData(reader))
@@ -161,11 +183,16 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
         context.watch(listener)
         val (dec1, plaintextMessages) = dec.decrypt()
         val unackedReceived1 = decodeAndSendToListener(listener, plaintextMessages)
-        if (unackedReceived1.isEmpty) {
-          log.debug("no decoded messages, resuming reading")
-          connection ! Tcp.ResumeReading
+        if (pendingPings > 1) {
+          log.warning("ping flood detected (pendingPings={}): closing connection", pendingPings)
+          stop(FSM.Normal)
+        } else {
+          if (unackedReceived1.isEmpty) {
+            log.debug("no decoded messages, resuming reading")
+            connection ! Tcp.ResumeReading
+          }
+          goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[LightningMessage], Queue.empty[LightningMessage]), unackedReceived = unackedReceived1, unackedSent = None)
         }
-        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[LightningMessage], Queue.empty[LightningMessage]), unackedReceived = unackedReceived1, unackedSent = None)
     }
   }
 
@@ -175,11 +202,16 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
         log.debug("received chunk of size={}", data.size)
         val (dec1, plaintextMessages) = d.decryptor.copy(buffer = d.decryptor.buffer ++ data).decrypt()
         val unackedReceived1 = decodeAndSendToListener(d.listener, plaintextMessages)
-        if (unackedReceived1.isEmpty) {
-          log.debug("no decoded messages, resuming reading")
-          connection ! Tcp.ResumeReading
+        if (pendingPings > 1) {
+          log.warning("ping flood detected (pendingPings={}): closing connection", pendingPings)
+          stop(FSM.Normal)
+        } else {
+          if (unackedReceived1.isEmpty) {
+            log.debug("no decoded messages, resuming reading")
+            connection ! Tcp.ResumeReading
+          }
+          stay() using d.copy(decryptor = dec1, unackedReceived = unackedReceived1)
         }
-        stay() using d.copy(decryptor = dec1, unackedReceived = unackedReceived1)
 
       case Event(ReadAck(msg: LightningMessage), d: NormalData) =>
         // how many occurrences of this message are still unacked?
@@ -209,32 +241,19 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
           }
           stay() using d.copy(sendBuffer = sendBuffer1)
         } else {
-          logMessage(t, "OUT")
-          val blob = codec.encode(t).require.toByteVector
-          Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.OUT).record(blob.size)
-          val (enc1, ciphertext) = d.encryptor.encrypt(blob)
-          connection ! Tcp.Write(buf(ciphertext), WriteAck)
+          val enc1 = encodeAndSendToPeer(d.encryptor, t)
           stay() using d.copy(encryptor = enc1, unackedSent = Some(t))
         }
 
       case Event(WriteAck, d: NormalData) =>
-        def send(t: LightningMessage) = {
-          logMessage(t, "OUT")
-          val blob = codec.encode(t).require.toByteVector
-          Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.OUT).record(blob.size)
-          val (enc1, ciphertext) = d.encryptor.encrypt(blob)
-          connection ! Tcp.Write(buf(ciphertext), WriteAck)
-          enc1
-        }
-
         d.sendBuffer.normalPriority.dequeueOption match {
           case Some((t, normalPriority1)) =>
-            val enc1 = send(t)
+            val enc1 = encodeAndSendToPeer(d.encryptor, t)
             stay() using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(normalPriority = normalPriority1), unackedSent = Some(t))
           case None =>
             d.sendBuffer.lowPriority.dequeueOption match {
               case Some((t, lowPriority1)) =>
-                val enc1 = send(t)
+                val enc1 = encodeAndSendToPeer(d.encryptor, t)
                 stay() using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(lowPriority = lowPriority1), unackedSent = Some(t))
               case None =>
                 stay() using d.copy(unackedSent = None)
