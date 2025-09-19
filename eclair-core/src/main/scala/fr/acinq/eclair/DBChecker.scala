@@ -40,7 +40,7 @@ object DBChecker extends Logging {
           case _ => ()
         }
         channels
-      case Failure(_) => throw IncompatibleDBException
+      case Failure(t) => throw IncompatibleDBException(t)
     }
   }
 

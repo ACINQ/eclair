@@ -127,7 +127,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         lockTime = nodeParams.currentBlockHeight.toLong,
         fundingPubkey = fundingPubKey,
         revocationBasepoint = channelKeys.revocationBasePoint,
-        paymentBasepoint = input.localChannelParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
+        paymentBasepoint = channelKeys.paymentBasePoint,
         delayedPaymentBasepoint = channelKeys.delayedPaymentBasePoint,
         htlcBasepoint = channelKeys.htlcBasePoint,
         firstPerCommitmentPoint = channelKeys.commitmentPoint(0),
@@ -141,7 +141,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(open: OpenDualFundedChannel, d: DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL) =>
       val localFundingPubkey = channelKeys.fundingKey(fundingTxIndex = 0).publicKey
       val fundingScript = Transactions.makeFundingScript(localFundingPubkey, open.fundingPubkey, d.init.channelType.commitmentFormat).pubkeyScript
-      Helpers.validateParamsDualFundedNonInitiator(nodeParams, d.init.channelType, open, fundingScript, remoteNodeId, d.init.localChannelParams.initFeatures, d.init.remoteInit.features, d.init.fundingContribution_opt) match {
+      Helpers.validateParamsDualFundedNonInitiator(nodeParams, open, fundingScript, remoteNodeId, d.init.localChannelParams.initFeatures, d.init.remoteInit.features, d.init.fundingContribution_opt) match {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript, willFund_opt)) =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isOpener = false, open.temporaryChannelId, open.commitmentFeerate, Some(open.fundingFeerate)))
@@ -179,7 +179,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             maxAcceptedHtlcs = localCommitParams.maxAcceptedHtlcs,
             fundingPubkey = localFundingPubkey,
             revocationBasepoint = channelKeys.revocationBasePoint,
-            paymentBasepoint = d.init.localChannelParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
+            paymentBasepoint = channelKeys.paymentBasePoint,
             delayedPaymentBasepoint = channelKeys.delayedPaymentBasePoint,
             htlcBasepoint = channelKeys.htlcBasePoint,
             firstPerCommitmentPoint = channelKeys.commitmentPoint(0),
@@ -224,7 +224,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL)(handleExceptions {
     case Event(accept: AcceptDualFundedChannel, d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) =>
-      Helpers.validateParamsDualFundedInitiator(nodeParams, remoteNodeId, d.init.channelType, d.init.localChannelParams.initFeatures, d.init.remoteInit.features, d.lastSent, accept) match {
+      Helpers.validateParamsDualFundedInitiator(nodeParams, remoteNodeId, d.init.localChannelParams.initFeatures, d.init.remoteInit.features, d.lastSent, accept) match {
         case Left(t) =>
           d.init.replyTo ! OpenChannelResponse.Rejected(t.getMessage)
           handleLocalError(t, d, Some(accept))

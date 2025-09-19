@@ -126,7 +126,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
   }
 
-  test("complete interactive-tx protocol (zero-conf)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.ScidAlias), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("complete interactive-tx protocol (zero-conf)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.ScidAlias)) { f =>
     import f._
 
     val listener = TestProbe()
@@ -425,7 +425,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     reconnect(f, fundingTxId, commitmentFormat, aliceExpectsCommitSig = true, bobExpectsCommitSig = true)
   }
 
-  test("recv INPUT_DISCONNECTED (commit_sig not received)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv INPUT_DISCONNECTED (commit_sig not received)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     testReconnectCommitSigNotReceived(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
   }
 
@@ -493,7 +493,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     reconnect(f, fundingTxId, commitmentFormat, aliceExpectsCommitSig = false, bobExpectsCommitSig = true)
   }
 
-  test("recv INPUT_DISCONNECTED (commit_sig received by Alice)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv INPUT_DISCONNECTED (commit_sig received by Alice)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     testReconnectCommitSigReceivedByAlice(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
   }
 
@@ -501,7 +501,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     testReconnectCommitSigReceivedByAlice(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
-  test("recv INPUT_DISCONNECTED (commit_sig received by Bob)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv INPUT_DISCONNECTED (commit_sig received by Bob)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
     val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId
@@ -579,7 +579,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     assert(listener.expectMsgType[TransactionPublished].tx.txid == fundingTx.txid)
   }
 
-  test("recv INPUT_DISCONNECTED (commit_sig received)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv INPUT_DISCONNECTED (commit_sig received)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
     val fundingTxId = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_SIGNED].signingSession.fundingTx.txId

@@ -32,7 +32,7 @@ import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentK
 import fr.acinq.eclair.crypto.{NonceGenerator, ShaChain}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AcceptChannelTlv, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, OpenChannelTlv, TlvStream}
 import fr.acinq.eclair.{MilliSatoshiLong, randomKey, toLongId}
 import scodec.bits.ByteVector
@@ -79,7 +79,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       val localShutdownScript = input.localChannelParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
       val localNonce = input.channelType.commitmentFormat match {
         case _: SimpleTaprootChannelCommitmentFormat => Some(NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0).publicNonce)
-        case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => None
+        case _: AnchorOutputsCommitmentFormat => None
       }
       val open = OpenChannel(
         chainHash = nodeParams.chainHash,
@@ -95,7 +95,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
         maxAcceptedHtlcs = input.proposedCommitParams.localMaxAcceptedHtlcs,
         fundingPubkey = fundingKey.publicKey,
         revocationBasepoint = channelKeys.revocationBasePoint,
-        paymentBasepoint = input.localChannelParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
+        paymentBasepoint = channelKeys.paymentBasePoint,
         delayedPaymentBasepoint = channelKeys.delayedPaymentBasePoint,
         htlcBasepoint = channelKeys.htlcBasePoint,
         firstPerCommitmentPoint = channelKeys.commitmentPoint(0),
@@ -112,7 +112,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, d: DATA_WAIT_FOR_OPEN_CHANNEL) =>
-      Helpers.validateParamsSingleFundedFundee(nodeParams, d.initFundee.channelType, d.initFundee.localChannelParams.initFeatures, open, remoteNodeId, d.initFundee.remoteInit.features) match {
+      Helpers.validateParamsSingleFundedFundee(nodeParams, d.initFundee.localChannelParams.initFeatures, open, remoteNodeId, d.initFundee.remoteInit.features) match {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript)) =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isOpener = false, open.temporaryChannelId, open.feeratePerKw, None))
@@ -134,7 +134,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val localShutdownScript = d.initFundee.localChannelParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
           val localNonce = d.initFundee.channelType.commitmentFormat match {
             case _: SimpleTaprootChannelCommitmentFormat => Some(NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0).publicNonce)
-            case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => None
+            case _: AnchorOutputsCommitmentFormat => None
           }
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localCommitParams.dustLimit,
@@ -146,7 +146,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             maxAcceptedHtlcs = localCommitParams.maxAcceptedHtlcs,
             fundingPubkey = fundingKey.publicKey,
             revocationBasepoint = channelKeys.revocationBasePoint,
-            paymentBasepoint = d.initFundee.localChannelParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
+            paymentBasepoint = channelKeys.paymentBasePoint,
             delayedPaymentBasepoint = channelKeys.delayedPaymentBasePoint,
             htlcBasepoint = channelKeys.htlcBasePoint,
             firstPerCommitmentPoint = channelKeys.commitmentPoint(0),
@@ -168,7 +168,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
     case Event(accept: AcceptChannel, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
-      Helpers.validateParamsSingleFundedFunder(nodeParams, d.initFunder.channelType, d.initFunder.localChannelParams.initFeatures, d.initFunder.remoteInit.features, d.lastSent, accept) match {
+      Helpers.validateParamsSingleFundedFunder(nodeParams, d.initFunder.localChannelParams.initFeatures, d.initFunder.remoteInit.features, d.lastSent, accept) match {
         case Left(t) =>
           d.initFunder.replyTo ! OpenChannelResponse.Rejected(t.getMessage)
           handleLocalError(t, d, Some(accept))
@@ -215,8 +215,8 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       val temporaryChannelId = d.channelParams.channelId
       // let's create the first commitment tx that spends the yet uncommitted funding tx
       val fundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
-      val localCommitmentKeys = LocalCommitmentKeys(d.channelParams, channelKeys, localCommitIndex = 0, d.commitmentFormat)
-      val remoteCommitmentKeys = RemoteCommitmentKeys(d.channelParams, channelKeys, d.remoteFirstPerCommitmentPoint, d.commitmentFormat)
+      val localCommitmentKeys = LocalCommitmentKeys(d.channelParams, channelKeys, localCommitIndex = 0)
+      val remoteCommitmentKeys = RemoteCommitmentKeys(d.channelParams, channelKeys, d.remoteFirstPerCommitmentPoint)
       Funding.makeFirstCommitTxs(d.channelParams, d.localCommitParams, d.remoteCommitParams, localFundingAmount = d.fundingAmount, remoteFundingAmount = 0 sat, localPushAmount = d.pushAmount, remotePushAmount = 0 msat, d.commitTxFeerate, d.commitmentFormat, fundingTx.txid, fundingTxOutputIndex, fundingKey, d.remoteFundingPubKey, localCommitmentKeys, remoteCommitmentKeys) match {
         case Left(ex) => handleLocalError(ex, d, None)
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
@@ -233,7 +233,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                   }
                 case None => Left(MissingCommitNonce(d.channelId, NonceGenerator.dummyFundingTxId, commitmentNumber = 0))
               }
-            case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => Right(remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey))
+            case _: AnchorOutputsCommitmentFormat => Right(remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey))
           }
           localSigOfRemoteTx match {
             case Left(f) => handleLocalError(f, d, None)
@@ -275,8 +275,8 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
     case Event(fc@FundingCreated(_, fundingTxId, fundingTxOutputIndex, _, _), d: DATA_WAIT_FOR_FUNDING_CREATED) =>
       val temporaryChannelId = d.channelParams.channelId
       val fundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
-      val localCommitmentKeys = LocalCommitmentKeys(d.channelParams, channelKeys, localCommitIndex = 0, d.commitmentFormat)
-      val remoteCommitmentKeys = RemoteCommitmentKeys(d.channelParams, channelKeys, d.remoteFirstPerCommitmentPoint, d.commitmentFormat)
+      val localCommitmentKeys = LocalCommitmentKeys(d.channelParams, channelKeys, localCommitIndex = 0)
+      val remoteCommitmentKeys = RemoteCommitmentKeys(d.channelParams, channelKeys, d.remoteFirstPerCommitmentPoint)
       Funding.makeFirstCommitTxs(d.channelParams, d.localCommitParams, d.remoteCommitParams, localFundingAmount = 0 sat, remoteFundingAmount = d.fundingAmount, localPushAmount = 0 msat, remotePushAmount = d.pushAmount, d.commitTxFeerate, d.commitmentFormat, fundingTxId, fundingTxOutputIndex, fundingKey, d.remoteFundingPubKey, localCommitmentKeys, remoteCommitmentKeys) match {
         case Left(ex) => handleLocalError(ex, d, Some(fc))
         case Right((localSpec, localCommitTx, remoteSpec, remoteCommitTx)) =>
@@ -303,7 +303,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                       }
                     case None => Left(MissingCommitNonce(channelId, NonceGenerator.dummyFundingTxId, commitmentNumber = 0))
                   }
-                case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat => Right(remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey))
+                case _: AnchorOutputsCommitmentFormat => Right(remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey))
               }
               localSigOfRemoteTx match {
                 case Left(f) => handleLocalError(f, d, Some(fc))

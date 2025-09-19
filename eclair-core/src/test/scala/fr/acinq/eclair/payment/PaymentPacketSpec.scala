@@ -35,7 +35,7 @@ import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.BaseRouterSpec.{blindedRouteFromHops, channelHopFromUpdate}
 import fr.acinq.eclair.router.BlindedRouteCreation
 import fr.acinq.eclair.router.Router.{NodeHop, Route}
-import fr.acinq.eclair.transactions.Transactions.DefaultCommitmentFormat
+import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer, PaymentInfo}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, OutgoingBlindedPerHopPayload}
 import fr.acinq.eclair.wire.protocol._
@@ -745,7 +745,7 @@ object PaymentPacketSpec {
 
   def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat, channelFeatures: ChannelFeatures = ChannelFeatures(), announcement_opt: Option[ChannelAnnouncement] = None): Commitments = {
     val channelReserve = testCapacity * 0.01
-    val localChannelParams = LocalChannelParams(null, null, Some(channelReserve), isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
+    val localChannelParams = LocalChannelParams(null, null, Some(channelReserve), isChannelOpener = true, paysCommitTxFees = true, None, Features.empty)
     val remoteChannelParams = RemoteChannelParams(randomKey().publicKey, Some(channelReserve), null, null, null, null, null, None)
     val commitParams = CommitParams(546 sat, 1 msat, UInt64.MaxValue, 30, CltvExpiryDelta(720))
     val fundingTx = Transaction(2, Nil, Seq(TxOut(testCapacity, Nil)), 0)
@@ -758,7 +758,7 @@ object PaymentPacketSpec {
       case None => LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None)
     }
     val channelFlags = ChannelFlags(announceChannel = announcement_opt.nonEmpty)
-    val commitmentFormat = DefaultCommitmentFormat
+    val commitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     new Commitments(
       ChannelParams(channelId, ChannelConfig.standard, channelFeatures, localChannelParams, remoteChannelParams, channelFlags),
       CommitmentChanges(localChanges, remoteChanges, 0, 0),

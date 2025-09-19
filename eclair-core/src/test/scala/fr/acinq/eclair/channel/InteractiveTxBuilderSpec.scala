@@ -219,9 +219,9 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
 
   private def createFixtureParams(channelType: SupportedChannelType, fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false), nonInitiatorPaysCommitTxFees: Boolean = false): FixtureParams = {
     val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(features = Features(channelType.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport])))
-    val localChannelParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, None, isChannelOpener = true, paysCommitTxFees = !nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountA)
+    val localChannelParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, isChannelOpener = true, paysCommitTxFees = !nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountA)
     val commitParamsA = CommitParams(nodeParamsA.channelConf.dustLimit, nodeParamsA.channelConf.htlcMinimum, nodeParamsA.channelConf.maxHtlcValueInFlight(fundingAmountA + fundingAmountB, unlimited = false), nodeParamsA.channelConf.maxAcceptedHtlcs, nodeParamsB.channelConf.toRemoteDelay)
-    val localChannelParamsB = makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), None, None, isChannelOpener = false, paysCommitTxFees = nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountB)
+    val localChannelParamsB = makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), None, isChannelOpener = false, paysCommitTxFees = nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountB)
     val commitParamsB = CommitParams(nodeParamsB.channelConf.dustLimit, nodeParamsB.channelConf.htlcMinimum, nodeParamsB.channelConf.maxHtlcValueInFlight(fundingAmountA + fundingAmountB, unlimited = false), nodeParamsB.channelConf.maxAcceptedHtlcs, nodeParamsA.channelConf.toRemoteDelay)
     val channelKeysA = nodeParamsA.channelKeyManager.channelKeys(ChannelConfig.standard, localChannelParamsA.fundingKeyPath)
     val channelKeysB = nodeParamsB.channelKeyManager.channelKeys(ChannelConfig.standard, localChannelParamsB.fundingKeyPath)
@@ -232,7 +232,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
           nodeParams.nodeId,
           None,
           channelKeys.revocationBasePoint,
-          localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
+          channelKeys.paymentBasePoint,
           channelKeys.delayedPaymentBasePoint,
           channelKeys.htlcBasePoint,
           localParams.initFeatures,
@@ -384,7 +384,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val utxosA = Seq(50_000 sat)
     val fundingB = 50_000 sat
     val utxosB = Seq(80_000 sat)
-    withFixture(ChannelTypes.AnchorOutputs(), fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
+    withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
       import f._
 
       alice ! Start(alice2bob.ref)

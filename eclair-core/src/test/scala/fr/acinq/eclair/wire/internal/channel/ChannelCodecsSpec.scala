@@ -28,7 +28,7 @@ import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, LocalChannelKeyMana
 import fr.acinq.eclair.json.JsonSerializers
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.DefaultCommitmentFormat
+import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs._
 import fr.acinq.eclair.wire.protocol.{CommonCodecs, UpdateAddHtlc}
@@ -124,7 +124,6 @@ object ChannelCodecsSpec {
     fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
     initialRequestedChannelReserve_opt = Some(10000 sat),
     upfrontShutdownScript_opt = None,
-    walletStaticPaymentBasepoint = None,
     isChannelOpener = true,
     paysCommitTxFees = true,
     initFeatures = Features.empty)
@@ -178,7 +177,7 @@ object ChannelCodecsSpec {
     val commitments = Commitments(
       ChannelParams(channelId, ChannelConfig.standard, ChannelFeatures(), localChannelParams, remoteChannelParams, channelFlags),
       CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 32, remoteNextHtlcId = 4),
-      Seq(Commitment(fundingTxIndex, 0, OutPoint(fundingTx.txid, 0), fundingAmount, remoteFundingPubKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.NotLocked, DefaultCommitmentFormat, localCommitParams, localCommit, remoteCommitParams, remoteCommit, None)),
+      Seq(Commitment(fundingTxIndex, 0, OutPoint(fundingTx.txid, 0), fundingAmount, remoteFundingPubKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.NotLocked, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, localCommitParams, localCommit, remoteCommitParams, remoteCommit, None)),
       remoteNextCommitInfo = Right(randomKey().publicKey),
       remotePerCommitmentSecrets = ShaChain.init,
       originChannels = origins)

@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
-import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, PhoenixSimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{PhoenixSimpleTaprootChannelCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, OpenChannel, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -41,7 +41,6 @@ import scala.concurrent.duration._
 class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
   private val HighRemoteDustLimit = "high_remote_dust_limit"
-  private val StandardChannelType = "standard_channel_type"
 
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, listener: TestProbe)
 
@@ -53,7 +52,6 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import setup._
 
     val channelParams = computeChannelParams(setup, test.tags)
-      .modify(_.channelType).setToIf(test.tags.contains(StandardChannelType))(ChannelTypes.Standard())
     val listener = TestProbe()
     within(30 seconds) {
       alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelAborted])
@@ -66,30 +64,11 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     }
   }
 
-  test("recv AcceptChannel") { f =>
+  test("recv AcceptChannel (anchor outputs zero fee htlc txs)") { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // Since https://github.com/lightningnetwork/lightning-rfc/pull/714 we must include an empty upfront_shutdown_script.
     assert(accept.upfrontShutdownScript_opt.contains(ByteVector.empty))
-    assert(accept.channelType_opt.contains(ChannelTypes.StaticRemoteKey()))
-    bob2alice.forward(alice)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    aliceOpenReplyTo.expectNoMessage()
-  }
-
-  test("recv AcceptChannel (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
-    import f._
-    val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputs()))
-    bob2alice.forward(alice)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat)
-    aliceOpenReplyTo.expectNoMessage()
-  }
-
-  test("recv AcceptChannel (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
-    import f._
-    val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
@@ -97,7 +76,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectNoMessage()
   }
 
-  test("recv AcceptChannel (anchor outputs zero fee htlc txs and scid alias)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ScidAlias)) { f =>
+  test("recv AcceptChannel (anchor outputs zero fee htlc txs and scid alias)", Tag(ChannelStateTestsTags.ScidAlias)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true)))
@@ -130,7 +109,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
-  test("recv AcceptChannel (channel type not set but feature bit set)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv AcceptChannel (channel type not set)") { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
@@ -141,24 +120,13 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
-  test("recv AcceptChannel (non-default channel type)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(StandardChannelType)) { f =>
-    import f._
-    val accept = bob2alice.expectMsgType[AcceptChannel]
-    // Alice asked for a standard channel whereas they both support anchor outputs.
-    assert(accept.channelType_opt.contains(ChannelTypes.Standard()))
-    bob2alice.forward(alice, accept)
-    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].commitmentFormat == DefaultCommitmentFormat)
-    aliceOpenReplyTo.expectNoMessage()
-  }
-
   test("recv AcceptChannel (invalid channel type)") { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.StaticRemoteKey()))
+    assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
     val invalidAccept = accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty), ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs())))
     bob2alice.forward(alice, invalidAccept)
-    alice2bob.expectMsg(Error(accept.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=static_remotekey"))
+    alice2bob.expectMsg(Error(accept.temporaryChannelId, "invalid channel_type=anchor_outputs"))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]

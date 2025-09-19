@@ -81,9 +81,9 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       aliceRegister ! alice
       bobRegister ! bob
       // no announcements
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, aliceChannelParams, commitParams, pipe, bobInit, channelFlags, ChannelConfig.standard, ChannelTypes.Standard(), replyTo = system.deadLetters)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, aliceChannelParams, commitParams, pipe, bobInit, channelFlags, ChannelConfig.standard, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), replyTo = system.deadLetters)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobChannelParams, commitParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard())
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobChannelParams, commitParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]

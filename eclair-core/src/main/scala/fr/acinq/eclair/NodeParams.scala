@@ -21,9 +21,9 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
+import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{BalanceThreshold, ChannelConf, UnhandledExceptionStrategy}
-import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
@@ -39,7 +39,7 @@ import fr.acinq.eclair.router.Graph.HeuristicsConstants
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf, Router}
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions.{PhoenixSimpleTaprootChannelCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -129,14 +129,17 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
       max = (fundingFeerate * feerateTolerance.ratioHigh).max(minimumFeerate),
     )
     // We use the most likely commitment format, even though there is no guarantee that this is the one that will be used.
-    val commitmentFormat = ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, announceChannel = false).commitmentFormat
+    val commitmentFormat = if (Features.canUseFeature(localFeatures, remoteFeatures, Features.SimpleTaprootChannelsPhoenix)) {
+      PhoenixSimpleTaprootChannelCommitmentFormat
+    } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.SimpleTaprootChannelsStaging)) {
+      ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
+    } else {
+      ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
+    }
     val commitmentFeerate = onChainFeeConf.getCommitmentFeerate(currentBitcoinCoreFeerates, remoteNodeId, commitmentFormat)
     val commitmentRange = RecommendedFeeratesTlv.CommitmentFeerateRange(
-      min = (commitmentFeerate * feerateTolerance.ratioLow).max(minimumFeerate),
-      max = (commitmentFormat match {
-        case Transactions.DefaultCommitmentFormat => commitmentFeerate * feerateTolerance.ratioHigh
-        case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat => (commitmentFeerate * feerateTolerance.ratioHigh).max(feerateTolerance.anchorOutputMaxCommitFeerate)
-      }).max(minimumFeerate),
+      min = Seq(commitmentFeerate * feerateTolerance.ratioLow, minimumFeerate).max,
+      max = Seq(commitmentFeerate * feerateTolerance.ratioHigh, feerateTolerance.anchorOutputMaxCommitFeerate, minimumFeerate).max,
     )
     RecommendedFeerates(chainHash, fundingFeerate, commitmentFeerate, TlvStream(fundingRange, commitmentRange))
   }
@@ -599,7 +602,6 @@ object NodeParams extends Logging {
         quiescenceTimeout = FiniteDuration(config.getDuration("channel.quiescence-timeout").getSeconds, TimeUnit.SECONDS),
         balanceThresholds = config.getConfigList("channel.channel-update.balance-thresholds").asScala.map(conf => BalanceThreshold(Satoshi(conf.getLong("available-sat")), Satoshi(conf.getLong("max-htlc-sat")))).toSeq,
         minTimeBetweenUpdates = FiniteDuration(config.getDuration("channel.channel-update.min-time-between-updates").getSeconds, TimeUnit.SECONDS),
-        acceptIncomingStaticRemoteKeyChannels = config.getBoolean("channel.accept-incoming-static-remote-key-channels")
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,

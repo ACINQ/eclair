@@ -3,7 +3,6 @@ package fr.acinq.eclair.blockchain.bitcoind
 
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Script, ScriptElt}
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 
@@ -19,18 +18,16 @@ object OnChainAddressRefresher {
 
   // @formatter:off
   sealed trait Command
-  case object RenewPubkey extends Command
   case object RenewPubkeyScript extends Command
-  private case class SetPubkey(pubkey: PublicKey) extends Command
   private case class SetPubkeyScript(script: Seq[ScriptElt]) extends Command
   private case class Error(reason: Throwable) extends Command
   private case object Done extends Command
   // @formatter:on
 
-  def apply(generator: OnChainAddressGenerator, finalPubkey: AtomicReference[PublicKey], finalPubkeyScript: AtomicReference[Seq[ScriptElt]], delay: FiniteDuration): Behavior[Command] = {
+  def apply(generator: OnChainAddressGenerator, finalPubkeyScript: AtomicReference[Seq[ScriptElt]], delay: FiniteDuration): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
-        val refresher = new OnChainAddressRefresher(generator, finalPubkey, finalPubkeyScript, context, timers, delay)
+        val refresher = new OnChainAddressRefresher(generator, finalPubkeyScript, context, timers, delay)
         refresher.idle()
       }
     }
@@ -38,7 +35,6 @@ object OnChainAddressRefresher {
 }
 
 private class OnChainAddressRefresher(generator: OnChainAddressGenerator,
-                                      finalPubkey: AtomicReference[PublicKey],
                                       finalPubkeyScript: AtomicReference[Seq[ScriptElt]],
                                       context: ActorContext[OnChainAddressRefresher.Command],
                                       timers: TimerScheduler[OnChainAddressRefresher.Command], delay: FiniteDuration) {
@@ -47,13 +43,6 @@ private class OnChainAddressRefresher(generator: OnChainAddressGenerator,
 
   /** In that state, we're ready to renew our on-chain address whenever requested. */
   def idle(): Behavior[Command] = Behaviors.receiveMessage {
-    case RenewPubkey =>
-      context.log.debug("renewing pubkey (current={})", finalPubkey.get())
-      context.pipeToSelf(generator.getP2wpkhPubkey()) {
-        case Success(pubkey) => SetPubkey(pubkey)
-        case Failure(reason) => Error(reason)
-      }
-      renewing()
     case RenewPubkeyScript =>
       context.log.debug("renewing script (current={})", Script.write(finalPubkeyScript.get()).toHex)
       context.pipeToSelf(generator.getReceivePublicKeyScript()) {
@@ -68,14 +57,11 @@ private class OnChainAddressRefresher(generator: OnChainAddressGenerator,
 
   /** We ignore concurrent requests while waiting for bitcoind to respond. */
   private def renewing(): Behavior[Command] = Behaviors.receiveMessage {
-    case SetPubkey(pubkey) =>
-      timers.startSingleTimer(Done, delay)
-      delaying(Some(pubkey), None)
     case SetPubkeyScript(script) =>
       timers.startSingleTimer(Done, delay)
-      delaying(None, Some(script))
+      delaying(script)
     case Error(reason) =>
-      context.log.error("cannot renew public key or script", reason)
+      context.log.error("cannot renew script", reason)
       idle()
     case cmd =>
       context.log.debug("ignoring command={} while waiting for bitcoin core's response", cmd)
@@ -83,29 +69,16 @@ private class OnChainAddressRefresher(generator: OnChainAddressGenerator,
   }
 
   /**
-   * After receiving our new script or pubkey from bitcoind, we wait before updating our current values.
+   * After receiving our new address from bitcoind, we wait before updating our current value.
    * While waiting, we ignore additional requests to renew.
    *
    * This ensures that a burst of requests during a mass force-close use the same final on-chain address instead of
    * creating a lot of address churn on our bitcoin wallet.
-   *
-   * Note that while we're updating our final script, we will ignore requests to update our final public key (and the
-   * other way around). This is fine, since the public key is only used:
-   *  - when opening static_remotekey channels, which is disabled by default
-   *  - when closing channels with peers that don't support shutdown_anysegwit (which should be widely supported)
-   *
-   * In practice, we most likely always use [[RenewPubkeyScript]].
    */
-  private def delaying(nextPubkey_opt: Option[PublicKey], nextScript_opt: Option[Seq[ScriptElt]]): Behavior[Command] = Behaviors.receiveMessage {
+  private def delaying(nextScript: Seq[ScriptElt]): Behavior[Command] = Behaviors.receiveMessage {
     case Done =>
-      nextPubkey_opt.foreach { nextPubkey =>
-        context.log.info("setting pubkey to {}", nextPubkey)
-        finalPubkey.set(nextPubkey)
-      }
-      nextScript_opt.foreach { nextScript =>
-        context.log.info("setting script to {}", Script.write(nextScript).toHex)
-        finalPubkeyScript.set(nextScript)
-      }
+      context.log.info("setting script to {}", Script.write(nextScript).toHex)
+      finalPubkeyScript.set(nextScript)
       idle()
     case cmd =>
       context.log.debug("rate-limiting command={}", cmd)

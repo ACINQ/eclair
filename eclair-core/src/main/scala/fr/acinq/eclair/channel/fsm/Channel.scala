@@ -109,8 +109,7 @@ object Channel {
                          remoteRbfLimits: RemoteRbfLimits,
                          quiescenceTimeout: FiniteDuration,
                          balanceThresholds: Seq[BalanceThreshold],
-                         minTimeBetweenUpdates: FiniteDuration,
-                         acceptIncomingStaticRemoteKeyChannels: Boolean) {
+                         minTimeBetweenUpdates: FiniteDuration) {
     require(0 <= maxHtlcValueInFlightPercent && maxHtlcValueInFlightPercent <= 100, "max-htlc-value-in-flight-percent must be between 0 and 100")
     require(balanceThresholds.sortBy(_.available) == balanceThresholds, "channel-update.balance-thresholds must be sorted by available-sat")
 
@@ -147,7 +146,7 @@ object Channel {
     }
   }
 
-  def props(nodeParams: NodeParams, channelKeys: ChannelKeys, wallet: OnChainChannelFunder with OnChainPubkeyCache, remoteNodeId: PublicKey, blockchain: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: TxPublisherFactory): Props =
+  def props(nodeParams: NodeParams, channelKeys: ChannelKeys, wallet: OnChainChannelFunder with OnChainAddressCache, remoteNodeId: PublicKey, blockchain: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: TxPublisherFactory): Props =
     Props(new Channel(nodeParams, channelKeys, wallet, remoteNodeId, blockchain, relayer, txPublisherFactory))
 
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
@@ -212,7 +211,7 @@ object Channel {
 
 }
 
-class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wallet: OnChainChannelFunder with OnChainPubkeyCache, val remoteNodeId: PublicKey, val blockchain: typed.ActorRef[ZmqWatcher.Command], val relayer: ActorRef, val txPublisherFactory: Channel.TxPublisherFactory)(implicit val ec: ExecutionContext = ExecutionContext.Implicits.global)
+class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wallet: OnChainChannelFunder with OnChainAddressCache, val remoteNodeId: PublicKey, val blockchain: typed.ActorRef[ZmqWatcher.Command], val relayer: ActorRef, val txPublisherFactory: Channel.TxPublisherFactory)(implicit val ec: ExecutionContext = ExecutionContext.Implicits.global)
   extends FSM[ChannelState, ChannelData]
     with FSMDiagnosticActorLogging[ChannelState, ChannelData]
     with ChannelOpenSingleFunded
@@ -317,11 +316,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(INPUT_RESTORED(data), _) =>
       log.debug("restoring channel")
-      data match {
-        case data: ChannelDataWithCommitments if data.commitments.active.exists(_.commitmentFormat == DefaultCommitmentFormat) =>
-          log.warning("channel is not using anchor outputs: please close it and re-open an anchor output channel before updating to the next version of eclair")
-        case _ => ()
-      }
       context.system.eventStream.publish(ChannelRestored(self, data.channelId, peer, remoteNodeId, data))
       txPublisher ! SetChannelId(remoteNodeId, data.channelId)
       // We watch all unconfirmed funding txs, whatever our state is.
@@ -536,7 +530,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       handleAddHtlcCommandError(c, error, Some(d.channelUpdate))
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
-      d.commitments.sendAdd(c, nodeParams.currentBlockHeight, nodeParams.channelConf, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf) match {
+      d.commitments.sendAdd(c, nodeParams.currentBlockHeight, nodeParams.channelConf, nodeParams.onChainFeeConf) match {
         case Right((commitments1, add)) =>
           if (c.commit) self ! CMD_SIGN()
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
@@ -548,7 +542,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(add: UpdateAddHtlc, d: DATA_NORMAL) =>
-      d.commitments.receiveAdd(add, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf) match {
+      d.commitments.receiveAdd(add) match {
         case Right(commitments1) => stay() using d.copy(commitments = commitments1)
         case Left(cause) => handleLocalError(cause, d, Some(add))
       }
@@ -670,7 +664,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case (s: SpliceStatus.SpliceInProgress, sig: CommitSig) =>
           log.debug("received their commit_sig, deferring message")
           stay() using d.copy(spliceStatus = s.copy(remoteCommitSig = Some(sig)))
-        case (SpliceStatus.SpliceAborted, sig: CommitSig) =>
+        case (SpliceStatus.SpliceAborted, _: CommitSig) =>
           log.warning("received commit_sig after sending tx_abort, they probably sent it before receiving our tx_abort, ignoring...")
           stay()
         case (SpliceStatus.SpliceWaitingForSigs(signingSession), sig: CommitSig) =>
@@ -866,7 +860,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(ProcessCurrentBlockHeight(c), d: DATA_NORMAL) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates.BitcoinCore, d: DATA_NORMAL) => handleCurrentFeerate(c, d)
+    case Event(c: CurrentFeerates.BitcoinCore, d: DATA_NORMAL) => handleCurrentFeerate(d)
 
     case Event(_: ChannelReady, d: DATA_NORMAL) =>
       // After a reconnection, if the channel hasn't been used yet, our peer cannot be sure we received their channel_ready
@@ -1114,10 +1108,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 // commitment format and will simply apply the previous commitment format.
                 val nextCommitmentFormat = msg.channelType_opt match {
                   case Some(ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat =>
-                    log.info(s"accepting upgrade to SimpleTaprootChannelsPhoenix during splice from commitment format ${parentCommitment.commitmentFormat}")
+                    log.info("accepting upgrade to {} during splice from commitment format {}", ChannelTypes.SimpleTaprootChannelsPhoenix, parentCommitment.commitmentFormat)
                     PhoenixSimpleTaprootChannelCommitmentFormat
                   case Some(channelType) =>
-                    log.info(s"rejecting upgrade to $channelType during splice from commitment format ${parentCommitment.commitmentFormat}")
+                    log.info("rejecting upgrade to {} during splice from commitment format {}", channelType, parentCommitment.commitmentFormat)
                     parentCommitment.commitmentFormat
                   case _ =>
                     parentCommitment.commitmentFormat
@@ -1768,7 +1762,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(ProcessCurrentBlockHeight(c), d: DATA_SHUTDOWN) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates.BitcoinCore, d: DATA_SHUTDOWN) => handleCurrentFeerate(c, d)
+    case Event(c: CurrentFeerates.BitcoinCore, d: DATA_SHUTDOWN) => handleCurrentFeerate(d)
 
     case Event(c: CMD_CLOSE, d: DATA_SHUTDOWN) =>
       val useSimpleClose = Features.canUseFeature(d.commitments.localChannelParams.initFeatures, d.commitments.remoteChannelParams.initFeatures, Features.SimpleClose)
@@ -1989,11 +1983,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               // We are already watching the corresponding outputs: no need to set additional watches.
               d.localCommitPublished.foreach(lcp => {
                 val commitKeys = commitment.localKeys(channelKeys)
-                Closing.LocalClose.claimHtlcsWithPreimage(channelKeys, commitKeys, commitment, c.r).foreach(htlcTx => commitment.commitmentFormat match {
-                  case Transactions.DefaultCommitmentFormat =>
-                    txPublisher ! TxPublisher.PublishFinalTx(htlcTx, Some(lcp.commitTx.txid))
-                  case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat =>
-                    txPublisher ! TxPublisher.PublishReplaceableTx(htlcTx, lcp.commitTx, commitment, Closing.confirmationTarget(htlcTx))
+                Closing.LocalClose.claimHtlcsWithPreimage(channelKeys, commitKeys, commitment, c.r).foreach(htlcTx => {
+                  txPublisher ! TxPublisher.PublishReplaceableTx(htlcTx, lcp.commitTx, commitment, Closing.confirmationTarget(htlcTx))
                 })
               })
               d.remoteCommitPublished.foreach(rcp => {
@@ -2525,7 +2516,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(ProcessCurrentBlockHeight(c), d: ChannelDataWithCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates.BitcoinCore, d: ChannelDataWithCommitments) => handleCurrentFeerateDisconnected(c, d)
+    case Event(c: CurrentFeerates.BitcoinCore, d: ChannelDataWithCommitments) => stay()
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
 
@@ -2830,7 +2821,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(ProcessCurrentBlockHeight(c), d: ChannelDataWithCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates.BitcoinCore, d: ChannelDataWithCommitments) => handleCurrentFeerateDisconnected(c, d)
+    case Event(c: CurrentFeerates.BitcoinCore, d: ChannelDataWithCommitments) => stay()
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.latest.fundingTxId => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx_opt)
 
@@ -3224,50 +3215,15 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           888    888 d88P     888 888    Y888 8888888P"  88888888 8888888888 888   T88b  "Y8888P"
    */
 
-  private def handleCurrentFeerate(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
+  private def handleCurrentFeerate(d: ChannelDataWithCommitments) = {
     val commitments = d.commitments.latest
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat)
     val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
     val shouldUpdateFee = d.commitments.localChannelParams.paysCommitTxFees && nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)
-    val shouldClose = !d.commitments.localChannelParams.paysCommitTxFees &&
-      nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isProposedFeerateTooLow(d.commitments.latest.commitmentFormat, networkFeeratePerKw, currentFeeratePerKw) &&
-      d.commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
     if (shouldUpdateFee) {
       self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
-      stay()
-    } else if (shouldClose) {
-      handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = networkFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.commitTxFeerate), d, Some(c))
-    } else {
-      stay()
     }
-  }
-
-  /**
-   * This is used to check for the commitment fees when the channel is not operational but we have something at stake
-   *
-   * @param c the new feerates
-   * @param d the channel commtiments
-   * @return
-   */
-  private def handleCurrentFeerateDisconnected(c: CurrentFeerates, d: ChannelDataWithCommitments) = {
-    val commitments = d.commitments.latest
-    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat)
-    val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
-    // if the network fees are too high we risk to not be able to confirm our current commitment
-    val shouldClose = networkFeeratePerKw > currentFeeratePerKw &&
-      nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isProposedFeerateTooLow(d.commitments.latest.commitmentFormat, networkFeeratePerKw, currentFeeratePerKw) &&
-      d.commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
-    if (shouldClose) {
-      if (nodeParams.onChainFeeConf.closeOnOfflineMismatch) {
-        log.warning(s"closing OFFLINE channel due to fee mismatch: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
-        handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = currentFeeratePerKw, remoteFeeratePerKw = networkFeeratePerKw), d, Some(c))
-      } else {
-        log.warning(s"channel is OFFLINE but its fee mismatch is over the threshold: currentFeeratePerKw=$currentFeeratePerKw networkFeeratePerKw=$networkFeeratePerKw")
-        stay()
-      }
-    } else {
-      stay()
-    }
+    stay()
   }
 
   private def handleCommandSuccess(c: channel.Command, newData: ChannelData) = {

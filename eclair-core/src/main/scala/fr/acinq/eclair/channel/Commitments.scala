@@ -202,7 +202,7 @@ object LocalCommit {
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePerCommitmentPoint: PublicKey) {
   def sign(channelParams: ChannelParams, commitParams: CommitParams, channelKeys: ChannelKeys, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo, commitmentFormat: CommitmentFormat, remoteNonce_opt: Option[IndividualNonce], batchSize: Int = 1): Either[ChannelException, CommitSig] = {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
-    val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentPoint, commitmentFormat)
+    val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentPoint)
     val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(channelParams, commitParams, commitKeys, index, fundingKey, remoteFundingPubKey, commitInput, commitmentFormat, spec)
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
     val htlcSigs = sortedHtlcTxs.map(_.localSig(commitKeys))
@@ -278,9 +278,9 @@ case class Commitment(fundingTxIndex: Long,
 
   def commitInput(channelKeys: ChannelKeys): InputInfo = commitInput(localFundingKey(channelKeys))
 
-  def localKeys(params: ChannelParams, channelKeys: ChannelKeys): LocalCommitmentKeys = LocalCommitmentKeys(params, channelKeys, localCommit.index, commitmentFormat)
+  def localKeys(params: ChannelParams, channelKeys: ChannelKeys): LocalCommitmentKeys = LocalCommitmentKeys(params, channelKeys, localCommit.index)
 
-  def remoteKeys(params: ChannelParams, channelKeys: ChannelKeys, remotePerCommitmentPoint: PublicKey): RemoteCommitmentKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentPoint, commitmentFormat)
+  def remoteKeys(params: ChannelParams, channelKeys: ChannelKeys, remotePerCommitmentPoint: PublicKey): RemoteCommitmentKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentPoint)
 
   /** Channel reserve that applies to our funds. */
   def localChannelReserve(params: ChannelParams): Satoshi = if (params.channelFeatures.hasFeature(Features.DualFunding) || fundingTxIndex > 0) {
@@ -458,19 +458,7 @@ case class Commitment(fundingTxIndex: Long,
     localCommit.spec.htlcs.collect(DirectedHtlc.incoming).filter(nearlyExpired)
   }
 
-  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf, reputationScore: Reputation.Score): Either[ChannelException, Unit] = {
-    // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
-    // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
-    // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
-    val localFeerate = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, commitmentFormat)
-    val remoteFeerate = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
-    // What we want to avoid is having an HTLC in a commitment transaction that has a very low feerate, which we won't
-    // be able to confirm in time to claim the HTLC, so we only need to check that the feerate isn't too low.
-    remoteFeerate.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isProposedFeerateTooLow(commitmentFormat, localFeerate, feerate)) match {
-      case Some(feerate) => return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeerate, remoteFeeratePerKw = feerate))
-      case None =>
-    }
-
+  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf, reputationScore: Reputation.Score): Either[ChannelException, Unit] = {
     // let's compute the current commitments *as seen by them* with the additional htlc
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val remoteCommit1 = nextRemoteCommit_opt.getOrElse(remoteCommit)
@@ -538,17 +526,7 @@ case class Commitment(fundingTxIndex: Long,
     reputationScore.checkOutgoingChannelOccupancy(params.channelId, this, outgoingHtlcs.toSeq)
   }
 
-  def canReceiveAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
-    // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
-    // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
-    // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
-    val localFeerate = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, commitmentFormat)
-    val remoteFeerate = localCommit.spec.commitTxFeerate +: changes.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
-    remoteFeerate.find(feerate => feeConf.feerateToleranceFor(params.remoteNodeId).isProposedFeerateTooLow(commitmentFormat, localFeerate, feerate)) match {
-      case Some(feerate) => return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeerate, remoteFeeratePerKw = feerate))
-      case None =>
-    }
-
+  def canReceiveAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges): Either[ChannelException, Unit] = {
     // let's compute the current commitment *as seen by us* including this additional htlc
     val reduced = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
     val incomingHtlcs = reduced.htlcs.collect(DirectedHtlc.incoming)
@@ -616,10 +594,7 @@ case class Commitment(fundingTxIndex: Long,
 
   def canReceiveFee(targetFeerate: FeeratePerKw, params: ChannelParams, changes: CommitmentChanges, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
     val localFeerate = feeConf.getCommitmentFeerate(feerates, params.remoteNodeId, commitmentFormat)
-    if (feeConf.feerateToleranceFor(params.remoteNodeId).isProposedFeerateTooHigh(commitmentFormat, localFeerate, targetFeerate)) {
-      return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeerate, remoteFeeratePerKw = targetFeerate))
-    } else if (feeConf.feerateToleranceFor(params.remoteNodeId).isProposedFeerateTooLow(commitmentFormat, localFeerate, targetFeerate) && hasPendingOrProposedHtlcs(changes)) {
-      // If the proposed feerate is too low, but we don't have any pending HTLC, we temporarily accept it.
+    if (feeConf.feerateToleranceFor(params.remoteNodeId).isProposedCommitFeerateTooHigh(localFeerate, targetFeerate)) {
       return Left(FeerateTooDifferent(params.channelId, localFeeratePerKw = localFeerate, remoteFeeratePerKw = targetFeerate))
     } else {
       // let's compute the current commitment *as seen by us* including this change
@@ -903,7 +878,7 @@ case class Commitments(channelParams: ChannelParams,
    * @param cmd add HTLC command
    * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right(new commitments, updateAddHtlc)
    */
-  def sendAdd(cmd: CMD_ADD_HTLC, currentHeight: BlockHeight, channelConf: ChannelConf, feerates: FeeratesPerKw, feeConf: OnChainFeeConf)(implicit log: LoggingAdapter): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
+  def sendAdd(cmd: CMD_ADD_HTLC, currentHeight: BlockHeight, channelConf: ChannelConf, feeConf: OnChainFeeConf)(implicit log: LoggingAdapter): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
     // we must ensure we're not relaying htlcs that are already expired, otherwise the downstream channel will instantly close
     // NB: we add a 3 blocks safety to reduce the probability of running into this when our bitcoin node is slightly outdated
     val minExpiry = CltvExpiry(currentHeight + 3)
@@ -927,9 +902,9 @@ case class Commitments(channelParams: ChannelParams,
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
     // we verify that this htlc is allowed in every active commitment
-    val failures =
-      (active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feerates, feeConf, cmd.reputationScore))
-        :+ cmd.reputationScore.checkIncomingChannelOccupancy(cmd.origin.upstream.incomingChannelOccupancy, channelId))
+    val failures = active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feeConf, cmd.reputationScore))
+      // and that we don't exceed the authorized channel occupancy (jamming)
+      .appended(cmd.reputationScore.checkIncomingChannelOccupancy(cmd.origin.upstream.incomingChannelOccupancy, channelId))
       .collect { case Left(f) => f }
     if (failures.isEmpty) {
       Right(copy(changes = changes1, originChannels = originChannels1), add)
@@ -953,7 +928,7 @@ case class Commitments(channelParams: ChannelParams,
     }
   }
 
-  def receiveAdd(add: UpdateAddHtlc, feerates: FeeratesPerKw, feeConf: OnChainFeeConf): Either[ChannelException, Commitments] = {
+  def receiveAdd(add: UpdateAddHtlc): Either[ChannelException, Commitments] = {
     if (add.id != changes.remoteNextHtlcId) {
       return Left(UnexpectedHtlcId(channelId, expected = changes.remoteNextHtlcId, actual = add.id))
     }
@@ -966,7 +941,7 @@ case class Commitments(channelParams: ChannelParams,
 
     val changes1 = changes.addRemoteProposal(add).copy(remoteNextHtlcId = changes.remoteNextHtlcId + 1)
     // we verify that this htlc is allowed in every active commitment
-    active.map(_.canReceiveAdd(add.amountMsat, channelParams, changes1, feerates, feeConf))
+    active.map(_.canReceiveAdd(add.amountMsat, channelParams, changes1))
       .collectFirst { case Left(f) => Left(f) }
       .getOrElse(Right(copy(changes = changes1)))
   }
@@ -1087,8 +1062,8 @@ case class Commitments(channelParams: ChannelParams,
     remoteNextCommitInfo match {
       case Right(_) if !changes.localHasChanges => Left(CannotSignWithoutChanges(channelId))
       case Right(remoteNextPerCommitmentPoint) =>
+        val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remoteNextPerCommitmentPoint)
         val (active1, sigs) = active.map(c => {
-          val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remoteNextPerCommitmentPoint, c.commitmentFormat)
           c.sendCommit(channelParams, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, active.size, nextRemoteCommitNonces.get(c.fundingTxId)) match {
             case Left(e) => return Left(e)
             case Right((c, cs)) => (c, cs)
@@ -1118,8 +1093,8 @@ case class Commitments(channelParams: ChannelParams,
       case commitSig: CommitSig => Seq(commitSig)
     }
     // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
+    val commitKeys = LocalCommitmentKeys(channelParams, channelKeys, localCommitIndex + 1)
     val active1 = active.zip(sigs).map { case (commitment, commit) =>
-      val commitKeys = LocalCommitmentKeys(channelParams, channelKeys, localCommitIndex + 1, commitment.commitmentFormat)
       commitment.receiveCommit(channelParams, channelKeys, commitKeys, changes, commit) match {
         case Left(f) => return Left(f)
         case Right(commitment1) => commitment1
