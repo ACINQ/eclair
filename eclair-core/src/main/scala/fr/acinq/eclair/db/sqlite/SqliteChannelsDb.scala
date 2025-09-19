@@ -64,10 +64,10 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON htlc_infos(channel_id)")
     statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON htlc_infos(commitment_number)")
     // We can now move closed channels to a dedicated table.
-    statement.executeUpdate("CREATE TABLE closed_channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, funding_output_index INTEGER NOT NULL, funding_tx_index INTEGER NOT NULL, funding_key_path TEXT NOT NULL, channel_features TEXT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis INTEGER NOT NULL, closing_txid TEXT NOT NULL, closing_type TEXT NOT NULL, closing_script TEXT NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, closing_amount_satoshis INTEGER NOT NULL, created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL)")
-    statement.executeUpdate("CREATE INDEX closed_channels_remote_node_id_idx ON closed_channels(remote_node_id)")
-    // We migrate closed channels from the local_channels table to the new closed_channels table, whenever possible.
-    val insertStatement = sqlite.prepareStatement("INSERT INTO closed_channels VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    statement.executeUpdate("CREATE TABLE local_channels_closed (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, funding_output_index INTEGER NOT NULL, funding_tx_index INTEGER NOT NULL, funding_key_path TEXT NOT NULL, channel_features TEXT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis INTEGER NOT NULL, closing_txid TEXT NOT NULL, closing_type TEXT NOT NULL, closing_script TEXT NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, closing_amount_satoshis INTEGER NOT NULL, created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL)")
+    statement.executeUpdate("CREATE INDEX local_channels_closed_remote_node_id_idx ON local_channels_closed(remote_node_id)")
+    // We migrate closed channels from the local_channels table to the new local_channels_closed table, whenever possible.
+    val insertStatement = sqlite.prepareStatement("INSERT INTO local_channels_closed VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
     val batchSize = 50
     using(sqlite.prepareStatement("SELECT channel_id, data, is_closed, created_timestamp, closed_timestamp FROM local_channels WHERE is_closed=1")) { queryStatement =>
       val rs = queryStatement.executeQuery()
@@ -88,11 +88,11 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
               // In that case, we didn't store which closing transaction actually confirmed, so we select the most likely one.
               case None if d.mutualClosePublished.nonEmpty => Some(DATA_CLOSED(d, Helpers.Closing.MutualClose(d.mutualClosePublished.last)))
               case None =>
-                logger.warn(s"cannot move channel_id=$channelId to the closed_channels table, unknown closing_type")
+                logger.warn(s"cannot move channel_id=$channelId to the local_channels_closed table, unknown closing_type")
                 None
             }
           case d =>
-            logger.warn(s"cannot move channel_id=$channelId to the closed_channels table (state=${d.getClass.getSimpleName})")
+            logger.warn(s"cannot move channel_id=$channelId to the local_channels_closed table (state=${d.getClass.getSimpleName})")
             None
         }
         data_opt match {
@@ -126,7 +126,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         }
       }
       inserted = inserted + insertStatement.executeBatch().sum
-      logger.info(s"moved $inserted channels to the closed_channels table")
+      logger.info(s"moved $inserted channels to the local_channels_closed table")
     }
     // We can now clean-up the active channels table.
     statement.executeUpdate("DELETE FROM local_channels WHERE is_closed=1")
@@ -138,14 +138,14 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, created_timestamp INTEGER, last_payment_sent_timestamp INTEGER, last_payment_received_timestamp INTEGER, last_connected_timestamp INTEGER)")
-        statement.executeUpdate("CREATE TABLE closed_channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, funding_output_index INTEGER NOT NULL, funding_tx_index INTEGER NOT NULL, funding_key_path TEXT NOT NULL, channel_features TEXT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis INTEGER NOT NULL, closing_txid TEXT NOT NULL, closing_type TEXT NOT NULL, closing_script TEXT NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, closing_amount_satoshis INTEGER NOT NULL, created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE local_channels_closed (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, funding_output_index INTEGER NOT NULL, funding_tx_index INTEGER NOT NULL, funding_key_path TEXT NOT NULL, channel_features TEXT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis INTEGER NOT NULL, closing_txid TEXT NOT NULL, closing_type TEXT NOT NULL, closing_script TEXT NOT NULL, local_balance_msat INTEGER NOT NULL, remote_balance_msat INTEGER NOT NULL, closing_amount_satoshis INTEGER NOT NULL, created_at INTEGER NOT NULL, closed_at INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE htlc_infos (channel_id BLOB NOT NULL, commitment_number INTEGER NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE htlc_infos_to_remove (channel_id BLOB NOT NULL PRIMARY KEY, before_commitment_number INTEGER NOT NULL)")
         // Note that we use two distinct indices instead of a composite index on (channel_id, commitment_number).
         // This is more efficient because we're writing a lot to this table but only reading when a channel is force-closed.
         statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON htlc_infos(channel_id)")
         statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON htlc_infos(commitment_number)")
-        statement.executeUpdate("CREATE INDEX closed_channels_remote_node_id_idx ON closed_channels(remote_node_id)")
+        statement.executeUpdate("CREATE INDEX local_channels_closed_remote_node_id_idx ON local_channels_closed(remote_node_id)")
       case Some(v) if v < 7 => throw new RuntimeException("You are updating from a version of eclair older than v0.13: please update to the v0.13 release first to migrate your channel data, and afterwards you'll be able to update to the latest version.")
       case Some(v@7) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
@@ -217,7 +217,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         statement.setBytes(1, channelId.toArray)
         statement.executeQuery().flatMap(rs => rs.getLongNullable("created_timestamp")).headOption
       }
-      using(sqlite.prepareStatement("INSERT OR IGNORE INTO closed_channels VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      using(sqlite.prepareStatement("INSERT OR IGNORE INTO local_channels_closed VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setString(2, data.remoteNodeId.toHex)
         statement.setString(3, data.fundingTxId.value.toHex)
@@ -299,8 +299,8 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
 
   override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[DATA_CLOSED] = withMetrics("channels/list-closed-channels", DbBackends.Sqlite) {
     val sql = remoteNodeId_opt match {
-      case Some(_) => "SELECT * FROM closed_channels WHERE remote_node_id=? ORDER BY closed_at DESC"
-      case None => "SELECT * FROM closed_channels ORDER BY closed_at DESC"
+      case Some(_) => "SELECT * FROM local_channels_closed WHERE remote_node_id=? ORDER BY closed_at DESC"
+      case None => "SELECT * FROM local_channels_closed ORDER BY closed_at DESC"
     }
     using(sqlite.prepareStatement(limited(sql, paginated_opt))) { statement =>
       remoteNodeId_opt.foreach(remoteNodeId => statement.setString(1, remoteNodeId.toHex))
