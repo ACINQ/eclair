@@ -4,7 +4,10 @@
 
 ## Major changes
 
-<insert changes>
+### Remove support for non-anchor channels
+
+We remove the code used to support legacy channels that don't use anchor outputs or taproot.
+If you still have such channels, eclair won't start: you will need to close those channels, and will only be able to update eclair once they have been successfully closed.
 
 ### Configuration changes
 
