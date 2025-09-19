@@ -384,7 +384,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val utxosA = Seq(50_000 sat)
     val fundingB = 50_000 sat
     val utxosB = Seq(80_000 sat)
-    withFixture(ChannelTypes.AnchorOutputs(), fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
+    withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
       import f._
 
       alice ! Start(alice2bob.ref)

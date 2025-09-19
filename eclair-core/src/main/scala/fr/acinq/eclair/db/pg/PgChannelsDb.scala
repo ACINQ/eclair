@@ -25,6 +25,7 @@ import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated}
 import grizzled.slf4j.Logging
@@ -49,6 +50,17 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
+
+      /**
+       * In ChannelCodecs5.scala, we replaced the legacy commitment format (which was removed from the [[CommitmentFormat]]
+       * trait) with this placeholder and must fix it here.
+       */
+      def setClosedLegacyCommitmentFormatIfNeeded(commitments: Commitments, data: DATA_CLOSED): DATA_CLOSED = commitments.latest.commitmentFormat match {
+        case UnsafeLegacyAnchorOutputsCommitmentFormat if commitments.channelParams.localParams.walletStaticPaymentBasepoint.nonEmpty => data.copy(commitmentFormat = "static_remote_key")
+        case UnsafeLegacyAnchorOutputsCommitmentFormat => data.copy(commitmentFormat = "standard")
+        case _ => data
+      }
+
       /**
        * Before version 12, closed channels were directly kept in the local_channels table with an is_closed flag set to true.
        * We move them to a dedicated table, where we keep minimal channel information.
@@ -77,13 +89,13 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
                 // We didn't store which closing transaction actually confirmed, so we select the most likely one.
                 // The simple_close feature wasn't widely supported before this migration, so this shouldn't affect a lot of channels.
                 val closingTx = d.publishedClosingTxs.lastOption.getOrElse(d.proposedClosingTxs.last.preferred_opt.get)
-                Some(DATA_CLOSED(d, closingTx))
+                Some(setClosedLegacyCommitmentFormatIfNeeded(d.commitments, DATA_CLOSED(d, closingTx)))
               case d: DATA_CLOSING =>
                 Helpers.Closing.isClosingTypeAlreadyKnown(d) match {
-                  case Some(closingType) => Some(DATA_CLOSED(d, closingType))
+                  case Some(closingType) => Some(setClosedLegacyCommitmentFormatIfNeeded(d.commitments, DATA_CLOSED(d, closingType)))
                   // If the closing type cannot be inferred from the stored data, it must be a mutual close.
                   // In that case, we didn't store which closing transaction actually confirmed, so we select the most likely one.
-                  case None if d.mutualClosePublished.nonEmpty => Some(DATA_CLOSED(d, Helpers.Closing.MutualClose(d.mutualClosePublished.last)))
+                  case None if d.mutualClosePublished.nonEmpty => Some(setClosedLegacyCommitmentFormatIfNeeded(d.commitments, DATA_CLOSED(d, Helpers.Closing.MutualClose(d.mutualClosePublished.last))))
                   case None =>
                     logger.warn(s"cannot move channel_id=$channelId to the channels_closed table, unknown closing_type")
                     None

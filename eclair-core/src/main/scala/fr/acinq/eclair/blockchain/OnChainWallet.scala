@@ -17,7 +17,6 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.psbt.Psbt
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, ScriptElt, Transaction, TxId}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -120,18 +119,10 @@ trait OnChainAddressGenerator {
   /** Generate the public key script for a new wallet address. */
   def getReceivePublicKeyScript(addressType_opt: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]]
 
-  /** Generate a p2wpkh wallet address and return the corresponding public key. */
-  def getP2wpkhPubkey()(implicit ec: ExecutionContext): Future[PublicKey]
-
 }
 
 /** A caching layer for [[OnChainAddressGenerator]] that provides synchronous access to wallet addresses and keys. */
-trait OnChainPubkeyCache {
-
-  /**
-   * @param renew applies after requesting the current pubkey, and is asynchronous.
-   */
-  def getP2wpkhPubkey(renew: Boolean): PublicKey
+trait OnChainAddressCache {
 
   /**
    * @param renew applies after requesting the current script, and is asynchronous.

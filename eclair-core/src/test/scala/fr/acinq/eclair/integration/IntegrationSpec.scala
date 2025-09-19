@@ -22,6 +22,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
+import fr.acinq.eclair.channel.SupportedChannelType
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
@@ -90,8 +91,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     "eclair.auto-reconnect" -> false,
     "eclair.multi-part-payment-expiry" -> "20 seconds",
     "eclair.channel.channel-update.balance-thresholds" -> Nil.asJava,
-    "eclair.channel.channel-update.min-time-between-updates" -> java.time.Duration.ZERO,
-    "eclair.channel.accept-incoming-static-remote-key-channels" -> true).asJava).withFallback(ConfigFactory.load())
+    "eclair.channel.channel-update.min-time-between-updates" -> java.time.Duration.ZERO).asJava).withFallback(ConfigFactory.load())
 
   private val commonFeatures = ConfigFactory.parseMap(Map(
     s"eclair.features.${DataLossProtect.rfcName}" -> "optional",
@@ -104,27 +104,18 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     s"eclair.features.${ShutdownAnySegwit.rfcName}" -> "optional",
     s"eclair.features.${ChannelType.rfcName}" -> "optional",
     s"eclair.features.${RouteBlinding.rfcName}" -> "optional",
+    s"eclair.features.${StaticRemoteKey.rfcName}" -> "mandatory",
     // We keep dual-funding disabled in tests, unless explicitly requested, as most of the network doesn't support it yet.
     s"eclair.features.${DualFunding.rfcName}" -> "disabled",
   ).asJava)
 
-  val withStaticRemoteKey = commonFeatures.withFallback(ConfigFactory.parseMap(Map(
-    s"eclair.features.${StaticRemoteKey.rfcName}" -> "mandatory",
-    s"eclair.features.${AnchorOutputs.rfcName}" -> "disabled",
-    s"eclair.features.${AnchorOutputsZeroFeeHtlcTx.rfcName}" -> "disabled",
-  ).asJava))
-
-  val withAnchorOutputs = ConfigFactory.parseMap(Map(
-    s"eclair.features.${AnchorOutputs.rfcName}" -> "optional"
-  ).asJava).withFallback(withStaticRemoteKey)
-
   val withAnchorOutputsZeroFeeHtlcTxs = ConfigFactory.parseMap(Map(
     s"eclair.features.${AnchorOutputsZeroFeeHtlcTx.rfcName}" -> "optional"
-  ).asJava).withFallback(withStaticRemoteKey)
+  ).asJava).withFallback(commonFeatures)
 
   val withDualFunding = ConfigFactory.parseMap(Map(
     s"eclair.features.${DualFunding.rfcName}" -> "optional"
-  ).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs)
+  ).asJava).withFallback(commonFeatures)
 
   implicit val formats: Formats = DefaultFormats
 
@@ -174,13 +165,13 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     sender.expectMsgType[PeerConnection.ConnectionResult.HasConnection](10 seconds)
   }
 
-  def connect(node1: Kit, node2: Kit, fundingAmount: Satoshi, pushMsat: MilliSatoshi): OpenChannelResponse.Created = {
+  def connect(node1: Kit, node2: Kit, fundingAmount: Satoshi, pushMsat: MilliSatoshi, channelType: SupportedChannelType): OpenChannelResponse.Created = {
     val sender = TestProbe()
     connect(node1, node2)
     sender.send(node1.switchboard, Peer.OpenChannel(
       remoteNodeId = node2.nodeParams.nodeId,
       fundingAmount = fundingAmount,
-      channelType_opt = None,
+      channelType_opt = Some(channelType),
       pushAmount_opt = Some(pushMsat),
       fundingTxFeerate_opt = None,
       fundingTxFeeBudget_opt = None,

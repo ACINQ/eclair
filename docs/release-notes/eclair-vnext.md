@@ -27,6 +27,12 @@ We now store closed channels in a dedicated table, where we only keep relevant i
 When restarting your node, the channels table will automatically be cleaned up and closed channels will move to the new table.
 This may take some time depending on your channels history, but will only happen once.
 
+### Remove support for non-anchor channels
+
+We remove the code used to support legacy channels that don't use anchor outputs or taproot.
+If you still have such channels, you MUST NOT update to this version of eclair.
+You must instead close those channels, and will only be able to update eclair once they have been successfully closed.
+
 ### Update minimal version of Bitcoin Core
 
 With this release, eclair requires using Bitcoin Core 29.1.

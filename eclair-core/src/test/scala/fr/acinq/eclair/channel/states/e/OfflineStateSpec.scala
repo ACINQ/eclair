@@ -28,12 +28,12 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
+import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTimeoutTx, ClaimRemoteAnchorTx, UnsignedHtlcSuccessTx}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -317,7 +317,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex == 4)
   }
 
-  test("reconnect with an outdated commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("reconnect with an outdated commitment", Tag(IgnoreChannelUpdates)) { f =>
     import f._
 
     val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
@@ -367,7 +367,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
-  test("reconnect with an outdated commitment (but counterparty can't tell)", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("reconnect with an outdated commitment (but counterparty can't tell)", Tag(IgnoreChannelUpdates)) { f =>
     import f._
 
     // we start by storing the current state
@@ -421,7 +421,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
-  test("counterparty lies about having a more recent commitment and publishes current commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("counterparty lies about having a more recent commitment and publishes current commitment", Tag(IgnoreChannelUpdates)) { f =>
     import f._
 
     // the current state contains a pending htlc
@@ -455,7 +455,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimHtlc.sign(), bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
-  test("counterparty lies about having a more recent commitment and publishes revoked commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("counterparty lies about having a more recent commitment and publishes revoked commitment", Tag(IgnoreChannelUpdates)) { f =>
     import f._
 
     // we sign a new commitment to make sure the first one is revoked
@@ -630,12 +630,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
     bob2blockchain.expectFinalTxPublished(initialCommitTx.txid)
+    val anchorTx = bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     val mainDelayedTx = bob2blockchain.expectFinalTxPublished("local-main-delayed")
     bob2blockchain.expectWatchTxConfirmed(initialCommitTx.txid)
-    bob2blockchain.expectWatchOutputSpent(mainDelayedTx.input)
-    bob2blockchain.expectWatchOutputSpent(htlcSuccessTx.input.outPoint)
-    val publishHtlcTx = bob2blockchain.expectFinalTxPublished("htlc-success")
-    assert(publishHtlcTx.input == htlcSuccessTx.input.outPoint)
+    bob2blockchain.expectWatchOutputsSpent(Seq(mainDelayedTx.input, anchorTx.input.outPoint, htlcSuccessTx.input.outPoint))
+    assert(bob2blockchain.expectReplaceableTxPublished[HtlcSuccessTx].input == htlcSuccessTx.input)
     bob2blockchain.expectNoMessage(100 millis)
   }
 
@@ -654,21 +653,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectNoMessage(100 millis)
   }
 
-  test("handle feerate changes while offline (funder scenario)") { f =>
-    import f._
-
-    // we only close channels on feerate mismatch if there are HTLCs at risk in the commitment
-    addHtlc(125000000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
-
-    testHandleFeerateFunder(f, shouldClose = true)
-  }
-
   test("handle feerate changes while offline without HTLCs (funder scenario)") { f =>
-    testHandleFeerateFunder(f, shouldClose = false)
+    testHandleFeerateFunder(f)
   }
 
-  def testHandleFeerateFunder(f: FixtureParam, shouldClose: Boolean): Unit = {
+  def testHandleFeerateFunder(f: FixtureParam): Unit = {
     import f._
 
     // we simulate a disconnection
@@ -684,11 +673,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice is funder
     alice.setBitcoinCoreFeerates(networkFeerates)
     alice ! CurrentFeerates.BitcoinCore(networkFeerates)
-    if (shouldClose) {
-      assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
-    } else {
-      alice2blockchain.expectNoMessage(100 millis)
-    }
+    alice2blockchain.expectNoMessage(100 millis)
   }
 
   test("handle feerate changes while offline (don't close on mismatch)", Tag(DisableOfflineMismatch)) { f =>
@@ -713,90 +698,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! CurrentFeerates.BitcoinCore(networkFeerates)
     alice2blockchain.expectNoMessage(100 millis)
     alice2bob.expectNoMessage(100 millis)
-  }
-
-  def testUpdateFeeOnReconnect(f: FixtureParam, shouldUpdateFee: Boolean): Unit = {
-    import f._
-
-    // we simulate a disconnection
-    disconnect(alice, bob)
-
-    val localFeeratePerKw = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.commitTxFeerate
-    val networkFeeratePerKw = localFeeratePerKw * 2
-    val networkFeerates = FeeratesPerKw.single(networkFeeratePerKw)
-
-    // Alice ignores feerate changes while offline
-    alice.setBitcoinCoreFeerates(networkFeerates)
-    alice ! CurrentFeerates.BitcoinCore(networkFeerates)
-    alice2blockchain.expectNoMessage(100 millis)
-    alice2bob.expectNoMessage(100 millis)
-
-    // then we reconnect them; Alice should send the feerate changes to Bob
-    reconnect(alice, bob, alice2bob, bob2alice)
-
-    // peers exchange channel_reestablish messages
-    alice2bob.expectMsgType[ChannelReestablish]
-    bob2alice.expectMsgType[ChannelReestablish]
-    bob2alice.forward(alice)
-
-    if (shouldUpdateFee) {
-      alice2bob.expectMsg(UpdateFee(channelId(alice), networkFeeratePerKw))
-    } else {
-      alice2bob.expectMsgType[Shutdown]
-      alice2bob.expectNoMessage(100 millis)
-    }
-  }
-
-  test("handle feerate changes while offline (update at reconnection)", Tag(IgnoreChannelUpdates)) { f =>
-    testUpdateFeeOnReconnect(f, shouldUpdateFee = true)
-  }
-
-  test("handle feerate changes while offline (shutdown sent, don't update at reconnection)", Tag(IgnoreChannelUpdates)) { f =>
-    import f._
-
-    // alice initiates a shutdown
-    val sender = TestProbe()
-    alice ! CMD_CLOSE(sender.ref, None, None)
-    alice2bob.expectMsgType[Shutdown]
-
-    testUpdateFeeOnReconnect(f, shouldUpdateFee = false)
-  }
-
-  test("handle feerate changes while offline (fundee scenario)") { f =>
-    import f._
-
-    // we only close channels on feerate mismatch if there are HTLCs at risk in the commitment
-    addHtlc(125000000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
-
-    testHandleFeerateFundee(f, shouldClose = true)
-  }
-
-  test("handle feerate changes while offline without HTLCs (fundee scenario)") { f =>
-    testHandleFeerateFundee(f, shouldClose = false)
-  }
-
-  def testHandleFeerateFundee(f: FixtureParam, shouldClose: Boolean): Unit = {
-    import f._
-
-    // we simulate a disconnection
-    disconnect(alice, bob)
-
-    val bobCommitTx = bob.signCommitTx()
-    val currentFeerate = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.commitTxFeerate
-    // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
-    // to ensure the network's feerate is 10% above our threshold).
-    val networkFeerate = currentFeerate * (1.1 / bob.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Alice.nodeParams.nodeId).ratioLow)
-    val networkFeerates = FeeratesPerKw.single(networkFeerate)
-
-    // bob is fundee
-    bob.setBitcoinCoreFeerates(networkFeerates)
-    bob ! CurrentFeerates.BitcoinCore(networkFeerates)
-    if (shouldClose) {
-      assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == bobCommitTx.txid)
-    } else {
-      bob2blockchain.expectNoMessage(100 millis)
-    }
   }
 
   test("re-send announcement_signatures on reconnection", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>

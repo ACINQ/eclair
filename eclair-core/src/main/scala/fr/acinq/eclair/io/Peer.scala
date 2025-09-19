@@ -29,7 +29,7 @@ import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates, OnChainChannelFunder, OnChainPubkeyCache}
+import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates, OnChainAddressCache, OnChainChannelFunder}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.Sphinx
@@ -61,7 +61,7 @@ import scodec.bits.ByteVector
  */
 class Peer(val nodeParams: NodeParams,
            remoteNodeId: PublicKey,
-           wallet: OnChainPubkeyCache,
+           wallet: OnChainAddressCache,
            channelFactory: Peer.ChannelFactory,
            switchboard: ActorRef,
            register: ActorRef,
@@ -1024,12 +1024,12 @@ object Peer {
     def spawn(context: ActorContext, remoteNodeId: PublicKey, channelKeys: ChannelKeys): ActorRef
   }
 
-  case class SimpleChannelFactory(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, wallet: OnChainChannelFunder with OnChainPubkeyCache, txPublisherFactory: Channel.TxPublisherFactory) extends ChannelFactory {
+  case class SimpleChannelFactory(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, wallet: OnChainChannelFunder with OnChainAddressCache, txPublisherFactory: Channel.TxPublisherFactory) extends ChannelFactory {
     override def spawn(context: ActorContext, remoteNodeId: PublicKey, channelKeys: ChannelKeys): ActorRef =
       context.actorOf(Channel.props(nodeParams, channelKeys, wallet, remoteNodeId, watcher, relayer, txPublisherFactory))
   }
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainPubkeyCache, channelFactory: ChannelFactory, switchboard: ActorRef, register: ActorRef, router: typed.ActorRef[Router.GetNodeId], pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]): Props =
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressCache, channelFactory: ChannelFactory, switchboard: ActorRef, register: ActorRef, router: typed.ActorRef[Router.GetNodeId], pendingChannelsRateLimiter: typed.ActorRef[PendingChannelsRateLimiter.Command]): Props =
     Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard, register, router, pendingChannelsRateLimiter))
 
   // @formatter:off
@@ -1051,7 +1051,7 @@ object Peer {
     def peerStorage: PeerStorage
   }
   case object Nothing extends Data {
-    override def channels = Map.empty
+    override def channels: Map[_ <: ChannelId, ActorRef] = Map.empty
     override def activeChannels: Set[ByteVector32] = Set.empty
     override def peerStorage: PeerStorage = PeerStorage(None, written = true)
   }
@@ -1112,7 +1112,7 @@ object Peer {
      * the channel has been opened.
      */
     case class Created(channelId: ByteVector32, fundingTxId: TxId, fee: Satoshi) extends OpenChannelResponse { override def toString  = s"created channel $channelId with fundingTxId=$fundingTxId and fees=$fee" }
-    case class Rejected(reason: String) extends OpenChannelResponse { override def toString = reason }
+    case class Rejected(reason: String) extends OpenChannelResponse { override def toString: String = reason }
     case object Cancelled extends OpenChannelResponse { override def toString  = "channel creation cancelled" }
     case object Disconnected extends OpenChannelResponse { override def toString = "disconnected" }
     case object TimedOut extends OpenChannelResponse { override def toString = "open channel cancelled, took too long" }
