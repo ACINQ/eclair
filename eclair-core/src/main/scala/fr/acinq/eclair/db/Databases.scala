@@ -214,9 +214,8 @@ object Databases extends Logging {
               maxAge = initChecks.localChannelsMaxAge,
               sqlQuery =
                 """
-                  |SELECT MAX(GREATEST(created_timestamp, last_payment_sent_timestamp, last_payment_received_timestamp, last_connected_timestamp, closed_timestamp))
-                  |FROM local.channels
-                  |WHERE NOT is_closed""".stripMargin)
+                  |SELECT MAX(GREATEST(created_timestamp, last_payment_sent_timestamp, last_payment_received_timestamp, last_connected_timestamp))
+                  |FROM local.channels""".stripMargin)
 
             checkMaxAge(name = "network node",
               maxAge = initChecks.networkNodesMaxAge,

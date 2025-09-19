@@ -110,7 +110,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
     if (fundingTxIds.subsetOf(e.fundingTxIds)) {
       log.warning("{} funding attempts have been double-spent, forgetting channel", fundingTxIds.size)
       d.allFundingTxs.map(_.sharedTx.tx.buildUnsignedTx()).foreach(tx => wallet.rollback(tx))
-      goto(CLOSED) sending Error(d.channelId, FundingTxDoubleSpent(d.channelId).getMessage)
+      goto(CLOSED) using IgnoreClosedData(d) sending Error(d.channelId, FundingTxDoubleSpent(d.channelId).getMessage)
     } else {
       // Not all funding attempts have been double-spent, the channel may still confirm.
       // For example, we may have published an RBF attempt while we were checking if funding attempts were double-spent.
