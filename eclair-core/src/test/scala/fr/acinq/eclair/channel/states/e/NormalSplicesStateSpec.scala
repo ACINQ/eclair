@@ -639,10 +639,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(commitment.localCommit.spec.toLocal == 650_000_000.msat)
     assert(commitment.localChannelReserve == 15_000.sat)
     val commitFees = Transactions.commitTxTotalCost(commitment.remoteCommitParams.dustLimit, commitment.remoteCommit.spec, commitment.commitmentFormat)
-    assert(commitFees > 20_000.sat)
+    assert(commitFees > 7_000.sat)
 
     val sender = TestProbe()
-    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(630_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None, channelType_opt = None)
+    val cmd = CMD_SPLICE(sender.ref, spliceIn_opt = None, Some(SpliceOut(643_000 sat, defaultSpliceOutScriptPubKey)), requestFunding_opt = None, channelType_opt = None)
     alice ! cmd
     exchangeStfu(f)
     sender.expectMsgType[RES_FAILURE[_, _]]
@@ -762,7 +762,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("recv CMD_SPLICE (accepting upgrade channel to taproot)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+  test("recv CMD_SPLICE (accepting upgrade channel to taproot)", Tag(ChannelStateTestsTags.AnchorOutputsPhoenix)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -772,7 +772,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("recv CMD_SPLICE (rejecting upgrade channel to taproot)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv CMD_SPLICE (rejecting upgrade channel to taproot)") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -1007,7 +1007,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice2bob.expectMsgType[TxAbort].toAscii.contains("transaction is already confirmed"))
   }
 
-  test("recv CMD_BUMP_FUNDING_FEE (transaction is using 0-conf)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv CMD_BUMP_FUNDING_FEE (transaction is using 0-conf)", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
@@ -1222,7 +1222,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.map(_.fundingTxIndex) == Seq.empty)
   }
 
-  test("splice local/remote locking (zero-conf)", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight), Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("splice local/remote locking (zero-conf)", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val fundingTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(250_000 sat)))
@@ -1391,7 +1391,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
-  test("recv announcement_signatures", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
+  test("recv announcement_signatures", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
     import f._
 
     val aliceListener = TestProbe()
@@ -1484,7 +1484,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.contains(spliceAnn2))
   }
 
-  test("recv announcement_signatures (after restart)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
+  test("recv announcement_signatures (after restart)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
     import f._
 
     val aliceListener = TestProbe()
@@ -1682,7 +1682,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(!alice.stateData.asInstanceOf[DATA_NORMAL].commitments.hasPendingOrProposedHtlcs)
   }
 
-  test("recv UpdateAddHtlc before splice confirms (zero-conf)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv UpdateAddHtlc before splice confirms (zero-conf)", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val spliceTx = initiateSplice(f, spliceOut_opt = Some(SpliceOut(50_000 sat, defaultSpliceOutScriptPubKey)))
@@ -1706,7 +1706,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.head.localCommit.spec.htlcs.size == 1)
   }
 
-  test("recv UpdateAddHtlc while splice is being locked", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv UpdateAddHtlc while splice is being locked", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val spliceTx1 = initiateSplice(f, spliceOut_opt = Some(SpliceOut(50_000 sat, defaultSpliceOutScriptPubKey)))
@@ -2070,7 +2070,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("disconnect (commit_sig received by alice)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("disconnect (commit_sig received by alice)") { f =>
     disconnectCommitSigReceivedAlice(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
   }
 
@@ -2139,7 +2139,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("disconnect (commit_sig received by bob)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("disconnect (commit_sig received by bob)") { f =>
     disconnectCommitSigReceivedBob(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
   }
 
@@ -2203,7 +2203,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("disconnect (commit_sig received)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("disconnect (commit_sig received)") { f =>
     disconnectCommitSigReceived(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
   }
 
@@ -2282,7 +2282,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("disconnect (tx_signatures received by alice)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("disconnect (tx_signatures received by alice)") { f =>
     disconnectTxSigsReceivedAlice(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
   }
 
@@ -2290,7 +2290,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     disconnectTxSigsReceivedAlice(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
-  test("disconnect (tx_signatures received by alice, zero-conf)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("disconnect (tx_signatures received by alice, zero-conf)", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -2611,7 +2611,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("don't resend splice_locked when zero-conf channel confirms", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("don't resend splice_locked when zero-conf channel confirms", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
@@ -3307,19 +3307,22 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectMsgType[Error]
     val commitTx2 = alice2blockchain.expectFinalTxPublished("commit-tx").tx
     Transaction.correctlySpends(commitTx2, Seq(fundingTx2), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    val anchorAlice = alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     val claimMainAlice = alice2blockchain.expectFinalTxPublished("local-main-delayed")
     // Alice publishes her htlc timeout transactions.
-    val aliceHtlcTimeout = htlcs.aliceToBob.map(_ => alice2blockchain.expectFinalTxPublished("htlc-timeout"))
-    aliceHtlcTimeout.foreach(htlcTx => Transaction.correctlySpends(htlcTx.tx, Seq(commitTx2), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    val aliceHtlcTimeout = htlcs.aliceToBob.map(_ => alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx].sign())
+    aliceHtlcTimeout.foreach(htlcTx => Transaction.correctlySpends(htlcTx, Seq(commitTx2), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
     // Bob detects Alice's commit tx.
     bob ! WatchFundingSpentTriggered(commitTx2)
+    val anchorBob = bob2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
+    val claimMainBob = bob2blockchain.expectFinalTxPublished("remote-main-delayed")
     val bobHtlcTimeout = htlcs.bobToAlice.map(_ => bob2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx])
     bobHtlcTimeout.foreach(htlcTx => Transaction.correctlySpends(htlcTx.sign(), Seq(commitTx2), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     bob2blockchain.expectWatchTxConfirmed(commitTx2.txid)
-    bob2blockchain.expectWatchOutputsSpent(aliceHtlcTimeout.map(_.input) ++ bobHtlcTimeout.map(_.input.outPoint))
+    bob2blockchain.expectWatchOutputsSpent(Seq(claimMainBob.input, anchorBob.input.outPoint) ++ aliceHtlcTimeout.map(_.txIn.head.outPoint) ++ bobHtlcTimeout.map(_.input.outPoint))
     alice2blockchain.expectWatchTxConfirmed(commitTx2.txid)
-    alice2blockchain.expectWatchOutputsSpent(Seq(claimMainAlice.input) ++ aliceHtlcTimeout.map(_.input) ++ bobHtlcTimeout.map(_.input.outPoint))
+    alice2blockchain.expectWatchOutputsSpent(Seq(claimMainAlice.input, anchorAlice.input.outPoint) ++ aliceHtlcTimeout.map(_.txIn.head.outPoint) ++ bobHtlcTimeout.map(_.input.outPoint))
 
     // The first splice transaction confirms.
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
@@ -3333,9 +3336,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, commitTx2)
     alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, claimMainAlice.tx)
     aliceHtlcTimeout.foreach(htlcTx => {
-      alice ! WatchOutputSpentTriggered(0 sat, htlcTx.tx)
-      alice2blockchain.expectWatchTxConfirmed(htlcTx.tx.txid)
-      alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, htlcTx.tx)
+      alice ! WatchOutputSpentTriggered(0 sat, htlcTx)
+      alice2blockchain.expectWatchTxConfirmed(htlcTx.txid)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, htlcTx)
       val htlcDelayed = alice2blockchain.expectFinalTxPublished("htlc-delayed")
       alice2blockchain.expectWatchOutputSpent(htlcDelayed.input)
       alice ! WatchOutputSpentTriggered(0 sat, htlcDelayed.tx)
@@ -3360,11 +3363,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
       bob ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, htlcTx.tx)
     })
     aliceHtlcTimeout.foreach(htlcTx => {
-      bob ! WatchOutputSpentTriggered(0 sat, htlcTx.tx)
-      bob2blockchain.expectWatchTxConfirmed(htlcTx.tx.txid)
-      bob ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, htlcTx.tx)
+      bob ! WatchOutputSpentTriggered(0 sat, htlcTx)
+      bob2blockchain.expectWatchTxConfirmed(htlcTx.txid)
+      bob ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, htlcTx)
     })
     bob2blockchain.expectNoMessage(100 millis)
+    bob ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, claimMainBob.tx)
     awaitCond(bob.stateName == CLOSED)
     assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingTxId == commitTx2.txid)
     assert(bob.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx2.txid)
@@ -3449,7 +3453,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx1.txid)
   }
 
-  test("force-close with multiple splices (previous active revoked)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("force-close with multiple splices (previous active revoked)") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -3527,7 +3531,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingAmount == (Seq(remoteMain.tx, mainPenalty.tx) ++ htlcPenalty.map(_.tx)).map(_.txOut.head.amount).sum)
   }
 
-  test("force-close with multiple splices (inactive remote)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("force-close with multiple splices (inactive remote)", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -3727,7 +3731,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingTxId == bobRevokedCommitTx.txid)
   }
 
-  test("force-close after channel type upgrade (latest active)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+  test("force-close after channel type upgrade (latest active)", Tag(ChannelStateTestsTags.AnchorOutputsPhoenix)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -3824,7 +3828,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx2.txid)
   }
 
-  test("force-close after channel type upgrade (previous active)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+  test("force-close after channel type upgrade (previous active)", Tag(ChannelStateTestsTags.AnchorOutputsPhoenix)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -3865,7 +3869,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectNoMessage(100 millis)
   }
 
-  test("force-close after channel type upgrade (revoked previous active)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+  test("force-close after channel type upgrade (revoked previous active)", Tag(ChannelStateTestsTags.AnchorOutputsPhoenix)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -3917,7 +3921,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingTxId == aliceCommitTx.txid)
   }
 
-  test("force-close after channel type upgrade (revoked latest active)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+  test("force-close after channel type upgrade (revoked latest active)", Tag(ChannelStateTestsTags.AnchorOutputsPhoenix)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -3955,7 +3959,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == spliceTx.txid)
   }
 
-  test("force-close after channel type upgrade (revoked previous inactive)", Tag(ChannelStateTestsTags.AnchorOutputs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("force-close after channel type upgrade (revoked previous inactive)", Tag(ChannelStateTestsTags.AnchorOutputsPhoenix), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
@@ -4071,7 +4075,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectNoMessage(100 millis)
   }
 
-  test("put back watches after restart (inactive)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("put back watches after restart (inactive)", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val fundingTx0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
@@ -4171,7 +4175,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resolveHtlcs(f, htlcs)
   }
 
-  test("recv CMD_SPLICE (splice-in + splice-out) with pre and post splice htlcs", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv CMD_SPLICE (splice-in + splice-out) with pre and post splice htlcs") { f =>
     spliceWithPreAndPostHtlcs(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
   }
 
@@ -4179,7 +4183,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     spliceWithPreAndPostHtlcs(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
-  test("recv CMD_SPLICE (splice-in + splice-out) with pending htlcs, resolved after splice locked", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv CMD_SPLICE (splice-in + splice-out) with pending htlcs, resolved after splice locked") { f =>
     import f._
 
     val htlcs = setupHtlcs(f)

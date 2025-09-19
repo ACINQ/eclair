@@ -27,7 +27,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.blockchain.{OnChainPubkeyCache, OnChainWallet, SingleKeyOnChainWallet}
+import fr.acinq.eclair.blockchain.{OnChainAddressCache, OnChainWallet, SingleKeyOnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
@@ -38,7 +38,6 @@ import fr.acinq.eclair.payment.{Invoice, OutgoingPaymentPacket}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, Route}
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Assertions
@@ -55,14 +54,6 @@ object ChannelStateTestsTags {
   val DualFunding = "dual_funding"
   /** If set, a liquidity ads will be used when opening a channel. */
   val LiquidityAds = "liquidity_ads"
-  /** If set, channels will use option_static_remotekey. */
-  val StaticRemoteKey = "static_remotekey"
-  /** If set, channels will use option_anchor_outputs. */
-  val AnchorOutputs = "anchor_outputs"
-  /** If set, channels will use option_anchors_zero_fee_htlc_tx. */
-  val AnchorOutputsZeroFeeHtlcTxs = "anchor_outputs_zero_fee_htlc_tx"
-  /** If set, channels will use option_shutdown_anysegwit. */
-  val ShutdownAnySegwit = "shutdown_anysegwit"
   /** If set, channels will be public (otherwise we don't announce them by default). */
   val ChannelsPublic = "channels_public"
   /** If set, initial announcement_signatures and channel_updates will not be intercepted and ignored. */
@@ -101,8 +92,11 @@ object ChannelStateTestsTags {
   val SimpleClose = "option_simple_close"
   /** If set, disable option_splice for one node. */
   val DisableSplice = "disable_splice"
-  /** If set, channels will use taproot. */
+  /** If set, channels will use the anchor outputs format where HTLC txs have a non-0 feerate, which is used for pre-taproot Phoenix channels. */
+  val AnchorOutputsPhoenix = "anchor_outputs_phoenix"
+  /** If set, channels will use taproot like Phoenix does. */
   val OptionSimpleTaprootPhoenix = "option_simple_taproot_phoenix"
+  /** If set, channels will use taproot. */
   val OptionSimpleTaproot = "option_simple_taproot"
 }
 
@@ -119,8 +113,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
                           alice2relayer: TestProbe,
                           bob2relayer: TestProbe,
                           channelUpdateListener: TestProbe,
-                          aliceWallet: OnChainWallet with OnChainPubkeyCache,
-                          bobWallet: OnChainWallet with OnChainPubkeyCache,
+                          aliceWallet: OnChainWallet with OnChainAddressCache,
+                          bobWallet: OnChainWallet with OnChainAddressCache,
                           alicePeer: TestProbe,
                           bobPeer: TestProbe) {
     def currentBlockHeight: BlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
@@ -146,10 +140,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
         temporaryChannelId = ByteVector32.Zeroes,
         fundingAmount = fundingAmount,
         dualFunded = dualFunded,
-        commitTxFeerate = channelType.commitmentFormat match {
-          case DefaultCommitmentFormat => TestConstants.feeratePerKw
-          case _ => TestConstants.anchorOutputsFeeratePerKw
-        },
+        commitTxFeerate = TestConstants.anchorOutputsFeeratePerKw,
         fundingTxFeerate = TestConstants.feeratePerKw,
         fundingTxFeeBudget_opt = None,
         pushAmount_opt = pushAmount_opt,
@@ -204,7 +195,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   system.registerOnTermination(TestKit.shutdownActorSystem(systemA))
   system.registerOnTermination(TestKit.shutdownActorSystem(systemB))
 
-  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, walletA_opt: Option[OnChainWallet with OnChainPubkeyCache] = None, walletB_opt: Option[OnChainWallet with OnChainPubkeyCache] = None, tags: Set[String] = Set.empty): SetupFixture = {
+  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, walletA_opt: Option[OnChainWallet with OnChainAddressCache] = None, walletB_opt: Option[OnChainWallet with OnChainAddressCache] = None, tags: Set[String] = Set.empty): SetupFixture = {
     val aliceOpenReplyTo = TestProbe()
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
@@ -263,34 +254,47 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   def updateInitFeatures(nodeParamsA: NodeParams, nodeParamsB: NodeParams, tags: Set[String]): (NodeParams, NodeParams) = {
     val nodeParamsA1 = nodeParamsA.copy(features = nodeParamsA.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableWumbo))(_.removed(Features.Wumbo))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional).updated(Features.AnchorOutputs, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional).updated(Features.AnchorOutputs, FeatureSupport.Optional).updated(Features.AnchorOutputsZeroFeeHtlcTx, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(_.updated(Features.UpfrontShutdownScript, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.SimpleClose))(_.updated(Features.SimpleClose, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix))(_.updated(Features.SimpleTaprootChannelsPhoenix, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputsPhoenix))(_.removed(Features.AnchorOutputsZeroFeeHtlcTx).updated(Features.AnchorOutputs, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix))(_.removed(Features.SimpleTaprootChannelsStaging).updated(Features.SimpleTaprootChannelsPhoenix, FeatureSupport.Optional).updated(Features.PhoenixZeroReserve, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaproot))(_.updated(Features.SimpleTaprootChannelsStaging, FeatureSupport.Optional))
     )
     val nodeParamsB1 = nodeParamsB.copy(features = nodeParamsB.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableWumbo))(_.removed(Features.Wumbo))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional).updated(Features.AnchorOutputs, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional).updated(Features.AnchorOutputs, FeatureSupport.Optional).updated(Features.AnchorOutputsZeroFeeHtlcTx, FeatureSupport.Optional))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(_.updated(Features.UpfrontShutdownScript, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroConf))(_.updated(Features.ZeroConf, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ScidAlias))(_.updated(Features.ScidAlias, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DualFunding))(_.updated(Features.DualFunding, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.SimpleClose))(_.updated(Features.SimpleClose, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableSplice))(_.removed(Features.SplicePrototype))
-      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix))(_.updated(Features.SimpleTaprootChannelsPhoenix, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputsPhoenix))(_.removed(Features.AnchorOutputsZeroFeeHtlcTx).updated(Features.AnchorOutputs, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix))(_.removed(Features.SimpleTaprootChannelsStaging).updated(Features.SimpleTaprootChannelsPhoenix, FeatureSupport.Optional).updated(Features.PhoenixZeroReserve, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaproot))(_.updated(Features.SimpleTaprootChannelsStaging, FeatureSupport.Optional))
     )
     (nodeParamsA1, nodeParamsB1)
+  }
+
+  /** Pick the channel type based on local and remote feature bits. */
+  def channelTypeFromFeatures(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean): SupportedChannelType = {
+    def canUse(feature: InitFeature): Boolean = Features.canUseFeature(localFeatures, remoteFeatures, feature)
+
+    val scidAlias = canUse(Features.ScidAlias) && !announceChannel // alias feature is incompatible with public channel
+    val zeroConf = canUse(Features.ZeroConf)
+    if (canUse(Features.SimpleTaprootChannelsStaging)) {
+      ChannelTypes.SimpleTaprootChannelsStaging(scidAlias, zeroConf)
+    } else if (canUse(Features.SimpleTaprootChannelsPhoenix)) {
+      ChannelTypes.SimpleTaprootChannelsPhoenix
+    } else if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
+      ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)
+    } else if (canUse(Features.AnchorOutputs)) {
+      ChannelTypes.AnchorOutputs(scidAlias, zeroConf)
+    } else {
+      fail("cannot figure out channel_type from features")
+    }
   }
 
   def computeChannelParams(setup: SetupFixture, tags: Set[String], channelFlags: ChannelFlags = ChannelFlags(announceChannel = false)): ChannelParamsFixture = {
@@ -299,18 +303,13 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val (nodeParamsA, nodeParamsB) = updateInitFeatures(alice.underlyingActor.nodeParams, bob.underlyingActor.nodeParams, tags)
     val aliceInitFeatures = nodeParamsA.features.initFeatures()
     val bobInitFeatures = nodeParamsB.features.initFeatures()
-    val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures, announceChannel = channelFlags.announceChannel)
-
-    // those features can only be enabled with AnchorOutputsZeroFeeHtlcTxs, this is to prevent incompatible test configurations
-    if (tags.contains(ChannelStateTestsTags.ZeroConf)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs) || tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix) || tags.contains(ChannelStateTestsTags.OptionSimpleTaproot), "invalid test configuration")
-    if (tags.contains(ChannelStateTestsTags.ScidAlias)) assert(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs) || tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix) || tags.contains(ChannelStateTestsTags.OptionSimpleTaproot), "invalid test configuration")
+    val channelType = channelTypeFromFeatures(aliceInitFeatures, bobInitFeatures, announceChannel = channelFlags.announceChannel)
 
     implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
     val aliceChannelParams = Alice.channelParams
       .modify(_.initFeatures).setTo(aliceInitFeatures)
-      .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Await.result(aliceWallet.getP2wpkhPubkey(), 10 seconds)))
       .modify(_.initialRequestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
-      .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(aliceWallet.getP2wpkhPubkey(), 10 seconds)))))
+      .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Await.result(aliceWallet.getReceivePublicKeyScript(), 10 seconds))))
     val aliceCommitParams = CommitParams(nodeParamsA.channelConf.dustLimit, nodeParamsA.channelConf.htlcMinimum, nodeParamsA.channelConf.maxHtlcValueInFlight(TestConstants.fundingSatoshis, unlimited = false), nodeParamsA.channelConf.maxAcceptedHtlcs, nodeParamsB.channelConf.toRemoteDelay)
       .modify(_.maxHtlcValueInFlight).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
       .modify(_.maxHtlcValueInFlight).setToIf(tags.contains(ChannelStateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150_000_000))
@@ -318,9 +317,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
     val bobChannelParams = Bob.channelParams
       .modify(_.initFeatures).setTo(bobInitFeatures)
-      .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Await.result(bobWallet.getP2wpkhPubkey(), 10 seconds)))
       .modify(_.initialRequestedChannelReserve_opt).setToIf(tags.contains(ChannelStateTestsTags.DualFunding))(None)
-      .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Script.pay2wpkh(Await.result(bobWallet.getP2wpkhPubkey(), 10 seconds)))))
+      .modify(_.upfrontShutdownScript_opt).setToIf(tags.contains(ChannelStateTestsTags.UpfrontShutdownScript))(Some(Script.write(Await.result(bobWallet.getReceivePublicKeyScript(), 10 seconds))))
     val bobCommitParams = CommitParams(nodeParamsB.channelConf.dustLimit, nodeParamsB.channelConf.htlcMinimum, nodeParamsB.channelConf.maxHtlcValueInFlight(TestConstants.fundingSatoshis, unlimited = false), nodeParamsB.channelConf.maxAcceptedHtlcs, nodeParamsA.channelConf.toRemoteDelay)
       .modify(_.maxHtlcValueInFlight).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
@@ -635,7 +633,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     }
   }
 
-  case class PublishedForceCloseTxs(mainTx_opt: Option[Transaction], anchorTx_opt: Option[Transaction], htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction]) {
+  case class PublishedForceCloseTxs(mainTx_opt: Option[Transaction], anchorTx: Transaction, htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction]) {
     val htlcTxs: Seq[Transaction] = htlcSuccessTxs ++ htlcTimeoutTxs
   }
 
@@ -654,43 +652,24 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(commitTx.txid == closingState.commitments.latest.localCommit.txId)
     val commitInput = closingState.commitments.latest.commitInput(s.underlyingActor.channelKeys)
     Transaction.correctlySpends(commitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    val publishedAnchorTx_opt = closingState.commitments.latest.commitmentFormat match {
-      case DefaultCommitmentFormat => None
-      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(s2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx].tx)
-    }
+    val publishedAnchorTx = s2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx].tx
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     val publishedMainTx_opt = localCommitPublished.localOutput_opt.map(_ => s2blockchain.expectFinalTxPublished("local-main-delayed").tx)
-    val (publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs) = closingState.commitments.latest.commitmentFormat match {
-      case Transactions.DefaultCommitmentFormat =>
-        // all htlcs success/timeout should be published as-is, we cannot RBF
-        val publishedHtlcTxs = (0 until htlcSuccessCount + htlcTimeoutCount).map { _ =>
-          val htlcTx = s2blockchain.expectMsgType[PublishFinalTx]
-          assert(htlcTx.parentTx_opt.contains(commitTx.txid))
-          assert(localCommitPublished.htlcOutputs.contains(htlcTx.input))
-          assert(htlcTx.desc == "htlc-success" || htlcTx.desc == "htlc-timeout")
-          htlcTx
-        }
-        val successTxs = publishedHtlcTxs.filter(_.desc == "htlc-success").map(_.tx)
-        val timeoutTxs = publishedHtlcTxs.filter(_.desc == "htlc-timeout").map(_.tx)
-        (successTxs, timeoutTxs)
-      case _: Transactions.AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
-        // all htlcs success/timeout should be published as replaceable txs
-        val publishedHtlcTxs = (0 until htlcSuccessCount + htlcTimeoutCount).map { _ =>
-          val htlcTx = s2blockchain.expectMsgType[PublishReplaceableTx]
-          assert(htlcTx.commitTx == commitTx)
-          assert(localCommitPublished.htlcOutputs.contains(htlcTx.txInfo.input.outPoint))
-          htlcTx.txInfo
-        }
-        // the publisher actors will sign the HTLC transactions, so we sign them here to test witness validity
-        val successTxs = publishedHtlcTxs.collect { case tx: HtlcSuccessTx =>
-          assert(localCommitPublished.incomingHtlcs.get(tx.input.outPoint).contains(tx.htlcId))
-          tx.sign()
-        }
-        val timeoutTxs = publishedHtlcTxs.collect { case tx: HtlcTimeoutTx =>
-          assert(localCommitPublished.outgoingHtlcs.get(tx.input.outPoint).contains(tx.htlcId))
-          tx.sign()
-        }
-        (successTxs, timeoutTxs)
+    // all htlcs success/timeout should be published as replaceable txs
+    val publishedHtlcTxs = (0 until htlcSuccessCount + htlcTimeoutCount).map { _ =>
+      val htlcTx = s2blockchain.expectMsgType[PublishReplaceableTx]
+      assert(htlcTx.commitTx == commitTx)
+      assert(localCommitPublished.htlcOutputs.contains(htlcTx.txInfo.input.outPoint))
+      htlcTx.txInfo
+    }
+    // the publisher actors will sign the HTLC transactions, so we sign them here to test witness validity
+    val publishedHtlcSuccessTxs = publishedHtlcTxs.collect { case tx: HtlcSuccessTx =>
+      assert(localCommitPublished.incomingHtlcs.get(tx.input.outPoint).contains(tx.htlcId))
+      tx.sign()
+    }
+    val publishedHtlcTimeoutTxs = publishedHtlcTxs.collect { case tx: HtlcTimeoutTx =>
+      assert(localCommitPublished.outgoingHtlcs.get(tx.input.outPoint).contains(tx.htlcId))
+      tx.sign()
     }
     assert(publishedHtlcSuccessTxs.size == htlcSuccessCount)
     assert(publishedHtlcTimeoutTxs.size == htlcTimeoutCount)
@@ -708,13 +687,13 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     s2blockchain.expectNoMessage(100 millis)
 
     // once our closing transactions are published, we watch for their confirmation
-    (publishedMainTx_opt ++ publishedAnchorTx_opt ++ publishedHtlcSuccessTxs ++ publishedHtlcTimeoutTxs).foreach(tx => {
+    (publishedMainTx_opt ++ Seq(publishedAnchorTx) ++ publishedHtlcSuccessTxs ++ publishedHtlcTimeoutTxs).foreach(tx => {
       s ! WatchOutputSpentTriggered(tx.txOut.headOption.map(_.amount).getOrElse(330 sat), tx)
       s2blockchain.expectWatchTxConfirmed(tx.txid)
     })
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
-    val publishedTxs = PublishedForceCloseTxs(publishedMainTx_opt, publishedAnchorTx_opt, publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs)
+    val publishedTxs = PublishedForceCloseTxs(publishedMainTx_opt, publishedAnchorTx, publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs)
     (localCommitPublished, publishedTxs)
   }
 
@@ -733,10 +712,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(remoteCommitPublished.outgoingHtlcs.size == htlcTimeoutCount)
 
     // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
-    val publishedAnchorTx_opt = closingData.commitments.latest.commitmentFormat match {
-      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(s2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx].tx)
-      case Transactions.DefaultCommitmentFormat => None
-    }
+    val publishedAnchorTx = s2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx].tx
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     val publishedMainTx_opt = remoteCommitPublished.localOutput_opt.map(_ => s2blockchain.expectFinalTxPublished("remote-main-delayed").tx)
     publishedMainTx_opt.foreach(tx => Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
@@ -770,13 +746,13 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     s2blockchain.expectNoMessage(100 millis)
 
     // once our closing transactions are published, we watch for their confirmation
-    (publishedMainTx_opt ++ publishedAnchorTx_opt ++ publishedHtlcSuccessTxs ++ publishedHtlcTimeoutTxs).foreach(tx => {
+    (publishedMainTx_opt ++ Seq(publishedAnchorTx) ++ publishedHtlcSuccessTxs ++ publishedHtlcTimeoutTxs).foreach(tx => {
       s ! WatchOutputSpentTriggered(tx.txOut.headOption.map(_.amount).getOrElse(330 sat), tx)
       s2blockchain.expectWatchTxConfirmed(tx.txid)
     })
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
-    val publishedTxs = PublishedForceCloseTxs(publishedMainTx_opt, publishedAnchorTx_opt, publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs)
+    val publishedTxs = PublishedForceCloseTxs(publishedMainTx_opt, publishedAnchorTx, publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs)
     (remoteCommitPublished, publishedTxs)
   }
 

@@ -894,8 +894,8 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val fundingTx = completeTx.buildUnsignedTx()
     val fundingOutputIndex = fundingTx.txOut.indexWhere(_.publicKeyScript == fundingPubkeyScript)
     val liquidityFee = fundingParams.liquidityFees(liquidityPurchase_opt)
-    val localCommitmentKeys = LocalCommitmentKeys(channelParams, channelKeys, purpose.localCommitIndex, fundingParams.commitmentFormat)
-    val remoteCommitmentKeys = RemoteCommitmentKeys(channelParams, channelKeys, purpose.remotePerCommitmentPoint, fundingParams.commitmentFormat)
+    val localCommitmentKeys = LocalCommitmentKeys(channelParams, channelKeys, purpose.localCommitIndex)
+    val remoteCommitmentKeys = RemoteCommitmentKeys(channelParams, channelKeys, purpose.remotePerCommitmentPoint)
     Funding.makeCommitTxs(channelParams, localCommitParams, remoteCommitParams,
       fundingAmount = fundingParams.fundingAmount,
       toLocal = completeTx.sharedOutput.localAmount - localPushAmount + remotePushAmount - liquidityFee,
@@ -1218,7 +1218,7 @@ object InteractiveTxSigningSession {
       localCommit match {
         case Left(unsignedLocalCommit) =>
           val fundingKey = localFundingKey(channelKeys)
-          val commitKeys = LocalCommitmentKeys(channelParams, channelKeys, localCommitIndex, fundingParams.commitmentFormat)
+          val commitKeys = LocalCommitmentKeys(channelParams, channelKeys, localCommitIndex)
           val fundingOutput = commitInput(fundingKey)
           LocalCommit.fromCommitSig(channelParams, localCommitParams, commitKeys, fundingTx.txId, fundingKey, fundingParams.remoteFundingPubKey, fundingOutput, remoteCommitSig, localCommitIndex, unsignedLocalCommit.spec, fundingParams.commitmentFormat).map { signedLocalCommit =>
             if (shouldSignFirst(fundingParams.isInitiator, channelParams, fundingTx.tx)) {
