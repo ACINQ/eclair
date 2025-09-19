@@ -43,7 +43,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTrampolinePayment}
-import fr.acinq.eclair.router.Graph.PaymentWeightRatios
+import fr.acinq.eclair.router.Graph.HeuristicsConstants
 import fr.acinq.eclair.router.Router.{ChannelHop, GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferPaths}
@@ -337,15 +337,15 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val (sender, holdTimesRecorder) = (TestProbe(), TestProbe())
     nodes("A").system.eventStream.subscribe(holdTimesRecorder.ref, classOf[Router.ReportedHoldTimes])
     // first we retrieve a payment hash from C
-    val amountMsat = 2000.msat
+    val amountMsat = 200000.msat
     sender.send(nodes("C").paymentHandler, ReceiveStandardPayment(sender.ref, Some(amountMsat), Left("Change from coffee")))
     val invoice = sender.expectMsgType[Bolt11Invoice]
 
     // the payment is requesting to use a capacity-optimized route which will select node G even though it's a bit more expensive
-    sender.send(nodes("A").paymentInitiator, SendPaymentToNode(sender.ref, amountMsat, invoice, Nil, maxAttempts = 1, routeParams = integrationTestRouteParams.copy(heuristics = PaymentWeightRatios(0, 0, 0, 1, RelayFees(0 msat, 0)))))
+    sender.send(nodes("A").paymentInitiator, SendPaymentToNode(sender.ref, amountMsat, invoice, Nil, maxAttempts = 1, routeParams = integrationTestRouteParams.copy(heuristics = HeuristicsConstants(0, RelayFees(10000000000L msat, 10000000000L), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false))))
     sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent]
-    ps.parts.foreach(part => assert(part.route.getOrElse(Nil).exists(_.nodeId == nodes("G").nodeParams.nodeId)))
+    ps.parts.foreach(part => assert(part.route.get.exists(_.nodeId == nodes("G").nodeParams.nodeId)))
 
     assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B", "G", "C").map(nodes(_).nodeParams.nodeId))
   }

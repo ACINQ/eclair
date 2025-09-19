@@ -24,7 +24,7 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentPathWeight, PaymentWeightRatios, WeightRatios}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentPathWeight, WeightRatios}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
@@ -57,13 +57,6 @@ object EclairInternalsSerializer {
     ("feeBase" | millisatoshi) ::
       ("feeProportionalMillionths" | int64)).as[RelayFees]
 
-  val paymentWeightRatiosCodec: Codec[PaymentWeightRatios] = (
-    ("baseFactor" | double) ::
-      ("cltvDeltaFactor" | double) ::
-      ("ageFactor" | double) ::
-      ("capacityFactor" | double) ::
-      ("hopCost" | relayFeesCodec)).as[PaymentWeightRatios]
-
   val heuristicsConstantsCodec: Codec[HeuristicsConstants] = (
     ("lockedFundsRisk" | double) ::
       ("failureCost" | relayFeesCodec) ::
@@ -73,7 +66,6 @@ object EclairInternalsSerializer {
 
   val weightRatiosCodec: Codec[WeightRatios[PaymentPathWeight]] =
     discriminated[WeightRatios[PaymentPathWeight]].by(uint8)
-      .typecase(0x00, paymentWeightRatiosCodec)
       .typecase(0xff, heuristicsConstantsCodec)
 
   val multiPartParamsCodec: Codec[MultiPartParams] = (

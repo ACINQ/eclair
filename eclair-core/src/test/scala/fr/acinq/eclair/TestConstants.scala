@@ -29,7 +29,7 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
-import fr.acinq.eclair.router.Graph.{MessageWeightRatios, PaymentWeightRatios}
+import fr.acinq.eclair.router.Graph.{MessageWeightRatios, HeuristicsConstants}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{PathFindingExperimentConf, Router}
@@ -221,12 +221,12 @@ object TestConstants {
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          heuristics = PaymentWeightRatios(
-            baseFactor = 1.0,
-            cltvDeltaFactor = 0.0,
-            ageFactor = 0.0,
-            capacityFactor = 0.0,
+          heuristics = HeuristicsConstants(
+            lockedFundsRisk = 0,
+            failureFees = RelayFees(0 msat, 0),
             hopFees = RelayFees(0 msat, 0),
+            useLogProbability = false,
+            usePastRelaysData = false
           ),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
@@ -412,12 +412,12 @@ object TestConstants {
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          heuristics = PaymentWeightRatios(
-            baseFactor = 1.0,
-            cltvDeltaFactor = 0.0,
-            ageFactor = 0.0,
-            capacityFactor = 0.0,
+          heuristics = HeuristicsConstants(
+            lockedFundsRisk = 0,
+            failureFees = RelayFees(0 msat, 0),
             hopFees = RelayFees(0 msat, 0),
+            useLogProbability = false,
+            usePastRelaysData = false
           ),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,

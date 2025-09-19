@@ -88,56 +88,6 @@ object Graph {
   }
 
   /**
-   * We use heuristics to calculate the weight of an edge based on channel age, cltv delta, capacity and a virtual hop cost to keep routes short.
-   * We favor older channels, with bigger capacity and small cltv delta.
-   */
-  case class PaymentWeightRatios(baseFactor: Double, cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double, hopFees: RelayFees) extends WeightRatios[PaymentPathWeight] {
-    require(baseFactor + cltvDeltaFactor + ageFactor + capacityFactor == 1, "The sum of heuristics ratios must be 1")
-    require(baseFactor >= 0.0, "ratio-base must be nonnegative")
-    require(cltvDeltaFactor >= 0.0, "ratio-cltv must be nonnegative")
-    require(ageFactor >= 0.0, "ratio-channel-age must be nonnegative")
-    require(capacityFactor >= 0.0, "ratio-channel-capacity must be nonnegative")
-
-    override def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: PaymentPathWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean): PaymentPathWeight = {
-      val totalAmount = if (edge.desc.a == sender && !includeLocalChannelCost) prev.amount else addEdgeFees(edge, prev.amount)
-      val fee = totalAmount - prev.amount
-      val totalFees = prev.fees + fee
-      val totalCltv = prev.cltv + edge.params.cltvExpiryDelta
-      val hopCost = if (edge.desc.a == sender) 0 msat else nodeFee(hopFees, prev.amount)
-      import RoutingHeuristics._
-
-      // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
-      val ageFactor = edge.desc.shortChannelId match {
-        case real: RealShortChannelId => normalize(real.blockHeight.toDouble, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
-        // for local channels or route hints we don't easily have access to the channel block height, but we want to
-        // give them the best score anyway
-        case _: Alias => 1
-        case _: UnspecifiedShortChannelId => 1
-      }
-
-      // Every edge is weighted by channel capacity, larger channels add less weight
-      val edgeMaxCapacity = edge.capacity.toMilliSatoshi
-      val capFactor =
-        if (edge.balance_opt.isDefined) 0 // If we know the balance of the channel we treat it as if it had the maximum capacity.
-        else 1 - normalize(edgeMaxCapacity.toLong.toDouble, CAPACITY_CHANNEL_LOW.toLong.toDouble, CAPACITY_CHANNEL_HIGH.toLong.toDouble)
-
-      // Every edge is weighted by its cltv-delta value, normalized
-      val cltvFactor = normalize(edge.params.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
-
-      // NB we're guaranteed to have weightRatios and factors > 0
-      val factor = baseFactor + (cltvFactor * this.cltvDeltaFactor) + (ageFactor * this.ageFactor) + (capFactor * this.capacityFactor)
-      val totalWeight = prev.weight + (fee + hopCost).toLong * factor
-      val richWeight = PaymentPathWeight(totalAmount, prev.length + 1, totalCltv, 1.0, totalFees, 0 msat, totalWeight)
-      if (edge.desc.a == sender) {
-        // If this is a local channel it shouldn't add any weight. We always prefer local channels.
-        richWeight.copy(weight = prev.weight)
-      } else {
-        richWeight
-      }
-    }
-  }
-
-  /**
    * We use heuristics to calculate the weight of an edge.
    * The fee for a failed attempt and the fee per hop are never actually spent, they are used to incentivize shorter
    * paths or path with higher success probability.
