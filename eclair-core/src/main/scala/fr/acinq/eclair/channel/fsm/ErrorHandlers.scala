@@ -240,10 +240,7 @@ trait ErrorHandlers extends CommonHandlers {
       case _ => None
     }
     val publishMainDelayedTx_opt = txs.mainDelayedTx_opt.map(tx => PublishFinalTx(tx, None))
-    val publishHtlcTxs = txs.htlcTxs.map(htlcTx => commitment.commitmentFormat match {
-      case DefaultCommitmentFormat => PublishFinalTx(htlcTx, Some(lcp.commitTx.txid))
-      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => PublishReplaceableTx(htlcTx, lcp.commitTx, commitment, Closing.confirmationTarget(htlcTx))
-    })
+    val publishHtlcTxs = txs.htlcTxs.map(htlcTx => PublishReplaceableTx(htlcTx, lcp.commitTx, commitment, Closing.confirmationTarget(htlcTx)))
     val publishQueue = Seq(publishCommitTx) ++ publishAnchorTx_opt ++ publishMainDelayedTx_opt ++ publishHtlcTxs
     publishIfNeeded(publishQueue, lcp.irrevocablySpent)
 

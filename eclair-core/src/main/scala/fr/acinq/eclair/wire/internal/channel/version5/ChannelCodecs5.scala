@@ -78,11 +78,17 @@ private[channel] object ChannelCodecs5 {
     )
 
     private val commitmentFormatCodec: Codec[Transactions.CommitmentFormat] = discriminated[Transactions.CommitmentFormat].by(uint8)
-      .typecase(0x00, provide(Transactions.DefaultCommitmentFormat))
       .typecase(0x01, provide(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
       .typecase(0x02, provide(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat))
       .typecase(0x03, provide(Transactions.PhoenixSimpleTaprootChannelCommitmentFormat))
       .typecase(0x04, provide(Transactions.ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat))
+      // This is incorrect: this discriminator was used for the pre-anchor commitment format, which has been deprecated
+      // after the 0.13.0 release. We explicitly required nodes to close their non-anchor channels before updating to
+      // a version newer than 0.13.0, so this will only affect already closed channels that were kept in the DB.
+      // The UnsafeLegacyAnchorOutputsCommitmentFormat was only used by the ACINQ node with Phoenix wallets: we use it
+      // as a placeholder here, but will replace it with the correct value in the DB migration of closed channels to
+      // their dedicated table (see SqliteChannelsDb.scala and PgChannelsDb.scala).
+      .typecase(0x00, provide(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
 
     private val localChannelParamsCodec: Codec[LocalChannelParams] = (
       ("nodeId" | publicKey) ::

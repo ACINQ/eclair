@@ -33,7 +33,7 @@ import scala.jdk.CollectionConverters._
 class StartupIntegrationSpec extends IntegrationSpec {
 
   private def createConfig(wallet_opt: Option[String], waitForBitcoind: Boolean = false): Config = {
-    val defaultConfig = ConfigFactory.parseMap(Map("eclair.bitcoind.wait-for-bitcoind-up" -> waitForBitcoind, "eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig)
+    val defaultConfig = ConfigFactory.parseMap(Map("eclair.bitcoind.wait-for-bitcoind-up" -> waitForBitcoind, "eclair.server.port" -> TestUtils.availablePort).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(commonConfig)
     wallet_opt match {
       case Some(wallet) => ConfigFactory.parseMap(Map("eclair.bitcoind.wallet" -> wallet).asJava).withFallback(defaultConfig)
       case None => defaultConfig.withoutPath("eclair.bitcoind.wallet")

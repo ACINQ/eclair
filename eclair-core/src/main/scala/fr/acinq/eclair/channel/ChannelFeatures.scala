@@ -67,9 +67,6 @@ sealed trait SupportedChannelType extends ChannelType {
   /** Known channel-type features */
   override def features: Set[ChannelTypeFeature]
 
-  /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
-  def paysDirectlyToWallet: Boolean
-
   /** Format of the channel transactions. */
   def commitmentFormat: CommitmentFormat
 }
@@ -77,25 +74,6 @@ sealed trait SupportedChannelType extends ChannelType {
 object ChannelTypes {
 
   // @formatter:off
-  case class Standard(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
-    override def features: Set[ChannelTypeFeature] = Set(
-      if (scidAlias) Some(Features.ScidAlias) else None,
-      if (zeroConf) Some(Features.ZeroConf) else None,
-    ).flatten
-    override def paysDirectlyToWallet: Boolean = false
-    override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
-    override def toString: String = s"standard${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
-  }
-  case class StaticRemoteKey(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
-    override def features: Set[ChannelTypeFeature] = Set(
-      if (scidAlias) Some(Features.ScidAlias) else None,
-      if (zeroConf) Some(Features.ZeroConf) else None,
-      Some(Features.StaticRemoteKey)
-    ).flatten
-    override def paysDirectlyToWallet: Boolean = true
-    override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
-    override def toString: String = s"static_remotekey${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
-  }
   case class AnchorOutputs(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     override def features: Set[ChannelTypeFeature] = Set(
       if (scidAlias) Some(Features.ScidAlias) else None,
@@ -103,7 +81,6 @@ object ChannelTypes {
       Some(Features.StaticRemoteKey),
       Some(Features.AnchorOutputs)
     ).flatten
-    override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = UnsafeLegacyAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
@@ -114,20 +91,8 @@ object ChannelTypes {
       Some(Features.StaticRemoteKey),
       Some(Features.AnchorOutputsZeroFeeHtlcTx)
     ).flatten
-    override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
-  }
-  case class SimpleTaprootChannelsPhoenix(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
-    /** Known channel-type features */
-    override def features: Set[ChannelTypeFeature] = Set(
-      if (scidAlias) Some(Features.ScidAlias) else None,
-      if (zeroConf) Some(Features.ZeroConf) else None,
-      Some(Features.SimpleTaprootChannelsPhoenix),
-    ).flatten
-    override def paysDirectlyToWallet: Boolean = false
-    override def commitmentFormat: CommitmentFormat = PhoenixSimpleTaprootChannelCommitmentFormat
-    override def toString: String = s"simple_taproot_channel_phoenix${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
   case class SimpleTaprootChannelsStaging(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     /** Known channel-type features */
@@ -136,9 +101,15 @@ object ChannelTypes {
       if (zeroConf) Some(Features.ZeroConf) else None,
       Some(Features.SimpleTaprootChannelsStaging),
     ).flatten
-    override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
     override def toString: String = s"simple_taproot_channel_staging${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+  }
+
+  // Phoenix uses custom channel types, that we may remove in the future.
+  case object SimpleTaprootChannelsPhoenix extends SupportedChannelType {
+    override def features: Set[ChannelTypeFeature] = Set(Features.SimpleTaprootChannelsPhoenix)
+    override def commitmentFormat: CommitmentFormat = PhoenixSimpleTaprootChannelCommitmentFormat
+    override def toString: String = "phoenix_simple_taproot_channel"
   }
 
   case class UnsupportedChannelType(featureBits: Features[InitFeature]) extends ChannelType {
@@ -148,14 +119,6 @@ object ChannelTypes {
   // @formatter:on
 
   private val features2ChannelType: Map[Features[_ <: InitFeature], SupportedChannelType] = Set(
-    Standard(),
-    Standard(zeroConf = true),
-    Standard(scidAlias = true),
-    Standard(scidAlias = true, zeroConf = true),
-    StaticRemoteKey(),
-    StaticRemoteKey(zeroConf = true),
-    StaticRemoteKey(scidAlias = true),
-    StaticRemoteKey(scidAlias = true, zeroConf = true),
     AnchorOutputs(),
     AnchorOutputs(zeroConf = true),
     AnchorOutputs(scidAlias = true),
@@ -164,41 +127,17 @@ object ChannelTypes {
     AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
-    SimpleTaprootChannelsPhoenix(),
-    SimpleTaprootChannelsPhoenix(zeroConf = true),
-    SimpleTaprootChannelsPhoenix(scidAlias = true),
-    SimpleTaprootChannelsPhoenix(scidAlias = true, zeroConf = true),
     SimpleTaprootChannelsStaging(),
     SimpleTaprootChannelsStaging(zeroConf = true),
     SimpleTaprootChannelsStaging(scidAlias = true),
     SimpleTaprootChannelsStaging(scidAlias = true, zeroConf = true),
-  )
-    .map(channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType)
-    .toMap
+    SimpleTaprootChannelsPhoenix,
+  ).map {
+    channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType
+  }.toMap
 
   // NB: Bolt 2: features must exactly match in order to identify a channel type.
   def fromFeatures(features: Features[InitFeature]): ChannelType = features2ChannelType.getOrElse(features, UnsupportedChannelType(features))
-
-  /** Pick the channel type based on local and remote feature bits, as defined by the spec. */
-  def defaultFromFeatures(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean): SupportedChannelType = {
-    def canUse(feature: InitFeature): Boolean = Features.canUseFeature(localFeatures, remoteFeatures, feature)
-
-    val scidAlias = canUse(Features.ScidAlias) && !announceChannel // alias feature is incompatible with public channel
-    val zeroConf = canUse(Features.ZeroConf)
-    if (canUse(Features.SimpleTaprootChannelsStaging)) {
-      SimpleTaprootChannelsStaging(scidAlias, zeroConf)
-    } else if (canUse(Features.SimpleTaprootChannelsPhoenix)) {
-      SimpleTaprootChannelsPhoenix(scidAlias, zeroConf)
-    } else if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
-      AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)
-    } else if (canUse(Features.AnchorOutputs)) {
-      AnchorOutputs(scidAlias, zeroConf)
-    } else if (canUse(Features.StaticRemoteKey)) {
-      StaticRemoteKey(scidAlias, zeroConf)
-    } else {
-      Standard(scidAlias, zeroConf)
-    }
-  }
 
   /** Check if a given channel type is compatible with our features. */
   def areCompatible(localFeatures: Features[InitFeature], remoteChannelType: ChannelType): Option[SupportedChannelType] = remoteChannelType match {

@@ -64,10 +64,10 @@ import scala.jdk.CollectionConverters._
 class PaymentIntegrationSpec extends IntegrationSpec {
 
   test("start eclair nodes") {
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel.channel-flags.announce-channel" -> false).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig)) // A's channels are private
-    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.channel.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081, "eclair.trampoline-payments-enable" -> true, "eclair.onion-messages.relay-policy" -> "relay-all").asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29730, "eclair.api.port" -> 28080, "eclair.channel.channel-flags.announce-channel" -> false).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(commonConfig)) // A's channels are private
+    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.channel.expiry-delta-blocks" -> 131, "eclair.server.port" -> 29731, "eclair.api.port" -> 28081, "eclair.trampoline-payments-enable" -> true, "eclair.onion-messages.relay-policy" -> "relay-all").asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(commonConfig))
     instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29732, "eclair.api.port" -> 28082, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(withDualFunding).withFallback(commonConfig))
-    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.channel.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(withStaticRemoteKey).withFallback(commonConfig))
+    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.channel.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.channel.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084).asJava).withFallback(withDualFunding).withFallback(commonConfig))
     instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonConfig))
     instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.channel.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086, "eclair.relay.fees.public-channels.fee-base-msat" -> 1010, "eclair.relay.fees.public-channels.fee-proportional-millionths" -> 102, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonConfig))
@@ -86,15 +86,15 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val eventListener = TestProbe()
     nodes.values.foreach(_.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged]))
 
-    connect(nodes("A"), nodes("B"), 11000000 sat, 0 msat)
-    connect(nodes("B"), nodes("C"), 2000000 sat, 0 msat)
-    connect(nodes("C"), nodes("D"), 5000000 sat, 0 msat)
-    connect(nodes("C"), nodes("D"), 5000000 sat, 0 msat)
-    connect(nodes("C"), nodes("F"), 16000000 sat, 0 msat)
-    connect(nodes("B"), nodes("E"), 10000000 sat, 0 msat)
-    connect(nodes("E"), nodes("C"), 10000000 sat, 0 msat)
-    connect(nodes("B"), nodes("G"), 16000000 sat, 0 msat)
-    connect(nodes("G"), nodes("C"), 16000000 sat, 0 msat)
+    connect(nodes("A"), nodes("B"), 11000000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("B"), nodes("C"), 2000000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("C"), nodes("D"), 5000000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("C"), nodes("D"), 5000000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("C"), nodes("F"), 16000000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("B"), nodes("E"), 10000000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("E"), nodes("C"), 10000000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("B"), nodes("G"), 16000000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("G"), nodes("C"), 16000000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
 
     val numberOfChannels = 9
     val channelEndpointsCount = 2 * numberOfChannels
