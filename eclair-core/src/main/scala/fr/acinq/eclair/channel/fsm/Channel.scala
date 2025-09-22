@@ -729,6 +729,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case Right((commitments1, actions)) =>
           cancelTimer(RevocationTimeout.toString)
           remoteNextCommitNonces = revocation.nextCommitNonces
+          if (revocation.nextCommitNonces.isEmpty && revocation.nextCommitNonce.nonEmpty) { // README: remove when BOLT proposal has been updated to only use nonce maps
+            remoteNextCommitNonces = Map(commitments1.latest.fundingTxId -> revocation.nextCommitNonce.get)
+          }
           log.debug("received a new rev, spec:\n{}", commitments1.latest.specs2String)
           actions.foreach {
             case PostRevocationAction.RelayHtlc(add) =>
@@ -1713,6 +1716,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case Right((commitments1, actions)) =>
           cancelTimer(RevocationTimeout.toString)
           remoteNextCommitNonces = revocation.nextCommitNonces
+          if (revocation.nextCommitNonces.isEmpty && revocation.nextCommitNonce.nonEmpty) { // README: remove when BOLT proposal has been updated to only use nonce maps
+            remoteNextCommitNonces = Map(commitments1.latest.fundingTxId -> revocation.nextCommitNonce.get)
+          }
           log.debug("received a new rev, spec:\n{}", commitments1.latest.specs2String)
           actions.foreach {
             case PostRevocationAction.RelayHtlc(add) =>
