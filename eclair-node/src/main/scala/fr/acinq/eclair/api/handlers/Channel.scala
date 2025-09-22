@@ -49,6 +49,9 @@ trait Channel {
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
+    ChannelTypes.SimpleTaprootChannels(),
+    ChannelTypes.SimpleTaprootChannels(scidAlias = true),
+    ChannelTypes.SimpleTaprootChannels(scidAlias = true, zeroConf = true),
     ChannelTypes.SimpleTaprootChannelsStaging(),
     ChannelTypes.SimpleTaprootChannelsStaging(scidAlias = true),
     ChannelTypes.SimpleTaprootChannelsStaging(scidAlias = true, zeroConf = true)

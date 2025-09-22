@@ -227,6 +227,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
               val localNonce = NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0)
               remoteNextCommitNonces.get(NonceGenerator.dummyFundingTxId) match {
                 case Some(remoteNonce) =>
+                  log.info(s"signing remote commit tx ${remoteCommitTx} with fundingKey = ${fundingKey.publicKey} remoteKey = ${d.remoteFundingPubKey} localNonce = ${localNonce.publicNonce} remoteNonce = $remoteNonce")
                   remoteCommitTx.partialSign(fundingKey, d.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
                     case Left(_) => Left(InvalidCommitNonce(d.channelId, NonceGenerator.dummyFundingTxId, commitmentNumber = 0))
                     case Right(psig) => Right(psig)

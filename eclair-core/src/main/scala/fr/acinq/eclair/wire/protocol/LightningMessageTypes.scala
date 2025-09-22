@@ -573,13 +573,15 @@ case class RevokeAndAck(channelId: ByteVector32,
                         perCommitmentSecret: PrivateKey,
                         nextPerCommitmentPoint: PublicKey,
                         tlvStream: TlvStream[RevokeAndAckTlv] = TlvStream.empty) extends HtlcMessage with HasChannelId {
+  val nextCommitNonce: Option[IndividualNonce] = tlvStream.get[RevokeAndAckTlv.NextLocalNonceTlv].map(_.nonce)
   val nextCommitNonces: Map[TxId, IndividualNonce] = tlvStream.get[RevokeAndAckTlv.NextLocalNoncesTlv].map(_.nonces.toMap).getOrElse(Map.empty)
 }
 
 object RevokeAndAck {
   def apply(channelId: ByteVector32, perCommitmentSecret: PrivateKey, nextPerCommitmentPoint: PublicKey, nextCommitNonces: Seq[(TxId, IndividualNonce)]): RevokeAndAck = {
     val tlvs = Set(
-      if (nextCommitNonces.nonEmpty) Some(RevokeAndAckTlv.NextLocalNoncesTlv(nextCommitNonces)) else None
+      if (nextCommitNonces.nonEmpty) Some(RevokeAndAckTlv.NextLocalNoncesTlv(nextCommitNonces)) else None,
+      nextCommitNonces.headOption.map(_._2).map(n => RevokeAndAckTlv.NextLocalNonceTlv(n))
     ).flatten[RevokeAndAckTlv]
     RevokeAndAck(channelId, perCommitmentSecret, nextPerCommitmentPoint, TlvStream(tlvs))
   }

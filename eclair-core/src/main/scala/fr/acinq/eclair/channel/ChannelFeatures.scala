@@ -130,6 +130,18 @@ object ChannelTypes {
     override def toString: String = s"simple_taproot_channel_staging${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
 
+  case class SimpleTaprootChannels(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+    /** Known channel-type features */
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.SimpleTaprootChannels),
+    ).flatten
+    override def paysDirectlyToWallet: Boolean = false
+    override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
+    override def toString: String = s"simple_taproot_channel${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+  }
+
   case class UnsupportedChannelType(featureBits: Features[InitFeature]) extends ChannelType {
     override def features: Set[InitFeature] = featureBits.activated.keySet
     override def toString: String = s"0x${featureBits.toByteVector.toHex}"
@@ -163,6 +175,11 @@ object ChannelTypes {
     AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
+    SimpleTaprootChannels(),
+    SimpleTaprootChannels(zeroConf = true),
+    SimpleTaprootChannels(scidAlias = true),
+    SimpleTaprootChannels(scidAlias = true, zeroConf = true),
+    SimpleTaprootChannels(),
     SimpleTaprootChannelsPhoenix,
     SimpleTaprootChannelsStaging(),
     SimpleTaprootChannelsStaging(zeroConf = true),
@@ -181,7 +198,9 @@ object ChannelTypes {
 
     val scidAlias = canUse(Features.ScidAlias) && !announceChannel // alias feature is incompatible with public channel
     val zeroConf = canUse(Features.ZeroConf)
-    if (canUse(Features.SimpleTaprootChannelsStaging)) {
+    if (canUse(Features.SimpleTaprootChannels)) {
+      SimpleTaprootChannels(scidAlias, zeroConf)
+    } else if (canUse(Features.SimpleTaprootChannelsStaging)) {
       SimpleTaprootChannelsStaging(scidAlias, zeroConf)
     } else if (canUse(Features.SimpleTaprootChannelsPhoenix)) {
       SimpleTaprootChannelsPhoenix
