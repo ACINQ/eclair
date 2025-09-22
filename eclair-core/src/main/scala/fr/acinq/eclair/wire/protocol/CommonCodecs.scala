@@ -205,4 +205,12 @@ object CommonCodecs {
     (bits: BitVector) => Attempt.fromTry(Try(codec.decode(bits))).flatten
   )
 
+  def nonEmptyList[A](codec: Codec[A], name: String): Codec[Seq[A]] =
+    list(codec).narrow(l => {
+      if (l.nonEmpty) {
+        Attempt.successful(l.toSeq)
+      } else {
+        Attempt.failure(Err(s"$name must not be empty"))
+      }
+    }, _.toList)
 }

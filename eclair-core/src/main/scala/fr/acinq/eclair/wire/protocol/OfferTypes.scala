@@ -308,7 +308,7 @@ object OfferTypes {
 
     def validate(records: TlvStream[OfferTlv]): Either[InvalidTlvPayload, Offer] = {
       if (records.get[OfferDescription].isEmpty && records.get[OfferAmount].nonEmpty) return Left(MissingRequiredTlv(UInt64(10)))
-      if (records.get[OfferNodeId].isEmpty && records.get[OfferPaths].forall(_.paths.isEmpty)) return Left(MissingRequiredTlv(UInt64(22)))
+      if (records.get[OfferNodeId].isEmpty && records.get[OfferPaths].isEmpty) return Left(MissingRequiredTlv(UInt64(22)))
       if (records.get[OfferCurrency].nonEmpty && records.get[OfferAmount].isEmpty) return Left(MissingRequiredTlv(UInt64(8)))
       if (records.unknown.exists(!isOfferTlv(_))) return Left(ForbiddenTlv(records.unknown.find(!isOfferTlv(_)).get.tag))
       Right(Offer(records))

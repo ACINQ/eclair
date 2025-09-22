@@ -350,4 +350,14 @@ class OfferTypesSpec extends AnyFunSuite {
     assert(OfferCodecs.offerCurrency.decode(encode("XAU")).isFailure)
     assert(OfferCodecs.offerCurrency.decode(hex"ffffff".bits).isFailure)
   }
+
+  test("empty fields") {
+    val invalidOffers = Seq(
+      Offer(TlvStream(OfferPaths(Nil))),
+      Offer(TlvStream(OfferNodeId(randomKey().publicKey), OfferChains(Nil))),
+    )
+    for (invalidOffer <- invalidOffers) {
+      assert(Offer.decode(invalidOffer.toString).isFailure)
+    }
+  }
 }
