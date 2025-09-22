@@ -30,6 +30,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.channel.ChannelTypes.SimpleTaprootChannelsPhoenix
 import fr.acinq.eclair.channel.Commitments.PostRevocationAction
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel.Helpers.Syncing.SyncResult
@@ -1113,8 +1114,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 // We only support updating phoenix channels to taproot: we ignore other attempts at upgrading the
                 // commitment format and will simply apply the previous commitment format.
                 val nextCommitmentFormat = msg.channelType_opt match {
-                  case Some(channelType: ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat =>
-                    log.info(s"accepting upgrade to $channelType during splice from commitment format ${parentCommitment.commitmentFormat}")
+                  case Some(ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat =>
+                    log.info(s"accepting upgrade to SimpleTaprootChannelsPhoenix during splice from commitment format ${parentCommitment.commitmentFormat}")
                     PhoenixSimpleTaprootChannelCommitmentFormat
                   case Some(channelType) =>
                     log.info(s"rejecting upgrade to $channelType during splice from commitment format ${parentCommitment.commitmentFormat}")
@@ -1181,7 +1182,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           // We only support updating phoenix channels to taproot: we ignore other attempts at upgrading the
           // commitment format and will simply apply the previous commitment format.
           val nextCommitmentFormat = msg.channelType_opt match {
-            case Some(_: ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat => PhoenixSimpleTaprootChannelCommitmentFormat
+            case Some(ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat => PhoenixSimpleTaprootChannelCommitmentFormat
             case _ => parentCommitment.commitmentFormat
           }
           val fundingParams = InteractiveTxParams(

@@ -825,7 +825,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val utxosA = Seq(150_000 sat)
     val fundingB1 = 90_000 sat
     val utxosB = Seq(130_000 sat)
-    withFixture(ChannelTypes.SimpleTaprootChannelsPhoenix(), fundingA1, utxosA, fundingB1, utxosB, FeeratePerKw(1000 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
+    withFixture(ChannelTypes.SimpleTaprootChannelsPhoenix, fundingA1, utxosA, fundingB1, utxosB, FeeratePerKw(1000 sat), 660 sat, 0, RequireConfirmedInputs(forLocal = true, forRemote = true)) { f =>
       import f._
 
       val probe = TestProbe()
@@ -2934,7 +2934,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   test("invalid commit_sig (taproot)") {
     val (alice2bob, bob2alice) = (TestProbe(), TestProbe())
     val wallet = new SingleKeyOnChainWallet()
-    val params = createFixtureParams(ChannelTypes.SimpleTaprootChannelsPhoenix(), 100_000 sat, 25_000 sat, FeeratePerKw(5000 sat), 330 sat, 0)
+    val params = createFixtureParams(ChannelTypes.SimpleTaprootChannelsPhoenix, 100_000 sat, 25_000 sat, FeeratePerKw(5000 sat), 330 sat, 0)
     val alice = params.spawnTxBuilderAlice(wallet)
     val bob = params.spawnTxBuilderBob(wallet)
     alice ! Start(alice2bob.ref)

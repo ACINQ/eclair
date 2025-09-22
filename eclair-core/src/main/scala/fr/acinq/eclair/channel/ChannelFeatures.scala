@@ -118,16 +118,12 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
-  case class SimpleTaprootChannelsPhoenix(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+  case object SimpleTaprootChannelsPhoenix extends SupportedChannelType {
     /** Known channel-type features */
-    override def features: Set[ChannelTypeFeature] = Set(
-      if (scidAlias) Some(Features.ScidAlias) else None,
-      if (zeroConf) Some(Features.ZeroConf) else None,
-      Some(Features.SimpleTaprootChannelsPhoenix),
-    ).flatten
+    override def features: Set[ChannelTypeFeature] = Set(Features.PhoenixZeroReserve, Features.SimpleTaprootChannelsPhoenix)
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = PhoenixSimpleTaprootChannelCommitmentFormat
-    override def toString: String = s"simple_taproot_channel_phoenix${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+    override def toString: String = "simple_taproot_channel_phoenix"
   }
   case class SimpleTaprootChannelsStaging(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     /** Known channel-type features */
@@ -164,10 +160,7 @@ object ChannelTypes {
     AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
-    SimpleTaprootChannelsPhoenix(),
-    SimpleTaprootChannelsPhoenix(zeroConf = true),
-    SimpleTaprootChannelsPhoenix(scidAlias = true),
-    SimpleTaprootChannelsPhoenix(scidAlias = true, zeroConf = true),
+    SimpleTaprootChannelsPhoenix,
     SimpleTaprootChannelsStaging(),
     SimpleTaprootChannelsStaging(zeroConf = true),
     SimpleTaprootChannelsStaging(scidAlias = true),
@@ -188,7 +181,7 @@ object ChannelTypes {
     if (canUse(Features.SimpleTaprootChannelsStaging)) {
       SimpleTaprootChannelsStaging(scidAlias, zeroConf)
     } else if (canUse(Features.SimpleTaprootChannelsPhoenix)) {
-      SimpleTaprootChannelsPhoenix(scidAlias, zeroConf)
+      SimpleTaprootChannelsPhoenix
     } else if (canUse(Features.AnchorOutputsZeroFeeHtlcTx)) {
       AnchorOutputsZeroFeeHtlcTx(scidAlias, zeroConf)
     } else if (canUse(Features.AnchorOutputs)) {
