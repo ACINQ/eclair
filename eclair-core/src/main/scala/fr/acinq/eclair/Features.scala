@@ -312,6 +312,11 @@ object Features {
     val mandatory = 60
   }
 
+  case object SimpleTaprootChannels extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "option_simple_taproot"
+    val mandatory = 80
+  }
+
   case object PhoenixZeroReserve extends Feature with InitFeature with ChannelTypeFeature with PermanentChannelFeature {
     val rfcName = "phoenix_zero_reserve"
     val mandatory = 128
@@ -399,6 +404,7 @@ object Features {
     ZeroConf,
     KeySend,
     SimpleClose,
+    SimpleTaprootChannels,
     SimpleTaprootChannelsPhoenix,
     SimpleTaprootChannelsStaging,
     WakeUpNotificationClient,
