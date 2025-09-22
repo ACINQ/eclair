@@ -22,22 +22,13 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{EncodedNodeId, TimestampSecond, UInt64}
-import scodec.{Attempt, Codec, Err}
+import scodec.{Attempt, Codec}
 import scodec.codecs._
 
 import java.util.Currency
 import scala.util.Try
 
 object OfferCodecs {
-  private def nonEmptyList[A](codec: Codec[A], name: String): Codec[Seq[A]] =
-    list(codec).narrow(l => {
-      if (l.nonEmpty) {
-        Attempt.successful(l.toSeq)
-      } else {
-        Attempt.failure(Err(s"$name must not be empty"))
-      }
-    }, _.toList)
-
   private val offerChains: Codec[OfferChains] = tlvField(nonEmptyList(blockHash, "offer_chains"))
 
   private val offerMetadata: Codec[OfferMetadata] = tlvField(bytes)

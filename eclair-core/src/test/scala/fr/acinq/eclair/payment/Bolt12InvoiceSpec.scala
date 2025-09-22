@@ -383,4 +383,9 @@ class Bolt12InvoiceSpec extends AnyFunSuite {
     assert(invoice.checkSignature())
     assert(invoice.amount == 1000000000.msat)
   }
+
+  test("invoice paths is set but and empty") {
+    val invoiceWithEmptyPaths = "lni1qqx2n6mw2fh2ckwdnwylkgqzypp5jl7hlqnf2ugg7j3slkwwcwht57vhyzzwjr4dq84rxzgqqqqqqzqrq83yqzscd9h8vmmfvdjjqamfw35zqmtpdeujqenfv4kxgucvqqfq2ctvd93k293pq0zxw03kpc8tc2vv3kfdne0kntqhq8p70wtdncwq2zngaqp529mmc5pqgdyhl4lcy62hzz855v8annkr46a8n9eqsn5satgpagesjqqqqqq9yqcpufq9vqfetqssyj5djm6dz0zzr8eprw9gu762k75f3lgm96gzwn994peh48k6xalctyr5jfmdyppx7cneqvqsyqaqqz3qpfqyv2sqd04xqg8pp2pq2x236nzneyzqxhct9y7unhcupeukwgf5xzhq0f0nuy6v6vej2dq65qcpufq2cysyqqzpy02klqrqqz8t8twx39z77cq6uq9syypugee7xc8qa0pf3jxe9k0976dvzuqu8eaedk0pcpg2dr5qx3gh008sgrn58w7cg2qhcunaapk9j6patmtda7nhqhzvwv6hflxygyrrglpqka8l6zfhfhprxazkufcn88rl07yxfp5mvjl70etp2pzdkhud3ekul5qnjq46hg"
+    assert(Bolt12Invoice.fromString(invoiceWithEmptyPaths).isFailure)
+  }
 }
