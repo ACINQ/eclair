@@ -118,6 +118,17 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
+  case class SimpleTaprootChannels(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+    /** Known channel-type features */
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.SimpleTaprootChannels),
+    ).flatten
+    override def paysDirectlyToWallet: Boolean = false
+    override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
+    override def toString: String = s"simple_taproot_channel${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+  }
   case class SimpleTaprootChannelsStaging(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     /** Known channel-type features */
     override def features: Set[ChannelTypeFeature] = Set(
@@ -164,6 +175,10 @@ object ChannelTypes {
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
     SimpleTaprootChannelsPhoenix,
+    SimpleTaprootChannels(),
+    SimpleTaprootChannels(zeroConf = true),
+    SimpleTaprootChannels(scidAlias = true),
+    SimpleTaprootChannels(scidAlias = true, zeroConf = true),
     SimpleTaprootChannelsStaging(),
     SimpleTaprootChannelsStaging(zeroConf = true),
     SimpleTaprootChannelsStaging(scidAlias = true),
