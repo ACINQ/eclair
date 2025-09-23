@@ -118,13 +118,6 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
-  case object SimpleTaprootChannelsPhoenix extends SupportedChannelType {
-    /** Known channel-type features */
-    override def features: Set[ChannelTypeFeature] = Set(Features.PhoenixZeroReserve, Features.SimpleTaprootChannelsPhoenix)
-    override def paysDirectlyToWallet: Boolean = false
-    override def commitmentFormat: CommitmentFormat = PhoenixSimpleTaprootChannelCommitmentFormat
-    override def toString: String = "simple_taproot_channel_phoenix"
-  }
   case class SimpleTaprootChannelsStaging(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     /** Known channel-type features */
     override def features: Set[ChannelTypeFeature] = Set(
@@ -141,6 +134,16 @@ object ChannelTypes {
     override def features: Set[InitFeature] = featureBits.activated.keySet
     override def toString: String = s"0x${featureBits.toByteVector.toHex}"
   }
+
+  // Phoenix uses custom channel types, that we may remove in the future.
+  case object SimpleTaprootChannelsPhoenix extends SupportedChannelType {
+    /** Known channel-type features */
+    override def features: Set[ChannelTypeFeature] = Set(Features.PhoenixZeroReserve, Features.SimpleTaprootChannelsPhoenix)
+    override def paysDirectlyToWallet: Boolean = false
+    override def commitmentFormat: CommitmentFormat = PhoenixSimpleTaprootChannelCommitmentFormat
+    override def toString: String = "phoenix_simple_taproot_channel"
+  }
+
   // @formatter:on
 
   private val features2ChannelType: Map[Features[_ <: InitFeature], SupportedChannelType] = Set(
