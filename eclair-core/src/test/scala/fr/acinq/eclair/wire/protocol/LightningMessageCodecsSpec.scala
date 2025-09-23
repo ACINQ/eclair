@@ -26,6 +26,7 @@ import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
+import fr.acinq.eclair.channel.ChannelTypes.SimpleTaprootChannelsPhoenix
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.json.JsonSerializers
 import fr.acinq.eclair.reputation.Reputation
@@ -424,6 +425,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       SpliceInit(channelId, 0 sat, FeeratePerKw(500 sat), 0, fundingPubkey) -> hex"9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000000 000001f4 00000000 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
       SpliceInit(channelId, (-50_000).sat, FeeratePerKw(500 sat), 0, fundingPubkey) -> hex"9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ffffffffffff3cb0 000001f4 00000000 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
       SpliceInit(channelId, 100_000 sat, 100, FeeratePerKw(2500 sat), fundingPubkey, 0 msat, requireConfirmedInputs = false, Some(LiquidityAds.RequestFunding(100_000 sat, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance))) -> hex"9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000186a0 000009c4 00000064 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd053b1e00000000000186a0000186a0000186a00190009600000000000000000000",
+      SpliceInit(channelId, 100_000 sat, 100, FeeratePerKw(2500 sat), fundingPubkey, 0 msat, requireConfirmedInputs = false, None, Some(SimpleTaprootChannelsPhoenix)) -> hex"9088 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000186a0 000009c400000064 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fe47000011 47 1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000",
       SpliceAck(channelId, 25_000 sat, fundingPubkey) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
       SpliceAck(channelId, 40_000 sat, fundingPubkey, 10_000_000 msat, requireConfirmedInputs = false, None, None) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000009c40 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fe4700000703989680",
       SpliceAck(channelId, 0 sat, fundingPubkey) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000000 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
@@ -431,7 +433,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       SpliceAck(channelId, 25_000 sat, fundingPubkey, 0 msat, requireConfirmedInputs = false, Some(LiquidityAds.WillFund(fundingRate, hex"deadbeef", ByteVector64.Zeroes)), None) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fd053b5a000186a0000186a00190009600000000000000000004deadbeef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
       SpliceAck(channelId, 25_000 sat, fundingPubkey, TlvStream(ChannelTlv.FeeCreditUsedTlv(0 msat))) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fda05200",
       SpliceAck(channelId, 25_000 sat, fundingPubkey, TlvStream(ChannelTlv.FeeCreditUsedTlv(1729 msat))) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fda0520206c1",
-      SpliceLocked(channelId, fundingTxId) -> hex"908c aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566",
+      SpliceAck(channelId, 25_000 sat, fundingPubkey, 0 msat, requireConfirmedInputs = false, None, None, Some(SimpleTaprootChannelsPhoenix)) -> hex"908a aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 00000000000061a8 0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798 fe47000011 47 1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000",      SpliceLocked(channelId, fundingTxId) -> hex"908c aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566",
       // @formatter:on
     )
     testCases.foreach { case (message, bin) =>
