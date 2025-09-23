@@ -115,6 +115,11 @@ sealed trait RevokeAndAckTlv extends Tlv
 
 object RevokeAndAckTlv {
 
+  /** Verification nonce used for the next commitment transaction that will be signed (when using taproot channels). */
+  case class NextLocalNonceTlv(nonce: IndividualNonce) extends RevokeAndAckTlv
+
+  val nextLocalNonceCodec: Codec[NextLocalNonceTlv] = tlvField(publicNonce)
+
   /**
    * Verification nonces used for the next commitment transaction, when using taproot channels.
    * There must be a nonce for each active commitment (when there are pending splices or RBF attempts), indexed by the
@@ -127,6 +132,7 @@ object RevokeAndAckTlv {
   }
 
   val revokeAndAckTlvCodec: Codec[TlvStream[RevokeAndAckTlv]] = tlvStream(discriminated[RevokeAndAckTlv].by(varint)
+    .typecase(UInt64(4), nextLocalNonceCodec)
     .typecase(UInt64(22), NextLocalNoncesTlv.codec)
   )
 }

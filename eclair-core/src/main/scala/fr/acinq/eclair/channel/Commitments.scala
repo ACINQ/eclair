@@ -1155,7 +1155,7 @@ case class Commitments(channelParams: ChannelParams,
     remoteNextCommitInfo match {
       case Right(_) => Left(UnexpectedRevocation(channelId))
       case Left(_) if revocation.perCommitmentSecret.publicKey != active.head.remoteCommit.remotePerCommitmentPoint => Left(InvalidRevocation(channelId))
-      case Left(_) if active.exists(c => c.commitmentFormat.isInstanceOf[TaprootCommitmentFormat] && !revocation.nextCommitNonces.contains(c.fundingTxId)) =>
+      case Left(_) if active.exists(c => c.commitmentFormat.isInstanceOf[TaprootCommitmentFormat] && !revocation.nextCommitNonces.contains(c.fundingTxId) && revocation.nextCommitNonce.isEmpty) =>
         val missingNonce = active.find(c => c.commitmentFormat.isInstanceOf[TaprootCommitmentFormat] && !revocation.nextCommitNonces.contains(c.fundingTxId)).get
         Left(MissingCommitNonce(channelId, missingNonce.fundingTxId, remoteCommitIndex + 1))
       case Left(_) =>
