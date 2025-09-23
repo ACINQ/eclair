@@ -757,7 +757,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
 
     val htlcs = setupHtlcs(f)
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(400_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(400_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix))
     assert(alice.commitments.active.head.commitmentFormat == PhoenixSimpleTaprootChannelCommitmentFormat)
     assert(alice.commitments.active.last.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat)
     resolveHtlcs(f, htlcs)
@@ -767,7 +767,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
 
     val htlcs = setupHtlcs(f)
-    initiateSplice(f, spliceIn_opt = Some(SpliceIn(400_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    initiateSplice(f, spliceIn_opt = Some(SpliceIn(400_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix))
     assert(alice.commitments.active.head.commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     assert(alice.commitments.active.last.commitmentFormat == ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     resolveHtlcs(f, htlcs)
@@ -3724,7 +3724,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val htlcs = setupHtlcs(f)
 
     // Our first splice upgrades the channel to taproot.
-    val fundingTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    val fundingTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix))
     checkWatchConfirmed(f, fundingTx1)
 
     // The first splice confirms on Bob's side.
@@ -3819,7 +3819,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val htlcs = setupHtlcs(f)
 
     // Our splice upgrades the channel to taproot.
-    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix))
     assert(alice.commitments.active.head.commitmentFormat == PhoenixSimpleTaprootChannelCommitmentFormat)
     assert(alice.commitments.active.last.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat)
     checkWatchConfirmed(f, spliceTx)
@@ -3860,7 +3860,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val htlcs = setupHtlcs(f)
 
     // Our splice upgrades the channel to taproot.
-    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix))
     assert(alice.commitments.active.head.commitmentFormat == PhoenixSimpleTaprootChannelCommitmentFormat)
     assert(alice.commitments.active.last.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat)
     checkWatchConfirmed(f, spliceTx)
@@ -3911,7 +3911,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val htlcs = setupHtlcs(f)
 
     // Our splice upgrades the channel to taproot.
-    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix))
     assert(alice.commitments.active.head.commitmentFormat == PhoenixSimpleTaprootChannelCommitmentFormat)
     assert(alice.commitments.active.last.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat)
     checkWatchConfirmed(f, spliceTx)
@@ -3947,7 +3947,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val htlcs = setupHtlcs(f)
 
     // Our splice upgrades the channel to taproot.
-    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), channelType_opt = Some(ChannelTypes.SimpleTaprootChannelsPhoenix))
     assert(alice.commitments.active.head.commitmentFormat == PhoenixSimpleTaprootChannelCommitmentFormat)
     assert(alice.commitments.active.last.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat)
     assert(alice2blockchain.expectMsgType[WatchPublished].txId == spliceTx.txid)

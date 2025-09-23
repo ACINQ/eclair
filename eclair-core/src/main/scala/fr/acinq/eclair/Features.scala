@@ -312,6 +312,11 @@ object Features {
     val mandatory = 60
   }
 
+  case object PhoenixZeroReserve extends Feature with InitFeature with ChannelTypeFeature with PermanentChannelFeature {
+    val rfcName = "phoenix_zero_reserve"
+    val mandatory = 128
+  }
+
   /** This feature bit indicates that the node is a mobile wallet that can be woken up via push notifications. */
   case object WakeUpNotificationClient extends Feature with InitFeature {
     val rfcName = "wake_up_notification_client"
@@ -401,7 +406,8 @@ object Features {
     AsyncPaymentPrototype,
     SplicePrototype,
     OnTheFlyFunding,
-    FundingFeeCredit
+    FundingFeeCredit,
+    PhoenixZeroReserve
   )
 
   // Features may depend on other features, as specified in Bolt 9.

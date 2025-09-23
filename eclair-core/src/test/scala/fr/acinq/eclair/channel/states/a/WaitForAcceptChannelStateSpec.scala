@@ -110,7 +110,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv AcceptChannel (simple taproot channels phoenix)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix))
     assert(accept.commitNonce_opt.isDefined)
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
@@ -121,7 +121,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv AcceptChannel (simple taproot channels outputs, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix))
     assert(accept.commitNonce_opt.isDefined)
     bob2alice.forward(alice, accept.copy(tlvStream = accept.tlvStream.copy(records = accept.tlvStream.records.filterNot(_.isInstanceOf[ChannelTlv.NextLocalNonceTlv]))))
     alice2bob.expectMsg(Error(accept.temporaryChannelId, MissingCommitNonce(accept.temporaryChannelId, TxId(ByteVector32.Zeroes), 0).getMessage))
