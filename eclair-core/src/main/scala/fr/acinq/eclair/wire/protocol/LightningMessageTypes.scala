@@ -18,8 +18,8 @@ package fr.acinq.eclair.wire.protocol
 
 import com.google.common.base.Charsets
 import com.google.common.net.InetAddresses
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, OutPoint, Satoshi, SatoshiLong, ScriptWitness, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}

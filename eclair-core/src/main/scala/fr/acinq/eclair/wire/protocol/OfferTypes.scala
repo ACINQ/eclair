@@ -17,13 +17,13 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.Bech32
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, SchnorrTweak, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol.CommonCodecs.varint
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
-import fr.acinq.eclair.{Bolt12Feature, CltvExpiryDelta, Feature, Features, MilliSatoshi, MilliSatoshiLong, TimestampSecond, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{Bolt12Feature, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TimestampSecond, UInt64, nodeFee, randomBytes32}
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs.vector
@@ -316,6 +316,7 @@ object OfferTypes {
 
     /**
      * An offer string can be split with '+' to fit in places with a low character limit. This validates that the string adheres to the spec format to guard against copy-pasting errors.
+     *
      * @return a lowercase string with '+' and whitespaces removed
      */
     private def validateFormat(s: String): String = {
@@ -445,7 +446,7 @@ object OfferTypes {
   }
 
   case class InvoiceError(records: TlvStream[InvoiceErrorTlv]) {
-    val error = records.get[Error].get.message
+    val error: String = records.get[Error].get.message
   }
 
   object InvoiceError {
@@ -499,7 +500,7 @@ object OfferTypes {
   def signSchnorr(tag: ByteVector, msg: ByteVector32, key: PrivateKey): ByteVector64 = {
     val h = hash(tag, msg)
     // NB: we don't add auxiliary random data to keep signatures deterministic.
-    Crypto.signSchnorr(h, key, fr.acinq.bitcoin.Crypto.SchnorrTweak.NoTweak.INSTANCE)
+    Crypto.signSchnorr(h, key, SchnorrTweak.NoTweak)
   }
 
   def verifySchnorr(tag: ByteVector, msg: ByteVector32, signature: ByteVector64, publicKey: PublicKey): Boolean = {

@@ -17,8 +17,8 @@
 package fr.acinq.eclair.channel
 
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
+import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce}
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainPubkeyCache
@@ -560,7 +560,7 @@ object Helpers {
           case _: SegwitV0CommitmentFormat => None
           case _: SimpleTaprootChannelCommitmentFormat =>
             val fundingKey = channelKeys.fundingKey(c.fundingTxIndex)
-            val n = NonceGenerator.verificationNonce(c.fundingTxId, fundingKey, c.remoteFundingPubKey, commitments.localCommitIndex + 1).publicNonce
+            val n = NonceGenerator.verificationNonce(c.fundingTxId, fundingKey, c.remoteFundingPubKey, commitments.localCommitIndex + 1).public
             Some(c.fundingTxId -> n)
         })
         val revocation = RevokeAndAck(
@@ -807,7 +807,7 @@ object Helpers {
                 // It will only happen if our peer sent an invalid nonce, in which case we cannot do anything anyway
                 // apart from eventually force-closing.
                 def localSig(tx: ClosingTx, localNonce: LocalNonce): Option[PartialSignatureWithNonce] = {
-                  tx.partialSign(localFundingKey, commitment.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)).toOption
+                  tx.partialSign(localFundingKey, commitment.remoteFundingPubKey, localNonce, Seq(localNonce.public, remoteNonce)).toOption
                 }
 
                 TlvStream(Set(
@@ -857,13 +857,13 @@ object Helpers {
                 case Some((closingTx, remoteSig, sigToTlv)) =>
                   val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
                   val signedClosingTx_opt = for {
-                    localSig <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteSig.nonce)).toOption
+                    localSig <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, localNonce, Seq(localNonce.public, remoteSig.nonce)).toOption
                     signedTx <- closingTx.aggregateSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig).toOption
                   } yield (closingTx.copy(tx = signedTx), localSig.partialSig)
                   signedClosingTx_opt match {
                     case Some((signedClosingTx, localSig)) if signedClosingTx.validate(extraUtxos = Map.empty) =>
                       val nextLocalNonce = NonceGenerator.signingNonce(localFundingKey.publicKey, commitment.remoteFundingPubKey, commitment.fundingTxId)
-                      val tlvs = TlvStream[ClosingSigTlv](sigToTlv(localSig), ClosingSigTlv.NextCloseeNonce(nextLocalNonce.publicNonce))
+                      val tlvs = TlvStream[ClosingSigTlv](sigToTlv(localSig), ClosingSigTlv.NextCloseeNonce(nextLocalNonce.public))
                       Right(signedClosingTx, ClosingSig(commitment.channelId, remoteScriptPubkey, localScriptPubkey, closingComplete.fees, closingComplete.lockTime, tlvs), Some(nextLocalNonce))
                     case _ => Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
                   }
@@ -931,7 +931,7 @@ object Helpers {
                   case None => return Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
                 }
                 for {
-                  localSig <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteSig.nonce)).toOption
+                  localSig <- closingTx.partialSign(localFundingKey, commitment.remoteFundingPubKey, localNonce, Seq(localNonce.public, remoteSig.nonce)).toOption
                   signedTx <- closingTx.aggregateSigs(localFundingKey.publicKey, commitment.remoteFundingPubKey, localSig, remoteSig).toOption
                 } yield closingTx.copy(tx = signedTx)
             }

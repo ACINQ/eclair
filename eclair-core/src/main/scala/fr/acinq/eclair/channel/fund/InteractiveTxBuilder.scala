@@ -22,9 +22,9 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors, StashBuffer}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ScriptFlags
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, LexicographicalOrdering, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -113,7 +113,7 @@ object InteractiveTxBuilder {
       commitmentFormat match {
         case _: SegwitV0CommitmentFormat => Right(spliceTx.sign(localFundingKey, remoteFundingPubkey, spentUtxos))
         case _: SimpleTaprootChannelCommitmentFormat => (localNonce_opt, remoteNonce_opt) match {
-          case (Some(localNonce), Some(remoteNonce)) => spliceTx.partialSign(localFundingKey, remoteFundingPubkey, spentUtxos, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
+          case (Some(localNonce), Some(remoteNonce)) => spliceTx.partialSign(localFundingKey, remoteFundingPubkey, spentUtxos, localNonce, Seq(localNonce.public, remoteNonce)) match {
             case Left(_) => Left(InvalidFundingNonce(channelId, tx.txid))
             case Right(sig) => Right(sig)
           }
@@ -566,9 +566,9 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             ).txid
             TxComplete(
               channelId = fundingParams.channelId,
-              commitNonce = NonceGenerator.verificationNonce(fundingTxId, localFundingKey, fundingParams.remoteFundingPubKey, purpose.localCommitIndex).publicNonce,
-              nextCommitNonce = NonceGenerator.verificationNonce(fundingTxId, localFundingKey, fundingParams.remoteFundingPubKey, purpose.localCommitIndex + 1).publicNonce,
-              fundingNonce_opt = localFundingNonce_opt.map(_.publicNonce),
+              commitNonce = NonceGenerator.verificationNonce(fundingTxId, localFundingKey, fundingParams.remoteFundingPubKey, purpose.localCommitIndex).public,
+              nextCommitNonce = NonceGenerator.verificationNonce(fundingTxId, localFundingKey, fundingParams.remoteFundingPubKey, purpose.localCommitIndex + 1).public,
+              fundingNonce_opt = localFundingNonce_opt.map(_.public),
             )
         }
         replyTo ! SendMessage(sessionId, txComplete)
@@ -919,7 +919,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             remoteCommitNonces_opt match {
               case Some(remoteNonces) =>
                 val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey, fundingParams.remoteFundingPubKey, fundingTx.txid)
-                remoteCommitTx.partialSign(localFundingKey, fundingParams.remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonces.commitNonce)) match {
+                remoteCommitTx.partialSign(localFundingKey, fundingParams.remoteFundingPubKey, localNonce, Seq(localNonce.public, remoteNonces.commitNonce)) match {
                   case Left(_) => Left(InvalidCommitNonce(channelParams.channelId, fundingTx.txid, purpose.remoteCommitIndex))
                   case Right(localSig) => Right(localSig)
                 }
