@@ -141,7 +141,7 @@ trait CommonHandlers {
         val localFundingPubKey = channelKeys.fundingKey(commitments.latest.fundingTxIndex).publicKey
         val localCloseeNonce = NonceGenerator.signingNonce(localFundingPubKey, commitments.latest.remoteFundingPubKey, commitments.latest.fundingTxId)
         localCloseeNonce_opt = Some(localCloseeNonce)
-        Shutdown(commitments.channelId, finalScriptPubKey, localCloseeNonce.publicNonce)
+        Shutdown(commitments.channelId, finalScriptPubKey, localCloseeNonce.public)
       case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
         Shutdown(commitments.channelId, finalScriptPubKey)
     }

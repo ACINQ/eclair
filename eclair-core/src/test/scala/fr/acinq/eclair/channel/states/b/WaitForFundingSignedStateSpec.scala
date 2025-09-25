@@ -143,7 +143,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv FundingSigned with invalid signature (simple taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     import f._
     // sending an invalid partial sig
-    alice ! FundingSigned(ByteVector32.Zeroes, PartialSignatureWithNonce(randomBytes32(), NonceGenerator.signingNonce(randomKey().publicKey, randomKey().publicKey, randomTxId()).publicNonce))
+    alice ! FundingSigned(ByteVector32.Zeroes, PartialSignatureWithNonce(randomBytes32(), NonceGenerator.signingNonce(randomKey().publicKey, randomKey().publicKey, randomTxId()).public))
     awaitCond(alice.stateName == CLOSED)
     alice2bob.expectMsgType[Error]
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]

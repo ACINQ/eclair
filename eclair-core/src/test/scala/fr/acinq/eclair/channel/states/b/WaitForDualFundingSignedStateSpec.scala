@@ -267,7 +267,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
 
-    val invalidSigAlice = aliceCommitSig.partialSignature_opt.get.copy(nonce = NonceGenerator.signingNonce(randomKey().publicKey, randomKey().publicKey, randomTxId()).publicNonce)
+    val invalidSigAlice = aliceCommitSig.partialSignature_opt.get.copy(nonce = NonceGenerator.signingNonce(randomKey().publicKey, randomKey().publicKey, randomTxId()).public)
     alice2bob.forward(bob, aliceCommitSig.copy(tlvStream = TlvStream(CommitSigTlv.PartialSignatureWithNonceTlv(invalidSigAlice))))
     bob2alice.expectMsgType[Error]
     awaitCond(bobWallet.rolledback.length == 1)

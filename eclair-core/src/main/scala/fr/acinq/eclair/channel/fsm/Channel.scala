@@ -20,8 +20,8 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
@@ -2424,8 +2424,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           }
           val nextCommitNonce = NonceGenerator.verificationNonce(d.signingSession.fundingTxId, localFundingKey, remoteFundingPubKey, 1)
           Set(
-            Some(ChannelReestablishTlv.NextLocalNoncesTlv(List(d.signingSession.fundingTxId -> nextCommitNonce.publicNonce))),
-            currentCommitNonce_opt.map(n => ChannelReestablishTlv.CurrentCommitNonceTlv(n.publicNonce)),
+            Some(ChannelReestablishTlv.NextLocalNoncesTlv(List(d.signingSession.fundingTxId -> nextCommitNonce.public))),
+            currentCommitNonce_opt.map(n => ChannelReestablishTlv.CurrentCommitNonceTlv(n.public)),
           ).flatten[ChannelReestablishTlv]
       }
       val channelReestablish = ChannelReestablish(
@@ -2485,21 +2485,21 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           case _: SegwitV0CommitmentFormat => None
           case _: SimpleTaprootChannelCommitmentFormat =>
             val localFundingKey = channelKeys.fundingKey(c.fundingTxIndex)
-            Some(c.fundingTxId -> NonceGenerator.verificationNonce(c.fundingTxId, localFundingKey, c.remoteFundingPubKey, d.commitments.localCommitIndex + 1).publicNonce)
+            Some(c.fundingTxId -> NonceGenerator.verificationNonce(c.fundingTxId, localFundingKey, c.remoteFundingPubKey, d.commitments.localCommitIndex + 1).public)
         }
       }).toMap
       // If an interactive-tx session hasn't been fully signed, we also need to include the corresponding nonces.
       val (interactiveTxCurrentCommitNonce_opt, interactiveTxNextCommitNonce): (Option[IndividualNonce], Map[TxId, IndividualNonce]) = d match {
         case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.status match {
           case DualFundingStatus.RbfWaitingForSigs(signingSession) if signingSession.fundingParams.commitmentFormat.isInstanceOf[TaprootCommitmentFormat] =>
-            val nextCommitNonce = Map(signingSession.fundingTxId -> signingSession.nextCommitNonce(channelKeys).publicNonce)
-            (signingSession.currentCommitNonce_opt(channelKeys).map(_.publicNonce), nextCommitNonce)
+            val nextCommitNonce = Map(signingSession.fundingTxId -> signingSession.nextCommitNonce(channelKeys).public)
+            (signingSession.currentCommitNonce_opt(channelKeys).map(_.public), nextCommitNonce)
           case _ => (None, Map.empty)
         }
         case d: DATA_NORMAL => d.spliceStatus match {
           case SpliceStatus.SpliceWaitingForSigs(signingSession) if signingSession.fundingParams.commitmentFormat.isInstanceOf[TaprootCommitmentFormat] =>
-            val nextCommitNonce = Map(signingSession.fundingTxId -> signingSession.nextCommitNonce(channelKeys).publicNonce)
-            (signingSession.currentCommitNonce_opt(channelKeys).map(_.publicNonce), nextCommitNonce)
+            val nextCommitNonce = Map(signingSession.fundingTxId -> signingSession.nextCommitNonce(channelKeys).public)
+            (signingSession.currentCommitNonce_opt(channelKeys).map(_.public), nextCommitNonce)
           case _ => (None, Map.empty)
         }
         case _ => (None, Map.empty)

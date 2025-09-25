@@ -1486,7 +1486,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.forward(bob)
     // Bob responds with an invalid nonce for its *next* commitment.
     val revokeAndAck = bob2alice.expectMsgType[RevokeAndAck]
-    val bobInvalidNonces = RevokeAndAckTlv.NextLocalNoncesTlv(revokeAndAck.nextCommitNonces.map { case (txId, _) => txId -> NonceGenerator.signingNonce(randomKey().publicKey, randomKey().publicKey, txId).publicNonce }.toSeq)
+    val bobInvalidNonces = RevokeAndAckTlv.NextLocalNoncesTlv(revokeAndAck.nextCommitNonces.map { case (txId, _) => txId -> NonceGenerator.signingNonce(randomKey().publicKey, randomKey().publicKey, txId).public }.toSeq)
     val revokeAndAckWithInvalidNonce = revokeAndAck.copy(tlvStream = revokeAndAck.tlvStream.copy(records = revokeAndAck.tlvStream.records.filterNot(tlv => tlv.isInstanceOf[RevokeAndAckTlv.NextLocalNoncesTlv]) + bobInvalidNonces))
     bob2alice.forward(alice, revokeAndAckWithInvalidNonce)
     // This applies to the *next* commitment, there is no issue when finalizing the *current* commitment.
