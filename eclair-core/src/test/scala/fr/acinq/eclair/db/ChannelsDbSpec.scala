@@ -17,26 +17,32 @@
 package fr.acinq.eclair.db
 
 import com.softwaremill.quicklens._
-import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
+import fr.acinq.eclair.TestUtils.randomTxId
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.ChannelsDbSpec.getTimestamp
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgChannelsDb
+import fr.acinq.eclair.db.pg.PgUtils.setVersion
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
+import fr.acinq.eclair.json.JsonSerializers
+import fr.acinq.eclair.transactions.Transactions.{ClosingTx, InputInfo}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.{Alias, CltvExpiry, TestDatabases, randomBytes32, randomKey, randomLong}
+import fr.acinq.eclair.wire.protocol.Shutdown
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, MilliSatoshiLong, TestDatabases, randomBytes32, randomKey, randomLong}
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
-import java.sql.{Connection, SQLException}
+import java.sql.Connection
 import java.util.concurrent.Executors
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future}
-import scala.util.Random
 
 class ChannelsDbSpec extends AnyFunSuite {
 
@@ -67,8 +73,6 @@ class ChannelsDbSpec extends AnyFunSuite {
       val paymentHash2 = ByteVector32(ByteVector.fill(32)(1))
       val cltvExpiry2 = CltvExpiry(656)
 
-      intercept[SQLException](db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
-
       assert(db.listLocalChannels().isEmpty)
       db.addOrUpdateChannel(channel1)
       db.addOrUpdateChannel(channel1)
@@ -88,16 +92,19 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listHtlcInfos(channel1.channelId, commitNumber + 1).isEmpty)
 
       assert(db.listClosedChannels(None, None).isEmpty)
-      db.removeChannel(channel1.channelId)
+      val closed1 = DATA_CLOSED(channel1.channelId, channel1.remoteNodeId, randomTxId(), 3, 2, channel1.channelParams.localParams.fundingKeyPath.toString(), channel1.channelParams.channelFeatures.toString, isChannelOpener = true, "anchor_outputs", announced = true, 100_000 sat, randomTxId(), "local-close", hex"deadbeef", 61_000_500 msat, 40_000_000 msat, 60_000 sat)
+      db.removeChannel(channel1.channelId, Some(closed1))
       assert(db.getChannel(channel1.channelId).isEmpty)
       assert(db.listLocalChannels() == List(channel2b))
-      assert(db.listClosedChannels(None, None) == List(channel1))
-      assert(db.listClosedChannels(Some(channel1.remoteNodeId), None) == List(channel1))
+      assert(db.listClosedChannels(None, None) == List(closed1))
+      assert(db.listClosedChannels(Some(channel1.remoteNodeId), None) == List(closed1))
       assert(db.listClosedChannels(Some(PrivateKey(randomBytes32()).publicKey), None).isEmpty)
 
-      db.removeChannel(channel2b.channelId)
+      // If no closing data is provided, the channel won't be backed-up in the closed_channels table.
+      db.removeChannel(channel2b.channelId, None)
       assert(db.getChannel(channel2b.channelId).isEmpty)
       assert(db.listLocalChannels().isEmpty)
+      assert(db.listClosedChannels(None, None) == Seq(closed1))
     }
   }
 
@@ -120,7 +127,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       db.markHtlcInfosForRemoval(channel1.channelId, commitNumberSplice1)
       db.addHtlcInfo(channel1.channelId, 51, randomBytes32(), CltvExpiry(561))
       db.addHtlcInfo(channel1.channelId, 52, randomBytes32(), CltvExpiry(561))
-      db.removeChannel(channel1.channelId)
+      db.removeChannel(channel1.channelId, None)
 
       // The second channel has two splice transactions.
       db.addHtlcInfo(channel2.channelId, 48, randomBytes32(), CltvExpiry(561))
@@ -191,7 +198,6 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(getTimestamp(dbs, channel1.channelId, "last_payment_sent_timestamp").isEmpty)
       assert(getTimestamp(dbs, channel1.channelId, "last_payment_received_timestamp").isEmpty)
       assert(getTimestamp(dbs, channel1.channelId, "last_connected_timestamp").nonEmpty)
-      assert(getTimestamp(dbs, channel1.channelId, "closed_timestamp").isEmpty)
 
       db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Created)
       assert(getTimestamp(dbs, channel1.channelId, "created_timestamp").nonEmpty)
@@ -205,14 +211,156 @@ class ChannelsDbSpec extends AnyFunSuite {
       db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Connected)
       assert(getTimestamp(dbs, channel1.channelId, "last_connected_timestamp").nonEmpty)
 
-      db.removeChannel(channel1.channelId)
-      assert(getTimestamp(dbs, channel1.channelId, "closed_timestamp").nonEmpty)
+      db.removeChannel(channel1.channelId, None)
 
       assert(getTimestamp(dbs, channel2.channelId, "created_timestamp").nonEmpty)
       assert(getTimestamp(dbs, channel2.channelId, "last_payment_sent_timestamp").isEmpty)
       assert(getTimestamp(dbs, channel2.channelId, "last_payment_received_timestamp").isEmpty)
       assert(getTimestamp(dbs, channel2.channelId, "last_connected_timestamp").nonEmpty)
-      assert(getTimestamp(dbs, channel2.channelId, "closed_timestamp").isEmpty)
+    }
+  }
+
+  test("migrate closed channels to dedicated table") {
+    def createCommitments(): Commitments = {
+      ChannelCodecsSpec.normal.commitments
+        .modify(_.channelParams.channelId).setTo(randomBytes32())
+        .modify(_.channelParams.remoteParams.nodeId).setTo(randomKey().publicKey)
+    }
+
+    def closingTx(): ClosingTx = {
+      val input = InputInfo(OutPoint(randomTxId(), 3), TxOut(300_000 sat, Script.pay2wpkh(randomKey().publicKey)))
+      val tx = Transaction(2, Seq(TxIn(input.outPoint, Nil, 0)), Seq(TxOut(120_000 sat, Script.pay2wpkh(randomKey().publicKey)), TxOut(175_000 sat, Script.pay2tr(randomKey().xOnlyPublicKey()))), 0)
+      ClosingTx(input, tx, Some(1))
+    }
+
+    val paymentHash1 = randomBytes32()
+    val paymentHash2 = randomBytes32()
+    // The next two channels are closed and should be migrated to the closed_channels table.
+    // We haven't yet removed their corresponding htlc_infos, because it is done asynchronously for performance reasons.
+    val closed1 = DATA_CLOSING(createCommitments(), BlockHeight(750_000), hex"deadbeef", closingTx() :: Nil, closingTx() :: Nil)
+    val closed2 = DATA_NEGOTIATING_SIMPLE(createCommitments(), FeeratePerKw(2500 sat), hex"deadbeef", hex"beefdead", Nil, closingTx() :: Nil)
+    val htlcInfos = Map(
+      closed1.channelId -> Seq(
+        (7, paymentHash1, CltvExpiry(800_000)),
+        (7, paymentHash2, CltvExpiry(795_000)),
+        (8, paymentHash1, CltvExpiry(800_000)),
+      ),
+      closed2.channelId -> Seq(
+        (13, paymentHash1, CltvExpiry(801_000)),
+        (14, paymentHash2, CltvExpiry(801_000)),
+      )
+    )
+    // The following channel is closed, but was never confirmed and thus doesn't need to be migrated to the closed_channels table.
+    val closed3 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(createCommitments(), 0 msat, 0 msat, BlockHeight(775_000), BlockHeight(780_000), DualFundingStatus.WaitingForConfirmations, None)
+    // The following channels aren't closed, and must stay in the channels table after the migration.
+    val notClosed1 = DATA_CLOSING(createCommitments(), BlockHeight(800_000), hex"deadbeef", closingTx() :: Nil, closingTx() :: Nil)
+    val notClosed2 = DATA_SHUTDOWN(createCommitments(), Shutdown(randomBytes32(), hex"deadbeef"), Shutdown(randomBytes32(), hex"beefdead"), CloseStatus.Initiator(Some(ClosingFeerates(FeeratePerKw(1500 sat), FeeratePerKw(1000 sat), FeeratePerKw(2500 sat)))))
+
+    def postCheck(db: ChannelsDb): Unit = {
+      // The closed channels have been migrated to a dedicated DB.
+      assert(db.listClosedChannels(None, None).map(_.channelId).toSet == Set(closed1.channelId, closed2.channelId))
+      // The remaining channels are still active.
+      assert(db.listLocalChannels().toSet == Set(notClosed1, notClosed2))
+      // The corresponding htlc_infos hasn't been removed.
+      assert(db.listHtlcInfos(closed1.channelId, 7).toSet == Set((paymentHash1, CltvExpiry(800_000)), (paymentHash2, CltvExpiry(795_000))))
+      assert(db.listHtlcInfos(closed1.channelId, 8).toSet == Set((paymentHash1, CltvExpiry(800_000))))
+      assert(db.listHtlcInfos(closed2.channelId, 13).toSet == Set((paymentHash1, CltvExpiry(801_000))))
+      assert(db.listHtlcInfos(closed2.channelId, 14).toSet == Set((paymentHash2, CltvExpiry(801_000))))
+    }
+
+    forAllDbs {
+      case dbs: TestPgDatabases =>
+        migrationCheck(
+          dbs = dbs,
+          initializeTables = connection => {
+            // We initialize a v11 database, where closed channels were kept inside the channels table with an is_closed flag.
+            using(connection.createStatement()) { statement =>
+              statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
+              statement.executeUpdate("CREATE TABLE local.channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, data BYTEA NOT NULL, json JSONB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE, created_timestamp TIMESTAMP WITH TIME ZONE, last_payment_sent_timestamp TIMESTAMP WITH TIME ZONE, last_payment_received_timestamp TIMESTAMP WITH TIME ZONE, last_connected_timestamp TIMESTAMP WITH TIME ZONE, closed_timestamp TIMESTAMP WITH TIME ZONE)")
+              statement.executeUpdate("CREATE TABLE local.htlc_infos (channel_id TEXT NOT NULL, commitment_number BIGINT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local.channels(channel_id))")
+              statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON local.htlc_infos(channel_id)")
+              statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON local.htlc_infos(commitment_number)")
+              setVersion(statement, PgChannelsDb.DB_NAME, 11)
+            }
+            // We insert some channels in our DB and htc info related to those channels.
+            Seq(closed1, closed2, closed3).foreach { c =>
+              using(connection.prepareStatement("INSERT INTO local.channels (channel_id, remote_node_id, data, json, is_closed) VALUES (?, ?, ?, ?::JSONB, TRUE)")) { statement =>
+                statement.setString(1, c.channelId.toHex)
+                statement.setString(2, c.remoteNodeId.toHex)
+                statement.setBytes(3, channelDataCodec.encode(c).require.toByteArray)
+                statement.setString(4, JsonSerializers.serialization.write(c)(JsonSerializers.formats))
+                statement.executeUpdate()
+              }
+            }
+            Seq(notClosed1, notClosed2).foreach { c =>
+              using(connection.prepareStatement("INSERT INTO local.channels (channel_id, remote_node_id, data, json, is_closed) VALUES (?, ?, ?, ?::JSONB, FALSE)")) { statement =>
+                statement.setString(1, c.channelId.toHex)
+                statement.setString(2, c.remoteNodeId.toHex)
+                statement.setBytes(3, channelDataCodec.encode(c).require.toByteArray)
+                statement.setString(4, JsonSerializers.serialization.write(c)(JsonSerializers.formats))
+                statement.executeUpdate()
+              }
+            }
+            htlcInfos.foreach { case (channelId, infos) =>
+              infos.foreach { case (commitmentNumber, paymentHash, expiry) =>
+                using(connection.prepareStatement("INSERT INTO local.htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
+                  statement.setString(1, channelId.toHex)
+                  statement.setLong(2, commitmentNumber)
+                  statement.setString(3, paymentHash.toHex)
+                  statement.setLong(4, expiry.toLong)
+                  statement.executeUpdate()
+                }
+              }
+            }
+          },
+          dbName = PgChannelsDb.DB_NAME,
+          targetVersion = PgChannelsDb.CURRENT_VERSION,
+          postCheck = _ => postCheck(dbs.channels)
+        )
+      case dbs: TestSqliteDatabases =>
+        migrationCheck(
+          dbs = dbs,
+          initializeTables = connection => {
+            // We initialize a v7 database, where closed channels were kept inside the channels table with an is_closed flag.
+            using(connection.createStatement()) { statement =>
+              statement.execute("PRAGMA foreign_keys = ON")
+              statement.executeUpdate("CREATE TABLE local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0, created_timestamp INTEGER, last_payment_sent_timestamp INTEGER, last_payment_received_timestamp INTEGER, last_connected_timestamp INTEGER, closed_timestamp INTEGER)")
+              statement.executeUpdate("CREATE TABLE htlc_infos (channel_id BLOB NOT NULL, commitment_number INTEGER NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+              statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON htlc_infos(channel_id)")
+              statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON htlc_infos(commitment_number)")
+              setVersion(statement, SqliteChannelsDb.DB_NAME, 7)
+            }
+            // We insert some channels in our DB and htc info related to those channels.
+            Seq(closed1, closed2, closed3).foreach { c =>
+              using(connection.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, 1)")) { statement =>
+                statement.setBytes(1, c.channelId.toArray)
+                statement.setBytes(2, channelDataCodec.encode(c).require.toByteArray)
+                statement.executeUpdate()
+              }
+            }
+            Seq(notClosed1, notClosed2).foreach { c =>
+              using(connection.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, 0)")) { statement =>
+                statement.setBytes(1, c.channelId.toArray)
+                statement.setBytes(2, channelDataCodec.encode(c).require.toByteArray)
+                statement.executeUpdate()
+              }
+            }
+            htlcInfos.foreach { case (channelId, infos) =>
+              infos.foreach { case (commitmentNumber, paymentHash, expiry) =>
+                using(connection.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
+                  statement.setBytes(1, channelId.toArray)
+                  statement.setLong(2, commitmentNumber)
+                  statement.setBytes(3, paymentHash.toArray)
+                  statement.setLong(4, expiry.toLong)
+                  statement.executeUpdate()
+                }
+              }
+            }
+          },
+          dbName = SqliteChannelsDb.DB_NAME,
+          targetVersion = SqliteChannelsDb.CURRENT_VERSION,
+          postCheck = _ => postCheck(dbs.channels)
+        )
     }
   }
 
@@ -232,38 +380,6 @@ class ChannelsDbSpec extends AnyFunSuite {
 }
 
 object ChannelsDbSpec {
-
-  case class TestCase(channelId: ByteVector32,
-                      remoteNodeId: PublicKey,
-                      data: ByteVector,
-                      isClosed: Boolean,
-                      createdTimestamp: Option[Long],
-                      lastPaymentSentTimestamp: Option[Long],
-                      lastPaymentReceivedTimestamp: Option[Long],
-                      lastConnectedTimestamp: Option[Long],
-                      closedTimestamp: Option[Long],
-                      commitmentNumbers: Seq[Int])
-
-  val testCases: Seq[TestCase] = for (_ <- 0 until 10) yield {
-    val channelId = randomBytes32()
-    val remoteNodeId = randomKey().publicKey
-    val channel = ChannelCodecsSpec.normal
-      .modify(_.commitments.channelParams.channelId).setTo(channelId)
-      .modify(_.commitments.channelParams.remoteParams.nodeId).setTo(remoteNodeId)
-    val data = channelDataCodec.encode(channel).require.bytes
-    TestCase(
-      channelId = channelId,
-      remoteNodeId = remoteNodeId,
-      data = data,
-      isClosed = Random.nextBoolean(),
-      createdTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
-      lastPaymentSentTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
-      lastPaymentReceivedTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
-      lastConnectedTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
-      closedTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
-      commitmentNumbers = for (_ <- 0 until Random.nextInt(10)) yield Random.nextInt(5) // there will be repetitions, on purpose
-    )
-  }
 
   def getTimestamp(dbs: TestDatabases, channelId: ByteVector32, columnName: String): Option[Long] = {
     dbs match {

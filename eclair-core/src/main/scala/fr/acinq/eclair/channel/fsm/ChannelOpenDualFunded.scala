@@ -285,11 +285,11 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) =>
       d.init.replyTo ! OpenChannelResponse.Disconnected
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData(d)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) =>
       d.init.replyTo ! OpenChannelResponse.TimedOut
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData(d)
   })
 
   when(WAIT_FOR_DUAL_FUNDING_CREATED)(handleExceptions {
@@ -302,12 +302,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           log.info("our peer aborted the dual funding flow: ascii='{}' bin={}", msg.toAscii, msg.data)
           d.txBuilder ! InteractiveTxBuilder.Abort
           d.replyTo_opt.foreach(_ ! OpenChannelResponse.RemoteError(msg.toAscii))
-          goto(CLOSED) sending TxAbort(d.channelId, DualFundingAborted(d.channelId).getMessage)
+          goto(CLOSED) using IgnoreClosedData(d) sending TxAbort(d.channelId, DualFundingAborted(d.channelId).getMessage)
         case _: TxSignatures =>
           log.info("received unexpected tx_signatures")
           d.txBuilder ! InteractiveTxBuilder.Abort
           d.replyTo_opt.foreach(_ ! OpenChannelResponse.Rejected(UnexpectedFundingSignatures(d.channelId).getMessage))
-          goto(CLOSED) sending TxAbort(d.channelId, UnexpectedFundingSignatures(d.channelId).getMessage)
+          goto(CLOSED) using IgnoreClosedData(d) sending TxAbort(d.channelId, UnexpectedFundingSignatures(d.channelId).getMessage)
         case _: TxInitRbf =>
           log.info("ignoring unexpected tx_init_rbf message")
           stay() sending Warning(d.channelId, InvalidRbfAttempt(d.channelId).getMessage)
@@ -333,7 +333,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         goto(WAIT_FOR_DUAL_FUNDING_SIGNED) using d1 storing() sending commitSig
       case f: InteractiveTxBuilder.Failed =>
         d.replyTo_opt.foreach(_ ! OpenChannelResponse.Rejected(f.cause.getMessage))
-        goto(CLOSED) sending TxAbort(d.channelId, f.cause.getMessage)
+        goto(CLOSED) using IgnoreClosedData(d) sending TxAbort(d.channelId, f.cause.getMessage)
     }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
@@ -349,12 +349,12 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
       d.txBuilder ! InteractiveTxBuilder.Abort
       d.replyTo_opt.foreach(_ ! OpenChannelResponse.Disconnected)
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData(d)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_DUAL_FUNDING_CREATED) =>
       d.txBuilder ! InteractiveTxBuilder.Abort
       d.replyTo_opt.foreach(_ ! OpenChannelResponse.TimedOut)
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData(d)
   })
 
   when(WAIT_FOR_DUAL_FUNDING_SIGNED)(handleExceptions {
@@ -362,7 +362,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       d.signingSession.receiveCommitSig(d.channelParams, channelKeys, commitSig, nodeParams.currentBlockHeight) match {
         case Left(f) =>
           rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
-          goto(CLOSED) sending Error(d.channelId, f.getMessage)
+          goto(CLOSED) using IgnoreClosedData(d) sending Error(d.channelId, f.getMessage)
         case Right(signingSession1) => signingSession1 match {
           case signingSession1: InteractiveTxSigningSession.WaitingForSigs =>
             // In theory we don't have to store their commit_sig here, as they would re-send it if we disconnect, but
@@ -394,7 +394,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           d.signingSession.receiveTxSigs(channelKeys, txSigs, nodeParams.currentBlockHeight) match {
             case Left(f) =>
               rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
-              goto(CLOSED) sending Error(d.channelId, f.getMessage)
+              goto(CLOSED) using IgnoreClosedData(d) sending Error(d.channelId, f.getMessage)
             case Right(signingSession) =>
               val minDepth_opt = d.channelParams.minDepth(nodeParams.channelConf.minDepth)
               watchFundingConfirmed(d.signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
@@ -412,7 +412,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case msg: TxAbort =>
           log.info("our peer aborted the dual funding flow: ascii='{}' bin={}", msg.toAscii, msg.data)
           rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
-          goto(CLOSED) sending TxAbort(d.channelId, DualFundingAborted(d.channelId).getMessage)
+          goto(CLOSED) using IgnoreClosedData(d) sending TxAbort(d.channelId, DualFundingAborted(d.channelId).getMessage)
         case msg: InteractiveTxConstructionMessage =>
           log.info("received unexpected interactive-tx message: {}", msg.getClass.getSimpleName)
           stay() sending Warning(d.channelId, UnexpectedInteractiveTxMessage(d.channelId, msg).getMessage)

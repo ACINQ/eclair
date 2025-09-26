@@ -97,21 +97,26 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
   }
 
   def handleFundingPublishFailed(d: PersistentChannelData) = {
-    log.error(s"failed to publish funding tx")
+    log.error("failed to publish funding tx")
     val exc = ChannelFundingError(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
     // NB: we don't use the handleLocalError handler because it would result in the commit tx being published, which we don't want:
     // implementation *guarantees* that in case of BITCOIN_FUNDING_PUBLISH_FAILED, the funding tx hasn't and will never be published, so we can close the channel right away
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(exc), isFatal = true))
-    goto(CLOSED) sending error
+    goto(CLOSED) using IgnoreClosedData(d) sending error
   }
 
   def handleFundingTimeout(d: PersistentChannelData) = {
-    log.warning(s"funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE")
+    // We log the commit tx: if our peer loses their channel backup, they will need that commit tx to recover their funds.
+    val commitTx_opt = d match {
+      case _: ChannelDataWithoutCommitments => None
+      case d: ChannelDataWithCommitments => Some(d.commitments.latest.fullySignedLocalCommitTx(channelKeys))
+    }
+    log.warning("funding tx hasn't been confirmed after {} blocks, ignoring channel (commitTx={})", FUNDING_TIMEOUT_FUNDEE, commitTx_opt.getOrElse("n/a"))
     val exc = FundingTxTimedout(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(exc), isFatal = true))
-    goto(CLOSED) sending error
+    goto(CLOSED) using IgnoreClosedData(d) sending error
   }
 
 }

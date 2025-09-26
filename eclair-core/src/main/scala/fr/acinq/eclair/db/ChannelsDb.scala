@@ -18,7 +18,7 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.channel.PersistentChannelData
+import fr.acinq.eclair.channel.{DATA_CLOSED, PersistentChannelData}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.{CltvExpiry, Paginated}
 
@@ -30,8 +30,13 @@ trait ChannelsDb {
 
   def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit
 
-  /** Mark a channel as closed, but keep it in the DB. */
-  def removeChannel(channelId: ByteVector32): Unit
+  /**
+   * Remove a channel from our DB.
+   *
+   * @param channelId ID of the channel that should be removed.
+   * @param data_opt  if provided, closing data will be stored in a dedicated table.
+   */
+  def removeChannel(channelId: ByteVector32, data_opt: Option[DATA_CLOSED]): Unit
 
   /** Mark revoked HTLC information as obsolete. It will be removed from the DB once [[removeHtlcInfos]] is called. */
   def markHtlcInfosForRemoval(channelId: ByteVector32, beforeCommitIndex: Long): Unit
@@ -41,9 +46,10 @@ trait ChannelsDb {
 
   def listLocalChannels(): Seq[PersistentChannelData]
 
-  def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData]
+  def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[DATA_CLOSED]
 
   def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
 
   def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)]
+
 }
