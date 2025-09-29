@@ -248,6 +248,15 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectNoMessage(100 millis)
   }
 
+  private def checkWatchPublished(f: FixtureParam, spliceTx: Transaction): Unit = {
+    import f._
+
+    alice2blockchain.expectWatchPublished(spliceTx.txid)
+    alice2blockchain.expectNoMessage(100 millis)
+    bob2blockchain.expectWatchPublished(spliceTx.txid)
+    bob2blockchain.expectNoMessage(100 millis)
+  }
+
   private def confirmSpliceTx(f: FixtureParam, spliceTx: Transaction): Unit = {
     import f._
 
@@ -2708,7 +2717,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     resendSpliceLockedOnReconnection(f)
   }
 
-  test("re-send splice_locked on reconnection (taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
+  test("re-send splice_locked on reconnection (taproot channels)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     resendSpliceLockedOnReconnection(f)
   }
 
@@ -2855,11 +2864,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
-  test("disconnect while updating channel before receiving splice_locked", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
+  test("disconnect while updating channel before receiving splice_locked", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
-    checkWatchConfirmed(f, spliceTx)
+    checkWatchPublished(f, spliceTx)
 
     alice2bob.ignoreMsg { case _: ChannelUpdate => true }
     bob2alice.ignoreMsg { case _: ChannelUpdate => true }
@@ -3360,13 +3369,13 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx2.txid)
   }
 
-  test("force-close with multiple splices (previous active remote)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
+  test("force-close with multiple splices (previous active remote)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
 
     val fundingTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
-    checkWatchConfirmed(f, fundingTx1)
+    checkWatchPublished(f, fundingTx1)
 
     // The first splice confirms on Bob's side.
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
@@ -3375,7 +3384,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
 
     val fundingTx2 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
-    checkWatchConfirmed(f, fundingTx2)
+    checkWatchPublished(f, fundingTx2)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
