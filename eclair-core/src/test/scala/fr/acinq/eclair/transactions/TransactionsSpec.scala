@@ -286,9 +286,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       commitTxFeerate = feeratePerKw,
       toLocal = 400.millibtc.toMilliSatoshi,
       toRemote = 300.millibtc.toMilliSatoshi)
-    val (secretLocalNonce, publicLocalNonce) = Musig2.generateNonce(randomBytes32(), Left(localFundingPriv), Seq(localFundingPriv.publicKey), None, None)
-    val (secretRemoteNonce, publicRemoteNonce) = Musig2.generateNonce(randomBytes32(), Left(remoteFundingPriv), Seq(remoteFundingPriv.publicKey), None, None)
-    val publicNonces = Seq(publicLocalNonce, publicRemoteNonce)
+    val localNonce = Musig2.generateNonce(randomBytes32(), Left(localFundingPriv), Seq(localFundingPriv.publicKey), None, None)
+    val remoteNonce = Musig2.generateNonce(randomBytes32(), Left(remoteFundingPriv), Seq(remoteFundingPriv.publicKey), None, None)
+    val publicNonces = Seq(localNonce, remoteNonce).map(_.publicNonce)
 
     val (commitTx, commitTxOutputs, htlcTimeoutTxs, htlcSuccessTxs) = {
       val commitTxNumber = 0x404142434445L
@@ -297,11 +297,11 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val commitTx = commitmentFormat match {
         case _: SimpleTaprootChannelCommitmentFormat =>
           val Right(commitTx) = for {
-            localPartialSig <- txInfo.partialSign(localFundingPriv, remoteFundingPriv.publicKey, LocalNonce(secretLocalNonce, publicLocalNonce), publicNonces)
-            remotePartialSig <- txInfo.partialSign(remoteFundingPriv, localFundingPriv.publicKey, LocalNonce(secretRemoteNonce, publicRemoteNonce), publicNonces)
-            _ = assert(txInfo.checkRemotePartialSignature(localFundingPriv.publicKey, remoteFundingPriv.publicKey, remotePartialSig, publicLocalNonce))
+            localPartialSig <- txInfo.partialSign(localFundingPriv, remoteFundingPriv.publicKey, localNonce, publicNonces)
+            remotePartialSig <- txInfo.partialSign(remoteFundingPriv, localFundingPriv.publicKey, remoteNonce, publicNonces)
+            _ = assert(txInfo.checkRemotePartialSignature(localFundingPriv.publicKey, remoteFundingPriv.publicKey, remotePartialSig, localNonce.publicNonce))
             invalidRemotePartialSig = ChannelSpendSignature.PartialSignatureWithNonce(randomBytes32(), remotePartialSig.nonce)
-            _ = assert(!txInfo.checkRemotePartialSignature(localFundingPriv.publicKey, remoteFundingPriv.publicKey, invalidRemotePartialSig, publicLocalNonce))
+            _ = assert(!txInfo.checkRemotePartialSignature(localFundingPriv.publicKey, remoteFundingPriv.publicKey, invalidRemotePartialSig, localNonce.publicNonce))
             tx <- txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localPartialSig, remotePartialSig)
           } yield tx
           commitTx

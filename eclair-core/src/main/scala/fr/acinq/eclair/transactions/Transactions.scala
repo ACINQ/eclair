@@ -18,11 +18,11 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.SigVersion._
-import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.bitcoin.{ScriptFlags, ScriptTree}
+import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature
@@ -239,14 +239,12 @@ object Transactions {
      * @param leafHash    hash of the leaf script we're spending (must belong to the tree).
      */
     case class TaprootScriptPath(internalKey: XonlyPublicKey, scriptTree: ScriptTree, leafHash: ByteVector32) extends Taproot {
-      val leaf: ScriptTree.Leaf = Option(scriptTree.findScript(leafHash)).getOrElse(throw new IllegalArgumentException("script tree must contain the provided leaf"))
+      val leaf: ScriptTree.Leaf = scriptTree.findScript(leafHash).getOrElse(throw new IllegalArgumentException("script tree must contain the provided leaf"))
       val redeemScript: ByteVector = leaf.getScript
       override val pubkeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, Some(scriptTree)))
     }
   }
   // @formatter:on
-
-  case class LocalNonce(secretNonce: SecretNonce, publicNonce: IndividualNonce)
 
   sealed trait TransactionWithInputInfo {
     // @formatter:off
