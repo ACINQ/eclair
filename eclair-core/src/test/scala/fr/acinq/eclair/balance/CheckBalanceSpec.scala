@@ -98,6 +98,16 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE]), recentlySpentInputs = Set(closingTxInput)).negotiating == expected)
   }
 
+  test("channel closing with published closing tx (without option_simple_close)") { f =>
+    import f._
+
+    mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.nonEmpty)
+    val closingTxInput = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.fundingInput
+    val expected = MainAndHtlcBalance(toLocal = 0 sat, htlcs = 0 sat)
+    assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_CLOSING]), recentlySpentInputs = Set(closingTxInput)).closing == expected)
+  }
+
   test("channel closed with remote commit tx", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
 
