@@ -94,6 +94,6 @@ To make local development and testing easier, SNAPSHOT dependencies are not veri
 To re-create the trusted checksums file, run:
 
 ```shell
-$ rm ~/.m2/wrapper ~/.sbt -rf
+$ rm -Rf ~/.m2/wrapper ~/.sbt
 $ ./mvnw clean install -DskipTests -Daether.artifactResolver.postProcessor.trustedChecksums.record
 ```
