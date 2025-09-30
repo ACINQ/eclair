@@ -163,7 +163,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(e: Error, d: DATA_WAIT_FOR_OPEN_CHANNEL) => handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_OPEN_CHANNEL) => goto(CLOSED) using IgnoreClosedData(d)
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
@@ -203,11 +203,11 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
       d.initFunder.replyTo ! OpenChannelResponse.Disconnected
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData(d)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
       d.initFunder.replyTo ! OpenChannelResponse.TimedOut
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData(d)
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
@@ -264,11 +264,11 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
       d.replyTo ! OpenChannelResponse.Disconnected
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData(d)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
       d.replyTo ! OpenChannelResponse.TimedOut
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData(d)
   })
 
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
@@ -346,7 +346,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_CREATED) => handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
+    case Event(INPUT_DISCONNECTED, d: DATA_WAIT_FOR_FUNDING_CREATED) => goto(CLOSED) using IgnoreClosedData(d)
   })
 
   when(WAIT_FOR_FUNDING_SIGNED)(handleExceptions {
@@ -414,13 +414,13 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
       d.replyTo ! OpenChannelResponse.Disconnected
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData(d)
 
     case Event(TickChannelOpenTimeout, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
       d.replyTo ! OpenChannelResponse.TimedOut
-      goto(CLOSED)
+      goto(CLOSED) using IgnoreClosedData(d)
   })
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {

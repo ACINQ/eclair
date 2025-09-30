@@ -27,7 +27,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{NewTransaction, SingleKeyOnChainWallet}
-import fr.acinq.eclair.channel.Helpers.Closing.{LocalClose, RemoteClose, RevokedClose}
 import fr.acinq.eclair.channel.LocalFundingStatus.DualFundedUnconfirmedFundingTx
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
@@ -3340,6 +3339,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     })
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(alice.stateName == CLOSED)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingTxId == commitTx2.txid)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx2.txid)
 
     // Bob also detects that the commit confirms, along with 2nd-stage transactions.
     bob ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, commitTx2)
@@ -3355,10 +3356,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     })
     bob2blockchain.expectNoMessage(100 millis)
     awaitCond(bob.stateName == CLOSED)
-
-    checkPostSpliceState(f, spliceOutFee(f, capacity = 1_900_000.sat, signedTx_opt = Some(fundingTx2)))
-    assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[LocalClose]))
-    assert(Helpers.Closing.isClosed(bob.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RemoteClose]))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingTxId == commitTx2.txid)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx2.txid)
   }
 
   test("force-close with multiple splices (previous active remote)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
@@ -3435,9 +3434,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bobHtlcTxs.foreach(htlcTx => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, htlcTx.tx))
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(alice.stateName == CLOSED)
-
-    checkPostSpliceState(f, spliceOutFee = 0.sat)
-    assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RemoteClose]))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingType == "remote-close")
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingTxId == bobCommitTx1.txid)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx1.txid)
   }
 
   test("force-close with multiple splices (previous active revoked)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -3513,7 +3512,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, mainPenalty.tx)
     htlcPenalty.foreach { penalty => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, penalty.tx) }
     awaitCond(alice.stateName == CLOSED)
-    assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RevokedClose]))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingType == "revoked-close")
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingTxId == bobRevokedCommitTx.txid)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingAmount == (Seq(remoteMain.tx, mainPenalty.tx) ++ htlcPenalty.map(_.tx)).map(_.txOut.head.amount).sum)
   }
 
   test("force-close with multiple splices (inactive remote)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
@@ -3611,9 +3612,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bobHtlcTxs.foreach(htlcTx => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, htlcTx.tx))
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(alice.stateName == CLOSED)
-
-    checkPostSpliceState(f, spliceOutFee = 0.sat)
-    assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RemoteClose]))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingTxId == bobCommitTx1.txid)
   }
 
   test("force-close with multiple splices (inactive revoked)", Tag(ChannelStateTestsTags.ZeroConf), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
@@ -3715,7 +3714,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, mainPenalty.tx)
     htlcPenalty.foreach { penalty => alice ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, penalty.tx) }
     awaitCond(alice.stateName == CLOSED)
-    assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RevokedClose]))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingTxId == bobRevokedCommitTx.txid)
   }
 
   test("force-close after channel type upgrade (latest active)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
@@ -3791,6 +3790,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     })
     alice2blockchain.expectNoMessage(100 millis)
     awaitCond(alice.stateName == CLOSED)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingType == "local-close")
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].closingTxId == commitTx2.txid)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx2.txid)
 
     // Bob also detects that the commit confirms, along with 2nd-stage transactions.
     bob ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, commitTx2)
@@ -3807,10 +3809,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     })
     bob2blockchain.expectNoMessage(100 millis)
     awaitCond(bob.stateName == CLOSED)
-
-    checkPostSpliceState(f, spliceOutFee(f, capacity = 1_900_000.sat, signedTx_opt = Some(fundingTx2)))
-    assert(Helpers.Closing.isClosed(alice.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[LocalClose]))
-    assert(Helpers.Closing.isClosed(bob.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RemoteClose]))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingType == "remote-close")
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingTxId == commitTx2.txid)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx2.txid)
   }
 
   test("force-close after channel type upgrade (previous active)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
@@ -3902,7 +3903,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, penaltyTx.tx)
     htlcPenalty.foreach { penalty => bob ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, penalty.tx) }
     awaitCond(bob.stateName == CLOSED)
-    assert(Helpers.Closing.isClosed(bob.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RevokedClose]))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingType == "revoked-close")
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingTxId == aliceCommitTx.txid)
   }
 
   test("force-close after channel type upgrade (revoked latest active)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
@@ -3938,7 +3940,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, penaltyTx.tx)
     htlcPenalty.foreach { penalty => bob ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, penalty.tx) }
     awaitCond(bob.stateName == CLOSED)
-    assert(Helpers.Closing.isClosed(bob.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RevokedClose]))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingType == "revoked-close")
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingTxId == aliceCommitTx.txid)
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == spliceTx.txid)
   }
 
   test("force-close after channel type upgrade (revoked previous inactive)", Tag(ChannelStateTestsTags.AnchorOutputs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
@@ -4005,7 +4009,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, penaltyTx.tx)
     htlcPenalty.foreach { penalty => bob ! WatchTxConfirmedTriggered(BlockHeight(400000), 42, penalty.tx) }
     awaitCond(bob.stateName == CLOSED)
-    assert(Helpers.Closing.isClosed(bob.stateData.asInstanceOf[DATA_CLOSING], None).exists(_.isInstanceOf[RevokedClose]))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingType == "revoked-close")
+    assert(bob.stateData.asInstanceOf[DATA_CLOSED].closingTxId == aliceCommitTx.txid)
   }
 
   test("put back watches after restart") { f =>

@@ -47,7 +47,6 @@ import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.{ClearRecipient, OfferPayment, PaymentIdentifier}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.transactions.Transactions.CommitmentFormat
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
@@ -117,7 +116,7 @@ trait Eclair {
 
   def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[CommandResponse[CMD_GET_CHANNEL_INFO]]
 
-  def closedChannels(nodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]]
+  def closedChannels(nodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Iterable[DATA_CLOSED]]
 
   def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
 
@@ -348,11 +347,9 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     sendToChannelTyped(channel = channel, cmdBuilder = CMD_GET_CHANNEL_INFO(_))
   }
 
-  override def closedChannels(nodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Iterable[RES_GET_CHANNEL_INFO]] = {
+  override def closedChannels(nodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Iterable[DATA_CLOSED]] = {
     Future {
-      appKit.nodeParams.db.channels.listClosedChannels(nodeId_opt, paginated_opt).map { data =>
-        RES_GET_CHANNEL_INFO(nodeId = data.remoteNodeId, channelId = data.channelId, channel = ActorRef.noSender, state = CLOSED, data = data)
-      }
+      appKit.nodeParams.db.channels.listClosedChannels(nodeId_opt, paginated_opt)
     }
   }
 
