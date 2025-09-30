@@ -17,7 +17,6 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.ScriptTree
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector64, Crypto, DeterministicWallet, MnemonicCode, Satoshi, Script, computeBIP84Address}
@@ -295,8 +294,8 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
   }
 
   private def signPsbtInput86(psbt: Psbt, pos: Int): Psbt = {
+    import fr.acinq.bitcoin.SigHash
     import fr.acinq.bitcoin.scalacompat.KotlinUtils._
-    import fr.acinq.bitcoin.{Script, SigHash}
 
     val input = psbt.getInput(pos)
     require(input != null, s"input $pos is missing from psbt: bitcoin core may be malicious")
@@ -307,7 +306,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     val (pub, keypath) = input.getTaprootDerivationPaths.asScala.toSeq.head
     val priv = fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey(master.priv, keypath.keyPath).getPrivateKey
     require(priv.publicKey().xOnly() == pub, s"derived public key doesn't match (expected=$pub actual=${priv.publicKey().xOnly()}): bitcoin core may be malicious")
-    val expectedScript = ByteVector(Script.write(Script.pay2tr(pub, null.asInstanceOf[ScriptTree])))
+    val expectedScript = Script.write(Script.pay2tr(pub, None))
     require(kmp2scala(input.getWitnessUtxo.publicKeyScript) == expectedScript, s"script mismatch (expected=$expectedScript, actual=${input.getWitnessUtxo.publicKeyScript}): bitcoin core may be malicious")
 
     // No need to update the input, we can directly sign and finalize.

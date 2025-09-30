@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, TxId}
 import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}

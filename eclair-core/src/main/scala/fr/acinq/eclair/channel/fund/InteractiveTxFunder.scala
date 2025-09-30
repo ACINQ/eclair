@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.fund
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainChannelFunder
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
@@ -75,7 +75,7 @@ object InteractiveTxFunder {
    */
   def computeSpliceContribution(isInitiator: Boolean, sharedInput: SharedFundingInput, spliceInAmount: Satoshi, spliceOut: Seq[TxOut], targetFeerate: FeeratePerKw): Satoshi = {
     val fees = if (spliceInAmount == 0.sat) {
-      val spliceOutputsWeight = spliceOut.map(KotlinUtils.scala2kmp).map(_.weight()).sum
+      val spliceOutputsWeight = spliceOut.map(_.weight()).sum
       val weight = if (isInitiator) {
         // The initiator must add the shared input, the shared output and pay for the fees of the common transaction fields.
         val dummyTx = Transaction(2, Nil, Seq(sharedInput.info.txOut), 0)

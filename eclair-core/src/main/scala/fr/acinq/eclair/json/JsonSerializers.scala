@@ -17,9 +17,9 @@
 package fr.acinq.eclair.json
 
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.balance.CheckBalance.{DetailedOnChainBalance, GlobalBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -153,7 +153,7 @@ object ByteVector64Serializer extends MinimalSerializer({
 })
 
 object IndividualNonceSerializer extends MinimalSerializer({
-  case x: IndividualNonce => JString(x.toString)
+  case x: IndividualNonce => JString(x.data.toHex)
 })
 
 object UInt64Serializer extends MinimalSerializer({

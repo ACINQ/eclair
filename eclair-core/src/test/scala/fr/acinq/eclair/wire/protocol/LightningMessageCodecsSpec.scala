@@ -17,8 +17,8 @@
 package fr.acinq.eclair.wire.protocol
 
 import com.google.common.base.Charsets
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, OutPoint, SatoshiLong, Script, ScriptWitness, Transaction, TxHash, TxId}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.DataLossProtect
@@ -149,8 +149,8 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val point = randomKey().publicKey
     val txId = randomTxId()
     val nextTxId = randomTxId()
-    val nonce = new IndividualNonce(randomBytes(66).toArray)
-    val nextNonce = new IndividualNonce(randomBytes(66).toArray)
+    val nonce = IndividualNonce(randomBytes(66))
+    val nextNonce = IndividualNonce(randomBytes(66))
     val randomData = randomBytes(42)
     val tlvTag = UInt64(hex"47010000")
 
@@ -163,24 +163,24 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"00 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.NextFundingTlv(txId))),
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"01 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.YourLastFundingLockedTlv(txId))),
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"03 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.MyCurrentFundingLockedTlv(txId))),
-      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"18 42" ++ ByteVector(nonce.toByteArray) -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.CurrentCommitNonceTlv(nonce))),
-      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"16 c4" ++ txId.value.reverse ++ ByteVector(nonce.toByteArray) ++ nextTxId.value.reverse ++ ByteVector(nextNonce.toByteArray) -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.NextLocalNoncesTlv(Seq(txId -> nonce, nextTxId -> nextNonce)))),
+      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"18 42" ++ nonce.data -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.CurrentCommitNonceTlv(nonce))),
+      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"16 c4" ++ txId.value.reverse ++ nonce.data ++ nextTxId.value.reverse ++ nextNonce.data -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.NextLocalNoncesTlv(Seq(txId -> nonce, nextTxId -> nextNonce)))),
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 00" -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream[ChannelReestablishTlv](Set.empty[ChannelReestablishTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 07 bbbbbbbbbbbbbb" -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream[ChannelReestablishTlv](Set.empty[ChannelReestablishTlv], Set(GenericTlv(tlvTag, hex"bbbbbbbbbbbbbb")))),
 
       hex"0084" ++ channelId ++ signature ++ hex"0000" -> CommitSig(channelId, IndividualSignature(signature), Nil),
-      hex"0084" ++ channelId ++ ByteVector64.Zeroes ++ hex"0000" ++ hex"02 62" ++ partialSig ++ ByteVector(nonce.toByteArray) -> CommitSig(channelId, PartialSignatureWithNonce(partialSig, nonce), Nil, batchSize = 1),
+      hex"0084" ++ channelId ++ ByteVector64.Zeroes ++ hex"0000" ++ hex"02 62" ++ partialSig ++ nonce.data -> CommitSig(channelId, PartialSignatureWithNonce(partialSig, nonce), Nil, batchSize = 1),
       hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 00" -> CommitSig(channelId, IndividualSignature(signature), Nil, TlvStream[CommitSigTlv](Set.empty[CommitSigTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
       hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 07 cccccccccccccc" -> CommitSig(channelId, IndividualSignature(signature), Nil, TlvStream[CommitSigTlv](Set.empty[CommitSigTlv], Set(GenericTlv(tlvTag, hex"cccccccccccccc")))),
 
       hex"0085" ++ channelId ++ key.value ++ point.value -> RevokeAndAck(channelId, key, point),
-      hex"0085" ++ channelId ++ key.value ++ point.value ++ hex"16 62" ++ txId.value.reverse ++ ByteVector(nonce.toByteArray) -> RevokeAndAck(channelId, key, point, Seq(txId -> nonce)),
-      hex"0085" ++ channelId ++ key.value ++ point.value ++ hex"16 c4" ++ txId.value.reverse ++ ByteVector(nonce.toByteArray) ++ nextTxId.value.reverse ++ ByteVector(nextNonce.toByteArray) -> RevokeAndAck(channelId, key, point, Seq(txId -> nonce, nextTxId -> nextNonce)),
+      hex"0085" ++ channelId ++ key.value ++ point.value ++ hex"16 62" ++ txId.value.reverse ++ nonce.data -> RevokeAndAck(channelId, key, point, Seq(txId -> nonce)),
+      hex"0085" ++ channelId ++ key.value ++ point.value ++ hex"16 c4" ++ txId.value.reverse ++ nonce.data ++ nextTxId.value.reverse ++ nextNonce.data -> RevokeAndAck(channelId, key, point, Seq(txId -> nonce, nextTxId -> nextNonce)),
       hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" fe47010000 00" -> RevokeAndAck(channelId, key, point, TlvStream[RevokeAndAckTlv](Set.empty[RevokeAndAckTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
       hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" fe47010000 07 cccccccccccccc" -> RevokeAndAck(channelId, key, point, TlvStream[RevokeAndAckTlv](Set.empty[RevokeAndAckTlv], Set(GenericTlv(tlvTag, hex"cccccccccccccc")))),
 
       hex"0026" ++ channelId ++ hex"002a" ++ randomData -> Shutdown(channelId, randomData),
-      hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"08 42" ++ ByteVector(nonce.toByteArray) -> Shutdown(channelId, randomData, nonce),
+      hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"08 42" ++ nonce.data -> Shutdown(channelId, randomData, nonce),
       hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"fe47010000 00" -> Shutdown(channelId, randomData, TlvStream[ShutdownTlv](Set.empty[ShutdownTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
       hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"fe47010000 07 cccccccccccccc" -> Shutdown(channelId, randomData, TlvStream[ShutdownTlv](Set.empty[ShutdownTlv], Set(GenericTlv(tlvTag, hex"cccccccccccccc")))),
 
@@ -215,9 +215,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     // This is random, longer mainnet transaction.
     val txBin2 = hex"0200000000010142180a8812fc79a3da7fb2471eff3e22d7faee990604c2ba7f2fc8dfb15b550a0200000000feffffff030f241800000000001976a9146774040642a78ca3b8b395e70f8391b21ec026fc88ac4a155801000000001600148d2e0b57adcb8869e603fd35b5179caf053361253b1d010000000000160014e032f4f4b9f8611df0d30a20648c190c263bbc33024730440220506005aa347f5b698542cafcb4f1a10250aeb52a609d6fd67ef68f9c1a5d954302206b9bb844343f4012bccd9d08a0f5430afb9549555a3252e499be7df97aae477a012103976d6b3eea3de4b056cd88cdfd50a22daf121e0fb5c6e45ba0f40e1effbd275a00000000"
     val tx2 = Transaction.read(txBin2.toArray)
-    val nonce = new IndividualNonce("2062534ccb3be5a8997843f3b6bc530a94cbc60eceb538674ceedd62d8be07f2dfa5df6acf3ded7444268d56925bb2c33afe71a55f4fa88f3985451a681415930f6b")
-    val nextNonce = new IndividualNonce("b218b34786408f0a1aee2b35a0e860aa234b8013d1c385d1fcb4583fc4472bedfdd69a53c71006ec9f8b33724b719a50aa137814f4d0c00caff4e1da0d9856a957e7")
-    val fundingNonce = new IndividualNonce("a49ff67b08c720b993c946556cde1be1c3b664bc847c4792135dfd6ef0986e00e9871808c6620b0420567dad525b27431453d4434fd326f8ac56496639b72326eb5d")
+    val nonce = IndividualNonce(hex"2062534ccb3be5a8997843f3b6bc530a94cbc60eceb538674ceedd62d8be07f2dfa5df6acf3ded7444268d56925bb2c33afe71a55f4fa88f3985451a681415930f6b")
+    val nextNonce = IndividualNonce(hex"b218b34786408f0a1aee2b35a0e860aa234b8013d1c385d1fcb4583fc4472bedfdd69a53c71006ec9f8b33724b719a50aa137814f4d0c00caff4e1da0d9856a957e7")
+    val fundingNonce = IndividualNonce(hex"a49ff67b08c720b993c946556cde1be1c3b664bc847c4792135dfd6ef0986e00e9871808c6620b0420567dad525b27431453d4434fd326f8ac56496639b72326eb5d")
     val fundingRate = LiquidityAds.FundingRate(25_000 sat, 250_000 sat, 750, 150, 50 sat, 500 sat)
     val testCases = Seq(
       TxAddInput(channelId1, UInt64(561), Some(tx1), 1, 5) -> hex"0042 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000231 00f7 020000000001014ade359c5deb7c1cde2e94f401854658f97d7fa31c17ce9a831db253120a0a410100000017160014eb9a5bd79194a23d19d6ec473c768fb74f9ed32cffffffff021ca408000000000017a914946118f24bb7b37d5e9e39579e4a411e70f5b6a08763e703000000000017a9143638b2602d11f934c04abc6adb1494f69d1f14af8702473044022059ddd943b399211e4266a349f26b3289979e29f9b067792c6cfa8cc5ae25f44602204d627a5a5b603d0562e7969011fb3d64908af90a3ec7c876eaa9baf61e1958af012102f5188df1da92ed818581c29778047800ed6635788aa09d9469f7d17628f7323300000000 00000001 00000005",
@@ -261,7 +261,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
   test("encode/decode open_channel") {
     val defaultOpen = OpenChannel(BlockHash(ByteVector32.Zeroes), ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, FeeratePerKw(1 sat), CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), ChannelFlags(announceChannel = false))
-    val nonce = new IndividualNonce("2062534ccb3be5a8997843f3b6bc530a94cbc60eceb538674ceedd62d8be07f2dfa5df6acf3ded7444268d56925bb2c33afe71a55f4fa88f3985451a681415930f6b")
+    val nonce = IndividualNonce(hex"2062534ccb3be5a8997843f3b6bc530a94cbc60eceb538674ceedd62d8be07f2dfa5df6acf3ded7444268d56925bb2c33afe71a55f4fa88f3985451a681415930f6b")
     // Legacy encoding that omits the upfront_shutdown_script and trailing tlv stream.
     // To allow extending all messages with TLV streams, the upfront_shutdown_script was moved to a TLV stream extension
     // in https://github.com/lightningnetwork/lightning-rfc/pull/714 and made mandatory when including a TLV stream.
@@ -368,7 +368,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
   test("encode/decode accept_channel") {
     val defaultAccept = AcceptChannel(ByteVector32.Zeroes, 1 sat, UInt64(1), 1 sat, 1 msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6))
-    val nonce = new IndividualNonce("2062534ccb3be5a8997843f3b6bc530a94cbc60eceb538674ceedd62d8be07f2dfa5df6acf3ded7444268d56925bb2c33afe71a55f4fa88f3985451a681415930f6b")
+    val nonce = IndividualNonce(hex"2062534ccb3be5a8997843f3b6bc530a94cbc60eceb538674ceedd62d8be07f2dfa5df6acf3ded7444268d56925bb2c33afe71a55f4fa88f3985451a681415930f6b")
     // Legacy encoding that omits the upfront_shutdown_script and trailing tlv stream.
     // To allow extending all messages with TLV streams, the upfront_shutdown_script was moved to a TLV stream extension
     // in https://github.com/lightningnetwork/lightning-rfc/pull/714 and made mandatory when including a TLV stream.
@@ -553,13 +553,13 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val channelId = ByteVector32(hex"58a00a6f14e69a2e97b18cf76f755c8551fea9947cf7b6ece9d641013eba5f86")
     val sig1 = ByteVector64(hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101")
     val partialSig1 = ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101")
-    val nonce1 = new IndividualNonce("52682593fd0783ea60657ed2d118e8f958c4a7a198237749b6729eccf963be1bc559531ec4b83bcfc42009cd08f7e95747146cec2fd09571b3fa76656e3012a4c97a")
+    val nonce1 = IndividualNonce(hex"52682593fd0783ea60657ed2d118e8f958c4a7a198237749b6729eccf963be1bc559531ec4b83bcfc42009cd08f7e95747146cec2fd09571b3fa76656e3012a4c97a")
     val sig2 = ByteVector64(hex"02020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202")
     val partialSig2 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
-    val nonce2 = new IndividualNonce("585b2fe8ca7a969bbda11ee9cbc95386abfddcc901967f84da4011c2a7cb5ada1dae51bdcd93a8b2933fcec7b2cda5a3f43ea2d0a29eb126bd329d4735d5389fe703")
+    val nonce2 = IndividualNonce(hex"585b2fe8ca7a969bbda11ee9cbc95386abfddcc901967f84da4011c2a7cb5ada1dae51bdcd93a8b2933fcec7b2cda5a3f43ea2d0a29eb126bd329d4735d5389fe703")
     val sig3 = ByteVector64(hex"03030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303")
     val partialSig3 = ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303")
-    val nonce3 = new IndividualNonce("19bed0825ceb5acf504cddea72e37a75505290a22850c183725963edfe2dfb9f26e27180b210c05635987b80b3de3b7d01732653565b9f25ec23f7aff26122e00bff")
+    val nonce3 = IndividualNonce(hex"19bed0825ceb5acf504cddea72e37a75505290a22850c183725963edfe2dfb9f26e27180b210c05635987b80b3de3b7d01732653565b9f25ec23f7aff26122e00bff")
     val closerScript = hex"deadbeef"
     val closeeScript = hex"d43db3ef1234"
     val testCases = Seq(
@@ -595,7 +595,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       FundingSigned(randomBytes32(), randomBytes64()),
       ChannelReady(randomBytes32(), point(2)),
       ChannelReady(randomBytes32(), point(2), Alias(123456)),
-      ChannelReady(randomBytes32(), point(2), Alias(123456), new IndividualNonce(randomBytes(66).toArray)),
+      ChannelReady(randomBytes32(), point(2), Alias(123456), IndividualNonce(randomBytes(66))),
       UpdateFee(randomBytes32(), FeeratePerKw(2 sat)),
       Shutdown(randomBytes32(), bin(47, 0)),
       ClosingSigned(randomBytes32(), 2 sat, randomBytes64()),
