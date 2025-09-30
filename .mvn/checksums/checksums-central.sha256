@@ -319,6 +319,7 @@
 43579c3ebe47e78358a7f32f967378ef56175b2294b335183584f0bd23595231  org/checkerframework/checker-qual/3.31.0/checker-qual-3.31.0.pom
 4367abba02c31f1dce129b455652966b1703b554a9bc9ddbf33e96ca00cfe15c  org/zeromq/jeromq/0.5.2/jeromq-0.5.2.pom
 439550da8d5451f84cbc6806df7cdccc30c4bbf59456659af95aac907bf658e1  org/apache/maven/maven-core/3.8.6/maven-core-3.8.6.jar
+43c196ab589cff83c5d094848b2c85454f0025fc4741a00bd0cf9b84d6273251  fr/acinq/bitcoin-lib_2.13/0.43.2/bitcoin-lib_2.13-0.43.2.pom
 43c75ef577d610ab77ec2894acbde0c72604416ba8ba8b49e9a740d045a40250  org/codehaus/plexus/plexus-archiver/4.4.0/plexus-archiver-4.4.0.jar
 43f30a6f8370440194de49a6e1cbb3b385cc175c67c8ce6506fa172c475ee3db  org/eclipse/jgit/org.eclipse.jgit/5.12.0.202106070339-r/org.eclipse.jgit-5.12.0.202106070339-r.pom
 44062569f108b3b2163142b94aea2b8549ffdbcdefb66e6d5650d14ad3b4849f  org/scalatest/scalatest-featurespec_2.13/3.2.16/scalatest-featurespec_2.13-3.2.16.pom
@@ -541,7 +542,6 @@
 780f9b25ba1a38ef6494f32236a59f1ba5b5298724ab4ff3419e9aa3195b9858  org/apache/maven/doxia/doxia-sink-api/1.11.1/doxia-sink-api-1.11.1.pom
 782aa857c2dedf15c7b2cadf7cb7690783858a5cc080ce74a882f27d1fa99ea1  com/typesafe/akka/akka-pki_2.13/2.6.20/akka-pki_2.13-2.6.20.pom
 7831307285fd475bbc36b20ae38e7882f11c3153b1d5930f852d44eda8f33c17  org/apache/apache/18/apache-18.pom
-7842874c4a2b8148ed336220360f42c95cae088363f82b96c632f21d89267c47  fr/acinq/bitcoin-lib_2.13/0.43.1/bitcoin-lib_2.13-0.43.1.jar
 784c41e3398c840f01d755a8abb1049c708caff55820ef68eb65719be8feabba  org/apache/maven/doxia/doxia/1.11.1/doxia-1.11.1.pom
 7858bc56c87d0d85217c4bbb88ce48021b2f59bf8ee0c47444d5c6c58927c706  com/typesafe/akka/akka-stream_2.13/2.6.20/akka-stream_2.13-2.6.20.pom
 786523c9d78258a74aa13447a1676c2172acfdf432165d7adae2b7876d2d83d3  org/eclipse/sisu/org.eclipse.sisu.plexus/0.3.5/org.eclipse.sisu.plexus-0.3.5.pom
@@ -571,7 +571,6 @@
 7d547087459c89b8717ec5081aa45922d605299da39e32a811041db1b7e2514e  org/eclipse/aether/aether-spi/1.0.0.v20140518/aether-spi-1.0.0.v20140518.pom
 7d807b97b01639282d3f4ef5793f9e2fb0729212494324db804b59e623ac36e0  org/apache/maven/wagon/wagon-provider-api/2.12/wagon-provider-api-2.12.pom
 7d95ad21733b060bfda2142b62439a196bde7644f9f127c299ae86d92179b518  org/codehaus/plexus/plexus-classworlds/2.2.3/plexus-classworlds-2.2.3.jar
-7dd5c448652c26851b3b55d28bcb8ec2926929a2f3a8df3658f7be693f61de87  fr/acinq/bitcoin-lib_2.13/0.43.1/bitcoin-lib_2.13-0.43.1.pom
 7df98e93e8bdc6a8edb86314ac8ba31f260cbd4a0e6b86f5e9afc932512ef0c7  com/typesafe/config/1.4.0/config-1.4.0.pom
 7e0747751e9b67e19dcb5206f04ea22cc03d250c422426402eadd03513f2c314  org/slf4j/slf4j-api/1.7.30/slf4j-api-1.7.30.pom
 7e188533566f575dab60532fdef5e79f6b65aec7507ea1ae516265feaf3f88ac  org/scala-sbt/core-macros_2.13/1.8.0/core-macros_2.13-1.8.0.jar
@@ -1031,6 +1030,7 @@ f0c98c571e93a7cb4dd18df0fa308f0963e7a0620ac2d4244e61e709d03ad6be  com/google/j2o
 f15e206b98ca25294506d2dadfe5ce2a6da9df9cf7c85d8e7191f99a422df3c9  ch/qos/logback/logback-core/1.5.16/logback-core-1.5.16.jar
 f1a709cd489f23498a0b6b3dfbfc0d21d4f15904791446dec7f8a58a7da5bd6a  commons-lang/commons-lang/2.1/commons-lang-2.1.pom
 f1c07cff218cb7f834ab5218671f996d188d07210bd425e1a31c6e57bb662399  org/apache/maven/doxia/doxia-sitetools/1.0/doxia-sitetools-1.0.pom
+f1ef1c48bf148b288d2dd961d3796ea33e5af0a8e9cb6b2fc91aedf829d3a767  fr/acinq/bitcoin-lib_2.13/0.43.2/bitcoin-lib_2.13-0.43.2.jar
 f21d19eb49b4a66cd85354a9ee7335439ea92a368173760a202766008cc19924  org/apache/maven/shared/maven-shared-incremental/1.1/maven-shared-incremental-1.1.pom
 f2df122d753eba8e980f238433466dba62debbc28661b7d423ee7a99098ab99b  com/chuusai/shapeless_2.13/2.3.9/shapeless_2.13-2.3.9.pom
 f3812df661f0a82e501d6b1ee14df1b277df29ab58c6c8c785624d6b1149b76d  org/codehaus/plexus/plexus-velocity/1.1.7/plexus-velocity-1.1.7.pom
