@@ -280,6 +280,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   private def setupHtlcs(f: FixtureParam): TestHtlcs = {
     import f._
 
+    val localBalance = alice.commitments.latest.localCommit.spec.toLocal
+    val remoteBalance = alice.commitments.latest.localCommit.spec.toRemote
+
     // Concurrently add htlcs in both directions so that commit indices don't match.
     val adda1 = addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
     val adda2 = addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
@@ -299,11 +302,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
 
-    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    assert(initialState.commitments.localCommitIndex != initialState.commitments.remoteCommitIndex)
-    assert(initialState.commitments.latest.capacity == 1_500_000.sat)
-    assert(initialState.commitments.latest.localCommit.spec.toLocal == 770_000_000.msat)
-    assert(initialState.commitments.latest.localCommit.spec.toRemote == 665_000_000.msat)
+    assert(alice.commitments.localCommitIndex != alice.commitments.remoteCommitIndex)
+    assert(alice.commitments.latest.localCommit.spec.toLocal == localBalance - 30_000_000.msat)
+    assert(alice.commitments.latest.localCommit.spec.toRemote == remoteBalance - 35_000_000.msat)
 
     alice2relayer.expectMsgType[Relayer.RelayForward]
     alice2relayer.expectMsgType[Relayer.RelayForward]
