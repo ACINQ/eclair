@@ -2865,7 +2865,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     }
   }
 
-  test("disconnect while updating channel before receiving splice_locked", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("disconnect while updating channel before receiving splice_locked", Tag(ChannelStateTestsTags.OptionSimpleTaproot), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
@@ -3370,7 +3370,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(bob.stateData.asInstanceOf[DATA_CLOSED].fundingTxId == fundingTx2.txid)
   }
 
-  test("force-close with multiple splices (previous active remote)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("force-close with multiple splices (previous active remote)", Tag(ChannelStateTestsTags.OptionSimpleTaproot), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val htlcs = setupHtlcs(f)
