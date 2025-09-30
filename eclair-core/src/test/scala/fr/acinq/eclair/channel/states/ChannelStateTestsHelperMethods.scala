@@ -32,7 +32,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
 import fr.acinq.eclair.channel.publish._
-import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.payment.{Invoice, OutgoingPaymentPacket}
 import fr.acinq.eclair.reputation.Reputation
@@ -373,7 +373,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       val fundingTx = eventListener.expectMsgType[TransactionPublished].tx
       eventually(assert(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED))
       eventually(assert(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED))
-      if (channelParams.channelType.features.contains(Features.ZeroConf)) {
+      if (channelParams.channelType.features.contains(Features.ZeroConf) || alice.commitments.channelParams.zeroConf) {
         alice2blockchain.expectMsgType[WatchPublished]
         bob2blockchain.expectMsgType[WatchPublished]
         alice ! WatchPublishedTriggered(fundingTx)
@@ -427,7 +427,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       val fundingTx = eventListener.expectMsgType[TransactionPublished].tx
       eventually(assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
       eventually(assert(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED))
-      if (channelParams.channelType.features.contains(Features.ZeroConf)) {
+      if (channelParams.channelType.features.contains(Features.ZeroConf) || alice.commitments.channelParams.zeroConf) {
         alice2blockchain.expectMsgType[WatchPublished]
         bob2blockchain.expectMsgType[WatchPublished]
         alice ! WatchPublishedTriggered(fundingTx)
