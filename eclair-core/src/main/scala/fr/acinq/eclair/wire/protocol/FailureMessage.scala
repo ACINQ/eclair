@@ -193,9 +193,9 @@ object FailureMessageCodecs {
 
   /**
    * An onion-encrypted failure from an intermediate node:
-   * +----------------+----------------------------------+-----------------+----------------------+-----+
+   *
    * | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
-   * +----------------+----------------------------------+-----------------+----------------------+-----+
+   *
    * Bolt 4: SHOULD set pad such that the failure_len plus pad_len is equal to 256: by always using the same size we
    * ensure error messages are indistinguishable.
    */
