@@ -756,6 +756,96 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     alice2bob.expectNoMessage(100 millis)
   }
 
+  test("recv ClosingComplete (with concurrent script update, taproot)", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
+    import f._
+    aliceClose(f)
+    alice2bob.expectMsgType[ClosingComplete]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ClosingComplete]
+    bob2alice.forward(alice)
+    val aliceTx1 = bob2blockchain.expectMsgType[PublishFinalTx]
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceTx1.tx.txid)
+    val bobTx1 = alice2blockchain.expectMsgType[PublishFinalTx]
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == bobTx1.tx.txid)
+    alice2bob.expectMsgType[ClosingSig]
+    alice2bob.forward(bob)
+    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == bobTx1.tx.txid)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId == bobTx1.tx.txid)
+    bob2alice.expectMsgType[ClosingSig]
+    bob2alice.forward(alice)
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceTx1.tx.txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceTx1.tx.txid)
+    val aliceScript1 = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].localScriptPubKey
+    val bobScript1 = bob.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].localScriptPubKey
+
+    // Alice sends another closing_complete, updating her script and the fees.
+    val probe = TestProbe()
+    val aliceScript2 = Script.write(Script.pay2wpkh(randomKey().publicKey))
+    val aliceFeerate2 = alice.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].lastClosingFeerate * 1.25
+    alice ! CMD_CLOSE(probe.ref, Some(aliceScript2), Some(ClosingFeerates(aliceFeerate2, aliceFeerate2, aliceFeerate2)))
+    probe.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    inside(alice2bob.expectMsgType[ClosingComplete]) { msg =>
+      assert(msg.fees > aliceTx1.fee)
+      assert(msg.closerScriptPubKey == aliceScript2)
+      assert(msg.closeeScriptPubKey == bobScript1)
+    }
+    // Bob also sends closing_complete concurrently, updating his script and the fees.
+    val bobScript2 = Script.write(Script.pay2wpkh(randomKey().publicKey))
+    val bobFeerate2 = bob.stateData.asInstanceOf[DATA_NEGOTIATING_SIMPLE].lastClosingFeerate * 1.25
+    bob ! CMD_CLOSE(probe.ref, Some(bobScript2), Some(ClosingFeerates(bobFeerate2, bobFeerate2, bobFeerate2)))
+    probe.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    inside(bob2alice.expectMsgType[ClosingComplete]) { msg =>
+      assert(msg.fees > bobTx1.fee)
+      assert(msg.closerScriptPubKey == bobScript2)
+      assert(msg.closeeScriptPubKey == aliceScript1)
+    }
+    // Those messages are ignored because they don't match the latest version of each participant's scripts.
+    alice2bob.forward(bob)
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[Warning]
+    alice2bob.expectNoMessage(100 millis)
+    bob2alice.expectMsgType[Warning]
+    bob2alice.expectNoMessage(100 millis)
+
+    // Alice retries with a higher fee, now that she received Bob's latest script.
+    val aliceFeerate3 = aliceFeerate2 * 1.25
+    alice ! CMD_CLOSE(probe.ref, Some(aliceScript2), Some(ClosingFeerates(aliceFeerate3, aliceFeerate3, aliceFeerate3)))
+    probe.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    inside(alice2bob.expectMsgType[ClosingComplete]) { msg =>
+      assert(msg.closerScriptPubKey == aliceScript2)
+      assert(msg.closeeScriptPubKey == bobScript2)
+    }
+    alice2bob.forward(bob)
+    val bobClosingSig3 = bob2alice.expectMsgType[ClosingSig]
+    assert(bobClosingSig3.closerScriptPubKey == aliceScript2)
+    assert(bobClosingSig3.closeeScriptPubKey == bobScript2)
+    // Before receiving Bob's closing_sig, Alice updates her script again.
+    val aliceFeerate4 = aliceFeerate3 * 1.25
+    val aliceScript4 = Script.write(Script.pay2wpkh(randomKey().publicKey))
+    alice ! CMD_CLOSE(probe.ref, Some(aliceScript4), Some(ClosingFeerates(aliceFeerate4, aliceFeerate4, aliceFeerate4)))
+    probe.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    inside(alice2bob.expectMsgType[ClosingComplete]) { msg =>
+      assert(msg.closerScriptPubKey == aliceScript4)
+      assert(msg.closeeScriptPubKey == bobScript2)
+    }
+    alice2bob.forward(bob)
+    val bobClosingSig4 = bob2alice.expectMsgType[ClosingSig]
+    assert(bobClosingSig4.closerScriptPubKey == aliceScript4)
+    assert(bobClosingSig4.closeeScriptPubKey == bobScript2)
+
+    // The first closing_sig is ignored because it's not using Alice's latest script.
+    bob2alice.forward(alice, bobClosingSig3)
+    alice2bob.expectMsgType[Warning]
+    alice2blockchain.expectNoMessage(100 millis)
+    // The second closing_sig lets Alice broadcast a new version of her closing transaction.
+    bob2alice.forward(alice, bobClosingSig4)
+    val aliceTx4 = alice2blockchain.expectMsgType[PublishFinalTx]
+    assert(aliceTx4.fee > aliceTx1.fee)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceTx4.tx.txid)
+    alice2blockchain.expectNoMessage(100 millis)
+    alice2bob.expectNoMessage(100 millis)
+  }
+
   test("recv WatchFundingSpentTriggered (counterparty's mutual close)") { f =>
     import f._
     aliceClose(f)

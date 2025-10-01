@@ -810,6 +810,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           //        there are pending signed changes  => go to SHUTDOWN
           //        there are no htlcs                => go to NEGOTIATING
           remoteCloseeNonce_opt = remoteShutdown.closeeNonce_opt
+          log.warning(s"set remoteCloseeNonce_opt to $remoteCloseeNonce_opt from 1st Shutdown")
           if (d.commitments.changes.remoteHasUnsignedOutgoingHtlcs) {
             handleLocalError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), d, Some(remoteShutdown))
           } else if (d.commitments.changes.remoteHasUnsignedOutgoingUpdateFee) {
@@ -1763,6 +1764,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         log.debug("our peer updated their shutdown script (previous={}, current={})", d.remoteShutdown.scriptPubKey, shutdown.scriptPubKey)
       }
       remoteCloseeNonce_opt = shutdown.closeeNonce_opt
+      log.warning(s"set remoteCloseeNonce_opt to $remoteCloseeNonce_opt from new Shutdown")
       stay() using d.copy(remoteShutdown = shutdown) storing()
 
     case Event(r: RevocationTimeout, d: DATA_SHUTDOWN) => handleRevocationTimeout(r, d)
@@ -1906,6 +1908,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   when(NEGOTIATING_SIMPLE)(handleExceptions {
     case Event(shutdown: Shutdown, d: DATA_NEGOTIATING_SIMPLE) =>
       remoteCloseeNonce_opt = shutdown.closeeNonce_opt
+      log.warning(s"set remoteCloseeNonce_opt to $remoteCloseeNonce_opt from new Shutdown in negotiating")
       if (shutdown.scriptPubKey != d.remoteScriptPubKey) {
         // This may lead to a signature mismatch: peers must use closing_complete to update their closing script.
         log.warning("received shutdown changing remote script, this may lead to a signature mismatch: previous={}, current={}", d.remoteScriptPubKey, shutdown.scriptPubKey)
@@ -1958,11 +1961,13 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case Left(f) =>
           log.warning("invalid closing_sig: {}", f.getMessage)
           remoteCloseeNonce_opt = closingSig.nextCloseeNonce_opt
+          log.warning(s"set remoteCloseeNonce_opt to $remoteCloseeNonce_opt from invalid closing sig")
           stay() sending Warning(d.channelId, f.getMessage)
         case Right(signedClosingTx) =>
           log.debug("received signatures for local mutual close transaction: {}", signedClosingTx.tx)
           val d1 = d.copy(publishedClosingTxs = d.publishedClosingTxs :+ signedClosingTx)
           remoteCloseeNonce_opt = closingSig.nextCloseeNonce_opt
+          log.warning(s"set remoteCloseeNonce_opt to $remoteCloseeNonce_opt from closing sig")
           stay() using d1 storing() calling doPublish(signedClosingTx, localPaysClosingFees = true)
       }
 

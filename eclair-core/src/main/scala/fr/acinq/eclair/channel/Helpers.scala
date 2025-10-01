@@ -843,7 +843,7 @@ object Helpers {
             case Some(localNonce) =>
               (closingTxs.localAndRemote_opt, closingTxs.localOnly_opt) match {
                 case (Some(_), Some(_)) if closingComplete.closerAndCloseeOutputsPartialSig_opt.isEmpty && closingComplete.closeeOutputOnlyPartialSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
-                case (Some(_), None) if closingComplete.closerAndCloseeOutputsPartialSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
+                case (Some(_), None) if closingComplete.closerOutputOnlyPartialSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
                 case (None, Some(_)) if closingComplete.closeeOutputOnlyPartialSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
                 case _ => ()
               }
@@ -865,6 +865,9 @@ object Helpers {
                       val nextLocalNonce = NonceGenerator.signingNonce(localFundingKey.publicKey, commitment.remoteFundingPubKey, commitment.fundingTxId)
                       val tlvs = TlvStream[ClosingSigTlv](sigToTlv(localSig), ClosingSigTlv.NextCloseeNonce(nextLocalNonce.publicNonce))
                       Right(signedClosingTx, ClosingSig(commitment.channelId, remoteScriptPubkey, localScriptPubkey, closingComplete.fees, closingComplete.lockTime, tlvs), Some(nextLocalNonce))
+                    case Some((signedClosingTx, localSig)) =>
+                      signedClosingTx.validate(extraUtxos = Map.empty)
+                      Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
                     case _ => Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
                   }
                 case None => Left(MissingCloseSignature(commitment.channelId))
