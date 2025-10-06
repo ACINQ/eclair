@@ -30,7 +30,6 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.channel.ChannelTypes.SimpleTaprootChannelsPhoenix
 import fr.acinq.eclair.channel.Commitments.PostRevocationAction
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel.Helpers.Syncing.SyncResult
@@ -2720,10 +2719,13 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               }
 
               // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-              d.localShutdown.foreach {
-                localShutdown =>
-                  log.debug("re-sending local_shutdown")
-                  sendQueue = sendQueue :+ localShutdown
+              val shutdown_opt = d.localShutdown match {
+                case None => None
+                case Some(shutdown) =>
+                  log.debug("re-sending local shutdown")
+                  val shutdown1 = createShutdown(commitments1, shutdown.scriptPubKey)
+                  sendQueue = sendQueue :+ shutdown1
+                  Some(shutdown1)
               }
 
               if (d.commitments.announceChannel) {
@@ -2754,7 +2756,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 peer ! ChannelReadyForPayments(self, remoteNodeId, d.channelId, fundingTxIndex)
               }
 
-              goto(NORMAL) using d.copy(commitments = commitments1, spliceStatus = spliceStatus1) sending sendQueue
+              goto(NORMAL) using d.copy(commitments = commitments1, spliceStatus = spliceStatus1, localShutdown = shutdown_opt) sending sendQueue
           }
       }
 
@@ -2780,9 +2782,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               handleSyncFailure(channelReestablish, syncFailure, d)
             case syncSuccess: SyncResult.Success =>
               val commitments1 = d.commitments.discardUnsignedUpdates()
-              val sendQueue = Queue.empty[LightningMessage] ++ syncSuccess.retransmit :+ d.localShutdown
+              // We retransmit our shutdown: we may have updated our script and they may not have received it.
+              val shutdown = createShutdown(commitments1, d.localShutdown.scriptPubKey)
+              val sendQueue = Queue.empty[LightningMessage] ++ syncSuccess.retransmit :+ shutdown
               // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-              goto(SHUTDOWN) using d.copy(commitments = commitments1) sending sendQueue
+              goto(SHUTDOWN) using d.copy(commitments = commitments1, localShutdown = shutdown) sending sendQueue
           }
       }
 
