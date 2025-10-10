@@ -506,6 +506,7 @@ object RouteCalculation {
         val (p, dp) = if (usePastRelaysData) {
           balances.get(edge).canSendAndDerivative(MilliSatoshi(x), now)
         } else {
+          // If not using past relays data, we assume that balances are uniformly distributed between 0 and the full capacity of the channel.
           val c = (edge.capacity - usedCapacity.getOrElse(edge.desc.shortChannelId, 0 msat)).toLong.toDouble
           (1.0 - x.toDouble / c, -1.0 / c)
         }
