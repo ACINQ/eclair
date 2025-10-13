@@ -71,7 +71,7 @@
         <akka.version>2.6.20</akka.version>
         <akka.http.version>10.2.7</akka.http.version>
         <sttp.version>3.8.16</sttp.version>
-        <bitcoinlib.version>0.43.2</bitcoinlib.version>
+        <bitcoinlib.version>0.44</bitcoinlib.version>
         <guava.version>32.1.1-jre</guava.version>
         <kamon.version>2.7.4</kamon.version>
         <kanela-agent.version>1.0.18</kanela-agent.version>
