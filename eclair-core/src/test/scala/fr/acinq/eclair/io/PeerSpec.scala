@@ -547,7 +547,7 @@ class PeerSpec extends FixtureSpec {
     assert(init.channelType == ChannelTypes.AnchorOutputs())
     assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
-    assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
+    assert(init.commitTxFeerate == TestConstants.phoenixCommitFeeratePerKw)
     assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing))
   }
 
