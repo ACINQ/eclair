@@ -2736,7 +2736,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               if (d.commitments.localChannelParams.paysCommitTxFees && !shutdownInProgress) {
                 val currentFeeratePerKw = d.commitments.latest.localCommit.spec.commitTxFeerate
                 val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat)
-                if (nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)) {
+                if (nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw, d.commitments.latest.commitmentFormat)) {
                   self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
                 }
               }
@@ -3219,7 +3219,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     val commitments = d.commitments.latest
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, d.commitments.latest.commitmentFormat)
     val currentFeeratePerKw = commitments.localCommit.spec.commitTxFeerate
-    val shouldUpdateFee = d.commitments.localChannelParams.paysCommitTxFees && nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)
+    val shouldUpdateFee = d.commitments.localChannelParams.paysCommitTxFees && nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw, d.commitments.latest.commitmentFormat)
     if (shouldUpdateFee) {
       self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
     }

@@ -53,6 +53,7 @@ object TestConstants {
   val nonInitiatorPushAmount: MilliSatoshi = 100_000_000L msat
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10_000 sat)
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2_500 sat)
+  val phoenixCommitFeeratePerKw: FeeratePerKw = FeeratePerByte(1 sat).perKw
   val defaultLiquidityRates: LiquidityAds.WillFundRates = LiquidityAds.WillFundRates(
     fundingRates = LiquidityAds.FundingRate(100_000 sat, 10_000_000 sat, 500, 100, 100 sat, 1000 sat) :: Nil,
     paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalance)

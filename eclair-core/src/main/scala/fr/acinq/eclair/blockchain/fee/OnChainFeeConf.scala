@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.Satoshi
+import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong}
 import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
@@ -65,8 +65,8 @@ case class DustTolerance(maxExposure: Satoshi, closeOnUpdateFeeOverflow: Boolean
 
 case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMaxCommitFeerate: FeeratePerKw, dustTolerance: DustTolerance) {
   /**
-   * @param networkFeerate   reference fee rate (value we estimate from our view of the network)
-   * @param proposedFeerate  fee rate proposed (new proposal through update_fee or previous proposal used in our current commit tx)
+   * @param networkFeerate  reference fee rate (value we estimate from our view of the network)
+   * @param proposedFeerate fee rate proposed (new proposal through update_fee or previous proposal used in our current commit tx)
    * @return true if the difference between proposed and reference fee rates is too high.
    */
   def isProposedCommitFeerateTooHigh(networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = networkFeerate * ratioHigh < proposedFeerate
@@ -85,15 +85,24 @@ case class OnChainFeeConf(feeTargets: FeeTargets,
   def feerateToleranceFor(nodeId: PublicKey): FeerateTolerance = perNodeFeerateTolerance.getOrElse(nodeId, defaultFeerateTolerance)
 
   /** To avoid spamming our peers with fee updates every time there's a small variation, we only update the fee when the difference exceeds a given ratio. */
-  def shouldUpdateFee(currentFeeratePerKw: FeeratePerKw, nextFeeratePerKw: FeeratePerKw): Boolean =
-    currentFeeratePerKw.toLong == 0 || Math.abs((currentFeeratePerKw.toLong - nextFeeratePerKw.toLong).toDouble / currentFeeratePerKw.toLong) > updateFeeMinDiffRatio
+  def shouldUpdateFee(currentFeeratePerKw: FeeratePerKw, nextFeeratePerKw: FeeratePerKw, commitmentFormat: CommitmentFormat): Boolean = {
+    commitmentFormat match {
+      case Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat | Transactions.PhoenixSimpleTaprootChannelCommitmentFormat =>
+        // If we're not already using 1 sat/byte, we update the fee.
+        FeeratePerKw(FeeratePerByte(1 sat)) < currentFeeratePerKw
+      case Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | Transactions.ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat =>
+        // If the fee has a large enough change, we update the fee.
+        currentFeeratePerKw.toLong == 0 || Math.abs((currentFeeratePerKw.toLong - nextFeeratePerKw.toLong).toDouble / currentFeeratePerKw.toLong) > updateFeeMinDiffRatio
+    }
+  }
 
   def getFundingFeerate(feerates: FeeratesPerKw): FeeratePerKw = feeTargets.funding.getFeerate(feerates)
 
   /**
    * Get the feerate that should apply to a channel commitment transaction:
-   *  - if we're using anchor outputs, we use a feerate that allows network propagation of the commit tx: we will use CPFP to speed up confirmation if needed
-   *  - otherwise we use a feerate that should get the commit tx confirmed within the configured block target
+   *  - if the remote peer is a mobile wallet that supports anchor outputs, we use 1 sat/byte
+   *  - otherwise, we use a feerate that should allow network propagation of the commit tx on its own: we will use CPFP
+   *    on the anchor output to speed up confirmation if needed or to help propagation
    *
    * @param remoteNodeId     nodeId of our channel peer
    * @param commitmentFormat commitment format
@@ -102,7 +111,11 @@ case class OnChainFeeConf(feeTargets: FeeTargets,
     val networkFeerate = feerates.fast
     val networkMinFee = feerates.minimum
     commitmentFormat match {
-      case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat =>
+      case Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat | Transactions.PhoenixSimpleTaprootChannelCommitmentFormat =>
+        // Since Bitcoin Core v28, 1-parent-1-child package relay has been deployed: it should be ok if the commit tx
+        // doesn't propagate on its own.
+        FeeratePerKw(FeeratePerByte(1 sat))
+      case Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | Transactions.ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat =>
         val targetFeerate = networkFeerate.min(feerateToleranceFor(remoteNodeId).anchorOutputMaxCommitFeerate)
         // We make sure the feerate is always greater than the propagation threshold.
         targetFeerate.max(networkMinFee * 1.25)

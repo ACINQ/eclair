@@ -140,7 +140,10 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
         temporaryChannelId = ByteVector32.Zeroes,
         fundingAmount = fundingAmount,
         dualFunded = dualFunded,
-        commitTxFeerate = TestConstants.anchorOutputsFeeratePerKw,
+        commitTxFeerate = channelType match {
+          case _: ChannelTypes.AnchorOutputs | ChannelTypes.SimpleTaprootChannelsPhoenix => TestConstants.phoenixCommitFeeratePerKw
+          case _ => TestConstants.anchorOutputsFeeratePerKw
+        },
         fundingTxFeerate = TestConstants.feeratePerKw,
         fundingTxFeeBudget_opt = None,
         pushAmount_opt = pushAmount_opt,
