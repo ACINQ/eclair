@@ -443,7 +443,7 @@ object RouteCalculation {
     }
   }
 
-  private case class CandidateRoute(routeWithMaximumAmount: Route, chosenAmount: MilliSatoshi)
+  private case class CandidateRoute(route: Route, maxAmount: MilliSatoshi)
 
   private def split(amount: MilliSatoshi, paths: mutable.Queue[WeightedPath[PaymentPathWeight]], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, balances: BalancesEstimates, now: TimestampSecond): Either[RouterException, Seq[Route]] = {
     var amountLeft = amount
@@ -452,7 +452,7 @@ object RouteCalculation {
       val current = paths.dequeue()
       val candidate = computeRouteMaxAmount(current.path, usedCapacity)
       if (candidate.amount >= routeParams.mpp.minPartAmount.min(amountLeft)) {
-        val routeFullCapacity = candidate.copy(amount = candidate.amount.min(amountLeft))
+        val maxAmount = candidate.amount.min(amountLeft)
         val chosenAmount = routeParams.mpp.splittingStrategy match {
           case MultiPartParams.Randomize =>
             // randomly choose the amount to be between 20% and 100% of the available capacity.
@@ -466,26 +466,27 @@ object RouteCalculation {
             val bestAmount = optimizeExpectedValue(current.path, candidate.amount, usedCapacity, routeParams.heuristics.usePastRelaysData, balances, now)
             bestAmount.max(routeParams.mpp.minPartAmount).min(amountLeft)
           case MultiPartParams.FullCapacity =>
-            routeFullCapacity.amount
+            maxAmount
         }
-        updateUsedCapacity(routeFullCapacity, usedCapacity)
-        candidates = CandidateRoute(routeFullCapacity, chosenAmount) :: candidates
+        val route = candidate.copy(amount = chosenAmount)
+        updateUsedCapacity(route.copy(amount = maxAmount), usedCapacity)
+        candidates = CandidateRoute(route, maxAmount) :: candidates
         amountLeft = amountLeft - chosenAmount
         paths.enqueue(current)
       }
     }
-    val totalChosen = candidates.map(_.chosenAmount).sum
-    val totalMaximum = candidates.map(_.routeWithMaximumAmount.amount).sum
+    val totalChosen = candidates.map(_.route.amount).sum
+    val totalMaximum = candidates.map(_.maxAmount).sum
     if (totalMaximum < amount) {
       Left(RouteNotFound)
     } else {
       val additionalFraction = if (totalMaximum > totalChosen) (amount - totalChosen).toLong.toDouble / (totalMaximum - totalChosen).toLong.toDouble else 0.0
       var routes: List[Route] = Nil
       var amountLeft = amount
-      candidates.foreach { case CandidateRoute(route, chosenAmount) =>
+      candidates.foreach { case CandidateRoute(route, maxAmount) =>
         if (amountLeft > 0.msat) {
-          val additionalAmount = MilliSatoshi(((route.amount - chosenAmount).toLong * additionalFraction).ceil.toLong)
-          val amountToSend = (chosenAmount + additionalAmount).min(amountLeft)
+          val additionalAmount = MilliSatoshi(((maxAmount - route.amount).toLong * additionalFraction).ceil.toLong)
+          val amountToSend = (route.amount + additionalAmount).min(amountLeft)
           routes = route.copy(amount = amountToSend) :: routes
           amountLeft = amountLeft - amountToSend
         }
