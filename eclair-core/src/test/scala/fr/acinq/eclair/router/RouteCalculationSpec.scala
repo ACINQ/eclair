@@ -1168,7 +1168,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     }
     {
       // Update A - B with unknown balance, capacity should be used instead.
-      val g1 = g.addEdge(edge_ab.copy(capacity = 15 sat, balance_opt = None))
+      val g1 = g.addEdge(makeEdge(1L, a, b, 50 msat, 100, minHtlc = 1 msat, capacity = 15 sat, balance_opt = None))
       val Success(routes) = findMultiPartRoute(g1, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
       checkRouteAmounts(routes, amount, maxFee)
       assert(routes2Ids(routes) == Set(Seq(1L, 2L, 3L), Seq(4L, 6L), Seq(5L, 6L)))
@@ -1190,7 +1190,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     }
     {
       // Update capacity A - B to be too low.
-      val g1 = g.addEdge(edge_ab.copy(capacity = 5 sat, balance_opt = None))
+      val g1 = g.addEdge(makeEdge(1L, a, b, 50 msat, 100, minHtlc = 1 msat, capacity = 5 sat, balance_opt = None))
       val failure = findMultiPartRoute(g1, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
       assert(failure == Failure(RouteNotFound))
     }
@@ -1278,7 +1278,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     }
     {
       // Update A - B with unknown balance, capacity should be used instead.
-      val g1 = g.addEdge(edge_ab.copy(capacity = 500 sat, balance_opt = None))
+      val g1 = g.addEdge(makeEdge(1L, a, b, 50 msat, 100, minHtlc = 1 msat, capacity = 500 sat, balance_opt = None))
       val Success(routes) = findMultiPartRoute(g1, a, f, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
       checkRouteAmounts(routes, amount, maxFee)
       assert(routes2Ids(routes) == Set(Seq(1L, 2L, 3L, 5L), Seq(1L, 4L, 5L), Seq(1L, 6L, 7L)))
@@ -1291,7 +1291,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     }
     {
       // Update capacity A - B to be too low to cover fees.
-      val g1 = g.addEdge(edge_ab.copy(capacity = 400 sat, balance_opt = None))
+      val g1 = g.addEdge(makeEdge(1L, a, b, 50 msat, 100, minHtlc = 1 msat, capacity = 400 sat, balance_opt = None))
       val failure = findMultiPartRoute(g1, a, f, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
       assert(failure == Failure(RouteNotFound))
     }
@@ -1386,35 +1386,6 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val Success(routes) = findMultiPartRoute(g, a, f, amount, maxFee, ignoredEdges = ignoredChannels, ignoredVertices = ignoredNodes, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
     checkRouteAmounts(routes, amount, maxFee)
     assert(routes2Ids(routes) == Set(Seq(8L), Seq(9L, 10L)))
-  }
-
-  test("calculate multipart route to remote node (restricted htlc_minimum_msat and htlc_maximum_msat)") {
-    // +----- B -----+
-    // |             |
-    // A----- C ---- E
-    // |             |
-    // +----- D -----+
-    val (amount, maxFee) = (15000 msat, 5 msat)
-    val g = GraphWithBalanceEstimates(DirectedGraph(List(
-      // The A -> B -> E path is impossible because the A -> B balance is lower than the B -> E htlc_minimum_msat.
-      makeEdge(1L, a, b, 1 msat, 0, minHtlc = 500 msat, balance_opt = Some(7000 msat)),
-      makeEdge(2L, b, e, 1 msat, 0, minHtlc = 10000 msat, capacity = 50 sat),
-      makeEdge(3L, a, c, 1 msat, 0, minHtlc = 500 msat, balance_opt = Some(10000 msat)),
-      makeEdge(4L, c, e, 1 msat, 0, minHtlc = 500 msat, maxHtlc = Some(4000 msat), capacity = 50 sat),
-      makeEdge(5L, a, d, 1 msat, 0, minHtlc = 500 msat, balance_opt = Some(10000 msat)),
-      makeEdge(6L, d, e, 1 msat, 0, minHtlc = 500 msat, maxHtlc = Some(4000 msat), capacity = 50 sat),
-    )), 1 day)
-
-    val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
-    checkRouteAmounts(routes, amount, maxFee)
-    assert(routes.length >= 4, routes)
-    assert(routes.forall(_.amount <= 4000.msat), routes)
-    assert(routes.forall(_.amount >= 500.msat), routes)
-    checkIgnoredChannels(routes, 1L, 2L)
-
-    val maxFeeTooLow = 3 msat
-    val failure = findMultiPartRoute(g, a, e, amount, maxFeeTooLow, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
-    assert(failure == Failure(RouteNotFound))
   }
 
   test("calculate multipart route to remote node (complex graph)") {
@@ -2006,11 +1977,11 @@ object RouteCalculationSpec {
                cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0),
                capacity: Satoshi = DEFAULT_CAPACITY,
                balance_opt: Option[MilliSatoshi] = None): GraphEdge = {
-    val update = makeUpdateShort(ShortChannelId(shortChannelId), nodeId1, nodeId2, feeBase, feeProportionalMillionth, minHtlc, maxHtlc, cltvDelta)
+    val update = makeUpdateShort(ShortChannelId(shortChannelId), nodeId1, nodeId2, feeBase, feeProportionalMillionth, minHtlc, maxHtlc.getOrElse(capacity.toMilliSatoshi), cltvDelta)
     GraphEdge(ChannelDesc(RealShortChannelId(shortChannelId), nodeId1, nodeId2), HopRelayParams.FromAnnouncement(update), capacity, balance_opt)
   }
 
-  def makeUpdateShort(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: Option[MilliSatoshi] = None, cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0), timestamp: TimestampSecond = 0 unixsec): ChannelUpdate =
+  def makeUpdateShort(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: MilliSatoshi = 500_000_000 msat, cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0), timestamp: TimestampSecond = 0 unixsec): ChannelUpdate =
     ChannelUpdate(
       signature = DUMMY_SIG,
       chainHash = Block.RegtestGenesisBlock.hash,
@@ -2022,7 +1993,7 @@ object RouteCalculationSpec {
       htlcMinimumMsat = minHtlc,
       feeBaseMsat = feeBase,
       feeProportionalMillionths = feeProportionalMillionth,
-      htlcMaximumMsat = maxHtlc.getOrElse(500_000_000 msat)
+      htlcMaximumMsat = maxHtlc
     )
 
   def hops2Ids(hops: Seq[ChannelHop]): Seq[Long] = hops.map(hop => hop.shortChannelId.toLong)

@@ -448,6 +448,7 @@ object RouteCalculation {
   private def split(amount: MilliSatoshi, paths: mutable.Queue[WeightedPath[PaymentPathWeight]], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, balances: BalancesEstimates, now: TimestampSecond): Either[RouterException, Seq[Route]] = {
     var amountLeft = amount
     var candidates: List[CandidateRoute] = Nil
+    // We build some candidate route but may adjust the amounts later if the don't cover the full amount we need to send.
     while(paths.nonEmpty && amountLeft > 0.msat) {
       val current = paths.dequeue()
       val candidate = computeRouteMaxAmount(current.path, usedCapacity)
@@ -469,12 +470,13 @@ object RouteCalculation {
             maxAmount
         }
         val route = candidate.copy(amount = chosenAmount)
-        updateUsedCapacity(route.copy(amount = maxAmount), usedCapacity)
+        updateUsedCapacity(route.copy(amount = maxAmount), usedCapacity) // We use `maxAmount` because we may send up to `maxAmount`.
         candidates = CandidateRoute(route, maxAmount) :: candidates
         amountLeft = amountLeft - chosenAmount
         paths.enqueue(current)
       }
     }
+    // We adjust the amounts to send through each route.
     val totalChosen = candidates.map(_.route.amount).sum
     val totalMaximum = candidates.map(_.maxAmount).sum
     if (totalMaximum < amount) {
@@ -524,15 +526,19 @@ object RouteCalculation {
 
   /** Compute the maximum amount that we can send through the given route. */
   private def computeRouteMaxAmount(route: Seq[GraphEdge], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Route = {
-    val firstHopMaxAmount = route.head.maxHtlcAmount(usedCapacity.getOrElse(route.head.desc.shortChannelId, 0 msat))
+    val firstHopMaxAmount = maxEdgeAmount(route.head, usedCapacity.getOrElse(route.head.desc.shortChannelId, 0 msat))
     val amount = route.drop(1).foldLeft(firstHopMaxAmount) { case (amount, edge) =>
       // We compute fees going forward instead of backwards. That means we will slightly overestimate the fees of some
       // edges, but we will always stay inside the capacity bounds we computed.
       val amountMinusFees = amount - edge.fee(amount)
-      val edgeMaxAmount = edge.maxHtlcAmount(usedCapacity.getOrElse(edge.desc.shortChannelId, 0 msat))
+      val edgeMaxAmount = maxEdgeAmount(edge, usedCapacity.getOrElse(edge.desc.shortChannelId, 0 msat))
       amountMinusFees.min(edgeMaxAmount)
     }
     Route(amount.max(0 msat), route.map(graphEdgeToHop), None)
+  }
+  private def maxEdgeAmount(edge: GraphEdge, usedCapacity: MilliSatoshi): MilliSatoshi = {
+    val maxBalance = edge.balance_opt.getOrElse(edge.params.htlcMaximum_opt.getOrElse(edge.capacity.toMilliSatoshi))
+    Seq(Some(maxBalance - usedCapacity), edge.params.htlcMaximum_opt).flatten.min.max(0 msat)
   }
 
   /** Initialize known used capacity based on pending HTLCs. */
@@ -546,7 +552,14 @@ object RouteCalculation {
 
   /** Update used capacity by taking into account an HTLC sent to the given route. */
   private def updateUsedCapacity(route: Route, usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Unit = {
-    route.hops.foldRight(route.amount) { case (hop, amount) =>
+    val finalHopAmount = route.finalHop_opt.map(hop => {
+      hop match {
+        case BlindedHop(dummyId, _) => usedCapacity.updateWith(dummyId)(previous => Some(route.amount + previous.getOrElse(0 msat)))
+        case _: NodeHop => ()
+      }
+      route.amount + hop.fee(route.amount)
+    }).getOrElse(route.amount)
+    route.hops.foldRight(finalHopAmount) { case (hop, amount) =>
       usedCapacity.updateWith(hop.shortChannelId)(previous => Some(amount + previous.getOrElse(0 msat)))
       amount + hop.fee(amount)
     }

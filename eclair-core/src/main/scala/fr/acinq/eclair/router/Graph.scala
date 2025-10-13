@@ -501,13 +501,6 @@ object Graph {
      * @param balance_opt (optional) available balance that can be sent through this edge
      */
     case class GraphEdge private(desc: ChannelDesc, params: HopRelayParams, capacity: Satoshi, balance_opt: Option[MilliSatoshi]) {
-
-      def maxHtlcAmount(reservedCapacity: MilliSatoshi): MilliSatoshi = Seq(
-        balance_opt.map(balance => balance - reservedCapacity),
-        params.htlcMaximum_opt,
-        Some(capacity.toMilliSatoshi - reservedCapacity)
-      ).flatten.min.max(0 msat)
-
       def fee(amount: MilliSatoshi): MilliSatoshi = params.fee(amount)
     }
 
