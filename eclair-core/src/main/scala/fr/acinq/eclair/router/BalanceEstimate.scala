@@ -216,7 +216,7 @@ case class BalanceEstimate private(low: MilliSatoshi,
    * - probability that it can relay a payment of high is decay(high, 0, highTimestamp) which is close to 0 if highTimestamp is recent
    * - probability that it can relay a payment of maxCapacity is 0
    */
-  def canSend(amount: MilliSatoshi, now: TimestampSecond): Double = {
+  def canSendAndDerivative(amount: MilliSatoshi, now: TimestampSecond): (Double, Double) = {
     val a = amount.toLong.toDouble
     val l = low.toLong.toDouble
     val h = high.toLong.toDouble
@@ -227,15 +227,17 @@ case class BalanceEstimate private(low: MilliSatoshi,
     val pHigh = decay(high, 0, highTimestamp, now)
 
     if (amount < low) {
-      (l - a * (1.0 - pLow)) / l
+      ((l - a * (1.0 - pLow)) / l, (pLow - 1.0) / l)
     } else if (amount < high) {
-      ((h - a) * pLow + (a - l) * pHigh) / (h - l)
+      (((h - a) * pLow + (a - l) * pHigh) / (h - l), (pHigh - pLow) / (h - l))
     } else if (h < c) {
-      ((c - a) * pHigh) / (c - h)
+      (((c - a) * pHigh) / (c - h), (-pHigh) / (c - h))
     } else {
-      0
+      (0.0, 0.0)
     }
   }
+
+  def canSend(amount: MilliSatoshi, now: TimestampSecond): Double = canSendAndDerivative(amount, now)._1
 }
 
 object BalanceEstimate {

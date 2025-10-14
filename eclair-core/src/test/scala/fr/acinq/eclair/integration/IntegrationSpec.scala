@@ -64,7 +64,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       useLogProbability = false,
       usePastRelaysData = false
     ),
-    mpp = MultiPartParams(15000000 msat, 6),
+    mpp = MultiPartParams(15000000 msat, 6, MultiPartParams.FullCapacity),
     experimentName = "my-test-experiment",
     experimentPercentage = 100
   ).getDefaultRouteParams

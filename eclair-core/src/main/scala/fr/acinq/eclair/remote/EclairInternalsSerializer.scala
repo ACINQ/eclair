@@ -64,13 +64,17 @@ object EclairInternalsSerializer {
       ("useLogProbability" | bool(8)) ::
       ("usePastRelaysData" | bool(8))).as[HeuristicsConstants]
 
-  val weightRatiosCodec: Codec[WeightRatios[PaymentPathWeight]] =
-    discriminated[WeightRatios[PaymentPathWeight]].by(uint8)
+  val weightRatiosCodec: Codec[HeuristicsConstants] =
+    discriminated[HeuristicsConstants].by(uint8)
       .typecase(0xff, heuristicsConstantsCodec)
 
   val multiPartParamsCodec: Codec[MultiPartParams] = (
     ("minPartAmount" | millisatoshi) ::
-      ("maxParts" | int32)).as[MultiPartParams]
+      ("maxParts" | int32) ::
+      ("splittingStrategy" | discriminated[MultiPartParams.SplittingStrategy].by(uint8)
+        .typecase(0, provide(MultiPartParams.FullCapacity))
+        .typecase(1, provide(MultiPartParams.Randomize))
+        .typecase(2, provide(MultiPartParams.MaxExpectedAmount)))).as[MultiPartParams]
 
   val pathFindingConfCodec: Codec[PathFindingConf] = (
     ("randomize" | bool(8)) ::
