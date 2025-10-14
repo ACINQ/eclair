@@ -187,7 +187,8 @@ object ReconnectionTask {
   // @formatter:on
 
   def selectNodeAddress(nodeParams: NodeParams, nodeAddresses: Seq[NodeAddress]): Option[NodeAddress] = {
-    // it makes perfect sense to mix tor and clearnet addresses over tor, but, we separate them when tor is not configured.
+    // we select one address that will be used later when we create a tcp client. If a proxy is configured and its settings 
+    // match the address type it will be used, otherwise we'll create a direct tcp connection.
     val torAddresses = nodeAddresses.collect { case o: OnionAddress => o }
     val clearnetAddresses = nodeAddresses diff torAddresses
     val selectedAddresses = nodeParams.socksProxy_opt match {
