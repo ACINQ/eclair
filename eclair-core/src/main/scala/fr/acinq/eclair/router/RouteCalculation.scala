@@ -453,36 +453,35 @@ object RouteCalculation {
       val current = paths.dequeue()
       val candidate = computeRouteMaxAmount(current.path, usedCapacity)
       if (candidate.amount >= routeParams.mpp.minPartAmount.min(amountLeft)) {
-        val maxAmount = candidate.amount.min(amountLeft)
         val chosenAmount = routeParams.mpp.splittingStrategy match {
           case MultiPartParams.Randomize =>
             // randomly choose the amount to be between 20% and 100% of the available capacity.
             val randomizedAmount = candidate.amount * ((20d + Random.nextInt(81)) / 100)
-            if (randomizedAmount < routeParams.mpp.minPartAmount) {
-              routeParams.mpp.minPartAmount.min(amountLeft)
-            } else {
-              randomizedAmount.min(amountLeft)
-            }
+            randomizedAmount.max(routeParams.mpp.minPartAmount).min(amountLeft)
           case MultiPartParams.MaxExpectedAmount =>
             val bestAmount = optimizeExpectedValue(current.path, candidate.amount, usedCapacity, routeParams.heuristics.usePastRelaysData, balances, now)
             bestAmount.max(routeParams.mpp.minPartAmount).min(amountLeft)
           case MultiPartParams.FullCapacity =>
-            maxAmount
+            candidate.amount.min(amountLeft)
         }
-        val route = candidate.copy(amount = chosenAmount)
-        updateUsedCapacity(route.copy(amount = maxAmount), usedCapacity) // We use `maxAmount` because we may send up to `maxAmount`.
-        candidates = CandidateRoute(route, maxAmount) :: candidates
+        // We update the route with our chosen amount, which is always smaller than the maximum amount.
+        val chosenRoute = CandidateRoute(candidate.copy(amount = chosenAmount), candidate.amount)
+        // But we use the route with its maximum amount when updating the used capacity, because we may use more funds below when adjusting the amounts.
+        updateUsedCapacity(candidate, usedCapacity)
+        candidates = chosenRoute :: candidates
         amountLeft = amountLeft - chosenAmount
         paths.enqueue(current)
       }
     }
     // We adjust the amounts to send through each route.
-    val totalChosen = candidates.map(_.route.amount).sum
     val totalMaximum = candidates.map(_.maxAmount).sum
-    if (totalMaximum < amount) {
+    if (amountLeft == 0.msat) {
+      Right(candidates.map(_.route))
+    } else if (totalMaximum < amount) {
       Left(RouteNotFound)
     } else {
-      val additionalFraction = if (totalMaximum > totalChosen) (amount - totalChosen).toLong.toDouble / (totalMaximum - totalChosen).toLong.toDouble else 0.0
+      val totalChosen = candidates.map(_.route.amount).sum
+      val additionalFraction = (amount - totalChosen).toLong.toDouble / (totalMaximum - totalChosen).toLong.toDouble
       var routes: List[Route] = Nil
       var amountLeft = amount
       candidates.foreach { case CandidateRoute(route, maxAmount) =>
@@ -536,6 +535,7 @@ object RouteCalculation {
     }
     Route(amount.max(0 msat), route.map(graphEdgeToHop), None)
   }
+
   private def maxEdgeAmount(edge: GraphEdge, usedCapacity: MilliSatoshi): MilliSatoshi = {
     val maxBalance = edge.balance_opt.getOrElse(edge.params.htlcMaximum_opt.getOrElse(edge.capacity.toMilliSatoshi))
     Seq(Some(maxBalance - usedCapacity), edge.params.htlcMaximum_opt).flatten.min.max(0 msat)
