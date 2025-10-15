@@ -91,7 +91,7 @@ object OnTheFlyFunding {
   /** An on-the-fly funding proposal sent to our peer. */
   case class Proposal(htlc: WillAddHtlc, upstream: Upstream.Hot, onionSharedSecrets: Seq[Sphinx.SharedSecret]) {
     /** Maximum fees that can be collected from this HTLC. */
-    def maxFees(htlcMinimum: MilliSatoshi): MilliSatoshi = htlc.amount - htlcMinimum
+    def maxFees(htlcMinimum: MilliSatoshi): MilliSatoshi = (htlc.amount - htlcMinimum).max(0 msat)
 
     /** Create commands to fail all upstream HTLCs. */
     def createFailureCommands(failure_opt: Option[FailureReason])(implicit log: LoggingAdapter): Seq[(ByteVector32, CMD_FAIL_HTLC)] = upstream match {
