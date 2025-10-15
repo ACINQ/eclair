@@ -1645,8 +1645,8 @@ object Helpers {
       val relevantOutpoints = tx.txIn.map(_.outPoint).filter(outPoint => {
         // is this the commit tx itself? (we could do this outside of the loop...)
         val isCommitTx = localCommitPublished.commitTx.txid == tx.txid
-        // does the tx spend an output of the local commitment tx?
-        val spendsTheCommitTx = localCommitPublished.commitTx.txid == outPoint.txid
+        // does the tx spend an output of the local commitment tx (other than the anchor output)?
+        val spendsTheCommitTx = localCommitPublished.commitTx.txid == outPoint.txid && !localCommitPublished.anchorOutput_opt.contains(outPoint)
         // is the tx one of our 3rd stage delayed txs? (a 3rd stage tx is a tx spending the output of an htlc tx, which
         // is itself spending the output of the commitment tx)
         val is3rdStageDelayedTx = localCommitPublished.htlcDelayedOutputs.contains(outPoint)
@@ -1672,8 +1672,8 @@ object Helpers {
       val relevantOutpoints = tx.txIn.map(_.outPoint).filter(outPoint => {
         // is this the commit tx itself? (we could do this outside of the loop...)
         val isCommitTx = remoteCommitPublished.commitTx.txid == tx.txid
-        // does the tx spend an output of the remote commitment tx?
-        val spendsTheCommitTx = remoteCommitPublished.commitTx.txid == outPoint.txid
+        // does the tx spend an output of the remote commitment tx (other than the anchor output)?
+        val spendsTheCommitTx = remoteCommitPublished.commitTx.txid == outPoint.txid  && !remoteCommitPublished.anchorOutput_opt.contains(outPoint)
         isCommitTx || spendsTheCommitTx
       })
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
@@ -1696,8 +1696,8 @@ object Helpers {
       val relevantOutpoints = tx.txIn.map(_.outPoint).filter(outPoint => {
         // is this the commit tx itself? (we could do this outside of the loop...)
         val isCommitTx = revokedCommitPublished.commitTx.txid == tx.txid
-        // does the tx spend an output of the remote commitment tx?
-        val spendsTheCommitTx = revokedCommitPublished.commitTx.txid == outPoint.txid
+        // does the tx spend an output of the remote commitment tx (other than the anchor output)?
+        val spendsTheCommitTx = revokedCommitPublished.commitTx.txid == outPoint.txid && !revokedCommitPublished.anchorOutput_opt.contains(outPoint)
         // is the tx one of our 3rd stage delayed txs? (a 3rd stage tx is a tx spending the output of an htlc tx, which
         // is itself spending the output of the commitment tx)
         val is3rdStageDelayedTx = revokedCommitPublished.htlcDelayedOutputs.contains(outPoint)

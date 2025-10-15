@@ -993,7 +993,6 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSING)
     // Alice republishes the HTLC-success transaction, which then confirms.
     assert(alice2blockchain.expectReplaceableTxPublished[HtlcSuccessTx].input == htlcSuccess.input)
-    closingTxs.anchorTx_opt.foreach(anchorTx => alice2blockchain.expectWatchOutputSpent(anchorTx.txIn.head.outPoint))
     alice2blockchain.expectWatchOutputSpent(htlcSuccess.input.outPoint)
     alice ! WatchOutputSpentTriggered(htlcSuccess.amountIn, htlcSuccess.tx)
     alice2blockchain.expectWatchTxConfirmed(htlcSuccess.tx.txid)
@@ -1010,7 +1009,6 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! INPUT_RESTORED(beforeRestart2)
     alice2blockchain.expectMsgType[SetChannelId]
     awaitCond(alice.stateName == CLOSING)
-    closingTxs.anchorTx_opt.foreach(anchorTx => alice2blockchain.expectWatchOutputSpent(anchorTx.txIn.head.outPoint))
     // Alice republishes the 3rd-stage HTLC transaction, which then confirms.
     alice2blockchain.expectFinalTxPublished(htlcDelayedTx.tx.txid)
     alice2blockchain.expectWatchOutputSpent(htlcDelayedTx.input)
@@ -1252,7 +1250,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Bob re-publishes closing transactions: he has 1 HTLC-success and 1 HTLC-timeout transactions left.
     val republishedHtlcTxsBob = (1 to 2).map(_ => bob2blockchain.expectMsgType[PublishReplaceableTx])
-    bob2blockchain.expectWatchOutputsSpent(remainingHtlcOutputs ++ closingTxsBob.anchorTx_opt.map(_.txIn.head.outPoint).toSeq)
+    bob2blockchain.expectWatchOutputsSpent(remainingHtlcOutputs)
     assert(republishedHtlcTxsBob.map(_.input).toSet == Set(htlcTimeoutTxBob2.txIn.head.outPoint, closingTxsBob.htlcSuccessTxs.head.txIn.head.outPoint))
     bob2blockchain.expectNoMessage(100 millis)
 
