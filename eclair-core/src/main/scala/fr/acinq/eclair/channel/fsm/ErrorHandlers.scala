@@ -256,7 +256,7 @@ trait ErrorHandlers extends CommonHandlers {
     // we will watch for its confirmation. This ensures that we detect double-spends that could come from:
     //  - our own RBF attempts
     //  - remote transactions for outputs that both parties may spend (e.g. HTLCs)
-    val watchSpentQueue = lcp.localOutput_opt ++ lcp.anchorOutput_opt ++ lcp.htlcOutputs.toSeq
+    val watchSpentQueue = lcp.localOutput_opt ++ (if (!lcp.isConfirmed) lcp.anchorOutput_opt else None) ++ lcp.htlcOutputs.toSeq
     watchSpentIfNeeded(lcp.commitTx, watchSpentQueue, lcp.irrevocablySpent)
   }
 
@@ -337,7 +337,7 @@ trait ErrorHandlers extends CommonHandlers {
     // we will watch for its confirmation. This ensures that we detect double-spends that could come from:
     //  - our own RBF attempts
     //  - remote transactions for outputs that both parties may spend (e.g. HTLCs)
-    val watchSpentQueue = rcp.localOutput_opt ++ rcp.anchorOutput_opt ++ rcp.htlcOutputs.toSeq
+    val watchSpentQueue = rcp.localOutput_opt ++ (if (!rcp.isConfirmed) rcp.anchorOutput_opt else None) ++ rcp.htlcOutputs.toSeq
     watchSpentIfNeeded(rcp.commitTx, watchSpentQueue, rcp.irrevocablySpent)
   }
 
