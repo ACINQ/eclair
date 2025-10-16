@@ -27,9 +27,9 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.{LiquidityAds, UpdateAddHtlc, UpdateMessage}
 import fr.acinq.eclair.{FeatureSupport, Features, PermanentChannelFeature}
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, DecodeResult}
 
 /**
  * Created by t-bast on 18/06/2025.
@@ -90,6 +90,12 @@ private[channel] object ChannelCodecs5 {
       // their dedicated table (see SqliteChannelsDb.scala and PgChannelsDb.scala).
       .typecase(0x00, provide(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
 
+    // The walletStaticPaymentBasepoint field was used for static_remotekey channels, which have been deprecated: we can
+    // thus safely ignore that field, and encode as if it wasn't provided.
+    // By keeping this codec, we can potentially re-introduce that field in the future if necessary for future channel
+    // types, without breaking backwards-compatibility.
+    private val ignoreWalletStaticPaymentBasepoint: Codec[Unit] = optional(bool8, publicKey).xmap[Unit](_ => (), _ => None)
+
     private val localChannelParamsCodec: Codec[LocalChannelParams] = (
       ("nodeId" | publicKey) ::
         ("channelPath" | keyPathCodec) ::
@@ -97,7 +103,7 @@ private[channel] object ChannelCodecs5 {
         // We pad to keep codecs byte-aligned.
         ("isChannelOpener" | bool) :: ("paysCommitTxFees" | bool) :: ignore(6) ::
         ("upfrontShutdownScript_opt" | optional(bool8, lengthDelimited(bytes))) ::
-        ("walletStaticPaymentBasepoint" | optional(bool8, publicKey)) ::
+        ("walletStaticPaymentBasepoint" | ignoreWalletStaticPaymentBasepoint) ::
         ("features" | combinedFeaturesCodec)).as[LocalChannelParams]
 
     val remoteChannelParamsCodec: Codec[RemoteChannelParams] = (

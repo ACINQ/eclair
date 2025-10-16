@@ -121,7 +121,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val probe = TestProbe()(system)
     val dummyPublicKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101").publicKey
     val dummyBytes32 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
-    val localChannelParams = LocalChannelParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), Some(1000 sat), isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
+    val localChannelParams = LocalChannelParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), Some(1000 sat), isChannelOpener = true, paysCommitTxFees = true, None, Features.empty)
     val localCommitParams = CommitParams(546 sat, 1 msat, UInt64(Long.MaxValue), 50, CltvExpiryDelta(144))
     val remoteChannelParams = RemoteChannelParams(dummyPublicKey, Some(1000 sat), dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
     val remoteCommitParams = CommitParams(546 sat, 1 msat, UInt64.MaxValue, 50, CltvExpiryDelta(144))

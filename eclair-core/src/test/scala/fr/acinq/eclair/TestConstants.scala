@@ -266,7 +266,6 @@ object TestConstants {
       nodeParams,
       nodeParams.features.initFeatures(),
       None,
-      None,
       isChannelOpener = true,
       paysCommitTxFees = true,
       dualFunded = false,
@@ -457,7 +456,6 @@ object TestConstants {
     def channelParams: LocalChannelParams = OpenChannelInterceptor.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
-      None,
       None,
       isChannelOpener = false,
       paysCommitTxFees = false,

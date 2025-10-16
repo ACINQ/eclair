@@ -202,7 +202,7 @@ object LocalCommit {
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePerCommitmentPoint: PublicKey) {
   def sign(channelParams: ChannelParams, commitParams: CommitParams, channelKeys: ChannelKeys, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo, commitmentFormat: CommitmentFormat, remoteNonce_opt: Option[IndividualNonce], batchSize: Int = 1): Either[ChannelException, CommitSig] = {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
-    val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentPoint, commitmentFormat)
+    val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentPoint)
     val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(channelParams, commitParams, commitKeys, index, fundingKey, remoteFundingPubKey, commitInput, commitmentFormat, spec)
     val sortedHtlcTxs = htlcTxs.sortBy(_.input.outPoint.index)
     val htlcSigs = sortedHtlcTxs.map(_.localSig(commitKeys))
@@ -278,9 +278,9 @@ case class Commitment(fundingTxIndex: Long,
 
   def commitInput(channelKeys: ChannelKeys): InputInfo = commitInput(localFundingKey(channelKeys))
 
-  def localKeys(params: ChannelParams, channelKeys: ChannelKeys): LocalCommitmentKeys = LocalCommitmentKeys(params, channelKeys, localCommit.index, commitmentFormat)
+  def localKeys(params: ChannelParams, channelKeys: ChannelKeys): LocalCommitmentKeys = LocalCommitmentKeys(params, channelKeys, localCommit.index)
 
-  def remoteKeys(params: ChannelParams, channelKeys: ChannelKeys, remotePerCommitmentPoint: PublicKey): RemoteCommitmentKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentPoint, commitmentFormat)
+  def remoteKeys(params: ChannelParams, channelKeys: ChannelKeys, remotePerCommitmentPoint: PublicKey): RemoteCommitmentKeys = RemoteCommitmentKeys(params, channelKeys, remotePerCommitmentPoint)
 
   /** Channel reserve that applies to our funds. */
   def localChannelReserve(params: ChannelParams): Satoshi = if (params.channelFeatures.hasFeature(Features.DualFunding) || fundingTxIndex > 0) {
@@ -1062,8 +1062,8 @@ case class Commitments(channelParams: ChannelParams,
     remoteNextCommitInfo match {
       case Right(_) if !changes.localHasChanges => Left(CannotSignWithoutChanges(channelId))
       case Right(remoteNextPerCommitmentPoint) =>
+        val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remoteNextPerCommitmentPoint)
         val (active1, sigs) = active.map(c => {
-          val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remoteNextPerCommitmentPoint, c.commitmentFormat)
           c.sendCommit(channelParams, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, active.size, nextRemoteCommitNonces.get(c.fundingTxId)) match {
             case Left(e) => return Left(e)
             case Right((c, cs)) => (c, cs)
@@ -1093,8 +1093,8 @@ case class Commitments(channelParams: ChannelParams,
       case commitSig: CommitSig => Seq(commitSig)
     }
     // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
+    val commitKeys = LocalCommitmentKeys(channelParams, channelKeys, localCommitIndex + 1)
     val active1 = active.zip(sigs).map { case (commitment, commit) =>
-      val commitKeys = LocalCommitmentKeys(channelParams, channelKeys, localCommitIndex + 1, commitment.commitmentFormat)
       commitment.receiveCommit(channelParams, channelKeys, commitKeys, changes, commit) match {
         case Left(f) => return Left(f)
         case Right(commitment1) => commitment1

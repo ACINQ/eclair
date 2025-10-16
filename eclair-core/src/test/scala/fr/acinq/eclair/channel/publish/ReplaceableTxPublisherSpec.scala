@@ -1603,13 +1603,13 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     generateBlocks(1)
 
     val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val mainTx_opt = if (bob.stateData.asInstanceOf[DATA_NORMAL].commitments.channelParams.localParams.walletStaticPaymentBasepoint.isEmpty) Some(alice2blockchain.expectFinalTxPublished("remote-main-delayed")) else None
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
     val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(claimHtlcSuccess.txInfo.isInstanceOf[ClaimHtlcSuccessTx])
     val claimHtlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(claimHtlcTimeout.txInfo.isInstanceOf[ClaimHtlcTimeoutTx])
     alice2blockchain.expectWatchTxConfirmed(remoteCommitTx.txid)
-    alice2blockchain.expectWatchOutputsSpent(mainTx_opt.map(_.input).toSeq ++ Seq(anchorTx.input.outPoint) ++ Seq(claimHtlcSuccess.input, claimHtlcTimeout.input))
+    alice2blockchain.expectWatchOutputsSpent(Seq(mainTx.input, anchorTx.input.outPoint) ++ Seq(claimHtlcSuccess.input, claimHtlcTimeout.input))
     alice2blockchain.expectNoMessage(100 millis)
 
     (remoteCommitTx, claimHtlcSuccess, claimHtlcTimeout)

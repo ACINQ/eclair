@@ -1349,7 +1349,7 @@ object Helpers {
         // a valid tx will always have at least one input, but this ensures we don't throw in tests
         val sequence = commitTx.txIn.headOption.map(_.sequence).getOrElse(0L)
         val obscuredTxNumber = Transactions.decodeTxNumber(sequence, commitTx.lockTime)
-        val localPaymentPoint = params.localParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint)
+        val localPaymentPoint = channelKeys.paymentBasePoint
         // this tx has been published by remote, so we need to invert local/remote params
         val txNumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !params.localParams.isChannelOpener, params.remoteParams.paymentBasepoint, localPaymentPoint)
         if (txNumber > 0xffffffffffffL) {
@@ -1368,7 +1368,7 @@ object Helpers {
       def claimCommitTxOutputs(channelParams: ChannelParams, channelKeys: ChannelKeys, commitTx: Transaction, commitmentNumber: Long, remotePerCommitmentSecret: PrivateKey, toSelfDelay: CltvExpiryDelta, commitmentFormat: CommitmentFormat, db: ChannelsDb, dustLimit: Satoshi, feerates: FeeratesPerKw, onChainFeeConf: OnChainFeeConf, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): (RevokedCommitPublished, SecondStageTransactions) = {
         log.warning("a revoked commit has been published with commitmentNumber={}", commitmentNumber)
 
-        val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentSecret.publicKey, commitmentFormat)
+        val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentSecret.publicKey)
         val revocationKey = channelKeys.revocationKey(remotePerCommitmentSecret)
 
         val feerateMain = onChainFeeConf.getClosingFeerate(feerates, maxClosingFeerateOverride_opt = None)
@@ -1428,7 +1428,7 @@ object Helpers {
         if (spendsHtlcOutput) {
           getRemotePerCommitmentSecret(channelParams, channelKeys, remotePerCommitmentSecrets, revokedCommitPublished.commitTx).map {
             case (_, remotePerCommitmentSecret) =>
-              val commitmentKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentSecret.publicKey, commitmentFormat)
+              val commitmentKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentSecret.publicKey)
               val revocationKey = channelKeys.revocationKey(remotePerCommitmentSecret)
               val penaltyTxs = claimHtlcTxOutputs(commitmentKeys, revocationKey, toSelfDelay, commitmentFormat, htlcTx, dustLimit, feerates, finalScriptPubKey)
               val revokedCommitPublished1 = revokedCommitPublished.copy(htlcDelayedOutputs = revokedCommitPublished.htlcDelayedOutputs ++ penaltyTxs.map(_.input.outPoint))
@@ -1452,7 +1452,7 @@ object Helpers {
        * Claim the outputs of all 2nd-stage HTLC transactions that have been confirmed.
        */
       def claimHtlcTxsOutputs(channelParams: ChannelParams, channelKeys: ChannelKeys, remotePerCommitmentSecret: PrivateKey, toSelfDelay: CltvExpiryDelta, commitmentFormat: CommitmentFormat, revokedCommitPublished: RevokedCommitPublished, dustLimit: Satoshi, feerates: FeeratesPerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): ThirdStageTransactions = {
-        val commitmentKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentSecret.publicKey, commitmentFormat)
+        val commitmentKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentSecret.publicKey)
         val revocationKey = channelKeys.revocationKey(remotePerCommitmentSecret)
         val confirmedHtlcTxs = revokedCommitPublished.htlcOutputs.flatMap(htlcOutput => revokedCommitPublished.irrevocablySpent.get(htlcOutput))
         val penaltyTxs = confirmedHtlcTxs.flatMap(htlcTx => claimHtlcTxOutputs(commitmentKeys, revocationKey, toSelfDelay, commitmentFormat, htlcTx, dustLimit, feerates, finalScriptPubKey))
@@ -1680,18 +1680,11 @@ object Helpers {
     }
 
     /** Returns the amount we've successfully claimed from a force-closed channel. */
-    def closingBalance(channelParams: ChannelParams, commitmentFormat: CommitmentFormat, closingScript: ByteVector, commit: CommitPublished): Satoshi = {
-      val toLocal = commit.localOutput_opt match {
-        case Some(o) if o.index < commit.commitTx.txOut.size => commit.commitTx.txOut(o.index.toInt).amount
-        case _ => 0 sat
-      }
-      val toClosingScript = commit.irrevocablySpent.values.flatMap(_.txOut)
+    def closingBalance(closingScript: ByteVector, commit: CommitPublished): Satoshi = {
+      commit.irrevocablySpent.values.flatMap(_.txOut)
         .filter(_.publicKeyScript == closingScript)
         .map(_.amount)
         .sum
-      commitmentFormat match {
-        case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => toClosingScript
-      }
     }
 
   }

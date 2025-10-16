@@ -29,7 +29,6 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.io.Peer.{OpenChannelResponse, SpawnChannelNonInitiator}
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{Error, LiquidityAds, NodeAddress}
 import fr.acinq.eclair.{AcceptOpenChannel, Features, InitFeature, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, InterceptOpenChannelResponse, Logs, NodeParams, RejectOpenChannel}
@@ -78,7 +77,7 @@ object OpenChannelInterceptor {
       }
     }
 
-  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], walletStaticPaymentBasepoint_opt: Option[PublicKey], isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi): LocalChannelParams = {
+  def makeChannelParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript_opt: Option[ByteVector], isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi): LocalChannelParams = {
     LocalChannelParams(
       nodeParams.nodeId,
       nodeParams.channelKeyManager.newFundingKeyPath(isChannelOpener),
@@ -86,7 +85,6 @@ object OpenChannelInterceptor {
       isChannelOpener = isChannelOpener,
       paysCommitTxFees = paysCommitTxFees,
       upfrontShutdownScript_opt = upfrontShutdownScript_opt,
-      walletStaticPaymentBasepoint = walletStaticPaymentBasepoint_opt,
       initFeatures = initFeatures
     )
   }
@@ -125,7 +123,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
       // If we're purchasing liquidity, we expect our peer to contribute at least the amount we're purchasing, otherwise we'll cancel the funding attempt.
       val expectedFundingAmount = request.open.fundingAmount + request.open.requestFunding_opt.map(_.requestedAmount).getOrElse(0 sat)
-      val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, channelType, isChannelOpener = true, paysCommitTxFees = true, dualFunded = dualFunded, expectedFundingAmount)
+      val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, isChannelOpener = true, paysCommitTxFees = true, dualFunded = dualFunded, expectedFundingAmount)
       peer ! Peer.SpawnChannelInitiator(request.replyTo, request.open, ChannelConfig.standard, channelType, localParams)
       waitForRequest()
     }
@@ -146,7 +144,6 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
           nodeParams,
           request.localFeatures,
           upfrontShutdownScript,
-          channelType,
           isChannelOpener = false,
           paysCommitTxFees = nonInitiatorPaysCommitTxFees,
           dualFunded = dualFunded,
@@ -274,19 +271,15 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     }
   }
 
-  private def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript: Boolean, channelType: SupportedChannelType, isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi): LocalChannelParams = {
+  private def createLocalParams(nodeParams: NodeParams, initFeatures: Features[InitFeature], upfrontShutdownScript: Boolean, isChannelOpener: Boolean, paysCommitTxFees: Boolean, dualFunded: Boolean, fundingAmount: Satoshi): LocalChannelParams = {
     makeChannelParams(
-      nodeParams, initFeatures,
+      nodeParams,
+      initFeatures,
       // Note that if our bitcoin node is configured to use taproot, this will generate a taproot script.
       // If our peer doesn't support option_shutdown_anysegwit, the channel open will fail.
       // This is fine: "serious" nodes should support option_shutdown_anysegwit, and if we want to use taproot, we
       // most likely don't want to open channels with nodes that don't support it. 
       if (upfrontShutdownScript) Some(Script.write(wallet.getReceivePublicKeyScript(renew = true))) else None,
-      // This is currently unused: it was previously used for pre-anchor channels, and will be used for v3 commitments.
-      walletStaticPaymentBasepoint_opt = channelType.commitmentFormat match {
-        case _: AnchorOutputsCommitmentFormat => None
-        case _: SimpleTaprootChannelCommitmentFormat => None
-      },
       isChannelOpener = isChannelOpener,
       paysCommitTxFees = paysCommitTxFees,
       dualFunded = dualFunded,

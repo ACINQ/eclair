@@ -133,7 +133,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   )
   // Keys used by the remote node to spend outputs of our local commitment.
   val remoteCommitmentKeys = RemoteCommitmentKeys(
-    ourPaymentKey = Right(Remote.payment_privkey),
+    ourPaymentKey = Remote.payment_privkey,
     theirDelayedPaymentPublicKey = Local.delayed_payment_privkey.publicKey,
     ourPaymentBasePoint = Remote.payment_basepoint,
     ourHtlcKey = Remote.htlc_privkey,

@@ -489,7 +489,7 @@ object CommitmentsSpec {
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isOpener: Boolean = true, announcement_opt: Option[ChannelAnnouncement] = None): Commitments = {
     val channelReserve = (toLocal + toRemote).truncateToSatoshi * 0.01
-    val localChannelParams = LocalChannelParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), Some(channelReserve), isOpener, isOpener, None, None, Features.empty)
+    val localChannelParams = LocalChannelParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), Some(channelReserve), isOpener, isOpener, None, Features.empty)
     val remoteChannelParams = RemoteChannelParams(randomKey().publicKey, Some(channelReserve), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
     val commitParams = CommitParams(dustLimit, 1 msat, UInt64.MaxValue, 50, CltvExpiryDelta(144))
     val localFundingPubKey = randomKey().publicKey
@@ -514,7 +514,7 @@ object CommitmentsSpec {
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announcement_opt: Option[ChannelAnnouncement]): Commitments = {
     val channelReserve = (toLocal + toRemote).truncateToSatoshi * 0.01
-    val localChannelParams = LocalChannelParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), Some(channelReserve), isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
+    val localChannelParams = LocalChannelParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), Some(channelReserve), isChannelOpener = true, paysCommitTxFees = true, None, Features.empty)
     val remoteChannelParams = RemoteChannelParams(remoteNodeId, Some(channelReserve), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty, None)
     val commitParams = CommitParams(0 sat, 1 msat, UInt64.MaxValue, 50, CltvExpiryDelta(144))
     val localFundingPubKey = randomKey().publicKey

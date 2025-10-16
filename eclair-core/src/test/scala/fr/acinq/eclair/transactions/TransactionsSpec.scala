@@ -61,9 +61,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   )
   // Keys used by the remote node to spend outputs of our local commitment.
   private val remoteKeys = RemoteCommitmentKeys(
-    ourPaymentKey = Right(remotePaymentPriv),
+    ourPaymentKey = remotePaymentPriv,
     theirDelayedPaymentPublicKey = localDelayedPaymentPriv.publicKey,
-    ourPaymentBasePoint = localPaymentBasePoint,
+    ourPaymentBasePoint = remotePaymentPriv.publicKey,
     ourHtlcKey = remoteHtlcPriv,
     theirHtlcPublicKey = localHtlcPriv.publicKey,
     revocationPublicKey = localRevocationPriv.publicKey,

@@ -56,7 +56,6 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
    * trait) with this placeholder and must fix it here.
    */
   private def setClosedLegacyCommitmentFormatIfNeeded(commitments: Commitments, data: DATA_CLOSED): DATA_CLOSED = commitments.latest.commitmentFormat match {
-    case UnsafeLegacyAnchorOutputsCommitmentFormat if commitments.channelParams.localParams.walletStaticPaymentBasepoint.nonEmpty => data.copy(commitmentFormat = "static_remote_key")
     case UnsafeLegacyAnchorOutputsCommitmentFormat => data.copy(commitmentFormat = "standard")
     case _ => data
   }

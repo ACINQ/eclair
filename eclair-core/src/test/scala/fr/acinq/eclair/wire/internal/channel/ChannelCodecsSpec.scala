@@ -124,7 +124,6 @@ object ChannelCodecsSpec {
     fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
     initialRequestedChannelReserve_opt = Some(10000 sat),
     upfrontShutdownScript_opt = None,
-    walletStaticPaymentBasepoint = None,
     isChannelOpener = true,
     paysCommitTxFees = true,
     initFeatures = Features.empty)
