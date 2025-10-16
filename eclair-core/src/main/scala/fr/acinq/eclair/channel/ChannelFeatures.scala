@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel
 
+import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{ChannelTypeFeature, FeatureSupport, Features, InitFeature, PermanentChannelFeature}
 
@@ -140,15 +141,12 @@ object ChannelTypes {
   def fromFeatures(features: Features[InitFeature]): ChannelType = features2ChannelType.getOrElse(features, UnsupportedChannelType(features))
 
   /** Check if a given channel type is compatible with our features. */
-  def areCompatible(localFeatures: Features[InitFeature], remoteChannelType: ChannelType): Option[SupportedChannelType] = remoteChannelType match {
-    case _: UnsupportedChannelType => None
+  def areCompatible(channelId: ByteVector32, localFeatures: Features[InitFeature], remoteChannelType_opt: Option[ChannelType]): Either[ChannelException, SupportedChannelType] = remoteChannelType_opt match {
+    case None => Left(MissingChannelType(channelId))
+    case Some(channelType: UnsupportedChannelType) => Left(InvalidChannelType(channelId, channelType))
     // We ensure that we support the features necessary for this channel type.
-    case proposedChannelType: SupportedChannelType =>
-      if (proposedChannelType.features.forall(f => localFeatures.hasFeature(f))) {
-        Some(proposedChannelType)
-      } else {
-        None
-      }
+    case Some(proposedChannelType: SupportedChannelType) if proposedChannelType.features.forall(f => localFeatures.hasFeature(f)) => Right(proposedChannelType)
+    case Some(proposedChannelType: SupportedChannelType) => Left(InvalidChannelType(channelId, proposedChannelType))
   }
 
 }

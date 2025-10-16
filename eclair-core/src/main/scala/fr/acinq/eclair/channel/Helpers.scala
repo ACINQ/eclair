@@ -99,7 +99,7 @@ object Helpers {
   }
 
   /** Called by the fundee of a single-funded channel. */
-  def validateParamsSingleFundedFundee(nodeParams: NodeParams, channelType: SupportedChannelType, localFeatures: Features[InitFeature], open: OpenChannel, remoteNodeId: PublicKey, remoteFeatures: Features[InitFeature]): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
+  def validateParamsSingleFundedFundee(nodeParams: NodeParams, localFeatures: Features[InitFeature], open: OpenChannel, remoteNodeId: PublicKey, remoteFeatures: Features[InitFeature]): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
     // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
     // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) return Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
@@ -133,6 +133,10 @@ object Helpers {
       return Left(ChannelReserveNotMet(open.temporaryChannelId, toLocalMsat, toRemoteMsat, open.channelReserveSatoshis))
     }
 
+    val channelType = ChannelTypes.areCompatible(open.temporaryChannelId, localFeatures, open.channelType_opt) match {
+      case Left(f) => return Left(f)
+      case Right(proposedChannelType) => proposedChannelType
+    }
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
     channelType.commitmentFormat match {
       case _: SimpleTaprootChannelCommitmentFormat => if (open.commitNonce_opt.isEmpty) return Left(MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), commitmentNumber = 0))
@@ -154,7 +158,6 @@ object Helpers {
 
   /** Called by the non-initiator of a dual-funded channel. */
   def validateParamsDualFundedNonInitiator(nodeParams: NodeParams,
-                                           channelType: SupportedChannelType,
                                            open: OpenDualFundedChannel,
                                            fundingScript: ByteVector,
                                            remoteNodeId: PublicKey,
@@ -184,6 +187,10 @@ object Helpers {
     if (open.dustLimit < Channel.MIN_DUST_LIMIT) return Left(DustLimitTooSmall(open.temporaryChannelId, open.dustLimit, Channel.MIN_DUST_LIMIT))
     if (open.dustLimit > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimit, nodeParams.channelConf.maxRemoteDustLimit))
 
+    val channelType = ChannelTypes.areCompatible(open.temporaryChannelId, localFeatures, open.channelType_opt) match {
+      case Left(f) => return Left(f)
+      case Right(proposedChannelType) => proposedChannelType
+    }
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
@@ -196,22 +203,19 @@ object Helpers {
     } yield (channelFeatures, script_opt, willFund_opt)
   }
 
-  private def validateChannelType(channelId: ByteVector32, channelType: SupportedChannelType, openChannelType_opt: Option[ChannelType], acceptChannelType_opt: Option[ChannelType]): Option[ChannelException] = {
-    if (openChannelType_opt.isEmpty || acceptChannelType_opt.isEmpty) {
-      Some(MissingChannelType(channelId))
-    } else if (!openChannelType_opt.contains(channelType) || !acceptChannelType_opt.contains(channelType)) {
-      Some(InvalidChannelType(channelId, acceptChannelType_opt.get))
-    } else {
-      // we agree on channel type
-      None
+  private def validateChannelTypeInitiator(channelId: ByteVector32, openChannelType_opt: Option[ChannelType], acceptChannelType_opt: Option[ChannelType]): Either[ChannelException, SupportedChannelType] = {
+    (openChannelType_opt, acceptChannelType_opt) match {
+      case (Some(proposed: SupportedChannelType), Some(received)) if proposed == received => Right(proposed)
+      case (Some(_), Some(received)) => Left(InvalidChannelType(channelId, received))
+      case _ => Left(MissingChannelType(channelId))
     }
   }
 
   /** Called by the funder of a single-funded channel. */
-  def validateParamsSingleFundedFunder(nodeParams: NodeParams, channelType: SupportedChannelType, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], open: OpenChannel, accept: AcceptChannel): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
-    validateChannelType(open.temporaryChannelId, channelType, open.channelType_opt, accept.channelType_opt) match {
-      case Some(t) => return Left(t)
-      case None => // we agree on channel type
+  def validateParamsSingleFundedFunder(nodeParams: NodeParams, localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], open: OpenChannel, accept: AcceptChannel): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
+    val channelType = validateChannelTypeInitiator(open.temporaryChannelId, open.channelType_opt, accept.channelType_opt) match {
+      case Left(t) => return Left(t)
+      case Right(channelType) => channelType
     }
 
     if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
@@ -248,14 +252,13 @@ object Helpers {
   /** Called by the initiator of a dual-funded channel. */
   def validateParamsDualFundedInitiator(nodeParams: NodeParams,
                                         remoteNodeId: PublicKey,
-                                        channelType: SupportedChannelType,
                                         localFeatures: Features[InitFeature],
                                         remoteFeatures: Features[InitFeature],
                                         open: OpenDualFundedChannel,
                                         accept: AcceptDualFundedChannel): Either[ChannelException, (ChannelFeatures, Option[ByteVector], Option[LiquidityAds.Purchase])] = {
-    validateChannelType(open.temporaryChannelId, channelType, open.channelType_opt, accept.channelType_opt) match {
-      case Some(t) => return Left(t)
-      case None => // we agree on channel type
+    val channelType = validateChannelTypeInitiator(open.temporaryChannelId, open.channelType_opt, accept.channelType_opt) match {
+      case Left(t) => return Left(t)
+      case Right(channelType) => channelType
     }
 
     // BOLT #2: Channel funding limits

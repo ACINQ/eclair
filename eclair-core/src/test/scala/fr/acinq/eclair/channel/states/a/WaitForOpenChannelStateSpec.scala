@@ -259,7 +259,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
   test("recv OpenChannel (empty upfront shutdown script)", Tag(ChannelStateTestsTags.UpfrontShutdownScript)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val open1 = open.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty)))
+    val open1 = open.copy(tlvStream = TlvStream(open.tlvStream.records.filterNot(_.isInstanceOf[ChannelTlv.UpfrontShutdownScriptTlv]) + ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty)))
     alice2bob.forward(bob, open1)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelParams.remoteParams.upfrontShutdownScript_opt.isEmpty)

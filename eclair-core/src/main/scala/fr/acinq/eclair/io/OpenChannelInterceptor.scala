@@ -132,7 +132,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
   }
 
   private def sanityCheckNonInitiator(request: OpenChannelNonInitiator): Behavior[Command] = {
-    validateRemoteChannelType(request.temporaryChannelId, request.channelType_opt, request.localFeatures) match {
+    ChannelTypes.areCompatible(request.temporaryChannelId, request.localFeatures, request.channelType_opt) match {
       case Right(channelType) =>
         val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
         val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
@@ -271,17 +271,6 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
       case m =>
         context.log.error(s"$stateName: received unhandled message $m")
         Behaviors.same
-    }
-  }
-
-  private def validateRemoteChannelType(temporaryChannelId: ByteVector32, remoteChannelType_opt: Option[ChannelType], localFeatures: Features[InitFeature]): Either[ChannelException, SupportedChannelType] = {
-    remoteChannelType_opt match {
-      // remote explicitly specifies a channel type: we check whether we want to allow it
-      case Some(remoteChannelType) => ChannelTypes.areCompatible(localFeatures, remoteChannelType) match {
-        case Some(acceptedChannelType) => Right(acceptedChannelType)
-        case None => Left(InvalidChannelType(temporaryChannelId, remoteChannelType))
-      }
-      case None => Left(MissingChannelType(temporaryChannelId))
     }
   }
 
