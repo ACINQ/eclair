@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.util.{Success, Try}
 
@@ -44,6 +44,7 @@ object Scripts {
 
   private def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
     case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
+    case ZeroFeeCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
   }
 
   /** Sort public keys using lexicographic ordering. */
@@ -201,9 +202,16 @@ object Scripts {
    */
   def witnessAnchor(localSig: ByteVector64, anchorScript: ByteVector): ScriptWitness = ScriptWitness(der(localSig) :: anchorScript :: Nil)
 
+  /** Standard P2A (pay-to-anchor) output. */
+  def pay2anchor(): Seq[ScriptElt] = OP_1 :: OP_PUSHDATA(hex"4e73") :: Nil
+
+  /** This witness script spends a [[pay2anchor]] output. */
+  def witnessPay2anchor(): ScriptWitness = ScriptWitness(ByteVector.empty :: Nil)
+
   def htlcOffered(keys: CommitmentPublicKeys, paymentHash: ByteVector32, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => true
+      case ZeroFeeCommitmentFormat => false
     }
     // @formatter:off
     // To you with revocation key
@@ -262,6 +270,7 @@ object Scripts {
   def htlcReceived(keys: CommitmentPublicKeys, paymentHash: ByteVector32, lockTime: CltvExpiry, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => true
+      case ZeroFeeCommitmentFormat => false
     }
     // @formatter:off
     // To you with revocation key

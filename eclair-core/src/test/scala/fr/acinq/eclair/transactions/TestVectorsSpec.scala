@@ -228,6 +228,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         localPaymentBasePoint = Local.payment_basepoint,
         remotePaymentBasePoint = Remote.payment_basepoint,
         localIsChannelOpener = true,
+        commitmentFormat = commitmentFormat,
         outputs = outputs)
       val local_sig = tx.sign(Local.funding_privkey, Remote.funding_pubkey)
       logger.info(s"# local_signature = ${Scripts.der(local_sig.sig).dropRight(1).toHex}")
