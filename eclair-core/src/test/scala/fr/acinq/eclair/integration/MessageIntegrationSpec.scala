@@ -23,12 +23,12 @@ import akka.testkit.TestProbe
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Transaction
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestUtils.waitEventStreamSynced
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.channel.{CMD_CLOSE, RES_SUCCESS, Register}
+import fr.acinq.eclair.channel.{CMD_CLOSE, ChannelTypes, RES_SUCCESS, Register}
 import fr.acinq.eclair.io.Switchboard
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildRoute}
@@ -36,7 +36,7 @@ import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.ReplyPath
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
 import fr.acinq.eclair.wire.protocol.{GenericTlv, NodeAnnouncement}
-import fr.acinq.eclair.{EclairImpl, EncodedNodeId, Features, MilliSatoshi, SendOnionMessageResponse, UInt64, randomBytes, randomKey}
+import fr.acinq.eclair.{EclairImpl, EncodedNodeId, Features, MilliSatoshiLong, SendOnionMessageResponse, UInt64, randomBytes, randomKey}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -231,21 +231,20 @@ class MessageIntegrationSpec extends IntegrationSpec {
     eventListener.expectNoMessage()
   }
 
-  // TODO: fails...
   test("open channels") {
     val probe = TestProbe()
 
     // We connect A -> B -> C
-    connect(nodes("B"), nodes("A"), Satoshi(100_000), MilliSatoshi(0))
-    connect(nodes("B"), nodes("C"), Satoshi(100_000), MilliSatoshi(0))
+    connect(nodes("B"), nodes("A"), 100_000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("B"), nodes("C"), 100_000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
 
     // We connect A -> E -> C
-    connect(nodes("E"), nodes("A"), Satoshi(100_000), MilliSatoshi(0))
-    connect(nodes("E"), nodes("C"), Satoshi(100_000), MilliSatoshi(0))
+    connect(nodes("E"), nodes("A"), 100_000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("E"), nodes("C"), 100_000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
 
     // We connect A -> F -> C
-    connect(nodes("F"), nodes("A"), Satoshi(100_000), MilliSatoshi(0))
-    connect(nodes("F"), nodes("C"), Satoshi(100_000), MilliSatoshi(0))
+    connect(nodes("F"), nodes("A"), 100_000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("F"), nodes("C"), 100_000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
 
     // we make sure all channels have set up their WatchConfirmed for the funding tx
     awaitCond({
@@ -265,9 +264,9 @@ class MessageIntegrationSpec extends IntegrationSpec {
     }, max = 20 seconds, interval = 500 millis)
 
     // We also connect A -> D, B -> D, C -> D
-    connect(nodes("D"), nodes("A"), Satoshi(100_000), MilliSatoshi(0))
-    connect(nodes("D"), nodes("B"), Satoshi(100_000), MilliSatoshi(0))
-    connect(nodes("D"), nodes("C"), Satoshi(100_000), MilliSatoshi(0))
+    connect(nodes("D"), nodes("A"), 100_000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("D"), nodes("B"), 100_000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+    connect(nodes("D"), nodes("C"), 100_000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
 
     // we make sure all channels have set up their WatchConfirmed for the funding tx
     awaitCond({

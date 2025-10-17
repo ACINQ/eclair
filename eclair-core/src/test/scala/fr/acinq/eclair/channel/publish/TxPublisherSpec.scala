@@ -42,7 +42,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
   private val fundingKey: PrivateKey = randomKey()
   private val localCommitKeys: LocalCommitmentKeys = LocalCommitmentKeys(randomKey(), randomKey().publicKey, randomKey().publicKey, randomKey(), randomKey().publicKey, randomKey().publicKey)
-  private val remoteCommitKeys: RemoteCommitmentKeys = RemoteCommitmentKeys(Right(randomKey()), randomKey().publicKey, randomKey().publicKey, randomKey(), randomKey().publicKey, randomKey().publicKey)
+  private val remoteCommitKeys: RemoteCommitmentKeys = RemoteCommitmentKeys(randomKey(), randomKey().publicKey, randomKey().publicKey, randomKey(), randomKey().publicKey, randomKey().publicKey)
 
   case class FixtureParam(nodeParams: NodeParams, txPublisher: ActorRef[TxPublisher.Command], factory: TestProbe, probe: TestProbe)
 
