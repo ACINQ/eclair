@@ -27,9 +27,9 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.{LiquidityAds, UpdateAddHtlc, UpdateMessage}
 import fr.acinq.eclair.{FeatureSupport, Features, PermanentChannelFeature}
-import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
+import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec, DecodeResult}
+import scodec.{Attempt, Codec}
 
 /**
  * Created by t-bast on 18/06/2025.
