@@ -27,9 +27,9 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.{LiquidityAds, UpdateAddHtlc, UpdateMessage}
 import fr.acinq.eclair.{FeatureSupport, Features, PermanentChannelFeature}
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, DecodeResult}
 
 /**
  * Created by t-bast on 18/06/2025.
@@ -78,11 +78,23 @@ private[channel] object ChannelCodecs5 {
     )
 
     private val commitmentFormatCodec: Codec[Transactions.CommitmentFormat] = discriminated[Transactions.CommitmentFormat].by(uint8)
-      .typecase(0x00, provide(Transactions.DefaultCommitmentFormat))
       .typecase(0x01, provide(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
       .typecase(0x02, provide(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat))
       .typecase(0x03, provide(Transactions.PhoenixSimpleTaprootChannelCommitmentFormat))
       .typecase(0x04, provide(Transactions.ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat))
+      // This is incorrect: this discriminator was used for the pre-anchor commitment format, which has been deprecated
+      // after the 0.13.0 release. We explicitly required nodes to close their non-anchor channels before updating to
+      // a version newer than 0.13.0, so this will only affect already closed channels that were kept in the DB.
+      // The UnsafeLegacyAnchorOutputsCommitmentFormat was only used by the ACINQ node with Phoenix wallets: we use it
+      // as a placeholder here, but will replace it with the correct value in the DB migration of closed channels to
+      // their dedicated table (see SqliteChannelsDb.scala and PgChannelsDb.scala).
+      .typecase(0x00, provide(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
+
+    // The walletStaticPaymentBasepoint field was used for static_remotekey channels, which have been deprecated: we can
+    // thus safely ignore that field, and encode as if it wasn't provided.
+    // By keeping this codec, we can potentially re-introduce that field in the future if necessary for future channel
+    // types, without breaking backwards-compatibility.
+    private val ignoreWalletStaticPaymentBasepoint: Codec[Unit] = optional(bool8, publicKey).xmap[Unit](_ => (), _ => None)
 
     private val localChannelParamsCodec: Codec[LocalChannelParams] = (
       ("nodeId" | publicKey) ::
@@ -91,7 +103,7 @@ private[channel] object ChannelCodecs5 {
         // We pad to keep codecs byte-aligned.
         ("isChannelOpener" | bool) :: ("paysCommitTxFees" | bool) :: ignore(6) ::
         ("upfrontShutdownScript_opt" | optional(bool8, lengthDelimited(bytes))) ::
-        ("walletStaticPaymentBasepoint" | optional(bool8, publicKey)) ::
+        ("walletStaticPaymentBasepoint" | ignoreWalletStaticPaymentBasepoint) ::
         ("features" | combinedFeaturesCodec)).as[LocalChannelParams]
 
     val remoteChannelParamsCodec: Codec[RemoteChannelParams] = (

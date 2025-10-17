@@ -71,7 +71,6 @@ class CommitmentSpecSpec extends AnyFunSuite {
 
   test("compute htlc tx feerate based on commitment format") {
     val spec = CommitmentSpec(htlcs = Set(), commitTxFeerate = FeeratePerKw(2500 sat), toLocal = (5000 * 1000) msat, toRemote = (2500 * 1000) msat)
-    assert(spec.htlcTxFeerate(Transactions.DefaultCommitmentFormat) == FeeratePerKw(2500 sat))
     assert(spec.htlcTxFeerate(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) == FeeratePerKw(2500 sat))
     assert(spec.htlcTxFeerate(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == FeeratePerKw(0 sat))
   }
