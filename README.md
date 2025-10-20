@@ -71,8 +71,8 @@ server=1
 rpcuser=foo
 rpcpassword=bar
 txindex=1
-addresstype=bech32
-changetype=bech32
+addresstype=bech32m
+changetype=bech32m
 zmqpubhashblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 ```

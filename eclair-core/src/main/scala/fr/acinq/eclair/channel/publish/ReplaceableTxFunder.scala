@@ -369,7 +369,8 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
       // pay the expected package feerate.
       val packageWeight = commitTx.weight() + anchorTx.commitmentFormat.anchorInputWeight + fundTxResponse.tx.weight()
       val expectedFee = Transactions.weight2fee(targetFeerate, packageWeight)
-      val currentFee = commitFee + fundTxResponse.fee
+      // Note that we haven't taken into account yet the amount of the anchor output, so we add it here.
+      val currentFee = commitFee + fundTxResponse.fee + anchorTx.input.txOut.amount
       val changeAmount = (fundTxResponse.tx.txOut.map(_.amount).sum - expectedFee + currentFee).max(dustLimit)
       WalletInputs(walletInputs, changeOutput_opt = Some(TxOut(changeAmount, changeScript)))
     }

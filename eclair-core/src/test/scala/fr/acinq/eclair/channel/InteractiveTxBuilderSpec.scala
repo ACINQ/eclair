@@ -77,7 +77,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   private def createInput(channelId: ByteVector32, serialId: UInt64, amount: Satoshi): TxAddInput = {
-    val changeScript = Script.write(Script.pay2wpkh(randomKey().publicKey))
+    val changeScript = Script.write(Script.pay2tr(randomKey().publicKey.xOnly))
     val previousTx = Transaction(2, Nil, Seq(TxOut(amount, changeScript), TxOut(amount, changeScript), TxOut(amount, changeScript)), 0)
     TxAddInput(channelId, serialId, Some(previousTx), 1, 0)
   }
@@ -1463,7 +1463,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   test("fund transaction with previous inputs (with new inputs)") {
-    val targetFeerate = FeeratePerKw(10_000 sat)
+    val targetFeerate = FeeratePerKw(11_000 sat)
     val fundingA = 100_000 sat
     val utxosA = Seq(55_000 sat, 55_000 sat, 55_000 sat)
     withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
@@ -1547,7 +1547,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val fundingA = 100_000 sat
     val utxosA = Seq(70_000 sat, 60_000 sat)
     val fundingB = 25_000 sat
-    val utxosB = Seq(27_500 sat)
+    val utxosB = Seq(27_250 sat)
     withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), fundingA, utxosA, fundingB, utxosB, initialFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
 
@@ -1892,7 +1892,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     val targetFeerate = FeeratePerKw(10_000 sat)
     val fundingA = 100_000 sat
     val utxosA = Seq(150_000 sat)
-    val fundingB = 92_000 sat
+    val fundingB = 93_000 sat
     val utxosB = Seq(50_000 sat, 50_000 sat, 50_000 sat, 50_000 sat)
     withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), fundingA, utxosA, fundingB, utxosB, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
       import f._
