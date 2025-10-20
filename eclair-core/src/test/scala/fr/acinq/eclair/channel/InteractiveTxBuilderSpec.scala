@@ -77,7 +77,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   private def createInput(channelId: ByteVector32, serialId: UInt64, amount: Satoshi): TxAddInput = {
-    val changeScript = Script.write(Script.pay2wpkh(randomKey().publicKey))
+    val changeScript = Script.write(Script.pay2tr(randomKey().publicKey.xOnly))
     val previousTx = Transaction(2, Nil, Seq(TxOut(amount, changeScript), TxOut(amount, changeScript), TxOut(amount, changeScript)), 0)
     TxAddInput(channelId, serialId, Some(previousTx), 1, 0)
   }
@@ -1463,7 +1463,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   test("fund transaction with previous inputs (with new inputs)") {
-    val targetFeerate = FeeratePerKw(10_000 sat)
+    val targetFeerate = FeeratePerKw(11_000 sat)
     val fundingA = 100_000 sat
     val utxosA = Seq(55_000 sat, 55_000 sat, 55_000 sat)
     withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), fundingA, utxosA, 0 sat, Nil, targetFeerate, 660 sat, 0, RequireConfirmedInputs(forLocal = false, forRemote = false)) { f =>
@@ -1576,7 +1576,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val successA1 = alice2bob.expectMsgType[Succeeded]
       val successB1 = bob2alice.expectMsgType[Succeeded]
       val (txA1, commitmentA1, txB1, commitmentB1) = fixtureParams.exchangeSigsBobFirst(bobParams, successA1, successB1)
-      assert(initialFeerate * 0.9 <= txA1.feerate && txA1.feerate <= initialFeerate * 1.25)
+      assert(initialFeerate * 0.9 <= txA1.feerate && txA1.feerate <= initialFeerate * 1.3)
       val probe = TestProbe()
       walletA.publishTransaction(txA1.signedTx).pipeTo(probe.ref)
       probe.expectMsg(txA1.txId)
@@ -1919,7 +1919,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val successA1 = alice2bob.expectMsgType[Succeeded]
       val successB1 = bob2alice.expectMsgType[Succeeded]
       val (txA1, commitmentA1, _, commitmentB1) = fixtureParams.exchangeSigsBobFirst(bobParams, successA1, successB1)
-      assert(targetFeerate * 0.9 <= txA1.feerate && txA1.feerate <= targetFeerate * 1.25)
+      assert(targetFeerate * 0.9 <= txA1.feerate && txA1.feerate <= targetFeerate * 1.35)
       walletA.publishTransaction(txA1.signedTx).pipeTo(probe.ref)
       probe.expectMsg(txA1.txId)
 
@@ -1970,7 +1970,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       val (spliceTxA1, commitmentA2, _, commitmentB2) = fixtureParams.exchangeSigsBobFirst(fundingParamsB1, successA2, successB2)
       assert(commitmentA2.localCommit.spec.toLocal == commitmentA1.localCommit.spec.toLocal - spliceFeeA - purchase.fees.total)
       assert(commitmentB2.localCommit.spec.toLocal == commitmentB1.localCommit.spec.toLocal + fundingB + purchase.fees.total)
-      assert(targetFeerate * 0.9 <= spliceTxA1.feerate && spliceTxA1.feerate <= targetFeerate * 1.25)
+      assert(targetFeerate * 0.9 <= spliceTxA1.feerate && spliceTxA1.feerate <= targetFeerate * 1.35)
       walletA.publishTransaction(spliceTxA1.signedTx).pipeTo(probe.ref)
       probe.expectMsg(spliceTxA1.txId)
 

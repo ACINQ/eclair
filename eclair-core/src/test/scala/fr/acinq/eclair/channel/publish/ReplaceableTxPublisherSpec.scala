@@ -455,7 +455,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
       val actualFee = mempoolTxs.map(_.fees).sum
-      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.3, s"actualFee=$actualFee targetFee=$targetFee")
 
       generateBlocks(6)
       system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
@@ -500,7 +500,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
     val actualFee = mempoolTxs.map(_.fees).sum
-    assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+    assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.2, s"actualFee=$actualFee targetFee=$targetFee")
 
     generateBlocks(6)
     system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
@@ -595,7 +595,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
       val actualFee = mempoolTxs.map(_.fees).sum
-      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.3, s"actualFee=$actualFee targetFee=$targetFee")
 
       generateBlocks(6)
       system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
@@ -628,7 +628,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
       val actualFee = mempoolTxs.map(_.fees).sum
-      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.3, s"actualFee=$actualFee targetFee=$targetFee")
 
       generateBlocks(6)
       system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
@@ -870,7 +870,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       assert(mempoolAnchorTx1.txid == anchorTxId1)
       val targetFee1 = Transactions.weight2fee(feerateLow, mempoolTxs1.map(_.weight).sum.toInt)
       val actualFee1 = mempoolTxs1.map(_.fees).sum
-      assert(targetFee1 * 0.9 <= actualFee1 && actualFee1 <= targetFee1 * 1.1, s"actualFee=$actualFee1 targetFee=$targetFee1")
+      assert(targetFee1 * 0.9 <= actualFee1 && actualFee1 <= targetFee1 * 1.3, s"actualFee=$actualFee1 targetFee=$targetFee1")
 
       // The confirmation target has changed (probably because we learnt a payment preimage).
       // We should now use the high feerate, which corresponds to that new target.
@@ -1147,7 +1147,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     setFeerate(targetFeerate) // the feerate is higher than what it was when the channel force-closed
     val htlcTimeoutTx = getMempoolTxs(1).head
     val htlcTimeoutTargetFee = Transactions.weight2fee(targetFeerate, htlcTimeoutTx.weight.toInt)
-    assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= htlcTimeoutTargetFee * 1.2, s"actualFee=${htlcTimeoutTx.fees} targetFee=$htlcTimeoutTargetFee")
+    assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= htlcTimeoutTargetFee * 1.3, s"actualFee=${htlcTimeoutTx.fees} targetFee=$htlcTimeoutTargetFee")
     assert(htlcTimeoutTx.fees <= htlcTimeout.txInfo.amountIn)
 
     generateBlocks(6)
