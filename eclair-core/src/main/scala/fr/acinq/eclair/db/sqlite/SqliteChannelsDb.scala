@@ -146,7 +146,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
         statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON htlc_infos(channel_id)")
         statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON htlc_infos(commitment_number)")
         statement.executeUpdate("CREATE INDEX local_channels_closed_remote_node_id_idx ON local_channels_closed(remote_node_id)")
-      case Some(v) if v < 7 => throw new RuntimeException("You are updating from a version of eclair older than v0.13: please update to the v0.13 release first to migrate your channel data, and afterwards you'll be able to update to the latest version.")
+      case Some(v) if v < 7 => throw new RuntimeException("You are updating from a version of eclair older than v0.13.0: please update to the v0.13.0 release first to migrate your channel data, and afterwards you'll be able to update to the latest version.")
       case Some(v@7) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 8) migration78(statement)
