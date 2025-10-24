@@ -16,7 +16,6 @@
 03932f354bc5b068ef4870260f418c9b0b0a76d9580c3b7b4eb2a6e622b25747  io/netty/netty-codec/4.1.94.Final/netty-codec-4.1.94.Final.pom
 03d0329547c13da9e17c634d1049ea2ead093925e290567e1a364fd6b1fc7ff8  com/google/errorprone/error_prone_annotations/2.1.3/error_prone_annotations-2.1.3.jar
 03d960bd5aef03c653eb000413ada15eb77cdd2b8e4448886edf5692805e35f3  org/objenesis/objenesis/3.2/objenesis-3.2.jar
-03faa23d6164d3378f87df4d622b43dd20463c59d3c620ab609192228bd7f8f3  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-darwin/0.20.0/secp256k1-kmp-jni-jvm-darwin-0.20.0.jar
 04534dea350a2187970a5b74444338bcf78ba8e537d44f262acfba16ebb33056  org/apache/maven/maven-parent/42/maven-parent-42.pom
 048282a7e5fd21c79679869e8a64ea704c7c78dd35dd202532cfdae52cd2d118  org/scala-lang/modules/scala-xml_2.13/2.1.0/scala-xml_2.13-2.1.0.pom
 04842f331b0225b85a5e20439710d228ea7a6302abe6d53c9c9846fbc5bf99ff  org/codehaus/plexus/plexus-cipher/2.0/plexus-cipher-2.0.pom
@@ -90,7 +89,6 @@
 1473d1eb9e2ffbed025819892b078985c5dd55c190b1d82fd1b5685505b2b819  org/codehaus/plexus/plexus-utils/3.1.0/plexus-utils-3.1.0.pom
 148de2c6928365db29443ca12d35c930d9f481172b934fdd801d1cb1409ea83a  org/mockito/mockito-core/4.3.1/mockito-core-4.3.1.jar
 154b5d0977e081c9654770af90a35cd2be9fa6c575b16ae239c01161496b3313  net/java/dev/jna/jna/5.12.0/jna-5.12.0.pom
-158bed6335d5c838c0934e1a50c3b0c9c8e186e05a7c56eadd6a97276b8eb17f  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm/0.20.0/secp256k1-kmp-jni-jvm-0.20.0.jar
 15cf8cbd9e014b7156482bbb48e515613158bdd9b4b908d21e6b900f7876f6ff  org/codehaus/plexus/plexus-io/3.2.0/plexus-io-3.2.0.jar
 1607b620e1f2b4e1a0f4891010b3490b1fb4a83e713ac4d38b08dc2c67fa3e51  org/jheaps/jheaps/0.14/jheaps-0.14.pom
 1609c2dad2c8c9e473b4e5b42ba2c807cc058b605a85c1f07cc83d1d68aac895  org/apache/maven/maven-model/3.8.2/maven-model-3.8.2.pom
@@ -187,7 +185,6 @@
 27d0dff1cd743190279becacfb372fe4d45b266edafad9f1c6c01b04d00280eb  io/netty/netty-transport-native-unix-common/4.1.94.Final/netty-transport-native-unix-common-4.1.94.Final.jar
 27e426d73f8662b47f60df0e43439b3dec2909c42b89175a6e4431dfed3edafd  org/apache/maven/maven-model/3.0/maven-model-3.0.jar
 27fc47e12bacc5e142b2edc7d442665e004fac3c8462b66f5656fdb08190f372  org/codehaus/janino/commons-compiler/3.1.10/commons-compiler-3.1.10.pom
-28191f10653f5292699d93ca7a951f74a3ab88fc15cab0e915bba6d1054dfc21  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-extract/0.20.0/secp256k1-kmp-jni-jvm-extract-0.20.0.jar
 2836b3b8a78edb31a1803592e60fc767b21f2d190764631ba6efa0837bb35721  org/checkerframework/checker-qual/3.5.0/checker-qual-3.5.0.pom
 284c0c8b648f17c22da6b70605a73044f1f6b6ab5862900a37e1f107771a825b  com/github/luben/zstd-jni/1.5.5-2/zstd-jni-1.5.5-2.jar
 288149850d8d131763df4151f7e443fd2739e48510a6e4cfe49ca082c76130fa  org/sonatype/aether/aether-impl/1.7/aether-impl-1.7.jar
@@ -210,6 +207,7 @@
 2b6461b313e56918416a773206ff7d64cf101a662cb03a1428f05f9dabe4b1ea  io/netty/netty-transport/4.1.94.Final/netty-transport-4.1.94.Final.pom
 2be8b810cf0937ff4bb7bef8ce78a8faad17ca2182751055ac7df54d5510b908  org/apache/maven/shared/maven-common-artifact-filters/3.3.2/maven-common-artifact-filters-3.3.2.jar
 2bf4e59f3acd106fea6145a9a88fe8956509f8b9c0fdd11eb96fee757269e3f3  classworlds/classworlds/1.1-alpha-2/classworlds-1.1-alpha-2.jar
+2c09293dbd05c38c5cc59ea6ee7c8105110eb89d758d8299bb428a78cfa8f867  fr/acinq/bitcoin/bitcoin-kmp-jvm/0.28.0/bitcoin-kmp-jvm-0.28.0.pom
 2c317f6041219f16f34bd47ea7618e57552d4f1f707378701b9efed4adecf70a  org/apache/maven/maven-plugin-api/3.8.6/maven-plugin-api-3.8.6.jar
 2c3ba62ee26ffc694cfb2fc6132e4ccd7b4acf553aa86d9143dc0f77822f68ec  org/apache/maven/maven-plugin-api/3.2.5/maven-plugin-api-3.2.5.pom
 2c9071d7d1522b0c762057c34e8b9bfae39927a0eb755c36aa76519721870d7b  com/google/guava/guava/32.1.1-jre/guava-32.1.1-jre.pom
@@ -226,6 +224,7 @@
 2e8cb2d546a01c2259cb17f1e06732db3d14b079d19622bf8400c82cb1ee6b96  org/apache/maven/shared/file-management/3.1.0/file-management-3.1.0.jar
 2eb0ea667bc489384478231dda7516407d4b5b22a138077229871de9362a7ae2  org/apache/maven/resolver/maven-resolver-util/1.9.18/maven-resolver-util-1.9.18.jar
 2ed07d65845131f5336a86476c9a4056b59d0b58b9815ab3679bb0f36f35f705  org/junit/junit-bom/5.9.2/junit-bom-5.9.2.pom
+30ad98b52f64377b3353c6f31289f15fce2217f01f5e3a4862305da6c78b6a71  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-extract/0.21.0/secp256k1-kmp-jni-jvm-extract-0.21.0.pom
 30e8e86a673564df28b14507c7943238fcedbb87b71dc7ceee1f676c5315c1eb  org/mockito/mockito-core/4.3.1/mockito-core-4.3.1.pom
 30f5789efa39ddbf96095aada3fc1260c4561faf2f714686717cb2dc5049475a  net/java/jvnet-parent/3/jvnet-parent-3.pom
 317d515c5c69278a980c6219901d327efb4210ca44ae1f07c2a304d487ec7cae  org/apache/maven/maven-aether-provider/3.2.5/maven-aether-provider-3.2.5.pom
@@ -288,6 +287,7 @@
 3d3d9753f36e88039e63f8757bfe643830d69443e168c4ecdaf5f47a2c1d94ce  org/apache/maven/maven-builder-support/3.8.6/maven-builder-support-3.8.6.jar
 3d6fdeb72b2967f1fa2784134fb832d08d8d6e879b7ace7712f2c7281994fc1e  org/apache/maven/maven-model/3.0/maven-model-3.0.pom
 3d8b64316e38439de6e0f14131e6d7d58d74e924f03d313b3cd8292a966aa010  com/fasterxml/jackson/core/jackson-core/2.12.6/jackson-core-2.12.6.pom
+3de1342b450f137ba2bdf5e93f15f6fa524404a7e3fcb36122a1bb968f3bab7a  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-darwin/0.21.0/secp256k1-kmp-jni-jvm-darwin-0.21.0.pom
 3e395d6fbc43c09a3774cac8694ce527398305ea3fd5492d80e25af27d382a9c  org/codehaus/mojo/mojo-parent/34/mojo-parent-34.pom
 3e48e181d5efa33edb06aaa14b9af5ed2a7582e87963f87602cfdad8fa659bb4  org/codehaus/plexus/plexus-containers/1.0-alpha-20/plexus-containers-1.0-alpha-20.pom
 3e49037174820bbd0df63420a977255886398954c2a06291fa61f727ac35b377  org/apache/apache/29/apache-29.pom
@@ -329,7 +329,6 @@
 481803338ffc3507a7c19f1172e0be6b677e07445f310040ea8dff5d82efa5c4  io/netty/netty-transport-native-kqueue/4.1.94.Final/netty-transport-native-kqueue-4.1.94.Final-osx-aarch_64.jar
 482811ea38f339d2b0867a7852a195b56e329fdb37066b2f3035a209c111a2bc  org/apache/maven/shared/maven-dependency-tree/3.2.1/maven-dependency-tree-3.2.1.jar
 483751e48fb2d1f43c61ad3ab00ffa466edc0333d8fc2fdb5a26e95d32982394  org/ow2/asm/asm/9.4/asm-9.4.pom
-486d40ab56917eba63b746aca2e6a4523cf092e4f9629b1769f37730ed265b47  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm/0.20.0/secp256k1-kmp-jni-jvm-0.20.0.pom
 487ef4984d70158f58c37ce8766931ba4c7e57375865884b756391bfd6d00c39  org/slf4j/slf4j-bom/2.0.12/slf4j-bom-2.0.12.pom
 488c2a42351a2e9cba24aa3d7843eedb3fbb13957469563f2d75e959f848454c  org/apache/maven/wrapper/maven-wrapper-parent/3.3.2/maven-wrapper-parent-3.3.2.pom
 48dc26f27f51520a5e8b6b9911901634fef425059b74505555d49584ace9b809  io/netty/netty-codec-http2/4.1.94.Final/netty-codec-http2-4.1.94.Final.pom
@@ -367,16 +366,13 @@
 505777efcfb0c93baee9514c949b061c3d2f66c11d1e1d2c73a84995344dcd8c  com/softwaremill/sttp/client3/json4s_2.13/3.8.16/json4s_2.13-3.8.16.pom
 50d2a59155284109a708675b52ebb4598500e43693967cff1401cb26b97f8853  org/glassfish/javax.json/1.1.4/javax.json-1.1.4.pom
 50d699f86369802baf2cd16c31d936ad8f0c1a8976120cd1dc3dc70c8abed99a  org/apache/maven/doxia/doxia-sink-api/1.0/doxia-sink-api-1.0.pom
-50dda896b5c3476dc4d35cdc4898e49691abbd6cac344f95fd4e448f7541a0da  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-linux/0.20.0/secp256k1-kmp-jni-jvm-linux-0.20.0.jar
 50fa72ddfdd176d02736e8f435e244882c7351d9397a27816b140f52a5d091ef  org/apache/maven/doxia/doxia-module-fml/1.0/doxia-module-fml-1.0.jar
 51215c67d2c068d8b7d2f6f80f51372a098075deccc448d4bdd7b987ba8328fb  org/ow2/ow2/1.3/ow2-1.3.pom
 512967d34539859e403cf489e8ba3ac7fc7648b5bdca44e1a81ca1312a78d6b3  org/apache/maven/surefire/surefire-extensions-spi/3.1.2/surefire-extensions-spi-3.1.2.jar
-516a7934c0f15d0adbb6e9ad7050da06725e79dcfaaed9594d50343da0b3ea40  fr/acinq/bitcoin-lib_2.13/0.44/bitcoin-lib_2.13-0.44.jar
 5197630dcd2336f5b4ab8e6d26e5b8675f5ebd83bd8c91d6aba431b09627d626  org/codehaus/plexus/plexus/1.0.11/plexus-1.0.11.pom
 51d879a5998f5822740dcf5522c0ed6971ad5c4a5ea30b70f5b546093e6b4263  org/slf4j/slf4j-api/2.0.12/slf4j-api-2.0.12.pom
 5283d9d1e9f54199b098ae51cb2c8939a13c73fea30db9d1b3dc3a9e9746bb75  org/apache/maven/maven-settings/3.8.2/maven-settings-3.8.2.pom
 52d73f35f7e638ce3cb56546f879c20e7f7019f72aa20cde1fa80e97865dfd40  javax/annotation/javax.annotation-api/1.2/javax.annotation-api-1.2.pom
-52ecd873394b687f5be2c6d14ca1da52ef2a8bd376043da029f46b2355cc2dcf  fr/acinq/secp256k1/secp256k1-kmp-jni-common/0.20.0/secp256k1-kmp-jni-common-0.20.0.jar
 52f77c5ec49f787c9c417ebed5d6efd9922f44a202f217376e4f94c0d74f3549  org/codehaus/plexus/plexus-classworlds/2.6.0/plexus-classworlds-2.6.0.jar
 53120586ef6f58019d3efb989a5c601827ba307e680ba0299eef9521831e4d25  com/softwaremill/sttp/shared/ws_2.13/1.3.13/ws_2.13-1.3.13.jar
 53174d76087bb73cc29db9c02766fb921fd7fc652f7952f3609e0018e3dd5ded  org/xerial/sqlite-jdbc/3.42.0.0/sqlite-jdbc-3.42.0.0.jar
@@ -421,7 +417,6 @@
 5c1271080f49d69bb56be5030d07482cdaa3f5ec3e7716489b0fc3bd77eb6ebb  org/scala-lang/scala-library/2.13.0/scala-library-2.13.0.pom
 5c285b72e6dc0a98e99ae0a1ceeb4027dab9adfa441844046bd3f19e0efdcb54  org/scala-lang/modules/scala-parser-combinators_2.13/1.1.2/scala-parser-combinators_2.13-1.1.2.jar
 5c31b96ad7c7c52a9bc9c6e8ee9ae963575819accfd6f99133ddaab8ec8e6780  io/netty/netty-handler-ssl-ocsp/4.1.94.Final/netty-handler-ssl-ocsp-4.1.94.Final.pom
-5c4d8965beb8d0ea731d74325158d415aa4a22c984e1aafe08434520ac85bbfc  fr/acinq/secp256k1/secp256k1-kmp-jvm/0.20.0/secp256k1-kmp-jvm-0.20.0.pom
 5c856fefc046a88de0118ac5e45cddf638975fa980c007d242633276f7266f02  org/scala-lang/modules/scala-parser-combinators_2.13/1.1.2/scala-parser-combinators_2.13-1.1.2.pom
 5c8b507a80901fcdaef89f50c639176b516e8866c6bf07be1ab8ab9da5a4877f  org/eclipse/aether/aether-util/1.0.0.v20140518/aether-util-1.0.0.v20140518.pom
 5ca374eb4e6194ec0cd7004366decd39d4d048145a6380f99741a9414f38cebb  org/apache/maven/maven-model-builder/3.8.6/maven-model-builder-3.8.6.jar
@@ -430,6 +425,7 @@
 5e583878df905b5f33a230ef690a52b8f19dab9cc892bedee069f3d8af4e960a  org/codehaus/plexus/plexus-utils/3.3.1/plexus-utils-3.3.1.pom
 5e93a63b3042023e558dcbeb19914ce82e6a6fbccdbd68797f80b135121a8bde  org/apache/maven/shared/file-management/3.1.0/file-management-3.1.0.pom
 5f32ecab9c8f6dff1f9e41b853e40d8f23a2508219154ef67cc00d4556f5f5dd  org/eclipse/sisu/sisu-inject/0.3.5/sisu-inject-0.3.5.pom
+5f6af6dd4b828a07b0a1fed9fd21ac3a07f39cbe7e9c07d6380ca35171df3e56  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm/0.21.0/secp256k1-kmp-jni-jvm-0.21.0.pom
 5fe611b07793d5ff3378ca3ae2c75e38bae08e73c3ae0acdf116ae5d6978d19f  org/codehaus/plexus/plexus-container-default/1.0-alpha-20/plexus-container-default-1.0-alpha-20.pom
 6047c86dae48672243662c26074731be6328edcc170a366807d56f57ce2a1965  org/apache/maven/doxia/doxia-module-xdoc/1.0/doxia-module-xdoc-1.0.pom
 606b5fa03b171d8204aac0fbace11ee28e71175a0f869bd45f09c9319e7e88dc  org/eclipse/aether/aether/1.0.0.v20140518/aether-1.0.0.v20140518.pom
@@ -467,7 +463,6 @@
 6937e9240351fc17fbd1e53ed02a7680d90979ca05a3d17f61969cdcd177fa11  com/github/oshi/oshi-parent/6.4.13/oshi-parent-6.4.13.pom
 69c0097c6383c3cc79e2df713e8b432e0f691a766b175f096ca6203bb4db2378  org/lmdbjava/lmdbjava/0.7.0/lmdbjava-0.7.0.pom
 6a17cfbfffe6bb87215ad38bcaac716383e552ec2ba7b204e2673ee66a2afaaa  org/codehaus/plexus/plexus-utils/2.0.4/plexus-utils-2.0.4.jar
-6a34876a75127ac146bdeac894190b3fadb3b573cedf89b2e21358ce0bd17548  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-linux/0.20.0/secp256k1-kmp-jni-jvm-linux-0.20.0.pom
 6a46ed9b333857e8b5ea668bb254ed8e47dacd1116bf53ade9467aa4ae8f1818  org/scala-lang/scala-reflect/2.13.11/scala-reflect-2.13.11.jar
 6a58eb24291600f75ce0fe369b73fe6700f575ace4b664724d3cd0a6b85b63ee  org/apache/maven/shared/maven-shared-components/15/maven-shared-components-15.pom
 6a80b1821e5d6956cf78ec4c0ce3c640c7f1141edd4885fae3e0b060797cca01  org/slf4j/slf4j-api/1.7.9/slf4j-api-1.7.9.pom
@@ -533,6 +528,7 @@
 7868cb444944c97f8623aacad804cf51330326d6886d8ee88e99275461397936  org/apache/maven/maven-settings/3.8.6/maven-settings-3.8.6.pom
 788fdf48a5ff60fb909b7e574d62036b5547cc975446dc18c99168b4ec124126  org/scala-sbt/zinc-classfile_2.13/1.8.0/zinc-classfile_2.13-1.8.0.jar
 78eb9ada74929fcd63d07adc4f49236841a45cc29d5f817bf45801f513fd7e6c  org/apache/httpcomponents/httpclient/4.5.13/httpclient-4.5.13.pom
+78fa74b91ba0333d156ddd51e260c7cc13258ce2b6e7d4f1ae9b112d8f418869  fr/acinq/bitcoin/bitcoin-kmp-jvm/0.28.0/bitcoin-kmp-jvm-0.28.0.jar
 78fefb752b801705c8d238e1355a962209bbf2501000f921d59efa5bf648c014  org/apache/maven/maven-model-builder/3.8.6/maven-model-builder-3.8.6.pom
 7925d9c5a0e2040d24b8fae3f612eb399cbffe5838b33ba368777dc7bddf6dda  org/apache/maven/shared/maven-shared-utils/3.3.4/maven-shared-utils-3.3.4.jar
 794d140cb5764d5a10eaf8606756feeb9c5e7c22732211ba002486e1045c80af  org/scala-sbt/zinc-classfile_2.13/1.8.0/zinc-classfile_2.13-1.8.0.pom
@@ -540,6 +536,7 @@
 79c9792073fdee3cdbebd61a76ba8c2dd11624a9f85d128bae56bda19e20475c  org/codehaus/plexus/plexus-utils/3.3.0/plexus-utils-3.3.0.pom
 79cf2bac9ae8027e31535ed6c238b0ed6f60fa3d3ebfdf6af475a4dadeb14bbe  org/apache/maven/surefire/surefire-extensions-spi/3.1.2/surefire-extensions-spi-3.1.2.pom
 79d5c44035af6622b04e311ff41eacb04d0471b787b0d4c20b239b1d70d5e724  org/scala-lang/scala-reflect/2.13.10/scala-reflect-2.13.10.pom
+79e0304ce11a5c1558712ea33a348b9256f78d598c69f7c48e810a3b889e2ee8  fr/acinq/secp256k1/secp256k1-kmp-jni-common/0.21.0/secp256k1-kmp-jni-common-0.21.0.pom
 7a5001ab88105b4f37c4fab3b62d977316290a13f8b14c6684f25f2a32efdef1  org/codehaus/plexus/plexus-utils/3.2.1/plexus-utils-3.2.1.pom
 7ace6e7fa6acd495bde67492a267b70ca91ecd870d2a686e1b3fe7d1aa9299c4  io/kamon/kamon-executors_2.13/2.7.4/kamon-executors_2.13-2.7.4.pom
 7beb97394c5a89facc822be158ce3b1809bb71a189ab11afd77d354ba18a6ba4  org/scalatest/scalatest-refspec_2.13/3.2.16/scalatest-refspec_2.13-3.2.16.jar
@@ -562,7 +559,6 @@
 7fc63378d3e84663619b9bedace9f9fe78b276c2be3c62ca2245449294c84176  org/codehaus/plexus/plexus-interpolation/1.14/plexus-interpolation-1.14.jar
 7fcc34e747ab753d7a842d6bf24f45c11852260ff181a60030a751f8b7d73865  io/netty/netty-codec-stomp/4.1.94.Final/netty-codec-stomp-4.1.94.Final.jar
 7fd0cde8ca2d9a7904d67a7743785a7c2ea98ad45c32185db9d713a7a9232d0c  com/github/luben/zstd-jni/1.5.5-2/zstd-jni-1.5.5-2.pom
-7ff911bd52e9dcdf2ed310196a0e8d8360d896a8032e39ff8371335422326a80  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-darwin/0.20.0/secp256k1-kmp-jni-jvm-darwin-0.20.0.pom
 8021cd27867f1503c906e5a9881933309f2ad7daca20ca13c96b81fbdc5ec9e8  org/scala-lang/scala-library/2.13.6/scala-library-2.13.6.pom
 803766d9fecc4112c72b39951e60c2e60156c2b100c3aa11df98b27583ba3eb6  nu/studer/java-ordered-properties/1.0.4/java-ordered-properties-1.0.4.jar
 8066ee7c49f9f29da96ee62f7cb13bee022cb4b68e51437b33da3b6d01398f13  io/netty/netty-buffer/4.1.94.Final/netty-buffer-4.1.94.Final.jar
@@ -596,7 +592,6 @@
 879b3e718453c8b934ff5e8225107a24701bde392f96daf6135f94f9e161dbc5  org/scala-lang/modules/scala-java8-compat_2.13/1.0.0/scala-java8-compat_2.13-1.0.0.jar
 87e66ffad03aa18129ea0762d2c02f566a9480e6eee8d84e25e1b931f12ea831  org/eclipse/sisu/org.eclipse.sisu.plexus/0.3.4/org.eclipse.sisu.plexus-0.3.4.jar
 8858248de2cab772fa26741b8972137058a6f4457b0a2b3e7cd8771d03d9373b  org/codehaus/plexus/plexus-container-default/1.0-alpha-30/plexus-container-default-1.0-alpha-30.pom
-88f116667ebf6162868e121ccc9ce9a5f189487c745bb2687953de80d0df30e3  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-extract/0.20.0/secp256k1-kmp-jni-jvm-extract-0.20.0.pom
 88ffe6ab7548bda1a711d434a67cfb1599bfb38497f65b36d106a6e98f6eb955  org/apache/maven/maven-core/3.2.5/maven-core-3.2.5.pom
 89001fcd98d29ab1c3102b14e7ddf5a3eb8cc3fce38558b485772bfc694c8600  org/apache/maven/doxia/doxia-logging-api/1.11.1/doxia-logging-api-1.11.1.pom
 894261f5b21a2a18519537086181426450300385518e53d2555f5b4a6c1260e7  org/codehaus/plexus/plexus-utils/1.4.1/plexus-utils-1.4.1.pom
@@ -611,11 +606,9 @@
 8a8ecb570553bf9f1ffae211a8d4ca9ee630c17afe59293368fba7bd9b42fcb7  org/apache/commons/commons-parent/47/commons-parent-47.pom
 8abf8511bb13a26ef1c481ce22b0fba8cf12fa399740e28123c06f70b5007103  com/typesafe/akka/akka-remote_2.13/2.6.20/akka-remote_2.13-2.6.20.pom
 8b30025f0ecb40d2b71a71ffeb6e97dfc7c43ce3cf2c698e51c7afac474b10ea  org/json4s/json4s-jackson-core_2.13/4.0.6/json4s-jackson-core_2.13-4.0.6.pom
-8bf4cbfbd87b8a5b7496b68d0d3334808748147eda92e5b8c1c439631cb3d75b  fr/acinq/bitcoin/bitcoin-kmp-jvm/0.27.0/bitcoin-kmp-jvm-0.27.0.jar
 8c0e6aa7f35593016f2c5e78b604b57f023cdaca3561fe2fe36f2b5dbbae1d16  org/eclipse/sisu/org.eclipse.sisu.inject/0.3.4/org.eclipse.sisu.inject-0.3.4.jar
 8c19e7148bee907597129b2fd706839c45db849c72a25285ec1674f0ffdabf8e  org/zeromq/jeromq/0.5.2/jeromq-0.5.2.jar
 8c3c821007c13411558739b9f3d5382eb81551db3895cffb89561e56c0f4dc16  org/jetbrains/kotlin/kotlin-stdlib/2.2.0/kotlin-stdlib-2.2.0.pom
-8c8eb6ae5ce31ac9619ea4221dbfedf938eeeee499f539270fc2792656de53e8  fr/acinq/secp256k1/secp256k1-kmp-jni-common/0.20.0/secp256k1-kmp-jni-common-0.20.0.pom
 8cbcb2aacd7f4a7759866ce91b2f910310fbe5a586b5fc7b9bdb76af9257e7c4  org/codehaus/plexus/plexus-components/1.3.1/plexus-components-1.3.1.pom
 8d40d3d6f3f4cba522f5a04989e87ffc7662118dd184956b24683fdfdb2e9ede  io/zonky/test/postgres/embedded-postgres-binaries-windows-amd64/14.5.0/embedded-postgres-binaries-windows-amd64-14.5.0.jar
 8d87c70724a4f1e03f9e04b9e25f538b00b4826dd4044e65e61525fbe3c5f3dd  org/apache/commons/commons-compress/1.22/commons-compress-1.22.pom
@@ -628,6 +621,7 @@
 8e5f6e5327d4aa11dde8011ffb7715f30fb12a5a5fb3d6372e1bb5b3a296e0fc  org/apache/maven/maven-plugin-api/3.8.2/maven-plugin-api-3.8.2.pom
 8e63292e5c53bb93c4a6b0c213e79f15990fed250c1340f1c343880e1c9c39b5  com/squareup/okio/okio/3.6.0/okio-3.6.0.jar
 8edf94ccf2a956fb75871b44bd5e085c15c965e725edc5c89ed21259b2f19cf0  org/json4s/json4s-scalap_2.13/4.0.3/json4s-scalap_2.13-4.0.3.pom
+8f020542e4628d083277edf3b21f981924769484fc5f4af7cd92eaf8458afca8  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-linux/0.21.0/secp256k1-kmp-jni-jvm-linux-0.21.0.jar
 8f3c20e3e2d565d26f33e8d4857a37d0d7f8ac39b62a7026496fcab1bdac30d4  org/bouncycastle/bcprov-jdk15on/1.70/bcprov-jdk15on-1.70.jar
 8f73857d9862c58517f982660f90aba003b71de385793680bda65d9c9cfdce8c  org/scalatest/scalatest-featurespec_2.13/3.2.16/scalatest-featurespec_2.13-3.2.16.jar
 8f74dc3a67c107376168b9f7b1b94e317e172768d398f826330931a02ff57b98  org/jboss/weld/weld-api-bom/1.0/weld-api-bom-1.0.pom
@@ -647,7 +641,7 @@
 91fbba37f1c8b251cf9ea9e7d3a369eb79eb1e6a5df1d4bbf483dd0380740281  com/google/guava/guava/32.1.1-jre/guava-32.1.1-jre.jar
 920135797dcca5917b5a5c017642a58d340a4cd1bcd12f56f892a5663bd7bddc  com/google/errorprone/error_prone_annotations/2.18.0/error_prone_annotations-2.18.0.pom
 9283e684d401d821a4cbb2646f9611cbbcd7828d2499483d13a4b507775a4cd7  org/scalatest/scalatest-compatible/3.2.16/scalatest-compatible-3.2.16.jar
-92e3885f9bc33dd159752afe9f5ca11d9178344345b48042786b9a707c4e42ce  fr/acinq/secp256k1/secp256k1-kmp-jvm/0.20.0/secp256k1-kmp-jvm-0.20.0.jar
+92e3885f9bc33dd159752afe9f5ca11d9178344345b48042786b9a707c4e42ce  fr/acinq/secp256k1/secp256k1-kmp-jvm/0.21.0/secp256k1-kmp-jvm-0.21.0.jar
 92eee24bc3c843e4881d46c1dd6505471ee3142facfb466b428cfea5a56c6b60  org/ow2/asm/asm/9.6/asm-9.6.pom
 92f1c78b5b6775430e3ad4ca3bc5ea0fe862f28b1ee69fa293e2d1b33be977da  org/scalatest/scalatest-wordspec_2.13/3.2.16/scalatest-wordspec_2.13-3.2.16.jar
 930f23cb1386d71ef771d7cc18d1a792755f555aad69e0de05fcadc5768caf8f  org/apache/maven/plugins/maven-wrapper-plugin/3.3.2/maven-wrapper-plugin-3.3.2.pom
@@ -687,6 +681,7 @@
 9a8273601fbeb2fd822bcd1df06e0ddb9d76e6e884b0f96a00567f6a2e5d5c0f  com/typesafe/akka/akka-actor_2.13/2.6.20/akka-actor_2.13-2.6.20.jar
 9aa9dfeb2e85e1d5e7932c87140697cecc2b0fadd933d679fd420a2e43831a82  oro/oro/2.0.8/oro-2.0.8.pom
 9b28bb307017938a94d06c85b2b099bc46912b859d084fb293e569f432eadb7c  org/codehaus/plexus/plexus-sec-dispatcher/2.0/plexus-sec-dispatcher-2.0.pom
+9b4790e9528c6c19f1633300dd14cf13dd70ca9a4fe906269be340c3b33c37b8  fr/acinq/bitcoin-lib_2.13/0.45/bitcoin-lib_2.13-0.45.pom
 9bb6808b89502af52b4662dfcd797945cb869a54b57f994e1652cab9f4d8f835  org/scala-sbt/zinc-compile-core_2.13/1.8.0/zinc-compile-core_2.13-1.8.0.pom
 9c5f7cd5226ac8c3798cb1f800c031f7dedc1606dc50dc29567877c8224459a7  org/sonatype/forge/forge-parent/6/forge-parent-6.pom
 9c62e83b103e38b10351603e246d7e54899d4a8f1d305176f5546dd3f8c55358  joda-time/joda-time/2.10.10/joda-time-2.10.10.pom
@@ -705,9 +700,9 @@
 9edcaa0a87343c8755c0633ae93763dcf2f2170088fc58a097d4cae370420cb8  com/swoval/file-tree-views/2.1.9/file-tree-views-2.1.9.jar
 9edfb21f0f59f5cfdfee6602b60a7bc75574728b788f3f199d9435b30f2aed09  com/softwaremill/quicklens/quicklens_2.13/1.9.4/quicklens_2.13-1.9.4.jar
 9ffc02a1bc3d846293ad9f889db9f42d0920e953acc4c4825726ff031405a7d0  org/ow2/asm/asm-analysis/5.0.3/asm-analysis-5.0.3.pom
-a0463ca48329836e482e17f616f359ee22ce5d9b4b5179ad057efb138893cd77  fr/acinq/bitcoin/bitcoin-kmp-jvm/0.27.0/bitcoin-kmp-jvm-0.27.0.pom
 a07ee27454a0a0421a293cc9867bf6ab5d2e1c8b3de12e164fcb94d7600f8b18  org/scala-sbt/util-relation_2.13/1.8.0/util-relation_2.13-1.8.0.pom
 a0882b82514190c2bac7d1a459872a75f005fc0f3e88b2bc0390367146e35db7  org/scala-lang/scala-library/2.13.8/scala-library-2.13.8.jar
+a0fd00a12de6ea8d0bd94ff37550eeab558af0d7b76fd7234c62f1851b90930e  fr/acinq/bitcoin-lib_2.13/0.45/bitcoin-lib_2.13-0.45.jar
 a12578dde1ba00bd9b816d388a0b879928d00bab3c83c240f7013bf4196c579a  org/slf4j/slf4j-api/2.0.16/slf4j-api-2.0.16.jar
 a171ee4c734dd2da837e4b16be9df4661afab72a41adaf31eb84dfdaf936ca26  com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar
 a17955976070c0573235ee662f2794a78082758b61accffce8d3f8aedcd91047  org/apache-extras/beanshell/bsh/2.0b6/bsh-2.0b6.jar
@@ -747,6 +742,7 @@ a89a2f99088e244b3e52e35f19f5f7d3aba03dbb3cfaea044e2a694119e88f79  org/codehaus/p
 a8cac905ad0e52e724f33faa395415ef7fdbede354d7c25a11072c87c064dc1d  net/java/dev/jna/jna-platform/5.12.0/jna-platform-5.12.0.jar
 a901f87b115c55070c7ee43efff63e20e7b02d30af2443ae292bf1f4e532d3aa  org/apache/httpcomponents/httpcomponents-parent/11/httpcomponents-parent-11.pom
 a909af8c61361b3cea2aece5e9cd9acbe36badee294ea710a8dad77d90c64654  org/codehaus/plexus/plexus-archiver/4.6.1/plexus-archiver-4.6.1.jar
+a9409750e84e2b9f10dbc05ca1778b6162d91425438c232dfb62110a8dbbcaf5  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-linux/0.21.0/secp256k1-kmp-jni-jvm-linux-0.21.0.pom
 a941745d7faeb8dc9a75edc2c330c994b7440b9a44d21142716b6053967a41c1  org/apache/maven/shared/maven-shared-utils/3.4.2/maven-shared-utils-3.4.2.pom
 a98e6af5cdf1b2456486ae0bb8128e52fee8d6996629af60606bbc9c1aadf8ec  org/apache/maven/resolver/maven-resolver-util/1.9.18/maven-resolver-util-1.9.18.pom
 a9afce635b3e48663b4b356119873288326503030c779f723c70a3deae6b8d2c  org/scala-sbt/zinc-apiinfo_2.13/1.8.0/zinc-apiinfo_2.13-1.8.0.jar
@@ -769,9 +765,11 @@ ae4caceb3840730c2537f9b7fb55a01baba580286b4122951488bcee558c2449  net/java/dev/j
 aeb3b70a24c103ed0c54541f35f5c511d27ce60cae376a596d7d653697f8cc95  com/squareup/okio/okio/3.6.0/okio-3.6.0.pom
 af10c108da014f17cafac7b52b2b4b5a3a1c18265fa2af97a325d9143537b380  org/apache/apache/21/apache-21.pom
 af650fa4dd400bc5769320bcef08ed93813f349cabe8213d469acafbbd945d8a  com/fasterxml/oss-parent/41/oss-parent-41.pom
+af68fdbaf7c3ce7f7597aef53c6d483e77efc34ce0d88743782274330e2b4c4d  fr/acinq/secp256k1/secp256k1-kmp-jvm/0.21.0/secp256k1-kmp-jvm-0.21.0.pom
 af6b01b48de15f2d4ded1e3884a0fdfd2deb4ef0156dccc6a2bfc13d3952c4ff  org/apache/maven/plugins/maven-surefire-plugin/3.1.2/maven-surefire-plugin-3.1.2.pom
 aff0951639837c4e3a4699a421fa79f410032f603f5c6a5bba435e98531f3984  org/eclipse/aether/aether-util/1.0.0.v20140518/aether-util-1.0.0.v20140518.jar
 affa829a13c7ae4a39d4ca52ba126c71d577319c7b38fa09a4cec24187415f5b  io/netty/netty-codec-xml/4.1.94.Final/netty-codec-xml-4.1.94.Final.jar
+b0a1369969fcd10b1892fd41f95df0a0779d30f0f0ac6e641167997ad27c9305  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-mingw/0.21.0/secp256k1-kmp-jni-jvm-mingw-0.21.0.pom
 b0cb73444c6379583b2a53a2648c48de420eb1f49156675374d8a6756ef3a2fa  com/squareup/okio/okio-jvm/3.0.0/okio-jvm-3.0.0.pom
 b1050081b14bb7a3a7e55a4d3ef01b5dcfabc453b4573a4fc019767191d5f4e0  com/squareup/okhttp3/okhttp/4.12.0/okhttp-4.12.0.jar
 b12663187d9ffc6a1ee76139c0ef497fe9400efbe2ebe01616fe2703656fb4f0  org/apache/maven/shared/maven-filtering/3.3.1/maven-filtering-3.3.1.jar
@@ -812,6 +810,7 @@ b80031b8cb961b73b5cb35a7c720f5f6044c2ec527fdfc341e713cfca1997c08  com/fasterxml/
 b817c67a40c94249fd59d4e686e3327ed0d3d3fae426b20da0f1e75652cfc461  org/postgresql/postgresql/42.6.0/postgresql-42.6.0.jar
 b8bcf4a49b85db0081c6b9305f56fd79dff75be33d8ec3e0f36042d3991adf49  org/apache/maven/plugins/maven-assembly-plugin/3.6.0/maven-assembly-plugin-3.6.0.pom
 b93f689f924e1718e27ae835c96c0b3397768427489685d97643eb9244cf9d64  com/github/jsqlparser/jsqlparser/4.1/jsqlparser-4.1.pom
+b9853cf6917a7254a02a64931c870103eaaf879732ecf3c86fc95928e996740a  fr/acinq/secp256k1/secp256k1-kmp-jni-common/0.21.0/secp256k1-kmp-jni-common-0.21.0.jar
 b993e4a0d96633ccafdcbd3f3d1d8c09874827a495d3c75d6d573110a547e717  com/amazonaws/jmespath-java/1.12.504/jmespath-java-1.12.504.pom
 b9efc41c3832ea329300f0b514ac7b96e7090eb7a42ad39ec1926ab276408294  org/scalatest/scalatest-maven-plugin/2.2.0/scalatest-maven-plugin-2.2.0.jar
 ba03294ee53e7ba31838e4950f280d033c7744c6c7b31253afc75aa351fbd989  org/apache/maven/maven-core/3.0/maven-core-3.0.jar
@@ -833,7 +832,6 @@ bd26e9bc5e94e2d3974a93fdf921658eff4f033bfd4c5208607760ab54298617  io/netty/netty
 bda25fcd0fa6b0d2fe359c571867d5b28b2b7200e3dd39ffe7b9890828109f4c  org/scala-sbt/util-logging_2.13/1.8.0/util-logging_2.13-1.8.0.jar
 bde3617ce9b5bcf9584126046080043af6a4b3baea40a3b153f02e7bbc32acac  org/codehaus/plexus/plexus-component-annotations/2.1.0/plexus-component-annotations-2.1.0.jar
 bdf2a77186c9463b0e6b5b29be35b91528bb59f3148e23c52719470b9bbb3a47  io/netty/netty-resolver-dns-classes-macos/4.1.94.Final/netty-resolver-dns-classes-macos-4.1.94.Final.pom
-be60335bc9529d9198092ec8c696352f2db43e43d2c44af152f6899a8c4611ab  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-mingw/0.20.0/secp256k1-kmp-jni-jvm-mingw-0.20.0.jar
 be64a0cc1f28ea9cd5c970dd7e7557af72c808d738c495b397bf897c9921e907  com/squareup/okio/okio-jvm/3.0.0/okio-jvm-3.0.0.jar
 be91e6192dd0296aaff949b5b27412a56da8b41aed73d0bfacebd83717686979  org/scala-lang/scala-reflect/2.13.11/scala-reflect-2.13.11.pom
 bea12e747708d25e73410ca1c731ebdfa102e8bdb6ec7d81bd4522583b234bcc  org/codehaus/plexus/plexus/2.0.6/plexus-2.0.6.pom
@@ -871,7 +869,6 @@ c8f4d8720972136be18385efd76cc074d35ff1a7a2b97a977590aa0015539bb2  com/swoval/fil
 c91ab5aa570d86f6fd07cc158ec6bc2c50080402972ee9179fe24100739fbb20  commons-logging/commons-logging/1.2/commons-logging-1.2.pom
 c938e4d8cdf0674496749a87e6d3b29aa41b1b35a39898a1ade2bc9eae214c17  org/apache/maven/maven-repository-metadata/3.0/maven-repository-metadata-3.0.jar
 c9686fd8ba7c62f0928f09d0b105aadc82bdab06241424ba2660e285dc559546  org/scala-lang/scala-library/2.13.10/scala-library-2.13.10.pom
-c9ef5ad168a3c29bdf6ec27ec5fab1fda0d6bf29035b4724a4ab2f98f5d3a8c1  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-mingw/0.20.0/secp256k1-kmp-jni-jvm-mingw-0.20.0.pom
 c9f70e161dc5194536831729605eb0ffdfabe0d01f199e6234f8dd26ccef4ddf  org/scala-sbt/util-relation_2.13/1.8.0/util-relation_2.13-1.8.0.jar
 c9fa3c4799615ebf299f616e4817efd16dcff341e1ee04e51e741d8add68bb43  org/json4s/json4s-ast_2.13/4.0.6/json4s-ast_2.13-4.0.6.jar
 cb49812dc1bfb0ea4f20f398bcae1a88c6406e213e67f7524fb10d4f8ad9347b  org/apache/commons/commons-exec/1.3/commons-exec-1.3.jar
@@ -929,7 +926,9 @@ dac807f65b07698ff39b1b07bfef3d87ae3fd46d91bbf8a2bc02b2a831616f68  org/apache/com
 dada2833d2f72fe87a60f5cd115762a8d7e8979d19dd35559893ff3ad1d9253c  org/scodec/scodec-core_2.13/1.11.10/scodec-core_2.13-1.11.10.pom
 daddea1ea0be0f56978ab3006b8ac92834afeefbd9b7e4e6316fca57df0fa636  commons-logging/commons-logging/1.2/commons-logging-1.2.jar
 db5f50d0615eb423bf46aef97bf0e2ffcf96f135fff6028fb6f8ffa6df280b98  org/jline/jline-terminal/3.19.0/jline-terminal-3.19.0.pom
+dbf7d1a66c749d7ec18aea711009d491d04575c806a9a6345598badd7cb0b26a  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-darwin/0.21.0/secp256k1-kmp-jni-jvm-darwin-0.21.0.jar
 dc2807225359adffd593c60a7d1352969554113a0a5a20962f23a1cfd6539ffc  org/jline/jline-parent/3.19.0/jline-parent-3.19.0.pom
+dcebf76a37ae96af964e6491232fbe87298d7e8cffbbfad1990e30050f6fffb9  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm/0.21.0/secp256k1-kmp-jni-jvm-0.21.0.jar
 dd0317f46922124e81571781a4276d425fab4abc95f43701b9a6bb7ac72584d4  org/scala-lang/scala-library/2.13.1/scala-library-2.13.1.pom
 dd14ed05a563983fc4496224dca9562c683aa68f70a9d279082d6fb5bd8232d8  org/apache/maven/maven-project/2.0/maven-project-2.0.pom
 dd5fc215db73fc436a70366aa38859517582bcc8f2805c7b95c0f159dd215cf7  org/apache/maven/doxia/doxia-modules/1.0/doxia-modules-1.0.pom
@@ -970,6 +969,7 @@ e5aebcc93079a6f6470e93a8b8c446ede7db704fc1c75c7362f7e15af76f851b  io/netty/netty
 e5f820f02dc5513b3f9518f6403fbcbcb0f1654cb965c759eb1e31ddd80f57fb  org/codehaus/plexus/plexus-utils/3.0.17/plexus-utils-3.0.17.pom
 e68f33343d832398f3c8aa78afcd808d56b7c1020de4d3ad8ce47909095ee904  junit/junit/3.8.1/junit-3.8.1.pom
 e68fc19a48cec582a6732fd0b10dbfe9feca25060963def89e547f8a3759d379  org/apache/apache/25/apache-25.pom
+e6cc1e9a6b37b8e2dde72a73dacf5cd0a4315206dfb22365c7dc89e1dd6121fc  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-extract/0.21.0/secp256k1-kmp-jni-jvm-extract-0.21.0.jar
 e6d066a767c5dcaf8b625ed88478b0084883fee256d0e5935b5c896df59f1a91  org/mockito/mockito-scala_2.13/1.17.5/mockito-scala_2.13-1.17.5.pom
 e6d79207a0b814b5642e26dce24ebc0edaf32a3948fa542ab7097fc44f9592fe  io/kamon/kamon-prometheus_2.13/2.7.4/kamon-prometheus_2.13-2.7.4.pom
 e71e6d9b6a3d559c409030e9ba83c8514cb625b937aeecb900d7a15613622c86  org/json4s/json4s-core_2.13/4.0.3/json4s-core_2.13-4.0.3.jar
@@ -996,7 +996,6 @@ ec8e973e7964aaf490dbddd39f312340e00d113b8470f135a13e35e45f4baf9f  org/apache/mav
 ec95e400c9b272b87254327ec408ef50f0252a5a8edf331f00902371c733fc00  org/apache/maven/doxia/doxia-decoration-model/1.0/doxia-decoration-model-1.0.jar
 ecf5d06fafe2b3d85de30f81a9801d6af406278f5ec5e5a4e0d1380d12e863ca  org/apache/maven/plugins/maven-source-plugin/3.3.0/maven-source-plugin-3.3.0.jar
 ed4c936be78a46d73fb64a24f97f971465eb32e76c4625a9738b6f1a25b2d570  org/apache/maven/maven-artifact/2.0/maven-artifact-2.0.pom
-ed5d03f2f44a432f85326fb1247ac38eac449218c7b1f6da736256beb7b99eaa  fr/acinq/bitcoin-lib_2.13/0.44/bitcoin-lib_2.13-0.44.pom
 ef5bd5faf8c2a8846fffc26ad3ca9bab4162e18f19e8fd5f77dfc6ad21ed1699  io/netty/netty-transport-native-kqueue/4.1.94.Final/netty-transport-native-kqueue-4.1.94.Final-osx-x86_64.jar
 ef5dbc7fa918b6dbba71d27e5b3d7a00df624bcfa2549a7297f36fe275f634d7  org/codehaus/plexus/plexus-components/1.1.18/plexus-components-1.1.18.pom
 ef5fa49aeb90df9cac923435577dc9c2701a18ba29191b6e407e7870795eea35  org/codehaus/plexus/plexus-container-default/1.0-alpha-30/plexus-container-default-1.0-alpha-30.jar
@@ -1020,6 +1019,7 @@ f515c2578178f45247ecca7a9e1db109531b1c42f2424e253ceeb0f6b8d42374  net/java/dev/j
 f54a0a28ce3d62af0e1cfe41dde616f645c28e452e77f77b78bc36e74d5e1a69  org/sonatype/aether/aether-spi/1.7/aether-spi-1.7.jar
 f55a922027a78fdd8b3ea15a0d8bfe3fec6a5ceac30c86aa8afa4a5b9b0df603  org/checkerframework/checker-qual/3.33.0/checker-qual-3.33.0.pom
 f5ecc6eaa4a32ee0c115d31525f588f491b2cc75fdeb4ed3c0c662c12ac0c32f  org/apache/maven/maven-plugin-api/3.0/maven-plugin-api-3.0.jar
+f5f9ceeac3b73ff9b82dcb22ea50ee47ee2d3e50c9c9e084496f6ab10344e5d7  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-mingw/0.21.0/secp256k1-kmp-jni-jvm-mingw-0.21.0.jar
 f62aeef7eb34196c9f4a7642cd610e4f175a88c040246918b19e4c3fbc0b8098  org/apache/maven/surefire/surefire-api/3.1.2/surefire-api-3.1.2.jar
 f66c2b6e2a1999b574bc8d37544d018c3fcab67877f4c9b311f9d23443f0096e  pl/project13/maven/git-commit-id-plugin/4.9.10/git-commit-id-plugin-4.9.10.jar
 f70e12ebea93f119f4f63766c2b8a3386c34bb48e588df710cb98c8e3822f7c7  org/apache/maven/maven-core/3.0/maven-core-3.0.pom
