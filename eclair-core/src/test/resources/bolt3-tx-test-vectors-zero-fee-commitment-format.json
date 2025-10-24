@@ -1,0 +1,80 @@
+{
+  "local_funding_priv": "8f567cb6382507019349a47623902aa65d7a142ac85462eeb63dc11799ac2bb9",
+  "remote_funding_priv": "4d22d96f0c0ccecffee4554d20ed43e51235917508ee292d281235bb7ebe0e3e",
+  "funding_txid": "4b70a2ee47b3005a6316ff87055e94c6b3d433d0fd3b384c9ecf7813843c1eae",
+  "funding_index": 1,
+  "funding_amount_satoshis": 10000000,
+  "commitment_number": 42,
+  "to_self_delay": 720,
+  "local_payment_basepoint_secret": "94f29d20a225ea2f7093331ba0f0f28a9382d8ed08e1fd121329925cd0c01b6d",
+  "local_delayed_payment_basepoint_secret": "e9d4e1935bf16e948d76ad007baf0646df023af38f41bcf2c8799336949d291e",
+  "local_htlc_basepoint_secret": "f699038ef4f95b6b16b22a5c04fcb3c508d68d02cd2f86cf197e0fac451681b0",
+  "per_commitment_point": "0275d12130c276b4274358a328901f8fc47e6c72629102e4b46c9f27dd2c1dda98",
+  "remote_payment_basepoint_secret": "580bff39085f3a6ae8b1f32905e67366c522ea8f2418391145b2e98f1a7cb3f2",
+  "remote_htlc_basepoint_secret": "32df9c4dd46ab6210e74e81e15282106f8db883f45674eabb3324166c6513062",
+  "revocation_pubkey": "03e1ea1b8f5e4cae2dbac454a341ad5c3323b5827054b7e8b0497600010b31f860",
+  "payment_hash_to_preimage": {
+    "ffa4f37b6d7dc03fecaaed8d36ebbea6d199e820e386e4549a69ce733f39f29f": "d3ad493d19860e4744491cf0795c0bc96a8e2a49ebb30afadae7a7d077aa93b2",
+    "23877c9093799487a8d49c7d6aaff7e06b9831c547400605252e7b07f7ae638a": "108cd7067c8ed6f3734b7b67ec153cfa83c40755b75c65e414e934099e6993aa",
+    "1a04764fd402b5557cba89ec3c4d8931b0225d6436923c65c079ce64a55084c4": "ec8f390e2ba4b8d807f1f83d25892169aecf63222f895469d04b521ccb9809dc",
+    "29a74a69c5941d402838f7e1a95c2b2ec534d79524b2582f48df7bc519ebaecf": "792dc27fc2bb0512bf2a203153f01d64458ca1dc3aea76f95e95399440120374",
+    "10b879729e8ddd44f2cfcf3cad6d62be535ca74e293c5ed4a59bd0dcbdad7ca1": "c916e086a4cd7d40f198708aefadd31149da628f820ca2fc213af10f7668501c",
+    "72c9386ba5a9d97b821d855930236d39c48dab5b1c2efe9ada44e2fbadcff983": "5591b96c0a6a03f51c27bfa658149260bd2fe5e2ce83130ce50d0229a3a947c5"
+  },
+  "tests": [
+    {
+      "name": "Commitment transaction with dust HTLCs above maximum anchor amount",
+      "dust_limit_satoshis": 2500,
+      "to_local_msat": 7988000000,
+      "to_remote_msat": 1988000000,
+      "incoming_htlcs": [
+        {
+          "id": 0,
+          "amount_msat": 2000000,
+          "payment_hash": "ffa4f37b6d7dc03fecaaed8d36ebbea6d199e820e386e4549a69ce733f39f29f",
+          "cltv_expiry": 920125
+        },
+        {
+          "id": 1,
+          "amount_msat": 5000000,
+          "payment_hash": "ffa4f37b6d7dc03fecaaed8d36ebbea6d199e820e386e4549a69ce733f39f29f",
+          "cltv_expiry": 920130
+        },
+        {
+          "id": 2,
+          "amount_msat": 5000000,
+          "payment_hash": "23877c9093799487a8d49c7d6aaff7e06b9831c547400605252e7b07f7ae638a",
+          "cltv_expiry": 920130
+        }
+      ],
+      "outgoing_htlcs": [
+        {
+          "id": 0,
+          "amount_msat": 1000000,
+          "payment_hash": "1a04764fd402b5557cba89ec3c4d8931b0225d6436923c65c079ce64a55084c4",
+          "cltv_expiry": 920125
+        },
+        {
+          "id": 1,
+          "amount_msat": 1000000,
+          "payment_hash": "29a74a69c5941d402838f7e1a95c2b2ec534d79524b2582f48df7bc519ebaecf",
+          "cltv_expiry": 920130
+        },
+        {
+          "id": 2,
+          "amount_msat": 10000000,
+          "payment_hash": "10b879729e8ddd44f2cfcf3cad6d62be535ca74e293c5ed4a59bd0dcbdad7ca1",
+          "cltv_expiry": 920130
+        }
+      ],
+      "signed_commit_tx": "03000000000101ae1e3c841378cf9e4c383bfdd033d4b3c6945e0587ff16635a00b347eea2704b0100000000340fef8006f0000000000000000451024e738813000000000000220020d224757593748074d4df6602806308dfcc52887e1ad61d1f72353f77f1a200a38813000000000000220020f270035091ad0a96",
+      "signed_htlc_success_txs": [
+        "",
+        ""
+      ],
+      "signed_htlc_timeout_txs": [
+        ""
+      ]
+    }
+  ]
+}

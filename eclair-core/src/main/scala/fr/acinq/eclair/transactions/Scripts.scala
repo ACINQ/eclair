@@ -43,8 +43,8 @@ object Scripts {
   def der(sig: ByteVector64, sighashType: Int = SIGHASH_ALL): ByteVector = Crypto.compact2der(sig) :+ sighashType.toByte
 
   private def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
-    case DefaultCommitmentFormat => SIGHASH_ALL
     case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
+    case ZeroFeeCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
   }
 
   /** Sort public keys using lexicographic ordering. */
@@ -204,8 +204,8 @@ object Scripts {
 
   def htlcOffered(keys: CommitmentPublicKeys, paymentHash: ByteVector32, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
-      case DefaultCommitmentFormat => false
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => true
+      case ZeroFeeCommitmentFormat => false
     }
     // @formatter:off
     // To you with revocation key
@@ -263,8 +263,8 @@ object Scripts {
 
   def htlcReceived(keys: CommitmentPublicKeys, paymentHash: ByteVector32, lockTime: CltvExpiry, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
-      case DefaultCommitmentFormat => false
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => true
+      case ZeroFeeCommitmentFormat => false
     }
     // @formatter:off
     // To you with revocation key

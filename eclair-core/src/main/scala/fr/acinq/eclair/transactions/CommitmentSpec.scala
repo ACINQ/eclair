@@ -19,7 +19,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.scalacompat.{LexicographicalOrdering, SatoshiLong, TxOut}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, PhoenixSimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 
 /**
@@ -36,6 +36,7 @@ object CommitmentOutput {
   case class ToRemote(txOut: TxOut) extends CommitmentOutput
   case class ToLocalAnchor(txOut: TxOut) extends CommitmentOutput
   case class ToRemoteAnchor(txOut: TxOut) extends CommitmentOutput
+  case class ToSharedAnchor(txOut: TxOut) extends CommitmentOutput
   // If there is an output for an HTLC in the commit tx, there is also a 2nd-level HTLC tx.
   case class InHtlc(htlc: IncomingHtlc, txOut: TxOut, htlcDelayedOutput: TxOut) extends CommitmentOutput
   case class OutHtlc(htlc: OutgoingHtlc, txOut: TxOut, htlcDelayedOutput: TxOut) extends CommitmentOutput
@@ -94,8 +95,8 @@ final case class CommitmentSpec(htlcs: Set[DirectedHtlc], commitTxFeerate: Feera
 
   def htlcTxFeerate(commitmentFormat: CommitmentFormat): FeeratePerKw = commitmentFormat match {
     case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat => FeeratePerKw(0 sat)
+    case ZeroFeeCommitmentFormat => FeeratePerKw(0 sat)
     case UnsafeLegacyAnchorOutputsCommitmentFormat | PhoenixSimpleTaprootChannelCommitmentFormat => commitTxFeerate
-    case DefaultCommitmentFormat => commitTxFeerate
   }
 
   def findIncomingHtlcById(id: Long): Option[IncomingHtlc] = htlcs.collectFirst { case htlc: IncomingHtlc if htlc.add.id == id => htlc }

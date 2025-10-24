@@ -16,13 +16,13 @@
 
 package fr.acinq.eclair.transactions
 
+import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.KotlinUtils._
-import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce}
+import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature
@@ -81,7 +81,7 @@ object Transactions {
     def claimHtlcTimeoutWeight: Int
     /** Weight of a fully signed [[ClaimLocalDelayedOutputTx]] transaction. */
     def toLocalDelayedWeight: Int
-    /** Weight of a fully signed [[ClaimRemoteCommitMainOutputTx]] transaction. */
+    /** Weight of a fully signed [[ClaimRemoteDelayedOutputTx]] transaction. */
     def toRemoteWeight: Int
     /** Weight of a fully signed [[HtlcDelayedTx]] 3rd-stage transaction (spending the output of an [[HtlcTx]]). */
     def htlcDelayedWeight: Int
@@ -98,30 +98,6 @@ object Transactions {
 
   sealed trait SegwitV0CommitmentFormat extends CommitmentFormat {
     override val fundingInputWeight = 384
-  }
-
-  /**
-   * Commitment format as defined in the v1.0 specification (https://github.com/lightningnetwork/lightning-rfc/tree/v1.0).
-   */
-  case object DefaultCommitmentFormat extends SegwitV0CommitmentFormat {
-    override val commitWeight = 724
-    override val anchorInputWeight = 0
-    override val htlcOutputWeight = 172
-    override val htlcTimeoutInputWeight = 449
-    override val htlcTimeoutWeight = 663
-    override val htlcSuccessInputWeight = 488
-    override val htlcSuccessWeight = 703
-    override val claimHtlcSuccessWeight = 571
-    override val claimHtlcTimeoutWeight = 544
-    override val toLocalDelayedWeight = 483
-    override val toRemoteWeight = 438
-    override val htlcDelayedWeight = 483
-    override val mainPenaltyWeight = 484
-    override val htlcOfferedPenaltyWeight = 572
-    override val htlcReceivedPenaltyWeight = 577
-    override val claimHtlcPenaltyWeight = 484
-
-    override def toString: String = "legacy"
   }
 
   /**
@@ -166,6 +142,33 @@ object Transactions {
    */
   case object ZeroFeeHtlcTxAnchorOutputsCommitmentFormat extends AnchorOutputsCommitmentFormat {
     override def toString: String = "anchor_outputs"
+  }
+
+  /**
+   * Commitment format that adds a shared anchor output (standard P2A script) to the commitment transaction and uses
+   * v3 (TRUC) transactions to allow CPFP and package relay.
+   */
+  case object ZeroFeeCommitmentFormat extends SegwitV0CommitmentFormat {
+    override val commitWeight: Int = 773
+    override val anchorInputWeight: Int = 164
+    override val htlcOutputWeight: Int = 172
+    override val htlcTimeoutInputWeight: Int = 449
+    override val htlcTimeoutWeight: Int = 663
+    override val htlcSuccessInputWeight: Int = 488
+    override val htlcSuccessWeight: Int = 703
+    override val claimHtlcSuccessWeight: Int = 571
+    override val claimHtlcTimeoutWeight: Int = 544
+    override val toLocalDelayedWeight: Int = 483
+    override val toRemoteWeight: Int = 438
+    override val htlcDelayedWeight: Int = 483
+    override val mainPenaltyWeight: Int = 483
+    override val htlcOfferedPenaltyWeight: Int = 572
+    override val htlcReceivedPenaltyWeight: Int = 577
+    override val claimHtlcPenaltyWeight: Int = 483
+    // The anchor output amount is capped at this value: afterwards, trimmed outputs go directly to fees.
+    val maxAnchorAmount: Satoshi = 240 sat
+
+    override def toString: String = "zero_fee_commitments"
   }
 
   sealed trait TaprootCommitmentFormat extends CommitmentFormat
@@ -243,6 +246,10 @@ object Transactions {
       val redeemScript: ByteVector = leaf.getScript
       override val pubkeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, Some(scriptTree)))
     }
+    /** Standard pay-to-anchor (P2A) output (introduced in https://github.com/bitcoin/bitcoin/pull/30352). */
+    case object PayToAnchor extends Taproot {
+      override val pubkeyScript: ByteVector = Script.write(Script.pay2anchor)
+    }
   }
   // @formatter:on
 
@@ -278,6 +285,9 @@ object Transactions {
           Transaction.signInputTaprootKeyPath(key, tx, inputIndex, spentOutputs, sighash, t.scriptTree_opt)
         case s: RedeemInfo.TaprootScriptPath =>
           Transaction.signInputTaprootScriptPath(key, tx, inputIndex, spentOutputs, sighash, s.leafHash)
+        case RedeemInfo.PayToAnchor =>
+          // We never call this function for PayToAnchor inputs, which don't require a signature.
+          ByteVector64.Zeroes
       }
     }
 
@@ -293,6 +303,7 @@ object Transactions {
           case s: RedeemInfo.TaprootScriptPath =>
             val data = Transaction.hashForSigningTaprootScriptPath(tx, inputIndex, Seq(input.txOut), sighash, s.leafHash)
             Crypto.verifySignatureSchnorr(data, sig, publicKey.xOnly)
+          case RedeemInfo.PayToAnchor => true
         }
       } else {
         false
@@ -491,14 +502,12 @@ object Transactions {
    * Transactions spending a remote [[CommitTx]] or one of its descendants.
    *
    * When a current remote [[CommitTx]] is published:
-   *    - When using the default commitment format, [[ClaimP2WPKHOutputTx]] spends the to-local output of [[CommitTx]]
    *    - When using anchor outputs, [[ClaimRemoteDelayedOutputTx]] spends the to-local output of [[CommitTx]]
    *    - When using anchor outputs, [[ClaimRemoteAnchorTx]] spends the to-local anchor of [[CommitTx]]
    *    - [[ClaimHtlcSuccessTx]] spends received htlc outputs of [[CommitTx]] for which we have the preimage
    *    - [[ClaimHtlcTimeoutTx]] spends sent htlc outputs of [[CommitTx]] after a timeout
    *
    * When a revoked remote [[CommitTx]] is published:
-   *    - When using the default commitment format, [[ClaimP2WPKHOutputTx]] spends the to-local output of [[CommitTx]]
    *    - When using anchor outputs, [[ClaimRemoteDelayedOutputTx]] spends the to-local output of [[CommitTx]]
    *    - [[MainPenaltyTx]] spends the remote main output using the revocation secret
    *    - [[HtlcPenaltyTx]] spends all htlc outputs using the revocation secret (and competes with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] published by the remote node)
@@ -538,8 +547,7 @@ object Transactions {
     // @formatter:on
 
     def sighash(txOwner: TxOwner): Int = commitmentFormat match {
-      case DefaultCommitmentFormat => SIGHASH_ALL
-      case _: AnchorOutputsCommitmentFormat => txOwner match {
+      case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat => txOwner match {
         case TxOwner.Local => SIGHASH_ALL
         case TxOwner.Remote => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
       }
@@ -623,7 +631,7 @@ object Transactions {
       val htlc = output.htlc.add
       val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
       val tx = Transaction(
-        version = 2,
+        version = commitTx.version,
         txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
         txOut = output.htlcDelayedOutput :: Nil,
         lockTime = 0
@@ -632,7 +640,7 @@ object Transactions {
     }
 
     def redeemInfo(commitKeys: CommitmentPublicKeys, paymentHash: ByteVector32, htlcExpiry: CltvExpiry, commitmentFormat: CommitmentFormat): RedeemInfo = commitmentFormat match {
-      case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+      case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
         val redeemScript = Script.write(htlcReceived(commitKeys, paymentHash, htlcExpiry, commitmentFormat))
         RedeemInfo.P2wsh(redeemScript)
       case _: SimpleTaprootChannelCommitmentFormat =>
@@ -677,7 +685,7 @@ object Transactions {
       val htlc = output.htlc.add
       val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
       val tx = Transaction(
-        version = 2,
+        version = commitTx.version,
         txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
         txOut = output.htlcDelayedOutput :: Nil,
         lockTime = htlc.cltvExpiry.toLong
@@ -686,7 +694,7 @@ object Transactions {
     }
 
     def redeemInfo(commitKeys: CommitmentPublicKeys, paymentHash: ByteVector32, commitmentFormat: CommitmentFormat): RedeemInfo = commitmentFormat match {
-      case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+      case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
         val redeemScript = Script.write(htlcOffered(commitKeys, paymentHash, commitmentFormat))
         RedeemInfo.P2wsh(redeemScript)
       case _: SimpleTaprootChannelCommitmentFormat =>
@@ -702,7 +710,7 @@ object Transactions {
 
     override def sign(): Transaction = {
       val witness = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
           val redeemScript = Script.write(toLocalDelayed(commitKeys.publicKeys, toLocalDelay))
           val sig = sign(commitKeys.ourDelayedPaymentKey, sighash, RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           witnessToLocalDelayedAfterDelay(sig, redeemScript)
@@ -725,7 +733,7 @@ object Transactions {
           val input = InputInfo(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex))
           val amount = input.txOut.amount - weight2fee(feerate, commitmentFormat.htlcDelayedWeight)
           val tx = Transaction(
-            version = 2,
+            version = htlcTx.version,
             txIn = TxIn(input.outPoint, ByteVector.empty, toLocalDelay.toInt) :: Nil,
             txOut = TxOut(amount, localFinalScriptPubKey) :: Nil,
             lockTime = 0
@@ -736,7 +744,7 @@ object Transactions {
     }
 
     def redeemInfo(commitKeys: CommitmentPublicKeys, toLocalDelay: CltvExpiryDelta, commitmentFormat: CommitmentFormat): RedeemInfo = commitmentFormat match {
-      case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+      case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
         val redeemScript = Script.write(toLocalDelayed(commitKeys, toLocalDelay))
         RedeemInfo.P2wsh(redeemScript)
       case _: SimpleTaprootChannelCommitmentFormat =>
@@ -762,7 +770,7 @@ object Transactions {
     override def sign(): Transaction = {
       // Note that in/out HTLCs are inverted in the remote commitment: from their point of view it's an offered (outgoing) HTLC.
       val witness = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
           val redeemScript = Script.write(htlcOffered(commitKeys.publicKeys, paymentHash, commitmentFormat))
           val sig = sign(commitKeys.ourHtlcKey, sighash, RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           witnessClaimHtlcSuccessFromCommitTx(sig, preimage, redeemScript)
@@ -822,7 +830,7 @@ object Transactions {
     override def sign(): Transaction = {
       // Note that in/out HTLCs are inverted in the remote commitment: from their point of view it's a received (incoming) HTLC.
       val witness = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
           val redeemScript = Script.write(htlcReceived(commitKeys.publicKeys, paymentHash, htlcExpiry, commitmentFormat))
           val sig = sign(commitKeys.ourHtlcKey, sighash, RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           witnessClaimHtlcTimeoutFromCommitTx(sig, redeemScript)
@@ -882,14 +890,18 @@ object Transactions {
   object ClaimAnchorTx {
     def redeemInfo(fundingKey: PublicKey, paymentKey: PublicKey, commitmentFormat: CommitmentFormat): RedeemInfo = {
       commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat => RedeemInfo.P2wsh(anchor(fundingKey))
+        case _: AnchorOutputsCommitmentFormat => RedeemInfo.P2wsh(anchor(fundingKey))
         case _: SimpleTaprootChannelCommitmentFormat => RedeemInfo.TaprootKeyPath(paymentKey.xOnly, Some(Taproot.anchorScriptTree))
+        case ZeroFeeCommitmentFormat => RedeemInfo.PayToAnchor
       }
     }
 
-    def createUnsignedTx(input: InputInfo): Transaction = {
+    def createUnsignedTx(input: InputInfo, commitmentFormat: CommitmentFormat): Transaction = {
       Transaction(
-        version = 2,
+        version = commitmentFormat match {
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => 2
+          case ZeroFeeCommitmentFormat => 3
+        },
         txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
         txOut = Nil, // anchor is only used to bump fees, the output will be added later depending on available inputs
         lockTime = 0
@@ -905,7 +917,7 @@ object Transactions {
     override def sign(walletInputs: WalletInputs): Transaction = {
       val toSign = copy(tx = setWalletInputs(walletInputs))
       val witness = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat =>
           val redeemScript = Script.write(anchor(fundingKey.publicKey))
           val sig = toSign.sign(fundingKey, sighash, RedeemInfo.P2wsh(redeemScript), walletInputs.spentUtxos)
           witnessAnchor(sig, redeemScript)
@@ -914,6 +926,7 @@ object Transactions {
           val redeemInfo = RedeemInfo.TaprootKeyPath(anchorKey.xOnlyPublicKey(), Some(Taproot.anchorScriptTree))
           val sig = toSign.sign(anchorKey, sighash, redeemInfo, walletInputs.spentUtxos)
           Script.witnessKeyPathPay2tr(sig)
+        case ZeroFeeCommitmentFormat => Script.witnessPay2anchor
       }
       toSign.tx.updateWitness(toSign.inputIndex, witness)
     }
@@ -930,7 +943,7 @@ object Transactions {
     }
 
     def createUnsignedTx(fundingKey: PrivateKey, commitKeys: LocalCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimLocalAnchorTx] = {
-      findInput(commitTx, fundingKey, commitKeys, commitmentFormat).map(input => ClaimLocalAnchorTx(fundingKey, commitKeys, input, ClaimAnchorTx.createUnsignedTx(input), commitmentFormat))
+      findInput(commitTx, fundingKey, commitKeys, commitmentFormat).map(input => ClaimLocalAnchorTx(fundingKey, commitKeys, input, ClaimAnchorTx.createUnsignedTx(input, commitmentFormat), commitmentFormat))
     }
   }
 
@@ -942,15 +955,15 @@ object Transactions {
     override def sign(walletInputs: WalletInputs): Transaction = {
       val toSign = copy(tx = setWalletInputs(walletInputs))
       val witness = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat =>
           val redeemScript = Script.write(anchor(fundingKey.publicKey))
           val sig = toSign.sign(fundingKey, sighash, RedeemInfo.P2wsh(redeemScript), walletInputs.spentUtxos)
           witnessAnchor(sig, redeemScript)
         case _: SimpleTaprootChannelCommitmentFormat =>
-          val Right(anchorKey) = commitKeys.ourPaymentKey
-          val redeemInfo = RedeemInfo.TaprootKeyPath(anchorKey.xOnlyPublicKey(), Some(Taproot.anchorScriptTree))
-          val sig = toSign.sign(anchorKey, sighash, redeemInfo, walletInputs.spentUtxos)
+          val redeemInfo = RedeemInfo.TaprootKeyPath(commitKeys.ourPaymentKey.xOnlyPublicKey(), Some(Taproot.anchorScriptTree))
+          val sig = toSign.sign(commitKeys.ourPaymentKey, sighash, redeemInfo, walletInputs.spentUtxos)
           Script.witnessKeyPathPay2tr(sig)
+        case ZeroFeeCommitmentFormat => Script.witnessPay2anchor
       }
       toSign.tx.updateWitness(toSign.inputIndex, witness)
     }
@@ -967,67 +980,30 @@ object Transactions {
     }
 
     def createUnsignedTx(fundingKey: PrivateKey, commitKeys: RemoteCommitmentKeys, commitTx: Transaction, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimRemoteAnchorTx] = {
-      findInput(commitTx, fundingKey, commitKeys, commitmentFormat).map(input => ClaimRemoteAnchorTx(fundingKey, commitKeys, input, ClaimAnchorTx.createUnsignedTx(input), commitmentFormat))
+      findInput(commitTx, fundingKey, commitKeys, commitmentFormat).map(input => ClaimRemoteAnchorTx(fundingKey, commitKeys, input, ClaimAnchorTx.createUnsignedTx(input, commitmentFormat), commitmentFormat))
     }
   }
 
-  sealed trait ClaimRemoteCommitMainOutputTx extends RemoteCommitForceCloseTransaction
-
-  /** This transaction claims our main balance from the remote commitment without any delay, when using the [[DefaultCommitmentFormat]]. */
-  case class ClaimP2WPKHOutputTx(commitKeys: RemoteCommitmentKeys, input: InputInfo, tx: Transaction, commitmentFormat: CommitmentFormat) extends ClaimRemoteCommitMainOutputTx {
-    override val desc: String = "remote-main"
-    override val expectedWeight: Int = commitmentFormat.toRemoteWeight
-
-    override def sign(): Transaction = {
-      val Right(paymentKey) = commitKeys.ourPaymentKey
-      val redeemInfo = RedeemInfo.P2wpkh(paymentKey.publicKey)
-      val sig = sign(paymentKey, sighash, redeemInfo, extraUtxos = Map.empty)
-      val witness = Script.witnessPay2wpkh(paymentKey.publicKey, der(sig))
-      tx.updateWitness(inputIndex, witness)
-    }
-  }
-
-  object ClaimP2WPKHOutputTx {
-    def createUnsignedTx(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimP2WPKHOutputTx] = {
-      val redeemInfo = RedeemInfo.P2wpkh(commitKeys.ourPaymentPublicKey)
-      findPubKeyScriptIndex(commitTx, redeemInfo.pubkeyScript) match {
-        case Left(skip) => Left(skip)
-        case Right(outputIndex) =>
-          commitKeys.ourPaymentKey match {
-            case Left(_) => Left(OutputAlreadyInWallet)
-            case Right(_) =>
-              val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
-              val amount = input.txOut.amount - weight2fee(feerate, commitmentFormat.toRemoteWeight)
-              val tx = Transaction(
-                version = 2,
-                txIn = TxIn(input.outPoint, ByteVector.empty, 0) :: Nil,
-                txOut = TxOut(amount, localFinalScriptPubKey) :: Nil,
-                lockTime = 0
-              )
-              val unsignedTx = ClaimP2WPKHOutputTx(commitKeys, input, tx, commitmentFormat)
-              skipTxIfBelowDust(unsignedTx, localDustLimit)
-          }
-      }
-    }
-  }
-
-  /** This transaction spends our main balance from the remote commitment with a 1-block relative delay. */
-  case class ClaimRemoteDelayedOutputTx(commitKeys: RemoteCommitmentKeys, input: InputInfo, tx: Transaction, commitmentFormat: CommitmentFormat) extends ClaimRemoteCommitMainOutputTx {
+  /** This transaction spends our main balance from the remote commitment with a 1-block relative delay, or immediately when using v3 commitments. */
+  case class ClaimRemoteDelayedOutputTx(commitKeys: RemoteCommitmentKeys, input: InputInfo, tx: Transaction, commitmentFormat: CommitmentFormat) extends RemoteCommitForceCloseTransaction {
     override val desc: String = "remote-main-delayed"
     override val expectedWeight: Int = commitmentFormat.toRemoteWeight
 
     override def sign(): Transaction = {
-      val Right(paymentKey) = commitKeys.ourPaymentKey
       val witness = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat =>
           val redeemScript = Script.write(toRemoteDelayed(commitKeys.publicKeys))
-          val sig = sign(paymentKey, sighash, RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
+          val sig = sign(commitKeys.ourPaymentKey, sighash, RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           witnessClaimToRemoteDelayedFromCommitTx(sig, redeemScript)
         case _: SimpleTaprootChannelCommitmentFormat =>
           val scriptTree: ScriptTree.Leaf = Taproot.toRemoteScriptTree(commitKeys.publicKeys)
           val redeemInfo = RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, scriptTree, scriptTree.hash())
-          val sig = sign(paymentKey, sighash, redeemInfo, extraUtxos = Map.empty)
+          val sig = sign(commitKeys.ourPaymentKey, sighash, redeemInfo, extraUtxos = Map.empty)
           Script.witnessScriptPathPay2tr(redeemInfo.internalKey, scriptTree, ScriptWitness(Seq(sig)), scriptTree)
+        case ZeroFeeCommitmentFormat =>
+          val redeemInfo = RedeemInfo.P2wpkh(commitKeys.ourPaymentKey.publicKey)
+          val sig = sign(commitKeys.ourPaymentKey, sighash, redeemInfo, extraUtxos = Map.empty)
+          Script.witnessPay2wpkh(redeemInfo.publicKey, der(sig))
       }
       tx.updateWitness(inputIndex, witness)
     }
@@ -1036,30 +1012,30 @@ object Transactions {
   object ClaimRemoteDelayedOutputTx {
     def createUnsignedTx(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimRemoteDelayedOutputTx] = {
       val redeemInfo = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat =>
           val redeemScript = Script.write(toRemoteDelayed(commitKeys.publicKeys))
           RedeemInfo.P2wsh(redeemScript)
         case _: SimpleTaprootChannelCommitmentFormat =>
           val scriptTree: ScriptTree.Leaf = Taproot.toRemoteScriptTree(commitKeys.publicKeys)
           RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, scriptTree, scriptTree.hash())
+        case ZeroFeeCommitmentFormat =>
+          RedeemInfo.P2wpkh(commitKeys.ourPaymentKey.publicKey)
       }
       findPubKeyScriptIndex(commitTx, redeemInfo.pubkeyScript) match {
         case Left(skip) => Left(skip)
         case Right(outputIndex) =>
-          commitKeys.ourPaymentKey match {
-            case Left(_) => Left(OutputAlreadyInWallet)
-            case Right(_) =>
-              val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
-              val amount = input.txOut.amount - weight2fee(feerate, commitmentFormat.toRemoteWeight)
-              val tx = Transaction(
-                version = 2,
-                txIn = TxIn(input.outPoint, ByteVector.empty, 1) :: Nil,
-                txOut = TxOut(amount, localFinalScriptPubKey) :: Nil,
-                lockTime = 0
-              )
-              val unsignedTx = ClaimRemoteDelayedOutputTx(commitKeys, input, tx, commitmentFormat)
-              skipTxIfBelowDust(unsignedTx, localDustLimit)
-          }
+          val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex))
+          val amount = input.txOut.amount - weight2fee(feerate, commitmentFormat.toRemoteWeight)
+          val tx = Transaction(
+            // Note that we use the same nVersion field as the commit tx here: this allows us to use this transaction
+            // to also spend the anchor when using v3 to pay the commit fees.
+            version = commitTx.version,
+            txIn = TxIn(input.outPoint, ByteVector.empty, 1) :: Nil,
+            txOut = TxOut(amount, localFinalScriptPubKey) :: Nil,
+            lockTime = 0
+          )
+          val unsignedTx = ClaimRemoteDelayedOutputTx(commitKeys, input, tx, commitmentFormat)
+          skipTxIfBelowDust(unsignedTx, localDustLimit)
       }
     }
   }
@@ -1071,7 +1047,7 @@ object Transactions {
 
     override def sign(): Transaction = {
       val witness = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
           val redeemScript = Script.write(toLocalDelayed(commitKeys.publicKeys, toLocalDelay))
           val sig = sign(commitKeys.ourDelayedPaymentKey, sighash, RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           witnessToLocalDelayedAfterDelay(sig, redeemScript)
@@ -1088,7 +1064,7 @@ object Transactions {
   object ClaimLocalDelayedOutputTx {
     def createUnsignedTx(commitKeys: LocalCommitmentKeys, commitTx: Transaction, localDustLimit: Satoshi, toLocalDelay: CltvExpiryDelta, localFinalScriptPubKey: ByteVector, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimLocalDelayedOutputTx] = {
       val redeemInfo = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
           val redeemScript = Script.write(toLocalDelayed(commitKeys.publicKeys, toLocalDelay))
           RedeemInfo.P2wsh(redeemScript)
         case _: SimpleTaprootChannelCommitmentFormat =>
@@ -1119,7 +1095,7 @@ object Transactions {
 
     override def sign(): Transaction = {
       val witness = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
           val redeemScript = Script.write(toLocalDelayed(commitKeys.publicKeys, toRemoteDelay))
           val sig = sign(revocationKey, sighash, RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           Scripts.witnessToLocalDelayedWithRevocationSig(sig, redeemScript)
@@ -1136,7 +1112,7 @@ object Transactions {
   object MainPenaltyTx {
     def createUnsignedTx(commitKeys: RemoteCommitmentKeys, revocationKey: PrivateKey, commitTx: Transaction, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, toRemoteDelay: CltvExpiryDelta, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, MainPenaltyTx] = {
       val redeemInfo = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
           val redeemScript = Script.write(toLocalDelayed(commitKeys.publicKeys, toRemoteDelay))
           RedeemInfo.P2wsh(redeemScript)
         case _: SimpleTaprootChannelCommitmentFormat =>
@@ -1175,6 +1151,7 @@ object Transactions {
         case RedeemInfo.P2wsh(redeemScript) => Scripts.witnessHtlcWithRevocationSig(commitKeys, sig, redeemScript)
         case _: RedeemInfo.TaprootKeyPath => Script.witnessKeyPathPay2tr(sig, sighash)
         case s: RedeemInfo.TaprootScriptPath => Script.witnessScriptPathPay2tr(s.internalKey, s.leaf, ScriptWitness(Seq(sig)), s.scriptTree)
+        case RedeemInfo.PayToAnchor => Script.witnessPay2anchor
       }
       tx.updateWitness(inputIndex, witness)
     }
@@ -1194,7 +1171,7 @@ object Transactions {
         case (paymentHash, htlcExpiry) =>
           // We don't know if this was an incoming or outgoing HTLC, so we try both cases.
           val (offered, received) = commitmentFormat match {
-            case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+            case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
               (RedeemInfo.P2wsh(Script.write(htlcOffered(commitKeys.publicKeys, paymentHash, commitmentFormat))),
                 RedeemInfo.P2wsh(Script.write(htlcReceived(commitKeys.publicKeys, paymentHash, htlcExpiry, commitmentFormat))))
             case _: SimpleTaprootChannelCommitmentFormat =>
@@ -1243,7 +1220,7 @@ object Transactions {
 
     override def sign(): Transaction = {
       val witness = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
           val redeemScript = Script.write(toLocalDelayed(commitKeys.publicKeys, toRemoteDelay))
           val sig = sign(revocationKey, sighash, RedeemInfo.P2wsh(redeemScript), extraUtxos = Map.empty)
           Scripts.witnessToLocalDelayedWithRevocationSig(sig, redeemScript)
@@ -1266,7 +1243,7 @@ object Transactions {
                           feerate: FeeratePerKw,
                           commitmentFormat: CommitmentFormat): Seq[Either[TxGenerationSkipped, ClaimHtlcDelayedOutputPenaltyTx]] = {
       val redeemInfo = commitmentFormat match {
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
           val redeemScript = Script.write(toLocalDelayed(commitKeys.publicKeys, toRemoteDelay))
           RedeemInfo.P2wsh(redeemScript)
         case _: SimpleTaprootChannelCommitmentFormat =>
@@ -1278,7 +1255,7 @@ object Transactions {
           val input = InputInfo(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex))
           val amount = input.txOut.amount - weight2fee(feerate, commitmentFormat.claimHtlcPenaltyWeight)
           val tx = Transaction(
-            version = 2,
+            version = htlcTx.version,
             txIn = TxIn(input.outPoint, ByteVector.empty, 0xffffffffL) :: Nil,
             txOut = TxOut(amount, localFinalScriptPubKey) :: Nil,
             lockTime = 0
@@ -1292,7 +1269,6 @@ object Transactions {
   // @formatter:off
   sealed trait TxGenerationSkipped
   case object OutputNotFound extends TxGenerationSkipped { override def toString = "output not found (probably trimmed)" }
-  private case object OutputAlreadyInWallet extends TxGenerationSkipped { override def toString = "output doesn't need to be claimed, it belongs to our bitcoin wallet (p2wpkh or p2tr)" }
   case object AmountBelowDustLimit extends TxGenerationSkipped { override def toString = "amount is below dust limit" }
   private case class CannotUpdateFee(txInfo: ForceCloseTransaction) extends TxGenerationSkipped { override def toString = s"cannot update fee for ${txInfo.desc} transactions" }
   // @formatter:on
@@ -1315,7 +1291,8 @@ object Transactions {
   def offeredHtlcTrimThreshold(dustLimit: Satoshi, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Satoshi = {
     commitmentFormat match {
       case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat => dustLimit
-      case _ => dustLimit + weight2fee(feerate, commitmentFormat.htlcTimeoutWeight)
+      case ZeroFeeCommitmentFormat => dustLimit
+      case UnsafeLegacyAnchorOutputsCommitmentFormat | PhoenixSimpleTaprootChannelCommitmentFormat => dustLimit + weight2fee(feerate, commitmentFormat.htlcTimeoutWeight)
     }
   }
 
@@ -1333,7 +1310,8 @@ object Transactions {
   def receivedHtlcTrimThreshold(dustLimit: Satoshi, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Satoshi = {
     commitmentFormat match {
       case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat => dustLimit
-      case _ => dustLimit + weight2fee(feerate, commitmentFormat.htlcSuccessWeight)
+      case ZeroFeeCommitmentFormat => dustLimit
+      case UnsafeLegacyAnchorOutputsCommitmentFormat | PhoenixSimpleTaprootChannelCommitmentFormat => dustLimit + weight2fee(feerate, commitmentFormat.htlcSuccessWeight)
     }
   }
 
@@ -1367,8 +1345,8 @@ object Transactions {
     // When using anchor outputs, the channel initiator pays for *both* anchors all the time, even if only one anchor is present.
     // This is not technically a fee (it doesn't go to miners) but it also has to be deduced from the channel initiator's main output.
     val anchorsCost = commitmentFormat match {
-      case DefaultCommitmentFormat => Satoshi(0)
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => AnchorOutputsCommitmentFormat.anchorAmount * 2
+      case ZeroFeeCommitmentFormat => 0 sat // the anchor amount will be taken from trimmed outputs
     }
     txFee + anchorsCost
   }
@@ -1421,8 +1399,8 @@ object Transactions {
   def decodeTxNumber(sequence: Long, locktime: Long): Long = ((sequence & 0xffffffL) << 24) + (locktime & 0xffffffL)
 
   private def getHtlcTxInputSequence(commitmentFormat: CommitmentFormat): Long = commitmentFormat match {
-    case DefaultCommitmentFormat => 0 // htlc txs immediately spend the commit tx
     case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => 1 // htlc txs have a 1-block delay to allow CPFP carve-out on anchors
+    case ZeroFeeCommitmentFormat => 0 // the 1-block delay is unnecessary for v3 transactions
   }
 
   def makeCommitTxOutputs(localFundingPublicKey: PublicKey,
@@ -1461,7 +1439,7 @@ object Transactions {
 
     if (toLocalAmount >= dustLimit) {
       val redeemInfo = commitmentFormat match {
-        case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat | ZeroFeeCommitmentFormat =>
           RedeemInfo.P2wsh(toLocalDelayed(commitmentKeys, toSelfDelay))
         case _: SimpleTaprootChannelCommitmentFormat =>
           val toLocalTree = Taproot.toLocalScriptTree(commitmentKeys, toSelfDelay)
@@ -1472,10 +1450,10 @@ object Transactions {
 
     if (toRemoteAmount >= dustLimit) {
       val redeemInfo = commitmentFormat match {
-        case DefaultCommitmentFormat =>
-          RedeemInfo.P2wpkh(commitmentKeys.remotePaymentPublicKey)
         case _: AnchorOutputsCommitmentFormat =>
           RedeemInfo.P2wsh(toRemoteDelayed(commitmentKeys))
+        case ZeroFeeCommitmentFormat =>
+          RedeemInfo.P2wpkh(commitmentKeys.remotePaymentPublicKey)
         case _: SimpleTaprootChannelCommitmentFormat =>
           val scripTree = Taproot.toRemoteScriptTree(commitmentKeys)
           RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly, scripTree, scripTree.hash())
@@ -1484,7 +1462,6 @@ object Transactions {
     }
 
     commitmentFormat match {
-      case DefaultCommitmentFormat => ()
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
         if (toLocalAmount >= dustLimit || hasHtlcs) {
           val redeemInfo = ClaimLocalAnchorTx.redeemInfo(localFundingPublicKey, commitmentKeys, commitmentFormat)
@@ -1494,6 +1471,15 @@ object Transactions {
           val redeemInfo = ClaimRemoteAnchorTx.redeemInfo(remoteFundingPublicKey, commitmentKeys, commitmentFormat)
           outputs.append(ToRemoteAnchor(TxOut(AnchorOutputsCommitmentFormat.anchorAmount, redeemInfo.pubkeyScript)))
         }
+      case ZeroFeeCommitmentFormat =>
+        // The shared anchor amount is usually 0 sat (ephemeral dust), but when outputs are trimmed, they go to the
+        // anchor amount. However, we cap this value at 240 sat (which makes the output non-ephemeral) and let the
+        // remaining dust directly go to on-chain fees.
+        val trimmedLocalAmount = if (spec.toLocal < dustLimit) spec.toLocal else 0.msat
+        val trimmedRemoteAmount = if (spec.toRemote < dustLimit) spec.toRemote else 0.msat
+        val trimmedHtlcs = spec.htlcs.collect { case htlc if htlc.add.amountMsat < dustLimit => htlc.add.amountMsat }.sum
+        val anchorAmount = (trimmedLocalAmount + trimmedRemoteAmount + trimmedHtlcs).truncateToSatoshi.min(ZeroFeeCommitmentFormat.maxAnchorAmount)
+        outputs.append(ToSharedAnchor(TxOut(anchorAmount, RedeemInfo.PayToAnchor.pubkeyScript)))
     }
 
     outputs.sortWith(CommitmentOutput.isLessThan).toSeq
@@ -1504,11 +1490,15 @@ object Transactions {
                    localPaymentBasePoint: PublicKey,
                    remotePaymentBasePoint: PublicKey,
                    localIsChannelOpener: Boolean,
+                   commitmentFormat: CommitmentFormat,
                    outputs: Seq[CommitmentOutput]): CommitTx = {
     val txNumber = obscuredCommitTxNumber(commitTxNumber, localIsChannelOpener, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, lockTime) = encodeTxNumber(txNumber)
     val tx = Transaction(
-      version = 2,
+      version = commitmentFormat match {
+        case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => 2
+        case ZeroFeeCommitmentFormat => 3
+      },
       txIn = TxIn(commitTxInput.outPoint, ByteVector.empty, sequence = sequence) :: Nil,
       txOut = outputs.map(_.txOut),
       lockTime = lockTime
@@ -1649,7 +1639,6 @@ object Transactions {
       txInfo match {
         case txInfo: ClaimLocalDelayedOutputTx => Right(txInfo.copy(tx = updatedTx))
         case txInfo: ClaimRemoteDelayedOutputTx => Right(txInfo.copy(tx = updatedTx))
-        case txInfo: ClaimP2WPKHOutputTx => Right(txInfo.copy(tx = updatedTx))
         // Anchor transaction don't have any output: wallet inputs must be used to pay fees.
         case txInfo: ClaimAnchorTx => Left(CannotUpdateFee(txInfo))
         // HTLC transactions are pre-signed, we can't update their fee by lowering the output amount.

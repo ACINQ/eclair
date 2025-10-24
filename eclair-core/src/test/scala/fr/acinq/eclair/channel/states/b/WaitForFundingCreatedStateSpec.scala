@@ -25,7 +25,6 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -82,12 +81,10 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
 
   test("recv FundingCreated (funder can't pay fees)", Tag(FunderBelowCommitFees)) { f =>
     import f._
-    val fees = Transactions.weight2fee(TestConstants.feeratePerKw, Transactions.DefaultCommitmentFormat.commitWeight)
-    val missing = fees - 100.sat
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     val error = bob2alice.expectMsgType[Error]
-    assert(error == Error(fundingCreated.temporaryChannelId, CannotAffordFirstCommitFees(fundingCreated.temporaryChannelId, missing, fees).getMessage))
+    assert(error == Error(fundingCreated.temporaryChannelId, CannotAffordFirstCommitFees(fundingCreated.temporaryChannelId, 3370 sat, 3470 sat).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
