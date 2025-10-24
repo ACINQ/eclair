@@ -932,7 +932,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             unlockAndStop(completeTx)
           case Right(localSigOfRemoteTx) =>
             val htlcSignatures = sortedHtlcTxs.map(_.localSig(remoteCommitmentKeys)).toList
-            val localCommitSig = CommitSig(fundingParams.channelId, localSigOfRemoteTx, htlcSignatures, batchSize = 1)
+            val localCommitSig = CommitSig(fundingParams.channelId, fundingTx.txid, localSigOfRemoteTx, htlcSignatures, batchSize = 1)
             val localCommit = UnsignedLocalCommit(purpose.localCommitIndex, localSpec, localCommitTx.tx.txid)
             val remoteCommit = RemoteCommit(purpose.remoteCommitIndex, remoteSpec, remoteCommitTx.tx.txid, purpose.remotePerCommitmentPoint)
             signFundingTx(completeTx, remoteFundingNonce_opt, remoteCommitNonces_opt.map(_.nextCommitNonce), localCommitSig, localCommit, remoteCommit)
@@ -1189,11 +1189,8 @@ object InteractiveTxSigningSession {
                             liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends InteractiveTxSigningSession {
     val fundingTxId: TxId = fundingTx.txId
     val localCommitIndex: Long = localCommit.fold(_.index, _.index)
-    // This value tells our peer whether we need them to retransmit their commit_sig on reconnection or not.
-    val nextLocalCommitmentNumber: Long = localCommit match {
-      case Left(unsignedCommit) => unsignedCommit.index
-      case Right(commit) => commit.index + 1
-    }
+    // If we haven't received the remote commit_sig, we will request a retransmission on reconnection.
+    val retransmitRemoteCommitSig: Boolean = localCommit.isLeft
 
     def localFundingKey(channelKeys: ChannelKeys): PrivateKey = channelKeys.fundingKey(fundingTxIndex)
 
