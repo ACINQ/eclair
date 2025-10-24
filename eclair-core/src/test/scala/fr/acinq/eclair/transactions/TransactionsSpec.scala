@@ -18,7 +18,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.scalacompat.Crypto._
-import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, Crypto, MilliBtc, MilliBtcDouble, Musig2, OP_2, OP_CHECKMULTISIG, OP_PUSHDATA, OP_RETURN, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxId, TxIn, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, Crypto, MilliBtc, MilliBtcDouble, Musig2, OP_2, OP_CHECKMULTISIG, OP_PUSHDATA, OP_RETURN, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.bitcoin.{ScriptFlags, SigVersion}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
@@ -26,7 +26,6 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature
 import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.reputation.Reputation
-import fr.acinq.eclair.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions.AnchorOutputsCommitmentFormat.anchorAmount
 import fr.acinq.eclair.transactions.Transactions._
@@ -35,7 +34,6 @@ import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
-import scala.io.Source
 import scala.util.Random
 
 /**
@@ -63,9 +61,9 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   )
   // Keys used by the remote node to spend outputs of our local commitment.
   private val remoteKeys = RemoteCommitmentKeys(
-    ourPaymentKey = Right(remotePaymentPriv),
+    ourPaymentKey = remotePaymentPriv,
     theirDelayedPaymentPublicKey = localDelayedPaymentPriv.publicKey,
-    ourPaymentBasePoint = localPaymentBasePoint,
+    ourPaymentBasePoint = remotePaymentPriv.publicKey,
     ourHtlcKey = remoteHtlcPriv,
     theirHtlcPublicKey = localHtlcPriv.publicKey,
     revocationPublicKey = localRevocationPriv.publicKey,
@@ -116,7 +114,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("compute fees") {
-    // see BOLT #3 specs
     val htlcs = Set[DirectedHtlc](
       OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000 msat, ByteVector32.Zeroes, CltvExpiry(552), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
       OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, ByteVector32.Zeroes, CltvExpiry(553), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
@@ -124,8 +121,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 800000 msat, ByteVector32.Zeroes, CltvExpiry(551), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None))
     )
     val spec = CommitmentSpec(htlcs, FeeratePerKw(5000 sat), toLocal = 0 msat, toRemote = 0 msat)
-    val fee = commitTxFeeMsat(546 sat, spec, DefaultCommitmentFormat)
-    assert(fee == 5340000.msat)
+    val fee = commitTxFeeMsat(546 sat, spec, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
+    assert(fee == 9_060_000.msat)
   }
 
   test("pre-compute wallet input and output weight") {
@@ -153,47 +150,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   private def checkExpectedWeight(actual: Int, expected: Int, commitmentFormat: CommitmentFormat): Unit = {
     commitmentFormat match {
       case _: SimpleTaprootChannelCommitmentFormat => assert(actual == expected)
-      case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
+      case _: AnchorOutputsCommitmentFormat =>
         // ECDSA signatures are der-encoded, which creates some variability in signature size compared to the baseline.
         assert(actual <= expected + 2)
         assert(actual >= expected - 2)
-    }
-  }
-
-  test("generate valid commitment with some outputs that don't materialize (default commitment format)") {
-    val spec = CommitmentSpec(htlcs = Set.empty, commitTxFeerate = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
-    val commitFee = commitTxTotalCost(localDustLimit, spec, DefaultCommitmentFormat)
-    val belowDust = (localDustLimit * 0.9).toMilliSatoshi
-    val belowDustWithFee = (localDustLimit + commitFee * 0.9).toMilliSatoshi
-
-    {
-      val toRemoteFundeeBelowDust = spec.copy(toRemote = belowDust)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, toRemoteFundeeBelowDust, DefaultCommitmentFormat)
-      assert(outputs.forall(_.isInstanceOf[CommitmentOutput.ToLocal]))
-      assert(outputs.head.txOut.amount.toMilliSatoshi == toRemoteFundeeBelowDust.toLocal - commitFee)
-    }
-    {
-      val toLocalFunderBelowDust = spec.copy(toLocal = belowDustWithFee)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, toLocalFunderBelowDust, DefaultCommitmentFormat)
-      assert(outputs.forall(_.isInstanceOf[CommitmentOutput.ToRemote]))
-      assert(outputs.head.txOut.amount.toMilliSatoshi == toLocalFunderBelowDust.toRemote)
-    }
-    {
-      val toRemoteFunderBelowDust = spec.copy(toRemote = belowDustWithFee)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = false, localDustLimit, toLocalDelay, toRemoteFunderBelowDust, DefaultCommitmentFormat)
-      assert(outputs.forall(_.isInstanceOf[CommitmentOutput.ToLocal]))
-      assert(outputs.head.txOut.amount.toMilliSatoshi == toRemoteFunderBelowDust.toLocal)
-    }
-    {
-      val toLocalFundeeBelowDust = spec.copy(toLocal = belowDust)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = false, localDustLimit, toLocalDelay, toLocalFundeeBelowDust, DefaultCommitmentFormat)
-      assert(outputs.forall(_.isInstanceOf[CommitmentOutput.ToRemote]))
-      assert(outputs.head.txOut.amount.toMilliSatoshi == toLocalFundeeBelowDust.toRemote - commitFee)
-    }
-    {
-      val allBelowDust = spec.copy(toLocal = belowDust, toRemote = belowDust)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, allBelowDust, DefaultCommitmentFormat)
-      assert(outputs.isEmpty)
     }
   }
 
@@ -305,7 +265,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
             tx <- txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localPartialSig, remotePartialSig)
           } yield tx
           commitTx
-        case DefaultCommitmentFormat | _: AnchorOutputsCommitmentFormat =>
+        case _: AnchorOutputsCommitmentFormat =>
           val localSig = txInfo.sign(localFundingPriv, remoteFundingPriv.publicKey)
           val remoteSig = txInfo.sign(remoteFundingPriv, localFundingPriv.publicKey)
           assert(txInfo.checkRemoteSig(localFundingPubkey = localFundingPriv.publicKey, remoteFundingPriv.publicKey, remoteSig))
@@ -347,18 +307,13 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       checkExpectedWeight(claimMainOutputTx.weight(), commitmentFormat.toLocalDelayedWeight, commitmentFormat)
       Transaction.correctlySpends(claimMainOutputTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
-    if (commitmentFormat != DefaultCommitmentFormat) {
-      // remote cannot spend main output with default commitment format
-      val Left(failure) = ClaimP2WPKHOutputTx.createUnsignedTx(remoteKeys, commitTx, localDustLimit, finalPubKeyScript, feeratePerKw, commitmentFormat)
-      assert(failure == OutputNotFound)
-    }
-    if (commitmentFormat != DefaultCommitmentFormat) {
+    {
       // remote spends main delayed output
       val Right(claimRemoteDelayedOutputTx) = ClaimRemoteDelayedOutputTx.createUnsignedTx(remoteKeys, commitTx, localDustLimit, finalPubKeyScript, feeratePerKw, commitmentFormat).map(_.sign())
       checkExpectedWeight(claimRemoteDelayedOutputTx.weight(), commitmentFormat.toRemoteWeight, commitmentFormat)
       Transaction.correctlySpends(claimRemoteDelayedOutputTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
-    if (commitmentFormat != DefaultCommitmentFormat) {
+    {
       // local spends local anchor with additional wallet inputs
       val walletAmount = 50_000 sat
       val walletInputs = WalletInputs(Seq(
@@ -381,7 +336,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val anchorTxWeight = claimAnchorTx.tx.copy(txIn = claimAnchorTx.tx.txIn.take(1), txOut = Nil).weight()
       checkExpectedWeight(anchorTxWeight, claimAnchorTx.expectedWeight, commitmentFormat)
     }
-    if (commitmentFormat != DefaultCommitmentFormat) {
+    {
       // remote spends remote anchor
       val Right(claimAnchorOutputTx) = ClaimRemoteAnchorTx.createUnsignedTx(remoteFundingPriv, remoteKeys, commitTx, commitmentFormat)
       assert(!claimAnchorOutputTx.validate(Map.empty))
@@ -402,10 +357,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         val signedTx = htlcTimeoutTx.addRemoteSig(localKeys, remoteSig).sign()
         Transaction.correctlySpends(signedTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         // local detects when remote doesn't use the right sighash flags
-        val invalidSighash = commitmentFormat match {
-          case DefaultCommitmentFormat => Seq(SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
-          case _ => Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
-        }
+        val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         for (sighash <- invalidSighash) {
           val invalidRemoteSig = htlcTimeoutTx.localSigWithInvalidSighash(remoteKeys, sighash)
           assert(!htlcTimeoutTx.checkRemoteSig(localKeys, invalidRemoteSig))
@@ -430,10 +382,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         Transaction.correctlySpends(signedTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         assert(htlcSuccessTx.checkRemoteSig(localKeys, remoteSig))
         // local detects when remote doesn't use the right sighash flags
-        val invalidSighash = commitmentFormat match {
-          case DefaultCommitmentFormat => Seq(SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
-          case _ => Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
-        }
+        val invalidSighash = Seq(SIGHASH_ALL, SIGHASH_ALL | SIGHASH_ANYONECANPAY, SIGHASH_SINGLE, SIGHASH_NONE)
         for (sighash <- invalidSighash) {
           val invalidRemoteSig = htlcSuccessTx.localSigWithInvalidSighash(remoteKeys, sighash)
           assert(!htlcSuccessTx.checkRemoteSig(localKeys, invalidRemoteSig))
@@ -535,10 +484,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
   }
 
-  test("generate valid commitment and htlc transactions (default commitment format)") {
-    testCommitAndHtlcTxs(DefaultCommitmentFormat)
-  }
-
   test("generate valid commitment and htlc transactions (legacy anchor outputs)") {
     testCommitAndHtlcTxs(UnsafeLegacyAnchorOutputsCommitmentFormat)
   }
@@ -570,83 +515,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     assert(multiSig2of2(pubkey2, pubkey1) == Seq(OP_2, OP_PUSHDATA(pubkey1.value), OP_PUSHDATA(pubkey2.value), OP_2, OP_CHECKMULTISIG))
     assert(Taproot.musig2Aggregate(pubkey1, pubkey2) == Taproot.musig2Aggregate(pubkey2, pubkey1))
     assert(Taproot.musig2Aggregate(pubkey2, pubkey1) == Musig2.aggregateKeys(Seq(pubkey1, pubkey2)))
-  }
-
-  test("sort the htlc outputs using BIP69 and cltv expiry") {
-    val localFundingPriv = PrivateKey(hex"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1")
-    val remoteFundingPriv = PrivateKey(hex"a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2")
-    val localRevocationPriv = PrivateKey(hex"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3")
-    val localPaymentPriv = PrivateKey(hex"a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4")
-    val localDelayedPaymentPriv = PrivateKey(hex"a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5")
-    val remotePaymentPriv = PrivateKey(hex"a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6")
-    val localHtlcPriv = PrivateKey(hex"a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7")
-    val remoteHtlcPriv = PrivateKey(hex"a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8")
-    val localKeys = LocalCommitmentKeys(
-      ourDelayedPaymentKey = localDelayedPaymentPriv,
-      theirPaymentPublicKey = remotePaymentPriv.publicKey,
-      ourPaymentBasePoint = localPaymentBasePoint,
-      ourHtlcKey = localHtlcPriv,
-      theirHtlcPublicKey = remoteHtlcPriv.publicKey,
-      revocationPublicKey = localRevocationPriv.publicKey,
-    )
-    val commitInput = makeFundingInputInfo(TxId.fromValidHex("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey, DefaultCommitmentFormat)
-
-    // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
-    // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
-    // htlc4 is identical to htlc3 and htlc5 has same payment_hash/amount but different CLTV
-    val paymentPreimage1 = ByteVector32(hex"1111111111111111111111111111111111111111111111111111111111111111")
-    val paymentPreimage2 = ByteVector32(hex"2222222222222222222222222222222222222222222222222222222222222222")
-    val paymentPreimage3 = ByteVector32(hex"3333333333333333333333333333333333333333333333333333333333333333")
-    val htlc1 = UpdateAddHtlc(randomBytes32(), 1, millibtc2satoshi(MilliBtc(100)).toMilliSatoshi, sha256(paymentPreimage1), CltvExpiry(300), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
-    val htlc2 = UpdateAddHtlc(randomBytes32(), 2, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage2), CltvExpiry(300), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
-    val htlc3 = UpdateAddHtlc(randomBytes32(), 3, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(300), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
-    val htlc4 = UpdateAddHtlc(randomBytes32(), 4, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(300), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
-    val htlc5 = UpdateAddHtlc(randomBytes32(), 5, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(301), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
-
-    val spec = CommitmentSpec(
-      htlcs = Set(
-        OutgoingHtlc(htlc1),
-        OutgoingHtlc(htlc2),
-        OutgoingHtlc(htlc3),
-        OutgoingHtlc(htlc4),
-        OutgoingHtlc(htlc5)
-      ),
-      commitTxFeerate = feeratePerKw,
-      toLocal = millibtc2satoshi(MilliBtc(400)).toMilliSatoshi,
-      toRemote = millibtc2satoshi(MilliBtc(300)).toMilliSatoshi)
-
-    val commitTxNumber = 0x404142434446L
-    val (commitTx, outputs, htlcTxs) = {
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, spec, DefaultCommitmentFormat)
-      val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localIsChannelOpener = true, outputs)
-      val localSig = txInfo.sign(localFundingPriv, remoteFundingPriv.publicKey)
-      val remoteSig = txInfo.sign(remoteFundingPriv, localFundingPriv.publicKey)
-      val commitTx = txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
-      commitTx.correctlySpends(Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      val htlcTxs = makeHtlcTxs(commitTx, outputs, DefaultCommitmentFormat)
-      (commitTx, outputs, htlcTxs)
-    }
-
-    // htlc1 comes before htlc2 because of the smaller amount (BIP69)
-    // htlc2 and htlc3 have the same amount but htlc2 comes first because its pubKeyScript is lexicographically smaller than htlc3's
-    // htlc5 comes after htlc3 and htlc4 because of the higher CLTV
-    val htlcOut1 :: htlcOut2 :: htlcOut3 :: htlcOut4 :: htlcOut5 :: _ = commitTx.txOut.toList
-    assert(htlcOut1.amount == 10000000.sat)
-    for (htlcOut <- Seq(htlcOut2, htlcOut3, htlcOut4, htlcOut5)) {
-      assert(htlcOut.amount == 20000000.sat)
-    }
-
-    // htlc3 and htlc4 are completely identical, their relative order can't be enforced.
-    assert(htlcTxs.length == 5)
-    htlcTxs.foreach(tx => assert(tx.isInstanceOf[UnsignedHtlcTimeoutTx]))
-    val htlcIds = htlcTxs.sortBy(_.input.outPoint.index).map(_.htlcId)
-    assert(htlcIds == Seq(1, 2, 3, 4, 5) || htlcIds == Seq(1, 2, 4, 3, 5))
-
-    assert(htlcOut2.publicKeyScript.toHex < htlcOut3.publicKeyScript.toHex)
-    assert(outputs.collectFirst { case o: OutHtlc if o.htlc.add == htlc2 => o.txOut.publicKeyScript }.contains(htlcOut2.publicKeyScript))
-    assert(outputs.collectFirst { case o: OutHtlc if o.htlc.add == htlc3 => o.txOut.publicKeyScript }.contains(htlcOut3.publicKeyScript))
-    assert(outputs.collectFirst { case o: OutHtlc if o.htlc.add == htlc4 => o.txOut.publicKeyScript }.contains(htlcOut4.publicKeyScript))
-    assert(outputs.collectFirst { case o: OutHtlc if o.htlc.add == htlc5 => o.txOut.publicKeyScript }.contains(htlcOut5.publicKeyScript))
   }
 
   test("find our output in closing tx") {
@@ -786,51 +654,6 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert(closingTx.tx.txOut.isEmpty)
       assert(closingTx.toLocalOutput_opt.isEmpty)
     }
-  }
-
-  test("BOLT 3 fee tests") {
-    val dustLimit = 546 sat
-    val bolt3 = {
-      val fetch = Source.fromURL("https://raw.githubusercontent.com/lightning/bolts/master/03-transactions.md")
-      // We'll use character '$' to separate tests:
-      val formatted = fetch.mkString.replace("    name:", "$   name:")
-      fetch.close()
-      formatted
-    }
-
-    def htlcIn(amount: Satoshi): DirectedHtlc = IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None))
-
-    def htlcOut(amount: Satoshi): DirectedHtlc = OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None))
-
-    case class TestVector(name: String, spec: CommitmentSpec, expectedFee: Satoshi)
-
-    // this regex extract params from a given test
-    val testRegex = ("""name: (.*)\n""" +
-      """.*to_local_msat: ([0-9]+)\n""" +
-      """.*to_remote_msat: ([0-9]+)\n""" +
-      """.*feerate_per_kw: ([0-9]+)\n""" +
-      """.*base commitment transaction fee = ([0-9]+)\n""" +
-      """[^$]+""").r
-    // this regex extracts htlc direction and amounts
-    val htlcRegex = """.*HTLC #[0-9] ([a-z]+) amount ([0-9]+).*""".r
-    val tests = testRegex.findAllIn(bolt3).map(s => {
-      val testRegex(name, to_local_msat, to_remote_msat, feerate_per_kw, fee) = s
-      val htlcs = htlcRegex.findAllIn(s).map(l => {
-        val htlcRegex(direction, amount) = l
-        direction match {
-          case "offered" => htlcOut(Satoshi(amount.toLong))
-          case "received" => htlcIn(Satoshi(amount.toLong))
-        }
-      }).toSet
-      TestVector(name, CommitmentSpec(htlcs, FeeratePerKw(feerate_per_kw.toLong.sat), MilliSatoshi(to_local_msat.toLong), MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
-    }).toSeq
-
-    assert(tests.size == 15, "there were 15 tests at e042c615efb5139a0bfdca0c6391c3c13df70418") // simple non-reg to make sure we are not missing tests
-    tests.foreach(test => {
-      logger.info(s"running BOLT 3 test: '${test.name}'")
-      val fee = commitTxTotalCost(dustLimit, test.spec, DefaultCommitmentFormat)
-      assert(fee == test.expectedFee)
-    })
   }
 
 }

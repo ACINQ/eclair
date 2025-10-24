@@ -203,7 +203,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     internalTest(f)
   }
 
-  test("private local channel (zeroconf)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("private local channel (zeroconf)", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     internalTest(f)
   }
 
@@ -211,7 +211,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     internalTest(f)
   }
 
-  test("public local channel (zeroconf)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("public local channel (zeroconf)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     internalTest(f)
   }
 
