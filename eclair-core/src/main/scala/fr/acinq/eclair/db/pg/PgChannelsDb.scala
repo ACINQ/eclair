@@ -30,7 +30,7 @@ import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
-import java.sql.{Connection, Statement, Timestamp}
+import java.sql.{Connection, Timestamp}
 import java.time.Instant
 import javax.sql.DataSource
 
@@ -49,88 +49,6 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
-      /**
-       * Before version 12, closed channels were directly kept in the local_channels table with an is_closed flag set to true.
-       * We move them to a dedicated table, where we keep minimal channel information.
-       */
-      def migration1112(statement: Statement): Unit = {
-        // We start by dropping for foreign key constraint on htlc_infos, otherwise we won't be able to move recently
-        // closed channels to a different table.
-        statement.executeQuery("SELECT conname FROM pg_catalog.pg_constraint WHERE contype = 'f'").map(rs => rs.getString("conname")).headOption match {
-          case Some(foreignKeyConstraint) => statement.executeUpdate(s"ALTER TABLE local.htlc_infos DROP CONSTRAINT $foreignKeyConstraint")
-          case None => logger.warn("couldn't find foreign key constraint for htlc_infos table: DB migration may fail")
-        }
-        // We can now move closed channels to a dedicated table.
-        statement.executeUpdate("CREATE TABLE local.channels_closed (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, funding_output_index BIGINT NOT NULL, funding_tx_index BIGINT NOT NULL, funding_key_path TEXT NOT NULL, channel_features TEXT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis BIGINT NOT NULL, closing_txid TEXT NOT NULL, closing_type TEXT NOT NULL, closing_script TEXT NOT NULL, local_balance_msat BIGINT NOT NULL, remote_balance_msat BIGINT NOT NULL, closing_amount_satoshis BIGINT NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL, closed_at TIMESTAMP WITH TIME ZONE NOT NULL)")
-        statement.executeUpdate("CREATE INDEX channels_closed_remote_node_id_idx ON local.channels_closed(remote_node_id)")
-        // We migrate closed channels from the local_channels table to the new channels_closed table, whenever possible.
-        val insertStatement = pg.prepareStatement("INSERT INTO local.channels_closed VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        val batchSize = 50
-        using(pg.prepareStatement("SELECT channel_id, data, is_closed, created_timestamp, closed_timestamp FROM local.channels WHERE is_closed=TRUE")) { queryStatement =>
-          val rs = queryStatement.executeQuery()
-          var inserted = 0
-          var batchCount = 0
-          while (rs.next()) {
-            val channelId = rs.getByteVector32FromHex("channel_id")
-            val data_opt = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value match {
-              case d: DATA_NEGOTIATING_SIMPLE =>
-                // We didn't store which closing transaction actually confirmed, so we select the most likely one.
-                // The simple_close feature wasn't widely supported before this migration, so this shouldn't affect a lot of channels.
-                val closingTx = d.publishedClosingTxs.lastOption.getOrElse(d.proposedClosingTxs.last.preferred_opt.get)
-                Some(DATA_CLOSED(d, closingTx))
-              case d: DATA_CLOSING =>
-                Helpers.Closing.isClosingTypeAlreadyKnown(d) match {
-                  case Some(closingType) => Some(DATA_CLOSED(d, closingType))
-                  // If the closing type cannot be inferred from the stored data, it must be a mutual close.
-                  // In that case, we didn't store which closing transaction actually confirmed, so we select the most likely one.
-                  case None if d.mutualClosePublished.nonEmpty => Some(DATA_CLOSED(d, Helpers.Closing.MutualClose(d.mutualClosePublished.last)))
-                  case None =>
-                    logger.warn(s"cannot move channel_id=$channelId to the channels_closed table, unknown closing_type")
-                    None
-                }
-              case d =>
-                logger.warn(s"cannot move channel_id=$channelId to the channels_closed table (state=${d.getClass.getSimpleName})")
-                None
-            }
-            data_opt match {
-              case Some(data) =>
-                insertStatement.setString(1, channelId.toHex)
-                insertStatement.setString(2, data.remoteNodeId.toHex)
-                insertStatement.setString(3, data.fundingTxId.value.toHex)
-                insertStatement.setLong(4, data.fundingOutputIndex)
-                insertStatement.setLong(5, data.fundingTxIndex)
-                insertStatement.setString(6, data.fundingKeyPath)
-                insertStatement.setString(7, data.channelFeatures)
-                insertStatement.setBoolean(8, data.isChannelOpener)
-                insertStatement.setString(9, data.commitmentFormat)
-                insertStatement.setBoolean(10, data.announced)
-                insertStatement.setLong(11, data.capacity.toLong)
-                insertStatement.setString(12, data.closingTxId.value.toHex)
-                insertStatement.setString(13, data.closingType)
-                insertStatement.setString(14, data.closingScript.toHex)
-                insertStatement.setLong(15, data.localBalance.toLong)
-                insertStatement.setLong(16, data.remoteBalance.toLong)
-                insertStatement.setLong(17, data.closingAmount.toLong)
-                insertStatement.setTimestamp(18, rs.getTimestampNullable("created_timestamp").getOrElse(Timestamp.from(Instant.ofEpochMilli(0))))
-                insertStatement.setTimestamp(19, rs.getTimestampNullable("closed_timestamp").getOrElse(Timestamp.from(Instant.ofEpochMilli(0))))
-                insertStatement.addBatch()
-                batchCount = batchCount + 1
-                if (batchCount % batchSize == 0) {
-                  inserted = inserted + insertStatement.executeBatch().sum
-                  batchCount = 0
-                }
-              case None => ()
-            }
-          }
-          inserted = inserted + insertStatement.executeBatch().sum
-          logger.info(s"moved $inserted channels to the channels_closed table")
-        }
-        // We can now clean-up the active channels table.
-        statement.executeUpdate("DELETE FROM local.channels WHERE is_closed=TRUE")
-        statement.executeUpdate("ALTER TABLE local.channels DROP COLUMN is_closed")
-        statement.executeUpdate("ALTER TABLE local.channels DROP COLUMN closed_timestamp")
-      }
-
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
@@ -147,10 +65,6 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON local.htlc_infos(channel_id)")
           statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON local.htlc_infos(commitment_number)")
           statement.executeUpdate("CREATE INDEX channels_closed_remote_node_id_idx ON local.channels_closed(remote_node_id)")
-        case Some(v) if v < 11 => throw new RuntimeException("You are updating from a version of eclair older than v0.13.0: please update to the v0.13.0 release first to migrate your channel data, and afterwards you'll be able to update to the latest version.")
-        case Some(v@11) =>
-          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-          if (v < 12) migration1112(statement)
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
