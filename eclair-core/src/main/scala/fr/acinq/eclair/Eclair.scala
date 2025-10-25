@@ -23,7 +23,7 @@ import akka.actor.{ActorRef, typed}
 import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction, TxId, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxId, addressToPublicKeyScript}
 import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
@@ -92,13 +92,13 @@ trait Eclair {
 
   def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String]
 
-  def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse]
+  def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], requestFunding_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse]
 
-  def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]]
+  def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, requestFunding_opt: Option[Satoshi], lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]]
 
-  def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[ChannelType])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
+  def spliceIn(channelId: ByteVector32, amountIn: Satoshi, requestFunding_opt: Option[Satoshi], pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[ChannelType])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
 
-  def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String], channelType_opt: Option[ChannelType])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
+  def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String], requestFunding_opt: Option[Satoshi], channelType_opt: Option[ChannelType])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]]
 
   def rbfSplice(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]]
 
@@ -232,13 +232,13 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     (appKit.switchboard ? Peer.Disconnect(nodeId)).mapTo[Peer.DisconnectResponse].map(_.toString)
   }
 
-  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse] = {
+  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeerate_opt: Option[FeeratePerByte], fundingFeeBudget_opt: Option[Satoshi], requestFunding_opt: Option[Satoshi], announceChannel_opt: Option[Boolean], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[OpenChannelResponse] = {
     // we want the open timeout to expire *before* the default ask timeout, otherwise user will get a generic response
     val openTimeout = openTimeout_opt.getOrElse(Timeout(20 seconds))
     // if no budget is provided for the mining fee of the funding tx, we use a default of 0.1% of the funding amount as a safety measure
     val fundingFeeBudget = fundingFeeBudget_opt.getOrElse(fundingAmount * 0.001)
     for {
-      _ <- Future.successful(0)
+      purchaseFunding_opt <- createLiquidityRequest(nodeId, requestFunding_opt)
       open = Peer.OpenChannel(
         remoteNodeId = nodeId,
         fundingAmount = fundingAmount,
@@ -246,29 +246,40 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
         pushAmount_opt = pushAmount_opt,
         fundingTxFeerate_opt = fundingFeerate_opt.map(_.perKw),
         fundingTxFeeBudget_opt = Some(fundingFeeBudget),
-        requestFunding_opt = None,
+        requestFunding_opt = purchaseFunding_opt,
         channelFlags_opt = announceChannel_opt.map(announceChannel => ChannelFlags(announceChannel = announceChannel)),
         timeout_opt = Some(openTimeout))
       res <- (appKit.switchboard ? open).mapTo[OpenChannelResponse]
     } yield res
   }
 
-  override def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]] = {
-    sendToChannelTyped(
-      channel = Left(channelId),
-      cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong), requestFunding_opt = None)
-    )
+  override def rbfOpen(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, requestFunding_opt: Option[Satoshi], lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]] = {
+    for {
+      purchaseFunding_opt <- createLiquidityRequest(channelId, requestFunding_opt)
+      res <- sendToChannelTyped[CMD_BUMP_FUNDING_FEE, CommandResponse[CMD_BUMP_FUNDING_FEE]](
+        channel = Left(channelId),
+        cmdBuilder = CMD_BUMP_FUNDING_FEE(_, targetFeerate, fundingFeeBudget, lockTime_opt.getOrElse(appKit.nodeParams.currentBlockHeight.toLong), purchaseFunding_opt)
+      )
+    } yield res
   }
 
-  override def spliceIn(channelId: ByteVector32, amountIn: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[ChannelType])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
-    val spliceIn = SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0.msat))
-    sendToChannelTyped(
-      channel = Left(channelId),
-      cmdBuilder = CMD_SPLICE(_, spliceIn_opt = Some(spliceIn), spliceOut_opt = None, requestFunding_opt = None, channelType_opt = channelType_opt)
-    )
+  override def spliceIn(channelId: ByteVector32, amountIn: Satoshi, requestFunding_opt: Option[Satoshi], pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[ChannelType])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
+    for {
+      purchaseFunding_opt <- createLiquidityRequest(channelId, requestFunding_opt)
+      spliceIn_opt = if (amountIn > 0.sat) Some(SpliceIn(additionalLocalFunding = amountIn, pushAmount = pushAmount_opt.getOrElse(0 msat))) else None
+      res <- sendToChannelTyped[CMD_SPLICE, CommandResponse[CMD_SPLICE]](
+        channel = Left(channelId),
+        cmdBuilder = CMD_SPLICE(_,
+          spliceIn_opt = spliceIn_opt,
+          spliceOut_opt = None,
+          requestFunding_opt = purchaseFunding_opt,
+          channelType_opt = channelType_opt
+        )
+      )
+    } yield res
   }
 
-  override def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String], channelType_opt: Option[ChannelType])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
+  override def spliceOut(channelId: ByteVector32, amountOut: Satoshi, scriptOrAddress: Either[ByteVector, String], requestFunding_opt: Option[Satoshi], channelType_opt: Option[ChannelType])(implicit timeout: Timeout): Future[CommandResponse[CMD_SPLICE]] = {
     val script = scriptOrAddress match {
       case Left(script) => script
       case Right(address) => addressToPublicKeyScript(this.appKit.nodeParams.chainHash, address) match {
@@ -276,11 +287,19 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
         case Right(script) => Script.write(script)
       }
     }
-    val spliceOut = SpliceOut(amount = amountOut, scriptPubKey = script)
-    sendToChannelTyped(
-      channel = Left(channelId),
-      cmdBuilder = CMD_SPLICE(_, spliceIn_opt = None, spliceOut_opt = Some(spliceOut), requestFunding_opt = None, channelType_opt = channelType_opt)
-    )
+    for {
+      purchaseFunding_opt <- createLiquidityRequest(channelId, requestFunding_opt)
+      spliceOut_opt = if (amountOut > 0.sat) Some(SpliceOut(amount = amountOut, scriptPubKey = script)) else None
+      res <- sendToChannelTyped[CMD_SPLICE, CommandResponse[CMD_SPLICE]](
+        channel = Left(channelId),
+        cmdBuilder = CMD_SPLICE(_,
+          spliceIn_opt = None,
+          spliceOut_opt = spliceOut_opt,
+          requestFunding_opt = purchaseFunding_opt,
+          channelType_opt = channelType_opt
+        )
+      )
+    } yield res
   }
 
   override def rbfSplice(channelId: ByteVector32, targetFeerate: FeeratePerKw, fundingFeeBudget: Satoshi, lockTime_opt: Option[Long])(implicit timeout: Timeout): Future[CommandResponse[CMD_BUMP_FUNDING_FEE]] = {
@@ -670,6 +689,37 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
       channelIds <- (appKit.register ? Register.GetChannelsTo).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(kv => nodeids.contains(kv._2)).keys)
       res <- sendToChannels[C, R](channelIds.map(Left(_)).toList, request)
     } yield res
+  }
+
+  private def createLiquidityRequest(nodeId: PublicKey, requestedAmount_opt: Option[Satoshi])(implicit timeout: Timeout): Future[Option[LiquidityAds.RequestFunding]] = {
+    requestedAmount_opt match {
+      case Some(requestedAmount) =>
+        getLiquidityRate(nodeId, requestedAmount)
+          .map(fundingRate => Some(LiquidityAds.RequestFunding(requestedAmount, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance)))
+      case None => Future.successful(Option.empty[LiquidityAds.RequestFunding])
+    }
+  }
+
+  private def createLiquidityRequest(channelId: ByteVector32, requestedAmount_opt: Option[Satoshi])(implicit timeout: Timeout): Future[Option[LiquidityAds.RequestFunding]] = {
+    requestedAmount_opt match {
+      case Some(requestedAmount) =>
+        channelInfo(Left(channelId)).map(_.nodeId)
+          .flatMap(nodeId => getLiquidityRate(nodeId, requestedAmount))
+          .map(fundingRate => Some(LiquidityAds.RequestFunding(requestedAmount, fundingRate, LiquidityAds.PaymentDetails.FromChannelBalance)))
+      case None => Future.successful(Option.empty[LiquidityAds.RequestFunding])
+    }
+  }
+
+  private def getLiquidityRate(nodeId: PublicKey, requestedAmount: Satoshi)(implicit timeout: Timeout): Future[LiquidityAds.FundingRate] = {
+    appKit.switchboard.toTyped.ask[Peer.PeerInfoResponse] { replyTo =>
+      Switchboard.GetPeerInfo(replyTo, nodeId)
+    }.map {
+      case p: PeerInfo => p.fundingRates_opt.flatMap(_.findRate(requestedAmount)) match {
+        case Some(fundingRate) => fundingRate
+        case None => throw new RuntimeException(s"peer $nodeId doesn't support funding $requestedAmount, please check their funding rates")
+      }
+      case _: Peer.PeerNotFound => throw new RuntimeException(s"peer $nodeId not connected")
+    }
   }
 
   override def getInfo()(implicit timeout: Timeout): Future[GetInfoResponse] = Future.successful(

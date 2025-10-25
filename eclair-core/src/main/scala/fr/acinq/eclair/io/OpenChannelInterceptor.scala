@@ -187,14 +187,14 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     nodeParams.pluginOpenChannelInterceptor match {
       case Some(plugin) => queryPlugin(plugin, request, localParams, ChannelConfig.standard, channelType)
       case None =>
+        val addFunding_opt = request.open.fold(_ => None, _.requestFunding_opt).map(requestFunding => LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.liquidityAdsConfig.rates_opt))
         request.open.fold(_ => None, _.requestFunding_opt) match {
-          case Some(requestFunding) if Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.OnTheFlyFunding) && localParams.paysCommitTxFees =>
-            val addFunding = LiquidityAds.AddFunding(requestFunding.requestedAmount, nodeParams.liquidityAdsConfig.rates_opt)
-            val accept = SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, Some(addFunding), localParams, request.peerConnection.toClassic)
+          case Some(_) if Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.OnTheFlyFunding) && localParams.paysCommitTxFees =>
+            val accept = SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, addFunding_opt, localParams, request.peerConnection.toClassic)
             checkNoExistingChannel(request, accept)
           case _ =>
-            // We don't honor liquidity ads for new channels: node operators should use plugin for that.
-            peer ! SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, addFunding_opt = None, localParams, request.peerConnection.toClassic)
+            // TODO: we must change the utxo locking behavior before releasing that change to protect against liquidity griefing.
+            peer ! SpawnChannelNonInitiator(request.open, ChannelConfig.standard, channelType, addFunding_opt, localParams, request.peerConnection.toClassic)
             waitForRequest()
         }
     }

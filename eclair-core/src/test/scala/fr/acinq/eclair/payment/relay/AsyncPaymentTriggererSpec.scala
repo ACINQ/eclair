@@ -129,7 +129,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
 
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, None, Set(TestProbe().ref.toClassic))
+    request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, None, None, Set(TestProbe().ref.toClassic))
 
     // An unrelated peer connects.
     system.eventStream ! EventStream.Publish(PeerConnected(peer.ref.toClassic, randomKey().publicKey, null))
@@ -138,7 +138,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     // The target peer connects.
     system.eventStream ! EventStream.Publish(PeerConnected(peer.ref.toClassic, remoteNodeId, null))
     val request2 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, None, Set(TestProbe().ref.toClassic))
+    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, None, None, Set(TestProbe().ref.toClassic))
     peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, Seq(Peer.ChannelInfo(null, NEGOTIATING, null)))
     probe.expectMessage(AsyncPaymentTriggered)
 
@@ -152,7 +152,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
 
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, None, Set(TestProbe().ref.toClassic))
+    request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, None, None, Set(TestProbe().ref.toClassic))
 
     // Another async payment node relay watches the peer
     val probe2 = TestProbe[Result]()
@@ -165,7 +165,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     // Second watch succeeds
     system.eventStream ! EventStream.Publish(PeerConnected(peer.ref.toClassic, remoteNodeId, null))
     val request2 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, None, Set(TestProbe().ref.toClassic))
+    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.CONNECTED, None, None, None, Set(TestProbe().ref.toClassic))
     peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, Seq(Peer.ChannelInfo(null, NEGOTIATING, null)))
     probe.expectNoMessage(100 millis)
     probe2.expectMessage(AsyncPaymentTriggered)
@@ -177,14 +177,14 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     // watch remote node
     triggerer ! Watch(probe.ref, remoteNodeId, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(100))
     val request1 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, None, Set(TestProbe().ref.toClassic))
+    request1.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId, Peer.DISCONNECTED, None, None, None, Set(TestProbe().ref.toClassic))
 
     // watch another remote node
     val remoteNodeId2 = TestConstants.Bob.nodeParams.nodeId
     val probe2 = TestProbe[Result]()
     triggerer ! Watch(probe2.ref, remoteNodeId2, paymentHash = ByteVector32.Zeroes, timeout = BlockHeight(101))
     val request2 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
-    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId2, Peer.DISCONNECTED, None, None, Set(TestProbe().ref.toClassic))
+    request2.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId2, Peer.DISCONNECTED, None, None, None, Set(TestProbe().ref.toClassic))
 
     // First remote node times out
     system.eventStream ! EventStream.Publish(CurrentBlockHeight(BlockHeight(100)))
@@ -194,7 +194,7 @@ class AsyncPaymentTriggererSpec extends ScalaTestWithActorTestKit(ConfigFactory.
     system.eventStream ! EventStream.Publish(PeerConnected(peer.ref.toClassic, remoteNodeId2, null))
     val request3 = switchboard.expectMessageType[Switchboard.GetPeerInfo]
     assert(request3.remoteNodeId == remoteNodeId2)
-    request3.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId2, Peer.CONNECTED, None, None, Set(TestProbe().ref.toClassic))
+    request3.replyTo ! Peer.PeerInfo(peer.ref.toClassic, remoteNodeId2, Peer.CONNECTED, None, None, None, Set(TestProbe().ref.toClassic))
     peer.expectMessageType[Peer.GetPeerChannels].replyTo ! Peer.PeerChannels(remoteNodeId, Seq(Peer.ChannelInfo(null, NEGOTIATING, null)))
     probe.expectNoMessage(100 millis)
     probe2.expectMessage(AsyncPaymentTriggered)
