@@ -43,7 +43,7 @@ import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, Route, RoutePa
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, InitFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, UInt64, nodeFee, randomBytes32}
+import fr.acinq.eclair.{Alias, CltvExpiry, CltvExpiryDelta, EncodedNodeId, FeatureSupport, Features, InitFeature, InvoiceFeature, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, UInt64, UnknownFeature, nodeFee, randomBytes32}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -67,6 +67,7 @@ object NodeRelay {
   private case class WrappedPaymentSent(paymentSent: PaymentSent) extends Command
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
   private case class WrappedPeerReadyResult(result: PeerReadyNotifier.Result) extends Command
+  private case class WrappedOutgoingNodeId(nodeId_opt: Option[PublicKey]) extends Command
   private case class WrappedResolvedPaths(resolved: Seq[ResolvedPath]) extends Command
   private case class WrappedPeerInfo(remoteFeatures_opt: Option[Features[InitFeature]]) extends Command
   private case class WrappedOnTheFlyFundingResponse(result: Peer.ProposeOnTheFlyFundingResponse) extends Command
@@ -111,6 +112,7 @@ object NodeRelay {
         val incomingPaymentHandler = context.actorOf(MultiPartPaymentFSM.props(nodeParams, paymentHash, totalAmountIn, mppFsmAdapters))
         val nextPacket_opt = nodeRelayPacket match {
           case IncomingPaymentPacket.RelayToTrampolinePacket(_, _, _, nextPacket, _) => Some(nextPacket)
+          case IncomingPaymentPacket.RelayToBlindedTrampolinePacket(_, _, _, nextPacket, _) => Some(nextPacket)
           case _: IncomingPaymentPacket.RelayToNonTrampolinePacket => None
           case _: IncomingPaymentPacket.RelayToBlindedPathsPacket => None
         }
@@ -127,12 +129,15 @@ object NodeRelay {
     val amountOut = outgoingAmount(upstream, payloadOut)
     val expiryOut = outgoingExpiry(upstream, payloadOut)
     val fee = nodeFee(nodeParams.relayParams.minTrampolineFees, amountOut)
+    // We don't know yet how costly it is to reach the next node: we use a rough first estimate of twice our trampoline
+    // fees. If we fail to find routes, we will return a different error with higher fees and expiry delta.
+    val failure = TrampolineFeeOrExpiryInsufficient(nodeParams.relayParams.minTrampolineFees.feeBase * 2, nodeParams.relayParams.minTrampolineFees.feeProportionalMillionths * 2, nodeParams.channelConf.expiryDelta * 2)
     if (upstream.amountIn - amountOut < fee) {
-      Some(TrampolineFeeInsufficient())
+      Some(failure)
     } else if (upstream.expiryIn - expiryOut < nodeParams.channelConf.expiryDelta) {
-      Some(TrampolineExpiryTooSoon())
+      Some(failure)
     } else if (expiryOut <= CltvExpiry(nodeParams.currentBlockHeight)) {
-      Some(TrampolineExpiryTooSoon())
+      Some(failure)
     } else if (amountOut <= MilliSatoshi(0)) {
       Some(InvalidOnionPayload(UInt64(2), 0))
     } else {
@@ -168,30 +173,41 @@ object NodeRelay {
    * This helper method translates relaying errors (returned by the downstream nodes) to a BOLT 4 standard error that we
    * should return upstream.
    */
-  private def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], upstream: Upstream.Hot.Trampoline, nextPayload: IntermediatePayload.NodeRelay): Option[FailureMessage] = {
+  private def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], upstream: Upstream.Hot.Trampoline, nextPayload: IntermediatePayload.NodeRelay): FailureReason = {
     val amountOut = outgoingAmount(upstream, nextPayload)
     val routeNotFound = failures.collectFirst { case f@LocalFailure(_, _, RouteNotFound) => f }.nonEmpty
     val routingFeeHigh = upstream.amountIn - amountOut >= nodeFee(nodeParams.relayParams.minTrampolineFees, amountOut) * 5
+    val trampolineFeesFailure = TrampolineFeeOrExpiryInsufficient(nodeParams.relayParams.minTrampolineFees.feeBase * 5, nodeParams.relayParams.minTrampolineFees.feeProportionalMillionths * 5, nodeParams.channelConf.expiryDelta * 5)
+    // We select the best error we can from our downstream attempts.
     failures match {
-      case Nil => None
+      case Nil => FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure())
       case LocalFailure(_, _, BalanceTooLow) :: Nil if routingFeeHigh =>
         // We have direct channels to the target node, but not enough outgoing liquidity to use those channels.
-        // The routing fee proposed by the sender was high enough to find alternative, indirect routes, but didn't yield
-        // any result so we tell them that we don't have enough outgoing liquidity at the moment.
-        Some(TemporaryNodeFailure())
-      case LocalFailure(_, _, BalanceTooLow) :: Nil => Some(TrampolineFeeInsufficient()) // a higher fee/cltv may find alternative, indirect routes
-      case _ if routeNotFound => Some(TrampolineFeeInsufficient()) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
+        // The routing fee proposed by the sender was high enough to find alternative, indirect routes, but didn't
+        // yield any result so we tell them that we don't have enough outgoing liquidity at the moment.
+        FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure())
+      case LocalFailure(_, _, BalanceTooLow) :: Nil =>
+        // A higher fee/cltv may find alternative, indirect routes.
+        FailureReason.LocalTrampolineFailure(trampolineFeesFailure)
+      case _ if routeNotFound =>
+        // If we couldn't find routes, it's likely that the fee/cltv was insufficient.
+        FailureReason.LocalTrampolineFailure(trampolineFeesFailure)
       case _ =>
-        // Otherwise, we try to find a downstream error that we could decrypt.
-        val outgoingNodeFailure = nextPayload match {
-          case nextPayload: IntermediatePayload.NodeRelay.Standard => failures.collectFirst { case RemoteFailure(_, _, e) if e.originNode == nextPayload.outgoingNodeId => e.failureMessage }
-          case nextPayload: IntermediatePayload.NodeRelay.ToNonTrampoline => failures.collectFirst { case RemoteFailure(_, _, e) if e.originNode == nextPayload.outgoingNodeId => e.failureMessage }
+        nextPayload match {
+          case _: IntermediatePayload.NodeRelay.Standard =>
+            // If we received a failure from the next trampoline node, we won't be able to decrypt it: we should encrypt
+            // it with our trampoline shared secret and relay it upstream, because only the sender can decrypt it.
+            // Note that we currently don't process the downstream attribution data, but we could!
+            failures.collectFirst { case UnreadableRemoteFailure(_, _, packet, _) => FailureReason.EncryptedDownstreamFailure(packet.unwrapped, packet.attribution_opt) }
+              .getOrElse(FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure()))
+          case nextPayload: IntermediatePayload.NodeRelay.ToNonTrampoline =>
+            // The recipient doesn't support trampoline: if we received a failure from them, we forward it upstream.
+            failures.collectFirst { case RemoteFailure(_, _, e) if e.originNode == nextPayload.outgoingNodeId => FailureReason.LocalFailure(e.failureMessage) }
+              .getOrElse(FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure()))
           // When using blinded paths, we will never get a failure from the final node (for privacy reasons).
-          case _: IntermediatePayload.NodeRelay.ToBlindedPaths => None
+          case _: IntermediatePayload.NodeRelay.Blinded => FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure())
+          case _: IntermediatePayload.NodeRelay.ToBlindedPaths => FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure())
         }
-        val otherNodeFailure = failures.collectFirst { case RemoteFailure(_, _, e) => e.failureMessage }
-        val failure = outgoingNodeFailure.getOrElse(otherNodeFailure.getOrElse(TemporaryNodeFailure()))
-        Some(failure)
     }
   }
 
@@ -231,7 +247,9 @@ class NodeRelay private(nodeParams: NodeParams,
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
-        parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, p.receivedAt, None, Some(failure)) }
+        // Note that we don't treat this as a trampoline failure, which would be encrypted for the payer.
+        // This is a failure of the previous trampoline node who didn't send a valid MPP payment.
+        parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, p.receivedAt, None, Some(FailureReason.LocalFailure(failure))) }
         stopping()
       case WrappedMultiPartPaymentSucceeded(MultiPartPaymentFSM.MultiPartPaymentSucceeded(_, parts)) =>
         context.log.info("completed incoming multi-part payment with parts={} paidAmount={}", parts.size, parts.map(_.amount).sum)
@@ -239,7 +257,7 @@ class NodeRelay private(nodeParams: NodeParams,
         validateRelay(nodeParams, upstream, nextPayload) match {
           case Some(failure) =>
             context.log.warn(s"rejecting trampoline payment reason=$failure")
-            rejectPayment(upstream, Some(failure))
+            rejectPayment(upstream, FailureReason.LocalTrampolineFailure(failure), nextPayload.isLegacy)
             stopping()
           case None =>
             resolveNextNode(upstream, nextPayload, nextPacket_opt)
@@ -251,9 +269,33 @@ class NodeRelay private(nodeParams: NodeParams,
     nextPayload match {
       case payloadOut: IntermediatePayload.NodeRelay.Standard =>
         val paymentSecret = randomBytes32() // we generate a new secret to protect against probing attacks
-        val recipient = ClearRecipient(payloadOut.outgoingNodeId, Features.empty, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, nextTrampolineOnion_opt = nextPacket_opt)
+        // If the recipient is using the legacy trampoline feature, we will use the legacy onion format.
+        val features = if (payloadOut.isLegacy) Features(Map.empty[InvoiceFeature, FeatureSupport], Set(UnknownFeature(149))) else Features.empty[InvoiceFeature]
+        val recipient = ClearRecipient(payloadOut.outgoingNodeId, features, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, nextTrampolineOnion_opt = nextPacket_opt)
         context.log.debug("forwarding payment to the next trampoline node {}", recipient.nodeId)
         attemptWakeUpIfRecipientIsWallet(upstream, recipient, nextPayload, nextPacket_opt)
+      case payloadOut: IntermediatePayload.NodeRelay.Blinded =>
+        // Blinded paths in Bolt 12 invoices may use an scid to reference the next node, if it is one of our peers.
+        // We need to resolve that to a nodeId in order to create a payment onion.
+        payloadOut.outgoing match {
+          case Left(outgoingNodeId) => context.self ! WrappedOutgoingNodeId(Some(outgoingNodeId.publicKey))
+          case Right(outgoingChannelId) => register ! Register.GetNextNodeId(context.messageAdapter[Option[PublicKey]](WrappedOutgoingNodeId), outgoingChannelId)
+        }
+        Behaviors.receiveMessagePartial {
+          rejectExtraHtlcPartialFunction orElse {
+            case WrappedOutgoingNodeId(Some(outgoingNodeId)) =>
+              val outgoingAmount = nextPayload.outgoingAmount(upstream.amountIn)
+              val outgoingExpiry = nextPayload.outgoingExpiry(upstream.expiryIn)
+              val paymentSecret = randomBytes32() // we generate a new secret to protect against probing attacks
+              val recipient = ClearRecipient(outgoingNodeId, Features.empty, outgoingAmount, outgoingExpiry, paymentSecret, nextTrampolineOnion_opt = nextPacket_opt, trampolinePathKey_opt = Some(payloadOut.nextPathKey))
+              context.log.debug("forwarding payment to the next blinded trampoline node {}", recipient.nodeId)
+              attemptWakeUpIfRecipientIsWallet(upstream, recipient, nextPayload, nextPacket_opt)
+            case WrappedOutgoingNodeId(None) =>
+              context.log.warn("rejecting trampoline payment to blinded trampoline: cannot identify next node for scid={}", payloadOut.outgoing)
+              rejectPayment(upstream, FailureReason.LocalTrampolineFailure(UnknownNextPeer()), nextPayload.isLegacy)
+              stopping()
+          }
+        }
       case payloadOut: IntermediatePayload.NodeRelay.ToNonTrampoline =>
         val paymentSecret = payloadOut.paymentSecret
         val features = Features(payloadOut.invoiceFeatures).invoiceFeatures()
@@ -270,7 +312,7 @@ class NodeRelay private(nodeParams: NodeParams,
           rejectExtraHtlcPartialFunction orElse {
             case WrappedResolvedPaths(resolved) if resolved.isEmpty =>
               context.log.warn("rejecting trampoline payment to blinded paths: no usable blinded path")
-              rejectPayment(upstream, Some(UnknownNextPeer()))
+              rejectPayment(upstream, FailureReason.LocalTrampolineFailure(UnknownNextPeer()), nextPayload.isLegacy)
               stopping()
             case WrappedResolvedPaths(resolved) =>
               // We don't have access to the invoice: we use the only node_id that somewhat makes sense for the recipient.
@@ -325,7 +367,7 @@ class NodeRelay private(nodeParams: NodeParams,
       rejectExtraHtlcPartialFunction orElse {
         case WrappedPeerReadyResult(_: PeerReadyNotifier.PeerUnavailable) =>
           context.log.warn("rejecting payment: failed to wake-up remote peer")
-          rejectPayment(upstream, Some(UnknownNextPeer()))
+          rejectPayment(upstream, FailureReason.LocalTrampolineFailure(UnknownNextPeer()), nextPayload.isLegacy)
           stopping()
         case WrappedPeerReadyResult(r: PeerReadyNotifier.PeerReady) =>
           relay(upstream, recipient, Some(walletNodeId), Some(r.remoteFeatures), nextPayload, nextPacket_opt)
@@ -401,7 +443,7 @@ class NodeRelay private(nodeParams: NodeParams,
               context.log.info("trampoline payment failed, attempting on-the-fly funding")
               attemptOnTheFlyFunding(upstream, walletNodeId, recipient, nextPayload, failures, startedAt)
             case _ =>
-              rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))
+              rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload), nextPayload.isLegacy)
               recordRelayDuration(startedAt, isSuccess = false)
               stopping()
           }
@@ -424,7 +466,7 @@ class NodeRelay private(nodeParams: NodeParams,
     OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(ActorRef.noSender, upstream), paymentHash, dummyRoute, recipient, Reputation.Score.max) match {
       case Left(f) =>
         context.log.warn("could not create payment onion for on-the-fly funding: {}", f.getMessage)
-        rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))
+        rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload), nextPayload.isLegacy)
         recordRelayDuration(startedAt, isSuccess = false)
         stopping()
       case Right(nextPacket) =>
@@ -443,7 +485,7 @@ class NodeRelay private(nodeParams: NodeParams,
                   stopping()
                 case ProposeOnTheFlyFundingResponse.NotAvailable(reason) =>
                   context.log.warn("could not propose on-the-fly funding: {}", reason)
-                  rejectPayment(upstream, Some(UnknownNextPeer()))
+                  rejectPayment(upstream, FailureReason.LocalTrampolineFailure(UnknownNextPeer()), nextPayload.isLegacy)
                   recordRelayDuration(startedAt, isSuccess = false)
                   stopping()
               }
@@ -482,16 +524,31 @@ class NodeRelay private(nodeParams: NodeParams,
     rejectHtlc(add.id, add.channelId, add.amountMsat, htlcReceivedAt, trampolineReceivedAt_opt = None)
   }
 
-  private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, htlcReceivedAt: TimestampMilli, trampolineReceivedAt_opt: Option[TimestampMilli], failure: Option[FailureMessage] = None): Unit = {
-    val failureMessage = failure.getOrElse(IncorrectOrUnknownPaymentDetails(amount, nodeParams.currentBlockHeight))
+  private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, htlcReceivedAt: TimestampMilli, trampolineReceivedAt_opt: Option[TimestampMilli], failure_opt: Option[FailureReason] = None): Unit = {
+    val failure = failure_opt.getOrElse(FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(amount, nodeParams.currentBlockHeight)))
     val attribution = FailureAttributionData(htlcReceivedAt, trampolineReceivedAt_opt)
-    val cmd = CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(failureMessage), Some(attribution), commit = true)
+    val cmd = CMD_FAIL_HTLC(htlcId, failure, Some(attribution), commit = true)
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
   }
 
-  private def rejectPayment(upstream: Upstream.Hot.Trampoline, failure: Option[FailureMessage]): Unit = {
-    Metrics.recordPaymentRelayFailed(failure.map(_.getClass.getSimpleName).getOrElse("Unknown"), Tags.RelayType.Trampoline)
-    upstream.received.foreach(r => rejectHtlc(r.add.id, r.add.channelId, upstream.amountIn, r.receivedAt, Some(upstream.receivedAt), failure))
+  private def rejectPayment(upstream: Upstream.Hot.Trampoline, failure: FailureReason, isLegacy: Boolean): Unit = {
+    val failure1 = failure match {
+      case failure: FailureReason.EncryptedDownstreamFailure =>
+        Metrics.recordPaymentRelayFailed("Unknown", Tags.RelayType.Trampoline)
+        failure
+      case failure: FailureReason.LocalFailure =>
+        Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
+        failure
+      case failure: FailureReason.LocalTrampolineFailure =>
+        Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
+        if (isLegacy) {
+          // The payer won't be able to decrypt our trampoline failure: we use a legacy failure for backwards-compat.
+          FailureReason.LocalFailure(LegacyTrampolineFeeInsufficient())
+        } else {
+          failure
+        }
+    }
+    upstream.received.foreach(r => rejectHtlc(r.add.id, r.add.channelId, upstream.amountIn, r.receivedAt, Some(upstream.receivedAt), Some(failure1)))
   }
 
   private def fulfillPayment(upstream: Upstream.Hot.Trampoline, paymentPreimage: ByteVector32, downstreamAttribution_opt: Option[ByteVector]): Unit = upstream.received.foreach(r => {

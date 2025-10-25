@@ -844,5 +844,10 @@ object Router {
   /** We have tried to relay this amount from this channel and it failed. */
   case class ChannelCouldNotRelay(amount: MilliSatoshi, hop: ChannelHop)
 
-  case class ReportedHoldTimes(holdTimes: Seq[Sphinx.HoldTime])
+  /**
+   * @param holdTimes           hold time reported by intermediate nodes in a payment path.
+   * @param trampolineHoldTimes hold time report by trampoline nodes in a trampoline payment path.
+   */
+  case class ReportedHoldTimes(holdTimes: Seq[Sphinx.HoldTime], trampolineHoldTimes: Seq[Sphinx.HoldTime])
+
 }

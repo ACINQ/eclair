@@ -4,6 +4,20 @@
 
 ## Major changes
 
+### Trampoline payments
+
+Trampoline payments allow nodes running on constrained devices to sync only a small portion of the network and leverage trampoline nodes to calculate the missing parts of the payment route, while providing the same privacy as fully source-routed payments.
+
+Eclair started supporting [trampoline payments](https://github.com/lightning/bolts/pull/829) in v0.3.3.
+The specification has evolved since then and has recently been added to the [BOLTs](https://github.com/lightning/bolts/pull/836).
+
+With this release, eclair nodes are able to relay and receive trampoline payments (activated by default).
+This feature can be disabled if you don't want to relay or receive trampoline payments:
+
+```conf
+eclair.features.trampoline_routing = disabled
+```
+
 ### New MPP splitting strategy
 
 Eclair can send large payments using multiple low-capacity routes by sending as much as it can through each route (if `randomize-route-selection = false`) or some random fraction (if `randomize-route-selection = true`).

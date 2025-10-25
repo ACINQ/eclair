@@ -591,7 +591,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.upstream_1))
     val fails = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]] :: Nil
     assert(fails.toSet == testCase.upstream_1.originHtlcs.map {
-      case Upstream.Cold.Channel(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true))
+      case Upstream.Cold.Channel(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure()), None, commit = true))
     }.toSet)
 
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.upstream_1))
@@ -603,7 +603,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.upstream_2))
     register.expectMsg(testCase.upstream_2.originHtlcs.map {
-      case Upstream.Cold.Channel(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalFailure(TemporaryNodeFailure()), None, commit = true))
+      case Upstream.Cold.Channel(channelId, htlcId, _) => Register.Forward(null, channelId, CMD_FAIL_HTLC(htlcId, FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure()), None, commit = true))
     }.head)
 
     register.expectNoMessage(100 millis)

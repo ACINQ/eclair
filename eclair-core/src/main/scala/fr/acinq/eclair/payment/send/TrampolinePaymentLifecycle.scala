@@ -32,8 +32,9 @@ import fr.acinq.eclair.payment.send.TrampolinePayment.{buildOutgoingPayment, com
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.RouteParams
-import fr.acinq.eclair.wire.protocol.{PaymentOnion, PaymentOnionCodecs}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, randomBytes32, randomKey}
+import scodec.bits.ByteVector
 
 import java.util.UUID
 
@@ -59,7 +60,7 @@ object TrampolinePaymentLifecycle {
   }
   private case class TrampolinePeerNotFound(trampolineNodeId: PublicKey) extends Command
   private case class CouldntAddHtlc(failure: Throwable) extends Command
-  private case class HtlcSettled(result: HtlcResult, part: PartialPayment, holdTimes: Seq[Sphinx.HoldTime]) extends Command
+  private case class HtlcSettled(result: HtlcResult, part: PartialPayment, holdTimes: Seq[Sphinx.HoldTime], trampolineHoldTimes: Seq[Sphinx.HoldTime]) extends Command
   private case class WrappedPeerChannels(channels: Seq[Peer.ChannelInfo]) extends Command
   // @formatter:on
 
@@ -113,7 +114,7 @@ object TrampolinePaymentLifecycle {
       val add = CMD_ADD_HTLC(addHtlcAdapter.toClassic, outgoing.trampolineAmount, paymentHash, outgoing.trampolineExpiry, outgoing.onion.packet, None, Reputation.Score.max, None, origin, commit = true)
       channelInfo.channel ! add
       val channelId = channelInfo.data.asInstanceOf[DATA_NORMAL].channelId
-      val part = PartialPayment(cmd.paymentId, amount, computeFees(amount, attemptNumber), channelId, None)
+      val part = PartialPayment(cmd.paymentId, amount, computeFees(amount, attemptNumber, cmd.invoice), channelId, None)
       waitForSettlement(part, outgoing.onion.sharedSecrets, outgoing.trampolineOnion.sharedSecrets)
     }
 
@@ -129,23 +130,28 @@ object TrampolinePaymentLifecycle {
         }
         case WrappedHtlcSettled(result) => result.result match {
           case fulfill: HtlcResult.Fulfill =>
-            val holdTimes = fulfill match {
+            val (holdTimes, trampolineHoldTimes) = fulfill match {
               case HtlcResult.RemoteFulfill(updateFulfill) =>
                 updateFulfill.attribution_opt match {
-                  case Some(attribution) => Sphinx.Attribution.unwrap(attribution, outerOnionSecrets).holdTimes
-                  case None => Nil
+                  case Some(attribution) => Sphinx.Attribution.unwrap(attribution, outerOnionSecrets) match {
+                    case Sphinx.Attribution.UnwrappedAttribution(holdTimes, Some(remaining)) => (holdTimes, Sphinx.Attribution.unwrap(remaining, trampolineOnionSecrets).holdTimes)
+                    case Sphinx.Attribution.UnwrappedAttribution(holdTimes, None) => (holdTimes, Nil)
+                  }
+                  case None => (Nil, Nil)
                 }
-              case _: HtlcResult.OnChainFulfill => Nil
+              case _: HtlcResult.OnChainFulfill => (Nil, Nil)
             }
-            parent ! HtlcSettled(fulfill, part, holdTimes)
+            parent ! HtlcSettled(fulfill, part, holdTimes, trampolineHoldTimes)
             Behaviors.stopped
           case fail: HtlcResult.Fail =>
-            val holdTimes = fail match {
-              case HtlcResult.RemoteFail(updateFail) =>
-                Sphinx.FailurePacket.decrypt(updateFail.reason, updateFail.attribution_opt, outerOnionSecrets).holdTimes
-              case _ => Nil
+            val (holdTimes, trampolineHoldTimes) = fail match {
+              case HtlcResult.RemoteFail(updateFail) => Sphinx.FailurePacket.decrypt(updateFail.reason, updateFail.attribution_opt, outerOnionSecrets) match {
+                case Sphinx.HtlcFailure(holdTimes, Left(Sphinx.CannotDecryptFailurePacket(unwrapped, attribution_opt))) => (holdTimes, Sphinx.FailurePacket.decrypt(unwrapped, attribution_opt, trampolineOnionSecrets).holdTimes)
+                case Sphinx.HtlcFailure(holdTimes, Right(_: Sphinx.DecryptedFailurePacket)) => (holdTimes, Nil)
+              }
+              case _ => (Nil, Nil)
             }
-            parent ! HtlcSettled(fail, part, holdTimes)
+            parent ! HtlcSettled(fail, part, holdTimes, trampolineHoldTimes)
             Behaviors.stopped
         }
       }
@@ -182,7 +188,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
   }
 
   private def sendPayment(channels: Seq[Peer.ChannelInfo], attemptNumber: Int): Behavior[Command] = {
-    val trampolineAmount = computeTrampolineAmount(totalAmount, attemptNumber)
+    val trampolineAmount = computeTrampolineAmount(totalAmount, attemptNumber, cmd.invoice)
     // We always use MPP to verify that the trampoline node is able to handle it.
     // This is a very naive way of doing MPP that simply splits the payment in two HTLCs.
     val filtered = channels.flatMap(c => {
@@ -223,9 +229,9 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
           cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, failure) :: Nil)
           Behaviors.stopped
         }
-      case HtlcSettled(result: HtlcResult, part, holdTimes) =>
+      case HtlcSettled(result: HtlcResult, part, holdTimes, trampolineHoldTimes) =>
         if (holdTimes.nonEmpty) {
-          context.system.eventStream ! EventStream.Publish(Router.ReportedHoldTimes(holdTimes))
+          context.system.eventStream ! EventStream.Publish(Router.ReportedHoldTimes(holdTimes, trampolineHoldTimes))
         }
         result match {
           case fulfill: HtlcResult.Fulfill =>
@@ -251,7 +257,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
   }
 
   private def retryOrStop(attemptNumber: Int): Behavior[Command] = {
-    val nextFees = computeFees(totalAmount, attemptNumber)
+    val nextFees = computeFees(totalAmount, attemptNumber, cmd.invoice)
     if (attemptNumber > 3) {
       context.log.warn("cannot retry trampoline payment: retries exceeded")
       cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("maximum trampoline retries exceeded")) :: Nil)
@@ -279,34 +285,82 @@ object TrampolinePayment {
   def buildOutgoingPayment(trampolineNodeId: PublicKey, invoice: Invoice, amount: MilliSatoshi, expiry: CltvExpiry, trampolinePaymentSecret_opt: Option[ByteVector32], attemptNumber: Int): OutgoingPayment = {
     val totalAmount = invoice.amount_opt.get
     val trampolineOnion = invoice match {
-      case invoice: Bolt11Invoice if invoice.features.hasFeature(Features.TrampolinePaymentPrototype) =>
+      case invoice: Bolt11Invoice if invoice.features.hasFeature(Features.TrampolinePayment) =>
         val finalPayload = PaymentOnion.FinalPayload.Standard.createPayload(amount, totalAmount, expiry, invoice.paymentSecret, invoice.paymentMetadata)
         val trampolinePayload = PaymentOnion.IntermediatePayload.NodeRelay.Standard(totalAmount, expiry, invoice.nodeId)
         buildOnion(NodePayload(trampolineNodeId, trampolinePayload) :: NodePayload(invoice.nodeId, finalPayload) :: Nil, invoice.paymentHash, None).toOption.get
       case invoice: Bolt11Invoice =>
         val trampolinePayload = PaymentOnion.IntermediatePayload.NodeRelay.ToNonTrampoline(totalAmount, totalAmount, expiry, invoice.nodeId, invoice)
         buildOnion(NodePayload(trampolineNodeId, trampolinePayload) :: Nil, invoice.paymentHash, None).toOption.get
+      case invoice: Bolt12Invoice if invoice.features.hasFeature(Features.TrampolinePayment) =>
+        val path = invoice.blindedPaths.head
+        require(path.route.firstNodeId.isInstanceOf[EncodedNodeId.WithPublicKey], "blinded path must provide the introduction node_id")
+        val introductionNodeId = path.route.firstNodeId.asInstanceOf[EncodedNodeId.WithPublicKey].publicKey
+        // We're creating blinded payloads for an outgoing payment: we don't have access to the decrypted data, so we use dummy data.
+        val dummyPathId = RouteBlindingEncryptedDataTlv.PathId(ByteVector.empty)
+        val dummyPaymentRelayData = BlindedRouteData.PaymentRelayData(TlvStream(
+          RouteBlindingEncryptedDataTlv.OutgoingChannelId(ShortChannelId(0)),
+          RouteBlindingEncryptedDataTlv.PaymentRelay(CltvExpiryDelta(0), 0, 0 msat),
+          RouteBlindingEncryptedDataTlv.PaymentConstraints(CltvExpiry(0), 0 msat)
+        ))
+        val finalPayload = NodePayload(path.route.blindedHops.last.blindedPublicKey, PaymentOnion.FinalPayload.Blinded(
+          records = TlvStream(
+            OnionPaymentPayloadTlv.AmountToForward(totalAmount),
+            OnionPaymentPayloadTlv.OutgoingCltv(expiry),
+            OnionPaymentPayloadTlv.TotalAmount(totalAmount),
+            OnionPaymentPayloadTlv.EncryptedRecipientData(path.route.blindedHops.last.encryptedPayload),
+          ),
+          blindedRecords = TlvStream(dummyPathId),
+        ))
+        val intermediatePayloads = path.route.blindedHops.drop(1).dropRight(1).map { b =>
+          NodePayload(b.blindedPublicKey, PaymentOnion.IntermediatePayload.ChannelRelay.Blinded(
+            records = TlvStream(OnionPaymentPayloadTlv.EncryptedRecipientData(b.encryptedPayload)),
+            paymentRelayData = dummyPaymentRelayData,
+            nextPathKey = randomKey().publicKey,
+          ))
+        }
+        val introductionPayload = NodePayload(introductionNodeId, PaymentOnion.IntermediatePayload.ChannelRelay.Blinded(
+          records = TlvStream(OnionPaymentPayloadTlv.EncryptedRecipientData(path.route.encryptedPayloads.head), OnionPaymentPayloadTlv.PathKey(path.route.firstPathKey)),
+          paymentRelayData = dummyPaymentRelayData,
+          nextPathKey = randomKey().publicKey,
+        ))
+        // We use our trampoline node to reach the introduction node of the blinded path.
+        val blindedAmount = totalAmount + path.paymentInfo.fee(totalAmount)
+        val blindedExpiry = expiry + path.paymentInfo.cltvExpiryDelta
+        val trampolinePayload = NodePayload(trampolineNodeId, PaymentOnion.IntermediatePayload.NodeRelay.Standard(blindedAmount, blindedExpiry, introductionNodeId))
+        buildOnion(trampolinePayload +: introductionPayload +: intermediatePayloads :+ finalPayload, invoice.paymentHash, None).toOption.get
       case invoice: Bolt12Invoice =>
         val trampolinePayload = PaymentOnion.IntermediatePayload.NodeRelay.ToBlindedPaths(totalAmount, expiry, invoice)
         buildOnion(NodePayload(trampolineNodeId, trampolinePayload) :: Nil, invoice.paymentHash, None).toOption.get
     }
-    val trampolineAmount = computeTrampolineAmount(amount, attemptNumber)
-    val trampolineTotalAmount = computeTrampolineAmount(totalAmount, attemptNumber)
-    val trampolineExpiry = computeTrampolineExpiry(expiry, attemptNumber)
+    val trampolineAmount = computeTrampolineAmount(amount, attemptNumber, invoice)
+    val trampolineTotalAmount = computeTrampolineAmount(totalAmount, attemptNumber, invoice)
+    val trampolineExpiry = computeTrampolineExpiry(expiry, attemptNumber, invoice)
     val payload = trampolinePaymentSecret_opt match {
-      case Some(trampolinePaymentSecret) => PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolineAmount, trampolineTotalAmount, trampolineExpiry, trampolinePaymentSecret, trampolineOnion.packet)
+      case Some(trampolinePaymentSecret) => PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolineAmount, trampolineTotalAmount, trampolineExpiry, trampolinePaymentSecret, trampolineOnion.packet, trampolinePathKey_opt = None)
       case None => PaymentOnion.TrampolineWithoutMppPayload.create(trampolineAmount, trampolineExpiry, trampolineOnion.packet)
     }
     val paymentOnion = buildOnion(NodePayload(trampolineNodeId, payload) :: Nil, invoice.paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
     OutgoingPayment(trampolineAmount, trampolineExpiry, paymentOnion, trampolineOnion)
   }
 
-  // We increase the fees paid by 0.2% of the amount sent at each attempt.
-  def computeFees(amount: MilliSatoshi, attemptNumber: Int): MilliSatoshi = amount * (attemptNumber + 1) * 0.002
+  def computeFees(amount: MilliSatoshi, attemptNumber: Int, invoice: Invoice): MilliSatoshi = invoice match {
+    case _: Bolt11Invoice =>
+      // We increase the fees paid by 0.2% of the amount sent at each attempt.
+      amount * (attemptNumber + 1) * 0.002
+    case _ =>
+      // We increase the fees paid by 1% of the amount sent at each attempt.
+      // That's because integration tests are much easier to write if the first attempt uses large enough fees and
+      // expiry because we must inject a plugin actor to respond to HandleInvoiceRequest and HandlePayment.
+      amount * (attemptNumber + 1) * 0.01
+  }
 
-  def computeTrampolineAmount(amount: MilliSatoshi, attemptNumber: Int): MilliSatoshi = amount + computeFees(amount, attemptNumber)
+  def computeTrampolineAmount(amount: MilliSatoshi, attemptNumber: Int, invoice: Invoice): MilliSatoshi = amount + computeFees(amount, attemptNumber, invoice)
 
   // We increase the trampoline expiry delta at each attempt.
-  private def computeTrampolineExpiry(expiry: CltvExpiry, attemptNumber: Int): CltvExpiry = expiry + CltvExpiryDelta(144) * (attemptNumber + 1)
+  private def computeTrampolineExpiry(expiry: CltvExpiry, attemptNumber: Int, invoice: Invoice): CltvExpiry = invoice match {
+    case _: Bolt11Invoice => expiry + CltvExpiryDelta(144) * (attemptNumber + 1)
+    case _ => expiry + CltvExpiryDelta(432) + CltvExpiryDelta(144) * (attemptNumber + 1)
+  }
 
 }
