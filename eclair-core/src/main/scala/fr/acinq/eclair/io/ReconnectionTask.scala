@@ -187,25 +187,32 @@ object ReconnectionTask {
   // @formatter:on
 
   def selectNodeAddress(nodeParams: NodeParams, nodeAddresses: Seq[NodeAddress]): Option[NodeAddress] = {
-    // we select one address that will be used later when we create a tcp client. If a proxy is configured and its settings 
-    // match the address type it will be used, otherwise we'll create a direct tcp connection.
-    val torAddresses = nodeAddresses.collect { case o: OnionAddress => o }
-    val clearnetAddresses = nodeAddresses diff torAddresses
-    val selectedAddresses = nodeParams.socksProxy_opt match {
-      case Some(params) if params.useForTor =>
-        // The SOCKS5 proxy is enabled, and specifically configured to handle tor addresses.
-        // This is the only case when we can connect to both tor and clearnet.
-        nodeAddresses
-      case _ =>
-        // Otherwise, if we don't support tor or they don't have a tor address, we use clearnet.
-        clearnetAddresses
-    }
-    // finally, we pick an address at random
+    val selectedAddresses = selectNodeAddresses(nodeParams, nodeAddresses)
+    // we pick an address at random
     if (selectedAddresses.nonEmpty) {
       Some(selectedAddresses(Random.nextInt(selectedAddresses.size)))
     } else {
       None
     }
+  }
+
+  private[io] def selectNodeAddresses(nodeParams: NodeParams, nodeAddresses: Seq[NodeAddress]): Seq[NodeAddress] = {
+    val torAddresses = nodeAddresses.collect { case o: OnionAddress => o }
+    val clearnetAddresses = nodeAddresses diff torAddresses
+    val selectedAddresses = nodeParams.socksProxy_opt match {
+      case Some(params) if clearnetAddresses.nonEmpty && (!params.useForIPv4 || !params.useForIPv6) =>
+        // Remote has clearnet and possibly tor addresses, but we have configured our proxy to only be used
+        // for tor. In this case we will only connect over clearnet.
+        clearnetAddresses
+      case Some(params) if params.useForTor =>
+        // The SOCKS5 proxy is enabled, and specifically configured to handle tor addresses.
+        // This is the only case when we can connect to both tor and clearnet.
+        nodeAddresses
+      case _ =>
+        // Otherwise, if we don't support tor or remote doesn't have a tor address, we use clearnet.
+        clearnetAddresses
+    }
+    selectedAddresses
   }
 
   def getPeerAddressFromDb(nodeParams: NodeParams, remoteNodeId: PublicKey): Option[NodeAddress] = {

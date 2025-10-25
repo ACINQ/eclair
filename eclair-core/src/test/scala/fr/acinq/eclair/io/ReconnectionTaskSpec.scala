@@ -247,7 +247,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       nodeParams.socksProxy_opt returns Some(socksParams)
       assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)).contains(clearnet))
       assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)).contains(tor))
-      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)).exists(Set(clearnet, tor)(_)))
+      assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)).contains(clearnet))
     }
     {
       // tor supported and enabled for clearnet addresses: return both tor and clearnet addresses when available
@@ -270,6 +270,97 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet)).contains(clearnet))
       assert(ReconnectionTask.selectNodeAddress(nodeParams, List(tor)).isEmpty)
       assert(ReconnectionTask.selectNodeAddress(nodeParams, List(clearnet, tor)).contains(clearnet))
+    }
+  }
+
+  test("select node addresses for reconnection") { () =>
+    val nodeParams = mock[NodeParams]
+    val clearnetIPv4 = NodeAddress.fromParts("1.2.3.4", 9735).get
+    val clearnetIPv6 = NodeAddress.fromParts("2001:db8::1", 9735).get
+    val tor = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get
+    val dnsHostname = NodeAddress.fromParts("example.com", 9735).get
+
+    {
+      // no proxy configured: only return clearnet addresses
+      nodeParams.socksProxy_opt returns None
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4)) == List(clearnetIPv4))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(tor)) == List.empty)
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4, tor)) == List(clearnetIPv4))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4, clearnetIPv6, tor)) == List(clearnetIPv4, clearnetIPv6))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(dnsHostname, tor)) == List(dnsHostname))
+    }
+    {
+      // proxy configured but not for tor: only return clearnet addresses
+      val socksParams = mock[Socks5ProxyParams]
+      socksParams.useForTor returns false
+      socksParams.useForIPv4 returns true
+      socksParams.useForIPv6 returns true
+      nodeParams.socksProxy_opt returns Some(socksParams)
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4)) == List(clearnetIPv4))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(tor)) == List.empty)
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4, tor)) == List(clearnetIPv4))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4, clearnetIPv6, tor)) == List(clearnetIPv4, clearnetIPv6))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(dnsHostname, tor)) == List(dnsHostname))
+    }
+    {
+      // proxy configured for tor but not for IPv4: return tor addresses only if there ar no clearnet addresses, otherwise return clearnet addresses
+      val socksParams = mock[Socks5ProxyParams]
+      socksParams.useForTor returns true
+      socksParams.useForIPv4 returns false
+      socksParams.useForIPv6 returns true
+      nodeParams.socksProxy_opt returns Some(socksParams)
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4)) == List(clearnetIPv4))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv6)) == List(clearnetIPv6))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(tor)) == List(tor))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4, tor)) == List(clearnetIPv4))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv6, tor)) == List(clearnetIPv6))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4, clearnetIPv6, tor)) == List(clearnetIPv4, clearnetIPv6))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(dnsHostname, tor)) == List(dnsHostname))
+    }
+    {
+      // proxy configured for tor but not for IPv6: return tor addresses only if there ar no clearnet addresses, otherwise return clearnet addresses
+      val socksParams = mock[Socks5ProxyParams]
+      socksParams.useForTor returns true
+      socksParams.useForIPv4 returns true
+      socksParams.useForIPv6 returns false
+      nodeParams.socksProxy_opt returns Some(socksParams)
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4)) == List(clearnetIPv4))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv6)) == List(clearnetIPv6))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(tor)) == List(tor))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4, tor)) == List(clearnetIPv4))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv6, tor)) == List(clearnetIPv6))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4, clearnetIPv6, tor)) == List(clearnetIPv4, clearnetIPv6))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(dnsHostname, tor)) == List(dnsHostname))
+    }
+    {
+      // proxy configured for tor but not for IPv4 and IPv6: return tor addresses only if there ar no clearnet addresses, otherwise return clearnet addresses
+      val socksParams = mock[Socks5ProxyParams]
+      socksParams.useForTor returns true
+      socksParams.useForIPv4 returns false
+      socksParams.useForIPv6 returns false
+      nodeParams.socksProxy_opt returns Some(socksParams)
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4)) == List(clearnetIPv4))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv6)) == List(clearnetIPv6))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(tor)) == List(tor))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4, tor)) == List(clearnetIPv4))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv6, tor)) == List(clearnetIPv6))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4, clearnetIPv6, tor)) == List(clearnetIPv4, clearnetIPv6))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(dnsHostname, tor)) == List(dnsHostname))
+    }
+    {
+      // proxy configured for tor and both IPv4/IPv6: return all addresses
+      val socksParams = mock[Socks5ProxyParams]
+      socksParams.useForTor returns true
+      socksParams.useForIPv4 returns true
+      socksParams.useForIPv6 returns true
+      nodeParams.socksProxy_opt returns Some(socksParams)
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4)) == List(clearnetIPv4))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv6)) == List(clearnetIPv6))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(tor)) == List(tor))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4, tor)) == List(clearnetIPv4, tor))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv6, tor)) == List(clearnetIPv6, tor))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(clearnetIPv4, clearnetIPv6, tor)) == List(clearnetIPv4, clearnetIPv6, tor))
+      assert(ReconnectionTask.selectNodeAddresses(nodeParams, List(dnsHostname, tor)) == List(dnsHostname, tor))
     }
   }
 
