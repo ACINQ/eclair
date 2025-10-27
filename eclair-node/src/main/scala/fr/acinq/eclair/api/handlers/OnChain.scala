@@ -17,12 +17,17 @@
 package fr.acinq.eclair.api.handlers
 
 import akka.http.scaladsl.server.Route
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
-import org.json4s.{JObject, JString}
+import org.json4s.{JBool, JObject, JString}
+
+import java.util.Base64
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.Try
 
 trait OnChain {
   this: Service with EclairDirectives =>
@@ -42,6 +47,26 @@ trait OnChain {
           case _ => throw new IllegalArgumentException("You must provide a confirmation target (in blocks) or a fee rate (in sat/vb)")
         }
         complete(eclairApi.sendOnChain(address, amount, confirmationTargetOrFeerate))
+      }
+    }
+  }
+
+  val signPsbt: Route = postRequest("signpsbt") { implicit t =>
+    formFields("psbt".as[String], "ourInputs".as[Seq[Int]].?, "ourOutputs".as[Seq[Int]].?) {
+      (base64, ourInputs_opt, ourOutputs_opt) => {
+        import fr.acinq.bitcoin.scalacompat.KotlinUtils._
+
+        val bytes = Try(Base64.getDecoder.decode(base64)).getOrElse(throw new IllegalArgumentException("Cannot decode base64 string"))
+        val psbt = Psbt.read(bytes).getOrElse(throw new IllegalArgumentException("Cannot read psbt"))
+        val ourInputs = ourInputs_opt.getOrElse(0 until psbt.inputs.size()) // if not specified we assume all inputs come from our wallet
+        val ourOutputs = ourOutputs_opt.getOrElse(Seq.empty)
+        complete(eclairApi.signPsbt(psbt, ourInputs, ourOutputs).map(response => {
+          val encoded = JString(Base64.getEncoder.encodeToString(Psbt.write(response.psbt).toByteArray))
+          Option(response.psbt.extract().getRight).map(_.toString) match {
+            case Some(hex) => new JObject(List("psbt" -> encoded, "complete" -> JBool(true), "hex" -> JString(hex)))
+            case None => new JObject(List("psbt" -> encoded, "complete" -> JBool(false)))
+          }
+        }))
       }
     }
   }
@@ -85,6 +110,6 @@ trait OnChain {
     }
   }
 
-  val onChainRoutes: Route = getNewAddress ~ sendOnChain ~ cpfpBumpFees ~ onChainBalance ~ onChainTransactions ~ globalBalance ~ getmasterxpub ~ getdescriptors
+  val onChainRoutes: Route = getNewAddress ~ sendOnChain ~ signPsbt ~ cpfpBumpFees ~ onChainBalance ~ onChainTransactions ~ globalBalance ~ getmasterxpub ~ getdescriptors
 
 }

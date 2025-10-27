@@ -22,12 +22,13 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystem
 import akka.actor.{ActorRef, typed}
 import akka.pattern._
 import akka.util.Timeout
+import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction, TxId, addressToPublicKeyScript}
 import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
-import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
+import fr.acinq.eclair.blockchain.OnChainWallet.{OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{AddressType, Descriptors, WalletTx}
@@ -147,6 +148,8 @@ trait Eclair {
   def sentInfo(id: PaymentIdentifier)(implicit timeout: Timeout): Future[Seq[OutgoingPayment]]
 
   def sendOnChain(address: String, amount: Satoshi, confirmationTargetOrFeerate: Either[Long, FeeratePerByte]): Future[TxId]
+
+  def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int]): Future[ProcessPsbtResponse]
 
   def cpfpBumpFees(targetFeeratePerByte: FeeratePerByte, outpoints: Set[OutPoint]): Future[TxId]
 
@@ -446,6 +449,13 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
           case Right(pubkeyScript) => w.sendToPubkeyScript(pubkeyScript, amount, feeRate)
           case Left(failure) => Future.failed(new IllegalArgumentException(s"invalid address ($failure)"))
         }
+      case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
+    }
+  }
+
+  override def signPsbt(psbt: Psbt, ourInputs: Seq[Int], ourOutputs: Seq[Int]): Future[ProcessPsbtResponse] = {
+    appKit.wallet match {
+      case w: BitcoinCoreClient => w.signPsbt(psbt, ourInputs, ourOutputs)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
