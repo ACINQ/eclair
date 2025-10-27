@@ -140,7 +140,7 @@ object Helpers {
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
     channelType.commitmentFormat match {
       case _: SimpleTaprootChannelCommitmentFormat => if (open.commitNonce_opt.isEmpty) return Left(MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), commitmentNumber = 0))
-      case _: AnchorOutputsCommitmentFormat => ()
+      case _: SegwitV0CommitmentFormat => ()
     }
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
@@ -244,7 +244,7 @@ object Helpers {
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
     channelType.commitmentFormat match {
       case _: SimpleTaprootChannelCommitmentFormat => if (accept.commitNonce_opt.isEmpty) return Left(MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), commitmentNumber = 0))
-      case _: AnchorOutputsCommitmentFormat => ()
+      case _: SegwitV0CommitmentFormat => ()
     }
     extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
@@ -778,7 +778,7 @@ object Helpers {
           dummyClosingTxs.preferred_opt match {
             case Some(dummyTx) =>
               commitment.commitmentFormat match {
-                case _: AnchorOutputsCommitmentFormat =>
+                case _: SegwitV0CommitmentFormat =>
                   val dummyPubkey = commitment.remoteFundingPubKey
                   val dummySig = IndividualSignature(Transactions.PlaceHolderSig)
                   val dummySignedTx = dummyTx.aggregateSigs(dummyPubkey, dummyPubkey, dummySig, dummySig)
@@ -816,7 +816,7 @@ object Helpers {
                   closingTxs.remoteOnly_opt.flatMap(tx => localSig(tx, localNonces.remoteOnly)).map(ClosingCompleteTlv.CloseeOutputOnlyPartialSignature(_)),
                 ).flatten[ClosingCompleteTlv])
             }
-          case _: AnchorOutputsCommitmentFormat => TlvStream(Set(
+          case _: SegwitV0CommitmentFormat => TlvStream(Set(
             closingTxs.localAndRemote_opt.map(tx => ClosingTlv.CloserAndCloseeOutputs(tx.sign(localFundingKey, commitment.remoteFundingPubKey).sig)),
             closingTxs.localOnly_opt.map(tx => ClosingTlv.CloserOutputOnly(tx.sign(localFundingKey, commitment.remoteFundingPubKey).sig)),
             closingTxs.remoteOnly_opt.map(tx => ClosingTlv.CloseeOutputOnly(tx.sign(localFundingKey, commitment.remoteFundingPubKey).sig)),
@@ -870,7 +870,7 @@ object Helpers {
                 case None => Left(MissingCloseSignature(commitment.channelId))
               }
           }
-          case _: AnchorOutputsCommitmentFormat =>
+          case _: SegwitV0CommitmentFormat =>
             (closingTxs.localAndRemote_opt, closingTxs.localOnly_opt) match {
               case (Some(_), Some(_)) if closingComplete.closerAndCloseeOutputsSig_opt.isEmpty && closingComplete.closeeOutputOnlySig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
               case (Some(_), None) if closingComplete.closerAndCloseeOutputsSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
@@ -1054,7 +1054,7 @@ object Helpers {
       /** Create outputs of the local commitment transaction, allowing us for example to identify HTLC outputs. */
       def makeLocalCommitTxOutputs(channelKeys: ChannelKeys, commitKeys: LocalCommitmentKeys, commitment: FullCommitment): Seq[CommitmentOutput] = {
         val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
-        makeCommitTxOutputs(fundingKey.publicKey, commitment.remoteFundingPubKey, commitKeys.publicKeys, commitment.localChannelParams.paysCommitTxFees, commitment.localCommitParams.dustLimit, commitment.localCommitParams.toSelfDelay, commitment.localCommit.spec, commitment.commitmentFormat)
+        makeCommitTxOutputs(fundingKey.publicKey, commitment.remoteFundingPubKey, commitment.commitInput(channelKeys), commitKeys.publicKeys, commitment.localChannelParams.paysCommitTxFees, commitment.localCommitParams.dustLimit, commitment.localCommitParams.toSelfDelay, commitment.localCommit.spec, commitment.commitmentFormat)
       }
 
       /**
@@ -1226,7 +1226,7 @@ object Helpers {
       /** Claim our main output from the remote commitment transaction, if available. */
       def claimMainOutput(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, dustLimit: Satoshi, commitmentFormat: CommitmentFormat, feerate: FeeratePerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Option[ClaimRemoteDelayedOutputTx] = {
         commitmentFormat match {
-          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat | ZeroFeeCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
             ClaimRemoteDelayedOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerate, commitmentFormat)
           }
         }
@@ -1235,7 +1235,7 @@ object Helpers {
       /** Create outputs of the remote commitment transaction, allowing us for example to identify HTLC outputs. */
       def makeRemoteCommitTxOutputs(channelKeys: ChannelKeys, commitKeys: RemoteCommitmentKeys, commitment: FullCommitment, remoteCommit: RemoteCommit): Seq[CommitmentOutput] = {
         val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
-        makeCommitTxOutputs(commitment.remoteFundingPubKey, fundingKey.publicKey, commitKeys.publicKeys, !commitment.localChannelParams.paysCommitTxFees, commitment.remoteCommitParams.dustLimit, commitment.remoteCommitParams.toSelfDelay, remoteCommit.spec, commitment.commitmentFormat)
+        makeCommitTxOutputs(commitment.remoteFundingPubKey, fundingKey.publicKey, commitment.commitInput(channelKeys), commitKeys.publicKeys, !commitment.localChannelParams.paysCommitTxFees, commitment.remoteCommitParams.dustLimit, commitment.remoteCommitParams.toSelfDelay, remoteCommit.spec, commitment.commitmentFormat)
       }
 
       /**
@@ -1394,7 +1394,7 @@ object Helpers {
 
         // First we will claim our main output right away.
         val mainTx_opt = commitmentFormat match {
-          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat | ZeroFeeCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
             ClaimRemoteDelayedOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerateMain, commitmentFormat)
           }
         }
