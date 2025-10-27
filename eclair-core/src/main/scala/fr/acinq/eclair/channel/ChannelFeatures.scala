@@ -95,6 +95,15 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = s"anchor_outputs_zero_fee_htlc_tx${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
+  case class ZeroFeeCommitments(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.ZeroFeeCommitments)
+    ).flatten
+    override def commitmentFormat: CommitmentFormat = ZeroFeeCommitmentFormat
+    override def toString: String = s"zero_fee_commitments${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+  }
   case class SimpleTaprootChannelsStaging(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
     override def features: Set[ChannelTypeFeature] = Set(
       if (scidAlias) Some(Features.ScidAlias) else None,
@@ -131,6 +140,10 @@ object ChannelTypes {
     SimpleTaprootChannelsStaging(zeroConf = true),
     SimpleTaprootChannelsStaging(scidAlias = true),
     SimpleTaprootChannelsStaging(scidAlias = true, zeroConf = true),
+    ZeroFeeCommitments(),
+    ZeroFeeCommitments(zeroConf = true),
+    ZeroFeeCommitments(scidAlias = true),
+    ZeroFeeCommitments(scidAlias = true, zeroConf = true),
     SimpleTaprootChannelsPhoenix,
   ).map {
     channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType
@@ -150,7 +163,9 @@ object ChannelTypes {
 
   /** Returns our preferred channel type for public channels, if supported by our peer. */
   def preferredForPublicChannels(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean): Option[SupportedChannelType] = {
-    if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputsZeroFeeHtlcTx)) {
+    if (Features.canUseFeature(localFeatures, remoteFeatures, Features.ZeroFeeCommitments)) {
+      Some(ZeroFeeCommitments(scidAlias = !announceChannel && Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias)))
+    } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputsZeroFeeHtlcTx)) {
       Some(AnchorOutputsZeroFeeHtlcTx(scidAlias = !announceChannel && Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias)))
     } else {
       None
