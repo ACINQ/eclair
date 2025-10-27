@@ -33,10 +33,6 @@ import scala.util.{Failure, Success}
  */
 object Boot extends App with Logging {
   try {
-    if (!System.getProperty("eclair.allow-unsafe-startup", "false").toBooleanOption.contains(true)) {
-      throw new RuntimeException("This version of eclair is unsafe to use: please wait for the next official release to update your node.")
-    }
-
     val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
     val config = NodeParams.loadConfiguration(datadir)
 

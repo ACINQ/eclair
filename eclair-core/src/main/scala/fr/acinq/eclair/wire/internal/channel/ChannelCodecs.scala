@@ -53,10 +53,10 @@ import scodec.{Codec, Err}
 object ChannelCodecs extends Logging {
 
   /**
-   * Codecs v0 to v4 have been removed after the eclair v0.13 release.
-   * Users on older version will need to first run the v0.13 release before updating to a newer version.
+   * Codecs v0 to v4 have been removed after the eclair v0.13.0 release.
+   * Users on older version will need to first run the v0.13.0 release before updating to a newer version.
    */
-  private val pre013FailingCodec: Codec[PersistentChannelData] = fail(Err("You are updating from a version of eclair older than v0.13: please update to the v0.13 release first to migrate your channel data, and afterwards you'll be able to update to the latest version."))
+  private val pre013FailingCodec: Codec[PersistentChannelData] = fail(Err("You are updating from a version of eclair older than v0.13.0: please update to the v0.13.0 release first to migrate your channel data, and afterwards you'll be able to update to the latest version."))
 
   /**
    * Order matters!!
