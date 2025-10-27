@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishTx, SetChannelId}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, SetChannelId}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment._
@@ -34,7 +34,6 @@ import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelUpdate, ClosingComplete, ClosingSig, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
@@ -231,11 +230,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! fulfill
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    alice2blockchain.expectMsgType[PublishTx] // main delayed
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
-    alice2blockchain.expectMsgType[WatchTxConfirmed]
+    alice2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv UpdateFulfillHtlc (invalid preimage)") { f =>
@@ -244,11 +239,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! UpdateFulfillHtlc(ByteVector32.Zeroes, 42, ByteVector32.Zeroes)
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    alice2blockchain.expectMsgType[PublishTx] // main delayed
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
-    alice2blockchain.expectMsgType[WatchTxConfirmed]
+    alice2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv CMD_FAIL_HTLC") { f =>
@@ -335,10 +326,11 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! UpdateFailHtlc(ByteVector32.Zeroes, 42, ByteVector.fill(152)(0))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    alice2blockchain.expectMsgType[PublishTx] // main delayed
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
+    alice2blockchain.expectFinalTxPublished(tx.txid)
+    alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx]
+    alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx]
     alice2blockchain.expectMsgType[WatchTxConfirmed]
   }
 
@@ -358,11 +350,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val error = alice2bob.expectMsgType[Error]
     assert(new String(error.data.toArray) == InvalidFailureCode(ByteVector32.Zeroes).getMessage)
     awaitCond(alice.stateName == CLOSING)
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    alice2blockchain.expectMsgType[PublishTx] // main delayed
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
-    alice2blockchain.expectMsgType[WatchTxConfirmed]
+    alice2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv CMD_SIGN") { f =>
@@ -434,27 +422,13 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2bob.expectMsgType[RevokeAndAck]
   }
 
-  test("recv CommitSig (no changes)") { f =>
-    import f._
-    val tx = bob.signCommitTx()
-    // signature is invalid but it doesn't matter
-    bob ! CommitSig(ByteVector32.Zeroes, IndividualSignature(ByteVector64.Zeroes), Nil)
-    bob2alice.expectMsgType[Error]
-    awaitCond(bob.stateName == CLOSING)
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[WatchTxConfirmed]
-  }
-
   test("recv CommitSig (invalid signature)") { f =>
     import f._
     val tx = bob.signCommitTx()
     bob ! CommitSig(ByteVector32.Zeroes, IndividualSignature(ByteVector64.Zeroes), Nil)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[WatchTxConfirmed]
+    bob2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv RevokeAndAck (with remaining htlcs on both sides)") { f =>
@@ -521,10 +495,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob ! RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32()), PrivateKey(randomBytes32()).publicKey)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[PublishTx] // htlc success
-    bob2blockchain.expectMsgType[WatchTxConfirmed]
+    bob2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv RevokeAndAck (unexpectedly)") { f =>
@@ -534,11 +505,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32()), PrivateKey(randomBytes32()).publicKey)
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    alice2blockchain.expectMsgType[PublishTx] // main delayed
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
-    alice2blockchain.expectMsgType[WatchTxConfirmed]
+    alice2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv RevokeAndAck (forward UpdateFailHtlc)") { f =>
@@ -611,7 +578,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv UpdateFee") { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
+    val fee = UpdateFee(ByteVector32.Zeroes, TestConstants.anchorOutputsFeeratePerKw * 1.2)
     bob ! fee
     awaitCond(bob.stateData == initialData
       .modify(_.commitments.changes.remoteChanges.proposed).using(_ :+ fee)
@@ -621,31 +588,10 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv UpdateFee (when sender is not funder)") { f =>
     import f._
     val tx = alice.signCommitTx()
-    alice ! UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
+    alice ! UpdateFee(ByteVector32.Zeroes, TestConstants.anchorOutputsFeeratePerKw * 1.2)
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    alice2blockchain.expectMsgType[PublishTx] // main delayed
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
-    alice2blockchain.expectMsgType[WatchTxConfirmed]
-  }
-
-  test("recv UpdateFee (sender can't afford it)") { f =>
-    import f._
-    val tx = bob.signCommitTx()
-    val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(100_000_000 sat))
-    // we first update the feerates so that we don't trigger a 'fee too different' error
-    bob.setBitcoinCoreFeerate(fee.feeratePerKw)
-    bob ! fee
-    val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) == CannotAffordFees(channelId(bob), missing = 72120000L sat, reserve = 20000L sat, fees = 72400000L sat).getMessage)
-    awaitCond(bob.stateName == CLOSING)
-    bob2blockchain.expectFinalTxPublished(tx.txid)
-    // even though the feerate is extremely high, we publish our main transaction with a feerate capped by our max-closing-feerate
-    val mainTx = bob2blockchain.expectFinalTxPublished("local-main-delayed")
-    assert(Transactions.fee2rate(mainTx.fee, mainTx.tx.weight()) <= bob.nodeParams.onChainFeeConf.maxClosingFeerate * 1.1)
-    bob2blockchain.expectWatchTxConfirmed(tx.txid)
+    alice2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
@@ -653,11 +599,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val tx = bob.signCommitTx()
     bob ! UpdateFee(ByteVector32.Zeroes, FeeratePerKw(65000 sat))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) == "local/remote feerates are too different: remoteFeeratePerKw=65000 localFeeratePerKw=10000")
+    assert(new String(error.data.toArray) == "local/remote feerates are too different: remoteFeeratePerKw=65000 localFeeratePerKw=2500")
     awaitCond(bob.stateName == CLOSING)
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[WatchTxConfirmed]
+    bob2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv UpdateFee (remote feerate is too small)") { f =>
@@ -667,9 +611,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) == "remote fee rate is too small: remoteFeeratePerKw=252")
     awaitCond(bob.stateName == CLOSING)
-    assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == tx.txid) // commit tx
-    bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[WatchTxConfirmed]
+    bob2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv CMD_UPDATE_RELAY_FEE ") { f =>
@@ -693,23 +635,15 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val aliceCommitTx = alice.signCommitTx()
     alice ! CurrentBlockHeight(BlockHeight(400145))
-    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid) // commit tx
-    alice2blockchain.expectMsgType[PublishTx] // main delayed
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
-    alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
+    alice2blockchain.expectFinalTxPublished(aliceCommitTx.txid)
+    alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx]
+    alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx]
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == aliceCommitTx.txid)
   }
 
   test("recv CurrentFeerate (when funder, triggers an UpdateFee)") { f =>
-    import f._
-    val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    val event = CurrentFeerates.BitcoinCore(FeeratesPerKw(minimum = FeeratePerKw(250 sat), fastest = FeeratePerKw(10_000 sat), fast = FeeratePerKw(5_000 sat), medium = FeeratePerKw(1000 sat), slow = FeeratePerKw(500 sat)))
-    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
-    alice ! event
-    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, alice.underlyingActor.nodeParams.onChainFeeConf.getCommitmentFeerate(alice.underlyingActor.nodeParams.currentBitcoinCoreFeerates, alice.underlyingActor.remoteNodeId, initialState.commitments.latest.commitmentFormat)))
-  }
-
-  test("recv CurrentFeerate (when funder, triggers an UpdateFee, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     assert(initialState.commitments.latest.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
@@ -720,14 +654,6 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   }
 
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
-    import f._
-    val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(10010 sat)))
-    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
-    alice ! event
-    alice2bob.expectNoMessage(500 millis)
-  }
-
-  test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     assert(initialState.commitments.latest.localCommit.spec.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
@@ -745,19 +671,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob2alice.expectNoMessage(500 millis)
   }
 
-  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different)") { f =>
-    import f._
-    val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(25000 sat)))
-    bob.setBitcoinCoreFeerates(event.feeratesPerKw)
-    bob ! event
-    bob2alice.expectMsgType[Error]
-    bob2blockchain.expectMsgType[PublishTx] // commit tx
-    bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[WatchTxConfirmed]
-    awaitCond(bob.stateName == CLOSING)
-  }
-
-  test("recv WatchFundingSpentTriggered (their commit)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
+  test("recv WatchFundingSpentTriggered (their commit)") { f =>
     import f._
     // bob publishes his current commit tx, which contains two pending htlcs alice->bob
     val bobCommitTx = bob.signCommitTx()
@@ -788,7 +702,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectNoMessage(100 millis)
   }
 
-  test("recv WatchFundingSpentTriggered (their next commit)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
+  test("recv WatchFundingSpentTriggered (their next commit)") { f =>
     import f._
     // bob fulfills the first htlc
     fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
@@ -834,7 +748,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectNoMessage(100 millis)
   }
 
-  test("recv WatchFundingSpentTriggered (revoked tx)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
+  test("recv WatchFundingSpentTriggered (revoked tx)") { f =>
     import f._
     val revokedTx = bob.signCommitTx()
     // two main outputs + 2 htlc
@@ -868,7 +782,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectNoMessage(100 millis)
   }
 
-  test("recv WatchFundingSpentTriggered (revoked tx with updated commitment)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.StaticRemoteKey)) { f =>
+  test("recv WatchFundingSpentTriggered (revoked tx with updated commitment)") { f =>
     import f._
     val initialCommitTx = bob.signCommitTx()
     assert(initialCommitTx.txOut.size == 6) // two main outputs + 2 htlc
@@ -951,7 +865,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
 
     val aliceCommitTx = alice.signCommitTx()
-    assert(aliceCommitTx.txOut.size == 4) // two main outputs and two htlcs
+    assert(aliceCommitTx.txOut.size == 6) // two main outputs, two anchor outputs and two htlcs
 
     val sender = TestProbe()
     alice ! CMD_FORCECLOSE(sender.ref)
@@ -962,21 +876,22 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
     assert(lcp.htlcOutputs.size == 2)
 
-    val claimMain = alice2blockchain.expectFinalTxPublished("local-main-delayed")
-    val htlc1 = alice2blockchain.expectFinalTxPublished("htlc-timeout")
-    val htlc2 = alice2blockchain.expectFinalTxPublished("htlc-timeout")
-    Seq(claimMain, htlc1, htlc2).foreach(tx => Transaction.correctlySpends(tx.tx, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx].tx
+    val claimMain = alice2blockchain.expectFinalTxPublished("local-main-delayed").tx
+    val htlc1 = alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx].sign()
+    val htlc2 = alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx].sign()
+    Seq(claimMain, htlc1, htlc2).foreach(tx => Transaction.correctlySpends(tx, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     alice2blockchain.expectWatchTxConfirmed(aliceCommitTx.txid)
-    alice2blockchain.expectWatchOutputsSpent(Seq(claimMain, htlc1, htlc2).map(_.input))
+    alice2blockchain.expectWatchOutputsSpent(Seq(claimMain, anchorTx, htlc1, htlc2).map(_.txIn.head.outPoint))
     alice2blockchain.expectNoMessage(100 millis)
 
     // 3rd-stage txs are published when htlc txs confirm
     Seq(htlc1, htlc2).foreach(htlcTimeoutTx => {
-      alice ! WatchOutputSpentTriggered(0 sat, htlcTimeoutTx.tx)
-      alice2blockchain.expectWatchTxConfirmed(htlcTimeoutTx.tx.txid)
-      alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTimeoutTx.tx)
+      alice ! WatchOutputSpentTriggered(0 sat, htlcTimeoutTx)
+      alice2blockchain.expectWatchTxConfirmed(htlcTimeoutTx.txid)
+      alice ! WatchTxConfirmedTriggered(BlockHeight(2701), 3, htlcTimeoutTx)
       val htlcDelayedTx = alice2blockchain.expectFinalTxPublished("htlc-delayed")
-      Transaction.correctlySpends(htlcDelayedTx.tx, htlcTimeoutTx.tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(htlcDelayedTx.tx, htlcTimeoutTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       alice2blockchain.expectWatchOutputSpent(htlcDelayedTx.input)
     })
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.htlcDelayedOutputs.size == 2)
@@ -1049,7 +964,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == closingTx.tx.txid)
   }
 
-  test("recv INPUT_RESTORED", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv INPUT_RESTORED", Tag(ChannelStateTestsTags.SimpleClose)) { f =>
     testInputRestored(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
   }
 
@@ -1062,7 +977,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val aliceCommitTx = alice.signCommitTx()
     alice ! Error(ByteVector32.Zeroes, "oops")
     alice2blockchain.expectFinalTxPublished(aliceCommitTx.txid)
-    assert(aliceCommitTx.txOut.size == 4) // two main outputs and two htlcs
+    assert(aliceCommitTx.txOut.size == 6) // two main outputs, two anchor outputs and two htlcs
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
 
@@ -1070,11 +985,14 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     // - 1 tx to claim the main delayed output
     // - 2 txs for each htlc
     // NB: 3rd-stage txs will only be published once the htlc txs confirm
-    val claimTxs = (0 until 3).map(_ => alice2blockchain.expectMsgType[PublishFinalTx].tx)
+    val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
+    val claimMain = alice2blockchain.expectFinalTxPublished("local-main-delayed")
+    val htlcTxs = (0 until 2).map(_ => alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx])
     // the main delayed output and htlc txs spend the commitment transaction
-    claimTxs.foreach(tx => Transaction.correctlySpends(tx, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    Transaction.correctlySpends(claimMain.tx, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    htlcTxs.foreach(tx => Transaction.correctlySpends(tx.sign(), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     alice2blockchain.expectWatchTxConfirmed(aliceCommitTx.txid)
-    alice2blockchain.expectWatchOutputsSpent(claimTxs.flatMap(_.txIn.map(_.outPoint)))
+    alice2blockchain.expectWatchOutputsSpent((Seq(anchorTx.tx, claimMain.tx) ++ htlcTxs.map(_.tx)).flatMap(_.txIn.map(_.outPoint)))
     alice2blockchain.expectNoMessage(100 millis)
   }
 

@@ -1098,7 +1098,7 @@ class RouterSpec extends BaseRouterSpec {
       assert(!data.channels.contains(scid2))
       assert(data.scid2PrivateChannels.get(aliases2.localAlias.toLong).contains(commitments2.channelId))
       val chan2 = data.privateChannels(commitments2.channelId)
-      assert(chan2.capacity == 99_000.sat) // for private channels, we use the balance to compute the channel's capacity
+      assert(chan2.capacity == 98_340.sat) // for private channels, we use the balance to compute the channel's capacity
       assert((chan2.update_1_opt.toSet ++ chan2.update_2_opt.toSet) == Set(update2))
     }
 

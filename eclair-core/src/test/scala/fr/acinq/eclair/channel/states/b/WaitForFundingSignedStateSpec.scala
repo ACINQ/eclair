@@ -92,7 +92,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Created]
   }
 
-  test("recv FundingSigned with valid signature (zero-conf)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("recv FundingSigned with valid signature (zero-conf)", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)

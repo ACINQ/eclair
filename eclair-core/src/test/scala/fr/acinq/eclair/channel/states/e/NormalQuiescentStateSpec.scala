@@ -32,7 +32,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.relay.Relayer.RelayForward
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions.{UnsignedHtlcSuccessTx, UnsignedHtlcTimeoutTx}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{channel, _}
 import org.scalatest.Outcome
@@ -455,11 +455,11 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     // the HTLC times out, alice needs to close the channel
     alice ! CurrentBlockHeight(add.cltvExpiry.blockHeight)
     alice2blockchain.expectFinalTxPublished(commitTx.txid)
+    val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     val mainDelayedTx = alice2blockchain.expectFinalTxPublished("local-main-delayed")
-    assert(alice2blockchain.expectFinalTxPublished("htlc-timeout").input == htlcTimeoutTx.input.outPoint)
+    assert(alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx].input == htlcTimeoutTx.input)
     alice2blockchain.expectWatchTxConfirmed(commitTx.txid)
-    alice2blockchain.expectWatchOutputSpent(mainDelayedTx.input)
-    alice2blockchain.expectWatchOutputSpent(htlcTimeoutTx.input.outPoint)
+    alice2blockchain.expectWatchOutputsSpent(Seq(mainDelayedTx.input, anchorTx.input.outPoint, htlcTimeoutTx.input.outPoint))
     alice2blockchain.expectNoMessage(100 millis)
 
     channelUpdateListener.expectMsgType[LocalChannelDown]
@@ -489,11 +489,11 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     bob ! CurrentBlockHeight(add.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
     // bob publishes a set of force-close transactions, including the HTLC-success using the received preimage
     bob2blockchain.expectFinalTxPublished(commitTx.txid)
+    val anchorTx = bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     val mainDelayedTx = bob2blockchain.expectFinalTxPublished("local-main-delayed")
     bob2blockchain.expectWatchTxConfirmed(commitTx.txid)
-    bob2blockchain.expectWatchOutputSpent(mainDelayedTx.input)
-    bob2blockchain.expectWatchOutputSpent(htlcSuccessTx.input.outPoint)
-    assert(bob2blockchain.expectFinalTxPublished("htlc-success").input == htlcSuccessTx.input.outPoint)
+    bob2blockchain.expectWatchOutputsSpent(Seq(mainDelayedTx.input, anchorTx.input.outPoint, htlcSuccessTx.input.outPoint))
+    assert(bob2blockchain.expectReplaceableTxPublished[HtlcSuccessTx].input == htlcSuccessTx.input)
     bob2blockchain.expectNoMessage(100 millis)
 
     channelUpdateListener.expectMsgType[LocalChannelDown]

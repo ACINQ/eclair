@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.randomKey
-import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import org.scalatest.funsuite.AnyFunSuite
 
 class OnChainFeeConfSpec extends AnyFunSuite {
@@ -37,14 +37,11 @@ class OnChainFeeConfSpec extends AnyFunSuite {
   }
 
   test("get commitment feerate") {
-    val commitmentFormat = DefaultCommitmentFormat
     val feeConf = OnChainFeeConf(defaultFeeTargets, defaultMaxClosingFeerate, safeUtxosThreshold = 0, spendAnchorWithoutHtlcs = true, anchorWithoutHtlcsMaxFee = 10_000.sat, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
-
     val feerates1 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = FeeratePerKw(5000 sat))
-    assert(feeConf.getCommitmentFeerate(feerates1, randomKey().publicKey, commitmentFormat) == FeeratePerKw(5000 sat))
-
-    val feerates2 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = FeeratePerKw(4000 sat))
-    assert(feeConf.getCommitmentFeerate(feerates2, randomKey().publicKey, commitmentFormat) == FeeratePerKw(4000 sat))
+    assert(feeConf.getCommitmentFeerate(feerates1, randomKey().publicKey, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == FeeratePerKw(2500 sat))
+    val feerates2 = FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(fast = FeeratePerKw(2000 sat))
+    assert(feeConf.getCommitmentFeerate(feerates2, randomKey().publicKey, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == FeeratePerKw(2000 sat))
   }
 
   test("get commitment feerate (anchor outputs)") {
@@ -103,24 +100,6 @@ class OnChainFeeConfSpec extends AnyFunSuite {
     val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat), DustTolerance(25000 sat, closeOnUpdateFeeOverflow = false))
     val testCases = Seq(
       (FeeratePerKw(500 sat), FeeratePerKw(500 sat), false),
-      (FeeratePerKw(500 sat), FeeratePerKw(250 sat), false),
-      (FeeratePerKw(500 sat), FeeratePerKw(249 sat), true),
-      (FeeratePerKw(500 sat), FeeratePerKw(200 sat), true),
-      (FeeratePerKw(249 sat), FeeratePerKw(500 sat), false),
-      (FeeratePerKw(250 sat), FeeratePerKw(500 sat), false),
-      (FeeratePerKw(250 sat), FeeratePerKw(1000 sat), false),
-      (FeeratePerKw(250 sat), FeeratePerKw(1001 sat), true),
-      (FeeratePerKw(250 sat), FeeratePerKw(1500 sat), true),
-    )
-    testCases.foreach { case (networkFeerate, proposedFeerate, expected) =>
-      assert(tolerance.isFeeDiffTooHigh(DefaultCommitmentFormat, networkFeerate, proposedFeerate) == expected)
-    }
-  }
-
-  test("fee difference too high (anchor outputs)") {
-    val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat), DustTolerance(25000 sat, closeOnUpdateFeeOverflow = false))
-    val testCases = Seq(
-      (FeeratePerKw(500 sat), FeeratePerKw(500 sat), false),
       (FeeratePerKw(500 sat), FeeratePerKw(1000 sat), false),
       (FeeratePerKw(500 sat), FeeratePerKw(2000 sat), false),
       (FeeratePerKw(500 sat), FeeratePerKw(2001 sat), true),
@@ -131,8 +110,7 @@ class OnChainFeeConfSpec extends AnyFunSuite {
       (FeeratePerKw(1000 sat), FeeratePerKw(500 sat), false),
     )
     testCases.foreach { case (networkFeerate, proposedFeerate, expected) =>
-      assert(tolerance.isFeeDiffTooHigh(UnsafeLegacyAnchorOutputsCommitmentFormat, networkFeerate, proposedFeerate) == expected)
-      assert(tolerance.isFeeDiffTooHigh(ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, networkFeerate, proposedFeerate) == expected)
+      assert(tolerance.isProposedCommitFeerateTooHigh(networkFeerate, proposedFeerate) == expected)
     }
   }
 

@@ -35,7 +35,6 @@ import java.util.concurrent.Executors
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.jdk.CollectionConverters._
-import scala.util.{Success, Try}
 
 /**
  * Created by PM on 12/07/2021.
@@ -60,7 +59,7 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     val eventListener = TestProbe()
     nodes.values.foreach(_.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged]))
 
-    connect(nodes("A"), nodes("B"), 100_000_000 sat, 0 msat)
+    connect(nodes("A"), nodes("B"), 100_000_000 sat, 0 msat, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
 
     // confirming the funding tx
     generateBlocks(6)

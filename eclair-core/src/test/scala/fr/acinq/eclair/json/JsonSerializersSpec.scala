@@ -121,11 +121,11 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val probe = TestProbe()(system)
     val dummyPublicKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101").publicKey
     val dummyBytes32 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
-    val localChannelParams = LocalChannelParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), Some(1000 sat), isChannelOpener = true, paysCommitTxFees = true, None, None, Features.empty)
+    val localChannelParams = LocalChannelParams(dummyPublicKey, DeterministicWallet.KeyPath(Seq(42L)), Some(1000 sat), isChannelOpener = true, paysCommitTxFees = true, None, Features.empty)
     val localCommitParams = CommitParams(546 sat, 1 msat, UInt64(Long.MaxValue), 50, CltvExpiryDelta(144))
     val remoteChannelParams = RemoteChannelParams(dummyPublicKey, Some(1000 sat), dummyPublicKey, dummyPublicKey, dummyPublicKey, dummyPublicKey, Features.empty, None)
     val remoteCommitParams = CommitParams(546 sat, 1 msat, UInt64.MaxValue, 50, CltvExpiryDelta(144))
-    val commitmentInput = Transactions.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey, DefaultCommitmentFormat)
+    val commitmentInput = Transactions.makeFundingInputInfo(TxId(dummyBytes32), 0, 150_000 sat, dummyPublicKey, dummyPublicKey, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     val localCommit = LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 100_000_000 msat, 50_000_000 msat), TxId(dummyBytes32), IndividualSignature(ByteVector64.Zeroes), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(2500 sat), 50_000_000 msat, 100_000_000 msat), TxId(dummyBytes32), dummyPublicKey)
     val channelInfo = RES_GET_CHANNEL_INFO(
@@ -137,7 +137,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         Commitments(
           ChannelParams(dummyBytes32, ChannelConfig.standard, ChannelFeatures(), localChannelParams, remoteChannelParams, ChannelFlags(announceChannel = true)),
           CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 1, remoteNextHtlcId = 1),
-          List(Commitment(0, 0, commitmentInput.outPoint, 150_000 sat, dummyPublicKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, DefaultCommitmentFormat, localCommitParams, localCommit, remoteCommitParams, remoteCommit, None)),
+          List(Commitment(0, 0, commitmentInput.outPoint, 150_000 sat, dummyPublicKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.Locked, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, localCommitParams, localCommit, remoteCommitParams, remoteCommit, None)),
           inactive = Nil,
           Right(dummyPublicKey),
           ShaChain.init,
@@ -196,7 +196,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         |         "fundingAmount": 150000,
         |         "localFunding": { "status":"unconfirmed" },
         |         "remoteFunding": { "status":"locked" },
-        |         "commitmentFormat": "legacy",
+        |         "commitmentFormat": "anchor_outputs",
         |         "localCommitParams": {
         |           "dustLimit": 546,
         |           "htlcMinimum": 1,

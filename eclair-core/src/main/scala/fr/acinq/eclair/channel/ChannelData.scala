@@ -786,11 +786,11 @@ object DATA_CLOSED {
     },
     closingAmount = closingType match {
       case Closing.MutualClose(closingTx) => closingTx.toLocalOutput_opt.map(_.amount).getOrElse(0 sat)
-      case Closing.LocalClose(_, localCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, localCommitPublished)
-      case Closing.CurrentRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, remoteCommitPublished)
-      case Closing.NextRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, remoteCommitPublished)
-      case Closing.RecoveryClose(remoteCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, remoteCommitPublished)
-      case Closing.RevokedClose(revokedCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, revokedCommitPublished)
+      case Closing.LocalClose(_, localCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, localCommitPublished)
+      case Closing.CurrentRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, remoteCommitPublished)
+      case Closing.NextRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, remoteCommitPublished)
+      case Closing.RecoveryClose(remoteCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, remoteCommitPublished)
+      case Closing.RevokedClose(revokedCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, revokedCommitPublished)
     }
   )
 }
@@ -805,7 +805,6 @@ case class LocalChannelParams(nodeId: PublicKey,
                               isChannelOpener: Boolean,
                               paysCommitTxFees: Boolean,
                               upfrontShutdownScript_opt: Option[ByteVector],
-                              walletStaticPaymentBasepoint: Option[PublicKey],
                               // Current connection features, or last features used if the channel is disconnected. Note that
                               // these features are updated at each reconnection and may be different from the channel permanent
                               // features (see [[ChannelFeatures]]).

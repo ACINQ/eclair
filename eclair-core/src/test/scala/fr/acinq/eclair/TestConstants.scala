@@ -29,8 +29,8 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
-import fr.acinq.eclair.router.Graph.{MessageWeightRatios, HeuristicsConstants}
 import fr.acinq.eclair.reputation.Reputation
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessageWeightRatios}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{PathFindingExperimentConf, Router}
 import fr.acinq.eclair.wire.protocol._
@@ -110,7 +110,9 @@ object TestConstants {
           Features.Wumbo -> FeatureSupport.Optional,
           Features.PaymentMetadata -> FeatureSupport.Optional,
           Features.RouteBlinding -> FeatureSupport.Optional,
+          Features.ShutdownAnySegwit -> FeatureSupport.Optional,
           Features.StaticRemoteKey -> FeatureSupport.Mandatory,
+          Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Optional,
           Features.Quiescence -> FeatureSupport.Optional,
           Features.SplicePrototype -> FeatureSupport.Optional,
           Features.ProvideStorage -> FeatureSupport.Optional,
@@ -155,7 +157,6 @@ object TestConstants {
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hours,
-        acceptIncomingStaticRemoteKeyChannels = false
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
@@ -265,7 +266,6 @@ object TestConstants {
       nodeParams,
       nodeParams.features.initFeatures(),
       None,
-      None,
       isChannelOpener = true,
       paysCommitTxFees = true,
       dualFunded = false,
@@ -304,6 +304,7 @@ object TestConstants {
         Features.Wumbo -> FeatureSupport.Optional,
         Features.PaymentMetadata -> FeatureSupport.Optional,
         Features.RouteBlinding -> FeatureSupport.Optional,
+        Features.ShutdownAnySegwit -> FeatureSupport.Optional,
         Features.StaticRemoteKey -> FeatureSupport.Mandatory,
         Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Optional,
         Features.Quiescence -> FeatureSupport.Optional,
@@ -347,7 +348,6 @@ object TestConstants {
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hour,
-        acceptIncomingStaticRemoteKeyChannels = false
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
@@ -456,7 +456,6 @@ object TestConstants {
     def channelParams: LocalChannelParams = OpenChannelInterceptor.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
-      None,
       None,
       isChannelOpener = false,
       paysCommitTxFees = false,

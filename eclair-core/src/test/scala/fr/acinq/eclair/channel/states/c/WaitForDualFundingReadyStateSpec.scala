@@ -107,7 +107,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     }
   }
 
-  test("recv ChannelReady", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv ChannelReady", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
     alice.underlyingActor.nodeParams.db.peers.addOrUpdateRelayFees(bob.underlyingActor.nodeParams.nodeId, RelayFees(20 msat, 125))
@@ -168,7 +168,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     bob2alice.expectNoMessage(100 millis)
   }
 
-  test("recv ChannelReady (zero-conf)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("recv ChannelReady (zero-conf)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
 
     val listenerA = TestProbe()
@@ -204,7 +204,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     bob2alice.expectNoMessage(100 millis)
   }
 
-  test("recv ChannelReady (public channel)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+  test("recv ChannelReady (public channel)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
 
     val aliceChannelReady = alice2bob.expectMsgType[ChannelReady]
@@ -255,7 +255,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.nonEmpty)
   }
 
-  test("recv TxInitRbf", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv TxInitRbf", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     alice2bob.expectMsgType[ChannelReady]
     alice ! TxInitRbf(channelId(alice), 0, TestConstants.feeratePerKw * 1.1)
@@ -263,7 +263,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_READY)
   }
 
-  test("recv WatchFundingSpentTriggered (remote commit)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv WatchFundingSpentTriggered (remote commit)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     // bob publishes his commitment tx
     val bobCommitTx = bob.signCommitTx()
@@ -275,7 +275,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(alice.stateName == CLOSING)
   }
 
-  test("recv WatchFundingSpentTriggered (unrecognized commit)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv WatchFundingSpentTriggered (unrecognized commit)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     alice2bob.expectMsgType[ChannelReady]
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
@@ -283,7 +283,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_READY)
   }
 
-  test("recv Error", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv Error", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     val commitTx = alice.signCommitTx()
     alice ! Error(ByteVector32.Zeroes, "dual funding failure")
@@ -295,7 +295,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == commitTx.txid)
   }
 
-  test("recv CMD_CLOSE", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv CMD_CLOSE", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     val sender = TestProbe()
     val c = CMD_CLOSE(sender.ref, None, None)
@@ -303,7 +303,7 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     sender.expectMsg(RES_FAILURE(c, CommandUnavailableInThisState(channelId(alice), "close", WAIT_FOR_DUAL_FUNDING_READY)))
   }
 
-  test("recv CMD_FORCECLOSE", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv CMD_FORCECLOSE", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     val sender = TestProbe()
     val commitTx = alice.signCommitTx()
