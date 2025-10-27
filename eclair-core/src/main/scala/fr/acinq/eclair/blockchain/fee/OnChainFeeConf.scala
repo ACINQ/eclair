@@ -93,6 +93,9 @@ case class OnChainFeeConf(feeTargets: FeeTargets,
       case Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | Transactions.ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat =>
         // If the fee has a large enough change, we update the fee.
         currentFeeratePerKw.toLong == 0 || Math.abs((currentFeeratePerKw.toLong - nextFeeratePerKw.toLong).toDouble / currentFeeratePerKw.toLong) > updateFeeMinDiffRatio
+      case Transactions.ZeroFeeCommitmentFormat =>
+        // We never send update_fee when using zero-fee commitments.
+        false
     }
   }
 
@@ -111,6 +114,7 @@ case class OnChainFeeConf(feeTargets: FeeTargets,
     val networkFeerate = feerates.fast
     val networkMinFee = feerates.minimum
     commitmentFormat match {
+      case Transactions.ZeroFeeCommitmentFormat => FeeratePerKw(0 sat)
       case Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat | Transactions.PhoenixSimpleTaprootChannelCommitmentFormat =>
         // Since Bitcoin Core v28, 1-parent-1-child package relay has been deployed: it should be ok if the commit tx
         // doesn't propagate on its own.
