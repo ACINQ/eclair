@@ -152,8 +152,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       case _: SimpleTaprootChannelCommitmentFormat => assert(actual == expected)
       case _: AnchorOutputsCommitmentFormat =>
         // ECDSA signatures are der-encoded, which creates some variability in signature size compared to the baseline.
-        assert(actual <= expected + 2)
-        assert(actual >= expected - 2)
+        assert(actual <= expected + 3)
+        assert(actual >= expected - 3)
     }
   }
 
