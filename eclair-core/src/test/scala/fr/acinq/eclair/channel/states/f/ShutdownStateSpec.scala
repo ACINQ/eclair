@@ -684,7 +684,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
     // in response to that, alice publishes her claim txs
     val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main")
     // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx])
     val htlcAmountClaimed = claimHtlcTxs.map(claimHtlcTx => {
@@ -730,7 +730,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     // in response to that, alice publishes her claim txs
     val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
     val claimTxs = Seq(
-      alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx,
+      alice2blockchain.expectFinalTxPublished("remote-main").tx,
       // there is only one htlc to claim in the commitment bob published
       alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx].sign()
     )
@@ -766,7 +766,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
 
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main").tx
     val mainPenaltyTx = alice2blockchain.expectFinalTxPublished("main-penalty").tx
     val htlc1PenaltyTx = alice2blockchain.expectFinalTxPublished("htlc-penalty").tx
     val htlc2PenaltyTx = alice2blockchain.expectFinalTxPublished("htlc-penalty").tx
@@ -804,7 +804,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
 
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main").tx
     val mainPenaltyTx = alice2blockchain.expectFinalTxPublished("main-penalty").tx
     val htlcPenaltyTx = alice2blockchain.expectFinalTxPublished("htlc-penalty").tx
     Seq(mainTx, mainPenaltyTx, htlcPenaltyTx).foreach(tx => Transaction.correctlySpends(tx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
