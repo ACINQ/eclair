@@ -1603,7 +1603,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     generateBlocks(1)
 
     val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main")
     val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))
     assert(claimHtlcSuccess.txInfo.isInstanceOf[ClaimHtlcSuccessTx])
     val claimHtlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(overrideHtlcTarget))

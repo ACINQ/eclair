@@ -2803,7 +2803,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // in response to that, alice publishes her claim txs
     val claimAnchor = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx
+    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main").tx
     // in addition to her main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
@@ -2890,7 +2890,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // in response to that, alice publishes her claim txs
     val claimAnchor = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx
+    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main").tx
     // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
@@ -2969,7 +2969,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val rvk = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head
     assert(rvk.htlcOutputs.size == 4)
 
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main").tx
     val mainPenaltyTx = alice2blockchain.expectFinalTxPublished("main-penalty").tx
     val htlcPenaltyTxs = (0 until 4).map(_ => alice2blockchain.expectFinalTxPublished("htlc-penalty").tx)
     // let's make sure that htlc-penalty txs each spend a different output
@@ -3025,7 +3025,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
 
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main").tx
     val mainPenaltyTx = alice2blockchain.expectFinalTxPublished("main-penalty").tx
     val htlcPenaltyTxs = (0 until 2).map(_ => alice2blockchain.expectFinalTxPublished("htlc-penalty").tx)
     // let's make sure that htlc-penalty txs each spend a different output
