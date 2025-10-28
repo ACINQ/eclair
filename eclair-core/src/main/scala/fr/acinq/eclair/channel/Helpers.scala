@@ -1187,7 +1187,7 @@ object Helpers {
     object RemoteClose {
 
       /** Transactions spending outputs of a remote commitment transaction. */
-      case class SecondStageTransactions(mainTx_opt: Option[ClaimRemoteDelayedOutputTx], anchorTx_opt: Option[ClaimRemoteAnchorTx], htlcTxs: Seq[ClaimHtlcTx])
+      case class SecondStageTransactions(mainTx_opt: Option[ClaimRemoteMainOutputTx], anchorTx_opt: Option[ClaimRemoteAnchorTx], htlcTxs: Seq[ClaimHtlcTx])
 
       /** Claim all the outputs that belong to us in the remote commitment transaction (which can be either their current or next commitment). */
       def claimCommitTxOutputs(channelKeys: ChannelKeys, commitment: FullCommitment, remoteCommit: RemoteCommit, commitTx: Transaction, closingFeerate: FeeratePerKw, finalScriptPubKey: ByteVector, spendAnchorWithoutHtlcs: Boolean)(implicit log: LoggingAdapter): (RemoteCommitPublished, SecondStageTransactions) = {
@@ -1224,10 +1224,10 @@ object Helpers {
       }
 
       /** Claim our main output from the remote commitment transaction, if available. */
-      def claimMainOutput(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, dustLimit: Satoshi, commitmentFormat: CommitmentFormat, feerate: FeeratePerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Option[ClaimRemoteDelayedOutputTx] = {
+      def claimMainOutput(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, dustLimit: Satoshi, commitmentFormat: CommitmentFormat, feerate: FeeratePerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Option[ClaimRemoteMainOutputTx] = {
         commitmentFormat match {
-          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat | ZeroFeeCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
-            ClaimRemoteDelayedOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerate, commitmentFormat)
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat | ZeroFeeCommitmentFormat => withTxGenerationLog("remote-main") {
+            ClaimRemoteMainOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerate, commitmentFormat)
           }
         }
       }
@@ -1346,7 +1346,7 @@ object Helpers {
     object RevokedClose {
 
       /** Transactions spending outputs of a revoked remote commitment transactions. */
-      case class SecondStageTransactions(mainTx_opt: Option[ClaimRemoteDelayedOutputTx], mainPenaltyTx_opt: Option[MainPenaltyTx], htlcPenaltyTxs: Seq[HtlcPenaltyTx])
+      case class SecondStageTransactions(mainTx_opt: Option[ClaimRemoteMainOutputTx], mainPenaltyTx_opt: Option[MainPenaltyTx], htlcPenaltyTxs: Seq[HtlcPenaltyTx])
 
       /** Transactions spending outputs of confirmed remote HTLC transactions. */
       case class ThirdStageTransactions(htlcDelayedPenaltyTxs: Seq[ClaimHtlcDelayedOutputPenaltyTx])
@@ -1394,8 +1394,8 @@ object Helpers {
 
         // First we will claim our main output right away.
         val mainTx_opt = commitmentFormat match {
-          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat | ZeroFeeCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
-            ClaimRemoteDelayedOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerateMain, commitmentFormat)
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat | ZeroFeeCommitmentFormat => withTxGenerationLog("remote-main") {
+            ClaimRemoteMainOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerateMain, commitmentFormat)
           }
         }
 
