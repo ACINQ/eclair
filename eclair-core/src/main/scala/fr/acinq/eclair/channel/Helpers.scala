@@ -114,12 +114,6 @@ object Helpers {
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
 
-    // BOLT #2: The receiving node MUST fail the channel if: max_accepted_htlcs is greater than 483.
-    if (open.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
-
-    // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing.
-    if (isFeeTooSmall(open.feeratePerKw)) return Left(FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw))
-
     if (open.dustLimitSatoshis > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, nodeParams.channelConf.maxRemoteDustLimit))
 
     // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
@@ -142,6 +136,12 @@ object Helpers {
       case _: SimpleTaprootChannelCommitmentFormat => if (open.commitNonce_opt.isEmpty) return Left(MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), commitmentNumber = 0))
       case _: SegwitV0CommitmentFormat => ()
     }
+
+    // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing.
+    if (isFeeTooSmall(open.feeratePerKw, channelType)) return Left(FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw))
+
+    // BOLT #2: The receiving node MUST fail the channel if max_accepted_htlcs is too high.
+    if (open.maxAcceptedHtlcs > Channel.maxAcceptedHtlcs(channelType)) return Left(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.maxAcceptedHtlcs(channelType)))
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
     val localFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelType.commitmentFormat)
@@ -178,12 +178,6 @@ object Helpers {
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
 
-    // BOLT #2: The receiving node MUST fail the channel if: max_accepted_htlcs is greater than 483.
-    if (open.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
-
-    // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing.
-    if (isFeeTooSmall(open.commitmentFeerate)) return Left(FeerateTooSmall(open.temporaryChannelId, open.commitmentFeerate))
-
     if (open.dustLimit < Channel.MIN_DUST_LIMIT) return Left(DustLimitTooSmall(open.temporaryChannelId, open.dustLimit, Channel.MIN_DUST_LIMIT))
     if (open.dustLimit > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimit, nodeParams.channelConf.maxRemoteDustLimit))
 
@@ -192,6 +186,12 @@ object Helpers {
       case Right(proposedChannelType) => proposedChannelType
     }
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
+
+    // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing.
+    if (isFeeTooSmall(open.commitmentFeerate, channelType)) return Left(FeerateTooSmall(open.temporaryChannelId, open.commitmentFeerate))
+
+    // BOLT #2: The receiving node MUST fail the channel if max_accepted_htlcs is too high.
+    if (open.maxAcceptedHtlcs > Channel.maxAcceptedHtlcs(channelType)) return Left(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.maxAcceptedHtlcs(channelType)))
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
     val localFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelType.commitmentFormat)
@@ -218,7 +218,7 @@ object Helpers {
       case Right(channelType) => channelType
     }
 
-    if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
+    if (accept.maxAcceptedHtlcs > Channel.maxAcceptedHtlcs(channelType)) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.maxAcceptedHtlcs(channelType)))
 
     if (accept.dustLimitSatoshis > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, accept.dustLimitSatoshis, nodeParams.channelConf.maxRemoteDustLimit))
     if (accept.dustLimitSatoshis < Channel.MIN_DUST_LIMIT) return Left(DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUST_LIMIT))
@@ -268,7 +268,7 @@ object Helpers {
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (accept.pushAmount > accept.fundingAmount) return Left(InvalidPushAmount(accept.temporaryChannelId, accept.pushAmount, accept.fundingAmount.toMilliSatoshi))
 
-    if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
+    if (accept.maxAcceptedHtlcs > Channel.maxAcceptedHtlcs(channelType)) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.maxAcceptedHtlcs(channelType)))
 
     if (accept.dustLimit < Channel.MIN_DUST_LIMIT) return Left(DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimit, Channel.MIN_DUST_LIMIT))
     if (accept.dustLimit > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, accept.dustLimit, nodeParams.channelConf.maxRemoteDustLimit))
@@ -291,8 +291,12 @@ object Helpers {
    * @param remoteFeeratePerKw remote fee rate per kiloweight
    * @return true if the remote fee rate is too small
    */
-  private def isFeeTooSmall(remoteFeeratePerKw: FeeratePerKw): Boolean = {
-    remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
+  private def isFeeTooSmall(remoteFeeratePerKw: FeeratePerKw, channelType: SupportedChannelType): Boolean = {
+    channelType match {
+      case _: ChannelTypes.AnchorOutputs | _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx => remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
+      case _: ChannelTypes.SimpleTaprootChannelsStaging | ChannelTypes.SimpleTaprootChannelsPhoenix => remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
+      case _: ChannelTypes.ZeroFeeCommitments => false
+    }
   }
 
   /** Compute the temporaryChannelId of a dual-funded channel. */
