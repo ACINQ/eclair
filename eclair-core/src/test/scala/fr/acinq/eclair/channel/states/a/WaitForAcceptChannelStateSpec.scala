@@ -138,11 +138,20 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv AcceptChannel (invalid max accepted htlcs)") { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    // spec says max = 483
-    val invalidMaxAcceptedHtlcs = 484
-    alice ! accept.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)
+    alice ! accept.copy(maxAcceptedHtlcs = 484)
     val error = alice2bob.expectMsgType[Error]
-    assert(error == Error(accept.temporaryChannelId, InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage))
+    assert(error == Error(accept.temporaryChannelId, InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, maxAcceptedHtlcs = 484, max = 483).getMessage))
+    listener.expectMsgType[ChannelAborted]
+    awaitCond(alice.stateName == CLOSED)
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
+  }
+
+  test("recv AcceptChannel (invalid max accepted htlcs, zero-fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    alice ! accept.copy(maxAcceptedHtlcs = 115)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error == Error(accept.temporaryChannelId, InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, maxAcceptedHtlcs = 115, max = 114).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
