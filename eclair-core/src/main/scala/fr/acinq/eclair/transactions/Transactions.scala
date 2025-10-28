@@ -81,7 +81,7 @@ object Transactions {
     def claimHtlcTimeoutWeight: Int
     /** Weight of a fully signed [[ClaimLocalDelayedOutputTx]] transaction. */
     def toLocalDelayedWeight: Int
-    /** Weight of a fully signed [[ClaimRemoteDelayedOutputTx]] transaction. */
+    /** Weight of a fully signed [[ClaimRemoteMainOutputTx]] transaction. */
     def toRemoteWeight: Int
     /** Weight of a fully signed [[HtlcDelayedTx]] 3rd-stage transaction (spending the output of an [[HtlcTx]]). */
     def htlcDelayedWeight: Int
@@ -505,13 +505,13 @@ object Transactions {
    * Transactions spending a remote [[CommitTx]] or one of its descendants.
    *
    * When a current remote [[CommitTx]] is published:
-   *    - When using anchor outputs, [[ClaimRemoteDelayedOutputTx]] spends the to-local output of [[CommitTx]]
+   *    - When using anchor outputs, [[ClaimRemoteMainOutputTx]] spends the to-local output of [[CommitTx]]
    *    - When using anchor outputs, [[ClaimRemoteAnchorTx]] spends the to-local anchor of [[CommitTx]]
    *    - [[ClaimHtlcSuccessTx]] spends received htlc outputs of [[CommitTx]] for which we have the preimage
    *    - [[ClaimHtlcTimeoutTx]] spends sent htlc outputs of [[CommitTx]] after a timeout
    *
    * When a revoked remote [[CommitTx]] is published:
-   *    - When using anchor outputs, [[ClaimRemoteDelayedOutputTx]] spends the to-local output of [[CommitTx]]
+   *    - When using anchor outputs, [[ClaimRemoteMainOutputTx]] spends the to-local output of [[CommitTx]]
    *    - [[MainPenaltyTx]] spends the remote main output using the revocation secret
    *    - [[HtlcPenaltyTx]] spends all htlc outputs using the revocation secret (and competes with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] published by the remote node)
    *    - [[ClaimHtlcDelayedOutputPenaltyTx]] spends [[HtlcSuccessTx]] transactions published by the remote node using the revocation secret
@@ -987,9 +987,24 @@ object Transactions {
     }
   }
 
-  /** This transaction spends our main balance from the remote commitment with a 1-block relative delay, or immediately when using v3 commitments. */
-  case class ClaimRemoteDelayedOutputTx(commitKeys: RemoteCommitmentKeys, input: InputInfo, tx: Transaction, commitmentFormat: CommitmentFormat) extends RemoteCommitForceCloseTransaction {
-    override val desc: String = "remote-main-delayed"
+  /**
+   * This transaction spends our main balance from the remote commitment.
+   *
+   * When using [[AnchorOutputsCommitmentFormat]] or [[SimpleTaprootChannelCommitmentFormat]], there is a CSV-1 on the
+   * output to allow CPFP carve-out on the anchor outputs.
+   *
+   * Otherwise, it directly sends to a public key (p2wpkh or p2tr). In theory we could avoid making a 2nd-stage transaction
+   * (and directly use a public key from our bitcoin wallet), but it adds complexity and doesn't work in the case where
+   * we upgrade an anchor outputs channel to v3 during a splice (since the public key was generated when the channel was
+   * opened and cannot be changed afterwards). Another reason to use a 2nd-stage transaction is because that's how we
+   * pay the on-chain fees for the commitment transaction (which doesn't pay any fees) by also spending the P2A output
+   * (which avoids the need for external wallet inputs).
+   * The only case where it is wasteful to have this 2nd-stage transaction is if the remote peer paid the fees for the
+   * remote commitment and it confirmed: in that case, we haven't paid any on-chain fees yet for the force-close, and
+   * our peer has paid for the largest transaction, so it's fine even though it's not optimal.
+   */
+  case class ClaimRemoteMainOutputTx(commitKeys: RemoteCommitmentKeys, input: InputInfo, tx: Transaction, commitmentFormat: CommitmentFormat) extends RemoteCommitForceCloseTransaction {
+    override val desc: String = "remote-main"
     override val expectedWeight: Int = commitmentFormat.toRemoteWeight
 
     override def sign(): Transaction = {
@@ -1012,8 +1027,8 @@ object Transactions {
     }
   }
 
-  object ClaimRemoteDelayedOutputTx {
-    def createUnsignedTx(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimRemoteDelayedOutputTx] = {
+  object ClaimRemoteMainOutputTx {
+    def createUnsignedTx(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, localDustLimit: Satoshi, localFinalScriptPubKey: ByteVector, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Either[TxGenerationSkipped, ClaimRemoteMainOutputTx] = {
       val redeemInfo = commitmentFormat match {
         case _: AnchorOutputsCommitmentFormat =>
           val redeemScript = Script.write(toRemoteDelayed(commitKeys.publicKeys))
@@ -1041,7 +1056,7 @@ object Transactions {
             txOut = TxOut(amount, localFinalScriptPubKey) :: Nil,
             lockTime = 0
           )
-          val unsignedTx = ClaimRemoteDelayedOutputTx(commitKeys, input, tx, commitmentFormat)
+          val unsignedTx = ClaimRemoteMainOutputTx(commitKeys, input, tx, commitmentFormat)
           skipTxIfBelowDust(unsignedTx, localDustLimit)
       }
     }
@@ -1644,7 +1659,7 @@ object Transactions {
       val updatedTx = txInfo.tx.copy(txOut = txInfo.tx.txOut.headOption.map(_.copy(amount = txInfo.amountIn - fee)).toSeq)
       txInfo match {
         case txInfo: ClaimLocalDelayedOutputTx => Right(txInfo.copy(tx = updatedTx))
-        case txInfo: ClaimRemoteDelayedOutputTx => Right(txInfo.copy(tx = updatedTx))
+        case txInfo: ClaimRemoteMainOutputTx => Right(txInfo.copy(tx = updatedTx))
         // Anchor transaction don't have any output: wallet inputs must be used to pay fees.
         case txInfo: ClaimAnchorTx => Left(CannotUpdateFee(txInfo))
         // HTLC transactions are pre-signed, we can't update their fee by lowering the output amount.

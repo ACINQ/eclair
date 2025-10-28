@@ -717,7 +717,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
     val publishedAnchorTx = s2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx].tx
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    val publishedMainTx_opt = remoteCommitPublished.localOutput_opt.map(_ => s2blockchain.expectFinalTxPublished("remote-main-delayed").tx)
+    val publishedMainTx_opt = remoteCommitPublished.localOutput_opt.map(_ => s2blockchain.expectFinalTxPublished("remote-main").tx)
     publishedMainTx_opt.foreach(tx => Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     // all htlcs success/timeout should be claimed
     val publishedClaimHtlcTxs = (0 until htlcSuccessCount + htlcTimeoutCount).map { _ =>

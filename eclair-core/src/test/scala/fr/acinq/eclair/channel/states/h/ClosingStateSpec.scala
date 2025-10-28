@@ -396,7 +396,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Bob claims the htlc output from Alice's commit tx using its preimage.
     bob ! WatchFundingSpentTriggered(lcp.commitTx)
     bob2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    bob2blockchain.expectFinalTxPublished("remote-main-delayed")
+    bob2blockchain.expectFinalTxPublished("remote-main")
     val claimHtlcSuccessTx1 = bob2blockchain.expectReplaceableTxPublished[ClaimHtlcSuccessTx].sign()
     val claimHtlcSuccessTx2 = bob2blockchain.expectReplaceableTxPublished[ClaimHtlcSuccessTx].sign()
     assert(Seq(claimHtlcSuccessTx1, claimHtlcSuccessTx2).flatMap(_.txIn.map(_.outPoint)).toSet == lcp.htlcOutputs)
@@ -501,7 +501,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Alice prepares Claim-HTLC-timeout transactions for each HTLC.
     alice ! WatchFundingSpentTriggered(rcp.commitTx)
     val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main")
     val claimHtlcTimeoutTxs = Seq(htlc1, htlc2, htlc3).map(_ => alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx])
     assert(claimHtlcTimeoutTxs.map(_.htlcId).toSet == Set(htlc1, htlc2, htlc3).map(_.id))
     alice2blockchain.expectWatchTxConfirmed(rcp.commitTx.txid)
@@ -587,7 +587,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Alice prepares Claim-HTLC-timeout transactions for each HTLC.
     alice ! WatchFundingSpentTriggered(rcp.commitTx)
     val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main")
     val claimHtlcTimeoutTxs = Seq(htlc1, htlc2, htlc3).map(_ => alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx])
     assert(claimHtlcTimeoutTxs.map(_.htlcId).toSet == Set(htlc1, htlc2, htlc3).map(_.id))
     alice2blockchain.expectWatchTxConfirmed(rcp.commitTx.txid)
@@ -1546,7 +1546,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Our main transaction should have a lower feerate.
     // HTLC transactions are unchanged: the feerate will be based on their expiry.
     closingTxs.mainTx_opt.foreach(tx => {
-      val tx2 = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+      val tx2 = alice2blockchain.expectFinalTxPublished("remote-main")
       assert(tx2.tx.txIn.head.outPoint == tx.txIn.head.outPoint)
       assert(tx2.tx.txOut.head.amount > tx.txOut.head.amount)
     })
@@ -1706,7 +1706,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectMsgType[WatchFundingSpent]
     // then we should re-publish unconfirmed transactions
     val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    closingTxs.mainTx_opt.foreach(_ => alice2blockchain.expectFinalTxPublished("remote-main-delayed"))
+    closingTxs.mainTx_opt.foreach(_ => alice2blockchain.expectFinalTxPublished("remote-main"))
     val htlcTimeoutTxs = closingTxs.htlcTxs.map(_ => alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx])
     assert(htlcTimeoutTxs.map(_.input.outPoint).toSet == closingTxs.htlcTxs.map(_.txIn.head.outPoint).toSet)
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
@@ -1761,7 +1761,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     // alice is able to claim its main output
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(mainTx.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
     alice2blockchain.expectWatchOutputSpent(mainTx.input)
@@ -1778,7 +1778,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
     // alice is able to claim its main output
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(mainTx.tx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
     alice2blockchain.expectWatchOutputSpent(mainTx.input)
@@ -1802,7 +1802,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSING)
 
     // bob republishes his main transaction
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main")
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, bobCommitTx)
     alice ! WatchTxConfirmedTriggered(BlockHeight(0), 0, mainTx.tx)
@@ -1882,7 +1882,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(rvk.htlcDelayedOutputs.isEmpty)
 
     // alice publishes the penalty txs
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main")
     val mainPenaltyTx = alice2blockchain.expectFinalTxPublished("main-penalty")
     Transaction.correctlySpends(mainPenaltyTx.tx, bobRevokedTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     val htlcPenaltyTxs = (0 until 2).map(_ => alice2blockchain.expectFinalTxPublished("htlc-penalty"))
@@ -1948,7 +1948,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.last.commitTx == revokedTx)
 
       // alice publishes penalty txs
-      val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+      val mainTx = alice2blockchain.expectFinalTxPublished("remote-main")
       val mainPenalty = alice2blockchain.expectFinalTxPublished("main-penalty")
       val htlcPenaltyTxs = (1 to htlcCount).map(_ => alice2blockchain.expectFinalTxPublished("htlc-penalty"))
       (mainTx.tx +: mainPenalty.tx +: htlcPenaltyTxs.map(_.tx)).foreach(tx => Transaction.correctlySpends(tx, revokedTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
@@ -1992,7 +1992,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // the commit tx hasn't been confirmed yet, so we watch the funding output first
     alice2blockchain.expectMsgType[WatchFundingSpent]
     // then we should re-publish unconfirmed transactions
-    alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    alice2blockchain.expectFinalTxPublished("remote-main")
     assert(alice2blockchain.expectFinalTxPublished("main-penalty").input == closingTxs.mainPenaltyTx.txIn.head.outPoint)
     val htlcPenaltyTxs = closingTxs.htlcPenaltyTxs.map(_ => alice2blockchain.expectFinalTxPublished("htlc-penalty"))
     assert(htlcPenaltyTxs.map(_.input).toSet == closingTxs.htlcPenaltyTxs.map(_.txIn.head.outPoint).toSet)
@@ -2033,7 +2033,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(rvk.htlcDelayedOutputs.isEmpty)
 
     // alice publishes the penalty txs and watches outputs
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main")
     val mainPenalty = alice2blockchain.expectFinalTxPublished("main-penalty")
     val htlcPenalty = (1 to 4).map(_ => alice2blockchain.expectFinalTxPublished("htlc-penalty"))
     alice2blockchain.expectWatchTxConfirmed(rvk.commitTx.txid)
@@ -2121,7 +2121,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(rvk.htlcDelayedOutputs.isEmpty)
 
     // alice publishes the penalty txs and watches outputs
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main")
     val mainPenalty = alice2blockchain.expectFinalTxPublished("main-penalty")
     val htlcPenalty = (1 to 4).map(_ => alice2blockchain.expectFinalTxPublished("htlc-penalty"))
     alice2blockchain.expectWatchTxConfirmed(rvk.commitTx.txid)
@@ -2193,7 +2193,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice.commitments.latest.commitmentFormat == commitmentFormat)
 
     // Alice publishes the penalty txs and watches outputs.
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main")
     val mainPenalty = alice2blockchain.expectFinalTxPublished("main-penalty")
     val htlcPenalty = (1 to 4).map(_ => alice2blockchain.expectFinalTxPublished("htlc-penalty"))
     alice2blockchain.expectWatchTxConfirmed(commitTx.txid)
@@ -2257,7 +2257,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSING)
 
     // We re-publish closing transactions with a higher feerate.
-    val mainTx2 = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val mainTx2 = alice2blockchain.expectFinalTxPublished("remote-main")
     assert(mainTx2.input == mainTx.input)
     assert(mainTx2.tx.txOut.head.amount < mainTx.tx.txOut.head.amount)
     Transaction.correctlySpends(mainTx2.tx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
