@@ -98,6 +98,8 @@ object ChannelStateTestsTags {
   val OptionSimpleTaprootPhoenix = "option_simple_taproot_phoenix"
   /** If set, channels will use taproot. */
   val OptionSimpleTaproot = "option_simple_taproot"
+  /** If set, channel will use zero-fee commitments. */
+  val ZeroFeeCommitments = "zero_fee_commitments"
 }
 
 trait ChannelStateTestsBase extends Assertions with Eventually {
@@ -142,7 +144,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
         dualFunded = dualFunded,
         commitTxFeerate = channelType match {
           case _: ChannelTypes.AnchorOutputs | ChannelTypes.SimpleTaprootChannelsPhoenix => TestConstants.phoenixCommitFeeratePerKw
-          case _ => TestConstants.anchorOutputsFeeratePerKw
+          case _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx | _: ChannelTypes.SimpleTaprootChannel => TestConstants.anchorOutputsFeeratePerKw
+          case _: ChannelTypes.ZeroFeeCommitments => FeeratePerKw(0 sat)
         },
         fundingTxFeerate = TestConstants.feeratePerKw,
         fundingTxFeeBudget_opt = None,
@@ -265,6 +268,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputsPhoenix))(_.removed(Features.AnchorOutputsZeroFeeHtlcTx).updated(Features.AnchorOutputs, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaproot))(_.updated(Features.SimpleTaprootChannels, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix))(_.removed(Features.SimpleTaprootChannels).updated(Features.SimpleTaprootChannelsPhoenix, FeatureSupport.Optional).updated(Features.PhoenixZeroReserve, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroFeeCommitments))(_.updated(Features.ZeroFeeCommitments, FeatureSupport.Optional))
     )
     val nodeParamsB1 = nodeParamsB.copy(features = nodeParamsB.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableWumbo))(_.removed(Features.Wumbo))
@@ -277,6 +281,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputsPhoenix))(_.removed(Features.AnchorOutputsZeroFeeHtlcTx).updated(Features.AnchorOutputs, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaproot))(_.updated(Features.SimpleTaprootChannels, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix))(_.removed(Features.SimpleTaprootChannels).updated(Features.SimpleTaprootChannelsPhoenix, FeatureSupport.Optional).updated(Features.PhoenixZeroReserve, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroFeeCommitments))(_.updated(Features.ZeroFeeCommitments, FeatureSupport.Optional))
     )
     (nodeParamsA1, nodeParamsB1)
   }
@@ -287,7 +292,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     val scidAlias = canUse(Features.ScidAlias) && !announceChannel // alias feature is incompatible with public channel
     val zeroConf = canUse(Features.ZeroConf)
-    if (canUse(Features.SimpleTaprootChannels)) {
+    if (canUse(Features.ZeroFeeCommitments)) {
+      ChannelTypes.ZeroFeeCommitments(scidAlias, zeroConf)
+    } else if (canUse(Features.SimpleTaprootChannels)) {
       ChannelTypes.SimpleTaprootChannel(scidAlias, zeroConf)
     } else if (canUse(Features.SimpleTaprootChannelsPhoenix)) {
       ChannelTypes.SimpleTaprootChannelsPhoenix
