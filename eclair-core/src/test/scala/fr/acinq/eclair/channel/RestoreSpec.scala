@@ -60,7 +60,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     alice.stop()
 
     // we restart Alice
-    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(Alice.nodeParams, Alice.channelKeys(), wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(Alice.nodeParams, Alice.channelKeys(), aliceWallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     newAlice ! INPUT_RESTORED(oldStateData)
 
     // then we reconnect them
@@ -136,7 +136,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     alice.stop()
 
     // we restart Alice
-    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(Alice.nodeParams, Alice.channelKeys(), wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(Alice.nodeParams, Alice.channelKeys(), aliceWallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     newAlice ! INPUT_RESTORED(oldStateData)
 
     newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
@@ -188,7 +188,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
         .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setTo(2345)
         .modify(_.channelConf.expiryDelta).setTo(CltvExpiryDelta(147)),
     ) foreach { newConfig =>
-      val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, Alice.channelKeys(), wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+      val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, Alice.channelKeys(), aliceWallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
       newAlice ! INPUT_RESTORED(oldStateData)
 
       val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]

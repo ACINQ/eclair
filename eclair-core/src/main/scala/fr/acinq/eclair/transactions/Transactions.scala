@@ -18,11 +18,11 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.SigVersion._
-import fr.acinq.bitcoin.crypto.musig2.{IndividualNonce, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.bitcoin.{ScriptFlags, ScriptTree}
+import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature
@@ -171,10 +171,12 @@ object Transactions {
   sealed trait TaprootCommitmentFormat extends CommitmentFormat
 
   sealed trait SimpleTaprootChannelCommitmentFormat extends TaprootCommitmentFormat {
-    // weights for taproot transactions are deterministic since signatures are encoded as 64 bytes and
-    // not in variable length DER format (around 72 bytes)
+    // Weights for taproot transactions are deterministic since signatures are encoded as 64 bytes and not in variable
+    // length DER format like ECDSA (which is used for segwit v0 commitment formats).
     override val fundingInputWeight = 230
-    override val commitWeight = 960
+    // Note that the commit weight assumes that the number of outputs is encoded using 3 bytes, to handle the case
+    // where we have a lot of HTLCs pending.
+    override val commitWeight = 968
     override val anchorInputWeight = 230
     override val htlcOutputWeight = 172
     override val htlcTimeoutWeight = 645
@@ -237,14 +239,12 @@ object Transactions {
      * @param leafHash    hash of the leaf script we're spending (must belong to the tree).
      */
     case class TaprootScriptPath(internalKey: XonlyPublicKey, scriptTree: ScriptTree, leafHash: ByteVector32) extends Taproot {
-      val leaf: ScriptTree.Leaf = Option(scriptTree.findScript(leafHash)).getOrElse(throw new IllegalArgumentException("script tree must contain the provided leaf"))
+      val leaf: ScriptTree.Leaf = scriptTree.findScript(leafHash).getOrElse(throw new IllegalArgumentException("script tree must contain the provided leaf"))
       val redeemScript: ByteVector = leaf.getScript
       override val pubkeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, Some(scriptTree)))
     }
   }
   // @formatter:on
-
-  case class LocalNonce(secretNonce: SecretNonce, publicNonce: IndividualNonce)
 
   sealed trait TransactionWithInputInfo {
     // @formatter:off

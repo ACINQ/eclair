@@ -27,6 +27,7 @@ import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
+import fr.acinq.eclair.router.Router.MultiPartParams.FullCapacity
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshiLong, NodeParams, TimestampMilli}
 import scodec.bits.ByteVector
@@ -57,7 +58,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   when(WAIT_FOR_PAYMENT_REQUEST) {
     case Event(r: SendMultiPartPayment, _) =>
-      val routeParams = r.routeParams.copy(randomize = false) // we don't randomize the first attempt, regardless of configuration choices
+      val routeParams = r.routeParams.copy(randomize = false, mpp = r.routeParams.mpp.copy(splittingStrategy = FullCapacity)) // we don't randomize the first attempt, regardless of configuration choices
       log.debug("sending {} with maximum fee {}", r.recipient.totalAmount, r.routeParams.getMaxFee(r.recipient.totalAmount))
       val d = PaymentProgress(r, r.maxAttempts, Map.empty, Ignore.empty, retryRouteRequest = false, failures = Nil)
       router ! createRouteRequest(self, nodeParams, routeParams, d, cfg)

@@ -226,9 +226,9 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
     primary.updateChannelMeta(channelId, event)
   }
 
-  override def removeChannel(channelId: ByteVector32): Unit = {
-    runAsync(secondary.removeChannel(channelId))
-    primary.removeChannel(channelId)
+  override def removeChannel(channelId: ByteVector32, data_opt: Option[DATA_CLOSED]): Unit = {
+    runAsync(secondary.removeChannel(channelId, data_opt))
+    primary.removeChannel(channelId, data_opt)
   }
 
   override def markHtlcInfosForRemoval(channelId: ByteVector32, beforeCommitIndex: Long): Unit = {
@@ -246,7 +246,7 @@ case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends Ch
     primary.listLocalChannels()
   }
 
-  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = {
+  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[DATA_CLOSED] = {
     runAsync(secondary.listClosedChannels(remoteNodeId_opt, paginated_opt))
     primary.listClosedChannels(remoteNodeId_opt, paginated_opt)
   }

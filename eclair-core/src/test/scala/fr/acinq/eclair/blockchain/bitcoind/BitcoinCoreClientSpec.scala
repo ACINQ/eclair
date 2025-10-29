@@ -54,7 +54,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
   implicit val formats: Formats = DefaultFormats
 
-  val defaultAddressType_opt: Option[String] = Some("bech32")
+  val defaultAddressType_opt: Option[String] = Some("bech32m")
 
   override def beforeAll(): Unit = {
     // Note that we don't specify a default change address type, allowing bitcoind to choose between p2wpkh and p2tr.
@@ -90,10 +90,10 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
     val bitcoinClient = makeBitcoinCoreClient()
 
-    // wallet is configured with address_type=bech32
+    // wallet is configured with address_type=bech32m
     bitcoinClient.getReceiveAddress(None).pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
-    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).map(Script.isPay2wpkh).contains(true))
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).map(Script.isPay2tr).contains(true))
 
     bitcoinClient.getReceiveAddress(Some(AddressType.P2wpkh)).pipeTo(sender.ref)
     val address1 = sender.expectMsgType[String]
@@ -108,10 +108,10 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
     val bitcoinClient = makeBitcoinCoreClient()
 
-    // wallet is configured with address_type=bech32
+    // wallet is configured with address_type=bech32m
     bitcoinClient.getChangeAddress(None).pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
-    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).map(Script.isPay2wpkh).contains(true))
+    assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address).map(Script.isPay2tr).contains(true))
 
     bitcoinClient.getChangeAddress(Some(AddressType.P2wpkh)).pipeTo(sender.ref)
     val address1 = sender.expectMsgType[String]
@@ -1746,11 +1746,11 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
     val bitcoinClient = makeBitcoinCoreClient()
 
-    // eclair on-chain key manager does not yet support taproot descriptors
+    // eclair on-chain key manager supports taproot descriptors
     bitcoinClient.getReceiveAddress().pipeTo(sender.ref)
     val defaultAddress = sender.expectMsgType[String]
     val decoded = Bech32.decodeWitnessAddress(defaultAddress)
-    assert(decoded.getSecond == 0)
+    assert(decoded.getSecond == 1)
 
     // But we can explicitly use segwit v0 addresses.
     bitcoinClient.getP2wpkhPubkey().pipeTo(sender.ref)
@@ -2015,13 +2015,13 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     assert(wallet.onChainKeyManager_opt.get.masterPubKey(0, AddressType.P2wpkh) == accountXPub)
 
     (0 to 10).foreach { _ =>
-      wallet.getReceiveAddress().pipeTo(sender.ref)
+      wallet.getReceiveAddress(Some(AddressType.P2wpkh)).pipeTo(sender.ref)
       val address = sender.expectMsgType[String]
       val bip32path = getBip32Path(wallet, address, sender)
       assert(bip32path.path.length == 5 && bip32path.toString().startsWith("m/84'/1'/0'/0"))
       assert(computeBIP84Address(master.derivePrivateKey(bip32path).publicKey, Block.RegtestGenesisBlock.hash) == address)
 
-      wallet.getChangeAddress().pipeTo(sender.ref)
+      wallet.getChangeAddress(Some(AddressType.P2wpkh)).pipeTo(sender.ref)
       val changeAddress = sender.expectMsgType[String]
       val bip32ChangePath = getBip32Path(wallet, changeAddress, sender)
       assert(bip32ChangePath.path.length == 5 && bip32ChangePath.toString().startsWith("m/84'/1'/0'/1"))

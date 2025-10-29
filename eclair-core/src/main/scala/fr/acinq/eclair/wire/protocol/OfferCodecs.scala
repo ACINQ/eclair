@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.scalacompat.BlockHash
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedHop, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
@@ -30,7 +29,7 @@ import java.util.Currency
 import scala.util.Try
 
 object OfferCodecs {
-  private val offerChains: Codec[OfferChains] = tlvField(list(blockHash).xmap[Seq[BlockHash]](_.toSeq, _.toList))
+  private val offerChains: Codec[OfferChains] = tlvField(nonEmptyList(blockHash, "offer_chains"))
 
   private val offerMetadata: Codec[OfferMetadata] = tlvField(bytes)
 
@@ -76,7 +75,7 @@ object OfferCodecs {
       ("firstPathKey" | publicKey) ::
       ("path" | blindedNodesCodec)).as[BlindedRoute]
 
-  private val offerPaths: Codec[OfferPaths] = tlvField(list(blindedRouteCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList))
+  private val offerPaths: Codec[OfferPaths] = tlvField(nonEmptyList(blindedRouteCodec, "offer_paths"))
 
   private val offerIssuer: Codec[OfferIssuer] = tlvField(utf8)
 
@@ -138,7 +137,7 @@ object OfferCodecs {
     .typecase(UInt64(240), signature)
   ).complete)
 
-  private val invoicePaths: Codec[InvoicePaths] = tlvField(list(blindedRouteCodec).xmap[Seq[BlindedRoute]](_.toSeq, _.toList))
+  private val invoicePaths: Codec[InvoicePaths] = tlvField(nonEmptyList(blindedRouteCodec, "invoice_paths"))
 
   val paymentInfo: Codec[PaymentInfo] =
     (("fee_base_msat" | millisatoshi32) ::
@@ -148,7 +147,7 @@ object OfferCodecs {
       ("htlc_maximum_msat" | millisatoshi) ::
       ("features" | variableSizeBytes(uint16, bytes))).as[PaymentInfo]
 
-  private val invoiceBlindedPay: Codec[InvoiceBlindedPay] = tlvField(list(paymentInfo).xmap[Seq[PaymentInfo]](_.toSeq, _.toList))
+  private val invoiceBlindedPay: Codec[InvoiceBlindedPay] = tlvField(nonEmptyList(paymentInfo, "invoice_blindedpay"))
 
   private val invoiceCreatedAt: Codec[InvoiceCreatedAt] = tlvField(tu64overflow.as[TimestampSecond])
 

@@ -17,16 +17,16 @@
 package fr.acinq.eclair.db.pg
 
 import com.zaxxer.hikari.util.IsolationLevel
-import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.channel.PersistentChannelData
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, TxId}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.channelDataCodec
-import fr.acinq.eclair.{CltvExpiry, Paginated}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
@@ -36,7 +36,7 @@ import javax.sql.DataSource
 
 object PgChannelsDb {
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 11
+  val CURRENT_VERSION = 12
 }
 
 class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb with Logging {
@@ -49,106 +49,95 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
-
-      def migration23(statement: Statement): Unit = {
-        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN created_timestamp BIGINT")
-        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_sent_timestamp BIGINT")
-        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_received_timestamp BIGINT")
-        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_connected_timestamp BIGINT")
-        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN closed_timestamp BIGINT")
-      }
-
-      def migration34(statement: Statement): Unit = {
-        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN created_timestamp SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + created_timestamp * interval '1 millisecond'")
-        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN last_payment_sent_timestamp SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + last_payment_sent_timestamp * interval '1 millisecond'")
-        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN last_payment_received_timestamp SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + last_payment_received_timestamp * interval '1 millisecond'")
-        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN last_connected_timestamp SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + last_connected_timestamp * interval '1 millisecond'")
-        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN closed_timestamp SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + closed_timestamp * interval '1 millisecond'")
-
-        statement.executeUpdate("ALTER TABLE htlc_infos ALTER COLUMN commitment_number SET DATA TYPE BIGINT USING commitment_number::BIGINT")
-      }
-
-      def migration45(statement: Statement): Unit = {
-        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN json JSONB")
-        resetJsonColumns(pg, oldTableName = true)
-        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN json SET NOT NULL")
-        statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local_channels ((json->>'type'))")
-        statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local_channels ((json->'commitments'->'params'->'remoteParams'->>'nodeId'))")
-      }
-
-      def migration56(statement: Statement): Unit = {
-        statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
-        statement.executeUpdate("ALTER TABLE local_channels SET SCHEMA local")
-        statement.executeUpdate("ALTER TABLE local.local_channels RENAME TO channels")
-        statement.executeUpdate("ALTER TABLE htlc_infos SET SCHEMA local")
-      }
-
-      def migration67(): Unit = {
-        migrateTable(pg, pg,
-          "local.channels",
-          "UPDATE local.channels SET data=?, json=?::JSONB WHERE channel_id=?",
-          (rs, statement) => {
-            // This forces a re-serialization of the channel data with latest codecs, because as of codecs v3 we don't
-            // store local commitment signatures anymore, and we want to clean up existing data
-            val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
-            val data = channelDataCodec.encode(state).require.toByteArray
-            val json = serialization.write(state)
-            statement.setBytes(1, data)
-            statement.setString(2, json)
-            statement.setString(3, state.channelId.toHex)
+      /**
+       * Before version 12, closed channels were directly kept in the local_channels table with an is_closed flag set to true.
+       * We move them to a dedicated table, where we keep minimal channel information.
+       */
+      def migration1112(statement: Statement): Unit = {
+        // We start by dropping for foreign key constraint on htlc_infos, otherwise we won't be able to move recently
+        // closed channels to a different table.
+        statement.executeQuery("SELECT conname FROM pg_catalog.pg_constraint WHERE contype = 'f'").map(rs => rs.getString("conname")).headOption match {
+          case Some(foreignKeyConstraint) => statement.executeUpdate(s"ALTER TABLE local.htlc_infos DROP CONSTRAINT $foreignKeyConstraint")
+          case None => logger.warn("couldn't find foreign key constraint for htlc_infos table: DB migration may fail")
+        }
+        // We can now move closed channels to a dedicated table.
+        statement.executeUpdate("CREATE TABLE local.channels_closed (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, funding_output_index BIGINT NOT NULL, funding_tx_index BIGINT NOT NULL, funding_key_path TEXT NOT NULL, channel_features TEXT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis BIGINT NOT NULL, closing_txid TEXT NOT NULL, closing_type TEXT NOT NULL, closing_script TEXT NOT NULL, local_balance_msat BIGINT NOT NULL, remote_balance_msat BIGINT NOT NULL, closing_amount_satoshis BIGINT NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL, closed_at TIMESTAMP WITH TIME ZONE NOT NULL)")
+        statement.executeUpdate("CREATE INDEX channels_closed_remote_node_id_idx ON local.channels_closed(remote_node_id)")
+        // We migrate closed channels from the local_channels table to the new channels_closed table, whenever possible.
+        val insertStatement = pg.prepareStatement("INSERT INTO local.channels_closed VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        val batchSize = 50
+        using(pg.prepareStatement("SELECT channel_id, data, is_closed, created_timestamp, closed_timestamp FROM local.channels WHERE is_closed=TRUE")) { queryStatement =>
+          val rs = queryStatement.executeQuery()
+          var inserted = 0
+          var batchCount = 0
+          while (rs.next()) {
+            val channelId = rs.getByteVector32FromHex("channel_id")
+            val data_opt = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value match {
+              case d: DATA_NEGOTIATING_SIMPLE =>
+                // We didn't store which closing transaction actually confirmed, so we select the most likely one.
+                // The simple_close feature wasn't widely supported before this migration, so this shouldn't affect a lot of channels.
+                val closingTx = d.publishedClosingTxs.lastOption.getOrElse(d.proposedClosingTxs.last.preferred_opt.get)
+                Some(DATA_CLOSED(d, closingTx))
+              case d: DATA_CLOSING =>
+                Helpers.Closing.isClosingTypeAlreadyKnown(d) match {
+                  case Some(closingType) => Some(DATA_CLOSED(d, closingType))
+                  // If the closing type cannot be inferred from the stored data, it must be a mutual close.
+                  // In that case, we didn't store which closing transaction actually confirmed, so we select the most likely one.
+                  case None if d.mutualClosePublished.nonEmpty => Some(DATA_CLOSED(d, Helpers.Closing.MutualClose(d.mutualClosePublished.last)))
+                  case None =>
+                    logger.warn(s"cannot move channel_id=$channelId to the channels_closed table, unknown closing_type")
+                    None
+                }
+              case d =>
+                logger.warn(s"cannot move channel_id=$channelId to the channels_closed table (state=${d.getClass.getSimpleName})")
+                None
+            }
+            data_opt match {
+              case Some(data) =>
+                insertStatement.setString(1, channelId.toHex)
+                insertStatement.setString(2, data.remoteNodeId.toHex)
+                insertStatement.setString(3, data.fundingTxId.value.toHex)
+                insertStatement.setLong(4, data.fundingOutputIndex)
+                insertStatement.setLong(5, data.fundingTxIndex)
+                insertStatement.setString(6, data.fundingKeyPath)
+                insertStatement.setString(7, data.channelFeatures)
+                insertStatement.setBoolean(8, data.isChannelOpener)
+                insertStatement.setString(9, data.commitmentFormat)
+                insertStatement.setBoolean(10, data.announced)
+                insertStatement.setLong(11, data.capacity.toLong)
+                insertStatement.setString(12, data.closingTxId.value.toHex)
+                insertStatement.setString(13, data.closingType)
+                insertStatement.setString(14, data.closingScript.toHex)
+                insertStatement.setLong(15, data.localBalance.toLong)
+                insertStatement.setLong(16, data.remoteBalance.toLong)
+                insertStatement.setLong(17, data.closingAmount.toLong)
+                insertStatement.setTimestamp(18, rs.getTimestampNullable("created_timestamp").getOrElse(Timestamp.from(Instant.ofEpochMilli(0))))
+                insertStatement.setTimestamp(19, rs.getTimestampNullable("closed_timestamp").getOrElse(Timestamp.from(Instant.ofEpochMilli(0))))
+                insertStatement.addBatch()
+                batchCount = batchCount + 1
+                if (batchCount % batchSize == 0) {
+                  inserted = inserted + insertStatement.executeBatch().sum
+                  batchCount = 0
+                }
+              case None => ()
+            }
           }
-        )(logger)
-      }
-
-      def migration78(statement: Statement): Unit = {
-        statement.executeUpdate("DROP INDEX IF EXISTS local.local_channels_remote_node_id_idx")
-        statement.executeUpdate("ALTER TABLE local.channels ADD COLUMN remote_node_id TEXT")
-        migrateTable(pg, pg,
-          "local.channels",
-          "UPDATE local.channels SET remote_node_id=? WHERE channel_id=?",
-          (rs, statement) => {
-            val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
-            statement.setString(1, state.remoteNodeId.toHex)
-            statement.setString(2, state.channelId.toHex)
-          })(logger)
-        statement.executeUpdate("ALTER TABLE local.channels ALTER COLUMN remote_node_id SET NOT NULL")
-        statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local.channels(remote_node_id)")
-      }
-
-      def migration89(statement: Statement): Unit = {
-        statement.executeUpdate("CREATE TABLE local.htlc_infos_to_remove (channel_id TEXT NOT NULL PRIMARY KEY, before_commitment_number BIGINT NOT NULL)")
-      }
-
-      def migration910(statement: Statement): Unit = {
-        // We're changing our composite index to two distinct indices to improve performance.
-        statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON local.htlc_infos(channel_id)")
-        statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON local.htlc_infos(commitment_number)")
-        statement.executeUpdate("DROP INDEX IF EXISTS local.htlc_infos_idx")
-      }
-
-      def migration1011(statement: Statement): Unit = {
-        migrateTable(pg, pg,
-          "local.channels",
-          "UPDATE local.channels SET data=?, json=?::JSONB WHERE channel_id=?",
-          (rs, statement) => {
-            // This forces a re-serialization of the channel data with latest codecs, because we want to remove support
-            // for codecs older than v5 in the next release.
-            val state = channelDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
-            val data = channelDataCodec.encode(state).require.toByteArray
-            val json = serialization.write(state)
-            statement.setBytes(1, data)
-            statement.setString(2, json)
-            statement.setString(3, state.channelId.toHex)
-          }
-        )(logger)
+          inserted = inserted + insertStatement.executeBatch().sum
+          logger.info(s"moved $inserted channels to the channels_closed table")
+        }
+        // We can now clean-up the active channels table.
+        statement.executeUpdate("DELETE FROM local.channels WHERE is_closed=TRUE")
+        statement.executeUpdate("ALTER TABLE local.channels DROP COLUMN is_closed")
+        statement.executeUpdate("ALTER TABLE local.channels DROP COLUMN closed_timestamp")
       }
 
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
 
-          statement.executeUpdate("CREATE TABLE local.channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, data BYTEA NOT NULL, json JSONB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE, created_timestamp TIMESTAMP WITH TIME ZONE, last_payment_sent_timestamp TIMESTAMP WITH TIME ZONE, last_payment_received_timestamp TIMESTAMP WITH TIME ZONE, last_connected_timestamp TIMESTAMP WITH TIME ZONE, closed_timestamp TIMESTAMP WITH TIME ZONE)")
-          statement.executeUpdate("CREATE TABLE local.htlc_infos (channel_id TEXT NOT NULL, commitment_number BIGINT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local.channels(channel_id))")
+          statement.executeUpdate("CREATE TABLE local.channels (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, data BYTEA NOT NULL, json JSONB NOT NULL, created_timestamp TIMESTAMP WITH TIME ZONE, last_payment_sent_timestamp TIMESTAMP WITH TIME ZONE, last_payment_received_timestamp TIMESTAMP WITH TIME ZONE, last_connected_timestamp TIMESTAMP WITH TIME ZONE)")
+          statement.executeUpdate("CREATE TABLE local.channels_closed (channel_id TEXT NOT NULL PRIMARY KEY, remote_node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, funding_output_index BIGINT NOT NULL, funding_tx_index BIGINT NOT NULL, funding_key_path TEXT NOT NULL, channel_features TEXT NOT NULL, is_channel_opener BOOLEAN NOT NULL, commitment_format TEXT NOT NULL, announced BOOLEAN NOT NULL, capacity_satoshis BIGINT NOT NULL, closing_txid TEXT NOT NULL, closing_type TEXT NOT NULL, closing_script TEXT NOT NULL, local_balance_msat BIGINT NOT NULL, remote_balance_msat BIGINT NOT NULL, closing_amount_satoshis BIGINT NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL, closed_at TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE local.htlc_infos (channel_id TEXT NOT NULL, commitment_number BIGINT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL)")
           statement.executeUpdate("CREATE TABLE local.htlc_infos_to_remove (channel_id TEXT NOT NULL PRIMARY KEY, before_commitment_number BIGINT NOT NULL)")
 
           statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local.channels ((json->>'type'))")
@@ -157,35 +146,11 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           // This is more efficient because we're writing a lot to this table but only reading when a channel is force-closed.
           statement.executeUpdate("CREATE INDEX htlc_infos_channel_id_idx ON local.htlc_infos(channel_id)")
           statement.executeUpdate("CREATE INDEX htlc_infos_commitment_number_idx ON local.htlc_infos(commitment_number)")
-        case Some(v@(2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10)) =>
+          statement.executeUpdate("CREATE INDEX channels_closed_remote_node_id_idx ON local.channels_closed(remote_node_id)")
+        case Some(v) if v < 11 => throw new RuntimeException("You are updating from a version of eclair older than v0.13.0: please update to the v0.13.0 release first to migrate your channel data, and afterwards you'll be able to update to the latest version.")
+        case Some(v@11) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-          if (v < 3) {
-            migration23(statement)
-          }
-          if (v < 4) {
-            migration34(statement)
-          }
-          if (v < 5) {
-            migration45(statement)
-          }
-          if (v < 6) {
-            migration56(statement)
-          }
-          if (v < 7) {
-            migration67()
-          }
-          if (v < 8) {
-            migration78(statement)
-          }
-          if (v < 9) {
-            migration89(statement)
-          }
-          if (v < 10) {
-            migration910(statement)
-          }
-          if (v < 11) {
-            migration1011(statement)
-          }
+          if (v < 12) migration1112(statement)
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
@@ -213,8 +178,8 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       val encoded = channelDataCodec.encode(data).require.toByteArray
       using(pg.prepareStatement(
         """
-          | INSERT INTO local.channels (channel_id, remote_node_id, data, json, created_timestamp, last_connected_timestamp, is_closed)
-          | VALUES (?, ?, ?, ?::JSONB, ?, ?, FALSE)
+          | INSERT INTO local.channels (channel_id, remote_node_id, data, json, created_timestamp, last_connected_timestamp)
+          | VALUES (?, ?, ?, ?::JSONB, ?, ?)
           | ON CONFLICT (channel_id)
           | DO UPDATE SET data = EXCLUDED.data, json = EXCLUDED.json ;
           | """.stripMargin)) { statement =>
@@ -231,7 +196,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
   override def getChannel(channelId: ByteVector32): Option[PersistentChannelData] = withMetrics("channels/get-channel", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("SELECT data FROM local.channels WHERE channel_id=? AND is_closed=FALSE")) { statement =>
+      using(pg.prepareStatement("SELECT data FROM local.channels WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.executeQuery.mapCodec(channelDataCodec).lastOption
       }
@@ -259,7 +224,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     timestampColumn_opt.foreach(updateChannelMetaTimestampColumn(channelId, _))
   }
 
-  override def removeChannel(channelId: ByteVector32): Unit = withMetrics("channels/remove-channel", DbBackends.Postgres) {
+  override def removeChannel(channelId: ByteVector32, data_opt: Option[DATA_CLOSED]): Unit = withMetrics("channels/remove-channel", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("DELETE FROM local.pending_settlement_commands WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
@@ -270,9 +235,39 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       // We instead run an asynchronous job to clean up that data in small batches.
       markHtlcInfosForRemoval(channelId, Long.MaxValue)
 
-      using(pg.prepareStatement("UPDATE local.channels SET is_closed=TRUE, closed_timestamp=? WHERE channel_id=?")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.now()))
-        statement.setString(2, channelId.toHex)
+      // If we have useful closing data for this channel, we keep it in a dedicated table.
+      data_opt.foreach(data => {
+        val createdAt_opt = using(pg.prepareStatement("SELECT created_timestamp FROM local.channels WHERE channel_id=?")) { statement =>
+          statement.setString(1, channelId.toHex)
+          statement.executeQuery().flatMap(rs => rs.getTimestampNullable("created_timestamp")).headOption
+        }
+        using(pg.prepareStatement("INSERT INTO local.channels_closed VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
+          statement.setString(1, channelId.toHex)
+          statement.setString(2, data.remoteNodeId.toHex)
+          statement.setString(3, data.fundingTxId.value.toHex)
+          statement.setLong(4, data.fundingOutputIndex)
+          statement.setLong(5, data.fundingTxIndex)
+          statement.setString(6, data.fundingKeyPath)
+          statement.setString(7, data.channelFeatures)
+          statement.setBoolean(8, data.isChannelOpener)
+          statement.setString(9, data.commitmentFormat)
+          statement.setBoolean(10, data.announced)
+          statement.setLong(11, data.capacity.toLong)
+          statement.setString(12, data.closingTxId.value.toHex)
+          statement.setString(13, data.closingType)
+          statement.setString(14, data.closingScript.toHex)
+          statement.setLong(15, data.localBalance.toLong)
+          statement.setLong(16, data.remoteBalance.toLong)
+          statement.setLong(17, data.closingAmount.toLong)
+          statement.setTimestamp(18, createdAt_opt.getOrElse(Timestamp.from(Instant.ofEpochMilli(0))))
+          statement.setTimestamp(19, Timestamp.from(Instant.now()))
+          statement.executeUpdate()
+        }
+      })
+
+      // We can now remove this channel from the active channels table.
+      using(pg.prepareStatement("DELETE FROM local.channels WHERE channel_id=?")) { statement =>
+        statement.setString(1, channelId.toHex)
         statement.executeUpdate()
       }
     }
@@ -321,21 +316,40 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
   override def listLocalChannels(): Seq[PersistentChannelData] = withMetrics("channels/list-local-channels", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.createStatement) { statement =>
-        statement.executeQuery("SELECT data FROM local.channels WHERE is_closed=FALSE")
+        statement.executeQuery("SELECT data FROM local.channels")
           .mapCodec(channelDataCodec).toSeq
       }
     }
   }
 
-  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[PersistentChannelData] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
+  override def listClosedChannels(remoteNodeId_opt: Option[PublicKey], paginated_opt: Option[Paginated]): Seq[DATA_CLOSED] = withMetrics("channels/list-closed-channels", DbBackends.Postgres) {
     val sql = remoteNodeId_opt match {
-      case None => "SELECT data FROM local.channels WHERE is_closed=TRUE ORDER BY closed_timestamp DESC"
-      case Some(remoteNodeId) => s"SELECT data FROM local.channels WHERE is_closed=TRUE AND remote_node_id = '${remoteNodeId.toHex}' ORDER BY closed_timestamp DESC"
+      case Some(remoteNodeId) => s"SELECT * FROM local.channels_closed WHERE remote_node_id = '${remoteNodeId.toHex}' ORDER BY closed_at DESC"
+      case None => "SELECT * FROM local.channels_closed ORDER BY closed_at DESC"
     }
     withLock { pg =>
       using(pg.prepareStatement(limited(sql, paginated_opt))) { statement =>
-        statement.executeQuery()
-          .mapCodec(channelDataCodec).toSeq
+        statement.executeQuery().map { rs =>
+          DATA_CLOSED(
+            channelId = rs.getByteVector32FromHex("channel_id"),
+            remoteNodeId = PublicKey(rs.getByteVectorFromHex("remote_node_id")),
+            fundingTxId = TxId(rs.getByteVector32FromHex("funding_txid")),
+            fundingOutputIndex = rs.getLong("funding_output_index"),
+            fundingTxIndex = rs.getLong("funding_tx_index"),
+            fundingKeyPath = rs.getString("funding_key_path"),
+            channelFeatures = rs.getString("channel_features"),
+            isChannelOpener = rs.getBoolean("is_channel_opener"),
+            commitmentFormat = rs.getString("commitment_format"),
+            announced = rs.getBoolean("announced"),
+            capacity = Satoshi(rs.getLong("capacity_satoshis")),
+            closingTxId = TxId(rs.getByteVector32FromHex("closing_txid")),
+            closingType = rs.getString("closing_type"),
+            closingScript = rs.getByteVectorFromHex("closing_script"),
+            localBalance = MilliSatoshi(rs.getLong("local_balance_msat")),
+            remoteBalance = MilliSatoshi(rs.getLong("remote_balance_msat")),
+            closingAmount = Satoshi(rs.getLong("closing_amount_satoshis"))
+          )
+        }.toSeq
       }
     }
   }

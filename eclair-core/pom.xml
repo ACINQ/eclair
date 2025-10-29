@@ -21,7 +21,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.13</artifactId>
-        <version>0.13.0</version>
+        <version>0.13.1</version>
     </parent>
 
     <artifactId>eclair-core_2.13</artifactId>
@@ -87,8 +87,8 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-28.1/bitcoin-28.1-x86_64-linux-gnu.tar.gz</bitcoind.url>
-                <bitcoind.sha256>07f77afd326639145b9ba9562912b2ad2ccec47b8a305bd075b4f4cb127b7ed7</bitcoind.sha256>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-29.2/bitcoin-29.2-x86_64-linux-gnu.tar.gz</bitcoind.url>
+                <bitcoind.sha256>1fd58d0ae94b8a9e21bbaeab7d53395a44976e82bd5492b0a894826c135f9009</bitcoind.sha256>
             </properties>
         </profile>
         <profile>
@@ -99,8 +99,8 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-28.1/bitcoin-28.1-x86_64-apple-darwin.tar.gz</bitcoind.url>
-                <bitcoind.sha256>c85d1a0ebedeff43b99db2c906b50f14547b84175a4d0ebb039a9809789af280</bitcoind.sha256>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-29.2/bitcoin-29.2-x86_64-apple-darwin.tar.gz</bitcoind.url>
+                <bitcoind.sha256>69ca05fbe838123091cf4d6d2675352f36cf55f49e2e6fb3b52fcf32b5e8dd9f</bitcoind.sha256>
             </properties>
         </profile>
         <profile>
@@ -111,8 +111,8 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-28.1/bitcoin-28.1-win64.zip</bitcoind.url>
-                <bitcoind.sha256>2d636ad562b347c96d36870d6ed810f4a364f446ca208258299f41048b35eab0</bitcoind.sha256>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-29.2/bitcoin-29.2-win64.zip</bitcoind.url>
+                <bitcoind.sha256>83f90a5bab1fc30849862aa1db88906b91e0730b78993c085f9e547a1c3cce79</bitcoind.sha256>
             </properties>
         </profile>
     </profiles>

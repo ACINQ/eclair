@@ -36,7 +36,7 @@ import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelUpdate, ClosingComplete, ClosingSig, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -1023,10 +1023,14 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2bob.forward(bob, channelReestablishAlice)
     bob2alice.forward(alice, channelReestablishBob)
     // They retransmit shutdown.
-    alice2bob.expectMsgType[Shutdown]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[Shutdown]
-    bob2alice.forward(alice)
+    val shutdownAlice = alice2bob.expectMsgType[Shutdown]
+    alice2bob.forward(bob, shutdownAlice)
+    val shutdownBob = bob2alice.expectMsgType[Shutdown]
+    bob2alice.forward(alice, shutdownBob)
+    Seq(shutdownAlice, shutdownBob).foreach(shutdown => commitmentFormat match {
+      case _: SegwitV0CommitmentFormat => assert(shutdown.closeeNonce_opt.isEmpty)
+      case _: TaprootCommitmentFormat => assert(shutdown.closeeNonce_opt.nonEmpty)
+    })
     // They resume HTLC settlement.
     fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
@@ -1035,6 +1039,14 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     crossSign(bob, alice, bob2alice, alice2bob)
     awaitCond(alice.stateName == NEGOTIATING_SIMPLE)
     awaitCond(bob.stateName == NEGOTIATING_SIMPLE)
+    // They can now sign the closing transaction.
+    val closingCompleteAlice = alice2bob.expectMsgType[ClosingComplete]
+    alice2bob.forward(bob, closingCompleteAlice)
+    bob2alice.expectMsgType[ClosingComplete] // ignored
+    val closingTx = bob2blockchain.expectMsgType[PublishFinalTx]
+    val closingSigBob = bob2alice.expectMsgType[ClosingSig]
+    bob2alice.forward(alice, closingSigBob)
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == closingTx.tx.txid)
   }
 
   test("recv INPUT_RESTORED", Tag(ChannelStateTestsTags.SimpleClose), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>

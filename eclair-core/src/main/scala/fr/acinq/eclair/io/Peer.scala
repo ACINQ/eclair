@@ -467,10 +467,11 @@ class Peer(val nodeParams: NodeParams,
       case Event(msg: SpliceInit, d: ConnectedData) =>
         d.channels.get(FinalChannelId(msg.channelId)) match {
           case Some(_) if msg.usesOnTheFlyFunding && !d.fundingFeerateOk(msg.feerate) =>
-            log.info("rejecting open_channel2: feerate too low ({} < {})", msg.feerate, d.currentFeerates.fundingFeerate)
+            log.info("rejecting splice_init: feerate too low ({} < {})", msg.feerate, d.currentFeerates.fundingFeerate)
             self ! Peer.OutgoingMessage(TxAbort(msg.channelId, FundingFeerateTooLow(msg.channelId, msg.feerate, d.currentFeerates.fundingFeerate).getMessage), d.peerConnection)
           case Some(channel) =>
-            OnTheFlyFunding.validateSplice(nodeParams.onTheFlyFundingConfig, msg, nodeParams.channelConf.htlcMinimum, pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
+            // We don't have access to the remote htlc_minimum here, so we hard-code the value Phoenix uses (1000 msat).
+            OnTheFlyFunding.validateSplice(nodeParams.onTheFlyFundingConfig, msg, nodeParams.channelConf.htlcMinimum.max(1000 msat), pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
               case reject: OnTheFlyFunding.ValidationResult.Reject =>
                 log.warning("rejecting on-the-fly splice: {}", reject.cancel.toAscii)
                 self ! Peer.OutgoingMessage(reject.cancel, d.peerConnection)

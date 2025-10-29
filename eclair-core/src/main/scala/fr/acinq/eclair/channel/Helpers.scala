@@ -17,8 +17,8 @@
 package fr.acinq.eclair.channel
 
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, sha256}
+import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce}
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.OnChainPubkeyCache
@@ -498,19 +498,19 @@ object Helpers {
       def checkRemoteCommit(remoteChannelReestablish: ChannelReestablish, retransmitRevocation_opt: Option[RevokeAndAck]): SyncResult = {
         commitments.remoteNextCommitInfo match {
           case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == commitments.nextRemoteCommitIndex =>
-            // we just sent a new commit_sig but they didn't receive it
-            // we resend the same updates and the same sig, and preserve the same ordering
+            // We just sent a new commit_sig but they didn't receive it: we resend the same updates and sign them again,
+            // and preserve the same ordering of messages.
             val signedUpdates = commitments.changes.localChanges.signed
-            val commitSigs = CommitSigs(commitments.active.flatMap(_.nextRemoteCommit_opt).map { nextRemoteCommit =>
-              // If there was a race condition with the remote splice_locked, we may need to adjust the batch size
-              // on reconnection: we may have less commit_sig messages to send than before the disconnection.
-              val commitSig = nextRemoteCommit.sig
-              if (commitments.active.size == 1) {
-                commitSig.copy(tlvStream = TlvStream(commitSig.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.BatchTlv])))
-              } else {
-                commitSig.copy(tlvStream = TlvStream(commitSig.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.BatchTlv]) + CommitSigTlv.BatchTlv(commitments.active.size)))
-              }
-            })
+            val channelParams = commitments.channelParams
+            val batchSize = commitments.active.size
+            val commitSigs = CommitSigs(commitments.active.flatMap(c => {
+              val commitInput = c.commitInput(c.localFundingKey(channelKeys))
+              val remoteCommitNonce_opt = remoteChannelReestablish.nextCommitNonces.get(c.fundingTxId)
+              // Note that we ignore errors and simply skip failures to sign: we've already signed those updates before
+              // the disconnection, so we don't expect any error here unless our peer sends an invalid nonce. In that
+              // case, we simply won't send back our commit_sig until they fix their node.
+              c.nextRemoteCommit_opt.flatMap(_.sign(channelParams, c.remoteCommitParams, channelKeys, c.fundingTxIndex, c.remoteFundingPubKey, commitInput, c.commitmentFormat, remoteCommitNonce_opt, batchSize).toOption)
+            }))
             retransmitRevocation_opt match {
               case None =>
                 SyncResult.Success(retransmit = signedUpdates :+ commitSigs)
@@ -610,13 +610,13 @@ object Helpers {
 
     // @formatter:off
     sealed trait ClosingType
-    case class MutualClose(tx: ClosingTx) extends ClosingType
-    case class LocalClose(localCommit: LocalCommit, localCommitPublished: LocalCommitPublished) extends ClosingType
+    case class MutualClose(tx: ClosingTx) extends ClosingType { override def toString: String = "mutual-close" }
+    case class LocalClose(localCommit: LocalCommit, localCommitPublished: LocalCommitPublished) extends ClosingType { override def toString: String = "local-close" }
     sealed trait RemoteClose extends ClosingType { def remoteCommit: RemoteCommit; def remoteCommitPublished: RemoteCommitPublished }
-    case class CurrentRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose
-    case class NextRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose
-    case class RecoveryClose(remoteCommitPublished: RemoteCommitPublished) extends ClosingType
-    case class RevokedClose(revokedCommitPublished: RevokedCommitPublished) extends ClosingType
+    case class CurrentRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose { override def toString: String = "remote-close" }
+    case class NextRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose { override def toString: String = "next-remote-close" }
+    case class RecoveryClose(remoteCommitPublished: RemoteCommitPublished) extends ClosingType { override def toString: String = "recovery-close" }
+    case class RevokedClose(revokedCommitPublished: RevokedCommitPublished) extends ClosingType { override def toString: String = "revoked-close" }
     // @formatter:on
 
     /**
@@ -653,7 +653,7 @@ object Helpers {
         case _ if closing.remoteCommitPublished.exists(_.isConfirmed) =>
           Some(CurrentRemoteClose(closing.commitments.latest.remoteCommit, closing.remoteCommitPublished.get))
         case _ if closing.nextRemoteCommitPublished.exists(_.isConfirmed) =>
-          Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get.commit, closing.nextRemoteCommitPublished.get))
+          Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get, closing.nextRemoteCommitPublished.get))
         case _ if closing.futureRemoteCommitPublished.exists(_.isConfirmed) =>
           Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
         case _ if closing.revokedCommitPublished.exists(_.isConfirmed) =>
@@ -679,7 +679,7 @@ object Helpers {
       case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(_.isDone) =>
         Some(CurrentRemoteClose(closing.commitments.latest.remoteCommit, closing.remoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(_.isDone) =>
-        Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get.commit, closing.nextRemoteCommitPublished.get))
+        Some(NextRemoteClose(closing.commitments.latest.nextRemoteCommit_opt.get, closing.nextRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(_.isDone) =>
         Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
       case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(_.isDone) =>
@@ -1513,7 +1513,7 @@ object Helpers {
         val fromRemote = commitment.remoteCommit.spec.htlcs.collect {
           case IncomingHtlc(add) if add.paymentHash == paymentHash => (add, paymentPreimage)
         }
-        val fromNextRemote = commitment.nextRemoteCommit_opt.map(_.commit.spec.htlcs).getOrElse(Set.empty).collect {
+        val fromNextRemote = commitment.nextRemoteCommit_opt.map(_.spec.htlcs).getOrElse(Set.empty).collect {
           case IncomingHtlc(add) if add.paymentHash == paymentHash => (add, paymentPreimage)
         }
         fromLocal ++ fromRemote ++ fromNextRemote
@@ -1606,7 +1606,7 @@ object Helpers {
     def overriddenOutgoingHtlcs(d: DATA_CLOSING, tx: Transaction): Set[UpdateAddHtlc] = {
       val localCommit = d.commitments.latest.localCommit
       val remoteCommit = d.commitments.latest.remoteCommit
-      val nextRemoteCommit_opt = d.commitments.latest.nextRemoteCommit_opt.map(_.commit)
+      val nextRemoteCommit_opt = d.commitments.latest.nextRemoteCommit_opt
       // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs.
       val outgoingHtlcs = localCommit.spec.htlcs.collect(outgoing) ++ (remoteCommit.spec.htlcs ++ nextRemoteCommit_opt.map(_.spec.htlcs).getOrElse(Set.empty)).collect(incoming)
       if (localCommit.txId == tx.txid) {
@@ -1645,14 +1645,11 @@ object Helpers {
       // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
       // over all of them to check if they are relevant
       val relevantOutpoints = tx.txIn.map(_.outPoint).filter(outPoint => {
-        // is this the commit tx itself? (we could do this outside of the loop...)
         val isCommitTx = localCommitPublished.commitTx.txid == tx.txid
-        // does the tx spend an output of the local commitment tx?
-        val spendsTheCommitTx = localCommitPublished.commitTx.txid == outPoint.txid
-        // is the tx one of our 3rd stage delayed txs? (a 3rd stage tx is a tx spending the output of an htlc tx, which
-        // is itself spending the output of the commitment tx)
-        val is3rdStageDelayedTx = localCommitPublished.htlcDelayedOutputs.contains(outPoint)
-        isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
+        val isMainTx = localCommitPublished.localOutput_opt.contains(outPoint)
+        val isHtlcTx = localCommitPublished.htlcOutputs.contains(outPoint)
+        val isHtlcDelayedTx = localCommitPublished.htlcDelayedOutputs.contains(outPoint)
+        isCommitTx || isMainTx || isHtlcTx || isHtlcDelayedTx
       })
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
       localCommitPublished.copy(irrevocablySpent = localCommitPublished.irrevocablySpent ++ relevantOutpoints.map(o => o -> tx).toMap)
@@ -1672,11 +1669,10 @@ object Helpers {
       // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
       // over all of them to check if they are relevant
       val relevantOutpoints = tx.txIn.map(_.outPoint).filter(outPoint => {
-        // is this the commit tx itself? (we could do this outside of the loop...)
         val isCommitTx = remoteCommitPublished.commitTx.txid == tx.txid
-        // does the tx spend an output of the remote commitment tx?
-        val spendsTheCommitTx = remoteCommitPublished.commitTx.txid == outPoint.txid
-        isCommitTx || spendsTheCommitTx
+        val isMainTx = remoteCommitPublished.localOutput_opt.contains(outPoint)
+        val isHtlcTx = remoteCommitPublished.htlcOutputs.contains(outPoint)
+        isCommitTx || isMainTx || isHtlcTx
       })
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
       remoteCommitPublished.copy(irrevocablySpent = remoteCommitPublished.irrevocablySpent ++ relevantOutpoints.map(o => o -> tx).toMap)
@@ -1696,17 +1692,32 @@ object Helpers {
       // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
       // over all of them to check if they are relevant
       val relevantOutpoints = tx.txIn.map(_.outPoint).filter(outPoint => {
-        // is this the commit tx itself? (we could do this outside of the loop...)
         val isCommitTx = revokedCommitPublished.commitTx.txid == tx.txid
-        // does the tx spend an output of the remote commitment tx?
-        val spendsTheCommitTx = revokedCommitPublished.commitTx.txid == outPoint.txid
-        // is the tx one of our 3rd stage delayed txs? (a 3rd stage tx is a tx spending the output of an htlc tx, which
-        // is itself spending the output of the commitment tx)
-        val is3rdStageDelayedTx = revokedCommitPublished.htlcDelayedOutputs.contains(outPoint)
-        isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
+        val isMainTx = revokedCommitPublished.localOutput_opt.contains(outPoint)
+        val isMainPenaltyTx = revokedCommitPublished.remoteOutput_opt.contains(outPoint)
+        val isHtlcPenaltyTx = revokedCommitPublished.htlcOutputs.contains(outPoint)
+        val isHtlcDelayedPenaltyTx = revokedCommitPublished.htlcDelayedOutputs.contains(outPoint)
+        isCommitTx || isMainTx || isMainPenaltyTx || isHtlcPenaltyTx || isHtlcDelayedPenaltyTx
       })
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
       revokedCommitPublished.copy(irrevocablySpent = revokedCommitPublished.irrevocablySpent ++ relevantOutpoints.map(o => o -> tx).toMap)
+    }
+
+    /** Returns the amount we've successfully claimed from a force-closed channel. */
+    def closingBalance(channelParams: ChannelParams, commitmentFormat: CommitmentFormat, closingScript: ByteVector, commit: CommitPublished): Satoshi = {
+      val toLocal = commit.localOutput_opt match {
+        case Some(o) if o.index < commit.commitTx.txOut.size => commit.commitTx.txOut(o.index.toInt).amount
+        case _ => 0 sat
+      }
+      val toClosingScript = commit.irrevocablySpent.values.flatMap(_.txOut)
+        .filter(_.publicKeyScript == closingScript)
+        .map(_.amount)
+        .sum
+      commitmentFormat match {
+        case DefaultCommitmentFormat if channelParams.localParams.walletStaticPaymentBasepoint.nonEmpty => toLocal + toClosingScript
+        case DefaultCommitmentFormat => toClosingScript
+        case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => toClosingScript
+      }
     }
 
   }

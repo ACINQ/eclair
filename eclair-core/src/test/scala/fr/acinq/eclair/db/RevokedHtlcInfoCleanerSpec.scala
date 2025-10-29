@@ -38,7 +38,7 @@ class RevokedHtlcInfoCleanerSpec extends ScalaTestWithActorTestKit(ConfigFactory
     channelsDb.addHtlcInfo(channelId, 17, randomBytes32(), CltvExpiry(561))
     channelsDb.addHtlcInfo(channelId, 19, randomBytes32(), CltvExpiry(1105))
     channelsDb.addHtlcInfo(channelId, 23, randomBytes32(), CltvExpiry(1729))
-    channelsDb.removeChannel(channelId)
+    channelsDb.removeChannel(channelId, None)
     assert(channelsDb.listHtlcInfos(channelId, 17).nonEmpty)
     assert(channelsDb.listHtlcInfos(channelId, 19).nonEmpty)
     assert(channelsDb.listHtlcInfos(channelId, 23).nonEmpty)

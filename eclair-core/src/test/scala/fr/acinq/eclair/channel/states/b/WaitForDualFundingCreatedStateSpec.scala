@@ -36,11 +36,12 @@ import scala.concurrent.duration.DurationInt
 
 class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, wallet: SingleKeyOnChainWallet, aliceListener: TestProbe, bobListener: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, aliceWallet: SingleKeyOnChainWallet, bobWallet: SingleKeyOnChainWallet, aliceListener: TestProbe, bobListener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val wallet = new SingleKeyOnChainWallet()
-    val setup = init(wallet_opt = Some(wallet), tags = test.tags)
+    val aliceWallet = new SingleKeyOnChainWallet()
+    val bobWallet = new SingleKeyOnChainWallet()
+    val setup = init(walletA_opt = Some(aliceWallet), walletB_opt = Some(bobWallet), tags = test.tags)
     import setup._
     val channelParams = computeChannelParams(setup, test.tags)
     val aliceListener = TestProbe()
@@ -60,7 +61,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId] // final channel id
       awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
       awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, aliceOpenReplyTo, alice2bob, bob2alice, alice2blockchain, bob2blockchain, wallet, aliceListener, bobListener)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, aliceOpenReplyTo, alice2bob, bob2alice, alice2blockchain, bob2blockchain, aliceWallet, bobWallet, aliceListener, bobListener)))
     }
   }
 
@@ -97,14 +98,14 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     // Invalid serial_id.
     alice2bob.forward(bob, inputA.copy(serialId = UInt64(1)))
     bob2alice.expectMsgType[TxAbort]
-    awaitCond(wallet.rolledback.length == 1)
+    awaitCond(bobWallet.rolledback.length == 1)
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
 
     // Below dust.
     bob2alice.forward(alice, TxAddOutput(channelId(bob), UInt64(1), 150 sat, Script.write(Script.pay2wpkh(randomKey().publicKey))))
     alice2bob.expectMsgType[TxAbort]
-    awaitCond(wallet.rolledback.length == 2)
+    awaitCond(aliceWallet.rolledback.length == 1)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
@@ -136,12 +137,12 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     alice2bob.expectMsgType[TxAddInput]
     alice2bob.forward(bob, TxAbort(channelId(alice), hex"deadbeef"))
     val bobTxAbort = bob2alice.expectMsgType[TxAbort]
-    awaitCond(wallet.rolledback.size == 1)
+    awaitCond(bobWallet.rolledback.size == 1)
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
 
     bob2alice.forward(alice, bobTxAbort)
-    awaitCond(wallet.rolledback.size == 2)
+    awaitCond(aliceWallet.rolledback.size == 1)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.RemoteError]
@@ -159,7 +160,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     alice2bob.expectMsgType[Warning]
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
     aliceOpenReplyTo.expectNoMessage(100 millis)
-    assert(wallet.rolledback.isEmpty)
+    assert(aliceWallet.rolledback.isEmpty)
   }
 
   test("recv TxAckRbf", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -174,7 +175,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     alice2bob.expectMsgType[Warning]
     assert(alice.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
     aliceOpenReplyTo.expectNoMessage(100 millis)
-    assert(wallet.rolledback.isEmpty)
+    assert(aliceWallet.rolledback.isEmpty)
   }
 
   test("recv Error", Tag(ChannelStateTestsTags.DualFunding)) { f =>
@@ -182,13 +183,13 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
     val finalChannelId = channelId(alice)
     alice ! Error(finalChannelId, "oops")
-    awaitCond(wallet.rolledback.size == 1)
+    awaitCond(aliceWallet.rolledback.size == 1)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.RemoteError]
 
     bob ! Error(finalChannelId, "oops")
-    awaitCond(wallet.rolledback.size == 2)
+    awaitCond(bobWallet.rolledback.size == 1)
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
@@ -202,14 +203,14 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
 
     alice ! c
     sender.expectMsg(RES_SUCCESS(c, finalChannelId))
-    awaitCond(wallet.rolledback.size == 1)
+    awaitCond(aliceWallet.rolledback.size == 1)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsg(OpenChannelResponse.Cancelled)
 
     bob ! c
     sender.expectMsg(RES_SUCCESS(c, finalChannelId))
-    awaitCond(wallet.rolledback.size == 2)
+    awaitCond(bobWallet.rolledback.size == 1)
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
@@ -218,13 +219,13 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     import f._
 
     alice ! INPUT_DISCONNECTED
-    awaitCond(wallet.rolledback.size == 1)
+    awaitCond(aliceWallet.rolledback.size == 1)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsg(OpenChannelResponse.Disconnected)
 
     bob ! INPUT_DISCONNECTED
-    awaitCond(wallet.rolledback.size == 2)
+    awaitCond(bobWallet.rolledback.size == 1)
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }
@@ -270,7 +271,7 @@ class WaitForDualFundingCreatedStateSpec extends TestKitBaseClass with FixtureAn
     import f._
 
     alice ! TickChannelOpenTimeout
-    awaitCond(wallet.rolledback.size == 1)
+    awaitCond(aliceWallet.rolledback.size == 1)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsg(OpenChannelResponse.TimedOut)

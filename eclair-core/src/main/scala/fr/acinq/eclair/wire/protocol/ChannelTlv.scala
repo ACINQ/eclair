@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, TxId}
 import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
@@ -183,7 +183,7 @@ object SpliceInitTlv {
     // We use a temporary TLV while the spec is being reviewed.
     .typecase(UInt64(1339), requestFundingCodec)
     .typecase(UInt64(0x47000007), tlvField(tmillisatoshi.as[PushAmountTlv]))
-    .typecase(UInt64(0x47000011), tlvField(channelTypeCodec.as[ChannelTypeTlv]))
+    .typecase(UInt64(0x47000011), channelTypeCodec.as[ChannelTypeTlv])
   )
 }
 
@@ -197,7 +197,7 @@ object SpliceAckTlv {
     .typecase(UInt64(1339), provideFundingCodec)
     .typecase(UInt64(41042), feeCreditUsedCodec)
     .typecase(UInt64(0x47000007), tlvField(tmillisatoshi.as[PushAmountTlv]))
-    .typecase(UInt64(0x47000011), tlvField(channelTypeCodec.as[ChannelTypeTlv]))
+    .typecase(UInt64(0x47000011), channelTypeCodec.as[ChannelTypeTlv])
   )
 }
 

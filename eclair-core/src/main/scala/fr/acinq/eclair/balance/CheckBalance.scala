@@ -200,6 +200,10 @@ object CheckBalance {
               this.copy(closing = this.closing.copy(toLocal = this.closing.toLocal + localBalance))
             case None => this
           }
+          // If we have a fully signed mutual close transaction and a closing transaction is in our mempool or recently
+          // confirmed, the channel will most likely end up being mutual-closed (since the feerate is higher than any
+          // force-close transaction). We thus ignore this channel in our off-chain balance to avoid counting it twice.
+          case None if d.mutualClosePublished.nonEmpty && recentlySpentInputs.contains(d.commitments.latest.fundingInput) => this
           // We don't know yet which type of closing will confirm on-chain, so we use our default off-chain balance.
           case None => this.copy(closing = this.closing.addChannelBalance(d.commitments))
         }

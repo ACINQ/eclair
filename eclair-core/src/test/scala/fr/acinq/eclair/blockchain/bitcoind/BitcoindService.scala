@@ -62,7 +62,7 @@ trait BitcoindService extends Logging {
 
   val PATH_BITCOIND = sys.env.get("BITCOIND_DIR") match {
     case Some(customBitcoinDir) => new File(customBitcoinDir, "bitcoind")
-    case None => new File(TestUtils.BUILD_DIRECTORY, "bitcoin-28.1/bin/bitcoind")
+    case None => new File(TestUtils.BUILD_DIRECTORY, "bitcoin-29.2/bin/bitcoind")
   }
   logger.info(s"using bitcoind: $PATH_BITCOIND")
   val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
@@ -89,8 +89,8 @@ trait BitcoindService extends Logging {
   val onChainKeyManager = new LocalOnChainKeyManager("eclair", MnemonicCode.toSeed(mnemonics, passphrase), TimestampSecond.now(), Block.RegtestGenesisBlock.hash)
 
   def startBitcoind(useCookie: Boolean = false,
-                    defaultAddressType_opt: Option[String] = None,
-                    changeAddressType_opt: Option[String] = None,
+                    defaultAddressType_opt: Option[String] = Some("bech32m"),
+                    changeAddressType_opt: Option[String] = Some("bech32m"),
                     mempoolSize_opt: Option[Int] = None, // mempool size in MB
                     mempoolMinFeerate_opt: Option[FeeratePerByte] = None, // transactions below this feerate won't be accepted in the mempool
                     startupFlags: String = ""): Unit = {
@@ -199,7 +199,7 @@ trait BitcoindService extends Logging {
     val addressToUse = address match {
       case Some(addr) => addr
       case None =>
-        sender.send(bitcoincli, BitcoinReq("getnewaddress", "", "bech32"))
+        sender.send(bitcoincli, BitcoinReq("getnewaddress", "", "bech32m"))
         val JString(address) = sender.expectMsgType[JValue](timeout)
         address
     }

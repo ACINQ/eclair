@@ -24,7 +24,7 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentPathWeight, PaymentWeightRatios, WeightRatios}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentPathWeight, WeightRatios}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
@@ -57,13 +57,6 @@ object EclairInternalsSerializer {
     ("feeBase" | millisatoshi) ::
       ("feeProportionalMillionths" | int64)).as[RelayFees]
 
-  val paymentWeightRatiosCodec: Codec[PaymentWeightRatios] = (
-    ("baseFactor" | double) ::
-      ("cltvDeltaFactor" | double) ::
-      ("ageFactor" | double) ::
-      ("capacityFactor" | double) ::
-      ("hopCost" | relayFeesCodec)).as[PaymentWeightRatios]
-
   val heuristicsConstantsCodec: Codec[HeuristicsConstants] = (
     ("lockedFundsRisk" | double) ::
       ("failureCost" | relayFeesCodec) ::
@@ -71,14 +64,17 @@ object EclairInternalsSerializer {
       ("useLogProbability" | bool(8)) ::
       ("usePastRelaysData" | bool(8))).as[HeuristicsConstants]
 
-  val weightRatiosCodec: Codec[WeightRatios[PaymentPathWeight]] =
-    discriminated[WeightRatios[PaymentPathWeight]].by(uint8)
-      .typecase(0x00, paymentWeightRatiosCodec)
+  val weightRatiosCodec: Codec[HeuristicsConstants] =
+    discriminated[HeuristicsConstants].by(uint8)
       .typecase(0xff, heuristicsConstantsCodec)
 
   val multiPartParamsCodec: Codec[MultiPartParams] = (
     ("minPartAmount" | millisatoshi) ::
-      ("maxParts" | int32)).as[MultiPartParams]
+      ("maxParts" | int32) ::
+      ("splittingStrategy" | discriminated[MultiPartParams.SplittingStrategy].by(uint8)
+        .typecase(0, provide(MultiPartParams.FullCapacity))
+        .typecase(1, provide(MultiPartParams.Randomize))
+        .typecase(2, provide(MultiPartParams.MaxExpectedAmount)))).as[MultiPartParams]
 
   val pathFindingConfCodec: Codec[PathFindingConf] = (
     ("randomize" | bool(8)) ::

@@ -1,10 +1,10 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, SatoshiLong, Transaction, TxId}
-import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
@@ -200,7 +200,7 @@ object LocalCommit {
 
 /** The remote commitment maps to a commitment transaction that only our peer can sign and broadcast. */
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePerCommitmentPoint: PublicKey) {
-  def sign(channelParams: ChannelParams, commitParams: CommitParams, channelKeys: ChannelKeys, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo, commitmentFormat: CommitmentFormat, remoteNonce_opt: Option[IndividualNonce]): Either[ChannelException, CommitSig] = {
+  def sign(channelParams: ChannelParams, commitParams: CommitParams, channelKeys: ChannelKeys, fundingTxIndex: Long, remoteFundingPubKey: PublicKey, commitInput: InputInfo, commitmentFormat: CommitmentFormat, remoteNonce_opt: Option[IndividualNonce], batchSize: Int = 1): Either[ChannelException, CommitSig] = {
     val fundingKey = channelKeys.fundingKey(fundingTxIndex)
     val commitKeys = RemoteCommitmentKeys(channelParams, channelKeys, remotePerCommitmentPoint, commitmentFormat)
     val (remoteCommitTx, htlcTxs) = Commitment.makeRemoteTxs(channelParams, commitParams, commitKeys, index, fundingKey, remoteFundingPubKey, commitInput, commitmentFormat, spec)
@@ -209,23 +209,20 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePer
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat =>
         val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey)
-        Right(CommitSig(channelParams.channelId, sig, htlcSigs.toList))
+        Right(CommitSig(channelParams.channelId, sig, htlcSigs.toList, batchSize))
       case _: SimpleTaprootChannelCommitmentFormat =>
         remoteNonce_opt match {
           case Some(remoteNonce) =>
             val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, remoteFundingPubKey, commitInput.outPoint.txid)
             remoteCommitTx.partialSign(fundingKey, remoteFundingPubKey, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
               case Left(_) => Left(InvalidCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
-              case Right(psig) => Right(CommitSig(channelParams.channelId, psig, htlcSigs.toList, batchSize = 1))
+              case Right(psig) => Right(CommitSig(channelParams.channelId, psig, htlcSigs.toList, batchSize))
             }
           case None => Left(MissingCommitNonce(channelParams.channelId, commitInput.outPoint.txid, index))
         }
     }
   }
 }
-
-/** We have the next remote commit when we've sent our commit_sig but haven't yet received their revoke_and_ack. */
-case class NextRemoteCommit(sig: CommitSig, commit: RemoteCommit)
 
 /**
  * If we ignore revoked commitments, there can be at most three concurrent commitment transactions during a force-close:
@@ -263,9 +260,9 @@ case class Commitment(fundingTxIndex: Long,
                       localCommit: LocalCommit,
                       remoteCommitParams: CommitParams,
                       remoteCommit: RemoteCommit,
-                      nextRemoteCommit_opt: Option[NextRemoteCommit]) {
+                      nextRemoteCommit_opt: Option[RemoteCommit]) {
   val fundingTxId: TxId = fundingInput.txid
-  val commitTxIds: CommitTxIds = CommitTxIds(localCommit.txId, remoteCommit.txId, nextRemoteCommit_opt.map(_.commit.txId))
+  val commitTxIds: CommitTxIds = CommitTxIds(localCommit.txId, remoteCommit.txId, nextRemoteCommit_opt.map(_.txId))
   val capacity: Satoshi = fundingAmount
   // We can safely cast to millisatoshis since we verify that it's less than a valid millisatoshi amount.
   val maxHtlcValueInFlight: MilliSatoshi = Seq(localCommitParams.maxHtlcValueInFlight, remoteCommitParams.maxHtlcValueInFlight, UInt64(MilliSatoshi.MaxMoney.toLong)).min.toBigInt.toLong.msat
@@ -328,7 +325,7 @@ case class Commitment(fundingTxIndex: Long,
   def availableBalanceForSend(params: ChannelParams, changes: CommitmentChanges): MilliSatoshi = {
     import params._
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
-    val remoteCommit1 = nextRemoteCommit_opt.map(_.commit).getOrElse(remoteCommit)
+    val remoteCommit1 = nextRemoteCommit_opt.getOrElse(remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
     val balanceNoFees = (reduced.toRemote - localChannelReserve(params)).max(0 msat)
     if (localParams.paysCommitTxFees) {
@@ -416,7 +413,7 @@ case class Commitment(fundingTxIndex: Long,
 
     localCommit.spec.htlcs.collect(DirectedHtlc.outgoing).filter(expired) ++
       remoteCommit.spec.htlcs.collect(DirectedHtlc.incoming).filter(expired) ++
-      nextRemoteCommit_opt.toSeq.flatMap(_.commit.spec.htlcs.collect(DirectedHtlc.incoming).filter(expired).toSet)
+      nextRemoteCommit_opt.toSeq.flatMap(_.spec.htlcs.collect(DirectedHtlc.incoming).filter(expired).toSet)
   }
 
   /**
@@ -427,7 +424,7 @@ case class Commitment(fundingTxIndex: Long,
    * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
    */
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
-    localSigned <- nextRemoteCommit_opt.map(_.commit).getOrElse(remoteCommit).spec.findIncomingHtlcById(htlcId)
+    localSigned <- nextRemoteCommit_opt.getOrElse(remoteCommit).spec.findIncomingHtlcById(htlcId)
     remoteSigned <- localCommit.spec.findOutgoingHtlcById(htlcId)
   } yield {
     require(localSigned.add == remoteSigned.add)
@@ -442,7 +439,7 @@ case class Commitment(fundingTxIndex: Long,
    * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
    */
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
-    localSigned <- nextRemoteCommit_opt.map(_.commit).getOrElse(remoteCommit).spec.findOutgoingHtlcById(htlcId)
+    localSigned <- nextRemoteCommit_opt.getOrElse(remoteCommit).spec.findOutgoingHtlcById(htlcId)
     remoteSigned <- localCommit.spec.findIncomingHtlcById(htlcId)
   } yield {
     require(localSigned.add == remoteSigned.add)
@@ -476,7 +473,7 @@ case class Commitment(fundingTxIndex: Long,
 
     // let's compute the current commitments *as seen by them* with the additional htlc
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
-    val remoteCommit1 = nextRemoteCommit_opt.map(_.commit).getOrElse(remoteCommit)
+    val remoteCommit1 = nextRemoteCommit_opt.getOrElse(remoteCommit)
     val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
     val outgoingHtlcs = reduced.htlcs.collect(DirectedHtlc.incoming)
@@ -680,7 +677,7 @@ case class Commitment(fundingTxIndex: Long,
         }
     }
     val commitSig = CommitSig(params.channelId, sig, htlcSigs.toList, batchSize)
-    val nextRemoteCommit = NextRemoteCommit(commitSig, RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint))
+    val nextRemoteCommit = RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint)
     Right((copy(nextRemoteCommit_opt = Some(nextRemoteCommit)), commitSig))
   }
 
@@ -796,7 +793,7 @@ case class FullCommitment(channelParams: ChannelParams, changes: CommitmentChang
   val remoteChannelParams: RemoteChannelParams = channelParams.remoteParams
   val remoteCommitParams: CommitParams = commitment.remoteCommitParams
   val remoteCommit: RemoteCommit = commitment.remoteCommit
-  val nextRemoteCommit_opt: Option[NextRemoteCommit] = commitment.nextRemoteCommit_opt
+  val nextRemoteCommit_opt: Option[RemoteCommit] = commitment.nextRemoteCommit_opt
   val commitmentFormat: CommitmentFormat = commitment.commitmentFormat
   val capacity: Satoshi = commitment.fundingAmount
 
@@ -829,10 +826,10 @@ case class FullCommitment(channelParams: ChannelParams, changes: CommitmentChang
        |  htlcs:
        |${remoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
        |next remotecommit:
-       |  toLocal: ${nextRemoteCommit_opt.map(_.commit.spec.toLocal).getOrElse("N/A")}
-       |  toRemote: ${nextRemoteCommit_opt.map(_.commit.spec.toRemote).getOrElse("N/A")}
+       |  toLocal: ${nextRemoteCommit_opt.map(_.spec.toLocal).getOrElse("N/A")}
+       |  toRemote: ${nextRemoteCommit_opt.map(_.spec.toRemote).getOrElse("N/A")}
        |  htlcs:
-       |${nextRemoteCommit_opt.map(_.commit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")).getOrElse("N/A")}""".stripMargin
+       |${nextRemoteCommit_opt.map(_.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")).getOrElse("N/A")}""".stripMargin
   }
 }
 
@@ -1191,7 +1188,7 @@ case class Commitments(channelParams: ChannelParams,
             case _ => true
           })
           // NB: we are supposed to keep nextRemoteCommit_opt consistent with remoteNextCommitInfo: this should exist.
-          val nextRemoteSpec = active.head.nextRemoteCommit_opt.get.commit.spec
+          val nextRemoteSpec = active.head.nextRemoteCommit_opt.get.spec
           val remoteSpecWithoutNewHtlcs = nextRemoteSpec.copy(htlcs = nextRemoteSpec.htlcs.filter {
             case OutgoingHtlc(add) if receivedHtlcs.contains(add) => false
             case _ => true
@@ -1227,7 +1224,7 @@ case class Commitments(channelParams: ChannelParams,
         // we remove the newly completed htlcs from the origin map
         val originChannels1 = originChannels -- completedOutgoingHtlcs
         val active1 = active.map(c => c.copy(
-          remoteCommit = c.nextRemoteCommit_opt.get.commit,
+          remoteCommit = c.nextRemoteCommit_opt.get,
           nextRemoteCommit_opt = None,
         ))
         val commitments1 = copy(

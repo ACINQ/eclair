@@ -20,7 +20,6 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, TxId}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain.NoOpOnChainWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
@@ -50,7 +49,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import com.softwaremill.quicklens._
 
     val aliceNodeParams = Alice.nodeParams.modify(_.channelConf.maxRemoteDustLimit).setToIf(test.tags.contains(HighRemoteDustLimit))(15_000 sat)
-    val setup = init(aliceNodeParams, Bob.nodeParams, wallet_opt = Some(new NoOpOnChainWallet()), test.tags)
+    val setup = init(aliceNodeParams, Bob.nodeParams, tags = test.tags)
     import setup._
 
     val channelParams = computeChannelParams(setup, test.tags)
@@ -111,7 +110,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv AcceptChannel (simple taproot channels phoenix)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix))
     assert(accept.commitNonce_opt.isDefined)
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
@@ -122,7 +121,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv AcceptChannel (simple taproot channels outputs, missing nonce)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix()))
+    assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix))
     assert(accept.commitNonce_opt.isDefined)
     bob2alice.forward(alice, accept.copy(tlvStream = accept.tlvStream.copy(records = accept.tlvStream.records.filterNot(_.isInstanceOf[ChannelTlv.NextLocalNonceTlv]))))
     alice2bob.expectMsg(Error(accept.temporaryChannelId, MissingCommitNonce(accept.temporaryChannelId, TxId(ByteVector32.Zeroes), 0).getMessage))
@@ -284,7 +283,6 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
       .modify(_.tlvStream.records).using(_.filterNot(_.isInstanceOf[ChannelTlv.UpfrontShutdownScriptTlv]))
       .modify(_.tlvStream.records).using(_ + ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty))
     bob2alice.forward(alice, accept1)
-    alice2bob.expectNoMessage(100 millis)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].channelParams.remoteParams.upfrontShutdownScript_opt.isEmpty)
     aliceOpenReplyTo.expectNoMessage()

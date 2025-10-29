@@ -19,6 +19,7 @@ package fr.acinq.eclair.json
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{BlockHash, BlockId, Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.balance.CheckBalance.{DetailedOnChainBalance, GlobalBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -149,6 +150,10 @@ object BlockHashKmpSerializer extends MinimalSerializer({
 
 object ByteVector64Serializer extends MinimalSerializer({
   case x: ByteVector64 => JString(x.toHex)
+})
+
+object IndividualNonceSerializer extends MinimalSerializer({
+  case x: IndividualNonce => JString(x.data.toHex)
 })
 
 object UInt64Serializer extends MinimalSerializer({
@@ -603,7 +608,7 @@ object OriginSerializer extends MinimalSerializer({
 
 // @formatter:off
 case class CommitmentJson(fundingTxIndex: Long, fundingInput: OutPoint, fundingAmount: Satoshi, localFunding: LocalFundingStatus, remoteFunding: RemoteFundingStatus, commitmentFormat: String, localCommitParams: CommitParams, localCommit: LocalCommit, remoteCommitParams: CommitParams, remoteCommit: RemoteCommit, nextRemoteCommit: Option[RemoteCommit])
-object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => CommitmentJson(c.fundingTxIndex, c.fundingInput, c.fundingAmount, c.localFundingStatus, c.remoteFundingStatus, c.commitmentFormat.toString, c.localCommitParams, c.localCommit, c.remoteCommitParams, c.remoteCommit, c.nextRemoteCommit_opt.map(_.commit)))
+object CommitmentSerializer extends ConvertClassSerializer[Commitment](c => CommitmentJson(c.fundingTxIndex, c.fundingInput, c.fundingAmount, c.localFundingStatus, c.remoteFundingStatus, c.commitmentFormat.toString, c.localCommitParams, c.localCommit, c.remoteCommitParams, c.remoteCommit, c.nextRemoteCommit_opt))
 // @formatter:on
 
 // @formatter:off
@@ -730,6 +735,7 @@ object JsonSerializers {
     BlockIdSerializer +
     BlockHashSerializer +
     ByteVector64Serializer +
+    IndividualNonceSerializer +
     ChannelEventSerializer +
     UInt64Serializer +
     TimestampSecondSerializer +

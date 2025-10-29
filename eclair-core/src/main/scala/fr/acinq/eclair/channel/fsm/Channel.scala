@@ -20,8 +20,8 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
@@ -385,7 +385,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>
           log.info("we have nothing at stake, going straight to CLOSED")
           context.system.eventStream.publish(ChannelAborted(self, remoteNodeId, closing.channelId))
-          goto(CLOSED) using closing
+          goto(CLOSED) using IgnoreClosedData(closing)
         case closing: DATA_CLOSING =>
           val localPaysClosingFees = closing.commitments.localChannelParams.paysClosingFees
           val closingType_opt = Closing.isClosingTypeAlreadyKnown(closing)
@@ -438,7 +438,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 doPublish(rcp, secondStageTransactions, commitment)
               })
               closing.nextRemoteCommitPublished.foreach(rcp => {
-                val remoteCommit = commitment.nextRemoteCommit_opt.get.commit
+                val remoteCommit = commitment.nextRemoteCommit_opt.get
                 val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, rcp.commitTx, closingFeerate, closing.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
                 doPublish(rcp, secondStageTransactions, commitment)
               })
@@ -645,7 +645,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           d.commitments.sendCommit(channelKeys, remoteNextCommitNonces) match {
             case Right((commitments1, commit)) =>
               log.debug("sending a new sig, spec:\n{}", commitments1.latest.specs2String)
-              val nextRemoteCommit = commitments1.latest.nextRemoteCommit_opt.get.commit
+              val nextRemoteCommit = commitments1.latest.nextRemoteCommit_opt.get
               val nextCommitNumber = nextRemoteCommit.index
               // We persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
               // counterparty, so only htlcs above remote's dust_limit matter.
@@ -1115,8 +1115,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 // We only support updating phoenix channels to taproot: we ignore other attempts at upgrading the
                 // commitment format and will simply apply the previous commitment format.
                 val nextCommitmentFormat = msg.channelType_opt match {
-                  case Some(channelType: ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat =>
-                    log.info(s"accepting upgrade to $channelType during splice from commitment format ${parentCommitment.commitmentFormat}")
+                  case Some(ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat =>
+                    log.info(s"accepting upgrade to SimpleTaprootChannelsPhoenix during splice from commitment format ${parentCommitment.commitmentFormat}")
                     PhoenixSimpleTaprootChannelCommitmentFormat
                   case Some(channelType) =>
                     log.info(s"rejecting upgrade to $channelType during splice from commitment format ${parentCommitment.commitmentFormat}")
@@ -1183,7 +1183,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           // We only support updating phoenix channels to taproot: we ignore other attempts at upgrading the
           // commitment format and will simply apply the previous commitment format.
           val nextCommitmentFormat = msg.channelType_opt match {
-            case Some(_: ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat => PhoenixSimpleTaprootChannelCommitmentFormat
+            case Some(ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat => PhoenixSimpleTaprootChannelCommitmentFormat
             case _ => parentCommitment.commitmentFormat
           }
           val fundingParams = InteractiveTxParams(
@@ -1665,7 +1665,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           d.commitments.sendCommit(channelKeys, remoteNextCommitNonces) match {
             case Right((commitments1, commit)) =>
               log.debug("sending a new sig, spec:\n{}", commitments1.latest.specs2String)
-              val nextRemoteCommit = commitments1.latest.nextRemoteCommit_opt.get.commit
+              val nextRemoteCommit = commitments1.latest.nextRemoteCommit_opt.get
               val nextCommitNumber = nextRemoteCommit.index
               // We persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
               // counterparty, so only htlcs above remote's dust_limit matter.
@@ -2006,7 +2006,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 })
               })
               d.nextRemoteCommitPublished.foreach(nrcp => {
-                val remoteCommit = commitment.nextRemoteCommit_opt.get.commit
+                val remoteCommit = commitment.nextRemoteCommit_opt.get
                 val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)
                 Closing.RemoteClose.claimHtlcsWithPreimage(channelKeys, commitKeys, nrcp, commitment, remoteCommit, c.r, d.finalScriptPubKey).foreach(htlcTx => {
                   txPublisher ! TxPublisher.PublishReplaceableTx(htlcTx, nrcp.commitTx, commitment, Closing.confirmationTarget(htlcTx))
@@ -2017,7 +2017,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               log.info("htlc #{} was failed downstream, recalculating watched htlc outputs", c.id)
               val lcp1 = d.localCommitPublished.map(lcp => Closing.LocalClose.ignoreFailedIncomingHtlc(c.id, lcp, commitment))
               val rcp1 = d.remoteCommitPublished.map(rcp => Closing.RemoteClose.ignoreFailedIncomingHtlc(c.id, rcp, commitment, commitment.remoteCommit))
-              val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.ignoreFailedIncomingHtlc(c.id, nrcp, commitment, commitment.nextRemoteCommit_opt.get.commit))
+              val nrcp1 = d.nextRemoteCommitPublished.map(nrcp => Closing.RemoteClose.ignoreFailedIncomingHtlc(c.id, nrcp, commitment, commitment.nextRemoteCommit_opt.get))
               d.copy(commitments = commitments1, localCommitPublished = lcp1, remoteCommitPublished = rcp1, nextRemoteCommitPublished = nrcp1)
           }
           handleCommandSuccess(c, d1) storing()
@@ -2090,7 +2090,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       } else if (tx.txid == d.commitments.latest.remoteCommit.txId) {
         // counterparty may attempt to spend its last commit tx at any time
         handleRemoteSpentCurrent(tx, d)
-      } else if (d.commitments.latest.nextRemoteCommit_opt.exists(_.commit.txId == tx.txid)) {
+      } else if (d.commitments.latest.nextRemoteCommit_opt.exists(_.txId == tx.txid)) {
         // counterparty may attempt to spend its last commit tx at any time
         handleRemoteSpentNext(tx, d)
       } else if (tx.txIn.map(_.outPoint.txid).contains(d.commitments.latest.fundingTxId)) {
@@ -2142,7 +2142,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             spendLocalCurrent(d1, d.maxClosingFeerate_opt)
           } else if (commitment.remoteCommit.txId == tx.txid && commitment.remoteCommit.index == d.commitments.remoteCommitIndex) {
             handleRemoteSpentCurrent(tx, d1)
-          } else if (commitment.nextRemoteCommit_opt.exists(_.commit.txId == tx.txid) && commitment.remoteCommit.index == d.commitments.remoteCommitIndex && d.commitments.remoteNextCommitInfo.isLeft) {
+          } else if (commitment.nextRemoteCommit_opt.exists(_.txId == tx.txid) && commitment.remoteCommit.index == d.commitments.remoteCommitIndex && d.commitments.remoteNextCommitInfo.isLeft) {
             handleRemoteSpentNext(tx, d1)
           } else {
             // Our counterparty is trying to broadcast a revoked commit tx (cheating attempt).
@@ -2156,7 +2156,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             // so the fail command will be a no-op.
             val outgoingHtlcs = d.commitments.latest.localCommit.spec.htlcs.collect(DirectedHtlc.outgoing) ++
               d.commitments.latest.remoteCommit.spec.htlcs.collect(DirectedHtlc.incoming) ++
-              d.commitments.latest.nextRemoteCommit_opt.map(_.commit.spec.htlcs.collect(DirectedHtlc.incoming)).getOrElse(Set.empty)
+              d.commitments.latest.nextRemoteCommit_opt.map(_.spec.htlcs.collect(DirectedHtlc.incoming)).getOrElse(Set.empty)
             outgoingHtlcs.foreach { add =>
               d.commitments.originChannels.get(add.id) match {
                 case Some(origin) =>
@@ -2282,7 +2282,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
       // for our outgoing payments, let's send events if we know that they will settle on chain
       Closing
-        .onChainOutgoingHtlcs(d.commitments.latest.localCommit, d.commitments.latest.remoteCommit, d.commitments.latest.nextRemoteCommit_opt.map(_.commit), tx)
+        .onChainOutgoingHtlcs(d.commitments.latest.localCommit, d.commitments.latest.remoteCommit, d.commitments.latest.nextRemoteCommit_opt, tx)
         .map(add => (add, d.commitments.originChannels.get(add.id).map(_.upstream).collect { case Upstream.Local(id) => id })) // we resolve the payment id if this was a local payment
         .collect { case (add, Some(id)) => context.system.eventStream.publish(PaymentSettlingOnChain(id, amount = add.amountMsat, add.paymentHash)) }
       // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay()
@@ -2290,7 +2290,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case Some(closingType) =>
           log.info("channel closed (type={})", EventType.Closed(closingType).label)
           context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.commitments))
-          goto(CLOSED) using d1 storing()
+          goto(CLOSED) using DATA_CLOSED(d1, closingType)
         case None =>
           stay() using d1 storing()
       }
@@ -2323,7 +2323,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           } yield PublishReplaceableTx(anchorTx, rcp.commitTx, commitment, c.confirmationTarget)
           val nextRemoteAnchor_opt = for {
             nrcp <- d.nextRemoteCommitPublished
-            commitKeys = commitment.remoteKeys(channelKeys, commitment.nextRemoteCommit_opt.get.commit.remotePerCommitmentPoint)
+            commitKeys = commitment.remoteKeys(channelKeys, commitment.nextRemoteCommit_opt.get.remotePerCommitmentPoint)
             anchorTx <- Closing.RemoteClose.claimAnchor(fundingKey, commitKeys, nrcp.commitTx, commitmentFormat)
           } yield PublishReplaceableTx(anchorTx, nrcp.commitTx, commitment, c.confirmationTarget)
           // We favor the remote commitment(s) because they're more interesting than the local commitment (no CSV delays).
@@ -2367,9 +2367,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   when(CLOSED)(handleExceptions {
     case Event(Symbol("shutdown"), _) =>
       stateData match {
-        case d: PersistentChannelData =>
-          log.info(s"deleting database record for channelId=${d.channelId}")
-          nodeParams.db.channels.removeChannel(d.channelId)
+        case d: DATA_CLOSED =>
+          log.info(s"moving channelId=${d.channelId} to the closed channels DB")
+          nodeParams.db.channels.removeChannel(d.channelId, Some(d))
+        case _: PersistentChannelData | _: IgnoreClosedData =>
+          log.info("deleting database record for channelId={}", stateData.channelId)
+          nodeParams.db.channels.removeChannel(stateData.channelId, None)
         case _: TransientChannelData => // nothing was stored in the DB
       }
       log.info("shutting down")
@@ -2718,10 +2721,13 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               }
 
               // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-              d.localShutdown.foreach {
-                localShutdown =>
-                  log.debug("re-sending local_shutdown")
-                  sendQueue = sendQueue :+ localShutdown
+              val shutdown_opt = d.localShutdown match {
+                case None => None
+                case Some(shutdown) =>
+                  log.debug("re-sending local shutdown")
+                  val shutdown1 = createShutdown(commitments1, shutdown.scriptPubKey)
+                  sendQueue = sendQueue :+ shutdown1
+                  Some(shutdown1)
               }
 
               if (d.commitments.announceChannel) {
@@ -2752,7 +2758,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 peer ! ChannelReadyForPayments(self, remoteNodeId, d.channelId, fundingTxIndex)
               }
 
-              goto(NORMAL) using d.copy(commitments = commitments1, spliceStatus = spliceStatus1) sending sendQueue
+              goto(NORMAL) using d.copy(commitments = commitments1, spliceStatus = spliceStatus1, localShutdown = shutdown_opt) sending sendQueue
           }
       }
 
@@ -2778,9 +2784,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               handleSyncFailure(channelReestablish, syncFailure, d)
             case syncSuccess: SyncResult.Success =>
               val commitments1 = d.commitments.discardUnsignedUpdates()
-              val sendQueue = Queue.empty[LightningMessage] ++ syncSuccess.retransmit :+ d.localShutdown
+              // We retransmit our shutdown: we may have updated our script and they may not have received it.
+              val shutdown = createShutdown(commitments1, d.localShutdown.scriptPubKey)
+              val sendQueue = Queue.empty[LightningMessage] ++ syncSuccess.retransmit :+ shutdown
               // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-              goto(SHUTDOWN) using d.copy(commitments = commitments1) sending sendQueue
+              goto(SHUTDOWN) using d.copy(commitments = commitments1, localShutdown = shutdown) sending sendQueue
           }
       }
 
@@ -3030,10 +3038,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(WatchTxConfirmedTriggered(_, _, tx), d: DATA_NEGOTIATING_SIMPLE) if d.findClosingTx(tx).nonEmpty =>
-      val closingType = MutualClose(d.findClosingTx(tx).get)
+      val closingTx = d.findClosingTx(tx).get
+      val closingType = MutualClose(closingTx)
       log.info("channel closed (type={})", EventType.Closed(closingType).label)
       context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.commitments))
-      goto(CLOSED) using d storing()
+      goto(CLOSED) using DATA_CLOSED(d, closingTx)
 
     case Event(WatchFundingSpentTriggered(tx), d: ChannelDataWithCommitments) =>
       if (d.commitments.all.map(_.fundingTxId).contains(tx.txid)) {
@@ -3041,7 +3050,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         stay()
       } else if (tx.txid == d.commitments.latest.remoteCommit.txId) {
         handleRemoteSpentCurrent(tx, d)
-      } else if (d.commitments.latest.nextRemoteCommit_opt.exists(_.commit.txId == tx.txid)) {
+      } else if (d.commitments.latest.nextRemoteCommit_opt.exists(_.txId == tx.txid)) {
         handleRemoteSpentNext(tx, d)
       } else if (tx.txid == d.commitments.latest.localCommit.txId) {
         log.warning(s"processing local commit spent from the outside")
@@ -3071,6 +3080,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           case d: ChannelDataWithCommitments => Some(d.commitments)
           case _: ChannelDataWithoutCommitments => None
           case _: TransientChannelData => None
+          case _: ClosedData => None
         }
         context.system.eventStream.publish(ChannelStateChanged(self, nextStateData.channelId, peer, remoteNodeId, state, nextState, commitments_opt))
       }

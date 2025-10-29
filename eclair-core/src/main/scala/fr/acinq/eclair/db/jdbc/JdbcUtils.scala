@@ -80,6 +80,18 @@ trait JdbcUtils {
   }
 
   /**
+   * We removed legacy channels codecs after the v0.13.0 eclair release, and migrated channels in that release.
+   * It is thus not possible to directly upgrade from an eclair version earlier than v0.13.0.
+   * We warn node operators that they must first run the v0.13.0 release to migrate their channel data.
+   */
+  def checkChannelsDbVersion(statement: Statement, db_name: String, minimum: Int): Unit = {
+    getVersion(statement, db_name) match {
+      case Some(v) if v < minimum => throw new IllegalArgumentException("You are updating from a version of eclair older than v0.13.0: please update to the v0.13.0 release first to migrate your channel data, and afterwards you'll be able to update to the latest version.")
+      case _ => ()
+    }
+  }
+
+  /**
    * Updates the version for a particular logical database, it will overwrite the previous version.
    *
    * NB: we could define this method in [[fr.acinq.eclair.db.sqlite.SqliteUtils]] and [[fr.acinq.eclair.db.pg.PgUtils]]

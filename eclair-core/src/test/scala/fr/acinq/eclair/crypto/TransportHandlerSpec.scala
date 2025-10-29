@@ -19,11 +19,11 @@ package fr.acinq.eclair.crypto
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, SupervisorStrategy, Terminated}
 import akka.io.Tcp
 import akka.testkit.{TestActorRef, TestFSMRef, TestProbe}
-import fr.acinq.eclair.TestKitBaseClass
+import fr.acinq.eclair.{TestKitBaseClass, randomBytes32}
 import fr.acinq.eclair.crypto.Noise.{Chacha20Poly1305CipherFunctions, CipherState}
 import fr.acinq.eclair.crypto.TransportHandler.{Encryptor, ExtendedCipherState, Listener}
-import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{lightningMessageCodec, pingCodec}
-import fr.acinq.eclair.wire.protocol.{LightningMessage, Ping, Pong}
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{lightningMessageCodec, pingCodec, warningCodec}
+import fr.acinq.eclair.wire.protocol.{LightningMessage, Ping, Pong, Warning}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.Codec
@@ -77,6 +77,7 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
 
   test("handle unknown messages") {
     val incompleteCodec: Codec[LightningMessage] = discriminated[LightningMessage].by(uint16)
+      .typecase(1, warningCodec)
       .typecase(18, pingCodec)
 
     val pipe = system.actorOf(Props[MyPipePull]())
@@ -103,7 +104,7 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
     responder ! Pong(hex"deadbeef")
     probe1.expectNoMessage(2 seconds) // unknown message
 
-    val msg2 = Ping(42, hex"beefdead")
+    val msg2 = Warning(randomBytes32(), hex"beefdead")
     responder ! msg2
     probe1.expectMsg(msg2)
     probe1.reply(TransportHandler.ReadAck(msg2))
@@ -198,6 +199,39 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
     assert(ciphertexts(501) == hex"1b186c57d44eb6de4c057c49940d79bb838a145cb528d6e8fd26dbe50a60ca2c104b56b60e45bd")
     assert(ciphertexts(1000) == hex"4a2f3cc3b5e78ddb83dcb426d9863d9d9a723b0337c89dd0b005d89f8d3c05c52b76b29b740f09")
     assert(ciphertexts(1001) == hex"2ecd8c8a5629d0d02ab457a0fdd0f7b90a192cd46be5ecb6ca570bfc5e268338b1a16cf4ef2d36")
+  }
+
+  test("reject ping flooding") {
+    val pipe = system.actorOf(Props[MyPipe]())
+    val probe1 = TestProbe()
+    val probe2 = TestProbe()
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, lightningMessageCodec))
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, lightningMessageCodec))
+    pipe ! (initiator, responder)
+
+    awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
+    awaitCond(responder.stateName == TransportHandler.WaitingForListener)
+
+    initiator ! Listener(probe1.ref)
+    responder ! Listener(probe2.ref)
+
+    awaitCond(initiator.stateName == TransportHandler.Normal)
+    awaitCond(responder.stateName == TransportHandler.Normal)
+
+    initiator.tell(Ping(1105, ByteVector("hello 1".getBytes)), probe1.ref)
+    probe2.expectMsg(Ping(1105, ByteVector("hello 1".getBytes)))
+
+    initiator.tell(Ping(1105, ByteVector("hello 2".getBytes)), probe1.ref)
+    probe2.expectNoMessage()
+
+    probe1.watch(initiator)
+    probe1.expectTerminated(initiator)
+
+    probe1.watch(responder)
+    probe1.expectTerminated(responder)
+
+    probe1.watch(pipe)
+    probe1.expectTerminated(pipe)
   }
 }
 

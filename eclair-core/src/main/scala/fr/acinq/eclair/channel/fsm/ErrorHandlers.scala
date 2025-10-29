@@ -46,7 +46,7 @@ trait ErrorHandlers extends CommonHandlers {
   def handleFastClose(c: CloseCommand, channelId: ByteVector32) = {
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
     replyTo ! RES_SUCCESS(c, channelId)
-    goto(CLOSED)
+    goto(CLOSED) using IgnoreClosedData(stateData)
   }
 
   def handleMutualClose(closingTx: ClosingTx, d: Either[DATA_NEGOTIATING, DATA_CLOSING]) = {
@@ -100,7 +100,7 @@ trait ErrorHandlers extends CommonHandlers {
         cause match {
           case _: InvalidFundingTx =>
             // invalid funding tx in the single-funding case: we just close the channel
-            goto(CLOSED)
+            goto(CLOSED) using IgnoreClosedData(d)
           case _: ChannelException =>
             // known channel exception: we force close using our current commitment
             spendLocalCurrent(dd, maxClosingFeerate_opt) sending error
@@ -125,8 +125,9 @@ trait ErrorHandlers extends CommonHandlers {
             }
         }
       // When there is no commitment yet, we just send an error to our peer and go to CLOSED state.
-      case _: ChannelDataWithoutCommitments => goto(CLOSED) sending error
-      case _: TransientChannelData => goto(CLOSED) sending error
+      case _: ChannelDataWithoutCommitments => goto(CLOSED) using IgnoreClosedData(d) sending error
+      case _: TransientChannelData => goto(CLOSED) using IgnoreClosedData(d) sending error
+      case _: ClosedData => stay()
     }
   }
 
@@ -165,8 +166,9 @@ trait ErrorHandlers extends CommonHandlers {
       // When there is no commitment yet, we just go to CLOSED state in case an error occurs.
       case waitForDualFundingSigned: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED =>
         rollbackFundingAttempt(waitForDualFundingSigned.signingSession.fundingTx.tx, Nil)
-        goto(CLOSED)
-      case _: TransientChannelData => goto(CLOSED)
+        goto(CLOSED) using IgnoreClosedData(d)
+      case _: TransientChannelData => goto(CLOSED) using IgnoreClosedData(d)
+      case _: ClosedData => stay()
     }
   }
 
@@ -254,7 +256,7 @@ trait ErrorHandlers extends CommonHandlers {
     // we will watch for its confirmation. This ensures that we detect double-spends that could come from:
     //  - our own RBF attempts
     //  - remote transactions for outputs that both parties may spend (e.g. HTLCs)
-    val watchSpentQueue = lcp.localOutput_opt ++ lcp.anchorOutput_opt ++ lcp.htlcOutputs.toSeq
+    val watchSpentQueue = lcp.localOutput_opt ++ (if (!lcp.isConfirmed) lcp.anchorOutput_opt else None) ++ lcp.htlcOutputs.toSeq
     watchSpentIfNeeded(lcp.commitTx, watchSpentQueue, lcp.irrevocablySpent)
   }
 
@@ -290,7 +292,7 @@ trait ErrorHandlers extends CommonHandlers {
     val commitment = d.commitments.latest
     log.warning(s"they published their next commit in txid=${commitTx.txid}")
     require(commitment.nextRemoteCommit_opt.nonEmpty, "next remote commit must be defined")
-    val remoteCommit = commitment.nextRemoteCommit_opt.get.commit
+    val remoteCommit = commitment.nextRemoteCommit_opt.get
     require(commitTx.txid == remoteCommit.txId, "txid mismatch")
     val finalScriptPubKey = getOrGenerateFinalScriptPubKey(d)
     val closingFeerate = d match {
@@ -312,7 +314,7 @@ trait ErrorHandlers extends CommonHandlers {
   /** Publish 2nd-stage transactions for the remote commitment (no need for 3rd-stage transactions in that case). */
   def doPublish(rcp: RemoteCommitPublished, txs: Closing.RemoteClose.SecondStageTransactions, commitment: FullCommitment): Unit = {
     val remoteCommit = commitment.nextRemoteCommit_opt match {
-      case Some(c) if rcp.commitTx.txid == c.commit.txId => c.commit
+      case Some(commit) if rcp.commitTx.txid == commit.txId => commit
       case _ => commitment.remoteCommit
     }
     val publishAnchorTx_opt = txs.anchorTx_opt match {
@@ -335,7 +337,7 @@ trait ErrorHandlers extends CommonHandlers {
     // we will watch for its confirmation. This ensures that we detect double-spends that could come from:
     //  - our own RBF attempts
     //  - remote transactions for outputs that both parties may spend (e.g. HTLCs)
-    val watchSpentQueue = rcp.localOutput_opt ++ rcp.anchorOutput_opt ++ rcp.htlcOutputs.toSeq
+    val watchSpentQueue = rcp.localOutput_opt ++ (if (!rcp.isConfirmed) rcp.anchorOutput_opt else None) ++ rcp.htlcOutputs.toSeq
     watchSpentIfNeeded(rcp.commitTx, watchSpentQueue, rcp.irrevocablySpent)
   }
 

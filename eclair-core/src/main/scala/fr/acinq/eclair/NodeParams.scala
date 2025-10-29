@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements.AddressException
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentWeightRatios}
+import fr.acinq.eclair.router.Graph.HeuristicsConstants
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf, Router}
 import fr.acinq.eclair.tor.Socks5ProxyParams
@@ -460,26 +460,20 @@ object NodeParams extends Logging {
         maxCltv = CltvExpiryDelta(config.getInt("boundaries.max-cltv")),
         maxFeeFlat = Satoshi(config.getLong("boundaries.max-fee-flat-sat")).toMilliSatoshi,
         maxFeeProportional = config.getDouble("boundaries.max-fee-proportional-percent") / 100.0),
-      heuristics = if (config.getBoolean("use-ratios")) {
-        PaymentWeightRatios(
-          baseFactor = config.getDouble("ratios.base"),
-          cltvDeltaFactor = config.getDouble("ratios.cltv"),
-          ageFactor = config.getDouble("ratios.channel-age"),
-          capacityFactor = config.getDouble("ratios.channel-capacity"),
-          hopFees = getRelayFees(config.getConfig("hop-cost")),
-        )
-      } else {
-        HeuristicsConstants(
-          lockedFundsRisk = config.getDouble("locked-funds-risk"),
-          failureFees = getRelayFees(config.getConfig("failure-cost")),
-          hopFees = getRelayFees(config.getConfig("hop-cost")),
-          useLogProbability = config.getBoolean("use-log-probability"),
-          usePastRelaysData = config.getBoolean("use-past-relay-data"),
-        )
-      },
+      heuristics = HeuristicsConstants(
+        lockedFundsRisk = config.getDouble("locked-funds-risk"),
+        failureFees = getRelayFees(config.getConfig("failure-cost")),
+        hopFees = getRelayFees(config.getConfig("hop-cost")),
+        useLogProbability = config.getBoolean("use-log-probability"),
+        usePastRelaysData = config.getBoolean("use-past-relay-data")),
       mpp = MultiPartParams(
         Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
-        config.getInt("mpp.max-parts")),
+        config.getInt("mpp.max-parts"),
+        config.getString("mpp.splitting-strategy") match {
+          case "full-capacity" => MultiPartParams.FullCapacity
+          case "randomize" => MultiPartParams.Randomize
+          case "max-expected-amount" => MultiPartParams.MaxExpectedAmount
+        }),
       experimentName = name,
       experimentPercentage = config.getInt("percentage"))
 

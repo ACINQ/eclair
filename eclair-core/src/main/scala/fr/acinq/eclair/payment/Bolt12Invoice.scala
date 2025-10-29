@@ -127,7 +127,7 @@ object Bolt12Invoice {
       _ -> ()
     )
     if (records.get[InvoiceAmount].isEmpty) return Left(MissingRequiredTlv(UInt64(170)))
-    if (records.get[InvoicePaths].forall(_.paths.isEmpty)) return Left(MissingRequiredTlv(UInt64(160)))
+    if (records.get[InvoicePaths].isEmpty) return Left(MissingRequiredTlv(UInt64(160)))
     if (records.get[InvoiceBlindedPay].map(_.paymentInfo.length) != records.get[InvoicePaths].map(_.paths.length)) return Left(MissingRequiredTlv(UInt64(162)))
     if (records.get[InvoiceNodeId].isEmpty) return Left(MissingRequiredTlv(UInt64(176)))
     if (records.get[InvoiceCreatedAt].isEmpty) return Left(MissingRequiredTlv(UInt64(164)))

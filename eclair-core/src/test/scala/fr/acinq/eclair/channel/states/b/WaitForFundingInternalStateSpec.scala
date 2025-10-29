@@ -19,7 +19,6 @@ package fr.acinq.eclair.channel.states.b
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.eclair.blockchain.NoOpOnChainWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
@@ -41,7 +40,7 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, listener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init(wallet_opt = Some(new NoOpOnChainWallet()), tags = test.tags)
+    val setup = init(tags = test.tags)
     import setup._
     val channelParams = computeChannelParams(setup, test.tags)
     val listener = TestProbe()
@@ -79,7 +78,7 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
     val sender = TestProbe()
     val c = CMD_CLOSE(sender.ref, None, None)
     alice ! c
-    sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
+    assert(sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]].cmd == c)
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsg(OpenChannelResponse.Cancelled)

@@ -163,7 +163,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val blockHeight = new AtomicLong()
     blockHeight.set(currentBlockHeight(probe).toLong)
     val aliceNodeParams = TestConstants.Alice.nodeParams.copy(blockHeight = blockHeight)
-    val setup = init(aliceNodeParams, TestConstants.Bob.nodeParams.copy(blockHeight = blockHeight), wallet_opt = Some(walletClient))
+    val setup = init(aliceNodeParams, TestConstants.Bob.nodeParams.copy(blockHeight = blockHeight), walletA_opt = Some(walletClient))
     val testTags = channelType match {
       case _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx => Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)
       case _: ChannelTypes.AnchorOutputs => Set(ChannelStateTestsTags.AnchorOutputs)
@@ -339,7 +339,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       bob2alice.expectMsgType[RevokeAndAck]
       bob2alice.expectMsgType[CommitSig]
       assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.nonEmpty)
-      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.get.commit.txId
+      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.get.txId
 
       val nextRemoteCommit = bob.signCommitTx()
       assert(nextRemoteCommit.txid == nextRemoteCommitTxId)
@@ -487,7 +487,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     if (nextCommit) {
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.nextRemoteCommit_opt.nonEmpty)
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.nextRemoteCommit_opt.map(_.commit.txId).contains(commitTx.txid))
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.latest.nextRemoteCommit_opt.map(_.txId).contains(commitTx.txid))
     }
 
     val targetFeerate = FeeratePerKw(3000 sat)
@@ -1028,7 +1028,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       bob2alice.expectMsgType[RevokeAndAck]
       bob2alice.expectMsgType[CommitSig]
       assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.nonEmpty)
-      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.get.commit.txId
+      val nextRemoteCommitTxId = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.nextRemoteCommit_opt.get.txId
 
       // Force-close channel.
       probe.send(alice, CMD_FORCECLOSE(probe.ref))
@@ -1119,7 +1119,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     htlcSuccessPublisher ! Publish(probe.ref, htlcSuccess)
     val htlcSuccessTx = getMempoolTxs(1).head
     val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx.weight.toInt)
-    assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.2, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
+    assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.1, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
     assert(htlcSuccessTx.fees <= htlcSuccess.txInfo.amountIn)
 
     generateBlocks(6)
@@ -1147,7 +1147,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     setFeerate(targetFeerate) // the feerate is higher than what it was when the channel force-closed
     val htlcTimeoutTx = getMempoolTxs(1).head
     val htlcTimeoutTargetFee = Transactions.weight2fee(targetFeerate, htlcTimeoutTx.weight.toInt)
-    assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= htlcTimeoutTargetFee * 1.2, s"actualFee=${htlcTimeoutTx.fees} targetFee=$htlcTimeoutTargetFee")
+    assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= htlcTimeoutTargetFee * 1.1, s"actualFee=${htlcTimeoutTx.fees} targetFee=$htlcTimeoutTargetFee")
     assert(htlcTimeoutTx.fees <= htlcTimeout.txInfo.amountIn)
 
     generateBlocks(6)
@@ -1264,7 +1264,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(utxos, ChannelTypes.AnchorOutputsZeroFeeHtlcTx()) { f =>
       import f._
 
-      val targetFeerate = FeeratePerKw(8_000 sat)
+      val targetFeerate = FeeratePerKw(10_000 sat)
       val (commitTx, htlcSuccess, htlcTimeout) = closeChannelWithHtlcs(f, aliceBlockHeight() + 30)
       // NB: we try to get transactions confirmed *before* their confirmation target, so we aim for a more aggressive block target than what's provided.
       setFeerate(targetFeerate, blockTarget = 12)
@@ -1474,6 +1474,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       // we try to publish the htlc-success again (can be caused by a node restart): it will fail to replace the existing
       // one in the mempool but we must ensure we don't leave some utxos locked.
+      setFeerate(targetFeerate * 0.9)
       val publisher2 = createPublisher()
       publisher2 ! Publish(probe.ref, htlcSuccess)
       val result = probe.expectMsgType[TxRejected]

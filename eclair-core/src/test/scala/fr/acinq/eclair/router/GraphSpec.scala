@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePathWeight, MessageWeightRatios, PaymentWeightRatios, dijkstraMessagePath, routeBlindingPaths, yenKshortestPaths}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePathWeight, MessageWeightRatios, dijkstraMessagePath, routeBlindingPaths, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.wire.protocol.Color
@@ -288,7 +288,7 @@ class GraphSpec extends AnyFunSuite {
 
     val paths = yenKshortestPaths(GraphWithBalanceEstimates(graph, 1 day), a, e, 90000000 msat,
       Set.empty, Set.empty, Set.empty, 2,
-      PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
+      HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
 
     assert(paths.length == 2)
@@ -314,7 +314,7 @@ class GraphSpec extends AnyFunSuite {
 
     val paths = yenKshortestPaths(GraphWithBalanceEstimates(graph, 1 day), a, e, 90000000 msat,
       Set.empty, Set.empty, Set.empty, 2,
-      PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
+      HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
 
     // Even though paths to find is 2, we only find 1 because that is all the valid paths that there are.
@@ -347,7 +347,7 @@ class GraphSpec extends AnyFunSuite {
 
     val paths = yenKshortestPaths(GraphWithBalanceEstimates(graph, 1 day), c, h, 10000000 msat,
       Set.empty, Set.empty, Set.empty, 3,
-      PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
+      HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(paths.length == 3)
     assert(paths(0).path == Seq(edgeCE, edgeEF, edgeFH))
@@ -388,7 +388,7 @@ class GraphSpec extends AnyFunSuite {
 
     val paths = yenKshortestPaths(GraphWithBalanceEstimates(graph, 1 day), a, b, 10000000 msat,
       Set.empty, Set.empty, Set.empty, 1,
-      PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
+      HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false),
       BlockHeight(714930), _ => true, includeLocalChannelCost = true)
     assert(paths.head.path == Seq(edgeAB))
   }
@@ -524,13 +524,13 @@ class GraphSpec extends AnyFunSuite {
       .addOrUpdateVertex(makeNodeAnnouncement(priv_h, "H", Color(0, 0, 0), Nil, Features(Features.RouteBlinding -> FeatureSupport.Optional)))
 
     {
-      val paths = routeBlindingPaths(GraphWithBalanceEstimates(graph, 1 day), a, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)), BlockHeight(793397), _ => true, false)
+      val paths = routeBlindingPaths(GraphWithBalanceEstimates(graph, 1 day), a, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false), BlockHeight(793397), _ => true, false)
       assert(paths.length == 2)
       assert(paths(0).path.map(_.desc.a) == Seq(a, b))
       assert(paths(1).path.map(_.desc.a) == Seq(a, e, f))
     }
     {
-      val paths = routeBlindingPaths(GraphWithBalanceEstimates(graph, 1 day), c, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)), BlockHeight(793397), _ => true, false)
+      val paths = routeBlindingPaths(GraphWithBalanceEstimates(graph, 1 day), c, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false), BlockHeight(793397), _ => true, false)
       assert(paths.length == 1)
       assert(paths(0).path.map(_.desc.a) == Seq(c, a, b))
     }

@@ -9,8 +9,9 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.ClearRecipient
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.PaymentWeightRatios
+import fr.acinq.eclair.router.Graph.HeuristicsConstants
 import fr.acinq.eclair.router.RouteCalculation.{findMultiPartRoute, findRoute}
+import fr.acinq.eclair.router.Router.MultiPartParams.FullCapacity
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalPayload
@@ -325,12 +326,12 @@ object Blip18RouteCalculationSpec {
   val DEFAULT_EXPIRY = CltvExpiry(TestConstants.defaultBlockHeight)
   val DEFAULT_CAPACITY = 100_000 sat
 
-  val NO_WEIGHT_RATIOS: PaymentWeightRatios = PaymentWeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))
+  val NO_WEIGHT_RATIOS: HeuristicsConstants = HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false)
   val DEFAULT_ROUTE_PARAMS = PathFindingConf(
     randomize = false,
     boundaries = SearchBoundaries(21000 msat, 0.03, 6, CltvExpiryDelta(2016)),
     NO_WEIGHT_RATIOS,
-    MultiPartParams(1000 msat, 10),
+    MultiPartParams(1000 msat, 10, FullCapacity),
     experimentName = "my-test-experiment",
     experimentPercentage = 100).getDefaultRouteParams
 

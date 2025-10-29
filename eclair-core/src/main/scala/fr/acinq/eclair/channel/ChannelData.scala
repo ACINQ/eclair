@@ -20,6 +20,7 @@ import akka.actor.{ActorRef, PossiblyHarmful, typed}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
+import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.io.Peer
@@ -560,6 +561,8 @@ sealed trait ChannelDataWithCommitments extends PersistentChannelData {
   def commitments: Commitments
 }
 
+sealed trait ClosedData extends ChannelData
+
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_CHANNEL_NON_INITIATOR) extends TransientChannelData {
   val channelId: ByteVector32 = initFundee.temporaryChannelId
 }
@@ -695,6 +698,102 @@ final case class DATA_CLOSING(commitments: Commitments,
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends ChannelDataWithCommitments
+
+/** We use this class when a channel shouldn't be stored in the DB (e.g. because it never confirmed). */
+case class IgnoreClosedData(previousData: ChannelData) extends ClosedData {
+  val channelId: ByteVector32 = previousData.channelId
+}
+
+/**
+ * This class contains the data we will keep in our DB for every closed channel.
+ * It shouldn't contain data we may wish to remove in the future, otherwise we'll have backwards-compatibility issues.
+ * This is why for example the commitmentFormat is a string instead of using the [[CommitmentFormat]] trait, to allow
+ * storing legacy cases that we don't support anymore for active channels.
+ *
+ * Note that we only store channels that have been fully opened and for which we had something at stake. Channels that
+ * are cancelled before having a confirmed funding transactions are ignored, which protects against spam.
+ */
+final case class DATA_CLOSED(channelId: ByteVector32,
+                             remoteNodeId: PublicKey,
+                             fundingTxId: TxId,
+                             fundingOutputIndex: Long,
+                             fundingTxIndex: Long,
+                             fundingKeyPath: String,
+                             channelFeatures: String,
+                             isChannelOpener: Boolean,
+                             commitmentFormat: String,
+                             announced: Boolean,
+                             capacity: Satoshi,
+                             closingTxId: TxId,
+                             closingType: String,
+                             closingScript: ByteVector,
+                             localBalance: MilliSatoshi,
+                             remoteBalance: MilliSatoshi,
+                             closingAmount: Satoshi) extends ClosedData
+
+object DATA_CLOSED {
+  def apply(d: DATA_NEGOTIATING_SIMPLE, closingTx: ClosingTx): DATA_CLOSED = DATA_CLOSED(
+    channelId = d.channelId,
+    remoteNodeId = d.remoteNodeId,
+    fundingTxId = d.commitments.latest.fundingTxId,
+    fundingOutputIndex = d.commitments.latest.fundingInput.index,
+    fundingTxIndex = d.commitments.latest.fundingTxIndex,
+    fundingKeyPath = d.commitments.channelParams.localParams.fundingKeyPath.toString(),
+    channelFeatures = d.commitments.channelParams.channelFeatures.toString,
+    isChannelOpener = d.commitments.latest.channelParams.localParams.isChannelOpener,
+    commitmentFormat = d.commitments.latest.commitmentFormat.toString,
+    announced = d.commitments.latest.channelParams.announceChannel,
+    capacity = d.commitments.latest.capacity,
+    closingTxId = closingTx.tx.txid,
+    closingType = Helpers.Closing.MutualClose(closingTx).toString,
+    closingScript = d.localScriptPubKey,
+    localBalance = d.commitments.latest.localCommit.spec.toLocal,
+    remoteBalance = d.commitments.latest.localCommit.spec.toRemote,
+    closingAmount = closingTx.toLocalOutput_opt.map(_.amount).getOrElse(0 sat)
+  )
+
+  def apply(d: DATA_CLOSING, closingType: Helpers.Closing.ClosingType): DATA_CLOSED = DATA_CLOSED(
+    channelId = d.channelId,
+    remoteNodeId = d.remoteNodeId,
+    fundingTxId = d.commitments.latest.fundingTxId,
+    fundingOutputIndex = d.commitments.latest.fundingInput.index,
+    fundingTxIndex = d.commitments.latest.fundingTxIndex,
+    fundingKeyPath = d.commitments.channelParams.localParams.fundingKeyPath.toString(),
+    channelFeatures = d.commitments.channelParams.channelFeatures.toString,
+    isChannelOpener = d.commitments.latest.channelParams.localParams.isChannelOpener,
+    commitmentFormat = d.commitments.latest.commitmentFormat.toString,
+    announced = d.commitments.latest.channelParams.announceChannel,
+    capacity = d.commitments.latest.capacity,
+    closingTxId = closingType match {
+      case Closing.MutualClose(closingTx) => closingTx.tx.txid
+      case Closing.LocalClose(_, localCommitPublished) => localCommitPublished.commitTx.txid
+      case Closing.CurrentRemoteClose(_, remoteCommitPublished) => remoteCommitPublished.commitTx.txid
+      case Closing.NextRemoteClose(_, remoteCommitPublished) => remoteCommitPublished.commitTx.txid
+      case Closing.RecoveryClose(remoteCommitPublished) => remoteCommitPublished.commitTx.txid
+      case Closing.RevokedClose(revokedCommitPublished) => revokedCommitPublished.commitTx.txid
+    },
+    closingType = closingType.toString,
+    closingScript = d.finalScriptPubKey,
+    localBalance = closingType match {
+      case _: Closing.CurrentRemoteClose => d.commitments.latest.remoteCommit.spec.toRemote
+      case _: Closing.NextRemoteClose => d.commitments.latest.nextRemoteCommit_opt.getOrElse(d.commitments.latest.remoteCommit).spec.toRemote
+      case _ => d.commitments.latest.localCommit.spec.toLocal
+    },
+    remoteBalance = closingType match {
+      case _: Closing.CurrentRemoteClose => d.commitments.latest.remoteCommit.spec.toLocal
+      case _: Closing.NextRemoteClose => d.commitments.latest.nextRemoteCommit_opt.getOrElse(d.commitments.latest.remoteCommit).spec.toLocal
+      case _ => d.commitments.latest.localCommit.spec.toRemote
+    },
+    closingAmount = closingType match {
+      case Closing.MutualClose(closingTx) => closingTx.toLocalOutput_opt.map(_.amount).getOrElse(0 sat)
+      case Closing.LocalClose(_, localCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, localCommitPublished)
+      case Closing.CurrentRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, remoteCommitPublished)
+      case Closing.NextRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, remoteCommitPublished)
+      case Closing.RecoveryClose(remoteCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, remoteCommitPublished)
+      case Closing.RevokedClose(revokedCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, revokedCommitPublished)
+    }
+  )
+}
 
 /** Local params that apply for the channel's lifetime. */
 case class LocalChannelParams(nodeId: PublicKey,

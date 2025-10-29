@@ -21,7 +21,6 @@ import akka.actor.{ActorSystem, CoordinatedShutdown}
 import com.typesafe.config.Config
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import fr.acinq.eclair.TimestampMilli
-import fr.acinq.eclair.db.migration.{CompareDb, MigrateDb}
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import fr.acinq.eclair.db.pg.PgUtils._
 import fr.acinq.eclair.db.pg._
@@ -82,6 +81,8 @@ object Databases extends Logging {
   object SqliteDatabases {
     def apply(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection, inboundFeesJdbc: Connection, jdbcUrlFile_opt: Option[File]): SqliteDatabases = {
       jdbcUrlFile_opt.foreach(checkIfDatabaseUrlIsUnchanged("sqlite", _))
+      // We check whether the node operator needs to run an intermediate eclair version first.
+      using(eclairJdbc.createStatement(), inTransaction = true) { statement => checkChannelsDbVersion(statement, SqliteChannelsDb.DB_NAME, minimum = 7) }
       SqliteDatabases(
         network = new SqliteNetworkDb(networkJdbc),
         liquidity = new SqliteLiquidityDb(eclairJdbc),
@@ -158,6 +159,11 @@ object Databases extends Logging {
           }
       }
 
+      // We check whether the node operator needs to run an intermediate eclair version first.
+      PgUtils.inTransaction { connection =>
+        using(connection.createStatement()) { statement => checkChannelsDbVersion(statement, PgChannelsDb.DB_NAME, minimum = 11) }
+      }
+
       val databases = PostgresDatabases(
         network = new PgNetworkDb,
         liquidity = new PgLiquidityDb,
@@ -213,9 +219,8 @@ object Databases extends Logging {
               maxAge = initChecks.localChannelsMaxAge,
               sqlQuery =
                 """
-                  |SELECT MAX(GREATEST(created_timestamp, last_payment_sent_timestamp, last_payment_received_timestamp, last_connected_timestamp, closed_timestamp))
-                  |FROM local.channels
-                  |WHERE NOT is_closed""".stripMargin)
+                  |SELECT MAX(GREATEST(created_timestamp, last_payment_sent_timestamp, last_payment_received_timestamp, last_connected_timestamp))
+                  |FROM local.channels""".stripMargin)
 
             checkMaxAge(name = "network node",
               maxAge = initChecks.networkNodesMaxAge,
@@ -286,21 +291,6 @@ object Databases extends Logging {
         dbConfig.getString("driver") match {
           case "sqlite" => Databases.sqlite(chaindir, jdbcUrlFile_opt = Some(jdbcUrlFile))
           case "postgres" => Databases.postgres(dbConfig, instanceId, chaindir, jdbcUrlFile_opt = Some(jdbcUrlFile))
-          case dual@("dual-sqlite-primary" | "dual-postgres-primary") =>
-            logger.info(s"using $dual database mode")
-            val sqlite = Databases.sqlite(chaindir, jdbcUrlFile_opt = None)
-            val postgres = Databases.postgres(dbConfig, instanceId, chaindir, jdbcUrlFile_opt = None)
-            val (primary, secondary) = if (dual == "dual-sqlite-primary") (sqlite, postgres) else (postgres, sqlite)
-            val dualDb = DualDatabases(primary, secondary)
-            if (primary == sqlite) {
-              if (dbConfig.getBoolean("dual.migrate-on-restart")) {
-                MigrateDb.migrateAll(dualDb)
-              }
-              if (dbConfig.getBoolean("dual.compare-on-restart")) {
-                CompareDb.compareAll(dualDb)
-              }
-            }
-            dualDb
           case driver => throw new RuntimeException(s"unknown database driver `$driver`")
         }
     }

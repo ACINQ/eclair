@@ -111,7 +111,6 @@ object TestDatabases {
   }
 
   case class TestPgDatabases() extends TestDatabases {
-
     val datasource: DataSource = getNewDatabase()
     val hikariConfig = new HikariConfig
     hikariConfig.setDataSource(datasource)
@@ -166,8 +165,7 @@ object TestDatabases {
                      initializeTables: Connection => Unit,
                      dbName: String,
                      targetVersion: Int,
-                     postCheck: Connection => Unit
-                    ): Unit = {
+                     postCheck: Connection => Unit): Unit = {
     val connection = dbs.connection
     // initialize the database to a previous version and populate data
     initializeTables(connection)

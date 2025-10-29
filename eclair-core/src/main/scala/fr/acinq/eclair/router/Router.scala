@@ -38,7 +38,7 @@ import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
-import fr.acinq.eclair.router.Graph.MessageWeightRatios
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessageWeightRatios}
 import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
 
@@ -354,7 +354,7 @@ object Router {
 
   case class PathFindingConf(randomize: Boolean,
                              boundaries: SearchBoundaries,
-                             heuristics: Graph.WeightRatios[Graph.PaymentPathWeight],
+                             heuristics: HeuristicsConstants,
                              mpp: MultiPartParams,
                              experimentName: String,
                              experimentPercentage: Int) {
@@ -582,11 +582,24 @@ object Router {
     override def fee(amount: MilliSatoshi): MilliSatoshi = fee
   }
 
-  case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int)
+  object MultiPartParams {
+    sealed trait SplittingStrategy
+
+    /** Send the full capacity of the route */
+    object FullCapacity extends SplittingStrategy
+
+    /** Send between 20% and 100% of the capacity of the route */
+    object Randomize extends SplittingStrategy
+
+    /** Maximize the expected delivered amount */
+    object MaxExpectedAmount extends SplittingStrategy
+  }
+
+  case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int, splittingStrategy: MultiPartParams.SplittingStrategy)
 
   case class RouteParams(randomize: Boolean,
                          boundaries: SearchBoundaries,
-                         heuristics: Graph.WeightRatios[Graph.PaymentPathWeight],
+                         heuristics: HeuristicsConstants,
                          mpp: MultiPartParams,
                          experimentName: String,
                          includeLocalChannelCost: Boolean) {

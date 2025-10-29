@@ -451,14 +451,7 @@ object RouteCalculation {
                          currentBlockHeight: BlockHeight,
                          blip18InboundFees: Boolean = false,
                          excludePositiveInboundFees: Boolean = false): Try[Seq[Route]] = Try {
-    val result = findMultiPartRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, extraEdges, ignoredEdges, ignoredVertices, pendingHtlcs, routeParams, currentBlockHeight, blip18InboundFees, excludePositiveInboundFees) match {
-      case Right(routes) => Right(routes)
-      case Left(RouteNotFound) if routeParams.randomize =>
-        // If we couldn't find a randomized solution, fallback to a deterministic one.
-        findMultiPartRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, extraEdges, ignoredEdges, ignoredVertices, pendingHtlcs, routeParams.copy(randomize = false), currentBlockHeight, blip18InboundFees, excludePositiveInboundFees)
-      case Left(ex) => Left(ex)
-    }
-    result match {
+    findMultiPartRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, extraEdges, ignoredEdges, ignoredVertices, pendingHtlcs, routeParams, currentBlockHeight, blip18InboundFees, excludePositiveInboundFees) match {
       case Right(routes) => routes
       case Left(ex) => return Failure(ex)
     }
@@ -476,7 +469,8 @@ object RouteCalculation {
                                          routeParams: RouteParams,
                                          currentBlockHeight: BlockHeight,
                                          blip18InboundFees: Boolean,
-                                         excludePositiveInboundFees: Boolean): Either[RouterException, Seq[Route]] = {
+                                         excludePositiveInboundFees: Boolean,
+                                         now: TimestampSecond = TimestampSecond.now()): Either[RouterException, Seq[Route]] = {
     // We use Yen's k-shortest paths to find many paths for chunks of the total amount.
     // When the recipient is a direct peer, we have complete visibility on our local channels so we can use more accurate MPP parameters.
     val routeParams1 = {
@@ -492,65 +486,130 @@ object RouteCalculation {
       // We want to ensure that the set of routes we find have enough capacity to allow sending the total amount,
       // without excluding routes with small capacity when the total amount is small.
       val minPartAmount = routeParams.mpp.minPartAmount.max(amount / numRoutes).min(amount)
-      routeParams.copy(mpp = MultiPartParams(minPartAmount, numRoutes))
+      routeParams.copy(mpp = MultiPartParams(minPartAmount, numRoutes, routeParams.mpp.splittingStrategy))
     }
     findRouteInternal(g, localNodeId, targetNodeId, routeParams1.mpp.minPartAmount, maxFee, routeParams1.mpp.maxParts, extraEdges, ignoredEdges, ignoredVertices, routeParams1, currentBlockHeight, excludePositiveInboundFees) match {
-      case Right(routes) =>
+      case Right(paths) =>
         // We use these shortest paths to find a set of non-conflicting HTLCs that send the total amount.
-        split(amount, mutable.Queue(routes: _*), initializeUsedCapacity(pendingHtlcs), routeParams1) match {
+        split(amount, mutable.Queue(paths: _*), initializeUsedCapacity(pendingHtlcs), routeParams1, g.balances, now) match {
           case Right(routes) if validateMultiPartRoute(amount, maxFee, routes, routeParams.includeLocalChannelCost) =>
             if (blip18InboundFees)
               Right(routes.map(r => routeWithInboundFees(r.amount,  r.hops, g.graph)))
             else
               Right(routes)
+          case Right(_) if routeParams.randomize =>
+            // We've found a multipart route, but it's too expensive. We try again without randomization to prioritize cheaper paths.
+            val sortedPaths = paths.sortBy(_.weight.weight)
+            split(amount, mutable.Queue(sortedPaths: _*), initializeUsedCapacity(pendingHtlcs), routeParams1, g.balances, now) match {
+              case Right(routes) if validateMultiPartRoute(amount, maxFee, routes, routeParams.includeLocalChannelCost) =>
+                if (blip18InboundFees)
+                  Right(routes.map(r => routeWithInboundFees(r.amount,  r.hops, g.graph)))
+                else
+                  Right(routes)
+              case _ => Left(RouteNotFound)
+            }
           case _ => Left(RouteNotFound)
         }
       case Left(ex) => Left(ex)
     }
   }
 
-  @tailrec
-  private def split(amount: MilliSatoshi, paths: mutable.Queue[WeightedPath[PaymentPathWeight]], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, selectedRoutes: Seq[Route] = Nil): Either[RouterException, Seq[Route]] = {
-    if (amount == 0.msat) {
-      Right(selectedRoutes)
-    } else if (paths.isEmpty) {
-      Left(RouteNotFound)
-    } else {
+  private case class CandidateRoute(route: Route, maxAmount: MilliSatoshi)
+
+  private def split(amount: MilliSatoshi, paths: mutable.Queue[WeightedPath[PaymentPathWeight]], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], routeParams: RouteParams, balances: BalancesEstimates, now: TimestampSecond): Either[RouterException, Seq[Route]] = {
+    var amountLeft = amount
+    var candidates: List[CandidateRoute] = Nil
+    // We build some candidate route but may adjust the amounts later if the don't cover the full amount we need to send.
+    while(paths.nonEmpty && amountLeft > 0.msat) {
       val current = paths.dequeue()
       val candidate = computeRouteMaxAmount(current.path, usedCapacity)
-      if (candidate.amount < routeParams.mpp.minPartAmount.min(amount)) {
-        // this route doesn't have enough capacity left: we remove it and continue.
-        split(amount, paths, usedCapacity, routeParams, selectedRoutes)
-      } else {
-        val route = if (routeParams.randomize) {
-          // randomly choose the amount to be between 20% and 100% of the available capacity.
-          val randomizedAmount = candidate.amount * ((20d + Random.nextInt(81)) / 100)
-          if (randomizedAmount < routeParams.mpp.minPartAmount) {
-            candidate.copy(amount = routeParams.mpp.minPartAmount.min(amount))
-          } else {
-            candidate.copy(amount = randomizedAmount.min(amount))
-          }
-        } else {
-          candidate.copy(amount = candidate.amount.min(amount))
+      if (candidate.amount >= routeParams.mpp.minPartAmount.min(amountLeft)) {
+        val chosenAmount = routeParams.mpp.splittingStrategy match {
+          case MultiPartParams.Randomize =>
+            // randomly choose the amount to be between 20% and 100% of the available capacity.
+            val randomizedAmount = candidate.amount * ((20d + Random.nextInt(81)) / 100)
+            randomizedAmount.max(routeParams.mpp.minPartAmount).min(amountLeft)
+          case MultiPartParams.MaxExpectedAmount =>
+            val bestAmount = optimizeExpectedValue(current.path, candidate.amount, usedCapacity, routeParams.heuristics.usePastRelaysData, balances, now)
+            bestAmount.max(routeParams.mpp.minPartAmount).min(amountLeft)
+          case MultiPartParams.FullCapacity =>
+            candidate.amount.min(amountLeft)
         }
-        updateUsedCapacity(route, usedCapacity)
-        // NB: we re-enqueue the current path, it may still have capacity for a second HTLC.
-        split(amount - route.amount, paths.enqueue(current), usedCapacity, routeParams, route +: selectedRoutes)
+        // We update the route with our chosen amount, which is always smaller than the maximum amount.
+        val chosenRoute = CandidateRoute(candidate.copy(amount = chosenAmount), candidate.amount)
+        // But we use the route with its maximum amount when updating the used capacity, because we may use more funds below when adjusting the amounts.
+        updateUsedCapacity(candidate, usedCapacity)
+        candidates = chosenRoute :: candidates
+        amountLeft = amountLeft - chosenAmount
+        paths.enqueue(current)
       }
     }
+    // We adjust the amounts to send through each route.
+    val totalMaximum = candidates.map(_.maxAmount).sum
+    if (amountLeft == 0.msat) {
+      Right(candidates.map(_.route))
+    } else if (totalMaximum < amount) {
+      Left(RouteNotFound)
+    } else {
+      val totalChosen = candidates.map(_.route.amount).sum
+      val additionalFraction = (amount - totalChosen).toLong.toDouble / (totalMaximum - totalChosen).toLong.toDouble
+      var routes: List[Route] = Nil
+      var amountLeft = amount
+      candidates.foreach { case CandidateRoute(route, maxAmount) =>
+        if (amountLeft > 0.msat) {
+          val additionalAmount = MilliSatoshi(((maxAmount - route.amount).toLong * additionalFraction).ceil.toLong)
+          val amountToSend = (route.amount + additionalAmount).min(amountLeft)
+          routes = route.copy(amount = amountToSend) :: routes
+          amountLeft = amountLeft - amountToSend
+        }
+      }
+      Right(routes)
+    }
+  }
+
+  private def optimizeExpectedValue(route: Seq[GraphEdge], capacity: MilliSatoshi, usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi], usePastRelaysData: Boolean, balances: BalancesEstimates, now: TimestampSecond): MilliSatoshi = {
+    // We search the maximum value of a polynomial between its two smallest roots (0 and the minimum channel capacity on the path).
+    // We use binary search to find where the derivative changes sign.
+    var low = 1L
+    var high = capacity.toLong
+    while (high - low > 1L) {
+      val x = (high + low) / 2
+      val d = route.drop(1).foldLeft(1.0 / x.toDouble) { case (total, edge) =>
+        // We compute the success probability `p` for this edge, and its derivative `dp`.
+        val (p, dp) = if (usePastRelaysData) {
+          balances.get(edge).canSendAndDerivative(MilliSatoshi(x), now)
+        } else {
+          // If not using past relays data, we assume that balances are uniformly distributed between 0 and the full capacity of the channel.
+          val c = (edge.capacity - usedCapacity.getOrElse(edge.desc.shortChannelId, 0 msat)).toLong.toDouble
+          (1.0 - x.toDouble / c, -1.0 / c)
+        }
+        total + dp / p
+      }
+      if (d > 0.0) {
+        low = x
+      } else {
+        high = x
+      }
+    }
+    MilliSatoshi(high)
   }
 
   /** Compute the maximum amount that we can send through the given route. */
   private def computeRouteMaxAmount(route: Seq[GraphEdge], usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Route = {
-    val firstHopMaxAmount = route.head.maxHtlcAmount(usedCapacity.getOrElse(route.head.desc.shortChannelId, 0 msat))
+    val firstHopMaxAmount = maxEdgeAmount(route.head, usedCapacity.getOrElse(route.head.desc.shortChannelId, 0 msat))
     val amount = route.drop(1).foldLeft(firstHopMaxAmount) { case (amount, edge) =>
       // We compute fees going forward instead of backwards. That means we will slightly overestimate the fees of some
       // edges, but we will always stay inside the capacity bounds we computed.
       val amountMinusFees = amount - edge.fee(amount)
-      val edgeMaxAmount = edge.maxHtlcAmount(usedCapacity.getOrElse(edge.desc.shortChannelId, 0 msat))
+      val edgeMaxAmount = maxEdgeAmount(edge, usedCapacity.getOrElse(edge.desc.shortChannelId, 0 msat))
       amountMinusFees.min(edgeMaxAmount)
     }
     Route(amount.max(0 msat), route.map(graphEdgeToHop), None)
+  }
+
+  private def maxEdgeAmount(edge: GraphEdge, usedCapacity: MilliSatoshi): MilliSatoshi = {
+    val maxBalance = edge.balance_opt.getOrElse(edge.params.htlcMaximum_opt.getOrElse(edge.capacity.toMilliSatoshi))
+    Seq(Some(maxBalance - usedCapacity), edge.params.htlcMaximum_opt).flatten.min.max(0 msat)
   }
 
   /** Initialize known used capacity based on pending HTLCs. */
@@ -564,7 +623,14 @@ object RouteCalculation {
 
   /** Update used capacity by taking into account an HTLC sent to the given route. */
   private def updateUsedCapacity(route: Route, usedCapacity: mutable.Map[ShortChannelId, MilliSatoshi]): Unit = {
-    route.hops.foldRight(route.amount) { case (hop, amount) =>
+    val finalHopAmount = route.finalHop_opt.map(hop => {
+      hop match {
+        case BlindedHop(dummyId, _) => usedCapacity.updateWith(dummyId)(previous => Some(route.amount + previous.getOrElse(0 msat)))
+        case _: NodeHop => ()
+      }
+      route.amount + hop.fee(route.amount)
+    }).getOrElse(route.amount)
+    route.hops.foldRight(finalHopAmount) { case (hop, amount) =>
       usedCapacity.updateWith(hop.shortChannelId)(previous => Some(amount + previous.getOrElse(0 msat)))
       amount + hop.fee(amount)
     }
