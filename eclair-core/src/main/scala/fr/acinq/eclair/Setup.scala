@@ -326,14 +326,14 @@ class Setup(val datadir: File,
       }
 
       watcher = {
-        system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), ZMQActor.Topics.HashBlock, Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
-        system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), ZMQActor.Topics.RawTx, Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
+        system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), ZMQActor.Topics.HashBlock, Some(zmqBlockConnected))), "zmq-block", SupervisorStrategy.Restart))
+        system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), ZMQActor.Topics.RawTx, Some(zmqTxConnected))), "zmq-tx", SupervisorStrategy.Restart))
         val watcherBitcoinClient = if (config.getBoolean("bitcoind.batch-watcher-requests")) {
           new BitcoinCoreClient(new BatchingBitcoinJsonRPCClient(bitcoin), nodeParams.liquidityAdsConfig.lockUtxos)
         } else {
           new BitcoinCoreClient(bitcoin, nodeParams.liquidityAdsConfig.lockUtxos)
         }
-        system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams, blockHeight, watcherBitcoinClient)).onFailure(typed.SupervisorStrategy.resume), "watcher")
+        system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams, blockHeight, watcherBitcoinClient)).onFailure(typed.SupervisorStrategy.resume), "zmq-watcher")
       }
 
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))
