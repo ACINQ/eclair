@@ -42,7 +42,7 @@ This is an example of `eclair-signer.conf` configuration file:
 
 Restart eclair, without changing `eclair.bitcoind.wallet` (so it uses the default wallet or the previously used bitcoin wallet for existing nodes).
 
-Create a new empty, decriptor-enabled wallet on your new Bitcoin Core node.
+Create a new empty, descriptor-enabled wallet on your new Bitcoin Core node.
 
 :warning: The name must match the one that you set in `eclair-signer.conf` (here we use "eclair")
 
