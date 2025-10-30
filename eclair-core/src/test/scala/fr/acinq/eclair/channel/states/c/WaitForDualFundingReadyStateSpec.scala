@@ -238,18 +238,16 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     val bobInit = Init(TestConstants.Bob.nodeParams.features.initFeatures())
     alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
-    alice2bob.expectMsgType[ChannelReestablish]
+    assert(alice2bob.expectMsgType[ChannelReestablish].retransmitAnnSigs)
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[ChannelReestablish]
+    assert(!bob2alice.expectMsgType[ChannelReestablish].retransmitAnnSigs)
     bob2alice.forward(alice)
-    // Bob does not retransmit channel_ready and announcement_signatures because he has already received both of them from Alice.
-    bob2alice.expectNoMessage(100 millis)
-    // Alice has already received Bob's channel_ready, but not its announcement_signatures.
-    // She retransmits channel_ready and Bob will retransmit its announcement_signatures in response.
     alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob)
     alice2bob.expectMsgType[AnnouncementSignatures]
     alice2bob.forward(bob)
+    bob2alice.expectMsgType[ChannelReady]
+    bob2alice.forward(alice)
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.nonEmpty)
