@@ -481,7 +481,7 @@ object Helpers {
     /**
      * Check whether we are in sync with our peer.
      */
-    def checkSync(channelKeys: ChannelKeys, commitments: Commitments, remoteChannelReestablish: ChannelReestablish): SyncResult = {
+    def checkSync(channelKeys: ChannelKeys, commitments: Commitments, remoteChannelReestablish: ChannelReestablish)(implicit log: LoggingAdapter): SyncResult = {
 
       // This is done in two steps:
       // - step 1: we check our local commitment
