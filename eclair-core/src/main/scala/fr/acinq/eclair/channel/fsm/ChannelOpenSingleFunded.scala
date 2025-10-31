@@ -32,7 +32,7 @@ import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentK
 import fr.acinq.eclair.crypto.{NonceGenerator, ShaChain}
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{SegwitV0CommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, AcceptChannelTlv, AnnouncementSignatures, ChannelReady, ChannelTlv, Error, FundingCreated, FundingSigned, OpenChannel, OpenChannelTlv, TlvStream}
 import fr.acinq.eclair.{MilliSatoshiLong, randomKey, toLongId}
 import scodec.bits.ByteVector
@@ -79,7 +79,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
       val localShutdownScript = input.localChannelParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
       val localNonce = input.channelType.commitmentFormat match {
         case _: SimpleTaprootChannelCommitmentFormat => Some(NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0).publicNonce)
-        case _: AnchorOutputsCommitmentFormat => None
+        case _: SegwitV0CommitmentFormat => None
       }
       val open = OpenChannel(
         chainHash = nodeParams.chainHash,
@@ -134,7 +134,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
           val localShutdownScript = d.initFundee.localChannelParams.upfrontShutdownScript_opt.getOrElse(ByteVector.empty)
           val localNonce = d.initFundee.channelType.commitmentFormat match {
             case _: SimpleTaprootChannelCommitmentFormat => Some(NonceGenerator.verificationNonce(NonceGenerator.dummyFundingTxId, fundingKey, NonceGenerator.dummyRemoteFundingPubKey, 0).publicNonce)
-            case _: AnchorOutputsCommitmentFormat => None
+            case _: SegwitV0CommitmentFormat => None
           }
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localCommitParams.dustLimit,
@@ -233,7 +233,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                   }
                 case None => Left(MissingCommitNonce(d.channelId, NonceGenerator.dummyFundingTxId, commitmentNumber = 0))
               }
-            case _: AnchorOutputsCommitmentFormat => Right(remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey))
+            case _: SegwitV0CommitmentFormat => Right(remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey))
           }
           localSigOfRemoteTx match {
             case Left(f) => handleLocalError(f, d, None)
@@ -303,7 +303,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                       }
                     case None => Left(MissingCommitNonce(channelId, NonceGenerator.dummyFundingTxId, commitmentNumber = 0))
                   }
-                case _: AnchorOutputsCommitmentFormat => Right(remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey))
+                case _: SegwitV0CommitmentFormat => Right(remoteCommitTx.sign(fundingKey, d.remoteFundingPubKey))
               }
               localSigOfRemoteTx match {
                 case Left(f) => handleLocalError(f, d, Some(fc))
