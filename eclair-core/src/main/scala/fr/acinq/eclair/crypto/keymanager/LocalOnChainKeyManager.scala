@@ -163,7 +163,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     for {
       spent <- spentAmount(psbt, ourInputs)
       change <- changeAmount(psbt, ourOutputs)
-      _ = logger.debug(s"signing txid=${psbt.global.tx.txid} fees=${psbt.computeFees()} spent=$spent change=$change")
+      _ = logger.info(s"signing txid=${psbt.global.tx.txid} fees=${psbt.computeFees()} spent=$spent change=$change")
       _ <- Try {
         ourOutputs.foreach(i => require(isOurOutput(psbt, i), s"could not verify output $i: bitcoin core may be malicious"))
       }

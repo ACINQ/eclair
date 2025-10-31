@@ -1108,7 +1108,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 // commitment format and will simply apply the previous commitment format.
                 val nextCommitmentFormat = msg.channelType_opt match {
                   case Some(ChannelTypes.SimpleTaprootChannelsPhoenix) if parentCommitment.commitmentFormat == UnsafeLegacyAnchorOutputsCommitmentFormat =>
-                    log.info("accepting upgrade to {} during splice from commitment format {}", ChannelTypes.SimpleTaprootChannelsPhoenix, parentCommitment.commitmentFormat)
+                    log.info("accepting upgrade to {} during splice from commitment format {}", PhoenixSimpleTaprootChannelCommitmentFormat, parentCommitment.commitmentFormat)
                     PhoenixSimpleTaprootChannelCommitmentFormat
                   case Some(channelType) =>
                     log.info("rejecting upgrade to {} during splice from commitment format {}", channelType, parentCommitment.commitmentFormat)

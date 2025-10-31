@@ -86,7 +86,9 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
   when(AUTHENTICATING) {
     case Event(TransportHandler.HandshakeCompleted(remoteNodeId), d: AuthenticatingData) =>
       cancelTimer(AUTH_TIMER)
-      log.info(s"connection authenticated (direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"})")
+      Logs.withMdc(diagLog)(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
+        log.info(s"connection authenticated (direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"})")
+      }
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
       switchboard ! Authenticated(self, remoteNodeId, d.pendingAuth.outgoing)
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport, d.isPersistent)
@@ -133,7 +135,6 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       case Event(remoteInit: protocol.Init, d: InitializingData) =>
         cancelTimer(INIT_TIMER)
         d.transport ! TransportHandler.ReadAck(remoteInit)
-
         log.info(s"peer is using features=${remoteInit.features}, networks=${remoteInit.networks.mkString(",")}")
         remoteInit.remoteAddress_opt.foreach(address => log.info("peer reports that our IP address is {} (public={})", address.toString, NodeAddress.isPublicIPAddress(address)))
 
