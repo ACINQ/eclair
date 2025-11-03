@@ -278,6 +278,10 @@ object LightningMessageCodecs {
       ("htlcSignatures" | listofsignatures) ::
       ("tlvStream" | CommitSigTlv.commitSigTlvCodec)).as[CommitSig]
 
+  // This isn't a "real" lightning codec, as we send each commit_sig individually to our peers.
+  // But it's necessary to send CommitSigBatch objects to front machines when the cluster mode is used.
+  val commitSigBatchCodec: Codec[CommitSigBatch] = listOfN(uint16, lengthDelimited(commitSigCodec)).xmap(sigs => CommitSigBatch(sigs.toSeq), batch => batch.messages.toList)
+
   val revokeAndAckCodec: Codec[RevokeAndAck] = (
     ("channelId" | bytes32) ::
       ("perCommitmentSecret" | privateKey) ::
@@ -567,7 +571,7 @@ object LightningMessageCodecs {
     //
     .typecase(39409, recommendedFeeratesCodec)
   //
-
+    .typecase(53011, commitSigBatchCodec)
   //
 
   //

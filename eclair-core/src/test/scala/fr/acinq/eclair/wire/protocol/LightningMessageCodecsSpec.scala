@@ -27,7 +27,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
 import fr.acinq.eclair.channel.ChannelTypes.SimpleTaprootChannelsPhoenix
-import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelSpendSignature, ChannelTypes}
 import fr.acinq.eclair.json.JsonSerializers
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements
@@ -694,6 +694,18 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       val reEncoded = lightningMessageCodec.encode(decoded).require.bytes
       assert(reEncoded == encoded)
     }
+  }
+
+  test("encode/decode commit_sig batch") {
+    val channelId = randomBytes32()
+    val batch = CommitSigBatch(Seq(
+      CommitSig(channelId, ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
+      CommitSig(channelId, ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
+      CommitSig(channelId, ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
+    ))
+    val encoded = lightningMessageCodec.encode(batch).require
+    val decoded = lightningMessageCodec.decode(encoded).require.value
+    assert(decoded == batch)
   }
 
   test("unknown messages") {
