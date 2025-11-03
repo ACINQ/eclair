@@ -362,16 +362,22 @@ object OnTheFlyFunding {
     import scodec.Codec
     import scodec.codecs._
 
-    private val upstreamLocal: Codec[Upstream.Local] = uuid.as[Upstream.Local]
-    private val upstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: double).as[Upstream.Hot.Channel]
+    private val upstreamLocal: Codec[Upstream.Local] = (uuid :: bool8).as[Upstream.Local]
+    private val upstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: double :: bool8).as[Upstream.Hot.Channel]
     private val upstreamTrampoline: Codec[Upstream.Hot.Trampoline] = listOfN(uint16, upstreamChannel).as[Upstream.Hot.Trampoline]
-    private val legacyUpstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: provide(0.0)).as[Upstream.Hot.Channel]
+    private val upstreamLocalNoAccountability: Codec[Upstream.Local] = (uuid :: provide(false)).as[Upstream.Local]
+    private val upstreamChannelNoAccountability: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: double :: provide(false)).as[Upstream.Hot.Channel]
+    private val upstreamTrampolineNoAccountability: Codec[Upstream.Hot.Trampoline] = listOfN(uint16, upstreamChannelNoAccountability).as[Upstream.Hot.Trampoline]
+    private val legacyUpstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: provide(0.0) :: provide(false)).as[Upstream.Hot.Channel]
     private val legacyUpstreamTrampoline: Codec[Upstream.Hot.Trampoline] = listOfN(uint16, legacyUpstreamChannel).as[Upstream.Hot.Trampoline]
 
     val upstream: Codec[Upstream.Hot] = discriminated[Upstream.Hot].by(uint16)
-      .typecase(0x00, upstreamLocal)
-      .typecase(0x03, upstreamChannel)
-      .typecase(0x04, upstreamTrampoline)
+      .typecase(0x05, upstreamLocal)
+      .typecase(0x06, upstreamChannel)
+      .typecase(0x07, upstreamTrampoline)
+      .typecase(0x00, upstreamLocalNoAccountability)
+      .typecase(0x03, upstreamChannelNoAccountability)
+      .typecase(0x04, upstreamTrampolineNoAccountability)
       .typecase(0x01, legacyUpstreamChannel)
       .typecase(0x02, legacyUpstreamTrampoline)
 

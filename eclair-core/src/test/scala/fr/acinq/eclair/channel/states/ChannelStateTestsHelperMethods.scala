@@ -472,14 +472,14 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
   def localOrigin(replyTo: ActorRef): Origin.Hot = Origin.Hot(replyTo, localUpstream())
 
-  def localUpstream(): Upstream.Local = Upstream.Local(UUID.randomUUID())
+  def localUpstream(): Upstream.Local = Upstream.Local(UUID.randomUUID(), upgradeAccountability = false)
 
   def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: BlockHeight): (ByteVector32, CMD_ADD_HTLC) = {
-    makeCmdAdd(amount, CltvExpiryDelta(144), destination, randomBytes32(), currentBlockHeight, Upstream.Local(UUID.randomUUID()))
+    makeCmdAdd(amount, CltvExpiryDelta(144), destination, randomBytes32(), currentBlockHeight, Upstream.Local(UUID.randomUUID(), upgradeAccountability = false))
   }
 
   def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: BlockHeight, paymentPreimage: ByteVector32): (ByteVector32, CMD_ADD_HTLC) = {
-    makeCmdAdd(amount, destination, currentBlockHeight, paymentPreimage, Upstream.Local(UUID.randomUUID()))
+    makeCmdAdd(amount, destination, currentBlockHeight, paymentPreimage, Upstream.Local(UUID.randomUUID(), upgradeAccountability = false))
   }
 
   def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: BlockHeight, paymentPreimage: ByteVector32, upstream: Upstream.Hot): (ByteVector32, CMD_ADD_HTLC) = {
@@ -490,7 +490,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val paymentHash = Crypto.sha256(paymentPreimage)
     val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight)
     val recipient = SpontaneousRecipient(destination, amount, expiry, paymentPreimage)
-    val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(replyTo, upstream), paymentHash, makeSingleHopRoute(amount, destination), recipient, Reputation.Score.max)
+    val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(replyTo, upstream), paymentHash, makeSingleHopRoute(amount, destination), recipient, Reputation.Score.max(accountable = false))
     (paymentPreimage, payment.cmd.copy(commit = false))
   }
 
@@ -511,7 +511,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     addHtlc(amount, CltvExpiryDelta(144), s, r, s2r, r2s, replyTo)
   }
 
-  def addHtlc(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, replyTo: ActorRef = TestProbe().ref, upstream: Upstream.Hot = Upstream.Local(UUID.randomUUID())): (ByteVector32, UpdateAddHtlc) = {
+  def addHtlc(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, replyTo: ActorRef = TestProbe().ref, upstream: Upstream.Hot = Upstream.Local(UUID.randomUUID(), upgradeAccountability = false)): (ByteVector32, UpdateAddHtlc) = {
     val currentBlockHeight = s.underlyingActor.nodeParams.currentBlockHeight
     val (paymentPreimage, cmd) = makeCmdAdd(amount, cltvExpiryDelta, r.underlyingActor.nodeParams.nodeId, randomBytes32(), currentBlockHeight, upstream, replyTo)
     val htlc = addHtlc(cmd, s, r, s2r, r2s)

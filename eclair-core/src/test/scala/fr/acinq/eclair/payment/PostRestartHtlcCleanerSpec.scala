@@ -168,8 +168,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     )
 
     val channels = Seq(
-      ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_1, Map(0L -> Origin.Cold(Upstream.Local(UUID.randomUUID())), 1L -> Origin.Cold(Upstream.Local(UUID.randomUUID())))),
-      ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_2, Map(2L -> Origin.Cold(Upstream.Local(UUID.randomUUID()))))
+      ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_1, Map(0L -> Origin.Cold(Upstream.Local(UUID.randomUUID(), upgradeAccountability = false)), 1L -> Origin.Cold(Upstream.Local(UUID.randomUUID())))),
+      ChannelCodecsSpec.makeChannelDataNormal(htlc_ab_2, Map(2L -> Origin.Cold(Upstream.Local(UUID.randomUUID(), upgradeAccountability = false))))
     )
 
     // The HTLCs were not relayed yet, but they match pending on-the-fly funding proposals.

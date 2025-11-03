@@ -136,6 +136,7 @@ object Reputation {
   }
 
   case object Score {
+    def min: Score = Score(0.0, accountable = false)
     def max(accountable: Boolean): Score = Score(1.0, accountable)
   }
 

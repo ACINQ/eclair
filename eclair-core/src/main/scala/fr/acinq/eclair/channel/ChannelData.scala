@@ -153,18 +153,23 @@ object Upstream {
      * Occupancy of the incoming channel (both slot and value occupancy combined) that will be compared to the outgoing confidence.
      */
     def incomingChannelOccupancy: Double
+    def accountable: Boolean
+    def upgradeAccountability: Boolean
   }
   object Hot {
     /** Our node is forwarding a single incoming HTLC. */
-    case class Channel(add: UpdateAddHtlc, receivedAt: TimestampMilli, receivedFrom: PublicKey, incomingChannelOccupancy: Double) extends Hot {
+    case class Channel(add: UpdateAddHtlc, receivedAt: TimestampMilli, receivedFrom: PublicKey, incomingChannelOccupancy: Double, upgradeAccountability: Boolean) extends Hot {
       override val amountIn: MilliSatoshi = add.amountMsat
+      override val accountable: Boolean = add.accountable
       val expiryIn: CltvExpiry = add.cltvExpiry
 
-      override def toString: String = s"Channel(amountIn=$amountIn, receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, accountability=${add.accountability}, incomingChannelOccupancy=$incomingChannelOccupancy)"
+      override def toString: String = s"Channel(amountIn=$amountIn, receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, accountable=${add.accountable}, incomingChannelOccupancy=$incomingChannelOccupancy)"
     }
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
     case class Trampoline(received: List[Channel]) extends Hot {
       override val amountIn: MilliSatoshi = received.map(_.add.amountMsat).sum
+      override val accountable: Boolean = received.map(_.add.accountable).reduce(_ || _)
+      override val upgradeAccountability: Boolean = received.map(_.upgradeAccountability).reduce(_ && _)
       // We must use the lowest expiry of the incoming HTLC set.
       val expiryIn: CltvExpiry = received.map(_.add.cltvExpiry).min
       val receivedAt: TimestampMilli = received.map(_.receivedAt).max
@@ -179,8 +184,8 @@ object Upstream {
   sealed trait Cold extends Upstream
   object Cold {
     def apply(hot: Hot): Cold = hot match {
-      case Local(id) => Local(id)
-      case Hot.Channel(add, _, _, _) => Cold.Channel(add.channelId, add.id, add.amountMsat)
+      case Local(id, upgradeAccountability) => Local(id, upgradeAccountability)
+      case Hot.Channel(add, _, _, _, _) => Cold.Channel(add.channelId, add.id, add.amountMsat)
       case Hot.Trampoline(received) => Cold.Trampoline(received.map(r => Cold.Channel(r.add.channelId, r.add.id, r.add.amountMsat)))
     }
 
@@ -195,9 +200,10 @@ object Upstream {
   }
 
   /** Our node is the origin of the payment: there are no matching upstream HTLCs. */
-  case class Local(id: UUID) extends Hot with Cold {
+  case class Local(id: UUID, upgradeAccountability: Boolean) extends Hot with Cold {
     override val amountIn: MilliSatoshi = 0 msat
     override def incomingChannelOccupancy: Double = 0.0
+    override def accountable: Boolean = false
   }
 }
 

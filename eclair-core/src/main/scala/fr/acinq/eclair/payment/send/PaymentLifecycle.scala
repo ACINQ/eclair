@@ -76,15 +76,22 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(route +: _), WaitingForRoute(request, failures, ignore)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${request.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
-      val accountability = ??? // TODO
-      reputationRecorder_opt match {
-        case Some(reputationRecorder) =>
-          val cltvExpiry = route.fullRoute.map(_.cltvExpiryDelta).foldLeft(request.recipient.expiry)(_ + _)
-          reputationRecorder ! GetConfidence(self, Some(route.hops.head.nextNodeId), route.hops.head.fee(request.amount), nodeParams.currentBlockHeight, cltvExpiry, accountability)
-        case None =>
-          self ! Reputation.Score.max(accountability)
+      val accountable = cfg.upstream.accountable || cfg.upstream.incomingChannelOccupancy > 1 - nodeParams.relayParams.reservedBucket
+      if (accountable && !cfg.upstream.upgradeAccountability) {
+        ??? // TODO: fail payment
+      } else {
+        reputationRecorder_opt match {
+          // TODO: penalize HTLCs that do not use `upgradeAccountability`.
+          //case _ if !cfg.upstream.upgradeAccountability =>
+          //  context.self ! WrappedReputationScore(Reputation.Score.min)
+          case Some(reputationRecorder) =>
+            val cltvExpiry = route.fullRoute.map(_.cltvExpiryDelta).foldLeft(request.recipient.expiry)(_ + _)
+            reputationRecorder ! GetConfidence(self, Some(route.hops.head.nextNodeId), route.hops.head.fee(request.amount), nodeParams.currentBlockHeight, cltvExpiry, accountable)
+          case None =>
+            self ! Reputation.Score.max(accountable)
+        }
+        goto(WAITING_FOR_CONFIDENCE) using WaitingForConfidence(request, failures, ignore, route)
       }
-      goto(WAITING_FOR_CONFIDENCE) using WaitingForConfidence(request, failures, ignore, route)
 
     case Event(PaymentRouteNotFound(t), WaitingForRoute(request, failures, _)) =>
       Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(request.amount, Nil, t))).increment()

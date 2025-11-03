@@ -31,7 +31,7 @@ import scala.collection.mutable
 object ReputationRecorder {
   // @formatter:off
   sealed trait Command
-  case class GetConfidence(replyTo: ActorRef[Reputation.Score], downstream_opt: Option[PublicKey], fee: MilliSatoshi, currentBlockHeight: BlockHeight, expiry: CltvExpiry, accountability: Int) extends Command
+  case class GetConfidence(replyTo: ActorRef[Reputation.Score], downstream_opt: Option[PublicKey], fee: MilliSatoshi, currentBlockHeight: BlockHeight, expiry: CltvExpiry, accountable: Boolean) extends Command
   case class WrappedOutgoingHtlcAdded(added: OutgoingHtlcAdded) extends Command
   case class WrappedOutgoingHtlcSettled(settled: OutgoingHtlcSettled) extends Command
   // @formatter:on
@@ -58,14 +58,14 @@ class ReputationRecorder(config: Reputation.Config) {
 
   def run(): Behavior[Command] =
     Behaviors.receiveMessage {
-      case GetConfidence(replyTo, downstream_opt, fee, currentBlockHeight, expiry, accountability) =>
-        val outgoingConfidence = downstream_opt.flatMap(outgoingReputations.get).map(_.getConfidence(fee, accountability, currentBlockHeight, expiry)).getOrElse(0.0)
-        replyTo ! Reputation.Score(outgoingConfidence, accountability)
+      case GetConfidence(replyTo, downstream_opt, fee, currentBlockHeight, expiry, accountable) =>
+        val outgoingConfidence = downstream_opt.flatMap(outgoingReputations.get).map(_.getConfidence(fee, if (accountable) 1 else 0, currentBlockHeight, expiry)).getOrElse(0.0)
+        replyTo ! Reputation.Score(outgoingConfidence, accountable)
         Behaviors.same
 
       case WrappedOutgoingHtlcAdded(OutgoingHtlcAdded(add, remoteNodeId, fee)) =>
         val htlcId = HtlcId(add)
-        outgoingReputations(remoteNodeId) = outgoingReputations(remoteNodeId).addPendingHtlc(add, fee, add.accountability)
+        outgoingReputations(remoteNodeId) = outgoingReputations(remoteNodeId).addPendingHtlc(add, fee, if (add.accountable) 1 else 0)
         pending(htlcId) = PendingHtlc(add, remoteNodeId)
         Behaviors.same
 

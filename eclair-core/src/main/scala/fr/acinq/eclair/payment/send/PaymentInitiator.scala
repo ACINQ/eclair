@@ -50,7 +50,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         // Immediately return the paymentId
         replyTo ! paymentId
       }
-      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.invoice.nodeId, Upstream.Local(paymentId), Some(r.invoice), r.payerKey_opt, storeInDb = true, publishEvent = true, recordPathFindingMetrics = true)
+      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.invoice.nodeId, Upstream.Local(paymentId, r.invoice.accountable), Some(r.invoice), r.payerKey_opt, storeInDb = true, publishEvent = true, recordPathFindingMetrics = true)
       val finalExpiry = r.finalExpiry(nodeParams)
       val recipient = r.invoice match {
         case invoice: Bolt11Invoice => ClearRecipient(invoice, r.recipientAmount, finalExpiry, r.userCustomTlvs)
@@ -71,7 +71,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
     case r: SendSpontaneousPayment =>
       val paymentId = UUID.randomUUID()
       sender() ! paymentId
-      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), None, None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = r.recordPathFindingMetrics)
+      val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId, upgradeAccountability = true), None, None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = r.recordPathFindingMetrics)
       val finalExpiry = nodeParams.paymentFinalExpiry.computeFinalExpiry(nodeParams.currentBlockHeight, Channel.MIN_CLTV_EXPIRY_DELTA)
       val recipient = SpontaneousRecipient(r.recipientNodeId, r.recipientAmount, finalExpiry, r.paymentPreimage, r.userCustomTlvs)
       val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
@@ -99,7 +99,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(r.invoice.features)) :: Nil)
       } else {
         sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId)
-        val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = false)
+        val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId, r.invoice.accountable), Some(r.invoice), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = false)
         val finalExpiry = r.finalExpiry(nodeParams)
         val recipient = r.invoice match {
           case invoice: Bolt11Invoice => ClearRecipient(invoice, r.recipientAmount, finalExpiry, Set.empty)

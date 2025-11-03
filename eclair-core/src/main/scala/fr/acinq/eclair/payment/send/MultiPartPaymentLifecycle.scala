@@ -198,7 +198,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   private def spawnChildPaymentFsm(childId: UUID): ActorRef = {
     val upstream = cfg.upstream match {
-      case Upstream.Local(_) => Upstream.Local(childId)
+      case Upstream.Local(_, upgradeAccountability) => Upstream.Local(childId, upgradeAccountability)
       case _ => cfg.upstream
     }
     val childCfg = cfg.copy(id = childId, publishEvent = false, recordPathFindingMetrics = false, upstream = upstream)

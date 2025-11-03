@@ -344,7 +344,8 @@ private[channel] object ChannelCodecs5 {
       // NB: order matters!
       .typecase(0x03, upstreamChannelCodec)
       .typecase(0x02, listOfN(uint16, upstreamChannelCodec).as[Upstream.Cold.Trampoline])
-      .typecase(0x01, ("id" | uuid).as[Upstream.Local])
+      .typecase(0x04, (("id" | uuid) :: ("upgradeAccountability" | bool8)).as[Upstream.Local])
+      .typecase(0x01, (("id" | uuid) :: ("upgradeAccountability" | provide(false))).as[Upstream.Local])
 
     private val originCodec: Codec[Origin] = coldUpstreamCodec.xmap[Origin](
       upstream => Origin.Cold(upstream),

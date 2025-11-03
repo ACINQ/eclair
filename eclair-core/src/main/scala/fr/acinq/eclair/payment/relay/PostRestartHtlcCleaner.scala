@@ -174,7 +174,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
   private def handleDownstreamFulfill(brokenHtlcs: BrokenHtlcs, origin: Origin.Cold, fulfilledHtlc: UpdateAddHtlc, paymentPreimage: ByteVector32): Unit =
     brokenHtlcs.relayedOut.get(origin) match {
       case Some(relayedOut) => origin.upstream match {
-        case Upstream.Local(id) =>
+        case Upstream.Local(id, _) =>
           val feesPaid = 0.msat // fees are unknown since we lost the reference to the payment
           nodeParams.db.payments.getOutgoingPayment(id) match {
             case Some(p) =>
@@ -243,7 +243,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
       case Some(relayedOut) =>
         // If this is a local payment, we need to update the DB:
         origin.upstream match {
-          case Upstream.Local(id) => nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(id, failedHtlc.paymentHash, Nil))
+          case Upstream.Local(id, _) => nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(id, failedHtlc.paymentHash, Nil))
           case _ =>
         }
         val relayedOut1 = relayedOut diff Set((failedHtlc.channelId, failedHtlc.id))
@@ -252,7 +252,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
           // If we haven't already settled upstream, we can fail now.
           if (!brokenHtlcs.settledUpstream.contains(origin)) {
             origin.upstream match {
-              case Upstream.Local(id) => nodeParams.db.payments.getOutgoingPayment(id).foreach(p => {
+              case Upstream.Local(id, _) => nodeParams.db.payments.getOutgoingPayment(id).foreach(p => {
                 val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
                 if (payments.forall(_.status.isInstanceOf[OutgoingPaymentStatus.Failed])) {
                   log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}")

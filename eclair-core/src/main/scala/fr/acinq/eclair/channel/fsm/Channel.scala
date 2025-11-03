@@ -536,7 +536,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.aliases, commitments1, d.lastAnnouncement_opt))
           val relayFee = nodeFee(d.channelUpdate.relayFees, add.amountMsat)
           context.system.eventStream.publish(OutgoingHtlcAdded(add, remoteNodeId, relayFee))
-          log.info("OutgoingHtlcAdded: channelId={}, id={}, accountability={}, remoteNodeId={}, upstream={}, fee={}, now={}, blockHeight={}, expiry={}", Array(add.channelId.toHex, add.id, add.accountability, remoteNodeId.toHex, c.origin.upstream.toString, relayFee, TimestampMilli.now().toLong, nodeParams.currentBlockHeight.toLong, add.cltvExpiry))
+          log.info("OutgoingHtlcAdded: channelId={}, id={}, accountability={}, remoteNodeId={}, upstream={}, fee={}, now={}, blockHeight={}, expiry={}", Array(add.channelId.toHex, add.id, add.accountable, remoteNodeId.toHex, c.origin.upstream.toString, relayFee, TimestampMilli.now().toLong, nodeParams.currentBlockHeight.toLong, add.cltvExpiry))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending add
         case Left(cause) => handleAddHtlcCommandError(c, cause, Some(d.channelUpdate))
       }
@@ -2275,7 +2275,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // for our outgoing payments, let's send events if we know that they will settle on chain
       Closing
         .onChainOutgoingHtlcs(d.commitments.latest.localCommit, d.commitments.latest.remoteCommit, d.commitments.latest.nextRemoteCommit_opt, tx)
-        .map(add => (add, d.commitments.originChannels.get(add.id).map(_.upstream).collect { case Upstream.Local(id) => id })) // we resolve the payment id if this was a local payment
+        .map(add => (add, d.commitments.originChannels.get(add.id).map(_.upstream).collect { case Upstream.Local(id, _) => id })) // we resolve the payment id if this was a local payment
         .collect { case (add, Some(id)) => context.system.eventStream.publish(PaymentSettlingOnChain(id, amount = add.amountMsat, add.paymentHash)) }
       // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay()
       Closing.isClosed(d1, Some(tx)) match {

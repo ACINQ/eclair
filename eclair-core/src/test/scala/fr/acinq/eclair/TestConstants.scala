@@ -59,7 +59,7 @@ object TestConstants {
     paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalance)
   )
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
-  val emptyOrigin: Origin.Hot = Origin.Hot(ActorRef.noSender, Upstream.Local(UUID.randomUUID()))
+  val emptyOrigin: Origin.Hot = Origin.Hot(ActorRef.noSender, Upstream.Local(UUID.randomUUID(), upgradeAccountability = false))
 
   case object TestFeature extends Feature with InitFeature with NodeFeature {
     val rfcName = "test_feature"
@@ -183,6 +183,7 @@ object TestConstants {
         enforcementDelay = 10 minutes,
         asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
         peerReputationConfig = Reputation.Config(enabled = true, 1 day, 10 minutes),
+        reservedBucket = 0.4,
       ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
@@ -374,6 +375,7 @@ object TestConstants {
         enforcementDelay = 10 minutes,
         asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
         peerReputationConfig = Reputation.Config(enabled = true, 2 day, 20 minutes),
+        reservedBucket = 0.3,
       ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,

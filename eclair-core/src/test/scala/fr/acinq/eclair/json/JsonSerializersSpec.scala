@@ -268,7 +268,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
         hmac = ByteVector32(hex"9442626f72c475963dbddf8a57ab2cef3013eb3d6a5e8afbea9e631dac4481f5")
       ),
       pathKey_opt = None,
-      endorsement = 6,
+      accountable = false,
       fundingFee_opt = None,
     )
 
@@ -278,7 +278,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   test("HTLC origin serialization") {
-    val localOrigin = Origin.Cold(Upstream.Local(UUID.fromString("11111111-1111-1111-1111-111111111111")))
+    val localOrigin = Origin.Cold(Upstream.Local(UUID.fromString("11111111-1111-1111-1111-111111111111"), upgradeAccountability = false))
     val expectedLocalOrigin = """{"paymentId":"11111111-1111-1111-1111-111111111111"}"""
     JsonSerializers.serialization.write(localOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedLocalOrigin
 

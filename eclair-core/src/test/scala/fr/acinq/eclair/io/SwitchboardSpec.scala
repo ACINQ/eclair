@@ -44,7 +44,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val remoteNodeId1 = channel.remoteNodeId
     val paymentHash1 = randomBytes32()
     val pendingOnTheFly1 = OnTheFlyFunding.Pending(
-      proposed = Seq(OnTheFlyFunding.Proposal(OnTheFlyFundingSpec.createWillAdd(10_000_000 msat, paymentHash1, CltvExpiry(600)), Upstream.Local(UUID.randomUUID()), Nil)),
+      proposed = Seq(OnTheFlyFunding.Proposal(OnTheFlyFundingSpec.createWillAdd(10_000_000 msat, paymentHash1, CltvExpiry(600)), Upstream.Local(UUID.randomUUID(), upgradeAccountability = false), Nil)),
       status = OnTheFlyFundingSpec.createStatus()
     )
     nodeParams.db.liquidity.addPendingOnTheFlyFunding(remoteNodeId1, pendingOnTheFly1)
@@ -53,7 +53,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val remoteNodeId2 = randomKey().publicKey
     val paymentHash2 = randomBytes32()
     val pendingOnTheFly2 = OnTheFlyFunding.Pending(
-      proposed = Seq(OnTheFlyFunding.Proposal(OnTheFlyFundingSpec.createWillAdd(5_000_000 msat, paymentHash2, CltvExpiry(600)), Upstream.Local(UUID.randomUUID()), Nil)),
+      proposed = Seq(OnTheFlyFunding.Proposal(OnTheFlyFundingSpec.createWillAdd(5_000_000 msat, paymentHash2, CltvExpiry(600)), Upstream.Local(UUID.randomUUID(), upgradeAccountability = false), Nil)),
       status = OnTheFlyFundingSpec.createStatus()
     )
     nodeParams.db.liquidity.addPendingOnTheFlyFunding(remoteNodeId2, pendingOnTheFly2)
