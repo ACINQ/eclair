@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTrans
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.io.Peer.{LiquidityPurchaseSigned, OpenChannelResponse}
+import fr.acinq.eclair.io.Peer.{LiquidityPurchaseAborted, LiquidityPurchaseSigned, OpenChannelResponse}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{ToMilliSatoshiConversion, randomBytes32}
@@ -412,6 +412,9 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         case msg: TxAbort =>
           log.info("our peer aborted the dual funding flow: ascii='{}' bin={}", msg.toAscii, msg.data)
           rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
+          d.signingSession.liquidityPurchase_opt.collect {
+            case purchase if !d.signingSession.fundingParams.isInitiator => peer ! LiquidityPurchaseAborted(d.channelId, d.signingSession.fundingTx.txId, d.signingSession.fundingTxIndex)
+          }
           goto(CLOSED) using IgnoreClosedData(d) sending TxAbort(d.channelId, DualFundingAborted(d.channelId).getMessage)
         case msg: InteractiveTxConstructionMessage =>
           log.info("received unexpected interactive-tx message: {}", msg.getClass.getSimpleName)

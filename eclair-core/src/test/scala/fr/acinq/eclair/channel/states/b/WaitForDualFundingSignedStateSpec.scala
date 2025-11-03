@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTrans
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.crypto.NonceGenerator
-import fr.acinq.eclair.io.Peer.{LiquidityPurchaseSigned, OpenChannelResponse}
+import fr.acinq.eclair.io.Peer.{LiquidityPurchaseAborted, LiquidityPurchaseSigned, OpenChannelResponse}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, randomBytes32, randomKey}
@@ -231,6 +231,35 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val aliceData = alice.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(aliceData.latestFundingTx.sharedTx.asInstanceOf[FullySignedSharedTransaction].signedTx.txid == fundingTxId)
+  }
+
+  test("complete interactive-tx protocol then aborts (with liquidity ads)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.LiquidityAds)) { f =>
+    import f._
+
+    // We don't forward signatures to simulate an abort.
+    bob2alice.expectMsgType[CommitSig]
+    alice2bob.expectMsgType[CommitSig]
+
+    // Bob signed a liquidity purchase.
+    val purchase = bobPeer.fishForMessage() {
+      case l: LiquidityPurchaseSigned =>
+        assert(l.purchase.paymentDetails == LiquidityAds.PaymentDetails.FromChannelBalance)
+        assert(l.fundingTxIndex == 0)
+        true
+      case _ => false
+    }
+
+    // Alice aborts the channel open.
+    alice2bob.forward(bob, TxAbort(alice.stateData.channelId, "changed my mind"))
+    bobPeer.fishForMessage() {
+      case l: LiquidityPurchaseAborted =>
+        assert(l.txId == purchase.asInstanceOf[LiquidityPurchaseSigned].txId)
+        assert(l.fundingTxIndex == 0)
+        true
+      case _ => false
+    }
+    bobListener.expectMsgType[ChannelAborted]
+    awaitCond(bob.stateName == CLOSED)
   }
 
   test("recv invalid CommitSig", Tag(ChannelStateTestsTags.DualFunding)) { f =>

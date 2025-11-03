@@ -22,6 +22,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Crypto, Satoshi, SatoshiLong, TxId}
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, DummyOnChainWallet}
 import fr.acinq.eclair.channel.Upstream.Hot
 import fr.acinq.eclair.channel._
@@ -434,6 +435,34 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     peer ! CurrentBlockHeight(BlockHeight(560))
     register.expectNoMessage(100 millis)
     peerConnection.expectNoMessage(100 millis)
+  }
+
+  test("signed on-the-fly funding aborted") { f =>
+    import f._
+
+    connect(peer)
+
+    // A funding proposal is signed.
+    val upstream1 = upstreamChannel(60_000_000 msat, CltvExpiry(560))
+    proposeFunding(50_000_000 msat, CltvExpiry(520), upstream1.add.paymentHash, upstream1)
+    val purchase = signLiquidityPurchase(75_000 sat, LiquidityAds.PaymentDetails.FromFutureHtlc(upstream1.add.paymentHash :: Nil))
+
+    // An unrelated liquidity purchase is aborted.
+    peer ! LiquidityPurchaseAborted(purchase.channelId, randomTxId(), purchase.fundingTxIndex)
+    register.expectNoMessage(100 millis)
+    awaitCond(nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId).contains(upstream1.add.paymentHash))
+
+    // Our peer then decides to abort instead of exchanging splice signatures.
+    peer ! LiquidityPurchaseAborted(purchase.channelId, purchase.txId, purchase.fundingTxIndex)
+
+    // We fail the corresponding upstream HTLC.
+    val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fwd.channelId == upstream1.add.channelId)
+    assert(fwd.message.id == upstream1.add.id)
+    register.expectNoMessage(100 millis)
+
+    // And forget the liquidity purchase.
+    awaitCond(nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId).isEmpty)
   }
 
   test("signed on-the-fly funding HTLC timeout after disconnection") { f =>

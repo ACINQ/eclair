@@ -46,7 +46,7 @@ import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent.EventType
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.io.Peer.LiquidityPurchaseSigned
+import fr.acinq.eclair.io.Peer.{LiquidityPurchaseAborted, LiquidityPurchaseSigned}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.{Bolt11Invoice, PaymentSettlingOnChain}
 import fr.acinq.eclair.reputation.Reputation
@@ -1363,6 +1363,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case SpliceStatus.SpliceWaitingForSigs(signingSession) =>
           log.info("our peer aborted the splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
           rollbackFundingAttempt(signingSession.fundingTx.tx, previousTxs = Seq.empty) // no splice rbf yet
+          signingSession.liquidityPurchase_opt.collect {
+            case purchase if !signingSession.fundingParams.isInitiator => peer ! LiquidityPurchaseAborted(d.channelId, signingSession.fundingTx.txId, signingSession.fundingTxIndex)
+          }
           stay() using d.copy(spliceStatus = SpliceStatus.NoSplice) sending TxAbort(d.channelId, SpliceAttemptAborted(d.channelId).getMessage) calling endQuiescence(d)
         case SpliceStatus.SpliceRequested(cmd, _) =>
           log.info("our peer rejected our splice attempt: ascii='{}' bin={}", msg.toAscii, msg.data)
