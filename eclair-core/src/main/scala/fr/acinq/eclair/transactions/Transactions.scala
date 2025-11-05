@@ -97,7 +97,7 @@ object Transactions {
   }
 
   sealed trait SegwitV0CommitmentFormat extends CommitmentFormat {
-    override val fundingInputWeight = 384
+    override val fundingInputWeight = 386
   }
 
   /**
