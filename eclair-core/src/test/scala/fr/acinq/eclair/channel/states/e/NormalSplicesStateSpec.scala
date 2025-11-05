@@ -35,7 +35,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFactory, PimpTestFSM}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.db.RevokedHtlcInfoCleaner.ForgetHtlcInfos
-import fr.acinq.eclair.io.Peer.LiquidityPurchaseSigned
+import fr.acinq.eclair.io.Peer.{LiquidityPurchaseAborted, LiquidityPurchaseSigned}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
@@ -461,6 +461,59 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
         assert(l.purchase.paymentDetails == LiquidityAds.PaymentDetails.FromChannelBalance)
         assert(l.fundingTxIndex == 1)
         assert(l.txId == alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.fundingTxId)
+        true
+      case _ => false
+    }
+  }
+
+  test("recv CMD_SPLICE (splice-in, liquidity ads, aborted)") { f =>
+    import f._
+
+    val sender = TestProbe()
+    val fundingRequest = LiquidityAds.RequestFunding(400_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalance)
+    val cmd = CMD_SPLICE(sender.ref, Some(SpliceIn(500_000 sat)), None, Some(fundingRequest), None)
+    alice ! cmd
+
+    exchangeStfu(alice, bob, alice2bob, bob2alice)
+    assert(alice2bob.expectMsgType[SpliceInit].requestFunding_opt.nonEmpty)
+    alice2bob.forward(bob)
+    assert(bob2alice.expectMsgType[SpliceAck].willFund_opt.nonEmpty)
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddInput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddInput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddInput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxAddOutput]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxComplete]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxAddOutput]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[TxComplete]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[TxComplete]
+    alice2bob.forward(bob)
+
+    // Bob signed a liquidity purchase.
+    val purchase = bobPeer.fishForMessage() {
+      case l: LiquidityPurchaseSigned =>
+        assert(l.purchase.paymentDetails == LiquidityAds.PaymentDetails.FromChannelBalance)
+        assert(l.fundingTxIndex == 1)
+        true
+      case _ => false
+    }
+
+    // Alice aborts the splice instead of signing it: Bob will notify the peer actor to allow failing the corresponding
+    // upstream HTLCs instead of holding them until they expire.
+    alice2bob.forward(bob, TxAbort(alice.stateData.channelId, "thanks but no thanks"))
+    bobPeer.fishForMessage() {
+      case l: LiquidityPurchaseAborted =>
+        assert(l.txId == purchase.asInstanceOf[LiquidityPurchaseSigned].txId)
+        assert(l.fundingTxIndex == 1)
         true
       case _ => false
     }

@@ -740,9 +740,8 @@ class Peer(val nodeParams: NodeParams,
       }
       // We signed a liquidity purchase from our peer. At that point we're not 100% sure yet it will succeed: if
       // we disconnect before our peer sends their signature, the funding attempt may be cancelled when reconnecting.
-      // If that happens, the on-the-fly proposal will stay in our state until we reach the CLTV expiry, at which
-      // point we will forget it and fail the upstream HTLCs. This is also what would happen if we successfully
-      // funded the channel, but it closed before we could relay the HTLCs.
+      // If that happens, we will receive a LiquidityPurchaseAborted event, which is handled below, at which point we
+      // will forget the purchase and fail the upstream HTLCs.
       val (paymentHashes, feesOwed) = e.purchase.paymentDetails match {
         case LiquidityAds.PaymentDetails.FromChannelBalance => (Nil, 0 msat)
         case p: LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc => (p.paymentHashes, 0 msat)
@@ -784,6 +783,19 @@ class Peer(val nodeParams: NodeParams,
               log.warning("liquidity purchase was already signed for payment_hash={} (previousTxId={}, currentTxId={})", payment.paymentHash, status.txId, e.txId)
           }
         })
+      stay()
+
+    case Event(e: LiquidityPurchaseAborted, _: ConnectedData) =>
+      pendingOnTheFlyFunding.foreach {
+        case (paymentHash, pending) => pending.status match {
+          case status: OnTheFlyFunding.Status.Funded if status.channelId == e.channelId && status.txId == e.txId && status.fundingTxIndex == e.fundingTxIndex =>
+            log.warning("funded will_add_htlc aborted by our peer after funding for payment_hash={} and fundingTxId={}", paymentHash, status.txId)
+            pending.createFailureCommands(log).foreach { case (channelId, cmd) => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd) }
+            nodeParams.db.liquidity.removePendingOnTheFlyFunding(remoteNodeId, paymentHash)
+            pendingOnTheFlyFunding -= paymentHash
+          case _ => ()
+        }
+      }
       stay()
 
     case Event(e: OnTheFlyFunding.PaymentRelayer.RelayResult, _) =>
@@ -1133,6 +1145,7 @@ object Peer {
 
   /** We signed a funding transaction where our peer purchased some liquidity. */
   case class LiquidityPurchaseSigned(channelId: ByteVector32, txId: TxId, fundingTxIndex: Long, htlcMinimum: MilliSatoshi, purchase: LiquidityAds.Purchase)
+  case class LiquidityPurchaseAborted(channelId: ByteVector32, txId: TxId, fundingTxIndex: Long)
 
   case class OnTheFlyFundingTimeout(paymentHash: ByteVector32)
 
