@@ -97,7 +97,9 @@ object Transactions {
   }
 
   sealed trait SegwitV0CommitmentFormat extends CommitmentFormat {
-    override val fundingInputWeight = 384
+    // see https://github.com/lightning/bolts/blob/master/03-transactions.md#appendix-a-expected-weights
+    // funding input weight = 4 * funding_input_size + witness_size = 4 * 41 + 222 = 386
+    override val fundingInputWeight = 386
   }
 
   /**
