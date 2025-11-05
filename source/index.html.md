@@ -1859,7 +1859,7 @@ invoice                   | The invoice you want to pay                         
 amountMsat                | Amount to pay if the invoice does not have one                                                 | Yes      | Millisatoshi (Integer)
 maxAttempts               | Max number of retries                                                                          | Yes      | Integer
 maxFeeFlatSat             | Fee threshold to be paid along the payment route                                               | Yes      | Satoshi (Integer)
-maxFeePct                 | Max percentage to be paid in fees along the payment route (ignored if below `maxFeeFlatSat`)   | Yes      | Integer (between 0 and 100)
+maxFeePct                 | Max percentage to be paid in fees along the payment route (ignored if below `maxFeeFlatSat`)   | Yes      | Double (between 0 and 100)
 externalId                | Extra payment identifier specified by the caller                                               | Yes      | String
 pathFindingExperimentName | Name of the path-finding configuration that should be used                                     | Yes      | String
 blocking                  | Block until the payment completes                                                              | Yes      | Boolean
@@ -2067,7 +2067,7 @@ quantity                  | Number of items to pay for, if the offer supports it
 connectDirectly           | If true, directly connect to the offer's introduction node to request an invoice               | Yes      | Boolean
 maxAttempts               | Max number of retries                                                                          | Yes      | Integer
 maxFeeFlatSat             | Fee threshold to be paid along the payment route                                               | Yes      | Satoshi (Integer)
-maxFeePct                 | Max percentage to be paid in fees along the payment route (ignored if below `maxFeeFlatSat`)   | Yes      | Integer (between 0 and 100)
+maxFeePct                 | Max percentage to be paid in fees along the payment route (ignored if below `maxFeeFlatSat`)   | Yes      | Double (between 0 and 100)
 externalId                | Extra payment identifier specified by the caller                                               | Yes      | String
 pathFindingExperimentName | Name of the path-finding configuration that should be used                                     | Yes      | String
 blocking                  | Block until the payment completes                                                              | Yes      | Boolean
@@ -2109,7 +2109,7 @@ nodeId                    | The recipient of this payment                       
 amountMsat                | Amount to pay                                                                                  | No       | Millisatoshi (Integer)
 maxAttempts               | Max number of retries                                                                          | Yes      | Integer
 maxFeeFlatSat             | Fee threshold to be paid along the payment route                                               | Yes      | Satoshi (Integer)
-maxFeePct                 | Max percentage to be paid in fees along the payment route (ignored if below `maxFeeFlatSat`)   | Yes      | Integer (between 0 and 100)
+maxFeePct                 | Max percentage to be paid in fees along the payment route (ignored if below `maxFeeFlatSat`)   | Yes      | Double (between 0 and 100)
 externalId                | Extra payment identifier specified by the caller                                               | Yes      | String
 pathFindingExperimentName | Name of the path-finding configuration that should be used                                     | Yes      | String
 
