@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.api.handlers
 
-import akka.http.scaladsl.server.Route
+import akka.http.scaladsl.server.{Route, ValidationRejection}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
@@ -36,7 +36,11 @@ trait Fees {
   val updateRelayFee: Route = postRequest("updaterelayfee") { implicit t =>
     withNodesIdentifier { nodes =>
       formFields("feeBaseMsat".as[MilliSatoshi], "feeProportionalMillionths".as[Long]) { (feeBase, feeProportional) =>
-        complete(eclairApi.updateRelayFee(nodes, feeBase, feeProportional))
+        if (feeBase.toLong < 0 || feeProportional < 0) {
+          reject(ValidationRejection("Fees must be nonnegative"))
+        } else {
+          complete(eclairApi.updateRelayFee(nodes, feeBase, feeProportional))
+        }
       }
     }
   }
