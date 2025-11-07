@@ -648,7 +648,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
   }
 
   def localClose(s: TestFSMRef[ChannelState, ChannelData, Channel], s2blockchain: TestProbe, htlcSuccessCount: Int = 0, htlcTimeoutCount: Int = 0): (LocalCommitPublished, PublishedForceCloseTxs) = {
-    s ! Error(ByteVector32.Zeroes, "oops")
+    s ! CMD_FORCECLOSE(ActorRef.noSender, None, None)
     eventually(assert(s.stateName == CLOSING))
     val closingState = s.stateData.asInstanceOf[DATA_CLOSING]
     assert(closingState.localCommitPublished.isDefined)
