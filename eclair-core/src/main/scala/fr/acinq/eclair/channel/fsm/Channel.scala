@@ -405,7 +405,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               val thirdStageTransactions = Closing.LocalClose.claimHtlcDelayedOutputs(c.localCommitPublished, channelKeys, commitment, closingFeerate, closing.finalScriptPubKey)
               doPublish(c.localCommitPublished, thirdStageTransactions)
             case Some(c: Closing.RemoteClose) =>
-              val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, c.remoteCommit, c.remoteCommitPublished.commitTx, closingFeerate, closing.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
+              val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, c.remoteCommit, c.remoteCommitPublished.commitTx, closingFeerate, nodeParams.currentBitcoinCoreFeerates, closing.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
               doPublish(c.remoteCommitPublished, secondStageTransactions, commitment)
             case Some(c: Closing.RecoveryClose) =>
               // We cannot do anything in that case: we've already published our recovery transaction before restarting,
@@ -434,12 +434,12 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 doPublish(lcp, secondStageTransactions, commitment)
               })
               closing.remoteCommitPublished.foreach(rcp => {
-                val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, commitment.remoteCommit, rcp.commitTx, closingFeerate, closing.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
+                val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, commitment.remoteCommit, rcp.commitTx, closingFeerate, nodeParams.currentBitcoinCoreFeerates, closing.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
                 doPublish(rcp, secondStageTransactions, commitment)
               })
               closing.nextRemoteCommitPublished.foreach(rcp => {
                 val remoteCommit = commitment.nextRemoteCommit_opt.get
-                val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, rcp.commitTx, closingFeerate, closing.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
+                val (_, secondStageTransactions) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, rcp.commitTx, closingFeerate, nodeParams.currentBitcoinCoreFeerates, closing.finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
                 doPublish(rcp, secondStageTransactions, commitment)
               })
               closing.revokedCommitPublished.foreach(rvk => {
