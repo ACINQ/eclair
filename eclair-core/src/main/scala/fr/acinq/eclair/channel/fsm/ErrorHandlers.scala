@@ -160,6 +160,12 @@ trait ErrorHandlers extends CommonHandlers {
           // The channel closing is retried on every reconnect of the channel, until it succeeds.
           log.warning("ignoring remote 'link failed to shutdown', probably coming from lnd")
           stay() sending Warning(d.channelId, "ignoring your 'link failed to shutdown' to avoid an unnecessary force-close")
+        } else if (hasCommitments.commitments.latest.commitmentFormat == ZeroFeeCommitmentFormat) {
+          // When using v3 transactions, we want to avoid using our wallet inputs as much as possible.
+          // It is much more convenient if our peer publishes their commitment transaction if they're having an issue,
+          // because we can use our main output for pay the fees of the commitment transaction directly (if necessary).
+          log.warning("ignoring remote error: waiting for remote commit tx to be published")
+          stay() sending Warning(d.channelId, "ignoring your error: please publish your commitment if you want to force-close the channel")
         } else {
           spendLocalCurrent(hasCommitments, maxClosingFeerateOverride_opt = None)
         }
