@@ -1194,7 +1194,7 @@ object Helpers {
       case class SecondStageTransactions(mainTx_opt: Option[ClaimRemoteMainOutputTx], anchorTx_opt: Option[ClaimRemoteAnchorTx], htlcTxs: Seq[ClaimHtlcTx])
 
       /** Claim all the outputs that belong to us in the remote commitment transaction (which can be either their current or next commitment). */
-      def claimCommitTxOutputs(channelKeys: ChannelKeys, commitment: FullCommitment, remoteCommit: RemoteCommit, commitTx: Transaction, closingFeerate: FeeratePerKw, finalScriptPubKey: ByteVector, spendAnchorWithoutHtlcs: Boolean)(implicit log: LoggingAdapter): (RemoteCommitPublished, SecondStageTransactions) = {
+      def claimCommitTxOutputs(channelKeys: ChannelKeys, commitment: FullCommitment, remoteCommit: RemoteCommit, commitTx: Transaction, closingFeerate: FeeratePerKw, feerates: FeeratesPerKw, finalScriptPubKey: ByteVector, spendAnchorWithoutHtlcs: Boolean)(implicit log: LoggingAdapter): (RemoteCommitPublished, SecondStageTransactions) = {
         require(remoteCommit.txId == commitTx.txid, "txid mismatch, provided tx is not the current remote commit tx")
         val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
         val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)
@@ -1203,8 +1203,16 @@ object Helpers {
         val (incomingHtlcs, htlcSuccessTxs) = claimIncomingHtlcOutputs(commitKeys, commitTx, outputs, commitment, remoteCommit, finalScriptPubKey)
         val (outgoingHtlcs, htlcTimeoutTxs) = claimOutgoingHtlcOutputs(commitKeys, commitTx, outputs, commitment, remoteCommit, finalScriptPubKey)
         val anchorOutput_opt = ClaimRemoteAnchorTx.findInput(commitTx, fundingKey, commitKeys, commitment.commitmentFormat).toOption
+        // When using v3 transactions, we can use our main output to pay commit fees if it's large enough.
+        // In that case, we don't need to create a dedicated anchor transaction which avoids using wallet inputs.
+        val useMainTxForAnchor = commitment.commitmentFormat match {
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => false
+          case ZeroFeeCommitmentFormat =>
+            val commitFee = Transactions.weight2fee(feerates.fastest, commitTx.weight())
+            mainTx_opt.exists(_.tx.txOut.map(_.amount).sum > commitFee)
+        }
         val spendAnchor = incomingHtlcs.nonEmpty || outgoingHtlcs.nonEmpty || spendAnchorWithoutHtlcs
-        val anchorTx_opt = if (spendAnchor) {
+        val anchorTx_opt = if (spendAnchor && !useMainTxForAnchor) {
           claimAnchor(fundingKey, commitKeys, commitTx, commitment.commitmentFormat)
         } else {
           None
