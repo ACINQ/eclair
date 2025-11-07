@@ -643,7 +643,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     }
   }
 
-  case class PublishedForceCloseTxs(mainTx_opt: Option[Transaction], anchorTx: Transaction, htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction]) {
+  case class PublishedForceCloseTxs(mainTx_opt: Option[Transaction], anchorTx_opt: Option[Transaction], htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction]) {
     val htlcTxs: Seq[Transaction] = htlcSuccessTxs ++ htlcTimeoutTxs
   }
 
@@ -658,7 +658,11 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(localCommitPublished.incomingHtlcs.size >= htlcSuccessCount)
     assert(localCommitPublished.outgoingHtlcs.size == htlcTimeoutCount)
 
-    val commitTx = s2blockchain.expectFinalTxPublished("commit-tx").tx
+    val commitTx = closingState.commitments.latest.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => s2blockchain.expectFinalTxPublished("commit-tx").tx
+      // In the 0-fee case, we cannot publish the commitment transaction alone.
+      case ZeroFeeCommitmentFormat => localCommitPublished.commitTx
+    }
     assert(commitTx.txid == closingState.commitments.latest.localCommit.txId)
     val commitInput = closingState.commitments.latest.commitInput(s.underlyingActor.channelKeys)
     Transaction.correctlySpends(commitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -703,7 +707,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     })
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
-    val publishedTxs = PublishedForceCloseTxs(publishedMainTx_opt, publishedAnchorTx, publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs)
+    val publishedTxs = PublishedForceCloseTxs(publishedMainTx_opt, Some(publishedAnchorTx), publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs)
     (localCommitPublished, publishedTxs)
   }
 
@@ -722,10 +726,17 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(remoteCommitPublished.outgoingHtlcs.size == htlcTimeoutCount)
 
     // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
-    val publishedAnchorTx = s2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx].tx
-    // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    val publishedMainTx_opt = remoteCommitPublished.localOutput_opt.map(_ => s2blockchain.expectFinalTxPublished("remote-main").tx)
-    publishedMainTx_opt.foreach(tx => Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    // When v3 transactions are used, we instead use our main output to bump the fees.
+    val (publishedMainTx_opt, publishedAnchorTx_opt) = closingData.commitments.latest.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
+        val publishedAnchorTx = s2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx].tx
+        val publishedMainTx_opt = remoteCommitPublished.localOutput_opt.map(_ => s2blockchain.expectFinalTxPublished("remote-main").tx)
+        publishedMainTx_opt.foreach(tx => Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+        (publishedMainTx_opt, Some(publishedAnchorTx))
+      case ZeroFeeCommitmentFormat =>
+        val publishedMainTx = s2blockchain.expectReplaceableTxPublished[ClaimRemoteMainOutputTx].tx
+        (Some(publishedMainTx), None)
+    }
     // all htlcs success/timeout should be claimed
     val publishedClaimHtlcTxs = (0 until htlcSuccessCount + htlcTimeoutCount).map { _ =>
       val claimHtlcTx = s2blockchain.expectMsgType[PublishReplaceableTx]
@@ -751,18 +762,18 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     // we watch outputs of the commitment tx that we want to claim
     remoteCommitPublished.localOutput_opt.foreach(outpoint => s2blockchain.expectWatchOutputSpent(outpoint))
-    remoteCommitPublished.anchorOutput_opt.foreach(outpoint => s2blockchain.expectWatchOutputSpent(outpoint))
+    publishedAnchorTx_opt.map(_.txIn.head.outPoint).foreach(outpoint => s2blockchain.expectWatchOutputSpent(outpoint))
     s2blockchain.expectWatchOutputsSpent(remoteCommitPublished.htlcOutputs.toSeq)
     s2blockchain.expectNoMessage(100 millis)
 
     // once our closing transactions are published, we watch for their confirmation
-    (publishedMainTx_opt ++ Seq(publishedAnchorTx) ++ publishedHtlcSuccessTxs ++ publishedHtlcTimeoutTxs).foreach(tx => {
+    (publishedMainTx_opt ++ publishedAnchorTx_opt.toSeq ++ publishedHtlcSuccessTxs ++ publishedHtlcTimeoutTxs).foreach(tx => {
       s ! WatchOutputSpentTriggered(tx.txOut.headOption.map(_.amount).getOrElse(330 sat), tx)
       s2blockchain.expectWatchTxConfirmed(tx.txid)
     })
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
-    val publishedTxs = PublishedForceCloseTxs(publishedMainTx_opt, publishedAnchorTx, publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs)
+    val publishedTxs = PublishedForceCloseTxs(publishedMainTx_opt, publishedAnchorTx_opt, publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs)
     (remoteCommitPublished, publishedTxs)
   }
 
