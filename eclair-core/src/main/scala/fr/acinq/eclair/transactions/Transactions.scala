@@ -1025,6 +1025,24 @@ object Transactions {
       }
       tx.updateWitness(inputIndex, witness)
     }
+
+    /** Add the shared P2A anchor to this transaction to pays fees for the parent commit tx. */
+    def addSharedAnchorAndSign(fee: Satoshi, commitTx: Transaction): Transaction = {
+      findPubKeyScriptIndex(commitTx, RedeemInfo.PayToAnchor.pubkeyScript) match {
+        case Left(_) => sign()
+        case Right(idx) =>
+          val dustLimit = Scripts.dustLimit(tx.txOut.head.publicKeyScript)
+          val anchorInput = InputInfo(OutPoint(commitTx, idx), commitTx.txOut(idx))
+          val amountOut = (amountIn + anchorInput.txOut.amount - fee).max(dustLimit)
+          val tx1 = tx.copy(
+            txIn = tx.txIn :+ TxIn(anchorInput.outPoint, ByteVector.empty, 0, Script.witnessPay2anchor),
+            txOut = Seq(tx.txOut.head.copy(amount = amountOut))
+          )
+          val redeemInfo = RedeemInfo.P2wpkh(commitKeys.ourPaymentKey.publicKey)
+          val sig = this.copy(tx = tx1).sign(commitKeys.ourPaymentKey, sighash, redeemInfo, Map(anchorInput.outPoint -> anchorInput.txOut))
+          tx1.updateWitness(inputIndex, Script.witnessPay2wpkh(redeemInfo.publicKey, der(sig)))
+      }
+    }
   }
 
   object ClaimRemoteMainOutputTx {

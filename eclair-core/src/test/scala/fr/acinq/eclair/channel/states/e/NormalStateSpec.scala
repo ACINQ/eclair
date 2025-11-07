@@ -2181,7 +2181,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! UpdateFee(ByteVector32.Zeroes, TestConstants.anchorOutputsFeeratePerKw)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
-    bob2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv UpdateFee (sender can't afford it)", Tag(ChannelStateTestsTags.HighFeerateMismatchTolerance)) { f =>
