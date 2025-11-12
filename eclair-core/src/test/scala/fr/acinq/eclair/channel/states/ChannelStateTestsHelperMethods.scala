@@ -98,6 +98,8 @@ object ChannelStateTestsTags {
   val OptionSimpleTaprootPhoenix = "option_simple_taproot_phoenix"
   /** If set, channels will use taproot. */
   val OptionSimpleTaproot = "option_simple_taproot"
+  /** If set, channel will use zero-fee commitments. */
+  val ZeroFeeCommitments = "zero_fee_commitments"
 }
 
 trait ChannelStateTestsBase extends Assertions with Eventually {
@@ -142,7 +144,8 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
         dualFunded = dualFunded,
         commitTxFeerate = channelType match {
           case _: ChannelTypes.AnchorOutputs | ChannelTypes.SimpleTaprootChannelsPhoenix => TestConstants.phoenixCommitFeeratePerKw
-          case _ => TestConstants.anchorOutputsFeeratePerKw
+          case _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx | _: ChannelTypes.SimpleTaprootChannelsStaging => TestConstants.anchorOutputsFeeratePerKw
+          case _: ChannelTypes.ZeroFeeCommitments => FeeratePerKw(0 sat)
         },
         fundingTxFeerate = TestConstants.feeratePerKw,
         fundingTxFeeBudget_opt = None,
@@ -265,6 +268,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputsPhoenix))(_.removed(Features.AnchorOutputsZeroFeeHtlcTx).updated(Features.AnchorOutputs, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix))(_.removed(Features.SimpleTaprootChannelsStaging).updated(Features.SimpleTaprootChannelsPhoenix, FeatureSupport.Optional).updated(Features.PhoenixZeroReserve, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaproot))(_.updated(Features.SimpleTaprootChannelsStaging, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroFeeCommitments))(_.updated(Features.ZeroFeeCommitments, FeatureSupport.Optional))
     )
     val nodeParamsB1 = nodeParamsB.copy(features = nodeParamsB.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.DisableWumbo))(_.removed(Features.Wumbo))
@@ -277,6 +281,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputsPhoenix))(_.removed(Features.AnchorOutputsZeroFeeHtlcTx).updated(Features.AnchorOutputs, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaprootPhoenix))(_.removed(Features.SimpleTaprootChannelsStaging).updated(Features.SimpleTaprootChannelsPhoenix, FeatureSupport.Optional).updated(Features.PhoenixZeroReserve, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionSimpleTaproot))(_.updated(Features.SimpleTaprootChannelsStaging, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ZeroFeeCommitments))(_.updated(Features.ZeroFeeCommitments, FeatureSupport.Optional))
     )
     (nodeParamsA1, nodeParamsB1)
   }
@@ -287,7 +292,9 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     val scidAlias = canUse(Features.ScidAlias) && !announceChannel // alias feature is incompatible with public channel
     val zeroConf = canUse(Features.ZeroConf)
-    if (canUse(Features.SimpleTaprootChannelsStaging)) {
+    if (canUse(Features.ZeroFeeCommitments)) {
+      ChannelTypes.ZeroFeeCommitments(scidAlias, zeroConf)
+    } else if (canUse(Features.SimpleTaprootChannelsStaging)) {
       ChannelTypes.SimpleTaprootChannelsStaging(scidAlias, zeroConf)
     } else if (canUse(Features.SimpleTaprootChannelsPhoenix)) {
       ChannelTypes.SimpleTaprootChannelsPhoenix
@@ -636,12 +643,12 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     }
   }
 
-  case class PublishedForceCloseTxs(mainTx_opt: Option[Transaction], anchorTx: Transaction, htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction]) {
+  case class PublishedForceCloseTxs(mainTx_opt: Option[Transaction], anchorTx_opt: Option[Transaction], htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction]) {
     val htlcTxs: Seq[Transaction] = htlcSuccessTxs ++ htlcTimeoutTxs
   }
 
   def localClose(s: TestFSMRef[ChannelState, ChannelData, Channel], s2blockchain: TestProbe, htlcSuccessCount: Int = 0, htlcTimeoutCount: Int = 0): (LocalCommitPublished, PublishedForceCloseTxs) = {
-    s ! Error(ByteVector32.Zeroes, "oops")
+    s ! CMD_FORCECLOSE(ActorRef.noSender, None, None)
     eventually(assert(s.stateName == CLOSING))
     val closingState = s.stateData.asInstanceOf[DATA_CLOSING]
     assert(closingState.localCommitPublished.isDefined)
@@ -651,7 +658,11 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(localCommitPublished.incomingHtlcs.size >= htlcSuccessCount)
     assert(localCommitPublished.outgoingHtlcs.size == htlcTimeoutCount)
 
-    val commitTx = s2blockchain.expectFinalTxPublished("commit-tx").tx
+    val commitTx = closingState.commitments.latest.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => s2blockchain.expectFinalTxPublished("commit-tx").tx
+      // In the 0-fee case, we cannot publish the commitment transaction alone.
+      case ZeroFeeCommitmentFormat => localCommitPublished.commitTx
+    }
     assert(commitTx.txid == closingState.commitments.latest.localCommit.txId)
     val commitInput = closingState.commitments.latest.commitInput(s.underlyingActor.channelKeys)
     Transaction.correctlySpends(commitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -696,7 +707,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     })
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
-    val publishedTxs = PublishedForceCloseTxs(publishedMainTx_opt, publishedAnchorTx, publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs)
+    val publishedTxs = PublishedForceCloseTxs(publishedMainTx_opt, Some(publishedAnchorTx), publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs)
     (localCommitPublished, publishedTxs)
   }
 
@@ -715,10 +726,17 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     assert(remoteCommitPublished.outgoingHtlcs.size == htlcTimeoutCount)
 
     // If anchor outputs is used, we use the anchor output to bump the fees if necessary.
-    val publishedAnchorTx = s2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx].tx
-    // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    val publishedMainTx_opt = remoteCommitPublished.localOutput_opt.map(_ => s2blockchain.expectFinalTxPublished("remote-main-delayed").tx)
-    publishedMainTx_opt.foreach(tx => Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    // When v3 transactions are used, we instead use our main output to bump the fees.
+    val (publishedMainTx_opt, publishedAnchorTx_opt) = closingData.commitments.latest.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
+        val publishedAnchorTx = s2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx].tx
+        val publishedMainTx_opt = remoteCommitPublished.localOutput_opt.map(_ => s2blockchain.expectFinalTxPublished("remote-main").tx)
+        publishedMainTx_opt.foreach(tx => Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+        (publishedMainTx_opt, Some(publishedAnchorTx))
+      case ZeroFeeCommitmentFormat =>
+        val publishedMainTx = s2blockchain.expectReplaceableTxPublished[ClaimRemoteMainOutputTx].tx
+        (Some(publishedMainTx), None)
+    }
     // all htlcs success/timeout should be claimed
     val publishedClaimHtlcTxs = (0 until htlcSuccessCount + htlcTimeoutCount).map { _ =>
       val claimHtlcTx = s2blockchain.expectMsgType[PublishReplaceableTx]
@@ -744,18 +762,18 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     // we watch outputs of the commitment tx that we want to claim
     remoteCommitPublished.localOutput_opt.foreach(outpoint => s2blockchain.expectWatchOutputSpent(outpoint))
-    remoteCommitPublished.anchorOutput_opt.foreach(outpoint => s2blockchain.expectWatchOutputSpent(outpoint))
+    publishedAnchorTx_opt.map(_.txIn.head.outPoint).foreach(outpoint => s2blockchain.expectWatchOutputSpent(outpoint))
     s2blockchain.expectWatchOutputsSpent(remoteCommitPublished.htlcOutputs.toSeq)
     s2blockchain.expectNoMessage(100 millis)
 
     // once our closing transactions are published, we watch for their confirmation
-    (publishedMainTx_opt ++ Seq(publishedAnchorTx) ++ publishedHtlcSuccessTxs ++ publishedHtlcTimeoutTxs).foreach(tx => {
+    (publishedMainTx_opt ++ publishedAnchorTx_opt.toSeq ++ publishedHtlcSuccessTxs ++ publishedHtlcTimeoutTxs).foreach(tx => {
       s ! WatchOutputSpentTriggered(tx.txOut.headOption.map(_.amount).getOrElse(330 sat), tx)
       s2blockchain.expectWatchTxConfirmed(tx.txid)
     })
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
-    val publishedTxs = PublishedForceCloseTxs(publishedMainTx_opt, publishedAnchorTx, publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs)
+    val publishedTxs = PublishedForceCloseTxs(publishedMainTx_opt, publishedAnchorTx_opt, publishedHtlcSuccessTxs, publishedHtlcTimeoutTxs)
     (remoteCommitPublished, publishedTxs)
   }
 
