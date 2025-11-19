@@ -18,13 +18,12 @@ package fr.acinq.eclair.reputation
 
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
-import akka.actor.typed.eventstream.EventStream
 import akka.testkit.TestKit.awaitCond
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel.{OutgoingHtlcAdded, OutgoingHtlcFailed, OutgoingHtlcFulfilled, Upstream}
 import fr.acinq.eclair.reputation.ReputationRecorder._
-import fr.acinq.eclair.wire.protocol.{TlvStream, UpdateAddHtlc, UpdateAddHtlcTlv, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, MilliSatoshiLong, TimestampMilli, randomBytes, randomBytes32, randomKey, randomLong}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -206,7 +205,7 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     }, max = 60 seconds)
   }
 
-  test("sink attack") {f =>
+  test("sink attack") { f =>
     import f._
 
     val (a, b, c) = (randomKey().publicKey, randomKey().publicKey, randomKey().publicKey)
