@@ -939,11 +939,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(cmd: CMD_SPLICE, d: DATA_NORMAL) =>
-      if (!d.commitments.remoteChannelParams.initFeatures.hasFeature(Features.Splicing)) {
-        log.warning("cannot initiate splice, peer doesn't support splicing")
-        cmd.replyTo ! RES_FAILURE(cmd, CommandUnavailableInThisState(d.channelId, "splice", NORMAL))
-        stay()
-      } else if (d.commitments.active.count(_.fundingTxIndex == d.commitments.latest.fundingTxIndex) > 1) {
+      if (d.commitments.active.count(_.fundingTxIndex == d.commitments.latest.fundingTxIndex) > 1) {
         log.warning("cannot initiate splice, the previous splice has unconfirmed rbf attempts")
         cmd.replyTo ! RES_FAILURE(cmd, InvalidSpliceWithUnconfirmedTx(d.channelId, d.commitments.latest.fundingTxId))
         stay()
@@ -1071,9 +1067,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           if (!d.commitments.isQuiescent) {
             log.info("rejecting splice request: channel not quiescent")
             stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceNotQuiescent(d.channelId).getMessage)
-          } else if (msg.feerate < nodeParams.currentBitcoinCoreFeerates.minimum) {
-            log.info("rejecting splice request: feerate too low ({} < {})", msg.feerate, nodeParams.currentBitcoinCoreFeerates.minimum)
-            stay() using d.copy(spliceStatus = SpliceStatus.SpliceAborted) sending TxAbort(d.channelId, InvalidSpliceFeerate(d.channelId, msg.feerate, nodeParams.currentBitcoinCoreFeerates.minimum).getMessage)
           } else if (d.commitments.active.count(_.fundingTxIndex == d.commitments.latest.fundingTxIndex) > 1) {
             val previousTxs = d.commitments.active.filter(_.fundingTxIndex == d.commitments.latest.fundingTxIndex).map(_.fundingTxId)
             log.info("rejecting splice request: the previous splice has unconfirmed rbf attempts (txIds={})", previousTxs.mkString(", "))
@@ -2425,16 +2418,14 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case _ => Set.empty
       }
       val remoteFeatures = d.commitments.remoteChannelParams.initFeatures
-      val lastFundingLockedTlvs: Set[ChannelReestablishTlv] = if (remoteFeatures.hasFeature(Features.Splicing) || remoteFeatures.unknown.contains(UnknownFeature(154)) || remoteFeatures.unknown.contains(UnknownFeature(155))) {
-        d.commitments.lastLocalLocked_opt.map(c => {
-          // We ask our peer to retransmit their announcement_signatures if we haven't already announced that splice.
-          val retransmitAnnSigs = d match {
-            case d: DATA_NORMAL if d.commitments.announceChannel => !d.lastAnnouncedFundingTxId_opt.contains(c.fundingTxId)
-            case _ => false
-          }
-          ChannelReestablishTlv.MyCurrentFundingLockedTlv(c.fundingTxId, retransmitAnnSigs)
-        }).toSet
-      } else Set.empty
+      val lastFundingLockedTlvs: Set[ChannelReestablishTlv] = d.commitments.lastLocalLocked_opt.map(c => {
+        // We ask our peer to retransmit their announcement_signatures if we haven't already announced that splice.
+        val retransmitAnnSigs = d match {
+          case d: DATA_NORMAL if d.commitments.announceChannel => !d.lastAnnouncedFundingTxId_opt.contains(c.fundingTxId)
+          case _ => false
+        }
+        ChannelReestablishTlv.MyCurrentFundingLockedTlv(c.fundingTxId, retransmitAnnSigs)
+      }).toSet
 
       // We send our verification nonces for all active commitments.
       val nextCommitNonces: Map[TxId, IndividualNonce] = d.commitments.active.flatMap(c => {
@@ -3356,7 +3347,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       case Some(c) =>
         // If our peer is a phoenix wallet using the legacy splicing protocol, we always retransmit channel_ready.
         val remoteFeatures = d.commitments.remoteChannelParams.initFeatures
-        val remoteLegacySpliceSupport = remoteFeatures.unknown.contains(UnknownFeature(154)) || remoteFeatures.unknown.contains(UnknownFeature(155))
+        val remoteLegacySpliceSupport = remoteFeatures.unknown.contains(UnknownFeature(154))
         // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node
         // MUST retransmit channel_ready, otherwise it MUST NOT
         val notReceivedByRemote = channelReestablish.nextLocalCommitmentNumber == 1 && c.localCommit.index == 0
@@ -3443,7 +3434,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       case Some(c) =>
         // We only send splice_locked for legacy phoenix wallets using the old splicing protocol.
         val remoteFeatures = commitments.remoteChannelParams.initFeatures
-        val remoteLegacySpliceSupport = remoteFeatures.unknown.contains(UnknownFeature(154)) || remoteFeatures.unknown.contains(UnknownFeature(155))
+        val remoteLegacySpliceSupport = remoteFeatures.unknown.contains(UnknownFeature(154))
         if (remoteLegacySpliceSupport) {
           log.debug("re-sending splice_locked for fundingTxId={}", c.fundingTxId)
           Some(SpliceLocked(commitments.channelId, c.fundingTxId))

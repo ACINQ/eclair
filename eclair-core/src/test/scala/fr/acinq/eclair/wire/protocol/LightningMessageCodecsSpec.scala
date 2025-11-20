@@ -718,9 +718,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   test("encode/decode commit_sig batch") {
     val channelId = randomBytes32()
     val batch = CommitSigBatch(Seq(
-      CommitSig(channelId, ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
-      CommitSig(channelId, ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
-      CommitSig(channelId, ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
+      CommitSig(channelId, randomTxId(), ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
+      CommitSig(channelId, randomTxId(), ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
+      CommitSig(channelId, randomTxId(), ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
     ))
     val encoded = lightningMessageCodec.encode(batch).require
     val decoded = lightningMessageCodec.decode(encoded).require.value

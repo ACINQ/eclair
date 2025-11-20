@@ -207,7 +207,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         stay()
 
       case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.transport => // if the message doesn't originate from the transport, it is an outgoing message
-        val useExperimentalSplice = d.remoteInit.features.unknown.contains(UnknownFeature(154)) || d.remoteInit.features.unknown.contains(UnknownFeature(155))
+        val useExperimentalSplice = d.remoteInit.features.unknown.contains(UnknownFeature(154))
         msg match {
           // If our peer is using the experimental splice version, we convert splice messages.
           case msg: SpliceInit if useExperimentalSplice => d.transport forward ExperimentalSpliceInit.from(msg)
