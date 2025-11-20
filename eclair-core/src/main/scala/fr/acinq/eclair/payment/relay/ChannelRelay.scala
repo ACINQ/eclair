@@ -77,15 +77,26 @@ object ChannelRelay {
         paymentHash_opt = Some(r.add.paymentHash),
         nodeAlias_opt = Some(nodeParams.alias))) {
         val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), r.receivedAt, originNode, incomingChannelOccupancy)
-        reputationRecorder_opt match {
-          case Some(reputationRecorder) =>
-            reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), upstream, channels.values.headOption.map(_.nextNodeId), r.relayFeeMsat, nodeParams.currentBlockHeight, r.outgoingCltv)
-          case None =>
-            context.self ! WrappedReputationScore(Reputation.Score.fromEndorsement(r.add.endorsement))
-        }
-        Behaviors.receiveMessagePartial {
-          case WrappedReputationScore(score) =>
-            new ChannelRelay(nodeParams, register, channels, r, upstream, score, context).start()
+        val accountable = r.add.accountable || incomingChannelOccupancy > 1 - nodeParams.relayParams.reservedBucket
+        if (accountable && !r.payload.upgradeAccountability) {
+          val relay = new ChannelRelay(nodeParams, register, channels, r, upstream, Reputation.Score.min, context, accountable)
+          Metrics.recordPaymentRelayFailed(Tags.FailureType.Jamming, Tags.RelayType.Channel)
+          context.log.info("rejecting htlc: unaccountable HTLC using reserved bucket")
+          relay.safeSendAndStop(r.add.channelId, relay.makeCmdFailHtlc(r.add.id, TemporaryChannelFailure(None)))
+        } else {
+          reputationRecorder_opt match {
+            // TODO: penalize HTLCs that do not use `upgradeAccountability`.
+            //case _ if !r.payload.upgradeAccountability =>
+            //  context.self ! WrappedReputationScore(Reputation.Score.min)
+            case Some(reputationRecorder) =>
+              reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), channels.values.headOption.map(_.nextNodeId), r.relayFeeMsat, nodeParams.currentBlockHeight, r.outgoingCltv, accountable)
+            case None =>
+              context.self ! WrappedReputationScore(Reputation.Score.max(accountable))
+          }
+          Behaviors.receiveMessagePartial {
+            case WrappedReputationScore(score) =>
+              new ChannelRelay(nodeParams, register, channels, r, upstream, score, context, accountable).start()
+          }
         }
       }
     }
@@ -132,7 +143,8 @@ class ChannelRelay private(nodeParams: NodeParams,
                            r: IncomingPaymentPacket.ChannelRelayPacket,
                            upstream: Upstream.Hot.Channel,
                            reputationScore: Reputation.Score,
-                           context: ActorContext[ChannelRelay.Command]) {
+                           context: ActorContext[ChannelRelay.Command],
+                           accountable: Boolean) {
 
   import ChannelRelay._
 
@@ -234,8 +246,8 @@ class ChannelRelay private(nodeParams: NodeParams,
   private def waitForAddSettled(): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill)) =>
-        context.log.info("relaying fulfill to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.incomingConfidence, upstream.receivedFrom, htlc.channelId)
-        Metrics.relayFulfill(reputationScore.incomingConfidence)
+        context.log.info("relaying fulfill to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.outgoingConfidence, upstream.receivedFrom, htlc.channelId)
+        Metrics.relayFulfill(reputationScore.outgoingConfidence)
         val downstreamAttribution_opt = fulfill match {
           case HtlcResult.RemoteFulfill(fulfill) => fulfill.attribution_opt
           case HtlcResult.OnChainFulfill(_) => None
@@ -247,8 +259,8 @@ class ChannelRelay private(nodeParams: NodeParams,
         safeSendAndStop(upstream.add.channelId, cmd)
 
       case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fail: HtlcResult.Fail)) =>
-        context.log.info("relaying fail to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.incomingConfidence, upstream.receivedFrom, htlc.channelId)
-        Metrics.relayFail(reputationScore.incomingConfidence)
+        context.log.info("relaying fail to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.outgoingConfidence, upstream.receivedFrom, htlc.channelId)
+        Metrics.relayFail(reputationScore.outgoingConfidence)
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
         val cmd = translateRelayFailure(upstream.add.id, fail, Some(upstream.receivedAt))
         recordRelayDuration(isSuccess = false)
@@ -270,7 +282,7 @@ class ChannelRelay private(nodeParams: NodeParams,
       }
   }
 
-  private def safeSendAndStop(channelId: ByteVector32, cmd: channel.HtlcSettlementCommand): Behavior[Command] = {
+  def safeSendAndStop(channelId: ByteVector32, cmd: channel.HtlcSettlementCommand): Behavior[Command] = {
     val toSend = cmd match {
       case _: CMD_FULFILL_HTLC => cmd
       case _: CMD_FAIL_HTLC | _: CMD_FAIL_MALFORMED_HTLC => r.payload match {
@@ -333,7 +345,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           makeCmdFailHtlc(r.add.id, UnknownNextPeer())
         }
         walletNodeId_opt match {
-          case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(remoteFeatures_opt, previousFailures) => RelayNeedsFunding(walletNodeId, cmdFail)
+          case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(remoteFeatures_opt, previousFailures) && !accountable => RelayNeedsFunding(walletNodeId, cmdFail)
           case _ => RelayFailure(cmdFail)
         }
     }
@@ -448,7 +460,7 @@ class ChannelRelay private(nodeParams: NodeParams,
     featureOk && liquidityIssue && relayParamsOk
   }
 
-  private def makeCmdFailHtlc(originHtlcId: Long, failure: FailureMessage, delay_opt: Option[FiniteDuration] = None): CMD_FAIL_HTLC = {
+  def makeCmdFailHtlc(originHtlcId: Long, failure: FailureMessage, delay_opt: Option[FiniteDuration] = None): CMD_FAIL_HTLC = {
     val attribution = FailureAttributionData(htlcReceivedAt = upstream.receivedAt, trampolineReceivedAt_opt = None)
     CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(failure), Some(attribution), delay_opt, commit = true)
   }

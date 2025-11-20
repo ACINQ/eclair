@@ -115,7 +115,7 @@ object NodeRelay {
           case _: IncomingPaymentPacket.RelayToBlindedPathsPacket => None
         }
         new NodeRelay(nodeParams, parent, register, relayId, paymentHash, nodeRelayPacket.outerPayload.paymentSecret, context, outgoingPaymentFactory, router)
-          .receiving(Queue.empty, nodeRelayPacket.innerPayload, nextPacket_opt, incomingPaymentHandler)
+          .receiving(Queue.empty, nodeRelayPacket.innerPayload, nextPacket_opt, incomingPaymentHandler, upgradeAccountability = true)
       }
     }
 
@@ -221,13 +221,13 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPacket_opt trampoline onion to relay to the next trampoline node.
    * @param handler        actor handling the aggregation of the incoming HTLC set.
    */
-  private def receiving(htlcs: Queue[Upstream.Hot.Channel], nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket], handler: ActorRef): Behavior[Command] =
+  private def receiving(htlcs: Queue[Upstream.Hot.Channel], nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket], handler: ActorRef, upgradeAccountability: Boolean): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case Relay(packet: IncomingPaymentPacket.NodeRelayPacket, originNode, incomingChannelOccupancy) =>
         require(packet.outerPayload.paymentSecret == paymentSecret, "payment secret mismatch")
         context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", packet.add.id, packet.add.channelId)
         handler ! MultiPartPaymentFSM.HtlcPart(packet.outerPayload.totalAmount, packet.add, packet.receivedAt)
-        receiving(htlcs :+ Upstream.Hot.Channel(packet.add.removeUnknownTlvs(), packet.receivedAt, originNode, incomingChannelOccupancy), nextPayload, nextPacket_opt, handler)
+        receiving(htlcs :+ Upstream.Hot.Channel(packet.add.removeUnknownTlvs(), packet.receivedAt, originNode, incomingChannelOccupancy), nextPayload, nextPacket_opt, handler, upgradeAccountability && packet.innerPayload.upgradeAccountability)
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
@@ -242,25 +242,25 @@ class NodeRelay private(nodeParams: NodeParams,
             rejectPayment(upstream, Some(failure))
             stopping()
           case None =>
-            resolveNextNode(upstream, nextPayload, nextPacket_opt)
+            resolveNextNode(upstream, nextPayload, nextPacket_opt, upgradeAccountability)
         }
     }
 
   /** Once we've fully received the incoming HTLC set, we must identify the next node before forwarding the payment. */
-  private def resolveNextNode(upstream: Upstream.Hot.Trampoline, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+  private def resolveNextNode(upstream: Upstream.Hot.Trampoline, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket], upgradeAccountability: Boolean): Behavior[Command] = {
     nextPayload match {
       case payloadOut: IntermediatePayload.NodeRelay.Standard =>
         val paymentSecret = randomBytes32() // we generate a new secret to protect against probing attacks
-        val recipient = ClearRecipient(payloadOut.outgoingNodeId, Features.empty, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, nextTrampolineOnion_opt = nextPacket_opt)
+        val recipient = ClearRecipient(payloadOut.outgoingNodeId, Features.empty, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, nextTrampolineOnion_opt = nextPacket_opt, upgradeAccountability = payloadOut.upgradeAccountability)
         context.log.debug("forwarding payment to the next trampoline node {}", recipient.nodeId)
-        attemptWakeUpIfRecipientIsWallet(upstream, recipient, nextPayload, nextPacket_opt)
+        attemptWakeUpIfRecipientIsWallet(upstream, recipient, nextPayload, nextPacket_opt, upgradeAccountability)
       case payloadOut: IntermediatePayload.NodeRelay.ToNonTrampoline =>
         val paymentSecret = payloadOut.paymentSecret
         val features = Features(payloadOut.invoiceFeatures).invoiceFeatures()
         val extraEdges = payloadOut.invoiceRoutingInfo.flatMap(Bolt11Invoice.toExtraEdges(_, payloadOut.outgoingNodeId))
-        val recipient = ClearRecipient(payloadOut.outgoingNodeId, features, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, extraEdges, payloadOut.paymentMetadata)
+        val recipient = ClearRecipient(payloadOut.outgoingNodeId, features, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, extraEdges, payloadOut.paymentMetadata, upgradeAccountability = payloadOut.upgradeAccountability)
         context.log.debug("forwarding payment to non-trampoline recipient {}", recipient.nodeId)
-        attemptWakeUpIfRecipientIsWallet(upstream, recipient, nextPayload, None)
+        attemptWakeUpIfRecipientIsWallet(upstream, recipient, nextPayload, None, upgradeAccountability)
       case payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths =>
         // Blinded paths in Bolt 12 invoices may encode the introduction node with an scid and a direction: we need to
         // resolve that to a nodeId in order to reach that introduction node and use the blinded path.
@@ -275,14 +275,14 @@ class NodeRelay private(nodeParams: NodeParams,
             case WrappedResolvedPaths(resolved) =>
               // We don't have access to the invoice: we use the only node_id that somewhat makes sense for the recipient.
               val blindedNodeId = resolved.head.route.blindedNodeIds.last
-              val recipient = BlindedRecipient.fromPaths(blindedNodeId, Features(payloadOut.invoiceFeatures).invoiceFeatures(), payloadOut.amountToForward, payloadOut.outgoingCltv, resolved, Set.empty)
+              val recipient = BlindedRecipient.fromPaths(blindedNodeId, Features(payloadOut.invoiceFeatures).invoiceFeatures(), payloadOut.amountToForward, payloadOut.outgoingCltv, resolved, Set.empty, upgradeAccountability = payloadOut.upgradeAccountability)
               resolved.head.route match {
                 case BlindedPathsResolver.PartialBlindedRoute(walletNodeId: EncodedNodeId.WithPublicKey.Wallet, _, _) if nodeParams.peerWakeUpConfig.enabled =>
                   context.log.debug("forwarding payment to blinded peer {}", walletNodeId.publicKey)
-                  attemptWakeUp(upstream, walletNodeId.publicKey, recipient, nextPayload, nextPacket_opt)
+                  attemptWakeUp(upstream, walletNodeId.publicKey, recipient, nextPayload, nextPacket_opt, upgradeAccountability)
                 case _ =>
                   context.log.debug("forwarding payment to blinded recipient {}", recipient.nodeId)
-                  relay(upstream, recipient, None, None, nextPayload, nextPacket_opt)
+                  relay(upstream, recipient, None, None, nextPayload, nextPacket_opt, upgradeAccountability)
               }
           }
         }
@@ -290,7 +290,7 @@ class NodeRelay private(nodeParams: NodeParams,
   }
 
   /** The next node may be a mobile wallet directly connected to us: in that case, we'll need to wake them up before relaying the payment. */
-  private def attemptWakeUpIfRecipientIsWallet(upstream: Upstream.Hot.Trampoline, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+  private def attemptWakeUpIfRecipientIsWallet(upstream: Upstream.Hot.Trampoline, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket], upgradeAccountability: Boolean): Behavior[Command] = {
     val forwardNodeIdFailureAdapter = context.messageAdapter[Register.ForwardNodeIdFailure[Peer.GetPeerInfo]](_ => WrappedPeerInfo(remoteFeatures_opt = None))
     val peerInfoAdapter = context.messageAdapter[Peer.PeerInfoResponse] {
       case _: Peer.PeerNotFound => WrappedPeerInfo(remoteFeatures_opt = None)
@@ -306,8 +306,8 @@ class NodeRelay private(nodeParams: NodeParams,
             None
           }
           walletNodeId_opt match {
-            case Some(walletNodeId) if nodeParams.peerWakeUpConfig.enabled => attemptWakeUp(upstream, walletNodeId, recipient, nextPayload, nextPacket_opt)
-            case _ => relay(upstream, recipient, walletNodeId_opt, None, nextPayload, nextPacket_opt)
+            case Some(walletNodeId) if nodeParams.peerWakeUpConfig.enabled => attemptWakeUp(upstream, walletNodeId, recipient, nextPayload, nextPacket_opt, upgradeAccountability)
+            case _ => relay(upstream, recipient, walletNodeId_opt, None, nextPayload, nextPacket_opt, upgradeAccountability)
           }
       }
     }
@@ -317,7 +317,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * The next node is the payment recipient. They are directly connected to us and may be offline. We try to wake them
    * up and will relay the payment once they're connected and channels are reestablished.
    */
-  private def attemptWakeUp(upstream: Upstream.Hot.Trampoline, walletNodeId: PublicKey, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+  private def attemptWakeUp(upstream: Upstream.Hot.Trampoline, walletNodeId: PublicKey, recipient: Recipient, nextPayload: IntermediatePayload.NodeRelay, nextPacket_opt: Option[OnionRoutingPacket], upgradeAccountability: Boolean): Behavior[Command] = {
     context.log.info("trying to wake up next peer (nodeId={})", walletNodeId)
     val notifier = context.spawnAnonymous(PeerReadyNotifier(walletNodeId, timeout_opt = Some(Left(nodeParams.peerWakeUpConfig.timeout))))
     notifier ! PeerReadyNotifier.NotifyWhenPeerReady(context.messageAdapter(WrappedPeerReadyResult))
@@ -328,35 +328,42 @@ class NodeRelay private(nodeParams: NodeParams,
           rejectPayment(upstream, Some(UnknownNextPeer()))
           stopping()
         case WrappedPeerReadyResult(r: PeerReadyNotifier.PeerReady) =>
-          relay(upstream, recipient, Some(walletNodeId), Some(r.remoteFeatures), nextPayload, nextPacket_opt)
+          relay(upstream, recipient, Some(walletNodeId), Some(r.remoteFeatures), nextPayload, nextPacket_opt, upgradeAccountability)
       }
     }
   }
 
   /** Relay the payment to the next identified node: this is similar to sending an outgoing payment. */
-  private def relay(upstream: Upstream.Hot.Trampoline, recipient: Recipient, walletNodeId_opt: Option[PublicKey], recipientFeatures_opt: Option[Features[InitFeature]], payloadOut: IntermediatePayload.NodeRelay, packetOut_opt: Option[OnionRoutingPacket]): Behavior[Command] = {
+  private def relay(upstream: Upstream.Hot.Trampoline, recipient: Recipient, walletNodeId_opt: Option[PublicKey], recipientFeatures_opt: Option[Features[InitFeature]], payloadOut: IntermediatePayload.NodeRelay, packetOut_opt: Option[OnionRoutingPacket], upgradeAccountability: Boolean): Behavior[Command] = {
     val amountOut = outgoingAmount(upstream, payloadOut)
     val expiryOut = outgoingExpiry(upstream, payloadOut)
     context.log.debug("relaying trampoline payment (amountIn={} expiryIn={} amountOut={} expiryOut={} isWallet={})", upstream.amountIn, upstream.expiryIn, amountOut, expiryOut, walletNodeId_opt.isDefined)
     // We only make one try when it's a direct payment to a wallet.
     val maxPaymentAttempts = if (walletNodeId_opt.isDefined) 1 else nodeParams.maxPaymentAttempts
-    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, recipient.nodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true)
-    val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, amountOut, expiryOut)
-    // If the next node is using trampoline, we assume that they support MPP.
-    val useMultiPart = recipient.features.hasFeature(Features.BasicMultiPartPayment) || packetOut_opt.nonEmpty
-    val payFsmAdapters = {
-      context.messageAdapter[PreimageReceived](WrappedPreimageReceived)
-      context.messageAdapter[PaymentSent](WrappedPaymentSent)
-      context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
-    }.toClassic
-    val payment = if (useMultiPart) {
-      SendMultiPartPayment(payFsmAdapters, recipient, maxPaymentAttempts, routeParams)
+    val accountable = upstream.accountable || upstream.incomingChannelOccupancy > 1 - nodeParams.relayParams.reservedBucket
+    if (accountable && !upgradeAccountability) {
+      rejectPayment(upstream, Some(TemporaryChannelFailure(None)))
+      recordRelayDuration(TimestampMilli.now(), isSuccess = false)
+      stopping()
     } else {
-      SendPaymentToNode(payFsmAdapters, recipient, maxPaymentAttempts, routeParams)
+      val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, recipient.nodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, accountable)
+      val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, amountOut, expiryOut)
+      // If the next node is using trampoline, we assume that they support MPP.
+      val useMultiPart = recipient.features.hasFeature(Features.BasicMultiPartPayment) || packetOut_opt.nonEmpty
+      val payFsmAdapters = {
+        context.messageAdapter[PreimageReceived](WrappedPreimageReceived)
+        context.messageAdapter[PaymentSent](WrappedPaymentSent)
+        context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
+      }.toClassic
+      val payment = if (useMultiPart) {
+        SendMultiPartPayment(payFsmAdapters, recipient, maxPaymentAttempts, routeParams)
+      } else {
+        SendPaymentToNode(payFsmAdapters, recipient, maxPaymentAttempts, routeParams)
+      }
+      val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, useMultiPart)
+      payFSM ! payment
+      sending(upstream, recipient, walletNodeId_opt, recipientFeatures_opt, payloadOut, TimestampMilli.now(), fulfilledUpstream = false, accountable)
     }
-    val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, useMultiPart)
-    payFSM ! payment
-    sending(upstream, recipient, walletNodeId_opt, recipientFeatures_opt, payloadOut, TimestampMilli.now(), fulfilledUpstream = false)
   }
 
   /**
@@ -372,7 +379,8 @@ class NodeRelay private(nodeParams: NodeParams,
                       recipientFeatures_opt: Option[Features[InitFeature]],
                       nextPayload: IntermediatePayload.NodeRelay,
                       startedAt: TimestampMilli,
-                      fulfilledUpstream: Boolean): Behavior[Command] =
+                      fulfilledUpstream: Boolean,
+                      accountable: Boolean): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         // this is the fulfill that arrives from downstream channels
@@ -381,7 +389,7 @@ class NodeRelay private(nodeParams: NodeParams,
             // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
             context.log.debug("got preimage from downstream")
             fulfillPayment(upstream, paymentPreimage, attribution_opt)
-            sending(upstream, recipient, walletNodeId_opt, recipientFeatures_opt, nextPayload, startedAt, fulfilledUpstream = true)
+            sending(upstream, recipient, walletNodeId_opt, recipientFeatures_opt, nextPayload, startedAt, fulfilledUpstream = true, accountable)
           } else {
             // we don't want to fulfill multiple times
             Behaviors.same
@@ -397,7 +405,7 @@ class NodeRelay private(nodeParams: NodeParams,
           stopping()
         case WrappedPaymentFailed(PaymentFailed(_, _, failures, _)) =>
           walletNodeId_opt match {
-            case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(nodeParams, recipientFeatures_opt, failures)(context) =>
+            case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(nodeParams, recipientFeatures_opt, failures)(context) && !accountable =>
               context.log.info("trampoline payment failed, attempting on-the-fly funding")
               attemptOnTheFlyFunding(upstream, walletNodeId, recipient, nextPayload, failures, startedAt)
             case _ =>
@@ -421,7 +429,7 @@ class NodeRelay private(nodeParams: NodeParams,
       case r: BlindedRecipient => r.blindedHops.headOption
     }
     val dummyRoute = Route(amountOut, Seq(dummyHop), finalHop_opt)
-    OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(ActorRef.noSender, upstream), paymentHash, dummyRoute, recipient, Reputation.Score.max) match {
+    OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(ActorRef.noSender, upstream), paymentHash, dummyRoute, recipient, Reputation.Score.max(accountable = false)) match {
       case Left(f) =>
         context.log.warn("could not create payment onion for on-the-fly funding: {}", f.getMessage)
         rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))

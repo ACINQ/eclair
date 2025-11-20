@@ -486,7 +486,7 @@ case class UpdateAddHtlc(channelId: ByteVector32,
   val pathKey_opt: Option[PublicKey] = tlvStream.get[UpdateAddHtlcTlv.PathKey].map(_.publicKey)
   val fundingFee_opt: Option[LiquidityAds.FundingFee] = tlvStream.get[UpdateAddHtlcTlv.FundingFeeTlv].map(_.fee)
 
-  val endorsement: Int = tlvStream.get[UpdateAddHtlcTlv.Endorsement].map(_.level).getOrElse(0)
+  val accountable: Boolean = tlvStream.records.contains(UpdateAddHtlcTlv.Accountable)
 
   /** When storing in our DB, we avoid wasting storage with unknown data. */
   def removeUnknownTlvs(): UpdateAddHtlc = this.copy(tlvStream = tlvStream.copy(unknown = Set.empty))
@@ -500,12 +500,12 @@ object UpdateAddHtlc {
             cltvExpiry: CltvExpiry,
             onionRoutingPacket: OnionRoutingPacket,
             pathKey_opt: Option[PublicKey],
-            endorsement: Int,
+            accountable: Boolean,
             fundingFee_opt: Option[LiquidityAds.FundingFee]): UpdateAddHtlc = {
     val tlvs = Set(
       pathKey_opt.map(UpdateAddHtlcTlv.PathKey),
       fundingFee_opt.map(UpdateAddHtlcTlv.FundingFeeTlv),
-      Some(UpdateAddHtlcTlv.Endorsement(endorsement)),
+      if (accountable) Some(UpdateAddHtlcTlv.Accountable) else None,
     ).flatten[UpdateAddHtlcTlv]
     UpdateAddHtlc(channelId, id, amountMsat, paymentHash, cltvExpiry, onionRoutingPacket, TlvStream(tlvs))
   }

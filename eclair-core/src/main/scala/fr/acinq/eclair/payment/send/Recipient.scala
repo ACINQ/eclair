@@ -54,11 +54,11 @@ sealed trait Recipient {
 
 object Recipient {
   /** Iteratively build all the payloads for a payment relayed through channel hops. */
-  def buildPayloads(finalPayloads: PaymentPayloads, hops: Seq[ChannelHop]): PaymentPayloads = {
+  def buildPayloads(finalPayloads: PaymentPayloads, hops: Seq[ChannelHop], upgradeAccountability: Boolean): PaymentPayloads = {
     // We ignore the first hop since the route starts at our node.
     hops.tail.foldRight(finalPayloads) {
       case (hop, current) =>
-        val payload = NodePayload(hop.nodeId, IntermediatePayload.ChannelRelay.Standard(hop.shortChannelId, current.amount, current.expiry))
+        val payload = NodePayload(hop.nodeId, IntermediatePayload.ChannelRelay.Standard(hop.shortChannelId, current.amount, current.expiry, upgradeAccountability))
         PaymentPayloads(current.amount + hop.fee(current.amount), current.expiry + hop.cltvExpiryDelta, payload +: current.payloads, None)
     }
   }
@@ -73,21 +73,22 @@ case class ClearRecipient(nodeId: PublicKey,
                           extraEdges: Seq[ExtraEdge] = Nil,
                           paymentMetadata_opt: Option[ByteVector] = None,
                           nextTrampolineOnion_opt: Option[OnionRoutingPacket] = None,
-                          customTlvs: Set[GenericTlv] = Set.empty) extends Recipient {
+                          customTlvs: Set[GenericTlv] = Set.empty,
+                          upgradeAccountability: Boolean) extends Recipient {
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
     ClearRecipient.validateRoute(nodeId, route).map(_ => {
       val finalPayload = nextTrampolineOnion_opt match {
-        case Some(trampolinePacket) => NodePayload(nodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, totalAmount, expiry, paymentSecret, trampolinePacket))
-        case None => NodePayload(nodeId, FinalPayload.Standard.createPayload(route.amount, totalAmount, expiry, paymentSecret, paymentMetadata_opt, trampolineOnion_opt = None, customTlvs = customTlvs))
+        case Some(trampolinePacket) => NodePayload(nodeId, FinalPayload.Standard.createTrampolinePayload(route.amount, totalAmount, expiry, paymentSecret, trampolinePacket, upgradeAccountability))
+        case None => NodePayload(nodeId, FinalPayload.Standard.createPayload(route.amount, totalAmount, expiry, paymentSecret, paymentMetadata_opt, trampolineOnion_opt = None, customTlvs = customTlvs, upgradeAccountability))
       }
-      Recipient.buildPayloads(PaymentPayloads(route.amount, expiry, Seq(finalPayload), None), route.hops)
+      Recipient.buildPayloads(PaymentPayloads(route.amount, expiry, Seq(finalPayload), None), route.hops, upgradeAccountability)
     })
   }
 }
 
 object ClearRecipient {
   def apply(invoice: Bolt11Invoice, totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv]): ClearRecipient = {
-    ClearRecipient(invoice.nodeId, invoice.features, totalAmount, expiry, invoice.paymentSecret, invoice.extraEdges, invoice.paymentMetadata, None, customTlvs)
+    ClearRecipient(invoice.nodeId, invoice.features, totalAmount, expiry, invoice.paymentSecret, invoice.extraEdges, invoice.paymentMetadata, None, customTlvs, invoice.accountable)
   }
 
   def validateRoute(nodeId: PublicKey, route: Route): Either[OutgoingPaymentError, Route] = {
@@ -111,7 +112,7 @@ case class SpontaneousRecipient(nodeId: PublicKey,
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
     ClearRecipient.validateRoute(nodeId, route).map(_ => {
       val finalPayload = NodePayload(nodeId, FinalPayload.Standard.createKeySendPayload(route.amount, expiry, preimage, customTlvs))
-      Recipient.buildPayloads(PaymentPayloads(totalAmount, expiry, Seq(finalPayload), None), route.hops)
+      Recipient.buildPayloads(PaymentPayloads(totalAmount, expiry, Seq(finalPayload), None), route.hops, upgradeAccountability = true)
     })
   }
 }
@@ -122,7 +123,8 @@ case class BlindedRecipient(nodeId: PublicKey,
                             totalAmount: MilliSatoshi,
                             expiry: CltvExpiry,
                             blindedHops: Seq[BlindedHop],
-                            customTlvs: Set[GenericTlv]) extends Recipient {
+                            customTlvs: Set[GenericTlv],
+                            upgradeAccountability: Boolean) extends Recipient {
   require(blindedHops.nonEmpty, "blinded routes must be provided")
 
   override val extraEdges = blindedHops.map { h =>
@@ -144,20 +146,20 @@ case class BlindedRecipient(nodeId: PublicKey,
       case route: BlindedPathsResolver.FullBlindedRoute =>
         val payloads = if (route.blindedHops.length == 1) {
           // The recipient is also the introduction node.
-          val payload = NodePayload(blindedHop.nodeId, OutgoingBlindedPerHopPayload.createFinalIntroductionPayload(amount, totalAmount, expiry, route.firstpathKey, route.encryptedPayloads.head, customTlvs))
+          val payload = NodePayload(blindedHop.nodeId, OutgoingBlindedPerHopPayload.createFinalIntroductionPayload(amount, totalAmount, expiry, route.firstpathKey, route.encryptedPayloads.head, customTlvs, upgradeAccountability))
           Seq(payload)
         } else {
-          val introductionPayload = NodePayload(blindedHop.nodeId, OutgoingBlindedPerHopPayload.createIntroductionPayload(route.encryptedPayloads.head, route.firstpathKey))
-          val intermediatePayloads = route.blindedHops.tail.dropRight(1).map(n => NodePayload(n.blindedPublicKey, OutgoingBlindedPerHopPayload.createIntermediatePayload(n.encryptedPayload)))
-          val finalPayload = NodePayload(route.blindedNodeIds.last, OutgoingBlindedPerHopPayload.createFinalPayload(amount, totalAmount, expiry, route.encryptedPayloads.last, customTlvs))
+          val introductionPayload = NodePayload(blindedHop.nodeId, OutgoingBlindedPerHopPayload.createIntroductionPayload(route.encryptedPayloads.head, route.firstpathKey, upgradeAccountability))
+          val intermediatePayloads = route.blindedHops.tail.dropRight(1).map(n => NodePayload(n.blindedPublicKey, OutgoingBlindedPerHopPayload.createIntermediatePayload(n.encryptedPayload, upgradeAccountability)))
+          val finalPayload = NodePayload(route.blindedNodeIds.last, OutgoingBlindedPerHopPayload.createFinalPayload(amount, totalAmount, expiry, route.encryptedPayloads.last, customTlvs, upgradeAccountability))
           introductionPayload +: intermediatePayloads :+ finalPayload
         }
         // The route starts at a remote introduction node: we include the path key in the onion, not in the HTLC.
         PaymentPayloads(introductionAmount, introductionExpiry, payloads, outerPathKey_opt = None)
       case route: BlindedPathsResolver.PartialBlindedRoute =>
         // The route started at our node: we already peeled the introduction part.
-        val intermediatePayloads = route.blindedHops.dropRight(1).map(n => NodePayload(n.blindedPublicKey, OutgoingBlindedPerHopPayload.createIntermediatePayload(n.encryptedPayload)))
-        val finalPayload = NodePayload(route.blindedNodeIds.last, OutgoingBlindedPerHopPayload.createFinalPayload(amount, totalAmount, expiry, route.encryptedPayloads.last, customTlvs))
+        val intermediatePayloads = route.blindedHops.dropRight(1).map(n => NodePayload(n.blindedPublicKey, OutgoingBlindedPerHopPayload.createIntermediatePayload(n.encryptedPayload, upgradeAccountability)))
+        val finalPayload = NodePayload(route.blindedNodeIds.last, OutgoingBlindedPerHopPayload.createFinalPayload(amount, totalAmount, expiry, route.encryptedPayloads.last, customTlvs, upgradeAccountability))
         // The next node is not the introduction node, so we must provide the path key in the HTLC.
         PaymentPayloads(introductionAmount, introductionExpiry, intermediatePayloads :+ finalPayload, outerPathKey_opt = Some(route.nextPathKey))
     }
@@ -166,7 +168,7 @@ case class BlindedRecipient(nodeId: PublicKey,
   override def buildPayloads(paymentHash: ByteVector32, route: Route): Either[OutgoingPaymentError, PaymentPayloads] = {
     validateRoute(route).flatMap(blindedHop => {
       val blindedPayloads = buildBlindedPayloads(route.amount, blindedHop)
-      Right(Recipient.buildPayloads(blindedPayloads, route.hops))
+      Right(Recipient.buildPayloads(blindedPayloads, route.hops, upgradeAccountability))
     })
   }
 }
@@ -177,9 +179,9 @@ object BlindedRecipient {
    * @param paths   Payment paths to use to reach the recipient.
    */
   def apply(invoice: Bolt12Invoice, paths: Seq[ResolvedPath], totalAmount: MilliSatoshi, expiry: CltvExpiry, customTlvs: Set[GenericTlv], duplicatePaths: Int = 3): BlindedRecipient =
-    BlindedRecipient.fromPaths(invoice.nodeId, invoice.features, totalAmount, expiry, paths, customTlvs, duplicatePaths)
+    BlindedRecipient.fromPaths(invoice.nodeId, invoice.features, totalAmount, expiry, paths, customTlvs, duplicatePaths, invoice.accountable)
 
-  def fromPaths(nodeId: PublicKey, features: Features[InvoiceFeature], totalAmount: MilliSatoshi, expiry: CltvExpiry, paths: Seq[ResolvedPath], customTlvs: Set[GenericTlv], duplicatePaths: Int = 3): BlindedRecipient = {
+  def fromPaths(nodeId: PublicKey, features: Features[InvoiceFeature], totalAmount: MilliSatoshi, expiry: CltvExpiry, paths: Seq[ResolvedPath], customTlvs: Set[GenericTlv], duplicatePaths: Int = 3, upgradeAccountability: Boolean): BlindedRecipient = {
     val blindedHops = paths.flatMap(resolved => {
       // We want to be able to split payments *inside* a blinded route, because nodes inside the route may be connected
       // by multiple channels which may be imbalanced. A simple trick for that is to clone each blinded path three times,
@@ -191,6 +193,6 @@ object BlindedRecipient {
         BlindedHop(dummyId, resolved)
       })
     })
-    BlindedRecipient(nodeId, features, totalAmount, expiry, blindedHops, customTlvs)
+    BlindedRecipient(nodeId, features, totalAmount, expiry, blindedHops, customTlvs, upgradeAccountability)
   }
 }
