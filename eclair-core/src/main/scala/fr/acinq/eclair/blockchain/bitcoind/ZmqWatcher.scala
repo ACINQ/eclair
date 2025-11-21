@@ -132,6 +132,7 @@ object ZmqWatcher {
 
   case class WatchFundingSpent(replyTo: ActorRef[WatchFundingSpentTriggered], txId: TxId, outputIndex: Int, hints: Set[TxId]) extends WatchSpent[WatchFundingSpentTriggered]
   case class WatchFundingSpentTriggered(spendingTx: Transaction) extends WatchSpentTriggered
+  case class UnwatchFundingSpent(txId: TxId, outputIndex: Int) extends Command
 
   case class WatchOutputSpent(replyTo: ActorRef[WatchOutputSpentTriggered], txId: TxId, outputIndex: Int, amount: Satoshi, hints: Set[TxId]) extends WatchSpent[WatchOutputSpentTriggered]
   case class WatchOutputSpentTriggered(amount: Satoshi, spendingTx: Transaction) extends WatchSpentTriggered
@@ -321,6 +322,12 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         blockHeight.set(currentHeight.toLong)
         context.system.eventStream ! EventStream.Publish(CurrentBlockHeight(currentHeight))
         // TODO: should we try to mitigate the herd effect and not check all watches immediately?
+        val watchExternalChannelCount = watches.keySet.count(_.isInstanceOf[WatchExternalChannelSpent])
+        val watchFundingSpentCount = watches.keySet.count(_.isInstanceOf[WatchFundingSpent])
+        val watchOutputSpentCount = watches.keySet.count(_.isInstanceOf[WatchOutputSpent])
+        val watchPublishedCount = watches.keySet.count(_.isInstanceOf[WatchPublished])
+        val watchConfirmedCount = watches.keySet.count(_.isInstanceOf[WatchConfirmed[_]])
+        log.info("{} watched utxos: external-channels={}, funding-spent={}, output-spent={}, tx-published={}, tx-confirmed={}", watchedUtxos.size, watchExternalChannelCount, watchFundingSpentCount, watchOutputSpentCount, watchPublishedCount, watchConfirmedCount)
         KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
           Future.sequence(watches.collect {
             case (w: WatchPublished, _) => checkPublished(w)
@@ -398,6 +405,11 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
 
       case UnwatchExternalChannelSpent(txId, outputIndex) =>
         val deprecatedWatches = watches.keySet.collect { case w: WatchExternalChannelSpent if w.txId == txId && w.outputIndex == outputIndex => w }
+        val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
+        watching(watches -- deprecatedWatches, watchedUtxos1, analyzedBlocks)
+
+      case UnwatchFundingSpent(txId, outputIndex) =>
+        val deprecatedWatches = watches.keySet.collect { case w: WatchFundingSpent if w.txId == txId && w.outputIndex == outputIndex => w }
         val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
         watching(watches -- deprecatedWatches, watchedUtxos1, analyzedBlocks)
 
