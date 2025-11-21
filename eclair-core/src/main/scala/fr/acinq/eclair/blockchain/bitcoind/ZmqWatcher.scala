@@ -322,6 +322,12 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         blockHeight.set(currentHeight.toLong)
         context.system.eventStream ! EventStream.Publish(CurrentBlockHeight(currentHeight))
         // TODO: should we try to mitigate the herd effect and not check all watches immediately?
+        val watchExternalChannelCount = watches.keySet.count(_.isInstanceOf[WatchExternalChannelSpent])
+        val watchFundingSpentCount = watches.keySet.count(_.isInstanceOf[WatchFundingSpent])
+        val watchOutputSpentCount = watches.keySet.count(_.isInstanceOf[WatchOutputSpent])
+        val watchPublishedCount = watches.keySet.count(_.isInstanceOf[WatchPublished])
+        val watchConfirmedCount = watches.keySet.count(_.isInstanceOf[WatchConfirmed[_]])
+        log.info("{} watched utxos: external-channels={}, funding-spent={}, output-spent={}, tx-published={}, tx-confirmed={}", watchedUtxos.size, watchExternalChannelCount, watchFundingSpentCount, watchOutputSpentCount, watchPublishedCount, watchConfirmedCount)
         KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
           Future.sequence(watches.collect {
             case (w: WatchPublished, _) => checkPublished(w)
