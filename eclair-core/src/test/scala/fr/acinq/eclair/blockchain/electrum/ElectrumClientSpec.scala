@@ -17,10 +17,9 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import java.net.InetSocketAddress
-
 import akka.actor.{ActorRef, Props}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Script, Transaction}
 import fr.acinq.eclair.TestKitBaseClass
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -56,7 +55,7 @@ class ElectrumClientSpec extends TestKitBaseClass with AnyFunSuiteLike with Logg
     .map(ByteVector32(_))
 
   override protected def beforeAll(): Unit = {
-    client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("electrum.acinq.co", 50002), SSL.STRICT)), "electrum-client")
+    client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("13.221.125.253", 50001), SSL.OFF)), "electrum-client")
   }
 
   test("connect to an electrumx mainnet server") {
@@ -121,6 +120,19 @@ class ElectrumClientSpec extends TestKitBaseClass with AnyFunSuiteLike with Logg
     probe.send(client, GetScriptHashHistory(scriptHash))
     val GetScriptHashHistoryResponse(scriptHash1, history) = probe.expectMsgType[GetScriptHashHistoryResponse]
     assert(history.contains(TransactionHistoryItem(500000, referenceTx.txid)))
+  }
+
+  test("get p2swh scripthash history (eclair-mobile patch)") {
+    // multisig-2-2 used in a LN channel
+    val script = ByteVector.fromValidHex("5221020c114d5ab136bbf18b9cdfbfb37acc03d25c1fbe65f6e03a03529b019fe65f92210332b7180593f3ed2d7aee8e4573aa05ebf77bfa9e70ae0be930a130d57bb5eb3452ae")
+    val scriptHash = Crypto.sha256(script).reverse
+    probe.send(client, GetScriptHashHistory(scriptHash))
+    val GetScriptHashHistoryResponse(scriptHash1, history) = probe.expectMsgType[GetScriptHashHistoryResponse]
+    // check that we get the history for the p2swh of our script
+    assert(history == List(
+      TransactionHistoryItem(600000, ByteVector32.fromValidHex("a38d861a0584254429a8e84747c0d203ddada49d6355bbf9de92e4fffc230c47")),
+      TransactionHistoryItem(613432, ByteVector32.fromValidHex("3bc154eb79ac92f7a6b0762e99cc4af1f3488e0d2a49b38936e97a0068f45ee4")))
+    )
   }
 
   test("list script unspents") {
