@@ -17,14 +17,14 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import java.net.InetSocketAddress
-
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MerkleTree, Transaction}
 import grizzled.slf4j.Logging
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import scodec.bits.HexStringSyntax
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -36,11 +36,26 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   var client: ActorRef = _
   val probe = TestProbe()
-  val referenceTx = Transaction.read("0200000003947e307df3ab452d23f02b5a65f4ada1804ee733e168e6197b0bd6cc79932b6c010000006a473044022069346ec6526454a481690a3664609f9e8032c34553015cfa2e9b25ebb420a33002206998f21a2aa771ad92a0c1083f4181a3acdb0d42ca51d01be1309da2ffb9cecf012102b4568cc6ee751f6d39f4a908b1fcffdb878f5f784a26a48c0acb0acff9d88e3bfeffffff966d9d969cd5f95bfd53003a35fcc1a50f4fb51f211596e6472583fdc5d38470000000006b4830450221009c9757515009c5709b5b678d678185202b817ef9a69ffb954144615ab11762210220732216384da4bf79340e9c46d0effba6ba92982cca998adfc3f354cec7715f800121035f7c3e077108035026f4ebd5d6ca696ef088d4f34d45d94eab4c41202ec74f9bfefffffff8d5062f5b04455c6cfa7e3f250e5a4fb44308ba2b86baf77f9ad0d782f57071010000006a47304402207f9f7dd91fe537a26d5554105977e3949a5c8c4ef53a6a3bff6da2d36eff928f02202b9427bef487a1825fd0c3c6851d17d5f19e6d73dfee22bf06db591929a2044d012102b4568cc6ee751f6d39f4a908b1fcffdb878f5f784a26a48c0acb0acff9d88e3bfeffffff02809698000000000017a914c82753548fdf4be1c3c7b14872c90b5198e67eaa876e642500000000001976a914e2365ec29471b3e271388b22eadf0e7f54d307a788ac6f771200")
+  val referenceTx = Transaction.read("0200000001983c5b32ced1de5ae97d3ce9b7436f8bb0487d15bf81e5cae97b1e238dc395c6000000006a47304402205957c75766e391350eba2c7b752f0056cb34b353648ecd0992a8a81fc9bcfe980220629c286592842d152cdde71177cd83086619744a533f262473298cacf60193500121021b8b51f74dbf0ac1e766d162c8707b5e8d89fc59da0796f3b4505e7c0fb4cf31feffffff0276bd0101000000001976a914219de672ba773aa0bc2e15cdd9d2e69b734138fa88ac3e692001000000001976a914301706dede031e9fb4b60836e073a4761855f6b188ac09a10700")
   val scriptHash: BinaryData = Crypto.sha256(referenceTx.txOut(0).publicKeyScript).reverse
+  val merkleProof = List(
+    "b500cd85cd6c7e0e570b82728dd516646536a477b61cc82056505d84a5820dc3",
+    "c98798c2e576566a92b23d2405f59d95c506966a6e26fecfb356d6447a199546",
+    "930d95c428546812fd11f8242904a9a1ba05d2140cd3a83be0e2ed794821c9ec",
+    "90c97965b12f4262fe9bf95bc37ff7d6362902745eaa822ecf0cf85801fa8b48",
+    "23792d51fddd6e439ed4c92ad9f19a9b73fc9d5c52bdd69039be70ad6619a1aa",
+    "4b73075f29a0abdcec2c83c2cfafc5f304d2c19dcacb50a88a023df725468760",
+    "f80225a32a5ce4ef0703822c6aa29692431a816dec77d9b1baa5b09c3ba29bfb",
+    "4858ac33f2022383d3b4dd674666a0880557d02a155073be93231a02ecbb81f4",
+    "eb5b142030ed4e0b55a8ba5a7b5b783a0a24e0c2fd67c1cfa2f7b308db00c38a",
+    "86858812c3837d209110f7ea79de485abdfd22039467a8aa15a8d85856ee7d30",
+    "de20eb85f2e9ad525a6fb5c618682b6bdce2fa83df836a698f31575c4e5b3d38",
+    "98bd1048e04ff1b0af5856d9890cd708d8d67ad6f3a01f777130fbc16810eeb3")
+    .map(BinaryData(_))
 
   override protected def beforeAll(): Unit = {
-    client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("testnet.qtornado.com", 51001))), "electrum-client")
+    client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("13.221.125.253", 50001))), "electrum-client")
+    //    client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("testnet.qtornado.com", 51001))), "electrum-client")
   }
 
   override protected def afterAll(): Unit = {
@@ -53,24 +68,24 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
   }
 
   test("get transaction") {
-    probe.send(client, GetTransaction("c5efb5cbd35a44ba956b18100be0a91c9c33af4c7f31be20e33741d95f04e202"))
+    probe.send(client, GetTransaction(referenceTx.txid))
     val GetTransactionResponse(tx) = probe.expectMsgType[GetTransactionResponse]
-    assert(tx.txid == BinaryData("c5efb5cbd35a44ba956b18100be0a91c9c33af4c7f31be20e33741d95f04e202"))
+    assert(tx == referenceTx)
   }
 
   test("get header") {
-    probe.send(client, GetHeader(10000))
+    probe.send(client, GetHeader(100000))
     val GetHeaderResponse(header) = probe.expectMsgType[GetHeaderResponse]
-    assert(header.block_hash == BinaryData("000000000058b74204bb9d59128e7975b683ac73910660b6531e59523fb4a102"))
+    assert(header.block_hash == BinaryData("000000000003ba27aa200b1cecaad478d2b00432346c3f1f3986da1afd33e506"))
   }
 
   test("get merkle tree") {
-    probe.send(client, GetMerkle("c5efb5cbd35a44ba956b18100be0a91c9c33af4c7f31be20e33741d95f04e202", 1210223L))
+    probe.send(client, GetMerkle(referenceTx.txid, 500000))
     val response = probe.expectMsgType[GetMerkleResponse]
-    assert(response.txid == BinaryData("c5efb5cbd35a44ba956b18100be0a91c9c33af4c7f31be20e33741d95f04e202"))
-    assert(response.block_height == 1210223L)
-    assert(response.pos == 28)
-    assert(response.root == BinaryData("fb0234a21e96913682bc4108bcf72b67fb5d2dd680875b7e4671c03ccf523a20"))
+    assert(response.txid == referenceTx.txid)
+    assert(response.block_height == 500000)
+    assert(response.pos == 2690)
+    assert(response.merkle == merkleProof)
   }
 
   test("header subscription") {
@@ -87,15 +102,28 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     assert(status != "")
   }
 
+  test("get p2swh scripthash history (eclair-mobile patch)") {
+    // multisig-2-2 used in a LN channel
+    val script = BinaryData("5221020c114d5ab136bbf18b9cdfbfb37acc03d25c1fbe65f6e03a03529b019fe65f92210332b7180593f3ed2d7aee8e4573aa05ebf77bfa9e70ae0be930a130d57bb5eb3452ae")
+    val scriptHash = Crypto.sha256(script).reverse
+    probe.send(client, GetScriptHashHistory(scriptHash))
+    val GetScriptHashHistoryResponse(scriptHash1, history) = probe.expectMsgType[GetScriptHashHistoryResponse]
+    // check that we get the history for the p2swh of our script
+    assert(history == List(
+      TransactionHistoryItem(600000, BinaryData("a38d861a0584254429a8e84747c0d203ddada49d6355bbf9de92e4fffc230c47")),
+      TransactionHistoryItem(613432, BinaryData("3bc154eb79ac92f7a6b0762e99cc4af1f3488e0d2a49b38936e97a0068f45ee4")))
+    )
+  }
+
   test("get scripthash history") {
     probe.send(client, GetScriptHashHistory(scriptHash))
     val GetScriptHashHistoryResponse(scriptHash1, history) = probe.expectMsgType[GetScriptHashHistoryResponse]
-    assert(history.contains((TransactionHistoryItem(1210224, "3903726806aa044fe59f40e42eed71bded068b43aaa9e2d716e38b7825412de0"))))
+    assert(history.contains(TransactionHistoryItem(500000, referenceTx.txid)))
   }
 
   test("list script unspents") {
     probe.send(client, ScriptHashListUnspent(scriptHash))
     val ScriptHashListUnspentResponse(scriptHash1, unspents) = probe.expectMsgType[ScriptHashListUnspentResponse]
-    assert(unspents.contains(UnspentItem("3903726806aa044fe59f40e42eed71bded068b43aaa9e2d716e38b7825412de0", 0, 10000000L, 1210224L)))
+    assert(unspents.isEmpty)
   }
 }
