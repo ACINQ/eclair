@@ -1,9 +1,12 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector64, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, addressToPublicKeyScript}
+import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, DeterministicWallet, Musig2, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, addressToPublicKeyScript}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel.{ChannelConfig, ChannelSpendSignature}
+import fr.acinq.eclair.transactions.Scripts.Taproot
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import scodec.bits.ByteVector
@@ -49,4 +52,48 @@ trait SpendFromChannelAddress {
     } yield SpendFromChannelResult(signedTx)
   }
 
+  override def spendFromTaprootChannelAddressPrep(outPoint: OutPoint, fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, address: String, feerate: FeeratePerKw, sessionId: ByteVector32): Future[SpendFromTaprootChannelPrep] = {
+    for {
+      inputTx <- appKit.wallet.getTransaction(outPoint.txid)
+      inputAmount = inputTx.txOut(outPoint.index.toInt).amount
+      Right(pubKeyScript) = addressToPublicKeyScript(appKit.nodeParams.chainHash, address).map(Script.write)
+      channelKeys = appKit.nodeParams.channelKeyManager.channelKeys(ChannelConfig.standard, fundingKeyPath)
+      localFundingPubkey = channelKeys.fundingKey(fundingTxIndex).publicKey
+      // build the tx a first time with a zero amount to compute the weight
+      dummyWitness = Script.witnessKeyPathPay2tr(PlaceHolderSig)
+      fee = Transactions.weight2fee(feerate, buildTx(outPoint, 0.sat, pubKeyScript, dummyWitness).weight())
+      _ = assert(inputAmount - fee > Scripts.dustLimit(pubKeyScript), s"amount insufficient (fee=$fee)")
+      unsignedTx = buildTx(outPoint, inputAmount - fee, pubKeyScript, dummyWitness)
+      nonce = Musig2.generateNonce(sessionId, Right(localFundingPubkey), Seq(localFundingPubkey), None, None)
+    } yield SpendFromTaprootChannelPrep(fundingTxIndex, localFundingPubkey, inputAmount, unsignedTx, nonce)
+  }
+
+  override def spendFromTaprootChannelAddressPartialSign(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, unsignedTx: Transaction, amount: Satoshi, remoteFundingPubkey: PublicKey, remoteNonce: IndividualNonce): Future[SpendFromTaprootChannelPartialSign] = {
+    for {
+      _ <- Future.successful(())
+      channelKeys = appKit.nodeParams.channelKeyManager.channelKeys(ChannelConfig.standard, fundingKeyPath)
+      localFundingKey = channelKeys.fundingKey(fundingTxIndex)
+      outputScript = Script.pay2tr(Taproot.musig2Aggregate(localFundingKey.publicKey, remoteFundingPubkey), None)
+      inputInfo = InputInfo(unsignedTx.txIn(0).outPoint, TxOut(amount, outputScript))
+      tx = Transactions.SpliceTx(inputInfo, unsignedTx)
+      localNonce = Musig2.generateNonce(randomBytes32(), Left(localFundingKey), Seq(localFundingKey.publicKey), None, None)
+      Right(localSig) = tx.partialSign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty, localNonce = localNonce, publicNonces = Seq(localNonce.publicNonce, remoteNonce))
+    } yield SpendFromTaprootChannelPartialSign(localFundingKey.publicKey, localSig)
+  }
+
+  override def spendFromTaprootChannelAddress(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, sessionId: ByteVector32, remotePartialSig: PartialSignatureWithNonce, unsignedTx: Transaction): Future[SpendFromChannelResult] = {
+    for {
+      _ <- Future.successful(())
+      outPoint = unsignedTx.txIn.head.outPoint
+      inputTx <- appKit.wallet.getTransaction(outPoint.txid)
+      channelKeys = appKit.nodeParams.channelKeyManager.channelKeys(ChannelConfig.standard, fundingKeyPath)
+      localFundingKey = channelKeys.fundingKey(fundingTxIndex)
+      inputInfo = InputInfo(outPoint, inputTx.txOut(outPoint.index.toInt))
+      // classify as splice, doesn't really matter
+      tx = Transactions.SpliceTx(inputInfo, unsignedTx)
+      localNonce = Musig2.generateNonce(sessionId, Right(localFundingKey.publicKey), Seq(localFundingKey.publicKey), None, None)
+      Right(localSig) = tx.partialSign(localFundingKey, remoteFundingPubkey, extraUtxos = Map.empty, localNonce = localNonce, publicNonces = Seq(localNonce.publicNonce, remotePartialSig.nonce))
+      Right(signedTx) = tx.aggregateSigs(localFundingKey.publicKey, remoteFundingPubkey, localSig, remotePartialSig,  extraUtxos = Map.empty)
+    } yield SpendFromChannelResult(signedTx)
+  }
 }

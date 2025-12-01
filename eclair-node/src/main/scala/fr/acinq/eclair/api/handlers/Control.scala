@@ -19,11 +19,14 @@ package fr.acinq.eclair.api.handlers
 import akka.http.scaladsl.server.Route
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OutPoint, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
+import scodec.bits.ByteVector
 
 trait Control {
   this: Service with EclairDirectives =>
@@ -68,6 +71,27 @@ trait Control {
     }
   }
 
-  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex ~ manualWatchFundingSpent ~ spendFromChannelAddressPrep ~ spendFromChannelAddress
+  val spendFromTaprootChannelAddressPrep: Route = postRequest("spendfromtaprootchanneladdressprep") { implicit t =>
+    formFields("t".as[ByteVector32], "o".as[Int], "kp", "fi".as[Int], "address", "f".as[FeeratePerByte], "randomSessionId".as[ByteVector32]) {
+      (txId, outputIndex, keyPath, fundingTxIndex, address, feerate, sessionId) =>
+        complete(eclairApi.spendFromTaprootChannelAddressPrep(OutPoint(TxId(txId), outputIndex), KeyPath(keyPath), fundingTxIndex, address, feerate.perKw, sessionId))
+    }
+  }
+
+  val spendFromTaprootChannelAddressPartialSign: Route = postRequest("spendfromtaprootchanneladdresspartialsign") { implicit t =>
+    formFields("kp", "fi".as[Int], "tx", "amount".as[Satoshi], "remoteFundingPubkey".as[PublicKey], "remoteNonce".as[String]) {
+      (keyPath, fundingTxIndex, tx, amount, remoteFundingPubkey, remoteNonce) =>
+        complete(eclairApi.spendFromTaprootChannelAddressPartialSign(KeyPath(keyPath), fundingTxIndex, Transaction.read(tx), amount, remoteFundingPubkey, IndividualNonce(ByteVector.fromValidHex(remoteNonce))))
+    }
+  }
+
+  val spendFromTaprootChannelAddress: Route = postRequest("spendfromtaprootchanneladdress") { implicit t =>
+    formFields("kp", "fi".as[Int], "p".as[PublicKey], "sessionId".as[ByteVector32], "remoteSig".as[ByteVector32], "remoteNonce".as[String], "tx".as[String]) {
+      (keyPath, fundingTxIndex, remoteFundingPubkey, sessionId, remoteSig, remoteNonce, unsignedTx) =>
+        complete(eclairApi.spendFromTaprootChannelAddress(KeyPath(keyPath), fundingTxIndex, remoteFundingPubkey, sessionId, PartialSignatureWithNonce(remoteSig, IndividualNonce(ByteVector.fromValidHex(remoteNonce))), Transaction.read(unsignedTx)))
+    }
+  }
+
+  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex ~ manualWatchFundingSpent ~ spendFromChannelAddressPrep ~ spendFromChannelAddress ~ spendFromTaprootChannelAddressPrep ~ spendFromTaprootChannelAddressPartialSign ~ spendFromTaprootChannelAddress
 
 }
