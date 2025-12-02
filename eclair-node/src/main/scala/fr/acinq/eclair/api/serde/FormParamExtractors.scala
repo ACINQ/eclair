@@ -19,6 +19,7 @@ package fr.acinq.eclair.api.serde
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OutPoint, Satoshi, TxId}
 import fr.acinq.eclair.api.directives.RouteFormat
 import fr.acinq.eclair.api.serde.JsonSupport._
@@ -38,6 +39,8 @@ import scala.util.Try
 object FormParamExtractors {
 
   implicit val publicKeyUnmarshaller: Unmarshaller[String, PublicKey] = Unmarshaller.strict { rawPubKey => PublicKey(ByteVector.fromValidHex(rawPubKey)) }
+
+  implicit val individualNonceUnmarshaller: Unmarshaller[String, IndividualNonce] = Unmarshaller.strict { str => IndividualNonce(ByteVector.fromValidHex(str)) }
 
   implicit val bytesUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str => ByteVector.fromValidHex(str) }
 
