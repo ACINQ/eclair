@@ -20,9 +20,9 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, ToMilliSatoshiConversion}
 import fr.acinq.eclair.channel.Upstream.Hot
-import fr.acinq.eclair.channel.{OutgoingHtlcAdded, OutgoingHtlcFailed, OutgoingHtlcFulfilled, OutgoingHtlcSettled, Upstream}
+import fr.acinq.eclair.channel.{ChannelLiquidityPurchased, OutgoingHtlcAdded, OutgoingHtlcFailed, OutgoingHtlcFulfilled, OutgoingHtlcSettled, Upstream}
 import fr.acinq.eclair.reputation.ReputationRecorder._
 import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc}
 
@@ -36,6 +36,7 @@ object ReputationRecorder {
   case class WrappedOutgoingHtlcAdded(added: OutgoingHtlcAdded) extends Command
   case class WrappedOutgoingHtlcSettled(settled: OutgoingHtlcSettled) extends Command
   private case object TickAudit extends Command
+  case class WrappedChannelLiquidityPurchased(purchased: ChannelLiquidityPurchased) extends Command
   // @formatter:on
 
   def apply(config: Reputation.Config): Behavior[Command] =
@@ -43,6 +44,7 @@ object ReputationRecorder {
       Behaviors.withTimers { timers =>
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcSettled))
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedOutgoingHtlcAdded))
+        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedChannelLiquidityPurchased))
         timers.startTimerWithFixedDelay(TickAudit, 5 minutes)
         new ReputationRecorder(context, config).run()
       }
@@ -89,6 +91,11 @@ class ReputationRecorder(context: ActorContext[ReputationRecorder.Command], conf
         pending.remove(htlcId).foreach(p => {
           outgoingReputations(p.remoteNodeId) = outgoingReputations(p.remoteNodeId).settlePendingHtlc(htlcId, isSuccess)
         })
+        Behaviors.same
+
+      case WrappedChannelLiquidityPurchased(purchased) =>
+        val fee = purchased.purchase.fees.serviceFee.toMilliSatoshi
+        outgoingReputations(purchased.remoteNodeId) = outgoingReputations(purchased.remoteNodeId).addExtraFee(fee)
         Behaviors.same
 
       case TickAudit =>

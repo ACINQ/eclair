@@ -31,7 +31,12 @@ import scala.concurrent.duration.{DurationInt, FiniteDuration}
  * @param score            How much fees we have collected in the past (exponential moving average).
  * @param lastSettlementAt Timestamp of the last recorded HTLC settlement.
  */
-case class PastScore(weight: Double, score: Double, lastSettlementAt: TimestampMilli)
+case class PastScore(weight: Double, score: Double, lastSettlementAt: TimestampMilli) {
+  def decay(now: TimestampMilli, halfLife: FiniteDuration): PastScore = {
+    val d = scala.math.pow(0.5, (now - lastSettlementAt) / halfLife)
+    PastScore(d * weight, d * score, now)
+  }
+}
 
 /** We're relaying that HTLC and are waiting for it to settle. */
 case class PendingHtlc(fee: MilliSatoshi, accountability: Int, startedAt: TimestampMilli, expiry: CltvExpiry) {
@@ -58,8 +63,6 @@ case object HtlcId {
  * @param maxRelayDuration  Duration after which HTLCs are penalized for staying pending too long.
  */
 case class Reputation(pastScores: Map[Int, PastScore], pending: Map[HtlcId, PendingHtlc], halfLife: FiniteDuration, maxRelayDuration: FiniteDuration) {
-  private def decay(now: TimestampMilli, lastSettlementAt: TimestampMilli): Double = scala.math.pow(0.5, (now - lastSettlementAt) / halfLife)
-
   /**
    * Estimate the confidence that a payment will succeed.
    */
@@ -67,9 +70,9 @@ case class Reputation(pastScores: Map[Int, PastScore], pending: Map[HtlcId, Pend
     val weights = Array.fill(Reputation.accountabilityLevels)(0.0)
     val scores = Array.fill(Reputation.accountabilityLevels)(0.0)
     for (e <- 0 until Reputation.accountabilityLevels) {
-      val d = decay(now, pastScores(e).lastSettlementAt)
-      weights(e) += d * pastScores(e).weight
-      scores(e) += d * pastScores(e).score
+      val ps = pastScores(e).decay(now, halfLife)
+      weights(e) += ps.weight
+      scores(e) += ps.score
     }
     for (p <- pending.values) {
       weights(p.accountability) += p.weight(now, maxRelayDuration, currentBlockHeight)
@@ -90,7 +93,7 @@ case class Reputation(pastScores: Map[Int, PastScore], pending: Map[HtlcId, Pend
       weight += weights(e)
       confidence = confidence.max(score / weight)
     }
-    confidence
+    confidence.min(1.0)
   }
 
   /**
@@ -104,18 +107,23 @@ case class Reputation(pastScores: Map[Int, PastScore], pending: Map[HtlcId, Pend
    */
   def settlePendingHtlc(htlcId: HtlcId, isSuccess: Boolean, now: TimestampMilli = TimestampMilli.now()): Reputation = {
     val newScores = pending.get(htlcId).map(p => {
-      val d = decay(now, pastScores(p.accountability).lastSettlementAt)
+      val ps = pastScores(p.accountability).decay(now, halfLife)
       val duration = now - p.startedAt
       val (weight, score) = if (isSuccess) {
         (p.fee.toLong.toDouble * (duration / maxRelayDuration).max(1.0), p.fee.toLong.toDouble)
       } else {
         (p.fee.toLong.toDouble * (duration / maxRelayDuration), 0.0)
       }
-      val newWeight = d * pastScores(p.accountability).weight + weight
-      val newScore = d * pastScores(p.accountability).score + score
+      val newWeight = ps.weight + weight
+      val newScore = ps.score + score
       pastScores + (p.accountability -> PastScore(newWeight, newScore, now))
     }).getOrElse(pastScores)
     copy(pending = pending - htlcId, pastScores = newScores)
+  }
+
+  def addExtraFee(fee: MilliSatoshi, now: TimestampMilli = TimestampMilli.now()): Reputation = {
+    val ps = pastScores(0).decay(now, halfLife)
+    copy(pastScores = pastScores + (0 -> ps.copy(score = ps.score + fee.toLong.toDouble)))
   }
 }
 
