@@ -32,15 +32,14 @@ trait SpendFromChannelAddress {
       channelKeys = appKit.nodeParams.channelKeyManager.channelKeys(ChannelConfig.standard, fundingKeyPath)
       localFundingPubkey = channelKeys.fundingKey(fundingTxIndex).publicKey
       isTaproot = Script.isPay2tr(Script.parse(pubKeyScript))
-      localNonce_opt = if (isTaproot) {
+      (localNonce_opt, dummyWitness) = if (isTaproot) {
         val serverNonce = Musig2.generateNonce(randomBytes32(), Right(localFundingPubkey), Seq(localFundingPubkey), None, None)
         nonces.put(serverNonce.publicNonce, serverNonce)
-        Some(serverNonce.publicNonce)
+        Some(serverNonce.publicNonce) -> Script.witnessKeyPathPay2tr(PlaceHolderSig)
       } else {
-        None
+        None -> Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, localFundingPubkey, localFundingPubkey)
       }
       // build the tx a first time with a zero amount to compute the weight
-      dummyWitness = Scripts.witness2of2(PlaceHolderSig, PlaceHolderSig, localFundingPubkey, localFundingPubkey)
       fee = Transactions.weight2fee(feerate, buildTx(outPoint, 0.sat, pubKeyScript, dummyWitness).weight())
       _ = assert(inputAmount - fee > Scripts.dustLimit(pubKeyScript), s"amount insufficient (fee=$fee)")
       unsignedTx = buildTx(outPoint, inputAmount - fee, pubKeyScript, dummyWitness)
