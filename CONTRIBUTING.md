@@ -28,7 +28,7 @@ You can also use Github issues for [feature requests](https://github.com/acinq/e
 
 - [Bitcoin Whitepaper](https://bitcoin.org/bitcoin.pdf)
 - [Lightning Network Whitepaper](https://lightning.network/lightning-network-paper.pdf)
-- [Deployable Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf)
+- [Deployable Lightning](https://github.com/ElementsProject/lightning/blob/10b10eb981a2c3f2385c3c9ae2244a1767eeca86/doc/miscellaneous/deployable-lightning.pdf)
 - [Understanding the Lightning Network](https://bitcoinmagazine.com/articles/understanding-the-lightning-network-part-building-a-bidirectional-payment-channel-1464710791)
 - [Lightning Network Specification](https://github.com/lightning/bolts)
 - [High Level Lightning Network Specification](https://medium.com/@rusty_lightning/the-bitcoin-lightning-spec-part-1-8-a7720fb1b4da)
