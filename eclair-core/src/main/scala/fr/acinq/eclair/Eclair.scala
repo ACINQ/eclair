@@ -23,6 +23,7 @@ import akka.actor.{ActorRef, typed}
 import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction, TxId, addressToPublicKeyScript}
 import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
@@ -32,6 +33,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{AddressType, Descriptors, WalletTx}
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
@@ -69,7 +71,7 @@ case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
 case class SendOnionMessageResponsePayload(tlvs: TlvStream[OnionMessagePayloadTlv])
 case class SendOnionMessageResponse(sent: Boolean, failureMessage: Option[String], response: Option[SendOnionMessageResponsePayload])
 
-case class SpendFromChannelPrep(fundingTxIndex: Long, localFundingPubkey: PublicKey, inputAmount: Satoshi, unsignedTx: Transaction)
+case class SpendFromChannelPrep(fundingTxIndex: Long, localFundingPubkey: PublicKey, localNonce_opt: Option[IndividualNonce], inputAmount: Satoshi, unsignedTx: Transaction)
 case class SpendFromChannelResult(signedTx: Transaction)
 // @formatter:on
 
@@ -212,7 +214,7 @@ trait Eclair {
 
   def spendFromChannelAddressPrep(outPoint: OutPoint, fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, address: String, feerate: FeeratePerKw): Future[SpendFromChannelPrep]
 
-  def spendFromChannelAddress(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, remoteSig: ByteVector64, unsignedTx: Transaction): Future[SpendFromChannelResult]
+  def spendFromChannelAddress(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, localNonce_opt: Option[IndividualNonce], remoteSig: ChannelSpendSignature, unsignedTx: Transaction): Future[SpendFromChannelResult]
 }
 
 class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChannelAddress {
