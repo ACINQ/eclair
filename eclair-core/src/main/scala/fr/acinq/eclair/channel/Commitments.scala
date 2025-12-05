@@ -523,9 +523,7 @@ case class Commitment(fundingTxIndex: Long,
       return Left(RemoteDustHtlcExposureTooHigh(params.channelId, maxDustExposure, remoteDustExposureAfterAdd))
     }
 
-    // Jamming protection
-    // Must be the last checks so that they can be ignored for shadow deployment.
-    reputationScore.checkOutgoingChannelOccupancy(params.channelId, this, outgoingHtlcs.toSeq)
+    Right(())
   }
 
   def canReceiveAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges): Either[ChannelException, Unit] = {
@@ -898,7 +896,7 @@ case class Commitments(channelParams: ChannelParams,
       return Left(HtlcValueTooSmall(channelId, minimum = htlcMinimum, actual = cmd.amount))
     }
 
-    val add = UpdateAddHtlc(channelId, changes.localNextHtlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.reputationScore.endorsement, cmd.fundingFee_opt)
+    val add = UpdateAddHtlc(channelId, changes.localNextHtlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.reputationScore.accountable, cmd.fundingFee_opt)
     // we increment the local htlc index and add an entry to the origins map
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
@@ -915,7 +913,6 @@ case class Commitments(channelParams: ChannelParams,
       Metrics.dropHtlc(failure, Tags.Directions.Outgoing)
       failure match {
         case f: TooManySmallHtlcs => log.info("TooManySmallHtlcs: {} outgoing HTLCs are below {}", f.number, f.below)
-        case f: IncomingConfidenceTooLow => log.info("IncomingConfidenceTooLow: confidence is {}% while channel is {}% full", (100 * f.confidence).toInt, (100 * f.occupancy).toInt)
         case f: OutgoingConfidenceTooLow => log.info("OutgoingConfidenceTooLow: confidence is {}% while channel is {}% full", (100 * f.confidence).toInt, (100 * f.occupancy).toInt)
         case _ => ()
       }

@@ -23,7 +23,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.send.Recipient
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Router.Route
-import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{InvoiceRoutingInfo, OutgoingBlindedPaths}
+import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{InvoiceRoutingInfo, OutgoingBlindedPaths, UpgradeAccountability}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePayload, PerHopPayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, MilliSatoshi, ShortChannelId, TimestampMilli, UInt64, randomBytes32, randomKey}
@@ -144,6 +144,8 @@ object IncomingPaymentPacket {
                 }
             }
           case None if add.pathKey_opt.isDefined => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+          case None if add.accountable && !payload.records.contains(UpgradeAccountability) =>
+            Left(InvalidOnionPayload(UInt64(19), 0))
           case None =>
             // We are not inside a blinded path: channel relay information is directly available.
             IntermediatePayload.ChannelRelay.Standard.validate(payload).left.map(_.failureMessage).map(payload => ChannelRelayPacket(add, payload, nextPacket, TimestampMilli.now()))
@@ -160,6 +162,8 @@ object IncomingPaymentPacket {
               case DecodedEncryptedRecipientData(blindedPayload, _) => validateBlindedFinalPayload(add, payload, blindedPayload)
             }
           case None if add.pathKey_opt.isDefined => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+          case None if add.accountable && !payload.records.contains(UpgradeAccountability) =>
+            Left(InvalidOnionPayload(UInt64(19), 0))
           case None =>
             // We check if the payment is using trampoline: if it is, we may not be the final recipient.
             payload.get[OnionPaymentPayloadTlv.TrampolineOnion] match {
@@ -219,6 +223,7 @@ object IncomingPaymentPacket {
       case payload if add.amountMsat < payload.paymentRelayData.paymentConstraints.minAmount => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if add.cltvExpiry > payload.paymentRelayData.paymentConstraints.maxCltvExpiry => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if !Features.areCompatible(Features.empty, payload.paymentRelayData.allowedFeatures) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+      case _ if add.accountable && !blindedPayload.records.contains(RouteBlindingEncryptedDataTlv.UpgradeAccountability) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload => Right(ChannelRelayPacket(add, payload, nextPacket, TimestampMilli.now()))
     }
   }
@@ -237,6 +242,7 @@ object IncomingPaymentPacket {
       case payload if payload.paymentConstraints_opt.exists(c => c.maxCltvExpiry < add.cltvExpiry) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if !Features.areCompatible(Features.empty, payload.allowedFeatures) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload if add.cltvExpiry < payload.expiry => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
+      case _ if add.accountable && !blindedPayload.records.contains(RouteBlindingEncryptedDataTlv.UpgradeAccountability) => Left(InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket)))
       case payload => Right(FinalPacket(add, payload, TimestampMilli.now()))
     }
   }
@@ -253,7 +259,7 @@ object IncomingPaymentPacket {
           // We merge contents from the outer and inner payloads.
           // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
           val trampolinePacket = outerPayload.records.get[OnionPaymentPayloadTlv.TrampolineOnion].map(_.packet)
-          Right(FinalPacket(add, FinalPayload.Standard.createPayload(outerPayload.amount, innerPayload.totalAmount, innerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata, trampolinePacket), TimestampMilli.now()))
+          Right(FinalPacket(add, FinalPayload.Standard.createPayload(outerPayload.amount, innerPayload.totalAmount, innerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata, trampolinePacket, upgradeAccountability = outerPayload.upgradeAccountability), TimestampMilli.now()))
       }
     }
   }

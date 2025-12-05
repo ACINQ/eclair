@@ -310,7 +310,7 @@ object OnTheFlyFunding {
           // This lets us detect that this HTLC is an on-the-fly funded HTLC.
           val htlcFees = LiquidityAds.FundingFee(remainingFees.min(p.maxFees(htlcMinimum)), cmd.status.txId)
           val origin = Origin.Hot(htlcSettledAdapter.toClassic, p.upstream)
-          val add = CMD_ADD_HTLC(cmdAdapter.toClassic, p.htlc.amount - htlcFees.amount, paymentHash, p.htlc.expiry, p.htlc.finalPacket, p.htlc.pathKey_opt, Reputation.Score.max, Some(htlcFees), origin, commit = true)
+          val add = CMD_ADD_HTLC(cmdAdapter.toClassic, p.htlc.amount - htlcFees.amount, paymentHash, p.htlc.expiry, p.htlc.finalPacket, p.htlc.pathKey_opt, Reputation.Score.max(accountable = false), Some(htlcFees), origin, commit = true)
           cmd.channel ! add
           remainingFees - htlcFees.amount
       }
@@ -362,7 +362,7 @@ object OnTheFlyFunding {
     import scodec.Codec
     import scodec.codecs._
 
-    private val upstreamLocal: Codec[Upstream.Local] = uuid.as[Upstream.Local]
+    private val upstreamLocal: Codec[Upstream.Local] = (uuid).as[Upstream.Local]
     private val upstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: double).as[Upstream.Hot.Channel]
     private val upstreamTrampoline: Codec[Upstream.Hot.Trampoline] = listOfN(uint16, upstreamChannel).as[Upstream.Hot.Trampoline]
     private val legacyUpstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: provide(0.0)).as[Upstream.Hot.Channel]

@@ -80,9 +80,7 @@
             "hmac" : "5ee09d8f0b0ae937a4307b4c7dfeb299a15d09a15fd3f0998867ddf1f6d042fa"
           },
           "tlvStream" : {
-            "Endorsement" : {
-              "level" : 7
-            }
+            "Unknown106823" : "07"
           }
         }, {
           "channelId" : "4b851a62adaa0c0c003027706666d9e860253463d81971eb22089bb534f9b526",
@@ -97,9 +95,7 @@
             "hmac" : "5cf7762cbc8ece0a15ba576d4b1d1910b376f2d19f524671275e6e4be33b4d8d"
           },
           "tlvStream" : {
-            "Endorsement" : {
-              "level" : 7
-            }
+            "Unknown106823" : "07"
           }
         }, {
           "channelId" : "4b851a62adaa0c0c003027706666d9e860253463d81971eb22089bb534f9b526",
@@ -114,9 +110,7 @@
             "hmac" : "e56ad161c160fecc76fd4668459464898800acbb4e99c2f96219380189b059bd"
           },
           "tlvStream" : {
-            "Endorsement" : {
-              "level" : 7
-            }
+            "Unknown106823" : "07"
           }
         }, {
           "channelId" : "4b851a62adaa0c0c003027706666d9e860253463d81971eb22089bb534f9b526",
@@ -131,9 +125,7 @@
             "hmac" : "f489b7419edba57764791019ee303acc27b6a6171c1bc4d296576186c47e2249"
           },
           "tlvStream" : {
-            "Endorsement" : {
-              "level" : 7
-            }
+            "Unknown106823" : "07"
           }
         } ],
         "acked" : [ ]
@@ -152,9 +144,7 @@
             "hmac" : "fc171d9f300e254a9ffa2b3a23eae54cf8bc03f7ab239142469b11179cefd72d"
           },
           "tlvStream" : {
-            "Endorsement" : {
-              "level" : 7
-            }
+            "Unknown106823" : "07"
           }
         }, {
           "channelId" : "4b851a62adaa0c0c003027706666d9e860253463d81971eb22089bb534f9b526",
@@ -169,9 +159,7 @@
             "hmac" : "ad3279099f3968fee2b1cc21d383e3771116b9e334ef766049b43d782a7fbe51"
           },
           "tlvStream" : {
-            "Endorsement" : {
-              "level" : 7
-            }
+            "Unknown106823" : "07"
           }
         }, {
           "channelId" : "4b851a62adaa0c0c003027706666d9e860253463d81971eb22089bb534f9b526",
@@ -186,9 +174,7 @@
             "hmac" : "710e9ee11b2463fe48ee38f0f144dc2f750e5ed7598e722e5894008361093522"
           },
           "tlvStream" : {
-            "Endorsement" : {
-              "level" : 7
-            }
+            "Unknown106823" : "07"
           }
         } ],
         "acked" : [ ],

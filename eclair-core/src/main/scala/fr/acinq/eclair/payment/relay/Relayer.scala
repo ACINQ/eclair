@@ -146,7 +146,8 @@ object Relayer extends Logging {
                          minTrampolineFees: RelayFees,
                          enforcementDelay: FiniteDuration,
                          asyncPaymentsParams: AsyncPaymentsParams,
-                         peerReputationConfig: Reputation.Config) {
+                         peerReputationConfig: Reputation.Config,
+                         reservedBucket: Double) {
     def defaultFees(announceChannel: Boolean): RelayFees = {
       if (announceChannel) {
         publicChannelFees
