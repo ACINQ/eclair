@@ -160,6 +160,12 @@ trait ErrorHandlers extends CommonHandlers {
           // The channel closing is retried on every reconnect of the channel, until it succeeds.
           log.warning("ignoring remote 'link failed to shutdown', probably coming from lnd")
           stay() sending Warning(d.channelId, "ignoring your 'link failed to shutdown' to avoid an unnecessary force-close")
+        } else if (hasCommitments.commitments.latest.commitmentFormat == ZeroFeeCommitmentFormat) {
+          // When using v3 transactions, we want to avoid using our wallet inputs as much as possible.
+          // It is much more convenient if our peer publishes their commitment transaction if they're having an issue,
+          // because we can use our main output for pay the fees of the commitment transaction directly (if necessary).
+          log.warning("ignoring remote error: waiting for remote commit tx to be published")
+          stay() sending Warning(d.channelId, "ignoring your error: please publish your commitment if you want to force-close the channel")
         } else {
           spendLocalCurrent(hasCommitments, maxClosingFeerateOverride_opt = None)
         }
@@ -232,7 +238,10 @@ trait ErrorHandlers extends CommonHandlers {
 
   /** Publish 2nd-stage transactions for our local commitment. */
   def doPublish(lcp: LocalCommitPublished, txs: Closing.LocalClose.SecondStageTransactions, commitment: FullCommitment): Unit = {
-    val publishCommitTx = PublishFinalTx(lcp.commitTx, commitment.fundingInput, "commit-tx", Closing.commitTxFee(commitment.commitInput(channelKeys), lcp.commitTx, commitment.localChannelParams.paysCommitTxFees), None)
+    val publishCommitTx_opt = commitment.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => Some(PublishFinalTx(lcp.commitTx, commitment.fundingInput, "commit-tx", Closing.commitTxFee(commitment.commitInput(channelKeys), lcp.commitTx, commitment.localChannelParams.paysCommitTxFees), None))
+      case ZeroFeeCommitmentFormat => None // we will publish the commit-tx alongside the anchor tx
+    }
     val publishAnchorTx_opt = txs.anchorTx_opt match {
       case Some(anchorTx) if !lcp.isConfirmed =>
         val confirmationTarget = Closing.confirmationTarget(commitment.localCommit, commitment.localCommitParams.dustLimit, commitment.commitmentFormat, nodeParams.onChainFeeConf)
@@ -241,7 +250,7 @@ trait ErrorHandlers extends CommonHandlers {
     }
     val publishMainDelayedTx_opt = txs.mainDelayedTx_opt.map(tx => PublishFinalTx(tx, None))
     val publishHtlcTxs = txs.htlcTxs.map(htlcTx => PublishReplaceableTx(htlcTx, lcp.commitTx, commitment, Closing.confirmationTarget(htlcTx)))
-    val publishQueue = Seq(publishCommitTx) ++ publishAnchorTx_opt ++ publishMainDelayedTx_opt ++ publishHtlcTxs
+    val publishQueue = publishCommitTx_opt.toSeq ++ publishAnchorTx_opt ++ publishMainDelayedTx_opt ++ publishHtlcTxs
     publishIfNeeded(publishQueue, lcp.irrevocablySpent)
 
     if (!lcp.isConfirmed) {
@@ -275,7 +284,7 @@ trait ErrorHandlers extends CommonHandlers {
       case _ => nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, maxClosingFeerateOverride_opt = None)
     }
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitments.commitInput(channelKeys), commitTx, d.commitments.localChannelParams.paysCommitTxFees), "remote-commit"))
-    val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitments, commitments.remoteCommit, commitTx, closingFeerate, finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
+    val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitments, commitments.remoteCommit, commitTx, closingFeerate, nodeParams.currentBitcoinCoreFeerates, finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
       case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), remoteCommitPublished = Some(remoteCommitPublished))
@@ -297,7 +306,7 @@ trait ErrorHandlers extends CommonHandlers {
       case _ => nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, maxClosingFeerateOverride_opt = None)
     }
     context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, Closing.commitTxFee(commitment.commitInput(channelKeys), commitTx, d.commitments.localChannelParams.paysCommitTxFees), "next-remote-commit"))
-    val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, commitTx, closingFeerate, finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
+    val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, commitTx, closingFeerate, nodeParams.currentBitcoinCoreFeerates, finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
       case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, waitingSince = nodeParams.currentBlockHeight, finalScriptPubKey = finalScriptPubKey, mutualCloseProposed = negotiating.closingTxProposed.flatten.map(_.unsignedTx), nextRemoteCommitPublished = Some(remoteCommitPublished))
@@ -314,13 +323,19 @@ trait ErrorHandlers extends CommonHandlers {
       case Some(commit) if rcp.commitTx.txid == commit.txId => commit
       case _ => commitment.remoteCommit
     }
+    val confirmationTarget = Closing.confirmationTarget(remoteCommit, commitment.remoteCommitParams.dustLimit, commitment.commitmentFormat, nodeParams.onChainFeeConf)
     val publishAnchorTx_opt = txs.anchorTx_opt match {
-      case Some(anchorTx) if !rcp.isConfirmed =>
-        val confirmationTarget = Closing.confirmationTarget(remoteCommit, commitment.remoteCommitParams.dustLimit, commitment.commitmentFormat, nodeParams.onChainFeeConf)
-        Some(PublishReplaceableTx(anchorTx, rcp.commitTx, commitment, confirmationTarget))
+      case Some(anchorTx) if !rcp.isConfirmed => Some(PublishReplaceableTx(anchorTx, rcp.commitTx, commitment, confirmationTarget))
       case _ => None
     }
-    val publishMainTx_opt = txs.mainTx_opt.map(tx => PublishFinalTx(tx, None))
+    val publishMainTx_opt = txs.mainTx_opt.map(tx => commitment.commitmentFormat match {
+      case ZeroFeeCommitmentFormat => publishAnchorTx_opt match {
+        // Instead of creating a dedicated anchor transaction, we use our main output to pay commit fees whenever possible.
+        case None if !rcp.isConfirmed => PublishReplaceableTx(tx, rcp.commitTx, commitment, confirmationTarget)
+        case _ => PublishFinalTx(tx, None)
+      }
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => PublishFinalTx(tx, None)
+    })
     val publishHtlcTxs = txs.htlcTxs.map(htlcTx => PublishReplaceableTx(htlcTx, rcp.commitTx, commitment, Closing.confirmationTarget(htlcTx)))
     val publishQueue = publishAnchorTx_opt ++ publishMainTx_opt ++ publishHtlcTxs
     publishIfNeeded(publishQueue, rcp.irrevocablySpent)
@@ -334,7 +349,7 @@ trait ErrorHandlers extends CommonHandlers {
     // we will watch for its confirmation. This ensures that we detect double-spends that could come from:
     //  - our own RBF attempts
     //  - remote transactions for outputs that both parties may spend (e.g. HTLCs)
-    val watchSpentQueue = rcp.localOutput_opt ++ (if (!rcp.isConfirmed) rcp.anchorOutput_opt else None) ++ rcp.htlcOutputs.toSeq
+    val watchSpentQueue = rcp.localOutput_opt ++ (if (publishAnchorTx_opt.nonEmpty) rcp.anchorOutput_opt else None) ++ rcp.htlcOutputs.toSeq
     watchSpentIfNeeded(rcp.commitTx, watchSpentQueue, rcp.irrevocablySpent)
   }
 

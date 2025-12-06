@@ -724,8 +724,8 @@ object Commitment {
                    commitmentInput: InputInfo,
                    commitmentFormat: CommitmentFormat,
                    spec: CommitmentSpec): (CommitTx, Seq[UnsignedHtlcTx]) = {
-    val outputs = makeCommitTxOutputs(localFundingKey.publicKey, remoteFundingPubKey, commitKeys.publicKeys, channelParams.localParams.paysCommitTxFees, commitParams.dustLimit, commitParams.toSelfDelay, spec, commitmentFormat)
-    val commitTx = makeCommitTx(commitmentInput, commitTxNumber, commitKeys.ourPaymentBasePoint, channelParams.remoteParams.paymentBasepoint, channelParams.localParams.isChannelOpener, outputs)
+    val outputs = makeCommitTxOutputs(localFundingKey.publicKey, remoteFundingPubKey, commitmentInput, commitKeys.publicKeys, channelParams.localParams.paysCommitTxFees, commitParams.dustLimit, commitParams.toSelfDelay, spec, commitmentFormat)
+    val commitTx = makeCommitTx(commitmentInput, commitTxNumber, commitKeys.ourPaymentBasePoint, channelParams.remoteParams.paymentBasepoint, channelParams.localParams.isChannelOpener, commitmentFormat, outputs)
     val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, commitmentFormat)
     (commitTx, htlcTxs)
   }
@@ -739,8 +739,8 @@ object Commitment {
                     commitmentInput: InputInfo,
                     commitmentFormat: CommitmentFormat,
                     spec: CommitmentSpec): (CommitTx, Seq[UnsignedHtlcTx]) = {
-    val outputs = makeCommitTxOutputs(remoteFundingPubKey, localFundingKey.publicKey, commitKeys.publicKeys, !channelParams.localParams.paysCommitTxFees, commitParams.dustLimit, commitParams.toSelfDelay, spec, commitmentFormat)
-    val commitTx = makeCommitTx(commitmentInput, commitTxNumber, channelParams.remoteParams.paymentBasepoint, commitKeys.ourPaymentBasePoint, !channelParams.localParams.isChannelOpener, outputs)
+    val outputs = makeCommitTxOutputs(remoteFundingPubKey, localFundingKey.publicKey, commitmentInput, commitKeys.publicKeys, !channelParams.localParams.paysCommitTxFees, commitParams.dustLimit, commitParams.toSelfDelay, spec, commitmentFormat)
+    val commitTx = makeCommitTx(commitmentInput, commitTxNumber, channelParams.remoteParams.paymentBasepoint, commitKeys.ourPaymentBasePoint, !channelParams.localParams.isChannelOpener, commitmentFormat, outputs)
     val htlcTxs = makeHtlcTxs(commitTx.tx, outputs, commitmentFormat)
     (commitTx, htlcTxs)
   }
