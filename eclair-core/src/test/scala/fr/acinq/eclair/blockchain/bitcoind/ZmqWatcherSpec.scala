@@ -370,6 +370,32 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     })
   }
 
+  test("unwatch funding spent") {
+    withWatcher(f => {
+      import f._
+
+      val (priv, address) = createExternalAddress()
+      val tx = sendToAddress(address, Btc(1), probe)
+      val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
+      val (tx1, _) = createUnspentTxChain(tx, priv)
+
+      watcher ! WatchFundingSpent(probe.ref, tx.txid, outputIndex, Set.empty)
+      probe.expectNoMessage(100 millis)
+
+      bitcoinClient.publishTransaction(tx1)
+      probe.expectMsg(WatchFundingSpentTriggered(tx1))
+      probe.expectNoMessage(100 millis)
+
+      watcher ! UnwatchFundingSpent(tx.txid, outputIndex)
+      probe.expectNoMessage(100 millis)
+      // Let's confirm tx and tx1: seeing tx1 in a block should trigger both WatchSpentTriggered events again, but we unwatched the transaction.
+      bitcoinClient.getBlockHeight().pipeTo(probe.ref)
+      probe.expectMsgType[BlockHeight]
+      generateBlocks(1)
+      probe.expectNoMessage(100 millis)
+    })
+  }
+
   test("watch for unknown spent transactions") {
     withWatcher(f => {
       import f._
