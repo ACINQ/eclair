@@ -194,7 +194,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.expectNoMessage(100 millis)
 
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
-    childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(failingRoute.amount, failingRoute.fullRoute, Sphinx.DecryptedFailurePacket(b, PermanentChannelFailure())))))
+    childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(failingRoute.amount, failingRoute.fullRoute, Sphinx.DecryptedFailurePacket(b, 1, PermanentChannelFailure())))))
     // We retry ignoring the failing channel.
     expectRouteRequest(router, nodeParams.nodeId, clearRecipient, routeParams.copy(randomize = true), allowMultiPart = true, ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_be, b, e))), paymentContext = Some(cfg.paymentContext))
     router.send(payFsm, RouteResponse(Seq(Route(400_000 msat, hop_ac_1 :: hop_ce :: Nil, None), Route(600_000 msat, hop_ad :: hop_de :: Nil, None))))
@@ -225,12 +225,12 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.expectNoMessage(100 millis)
 
     val (failedId1, failedRoute1) :: (failedId2, failedRoute2) :: Nil = payFsm.stateData.asInstanceOf[PaymentProgress].pending.toSeq
-    childPayFsm.send(payFsm, PaymentFailed(failedId1, paymentHash, Seq(RemoteFailure(failedRoute1.amount, failedRoute1.hops, Sphinx.DecryptedFailurePacket(b, TemporaryNodeFailure())))))
+    childPayFsm.send(payFsm, PaymentFailed(failedId1, paymentHash, Seq(RemoteFailure(failedRoute1.amount, failedRoute1.hops, Sphinx.DecryptedFailurePacket(b, 1, TemporaryNodeFailure())))))
 
     // When we retry, we ignore the failing node and we let the router know about the remaining pending route.
     expectRouteRequest(router, nodeParams.nodeId, clearRecipient, routeParams.copy(randomize = true), Ignore(Set(b), Set.empty), pendingPayments = Seq(failedRoute2), allowMultiPart = true, paymentContext = Some(cfg.paymentContext))
     // The second part fails while we're still waiting for new routes.
-    childPayFsm.send(payFsm, PaymentFailed(failedId2, paymentHash, Seq(RemoteFailure(failedRoute2.amount, failedRoute2.hops, Sphinx.DecryptedFailurePacket(b, TemporaryNodeFailure())))))
+    childPayFsm.send(payFsm, PaymentFailed(failedId2, paymentHash, Seq(RemoteFailure(failedRoute2.amount, failedRoute2.hops, Sphinx.DecryptedFailurePacket(b, 1, TemporaryNodeFailure())))))
     // We receive a response to our first request, but it's now obsolete: we re-sent a new route request that takes into
     // account the latest failures.
     router.send(payFsm, RouteResponse(Seq(Route(failedRoute1.amount, hop_ac_1 :: hop_ce :: Nil, None))))
@@ -342,7 +342,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     // B changed his fees and expiry after the invoice was issued.
     val channelUpdate = channelUpdate_be.copy(feeBaseMsat = 250 msat, feeProportionalMillionths = 150, cltvExpiryDelta = CltvExpiryDelta(24))
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
-    childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.fullRoute, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(finalAmount, Some(channelUpdate)))))))
+    childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.fullRoute, Sphinx.DecryptedFailurePacket(b, 1, FeeInsufficient(finalAmount, Some(channelUpdate)))))))
     // We update the routing hints accordingly before requesting a new route.
     val extraEdge1 = extraEdge.copy(feeBase = 250 msat, feeProportionalMillionths = 150, cltvExpiryDelta = CltvExpiryDelta(24))
     assert(router.expectMsgType[RouteRequest].target.extraEdges == Seq(extraEdge1))
@@ -366,7 +366,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     // NB: we need a channel update with a valid signature, otherwise we'll ignore the node instead of this specific channel.
     val channelUpdate = Announcements.makeChannelUpdate(channelUpdate_be.chainHash, priv_b, e, channelUpdate_be.shortChannelId, channelUpdate_be.cltvExpiryDelta, channelUpdate_be.htlcMinimumMsat, channelUpdate_be.feeBaseMsat, channelUpdate_be.feeProportionalMillionths, channelUpdate_be.htlcMaximumMsat)
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
-    childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.fullRoute, Sphinx.DecryptedFailurePacket(b, TemporaryChannelFailure(Some(channelUpdate)))))))
+    childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.fullRoute, Sphinx.DecryptedFailurePacket(b, 1, TemporaryChannelFailure(Some(channelUpdate)))))))
     // We update the routing hints accordingly before requesting a new route and ignore the channel.
     val routeRequest = router.expectMsgType[RouteRequest]
     assert(routeRequest.target.extraEdges == Seq(extraEdge))
@@ -387,7 +387,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // The blinded route fails to relay the payment.
     val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
-    childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.fullRoute, Sphinx.DecryptedFailurePacket(b, InvalidOnionBlinding(randomBytes32()))))))
+    childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.amount, route.fullRoute, Sphinx.DecryptedFailurePacket(b, 1, InvalidOnionBlinding(randomBytes32()))))))
     // We retry and ignore that blinded route.
     val routeRequest = router.expectMsgType[RouteRequest]
     assert(routeRequest.ignore.channels.map(_.shortChannelId) == Set(hop_be.dummyId))
@@ -407,7 +407,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     {
       val failures = Seq(
         LocalFailure(finalAmount, Nil, ChannelUnavailable(randomBytes32())),
-        RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(100 msat, Some(makeChannelUpdate(ShortChannelId(2), 15 msat, 150, CltvExpiryDelta(48)))))),
+        RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(b, 2, FeeInsufficient(100 msat, Some(makeChannelUpdate(ShortChannelId(2), 15 msat, 150, CltvExpiryDelta(48)))))),
         UnreadableRemoteFailure(finalAmount, Nil, Sphinx.CannotDecryptFailurePacket(randomBytes(292), None), Nil)
       )
       val extraEdges1 = Seq(
@@ -419,10 +419,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     }
     {
       val failures = Seq(
-        RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(a, FeeInsufficient(100 msat, Some(makeChannelUpdate(ShortChannelId(1), 20 msat, 20, CltvExpiryDelta(20)))))),
-        RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(100 msat, Some(makeChannelUpdate(ShortChannelId(2), 21 msat, 21, CltvExpiryDelta(21)))))),
-        RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(a, FeeInsufficient(100 msat, Some(makeChannelUpdate(ShortChannelId(3), 22 msat, 22, CltvExpiryDelta(22)))))),
-        RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(a, FeeInsufficient(100 msat, Some(makeChannelUpdate(ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23)))))),
+        RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(a, 1, FeeInsufficient(100 msat, Some(makeChannelUpdate(ShortChannelId(1), 20 msat, 20, CltvExpiryDelta(20)))))),
+        RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(b, 2, FeeInsufficient(100 msat, Some(makeChannelUpdate(ShortChannelId(2), 21 msat, 21, CltvExpiryDelta(21)))))),
+        RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(a, 1, FeeInsufficient(100 msat, Some(makeChannelUpdate(ShortChannelId(3), 22 msat, 22, CltvExpiryDelta(22)))))),
+        RemoteFailure(finalAmount, Nil, Sphinx.DecryptedFailurePacket(a, 1, FeeInsufficient(100 msat, Some(makeChannelUpdate(ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23)))))),
       )
       val extraEdges1 = Seq(
         ExtraEdge(a, b, ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23), defaultChannelUpdate.htlcMinimumMsat, Some(defaultChannelUpdate.htlcMaximumMsat)),
@@ -503,7 +503,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
     val (failedId, failedRoute) = payFsm.stateData.asInstanceOf[PaymentProgress].pending.head
-    val result = abortAfterFailure(f, PaymentFailed(failedId, paymentHash, Seq(RemoteFailure(failedRoute.amount, failedRoute.fullRoute, Sphinx.DecryptedFailurePacket(e, IncorrectOrUnknownPaymentDetails(600_000 msat, BlockHeight(0)))))))
+    val result = abortAfterFailure(f, PaymentFailed(failedId, paymentHash, Seq(RemoteFailure(failedRoute.amount, failedRoute.fullRoute, Sphinx.DecryptedFailurePacket(e, 2, IncorrectOrUnknownPaymentDetails(600_000 msat, BlockHeight(0)))))))
     assert(result.failures.length == 1)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
@@ -542,7 +542,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.send(payFsm, PaymentFailed(failedId1, paymentHash, Seq(UnreadableRemoteFailure(failedRoute1.amount, failedRoute1.hops, Sphinx.CannotDecryptFailurePacket(randomBytes(292), None), Nil))))
     router.expectMsgType[RouteRequest]
 
-    val result = abortAfterFailure(f, PaymentFailed(failedId2, paymentHash, Seq(RemoteFailure(failedRoute2.amount, failedRoute2.hops, Sphinx.DecryptedFailurePacket(e, PaymentTimeout())))))
+    val result = abortAfterFailure(f, PaymentFailed(failedId2, paymentHash, Seq(RemoteFailure(failedRoute2.amount, failedRoute2.hops, Sphinx.DecryptedFailurePacket(e, 2, PaymentTimeout())))))
     assert(result.failures.length == 2)
   }
 
@@ -576,7 +576,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
     val (failedId, failedRoute) :: (successId, successRoute) :: Nil = payFsm.stateData.asInstanceOf[PaymentProgress].pending.toSeq
-    childPayFsm.send(payFsm, PaymentFailed(failedId, paymentHash, Seq(RemoteFailure(failedRoute.amount, failedRoute.fullRoute, Sphinx.DecryptedFailurePacket(e, PaymentTimeout())))))
+    childPayFsm.send(payFsm, PaymentFailed(failedId, paymentHash, Seq(RemoteFailure(failedRoute.amount, failedRoute.fullRoute, Sphinx.DecryptedFailurePacket(e, 2, PaymentTimeout())))))
     awaitCond(payFsm.stateName == PAYMENT_ABORTED)
 
     sender.watch(payFsm)
@@ -613,7 +613,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(payFsm.stateName == PAYMENT_SUCCEEDED)
 
     sender.watch(payFsm)
-    childPayFsm.send(payFsm, PaymentFailed(failedId, paymentHash, Seq(RemoteFailure(failedRoute.amount, failedRoute.fullRoute, Sphinx.DecryptedFailurePacket(e, PaymentTimeout())))))
+    childPayFsm.send(payFsm, PaymentFailed(failedId, paymentHash, Seq(RemoteFailure(failedRoute.amount, failedRoute.fullRoute, Sphinx.DecryptedFailurePacket(e, 2, PaymentTimeout())))))
     val result = sender.expectMsgType[PaymentSent]
     assert(result.parts.length == 1 && result.parts.head.id == childId)
     assert(result.amountWithFees < finalAmount) // we got the preimage without paying the full amount
@@ -663,7 +663,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
       assert(payFsm.stateData.asInstanceOf[PaymentAborted].pending.size == pending.size - 1)
       // Fail all remaining child payments.
       payFsm.stateData.asInstanceOf[PaymentAborted].pending.foreach(childId =>
-        childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(pending(childId).amount, hop_ab_1 :: hop_be :: Nil, Sphinx.DecryptedFailurePacket(e, PaymentTimeout())))))
+        childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(pending(childId).amount, hop_ab_1 :: hop_be :: Nil, Sphinx.DecryptedFailurePacket(e, 2, PaymentTimeout())))))
       )
     }
 

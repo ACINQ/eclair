@@ -375,7 +375,7 @@ object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFail
     val route = f.route.map(_.nodeId) ++ f.route.lastOption.map(_.nextNodeId)
     val message = f match {
       case LocalFailure(_, _, t) => t.getMessage
-      case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, failureMessage)) => s"$origin returned: ${failureMessage.message}"
+      case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, _, failureMessage)) => s"$origin returned: ${failureMessage.message}"
       case _: UnreadableRemoteFailure => "unreadable remote failure"
     }
     PaymentFailureSummaryJson(f.amount, route, message)

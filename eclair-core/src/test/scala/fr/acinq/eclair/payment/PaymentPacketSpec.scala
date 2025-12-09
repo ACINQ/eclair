@@ -667,7 +667,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(fail_c.id == add_c.id)
     val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_b.privateKey, useAttributableFailures = false, CMD_FAIL_HTLC(add_b.id, FailureReason.EncryptedDownstreamFailure(fail_c.reason, None), None), add_b)
     assert(fail_b.id == add_b.id)
-    val Right(Sphinx.DecryptedFailurePacket(failingNode, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, fail_b.attribution_opt, payment.sharedSecrets).failure
+    val Right(Sphinx.DecryptedFailurePacket(failingNode, 4, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, fail_b.attribution_opt, payment.sharedSecrets).failure
     assert(failingNode == e)
     assert(decryptedFailure == failure)
   }
@@ -698,7 +698,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(fail_b.id == add_b.id)
     val htlcFailure = Sphinx.FailurePacket.decrypt(fail_b.reason, fail_b.attribution_opt, payment.sharedSecrets)
     assert(htlcFailure.holdTimes == Seq(HoldTime(1200 milliseconds, b), HoldTime(600 milliseconds, c), HoldTime(400 milliseconds, d), HoldTime(0 milliseconds, e)))
-    val Right(Sphinx.DecryptedFailurePacket(failingNode, decryptedFailure)) = htlcFailure.failure
+    val Right(Sphinx.DecryptedFailurePacket(failingNode, 4, decryptedFailure)) = htlcFailure.failure
     assert(failingNode == e)
     assert(decryptedFailure == failure)
   }
@@ -734,7 +734,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(fail_c.id == add_c.id)
     val Right(fail_b: UpdateFailHtlc) = buildHtlcFailure(priv_b.privateKey, useAttributableFailures = false, CMD_FAIL_HTLC(add_b.id, FailureReason.EncryptedDownstreamFailure(fail_c.reason, None), None), add_b)
     assert(fail_b.id == add_b.id)
-    val Right(Sphinx.DecryptedFailurePacket(failingNode, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, fail_b.attribution_opt, payment.sharedSecrets).failure
+    val Right(Sphinx.DecryptedFailurePacket(failingNode, 2, decryptedFailure)) = Sphinx.FailurePacket.decrypt(fail_b.reason, fail_b.attribution_opt, payment.sharedSecrets).failure
     assert(failingNode == c)
     assert(decryptedFailure == failure)
   }

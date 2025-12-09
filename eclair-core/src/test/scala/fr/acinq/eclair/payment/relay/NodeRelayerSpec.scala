@@ -538,7 +538,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     router.expectMessageType[RouteRequest]
 
     // If we're having a hard time finding routes, raising the fee/cltv will likely help.
-    val failures = LocalFailure(outgoingAmount, Nil, RouteNotFound) :: RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, PermanentNodeFailure())) :: LocalFailure(outgoingAmount, Nil, RouteNotFound) :: Nil
+    val failures = LocalFailure(outgoingAmount, Nil, RouteNotFound) :: RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, 1, PermanentNodeFailure())) :: LocalFailure(outgoingAmount, Nil, RouteNotFound) :: Nil
     payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
 
     incomingMultiPart.foreach { p =>
@@ -563,7 +563,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
     router.expectMessageType[RouteRequest]
 
-    val failures = RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(outgoingAmount, Nil, Sphinx.CannotDecryptFailurePacket(ByteVector.empty, None), Nil) :: Nil
+    val failures = RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, 1, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(outgoingAmount, Nil, Sphinx.CannotDecryptFailurePacket(ByteVector.empty, None), Nil) :: Nil
     payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
 
     incomingMultiPart.foreach { p =>
@@ -785,7 +785,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     validateOutgoingPayment(outgoingPayment)
 
     // The outgoing payment fails, but it's not a liquidity issue.
-    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, TemporaryNodeFailure())) :: Nil)
+    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, 1, TemporaryNodeFailure())) :: Nil)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)

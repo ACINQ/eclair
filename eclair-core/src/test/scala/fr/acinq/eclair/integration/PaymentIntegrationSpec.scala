@@ -260,7 +260,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(failed.id == paymentId)
     assert(failed.paymentHash == invoice.paymentHash)
     assert(failed.failures.size == 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(amount, getBlockHeight())))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, 3, IncorrectOrUnknownPaymentDetails(amount, getBlockHeight())))
 
     assert(holdTimesRecorder.expectMsgType[Router.ReportedHoldTimes].holdTimes.map(_.remoteNodeId) == Seq("B", "C", "D").map(nodes(_).nodeParams.nodeId))
   }
@@ -282,7 +282,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(failed.id == paymentId)
     assert(failed.paymentHash == invoice.paymentHash)
     assert(failed.failures.size == 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(100000000 msat, getBlockHeight())))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, 3, IncorrectOrUnknownPaymentDetails(100000000 msat, getBlockHeight())))
   }
 
   test("send an HTLC A->D with too much overpayment") {
@@ -302,7 +302,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentId == failed.id)
     assert(failed.paymentHash == invoice.paymentHash)
     assert(failed.failures.size == 1)
-    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, IncorrectOrUnknownPaymentDetails(600000000 msat, getBlockHeight())))
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e == DecryptedFailurePacket(nodes("D").nodeParams.nodeId, 3, IncorrectOrUnknownPaymentDetails(600000000 msat, getBlockHeight())))
   }
 
   test("send an HTLC A->D with a reasonable overpayment") {

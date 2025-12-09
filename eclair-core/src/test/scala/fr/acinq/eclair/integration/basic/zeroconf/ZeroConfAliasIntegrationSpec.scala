@@ -277,7 +277,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
 
     // The channel update returned in failures doesn't leak the real scid.
     val failure = sendFailingPayment(alice, carol, 40_000_000 msat, hints = List(List(carolHint)))
-    val failureWithChannelUpdate = failure.failures.collect { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => f }
+    val failureWithChannelUpdate = failure.failures.collect { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, _, f: Update)) => f }
     assert(failureWithChannelUpdate.length == 1)
     assert(failureWithChannelUpdate.head.update_opt.map(_.shortChannelId).contains(bobAlias))
   }
