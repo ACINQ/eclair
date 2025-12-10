@@ -17,6 +17,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.SigHash._
+import fr.acinq.bitcoin.scalacompat.Crypto.TaprootTweak.KeyPathTweak
 import fr.acinq.bitcoin.scalacompat.Crypto._
 import fr.acinq.bitcoin.scalacompat.{Btc, ByteVector32, ByteVector64, Crypto, MilliBtc, MilliBtcDouble, Musig2, OP_2, OP_CHECKMULTISIG, OP_PUSHDATA, OP_RETURN, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.bitcoin.{ScriptFlags, SigVersion}
@@ -137,7 +138,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       ),
       txOut = Seq(
         TxOut(250_000 sat, Script.pay2wpkh(randomKey().publicKey)),
-        TxOut(250_000 sat, Script.pay2tr(randomKey().publicKey.xOnly, scripts_opt = None)),
+        TxOut(250_000 sat, Script.pay2tr(randomKey().publicKey.xOnly, KeyPathTweak)),
       ),
       lockTime = 0
     )

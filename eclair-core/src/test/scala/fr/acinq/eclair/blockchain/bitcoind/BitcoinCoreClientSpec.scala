@@ -21,6 +21,7 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin
 import fr.acinq.bitcoin.psbt.{Psbt, UpdateFailure}
+import fr.acinq.bitcoin.scalacompat.Crypto.TaprootTweak.KeyPathTweak
 import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, der2compact}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BlockId, Btc, BtcDouble, Crypto, DeterministicWallet, KotlinUtils, MilliBtcDouble, MnemonicCode, OP_DROP, OP_PUSHDATA, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressToPublicKeyScript, computeBIP84Address, computeP2WpkhAddress}
 import fr.acinq.bitcoin.{Bech32, SigHash, SigVersion}
@@ -458,7 +459,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     }
     {
       // When sending to a p2tr, bitcoin core should add a p2tr change output.
-      val pubkeyScript = Script.pay2tr(pubKey.xOnly)
+      val pubkeyScript = Script.pay2tr(pubKey.xOnly, KeyPathTweak)
       val unsignedTx = Transaction(version = 2, Nil, Seq(TxOut(150_000 sat, pubkeyScript)), lockTime = 0)
       bitcoinClient.fundTransaction(unsignedTx, feeRate = FeeratePerByte(3 sat).perKw, changePosition = Some(1)).pipeTo(sender.ref)
       val tx = sender.expectMsgType[FundTransactionResponse].tx

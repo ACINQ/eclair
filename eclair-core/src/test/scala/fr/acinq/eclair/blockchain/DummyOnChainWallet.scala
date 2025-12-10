@@ -19,6 +19,7 @@ package fr.acinq.eclair.blockchain
 import fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL
 import fr.acinq.bitcoin.psbt.{KeyPathWithMaster, Psbt, TaprootBip32DerivationPath}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.TaprootTweak.KeyPathTweak
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector64, KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, ScriptElt, ScriptWitness, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.TestUtils.randomTxId
@@ -48,7 +49,7 @@ class DummyOnChainWallet extends OnChainWallet with OnChainAddressCache {
   override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
   override def getReceivePublicKeyScript(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]] = Future.successful(addressType match {
-    case Some(AddressType.P2tr) => Script.pay2tr(dummyReceivePubkey.xOnly)
+    case Some(AddressType.P2tr) => Script.pay2tr(dummyReceivePubkey.xOnly, KeyPathTweak)
     case _ => Script.pay2wpkh(dummyReceivePubkey)
   })
 
@@ -90,7 +91,7 @@ class DummyOnChainWallet extends OnChainWallet with OnChainAddressCache {
 
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(false)
 
-  override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = Script.pay2tr(dummyReceivePubkey.xOnly)
+  override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = Script.pay2tr(dummyReceivePubkey.xOnly, KeyPathTweak)
 }
 
 class SingleKeyOnChainWallet extends OnChainWallet with OnChainAddressCache {
@@ -104,7 +105,7 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainAddressCache {
   private val p2wpkhScript = Script.pay2wpkh(p2wpkhPublicKey)
   private val bip86path = KeyPath("m/86'/1'/0'/0/0")
   private val p2trPublicKey = keyManager.derivePublicKey(bip86path)._1.xOnly
-  private val p2trScript = Script.pay2tr(p2trPublicKey, None)
+  private val p2trScript = Script.pay2tr(p2trPublicKey, KeyPathTweak)
 
   // We create a new dummy input transaction for every funding request.
   var inputs = Seq.empty[Transaction]
