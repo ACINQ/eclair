@@ -194,7 +194,7 @@ object PaymentFailure {
    */
   def hasAlreadyFailedOnce(nodeId: PublicKey, failures: Seq[PaymentFailure]): Boolean =
     failures
-      .collectFirst { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, u: Update)) if origin == nodeId => u.update_opt }
+      .collectFirst { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, _, u: Update)) if origin == nodeId => u.update_opt }
       .isDefined
 
   /** Ignore the channel outgoing from the given nodeId in the given route. */
@@ -213,12 +213,12 @@ object PaymentFailure {
 
   /** Update the set of nodes and channels to ignore in retries depending on the failure we received. */
   def updateIgnored(failure: PaymentFailure, ignore: Ignore): Ignore = failure match {
-    case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _)) if nodeId == hops.last.nextNodeId =>
+    case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _, _)) if nodeId == hops.last.nextNodeId =>
       // The failure came from the final recipient: the payment should be aborted without penalizing anyone in the route.
       ignore
-    case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(nodeId, _: Node)) =>
+    case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(nodeId, _, _: Node)) =>
       ignore + nodeId
-    case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
+    case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _, failureMessage: Update)) =>
       if (failureMessage.update_opt.forall(update => Announcements.checkSig(update, nodeId))) {
         val shouldIgnore = failureMessage match {
           case _: TemporaryChannelFailure => true
@@ -235,7 +235,7 @@ object PaymentFailure {
         // This node is fishy, it gave us a bad channel update signature, so let's filter it out.
         ignore + nodeId
       }
-    case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
+    case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _, _)) =>
       ignoreNodeOutgoingEdge(nodeId, hops, ignore)
     case UnreadableRemoteFailure(_, hops, _, holdTimes) =>
       // TODO: Once everyone supports attributable errors, we should only exclude two nodes: the last for which we have attribution data and the next one.
@@ -267,7 +267,7 @@ object PaymentFailure {
         // We're only interested in the last channel update received per channel.
         val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
           case (current, failure) => failure match {
-            case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => f.update_opt match {
+            case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, _, f: Update)) => f.update_opt match {
               case Some(update) => current.updated(update.shortChannelId, update)
               case None => current
             }

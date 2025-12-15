@@ -692,9 +692,9 @@ object Router {
 
     def printChannels(): String = hops.map(_.shortChannelId).mkString("->")
 
-    def stopAt(nodeId: PublicKey): Route = {
-      val amountAtStop = hops.reverse.takeWhile(_.nextNodeId != nodeId).foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
-      Route(amountAtStop, hops.takeWhile(_.nodeId != nodeId), None)
+    def stopAt(index: Int): Route = {
+      val amountAtStop = hops.drop(index).foldRight(amount) { case (hop, amount1) => amount1 + hop.fee(amount1) }
+      Route(amountAtStop, hops.take(index), None)
     }
   }
 
