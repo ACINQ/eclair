@@ -102,6 +102,8 @@ trait CommonFundingHandlers extends CommonHandlers {
             // Children splice transactions may already spend that confirmed funding transaction.
             val spliceSpendingTxs = commitments1.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
             watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet, None)
+            // We can unwatch the previous funding transaction(s), which have been spent by this splice transaction.
+            d.commitments.all.collect { case c if c.fundingTxIndex < commitment.fundingTxIndex => blockchain ! UnwatchFundingSpent(c.fundingTxId, c.fundingInput.index.toInt) }
             // In the dual-funding/splicing case we can forget all other transactions (RBF attempts), they have been
             // double-spent by the tx that just confirmed.
             val conflictingTxs = d.commitments.active // note how we use the unpruned original commitments
