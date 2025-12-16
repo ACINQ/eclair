@@ -263,15 +263,24 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(r: ValidateResult, d) =>
       stay() using Validation.handleChannelValidationResponse(d, nodeParams, watcher, r)
 
-    case Event(WatchExternalChannelSpentTriggered(shortChannelId, spendingTx), d) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
+    case Event(WatchExternalChannelSpentTriggered(shortChannelId, spendingTx_opt), d) if d.channels.contains(shortChannelId) || d.prunedChannels.contains(shortChannelId) =>
       val fundingTxId = d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)).get.fundingTxId
-      log.info("funding tx txId={} of channelId={} has been spent by txId={}: waiting for the spending tx to have enough confirmations before removing the channel from the graph", fundingTxId, shortChannelId, spendingTx.txid)
-      watcher ! WatchTxConfirmed(self, spendingTx.txid, nodeParams.routerConf.channelSpentSpliceDelay)
-      stay() using d.copy(spentChannels = d.spentChannels.updated(spendingTx.txid, d.spentChannels.getOrElse(spendingTx.txid, Set.empty) + shortChannelId))
+      spendingTx_opt match {
+        case Some(spendingTx) =>
+          log.info("funding tx txId={} of channelId={} has been spent by txId={}: waiting for the spending tx to have enough confirmations before removing the channel from the graph", fundingTxId, shortChannelId, spendingTx.txid)
+          watcher ! WatchTxConfirmed(self, spendingTx.txid, nodeParams.routerConf.channelSpentSpliceDelay)
+          stay() using d.copy(spentChannels = d.spentChannels.updated(spendingTx.txid, d.spentChannels.getOrElse(spendingTx.txid, Set.empty) + shortChannelId))
+        case None =>
+          // If the channel was spent by a transaction that is already confirmed, it would be very inefficient to scan
+          // the blockchain for the spending transaction (which could have confirmed a long time ago), just to forget
+          // that channel. We skip scanning the blockchain and immediately forget the channel.
+          log.info("funding tx txId={} of channelId={} has already been spent by a confirmed transaction: removing the channel from the graph immediately", fundingTxId, shortChannelId)
+          stay() using Validation.handleChannelSpent(d, watcher, nodeParams.db.network, None, Set(shortChannelId))
+      }
 
     case Event(WatchTxConfirmedTriggered(_, _, spendingTx), d) =>
       d.spentChannels.get(spendingTx.txid) match {
-        case Some(shortChannelIds) => stay() using Validation.handleChannelSpent(d, watcher, nodeParams.db.network, spendingTx.txid, shortChannelIds)
+        case Some(shortChannelIds) => stay() using Validation.handleChannelSpent(d, watcher, nodeParams.db.network, Some(spendingTx.txid), shortChannelIds)
         case None => stay()
       }
 
