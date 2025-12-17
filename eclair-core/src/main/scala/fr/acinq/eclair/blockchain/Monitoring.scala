@@ -47,6 +47,7 @@ object Monitoring {
     val Wallet = "wallet"
     val Priority = "priority"
     val Provider = "provider"
+    val WatchType = "watch-type"
 
     object Priorities {
       val Minimum = "0-minimum"

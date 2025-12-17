@@ -324,7 +324,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         watches.keys
           .groupBy(_.getClass.getSimpleName)
           .foreach { case (t, list) =>
-            Metrics.Watches.withTag("type", t).update(list.size)
+            Metrics.Watches.withTag(Monitoring.Tags.WatchType, t).update(list.size)
             log.info("we have {} {} currently registered", list.size, t)
           }
         KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
