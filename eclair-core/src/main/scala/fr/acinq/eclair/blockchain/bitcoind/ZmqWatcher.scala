@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.scalacompat._
-import fr.acinq.eclair.blockchain.Monitoring.Metrics
+import fr.acinq.eclair.blockchain.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog
@@ -324,6 +324,12 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
         val watchOutputSpentCount = watches.keySet.count(_.isInstanceOf[WatchOutputSpent])
         val watchPublishedCount = watches.keySet.count(_.isInstanceOf[WatchPublished])
         val watchConfirmedCount = watches.keySet.count(_.isInstanceOf[WatchConfirmed[_]])
+        Metrics.WatchUtxosCount.withoutTags().update(watchedUtxos.size)
+        Metrics.WatchSpentCount.withTag(Tags.OutputType, Tags.OutputTypes.ExternalChannel).update(watchExternalChannelCount)
+        Metrics.WatchSpentCount.withTag(Tags.OutputType, Tags.OutputTypes.LocalChannelFunding).update(watchFundingSpentCount)
+        Metrics.WatchSpentCount.withTag(Tags.OutputType, Tags.OutputTypes.LocalChannelClosing).update(watchOutputSpentCount)
+        Metrics.WatchPublishedCount.withoutTags().update(watchPublishedCount)
+        Metrics.WatchConfirmedCount.withoutTags().update(watchConfirmedCount)
         log.info("{} watched utxos: external-channels={}, funding-spent={}, output-spent={}, tx-published={}, tx-confirmed={}", watchedUtxos.size, watchExternalChannelCount, watchFundingSpentCount, watchOutputSpentCount, watchPublishedCount, watchConfirmedCount)
         KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
           Future.sequence(watches.collect {

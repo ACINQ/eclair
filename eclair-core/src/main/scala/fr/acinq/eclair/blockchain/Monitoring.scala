@@ -24,6 +24,10 @@ object Monitoring {
 
   object Metrics {
     val NewBlockCheckConfirmedDuration: Metric.Timer = Kamon.timer("bitcoin.watcher.newblock.checkconfirmed")
+    val WatchUtxosCount: Metric.Gauge = Kamon.gauge("bitcoin.watcher.watching.utxos")
+    val WatchSpentCount: Metric.Gauge = Kamon.gauge("bitcoin.watcher.watching.spent")
+    val WatchPublishedCount: Metric.Gauge = Kamon.gauge("bitcoin.watcher.watching.published")
+    val WatchConfirmedCount: Metric.Gauge = Kamon.gauge("bitcoin.watcher.watching.confirmed")
     val RpcBasicInvokeCount: Metric.Counter = Kamon.counter("bitcoin.rpc.basic.invoke.count")
     val RpcBasicInvokeDuration: Metric.Timer = Kamon.timer("bitcoin.rpc.basic.invoke.duration")
     val RpcBatchInvokeDuration: Metric.Timer = Kamon.timer("bitcoin.rpc.batch.invoke.duration")
@@ -45,6 +49,7 @@ object Monitoring {
     val Wallet = "wallet"
     val Priority = "priority"
     val Provider = "provider"
+    val OutputType = "output-type"
 
     object Priorities {
       val Minimum = "0-minimum"
@@ -56,6 +61,12 @@ object Monitoring {
 
     object Providers {
       val BitcoinCore = "bitcoin-core"
+    }
+
+    object OutputTypes {
+      val ExternalChannel = "external-channel"
+      val LocalChannelFunding = "local-channel"
+      val LocalChannelClosing = "local-closing"
     }
   }
 
