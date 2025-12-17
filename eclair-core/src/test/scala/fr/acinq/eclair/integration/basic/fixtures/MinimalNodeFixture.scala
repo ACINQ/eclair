@@ -302,7 +302,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
             case watch: ZmqWatcher.WatchExternalChannelSpent =>
               knownFundingTxs().find(_.txIn.exists(_.outPoint == OutPoint(watch.txId, watch.outputIndex))) match {
                 case Some(nextFundingTx) =>
-                  watch.replyTo ! ZmqWatcher.WatchExternalChannelSpentTriggered(watch.shortChannelId, nextFundingTx)
+                  watch.replyTo ! ZmqWatcher.WatchExternalChannelSpentTriggered(watch.shortChannelId, Some(nextFundingTx))
                 case None => timers.startSingleTimer(watch, 10 millis)
               }
               Behaviors.same

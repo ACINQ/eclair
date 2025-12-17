@@ -264,7 +264,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       bitcoinClient.publishTransaction(tx1)
       // tx and tx1 aren't confirmed yet, but we trigger the WatchSpentTriggered event when we see tx1 in the mempool.
       probe.expectMsgAllOf(
-        WatchExternalChannelSpentTriggered(RealShortChannelId(5), tx1),
+        WatchExternalChannelSpentTriggered(RealShortChannelId(5), Some(tx1)),
         WatchFundingSpentTriggered(tx1)
       )
       // Let's confirm tx and tx1: seeing tx1 in a block should trigger both WatchSpentTriggered events again.
@@ -272,7 +272,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       val initialBlockHeight = probe.expectMsgType[BlockHeight]
       generateBlocks(1)
       probe.expectMsgAllOf(
-        WatchExternalChannelSpentTriggered(RealShortChannelId(5), tx1),
+        WatchExternalChannelSpentTriggered(RealShortChannelId(5), Some(tx1)),
         WatchFundingSpentTriggered(tx1)
       )
       probe.expectNoMessage(100 millis)
@@ -311,8 +311,10 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       probe.fishForMessage() { case m: WatchOutputSpentTriggered => m.spendingTx.txid == tx1.txid }
       watcher ! StopWatching(probe.ref)
 
+      // If we watch after being spent by a confirmed transaction, we immediately trigger the watch without fetching
+      // the spending transaction.
       watcher ! WatchExternalChannelSpent(probe.ref, tx1.txid, 0, RealShortChannelId(1))
-      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(1), tx2))
+      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(1), None))
       watcher ! StopWatching(probe.ref)
       watcher ! WatchFundingSpent(probe.ref, tx1.txid, 0, Set.empty)
       probe.expectMsg(WatchFundingSpentTriggered(tx2))
@@ -340,7 +342,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       // When publishing the transaction, the watch triggers immediately.
       bitcoinClient.publishTransaction(spendingTx1).pipeTo(sender.ref)
       sender.expectMsg(spendingTx1.txid)
-      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(3), spendingTx1))
+      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(3), Some(spendingTx1)))
       probe.expectNoMessage(100 millis)
 
       // If we unwatch the transaction, we will ignore when it's published.
@@ -351,7 +353,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
 
       // If we watch again, this will trigger immediately because the transaction is in the mempool.
       watcher ! WatchExternalChannelSpent(probe.ref, tx2.txid, outputIndex2, RealShortChannelId(5))
-      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(5), spendingTx2))
+      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(5), Some(spendingTx2)))
       probe.expectNoMessage(100 millis)
 
       // We make the transactions confirm while we're not watching.
@@ -365,7 +367,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
 
       // If we watch again after confirmation, the watch instantly triggers.
       watcher ! WatchExternalChannelSpent(probe.ref, tx1.txid, outputIndex1, RealShortChannelId(3))
-      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(3), spendingTx1))
+      probe.expectMsg(WatchExternalChannelSpentTriggered(RealShortChannelId(3), None))
       probe.expectNoMessage(100 millis)
     })
   }

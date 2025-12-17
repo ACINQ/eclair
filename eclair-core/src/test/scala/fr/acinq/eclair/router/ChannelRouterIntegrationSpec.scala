@@ -182,7 +182,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     if (testTags.contains(ChannelStateTestsTags.ChannelsPublic)) {
       val closingTx = Transaction(2, Nil, Seq(TxOut(100_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
       val watchSpent = channels.alice2blockchain.expectMsgType[WatchExternalChannelSpent]
-      watchSpent.replyTo ! WatchExternalChannelSpentTriggered(watchSpent.shortChannelId, closingTx)
+      watchSpent.replyTo ! WatchExternalChannelSpentTriggered(watchSpent.shortChannelId, Some(closingTx))
       val watchConfirmed = channels.alice2blockchain.expectMsgType[WatchTxConfirmed]
       assert(watchConfirmed.txId == closingTx.txid)
       watchConfirmed.replyTo ! WatchTxConfirmedTriggered(BlockHeight(400_000), 42, closingTx)

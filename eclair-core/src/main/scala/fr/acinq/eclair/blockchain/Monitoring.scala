@@ -24,6 +24,8 @@ object Monitoring {
 
   object Metrics {
     val NewBlockCheckConfirmedDuration: Metric.Timer = Kamon.timer("bitcoin.watcher.newblock.checkconfirmed")
+    val Watches: Metric.Gauge = Kamon.gauge("bitcoin.watcher.watches")
+    val WatchedUtxos: Metric.Gauge = Kamon.gauge("bitcoin.watcher.utxos")
     val RpcBasicInvokeCount: Metric.Counter = Kamon.counter("bitcoin.rpc.basic.invoke.count")
     val RpcBasicInvokeDuration: Metric.Timer = Kamon.timer("bitcoin.rpc.basic.invoke.duration")
     val RpcBatchInvokeDuration: Metric.Timer = Kamon.timer("bitcoin.rpc.batch.invoke.duration")
@@ -45,6 +47,7 @@ object Monitoring {
     val Wallet = "wallet"
     val Priority = "priority"
     val Provider = "provider"
+    val WatchType = "watch-type"
 
     object Priorities {
       val Minimum = "0-minimum"
