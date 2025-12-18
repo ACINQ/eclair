@@ -18,6 +18,7 @@ package fr.acinq.eclair.crypto.keymanager
 
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.psbt.Psbt
+import fr.acinq.bitcoin.scalacompat.Crypto.TaprootTweak.KeyPathTweak
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet._
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector64, Crypto, DeterministicWallet, MnemonicCode, Satoshi, Script, computeBIP84Address}
 import fr.acinq.eclair.TimestampSecond
@@ -225,8 +226,8 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
             } else if (pub != KotlinUtils.scala2kmp(expectedKey.xOnly)) {
               logger.warn(s"public key mismatch (expected=$expectedKey, actual=$pub): bitcoin core may be malicious")
               false
-            } else if (txOut.publicKeyScript != KotlinUtils.scala2kmp(Script.write(Script.pay2tr(expectedKey.xOnly, None)))) {
-              logger.warn(s"script mismatch (expected=${Script.write(Script.pay2tr(expectedKey.xOnly, None))}, actual=${txOut.publicKeyScript}): bitcoin core may be malicious")
+            } else if (txOut.publicKeyScript != KotlinUtils.scala2kmp(Script.write(Script.pay2tr(expectedKey.xOnly, KeyPathTweak)))) {
+              logger.warn(s"script mismatch (expected=${Script.write(Script.pay2tr(expectedKey.xOnly, KeyPathTweak))}, actual=${txOut.publicKeyScript}): bitcoin core may be malicious")
               false
             } else {
               true
@@ -306,7 +307,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     val (pub, keypath) = input.getTaprootDerivationPaths.asScala.toSeq.head
     val priv = fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey(master.priv, keypath.keyPath).getPrivateKey
     require(priv.publicKey().xOnly() == pub, s"derived public key doesn't match (expected=$pub actual=${priv.publicKey().xOnly()}): bitcoin core may be malicious")
-    val expectedScript = Script.write(Script.pay2tr(pub, None))
+    val expectedScript = Script.write(Script.pay2tr(pub, KeyPathTweak))
     require(kmp2scala(input.getWitnessUtxo.publicKeyScript) == expectedScript, s"script mismatch (expected=$expectedScript, actual=${input.getWitnessUtxo.publicKeyScript}): bitcoin core may be malicious")
 
     // No need to update the input, we can directly sign and finalize.

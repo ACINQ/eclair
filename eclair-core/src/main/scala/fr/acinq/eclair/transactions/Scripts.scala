@@ -345,7 +345,7 @@ object Scripts {
      * The key used matches the key for the matching node's main output.
      */
     def anchor(anchorKey: PublicKey): Seq[ScriptElt] = {
-      Script.pay2tr(anchorKey.xOnly, Some(anchorScriptTree))
+      Script.pay2tr(anchorKey.xOnly, anchorScriptTree)
     }
 
     /**
@@ -389,7 +389,7 @@ object Scripts {
      * Script used for the main balance of the owner of the commitment transaction.
      */
     def toLocal(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): Seq[ScriptElt] = {
-      Script.pay2tr(NUMS_POINT.xOnly, Some(toLocalScriptTree(keys, toSelfDelay).scriptTree))
+      Script.pay2tr(NUMS_POINT.xOnly, toLocalScriptTree(keys, toSelfDelay).scriptTree)
     }
 
     /**
@@ -417,7 +417,7 @@ object Scripts {
      * Script used for the main balance of the remote node in our commitment transaction.
      */
     def toRemote(keys: CommitmentPublicKeys): Seq[ScriptElt] = {
-      Script.pay2tr(NUMS_POINT.xOnly, Some(toRemoteScriptTree(keys)))
+      Script.pay2tr(NUMS_POINT.xOnly, toRemoteScriptTree(keys))
     }
 
     /**
@@ -533,7 +533,7 @@ object Scripts {
      * Script used for the output of pre-signed HTLC 2nd-stage transactions.
      */
     def htlcDelayed(keys: CommitmentPublicKeys, toSelfDelay: CltvExpiryDelta): Seq[ScriptElt] = {
-      Script.pay2tr(keys.revocationPublicKey.xOnly, Some(htlcDelayedScriptTree(keys, toSelfDelay)))
+      Script.pay2tr(keys.revocationPublicKey.xOnly, htlcDelayedScriptTree(keys, toSelfDelay))
     }
   }
 }

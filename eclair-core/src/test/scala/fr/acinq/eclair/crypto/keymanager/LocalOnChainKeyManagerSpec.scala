@@ -1,6 +1,7 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import fr.acinq.bitcoin.psbt.{KeyPathWithMaster, Psbt, TaprootBip32DerivationPath}
+import fr.acinq.bitcoin.scalacompat.Crypto.TaprootTweak.KeyPathTweak
 import fr.acinq.bitcoin.scalacompat.{Block, DeterministicWallet, MnemonicCode, OutPoint, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
 import fr.acinq.bitcoin.{ScriptFlags, SigHash}
 import fr.acinq.eclair.{TimestampSecond, randomBytes32}
@@ -130,9 +131,9 @@ class LocalOnChainKeyManagerSpec extends AnyFunSuite {
     def getPublicKey(index: Long) = DeterministicWallet.derivePublicKey(mainPub, index).publicKey.xOnly
 
     val utxos = Seq(
-      Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1_000_000), Script.pay2tr(getPublicKey(0), None)) :: Nil, lockTime = 0),
-      Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1_100_000), Script.pay2tr(getPublicKey(1), None)) :: Nil, lockTime = 0),
-      Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1_200_000), Script.pay2tr(getPublicKey(2), None)) :: Nil, lockTime = 0),
+      Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1_000_000), Script.pay2tr(getPublicKey(0), KeyPathTweak)) :: Nil, lockTime = 0),
+      Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1_100_000), Script.pay2tr(getPublicKey(1), KeyPathTweak)) :: Nil, lockTime = 0),
+      Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(1_200_000), Script.pay2tr(getPublicKey(2), KeyPathTweak)) :: Nil, lockTime = 0),
     )
     val bip32paths = Seq(
       new TaprootBip32DerivationPath(java.util.List.of(), 0, new fr.acinq.bitcoin.KeyPath("m/86'/1'/0'/0/0")),
@@ -142,7 +143,7 @@ class LocalOnChainKeyManagerSpec extends AnyFunSuite {
 
     val tx = Transaction(version = 2,
       txIn = utxos.map(tx => TxIn(OutPoint(tx, 0), Nil, fr.acinq.bitcoin.TxIn.SEQUENCE_FINAL)),
-      txOut = TxOut(Satoshi(1000_000), Script.pay2tr(getPublicKey(0), None)) :: Nil, lockTime = 0)
+      txOut = TxOut(Satoshi(1000_000), Script.pay2tr(getPublicKey(0), KeyPathTweak)) :: Nil, lockTime = 0)
 
     val Right(psbt) = for {
       p0 <- new Psbt(tx).updateWitnessInput(OutPoint(utxos(0), 0), utxos(0).txOut(0), null, null, null, java.util.Map.of(), null, getPublicKey(0), java.util.Map.of(getPublicKey(0), bip32paths(0)))

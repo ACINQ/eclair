@@ -23,6 +23,7 @@ import akka.testkit.TestProbe
 import com.softwaremill.quicklens.{ModifyPimp, QuicklensAt}
 import fr.acinq.bitcoin.psbt.Psbt
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.TaprootTweak.KeyPathTweak
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, OP_1, OutPoint, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxHash, TxId, TxIn, TxOut, addressToPublicKeyScript}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, ProcessPsbtResponse}
@@ -77,7 +78,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   private def createInput(channelId: ByteVector32, serialId: UInt64, amount: Satoshi): TxAddInput = {
-    val changeScript = Script.write(Script.pay2tr(randomKey().publicKey.xOnly))
+    val changeScript = Script.write(Script.pay2tr(randomKey().publicKey.xOnly, KeyPathTweak))
     val previousTx = Transaction(2, Nil, Seq(TxOut(amount, changeScript), TxOut(amount, changeScript), TxOut(amount, changeScript)), 0)
     TxAddInput(channelId, serialId, Some(previousTx), 1, 0)
   }
@@ -856,8 +857,8 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       probe.expectMsg(txA1.txId)
 
       // Alice and Bob decide to splice funds out of the channel, and deduce on-chain fees from their new channel contribution.
-      val spliceOutputsA = List(TxOut(50_000 sat, Script.pay2tr(randomKey().xOnlyPublicKey())))
-      val spliceOutputsB = List(TxOut(30_000 sat, Script.pay2tr(randomKey().xOnlyPublicKey())))
+      val spliceOutputsA = List(TxOut(50_000 sat, Script.pay2tr(randomKey().xOnlyPublicKey(), KeyPathTweak)))
+      val spliceOutputsB = List(TxOut(30_000 sat, Script.pay2tr(randomKey().xOnlyPublicKey(), KeyPathTweak)))
       val subtractedFundingA = spliceOutputsA.map(_.amount).sum + 1_000.sat
       val subtractedFundingB = spliceOutputsB.map(_.amount).sum + 500.sat
       val (sharedInputA, sharedInputB) = fixtureParams.sharedInputs(commitmentA1, commitmentB1)
@@ -2558,7 +2559,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(Script.pay2sh(OP_1 :: Nil))),
       TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(Script.pay2wpkh(randomKey().publicKey))),
       TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(Script.pay2wsh(OP_1 :: Nil))),
-      TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(Script.pay2tr(randomKey().xOnlyPublicKey()))),
+      TxAddOutput(params.channelId, UInt64(1), 25_000 sat, Script.write(Script.pay2tr(randomKey().xOnlyPublicKey(), KeyPathTweak))),
     )
     testCases.foreach { output =>
       val alice = params.spawnTxBuilderAlice(wallet)
@@ -2775,7 +2776,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     bob ! Start(probe.ref)
     // Alice --- tx_add_input --> Bob
     // The input only includes the previous txOut which is only allowed for taproot channels.
-    bob ! ReceiveMessage(TxAddInput(params.channelId, UInt64(0), None, 0, 0, TlvStream(TxAddInputTlv.PrevTxOut(randomTxId(), 100_000 sat, Script.write(Script.pay2tr(randomKey().xOnlyPublicKey()))))))
+    bob ! ReceiveMessage(TxAddInput(params.channelId, UInt64(0), None, 0, 0, TlvStream(TxAddInputTlv.PrevTxOut(randomTxId(), 100_000 sat, Script.write(Script.pay2tr(randomKey().xOnlyPublicKey(), KeyPathTweak))))))
     assert(probe.expectMsgType[RemoteFailure].cause == PreviousTxMissing(params.channelId, UInt64(0)))
   }
 

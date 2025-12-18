@@ -1,6 +1,7 @@
 package fr.acinq.eclair.blockchain.bitcoind
 
 import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
+import fr.acinq.bitcoin.scalacompat.Crypto.TaprootTweak.KeyPathTweak
 import fr.acinq.bitcoin.scalacompat.{Script, ScriptElt}
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType
@@ -14,13 +15,13 @@ import scala.concurrent.{ExecutionContext, Future}
 class OnChainAddressRefresherSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("renew on-chain addresses") {
-    val finalPubkeyScript = new AtomicReference[Seq[ScriptElt]](Script.pay2tr(randomKey().xOnlyPublicKey()))
+    val finalPubkeyScript = new AtomicReference[Seq[ScriptElt]](Script.pay2tr(randomKey().xOnlyPublicKey(), KeyPathTweak))
     val renewedCount = new AtomicInteger(0)
     val generator = new OnChainAddressGenerator {
       override def getReceivePublicKeyScript(addressType: Option[AddressType] = None)(implicit ec: ExecutionContext): Future[Seq[ScriptElt]] = {
         renewedCount.incrementAndGet()
         Future.successful(addressType match {
-          case Some(AddressType.P2tr) => Script.pay2tr(randomKey().xOnlyPublicKey())
+          case Some(AddressType.P2tr) => Script.pay2tr(randomKey().xOnlyPublicKey(), KeyPathTweak)
           case _ => Script.pay2wpkh(randomKey().publicKey)
         })
       }
