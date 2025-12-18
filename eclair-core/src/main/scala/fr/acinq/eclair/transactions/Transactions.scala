@@ -204,7 +204,7 @@ object Transactions {
      * @param scriptTree_opt the script tree must be known if there is one, even when spending via the key path.
      */
     case class TaprootKeyPath(internalKey: XonlyPublicKey, scriptTree_opt: Option[ScriptTree]) extends Taproot {
-      override val pubkeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, scriptTree_opt.map(TaprootTweak.ScriptPathTweak.apply).getOrElse(TaprootTweak.KeyPathTweak)))
+      override val pubkeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, scriptTree_opt.map(TaprootTweak.ScriptPathTweak(_)).getOrElse(TaprootTweak.KeyPathTweak)))
     }
     /**
      * @param internalKey we need the internal key, even if we don't have the private key, to spend via a script path.
