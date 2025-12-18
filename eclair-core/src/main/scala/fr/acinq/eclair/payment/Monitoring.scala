@@ -126,6 +126,7 @@ object Monitoring {
       val WakeUp = "WakeUp"
       val Remote = "Remote"
       val Malformed = "MalformedHtlc"
+      val Jamming = "Jamming"
 
       def apply(cmdFail: CMD_FAIL_HTLC): String = cmdFail.reason match {
         case _: FailureReason.EncryptedDownstreamFailure => Remote

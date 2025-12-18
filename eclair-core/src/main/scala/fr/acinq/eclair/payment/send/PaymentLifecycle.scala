@@ -77,16 +77,14 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(RouteResponse(route +: _), WaitingForRoute(request, failures, ignore)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${request.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
       reputationRecorder_opt match {
+        // TODO: penalize HTLCs that do not use `upgradeAccountability`.
+        //case _ if !cfg.upstream.upgradeAccountability =>
+        //  context.self ! WrappedReputationScore(Reputation.Score.min)
         case Some(reputationRecorder) =>
           val cltvExpiry = route.fullRoute.map(_.cltvExpiryDelta).foldLeft(request.recipient.expiry)(_ + _)
-          reputationRecorder ! GetConfidence(self, cfg.upstream, Some(route.hops.head.nextNodeId), route.hops.head.fee(request.amount), nodeParams.currentBlockHeight, cltvExpiry)
+          reputationRecorder ! GetConfidence(self, Some(route.hops.head.nextNodeId), route.hops.head.fee(request.amount), nodeParams.currentBlockHeight, cltvExpiry, cfg.accountable)
         case None =>
-          val endorsement = cfg.upstream match {
-            case Hot.Channel(add, _, _, _) => add.endorsement
-            case Hot.Trampoline(received) => received.map(_.add.endorsement).min
-            case Upstream.Local(_) => Reputation.maxEndorsement
-          }
-          self ! Reputation.Score.fromEndorsement(endorsement)
+          self ! Reputation.Score.max(cfg.accountable)
       }
       goto(WAITING_FOR_CONFIDENCE) using WaitingForConfidence(request, failures, ignore, route)
 

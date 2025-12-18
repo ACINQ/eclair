@@ -159,6 +159,8 @@ object OfferTypes {
    */
   case class InvoicePaths(paths: Seq[BlindedRoute]) extends InvoiceTlv
 
+  case object InvoiceAccountable extends InvoiceTlv
+
   case class PaymentInfo(feeBase: MilliSatoshi,
                          feeProportionalMillionths: Long,
                          cltvExpiryDelta: CltvExpiryDelta,

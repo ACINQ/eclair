@@ -160,11 +160,12 @@ object Upstream {
       override val amountIn: MilliSatoshi = add.amountMsat
       val expiryIn: CltvExpiry = add.cltvExpiry
 
-      override def toString: String = s"Channel(amountIn=$amountIn, receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, endorsement=${add.endorsement}, incomingChannelOccupancy=$incomingChannelOccupancy)"
+      override def toString: String = s"Channel(amountIn=$amountIn, receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, accountable=${add.accountable}, incomingChannelOccupancy=$incomingChannelOccupancy)"
     }
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
     case class Trampoline(received: List[Channel]) extends Hot {
       override val amountIn: MilliSatoshi = received.map(_.add.amountMsat).sum
+      val accountable: Boolean = received.map(_.add.accountable).reduce(_ || _)
       // We must use the lowest expiry of the incoming HTLC set.
       val expiryIn: CltvExpiry = received.map(_.add.cltvExpiry).min
       val receivedAt: TimestampMilli = received.map(_.receivedAt).max

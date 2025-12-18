@@ -146,11 +146,11 @@ object ChannelCodecsSpec {
   )
 
   val htlcs: Seq[DirectedHtlc] = Seq[DirectedHtlc](
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 30, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 31, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None))
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket, None, accountable = false, None)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket, None, accountable = false, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 30, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket, None, accountable = false, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 31, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket, None, accountable = false, None)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket, None, accountable = false, None))
   )
 
   val normal: DATA_NORMAL = {

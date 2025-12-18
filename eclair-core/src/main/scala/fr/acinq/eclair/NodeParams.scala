@@ -645,6 +645,7 @@ object NodeParams extends Logging {
           halfLife = FiniteDuration(config.getDuration("relay.peer-reputation.half-life").getSeconds, TimeUnit.SECONDS),
           maxRelayDuration = FiniteDuration(config.getDuration("relay.peer-reputation.max-relay-duration").getSeconds, TimeUnit.SECONDS),
         ),
+        reservedBucket = config.getDouble("relay.reserved-for-accountable"),
       ),
       db = database,
       autoReconnect = config.getBoolean("auto-reconnect"),

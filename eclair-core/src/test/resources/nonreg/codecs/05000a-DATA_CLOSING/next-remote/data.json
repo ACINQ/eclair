@@ -90,9 +90,7 @@
             "hmac" : "3ae1ea4bbe67becc89c99d333c245e44e8d94be0e29248a1c27d0fc9d1f0b004"
           },
           "tlvStream" : {
-            "Endorsement" : {
-              "level" : 7
-            }
+            "Unknown106823" : "07"
           }
         } ],
         "acked" : [ ]
