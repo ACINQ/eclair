@@ -9,6 +9,19 @@
 We remove the code used to support legacy channels that don't use anchor outputs or taproot.
 If you still have such channels, eclair won't start: you will need to close those channels, and will only be able to update eclair once they have been successfully closed.
 
+### Channel jamming accountability
+
+We update our channel jamming mitigation to match the latest draft of the [spec](https://github.com/lightning/bolts/pull/1280).
+Note that we use a different architecture for channel bucketing and confidence scoring than what is described in the BOLTs.
+We don't yet fail HTLCs that don't meet these restrictions: we're only collecting data so far to evaluate how the algorithm performs.
+
+If you want to disable this feature entirely, you can set the following values in `eclair.conf`:
+
+```conf
+eclair.relay.peer-reputation.enabled = false
+eclair.relay.reserved-for-accountable = 0.0
+```
+
 ### Configuration changes
 
 <insert changes>
