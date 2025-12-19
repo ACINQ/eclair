@@ -22,9 +22,8 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tmillisatoshi, tu32, tu64overflow}
 import fr.acinq.eclair.{EncodedNodeId, TimestampSecond, UInt64}
-import scodec.bits.HexStringSyntax
-import scodec.{Attempt, Codec}
 import scodec.codecs._
+import scodec.{Attempt, Codec}
 
 import java.util.Currency
 import scala.util.Try
@@ -35,7 +34,7 @@ object OfferCodecs {
   private val offerMetadata: Codec[OfferMetadata] = tlvField(bytes)
 
   val offerCurrency: Codec[OfferCurrency] =
-    tlvField(utf8.narrow[Currency](s => Attempt.fromTry(Try{
+    tlvField(utf8.narrow[Currency](s => Attempt.fromTry(Try {
       val c = Currency.getInstance(s)
       require(c.getDefaultFractionDigits() >= 0) // getDefaultFractionDigits may return -1 for things that are not currencies
       c
@@ -140,7 +139,7 @@ object OfferCodecs {
 
   private val invoicePaths: Codec[InvoicePaths] = tlvField(nonEmptyList(blindedRouteCodec, "invoice_paths"))
 
-  private val invoiceAccountable: Codec[InvoiceAccountable.type] = ("length" | constant(hex"00")).xmap(_ => InvoiceAccountable, _ => ())
+  private val invoiceAccountable: Codec[InvoiceAccountable] = tlvField(provide(InvoiceAccountable()))
 
   val paymentInfo: Codec[PaymentInfo] =
     (("fee_base_msat" | millisatoshi32) ::

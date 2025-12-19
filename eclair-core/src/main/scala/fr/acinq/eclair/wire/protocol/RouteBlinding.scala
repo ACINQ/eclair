@@ -22,7 +22,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs.{catchAllCodec, cltvExpiry, cl
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{fixedLengthTlvField, tlvField, tmillisatoshi, tmillisatoshi32}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, Features, MilliSatoshi, ShortChannelId, UInt64, amountAfterFee}
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success}
 
@@ -41,7 +41,7 @@ object RouteBlindingEncryptedDataTlv {
   case class OutgoingChannelId(shortChannelId: ShortChannelId) extends RouteBlindingEncryptedDataTlv
 
   /** Flag to allow forwarding nodes to set `accountable` in their `update_add_htlc` */
-  case object UpgradeAccountability extends RouteBlindingEncryptedDataTlv
+  case class UpgradeAccountability() extends RouteBlindingEncryptedDataTlv
 
   /**
    * Id of the next node.
@@ -141,7 +141,7 @@ object RouteBlindingEncryptedDataCodecs {
 
   private val padding: Codec[Padding] = tlvField(bytes)
   private val outgoingChannelId: Codec[OutgoingChannelId] = tlvField(shortchannelid)
-  private val upgradeAccountability: Codec[UpgradeAccountability.type] = ("length" | constant(hex"00")).xmap(_ => UpgradeAccountability, _ => ())
+  private val upgradeAccountability: Codec[UpgradeAccountability] = tlvField(provide(UpgradeAccountability()))
   private val outgoingNodeId: Codec[OutgoingNodeId] = tlvField(encodedNodeIdCodec)
   private val pathId: Codec[PathId] = tlvField(bytes)
   private val nextPathKey: Codec[NextPathKey] = fixedLengthTlvField(33, publicKey)

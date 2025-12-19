@@ -159,7 +159,11 @@ object OfferTypes {
    */
   case class InvoicePaths(paths: Seq[BlindedRoute]) extends InvoiceTlv
 
-  case object InvoiceAccountable extends InvoiceTlv
+  /**
+   * By setting this field, we let the payer know that we will resolve the payment quickly once we receive it.
+   * If we don't, our reputation will be negatively impacted (channel jamming protection).
+   */
+  case class InvoiceAccountable() extends InvoiceTlv
 
   case class PaymentInfo(feeBase: MilliSatoshi,
                          feeProportionalMillionths: Long,

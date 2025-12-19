@@ -72,7 +72,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
 
   override lazy val features: Features[InvoiceFeature] = tags.collectFirst { case f: InvoiceFeatures => f.features.invoiceFeatures() }.getOrElse(Features.empty)
 
-  override lazy val accountable: Boolean = tags.contains(Accountable)
+  override lazy val accountable: Boolean = tags.collectFirst { case a: Accountable => a }.nonEmpty
 
   /**
    * @return the hash of this payment invoice
@@ -149,7 +149,7 @@ object Bolt11Invoice {
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
-        Some(Accountable),
+        Some(Accountable()),
         // We want to keep invoices as small as possible, so we explicitly remove unknown features.
         Some(InvoiceFeatures(features.copy(unknown = Set.empty).unscoped()))
       ).flatten
@@ -289,8 +289,7 @@ object Bolt11Invoice {
   /**
    * Present if the recipient is willing to be held accountable for the timely resolution of HTLCs.
    */
-  case object Accountable extends TaggedField
-
+  case class Accountable() extends TaggedField
 
   /**
    * This returns a bitvector with the minimum size necessary to encode the long, left padded to have a length (in bits)
@@ -449,9 +448,9 @@ object Bolt11Invoice {
       .typecase(29, dataCodec(bits).as[UnknownTag29])
       .typecase(30, dataCodec(bits).as[UnknownTag30])
       .\(31) {
-        case Accountable => Accountable
+        case _: Accountable => Accountable()
         case a: InvalidTag31 => a: TaggedField
-      }(choice(dataCodec(provide(Accountable), expectedLength = Some(0)).upcast[TaggedField], dataCodec(bits).as[InvalidTag31].upcast[TaggedField]))
+      }(choice(dataCodec(provide(Accountable()), expectedLength = Some(0)).upcast[TaggedField], dataCodec(bits).as[InvalidTag31].upcast[TaggedField]))
 
     private def fixedSizeTrailingCodec[A](codec: Codec[A], size: Int): Codec[A] = Codec[A](
       (data: A) => codec.encode(data),

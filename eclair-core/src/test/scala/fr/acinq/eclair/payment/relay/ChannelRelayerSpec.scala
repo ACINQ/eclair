@@ -896,7 +896,7 @@ object ChannelRelayerSpec {
       case p: ChannelRelay.Blinded => Some(UpdateAddHtlcTlv.PathKey(p.nextPathKey))
       case _: ChannelRelay.Standard => None
     }
-    val tlvs = TlvStream(Set[Option[UpdateAddHtlcTlv]](nextPathKey_opt, if (accountableIn) Some(UpdateAddHtlcTlv.Accountable) else None).flatten)
+    val tlvs = TlvStream(Set[Option[UpdateAddHtlcTlv]](nextPathKey_opt, if (accountableIn) Some(UpdateAddHtlcTlv.Accountable()) else None).flatten)
     val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket, tlvs)
     ChannelRelayPacket(add_ab, payload, emptyOnionPacket, TimestampMilli.now())
   }
