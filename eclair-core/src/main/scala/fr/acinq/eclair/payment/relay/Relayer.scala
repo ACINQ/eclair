@@ -155,6 +155,8 @@ object Relayer extends Logging {
         privateChannelFees
       }
     }
+
+    def incomingChannelCongested(incomingChannelOccupancy: Double): Boolean = incomingChannelOccupancy > 1 - reservedBucket
   }
 
   case class RelayForward(add: UpdateAddHtlc, originNode: PublicKey, incomingChannelOccupancy: Double)

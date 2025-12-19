@@ -165,7 +165,7 @@ object Upstream {
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
     case class Trampoline(received: List[Channel]) extends Hot {
       override val amountIn: MilliSatoshi = received.map(_.add.amountMsat).sum
-      val accountable: Boolean = received.map(_.add.accountable).reduce(_ || _)
+      val accountable: Boolean = received.exists(_.add.accountable)
       // We must use the lowest expiry of the incoming HTLC set.
       val expiryIn: CltvExpiry = received.map(_.add.cltvExpiry).min
       val receivedAt: TimestampMilli = received.map(_.receivedAt).max

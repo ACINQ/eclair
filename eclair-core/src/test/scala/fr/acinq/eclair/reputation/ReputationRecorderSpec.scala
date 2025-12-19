@@ -21,10 +21,10 @@ import akka.actor.typed.ActorRef
 import akka.testkit.TestKit.awaitCond
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.channel.{OutgoingHtlcAdded, OutgoingHtlcFailed, OutgoingHtlcFulfilled, Upstream}
+import fr.acinq.eclair.channel.{OutgoingHtlcAdded, OutgoingHtlcFailed, OutgoingHtlcFulfilled}
 import fr.acinq.eclair.reputation.ReputationRecorder._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, MilliSatoshiLong, TimestampMilli, randomBytes, randomBytes32, randomKey, randomLong}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, MilliSatoshiLong, randomBytes, randomBytes32, randomKey, randomLong}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -56,24 +56,24 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
 
     val nextNode = randomKey().publicKey
 
-    reputationRecorder ! GetConfidence(replyTo.ref, Some(nextNode), 2000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
+    reputationRecorder ! GetConfidence(replyTo.ref, nextNode, 2000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
     replyTo.expectMessage(Reputation.Score(0.0, accountable = true))
     val added1 = makeOutgoingHtlcAdded(nextNode, 2000 msat, CltvExpiry(2), accountable = true)
     reputationRecorder ! WrappedOutgoingHtlcAdded(added1)
     reputationRecorder ! WrappedOutgoingHtlcSettled(makeOutgoingHtlcFulfilled(added1.add))
     awaitCond({
-      reputationRecorder ! GetConfidence(replyTo.ref, Some(nextNode), 1000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
+      reputationRecorder ! GetConfidence(replyTo.ref, nextNode, 1000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
       val score = replyTo.expectMessageType[Reputation.Score]
       score.outgoingConfidence === (2.0 / 4) +- 0.001
     }, max = 60 seconds)
     val added2 = makeOutgoingHtlcAdded(nextNode, 1000 msat, CltvExpiry(2), accountable = true)
     reputationRecorder ! WrappedOutgoingHtlcAdded(added2)
     awaitCond({
-      reputationRecorder ! GetConfidence(replyTo.ref, Some(nextNode), 3000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
+      reputationRecorder ! GetConfidence(replyTo.ref, nextNode, 3000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
       val score = replyTo.expectMessageType[Reputation.Score]
       score.outgoingConfidence === (2.0 / 10) +- 0.001
     }, max = 60 seconds)
-    reputationRecorder ! GetConfidence(replyTo.ref, Some(nextNode), 1000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
+    reputationRecorder ! GetConfidence(replyTo.ref, nextNode, 1000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
     assert({
       val score = replyTo.expectMessageType[Reputation.Score]
       score.outgoingConfidence === (2.0 / 6) +- 0.001
@@ -84,18 +84,18 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     reputationRecorder ! WrappedOutgoingHtlcSettled(makeOutgoingHtlcFailed(added2.add))
     // Not accountable
     awaitCond({
-      reputationRecorder ! GetConfidence(replyTo.ref, Some(nextNode), 1000 msat, BlockHeight(0), CltvExpiry(2), accountable = false)
+      reputationRecorder ! GetConfidence(replyTo.ref, nextNode, 1000 msat, BlockHeight(0), CltvExpiry(2), accountable = false)
       val score = replyTo.expectMessageType[Reputation.Score]
       score.outgoingConfidence == 0.0
     }, max = 60 seconds)
     // Different next node
-    reputationRecorder ! GetConfidence(replyTo.ref, Some(randomKey().publicKey), 1000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
+    reputationRecorder ! GetConfidence(replyTo.ref, randomKey().publicKey, 1000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
     assert({
       val score = replyTo.expectMessageType[Reputation.Score]
       score.outgoingConfidence == 0.0
     })
     // Very large HTLC
-    reputationRecorder ! GetConfidence(replyTo.ref, Some(nextNode), 100000000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
+    reputationRecorder ! GetConfidence(replyTo.ref, nextNode, 100000000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
     assert({
       val score = replyTo.expectMessageType[Reputation.Score]
       score.outgoingConfidence === 0.0 +- 0.001
@@ -114,13 +114,13 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       reputationRecorder ! WrappedOutgoingHtlcSettled(makeOutgoingHtlcFulfilled(added.add))
     }
     awaitCond({
-      reputationRecorder ! GetConfidence(replyTo.ref, Some(nextNode), 10000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
+      reputationRecorder ! GetConfidence(replyTo.ref, nextNode, 10000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
       val score = replyTo.expectMessageType[Reputation.Score]
       score.outgoingConfidence === 0.99 +- 0.01
     }, max = 60 seconds)
 
     // HTLCs that are not accountable don't benefit from this high reputation.
-    reputationRecorder ! GetConfidence(replyTo.ref, Some(nextNode), 10000 msat, BlockHeight(0), CltvExpiry(2), accountable = false)
+    reputationRecorder ! GetConfidence(replyTo.ref, nextNode, 10000 msat, BlockHeight(0), CltvExpiry(2), accountable = false)
     assert(replyTo.expectMessageType[Reputation.Score].outgoingConfidence == 0.0)
 
     // The attack starts, HTLCs stay pending.
@@ -129,7 +129,7 @@ class ReputationRecorderSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       reputationRecorder ! WrappedOutgoingHtlcAdded(added)
     }
     awaitCond({
-      reputationRecorder ! GetConfidence(replyTo.ref, Some(nextNode), 10000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
+      reputationRecorder ! GetConfidence(replyTo.ref, nextNode, 10000 msat, BlockHeight(0), CltvExpiry(2), accountable = true)
       replyTo.expectMessageType[Reputation.Score].outgoingConfidence < 1.0 / 2
     }, max = 60 seconds)
   }

@@ -258,7 +258,7 @@ class NodeRelay private(nodeParams: NodeParams,
         val paymentSecret = payloadOut.paymentSecret
         val features = Features(payloadOut.invoiceFeatures).invoiceFeatures()
         val extraEdges = payloadOut.invoiceRoutingInfo.flatMap(Bolt11Invoice.toExtraEdges(_, payloadOut.outgoingNodeId))
-        val recipient = ClearRecipient(payloadOut.outgoingNodeId, features, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, extraEdges, payloadOut.paymentMetadata, upgradeAccountability = payloadOut.upgradeAccountability)
+        val recipient = ClearRecipient(payloadOut.outgoingNodeId, features, payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret, payloadOut.upgradeAccountability, extraEdges, payloadOut.paymentMetadata)
         context.log.debug("forwarding payment to non-trampoline recipient {}", recipient.nodeId)
         attemptWakeUpIfRecipientIsWallet(upstream, recipient, nextPayload, None, upgradeAccountability)
       case payloadOut: IntermediatePayload.NodeRelay.ToBlindedPaths =>
@@ -275,7 +275,7 @@ class NodeRelay private(nodeParams: NodeParams,
             case WrappedResolvedPaths(resolved) =>
               // We don't have access to the invoice: we use the only node_id that somewhat makes sense for the recipient.
               val blindedNodeId = resolved.head.route.blindedNodeIds.last
-              val recipient = BlindedRecipient.fromPaths(blindedNodeId, Features(payloadOut.invoiceFeatures).invoiceFeatures(), payloadOut.amountToForward, payloadOut.outgoingCltv, resolved, Set.empty, upgradeAccountability = payloadOut.upgradeAccountability)
+              val recipient = BlindedRecipient.fromPaths(blindedNodeId, Features(payloadOut.invoiceFeatures).invoiceFeatures(), payloadOut.amountToForward, payloadOut.outgoingCltv, resolved, payloadOut.upgradeAccountability, Set.empty)
               resolved.head.route match {
                 case BlindedPathsResolver.PartialBlindedRoute(walletNodeId: EncodedNodeId.WithPublicKey.Wallet, _, _) if nodeParams.peerWakeUpConfig.enabled =>
                   context.log.debug("forwarding payment to blinded peer {}", walletNodeId.publicKey)
@@ -340,30 +340,29 @@ class NodeRelay private(nodeParams: NodeParams,
     context.log.debug("relaying trampoline payment (amountIn={} expiryIn={} amountOut={} expiryOut={} isWallet={})", upstream.amountIn, upstream.expiryIn, amountOut, expiryOut, walletNodeId_opt.isDefined)
     // We only make one try when it's a direct payment to a wallet.
     val maxPaymentAttempts = if (walletNodeId_opt.isDefined) 1 else nodeParams.maxPaymentAttempts
-    val accountable = upstream.accountable || upstream.incomingChannelOccupancy > 1 - nodeParams.relayParams.reservedBucket
+    val accountable = upstream.accountable || nodeParams.relayParams.incomingChannelCongested(upstream.incomingChannelOccupancy)
     if (accountable && !upgradeAccountability) {
-      rejectPayment(upstream, Some(TemporaryChannelFailure(None)))
-      recordRelayDuration(TimestampMilli.now(), isSuccess = false)
-      stopping()
-    } else {
-      val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, recipient.nodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, accountable)
-      val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, amountOut, expiryOut)
-      // If the next node is using trampoline, we assume that they support MPP.
-      val useMultiPart = recipient.features.hasFeature(Features.BasicMultiPartPayment) || packetOut_opt.nonEmpty
-      val payFsmAdapters = {
-        context.messageAdapter[PreimageReceived](WrappedPreimageReceived)
-        context.messageAdapter[PaymentSent](WrappedPaymentSent)
-        context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
-      }.toClassic
-      val payment = if (useMultiPart) {
-        SendMultiPartPayment(payFsmAdapters, recipient, maxPaymentAttempts, routeParams)
-      } else {
-        SendPaymentToNode(payFsmAdapters, recipient, maxPaymentAttempts, routeParams)
-      }
-      val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, useMultiPart)
-      payFSM ! payment
-      sending(upstream, recipient, walletNodeId_opt, recipientFeatures_opt, payloadOut, TimestampMilli.now(), fulfilledUpstream = false, accountable)
+      // We don't yet enforce channel jamming protections: we log that we would have failed that payment, but we
+      // currently relay it anyway. This will let us analyze data before actually activating jamming protection.
+      context.log.info("payment would have been rejected if jamming protection was activated")
     }
+    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, recipient.nodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, accountable)
+    val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, amountOut, expiryOut)
+    // If the next node is using trampoline, we assume that they support MPP.
+    val useMultiPart = recipient.features.hasFeature(Features.BasicMultiPartPayment) || packetOut_opt.nonEmpty
+    val payFsmAdapters = {
+      context.messageAdapter[PreimageReceived](WrappedPreimageReceived)
+      context.messageAdapter[PaymentSent](WrappedPaymentSent)
+      context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
+    }.toClassic
+    val payment = if (useMultiPart) {
+      SendMultiPartPayment(payFsmAdapters, recipient, maxPaymentAttempts, routeParams)
+    } else {
+      SendPaymentToNode(payFsmAdapters, recipient, maxPaymentAttempts, routeParams)
+    }
+    val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, useMultiPart)
+    payFSM ! payment
+    sending(upstream, recipient, walletNodeId_opt, recipientFeatures_opt, payloadOut, TimestampMilli.now(), fulfilledUpstream = false, accountable)
   }
 
   /**
@@ -405,7 +404,7 @@ class NodeRelay private(nodeParams: NodeParams,
           stopping()
         case WrappedPaymentFailed(PaymentFailed(_, _, failures, _)) =>
           walletNodeId_opt match {
-            case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(nodeParams, recipientFeatures_opt, failures)(context) && !accountable =>
+            case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(nodeParams, recipientFeatures_opt, failures)(context) =>
               context.log.info("trampoline payment failed, attempting on-the-fly funding")
               attemptOnTheFlyFunding(upstream, walletNodeId, recipient, nextPayload, failures, startedAt)
             case _ =>

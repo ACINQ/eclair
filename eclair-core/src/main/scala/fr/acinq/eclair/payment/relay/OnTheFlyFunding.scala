@@ -362,7 +362,7 @@ object OnTheFlyFunding {
     import scodec.Codec
     import scodec.codecs._
 
-    private val upstreamLocal: Codec[Upstream.Local] = (uuid).as[Upstream.Local]
+    private val upstreamLocal: Codec[Upstream.Local] = uuid.as[Upstream.Local]
     private val upstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: double).as[Upstream.Hot.Channel]
     private val upstreamTrampoline: Codec[Upstream.Hot.Trampoline] = listOfN(uint16, upstreamChannel).as[Upstream.Hot.Trampoline]
     private val legacyUpstreamChannel: Codec[Upstream.Hot.Channel] = (lengthDelimited(updateAddHtlcCodec) :: uint64overflow.as[TimestampMilli] :: publicKey :: provide(0.0)).as[Upstream.Hot.Channel]

@@ -25,7 +25,7 @@ import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, TimestampMilli}
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
 /**
- * Reputation score per accountability level.
+ * Reputation score per accountability level (we currently only support two levels, 0 or 1).
  *
  * @param weight           How much fees we would have collected in the past if all HTLCs had succeeded (exponential moving average).
  * @param score            How much fees we have collected in the past (exponential moving average).
@@ -50,12 +50,13 @@ case object HtlcId {
 }
 
 /**
- * Local reputation for a given node.
+ * Local reputation for a given node. Note that we use a different algorithm than what the BOLTs recommend, because we
+ * may want to support more than a binary accountability in the future.
  *
- * @param pastScores        Scores from past HTLCs for each accountability level.
- * @param pending           Set of pending HTLCs.
- * @param halfLife          Half life for the exponential moving average.
- * @param maxRelayDuration  Duration after which HTLCs are penalized for staying pending too long.
+ * @param pastScores       Scores from past HTLCs for each accountability level.
+ * @param pending          Set of pending HTLCs.
+ * @param halfLife         Half life for the exponential moving average.
+ * @param maxRelayDuration Duration after which HTLCs are penalized for staying pending too long.
  */
 case class Reputation(pastScores: Map[Int, PastScore], pending: Map[HtlcId, PendingHtlc], halfLife: FiniteDuration, maxRelayDuration: FiniteDuration) {
   private def decay(now: TimestampMilli, lastSettlementAt: TimestampMilli): Double = scala.math.pow(0.5, (now - lastSettlementAt) / halfLife)
@@ -120,6 +121,7 @@ case class Reputation(pastScores: Map[Int, PastScore], pending: Map[HtlcId, Pend
 }
 
 object Reputation {
+  // We only support binary accountability to match the BOLTs, but may use more levels in the future.
   private val accountabilityLevels = 2
 
   case class Config(enabled: Boolean, halfLife: FiniteDuration, maxRelayDuration: FiniteDuration)
