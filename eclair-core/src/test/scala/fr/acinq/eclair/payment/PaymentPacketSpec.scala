@@ -362,7 +362,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_c.invoiceRoutingInfo == routingHints)
 
     // c forwards the trampoline payment to e through d.
-    val recipient_e = ClearRecipient(e, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, inner_c.paymentSecret, invoice.extraEdges, inner_c.paymentMetadata, upgradeAccountability = false)
+    val recipient_e = ClearRecipient(e, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, inner_c.paymentSecret, upgradeAccountability = false, invoice.extraEdges, inner_c.paymentMetadata)
     val Right(payment_e) = buildOutgoingPayment(Origin.Hot(ActorRef.noSender, Upstream.Hot.Trampoline(List(Upstream.Hot.Channel(add_c, TimestampMilli(1687345927000L), b, 0.1)))), paymentHash, Route(inner_c.amountToForward, afterTrampolineChannelHops, None), recipient_e, Reputation.Score.max(accountable = false))
     assert(payment_e.outgoingChannel == channelUpdate_cd.shortChannelId)
     assert(payment_e.cmd.amount == amount_cd)
@@ -424,7 +424,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_c.invoiceRoutingInfo == routingHints)
 
     // c forwards the trampoline payment to e through d.
-    val recipient_e = ClearRecipient(e, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, inner_c.paymentSecret, invoice.extraEdges, inner_c.paymentMetadata, upgradeAccountability = false)
+    val recipient_e = ClearRecipient(e, Features.empty, inner_c.amountToForward, inner_c.outgoingCltv, inner_c.paymentSecret, upgradeAccountability = false, invoice.extraEdges, inner_c.paymentMetadata)
     val Right(payment_e) = buildOutgoingPayment(Origin.Hot(ActorRef.noSender, Upstream.Hot.Trampoline(List(Upstream.Hot.Channel(add_c, TimestampMilli(1687345927000L), b, 0.1)))), paymentHash, Route(inner_c.amountToForward, afterTrampolineChannelHops, None), recipient_e, Reputation.Score.max(accountable = false))
     assert(payment_e.outgoingChannel == channelUpdate_cd.shortChannelId)
     assert(payment_e.cmd.amount == amount_cd)

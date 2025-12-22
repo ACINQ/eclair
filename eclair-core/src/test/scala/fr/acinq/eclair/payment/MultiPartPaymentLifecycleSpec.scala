@@ -330,7 +330,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // The B -> E channel is private and provided in the invoice routing hints.
     val extraEdge = ExtraEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta, hop_be.params.htlcMinimum, hop_be.params.htlcMaximum_opt)
-    val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(extraEdge), upgradeAccountability = false)
+    val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), upgradeAccountability = false, Seq(extraEdge))
     val payment = SendMultiPartPayment(sender.ref, recipient, 3, routeParams)
     sender.send(payFsm, payment)
     assert(router.expectMsgType[RouteRequest].target.extraEdges == Seq(extraEdge))
@@ -353,7 +353,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     // The B -> E channel is private and provided in the invoice routing hints.
     val extraEdge = ExtraEdge(b, e, hop_be.shortChannelId, hop_be.params.relayFees.feeBase, hop_be.params.relayFees.feeProportionalMillionths, hop_be.params.cltvExpiryDelta, hop_be.params.htlcMinimum, hop_be.params.htlcMaximum_opt)
-    val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(extraEdge), upgradeAccountability = false)
+    val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), upgradeAccountability = false, Seq(extraEdge))
     val payment = SendMultiPartPayment(sender.ref, recipient, 3, routeParams)
     sender.send(payFsm, payment)
     assert(router.expectMsgType[RouteRequest].target.extraEdges == Seq(extraEdge))
@@ -394,11 +394,11 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
   }
 
   test("update routing hints") { () =>
-    val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), Seq(
+    val recipient = ClearRecipient(e, Features.empty, finalAmount, expiry, randomBytes32(), upgradeAccountability = false, Seq(
       ExtraEdge(a, b, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12), 1 msat, None),
       ExtraEdge(b, c, ShortChannelId(2), 0 msat, 100, CltvExpiryDelta(24), 1 msat, None),
       ExtraEdge(a, c, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144), 1 msat, None)
-    ), upgradeAccountability = false)
+    ))
 
     def makeChannelUpdate(shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportional: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelUpdate = {
       defaultChannelUpdate.copy(shortChannelId = shortChannelId, feeBaseMsat = feeBase, feeProportionalMillionths = feeProportional, cltvExpiryDelta = cltvExpiryDelta)

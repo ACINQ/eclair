@@ -20,11 +20,10 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi}
-import fr.acinq.eclair.channel.Upstream.Hot
-import fr.acinq.eclair.channel.{OutgoingHtlcAdded, OutgoingHtlcFailed, OutgoingHtlcFulfilled, OutgoingHtlcSettled, Upstream}
+import fr.acinq.eclair.channel.{OutgoingHtlcAdded, OutgoingHtlcFailed, OutgoingHtlcFulfilled, OutgoingHtlcSettled}
 import fr.acinq.eclair.reputation.ReputationRecorder._
 import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi}
 
 import scala.collection.mutable
 import scala.concurrent.duration.DurationInt
@@ -32,7 +31,7 @@ import scala.concurrent.duration.DurationInt
 object ReputationRecorder {
   // @formatter:off
   sealed trait Command
-  case class GetConfidence(replyTo: ActorRef[Reputation.Score], downstream_opt: Option[PublicKey], fee: MilliSatoshi, currentBlockHeight: BlockHeight, expiry: CltvExpiry, accountable: Boolean) extends Command
+  case class GetConfidence(replyTo: ActorRef[Reputation.Score], downstream: PublicKey, fee: MilliSatoshi, currentBlockHeight: BlockHeight, expiry: CltvExpiry, accountable: Boolean) extends Command
   case class WrappedOutgoingHtlcAdded(added: OutgoingHtlcAdded) extends Command
   case class WrappedOutgoingHtlcSettled(settled: OutgoingHtlcSettled) extends Command
   private case object TickAudit extends Command
@@ -65,14 +64,16 @@ class ReputationRecorder(context: ActorContext[ReputationRecorder.Command], conf
 
   def run(): Behavior[Command] =
     Behaviors.receiveMessage {
-      case GetConfidence(replyTo, downstream_opt, fee, currentBlockHeight, expiry, accountable) =>
-        val outgoingConfidence = downstream_opt.flatMap(outgoingReputations.get).map(_.getConfidence(fee, if (accountable) 1 else 0, currentBlockHeight, expiry)).getOrElse(0.0)
+      case GetConfidence(replyTo, remoteNodeId, fee, currentBlockHeight, expiry, accountable) =>
+        val accountability = if (accountable) 1 else 0
+        val outgoingConfidence = outgoingReputations.get(remoteNodeId).map(_.getConfidence(fee, accountability, currentBlockHeight, expiry)).getOrElse(0.0)
         replyTo ! Reputation.Score(outgoingConfidence, accountable)
         Behaviors.same
 
       case WrappedOutgoingHtlcAdded(OutgoingHtlcAdded(add, remoteNodeId, fee)) =>
         val htlcId = HtlcId(add)
-        outgoingReputations(remoteNodeId) = outgoingReputations(remoteNodeId).addPendingHtlc(add, fee, if (add.accountable) 1 else 0)
+        val accountability = if (add.accountable) 1 else 0
+        outgoingReputations(remoteNodeId) = outgoingReputations(remoteNodeId).addPendingHtlc(add, fee, accountability)
         pending(htlcId) = PendingHtlc(add, remoteNodeId)
         Behaviors.same
 

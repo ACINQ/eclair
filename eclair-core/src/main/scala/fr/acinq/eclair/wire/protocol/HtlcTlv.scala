@@ -24,9 +24,9 @@ import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tu16}
+import scodec.Codec
 import scodec.bits.{ByteVector, HexStringSyntax}
 import scodec.codecs._
-import scodec.{Attempt, Codec, Err}
 
 /**
  * Created by t-bast on 19/07/2021.
@@ -40,9 +40,15 @@ object UpdateAddHtlcTlv {
 
   private val pathKey: Codec[PathKey] = (("length" | constant(hex"21")) :: ("pathKey" | publicKey)).as[PathKey]
 
-  case object Accountable extends UpdateAddHtlcTlv
+  /**
+   * When set, this field tells the receiving node that they will be held accountable if the corresponding HTLC doesn't
+   * resolve quickly, and their reputation will be lowered. They should propagate this signal when relaying to ensure
+   * that their downstream nodes are also accountable, which protects against channel jamming.
+   * See github.com/lightning/bolts/pull/1280 for more details.
+   */
+  case class Accountable() extends UpdateAddHtlcTlv
 
-  private val accountable: Codec[Accountable.type] = ("length" | constant(hex"00")).xmap(_ => Accountable, _ => ())
+  private val accountable: Codec[Accountable] = tlvField(provide(Accountable()))
 
   /** When on-the-fly funding is used, the liquidity fees may be taken from HTLCs relayed after funding. */
   case class FundingFeeTlv(fee: LiquidityAds.FundingFee) extends UpdateAddHtlcTlv

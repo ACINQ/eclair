@@ -241,7 +241,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
 
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
-    receiveConfidence(Reputation.Score.max(accountable = false))
 
     // We try to wake-up the next node.
     peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 1)
@@ -265,7 +264,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(payload, outgoingAmount + u.channelUpdate.feeBaseMsat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta)
 
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
-    receiveConfidence(Reputation.Score.max(accountable = false))
 
     // We try to wake-up the next node.
     peerReadyManager.expectMessageType[PeerReadyManager.Register].replyTo ! PeerReadyManager.Registered(outgoingNodeId, otherAttempts = 1)
@@ -347,8 +345,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(payload)
 
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
-    receiveConfidence(Reputation.Score.max(accountable = false))
-
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), None, commit = true))
   }
 
@@ -380,7 +376,6 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! WrappedLocalChannelDown(d)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
-    receiveConfidence(Reputation.Score.max(accountable = false))
 
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(UnknownNextPeer()), None, commit = true))
   }
@@ -896,7 +891,7 @@ object ChannelRelayerSpec {
       case p: ChannelRelay.Blinded => Some(UpdateAddHtlcTlv.PathKey(p.nextPathKey))
       case _: ChannelRelay.Standard => None
     }
-    val tlvs = TlvStream(Set[Option[UpdateAddHtlcTlv]](nextPathKey_opt, if (accountableIn) Some(UpdateAddHtlcTlv.Accountable) else None).flatten)
+    val tlvs = TlvStream(Set[Option[UpdateAddHtlcTlv]](nextPathKey_opt, if (accountableIn) Some(UpdateAddHtlcTlv.Accountable()) else None).flatten)
     val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket, tlvs)
     ChannelRelayPacket(add_ab, payload, emptyOnionPacket, TimestampMilli.now())
   }

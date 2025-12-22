@@ -16,11 +16,11 @@
 
 package fr.acinq.eclair.payment.relay
 
-import akka.actor.{ActorRef, typed}
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
@@ -77,26 +77,17 @@ object ChannelRelay {
         paymentHash_opt = Some(r.add.paymentHash),
         nodeAlias_opt = Some(nodeParams.alias))) {
         val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), r.receivedAt, originNode, incomingChannelOccupancy)
-        val accountable = r.add.accountable || incomingChannelOccupancy > 1 - nodeParams.relayParams.reservedBucket
-        if (accountable && !r.payload.upgradeAccountability) {
-          val relay = new ChannelRelay(nodeParams, register, channels, r, upstream, Reputation.Score.min, context, accountable)
-          Metrics.recordPaymentRelayFailed(Tags.FailureType.Jamming, Tags.RelayType.Channel)
-          context.log.info("rejecting htlc: unaccountable HTLC using reserved bucket")
-          relay.safeSendAndStop(r.add.channelId, relay.makeCmdFailHtlc(r.add.id, TemporaryChannelFailure(None)))
-        } else {
-          reputationRecorder_opt match {
-            // TODO: penalize HTLCs that do not use `upgradeAccountability`.
-            //case _ if !r.payload.upgradeAccountability =>
-            //  context.self ! WrappedReputationScore(Reputation.Score.min)
-            case Some(reputationRecorder) =>
-              reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), channels.values.headOption.map(_.nextNodeId), r.relayFeeMsat, nodeParams.currentBlockHeight, r.outgoingCltv, accountable)
-            case None =>
-              context.self ! WrappedReputationScore(Reputation.Score.max(accountable))
-          }
-          Behaviors.receiveMessagePartial {
-            case WrappedReputationScore(score) =>
-              new ChannelRelay(nodeParams, register, channels, r, upstream, score, context, accountable).start()
-          }
+        val accountable = r.add.accountable || nodeParams.relayParams.incomingChannelCongested(upstream.incomingChannelOccupancy)
+        val nextNodeId_opt = channels.values.headOption.map(_.nextNodeId)
+        (reputationRecorder_opt, nextNodeId_opt) match {
+          case (Some(reputationRecorder), Some(nextNodeId)) =>
+            reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), nextNodeId, r.relayFeeMsat, nodeParams.currentBlockHeight, r.outgoingCltv, accountable)
+          case _ =>
+            context.self ! WrappedReputationScore(Reputation.Score.max(accountable))
+        }
+        Behaviors.receiveMessagePartial {
+          case WrappedReputationScore(score) =>
+            new ChannelRelay(nodeParams, register, channels, r, upstream, score, context).start()
         }
       }
     }
@@ -143,8 +134,7 @@ class ChannelRelay private(nodeParams: NodeParams,
                            r: IncomingPaymentPacket.ChannelRelayPacket,
                            upstream: Upstream.Hot.Channel,
                            reputationScore: Reputation.Score,
-                           context: ActorContext[ChannelRelay.Command],
-                           accountable: Boolean) {
+                           context: ActorContext[ChannelRelay.Command]) {
 
   import ChannelRelay._
 
@@ -176,6 +166,13 @@ class ChannelRelay private(nodeParams: NodeParams,
   private case class PreviouslyTried(channelId: ByteVector32, failure: RES_ADD_FAILED[ChannelException])
 
   def start(): Behavior[Command] = {
+    val accountable = r.add.accountable || nodeParams.relayParams.incomingChannelCongested(upstream.incomingChannelOccupancy)
+    if (accountable && !r.payload.upgradeAccountability) {
+      // We don't yet enforce channel jamming protections: we log and update metrics as if we had failed that payment,
+      // but we currently relay it anyway. This will let us analyze data before actually activating jamming protection.
+      Metrics.recordPaymentRelayFailed(Tags.FailureType.Jamming, Tags.RelayType.Channel)
+      context.log.info("payment would have been rejected if jamming protection was activated")
+    }
     walletNodeId_opt match {
       case Some(walletNodeId) if nodeParams.peerWakeUpConfig.enabled => wakeUp(walletNodeId)
       case _ =>
@@ -282,7 +279,7 @@ class ChannelRelay private(nodeParams: NodeParams,
       }
   }
 
-  def safeSendAndStop(channelId: ByteVector32, cmd: channel.HtlcSettlementCommand): Behavior[Command] = {
+  private def safeSendAndStop(channelId: ByteVector32, cmd: channel.HtlcSettlementCommand): Behavior[Command] = {
     val toSend = cmd match {
       case _: CMD_FULFILL_HTLC => cmd
       case _: CMD_FAIL_HTLC | _: CMD_FAIL_MALFORMED_HTLC => r.payload match {
@@ -345,7 +342,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           makeCmdFailHtlc(r.add.id, UnknownNextPeer())
         }
         walletNodeId_opt match {
-          case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(remoteFeatures_opt, previousFailures) && !accountable => RelayNeedsFunding(walletNodeId, cmdFail)
+          case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(remoteFeatures_opt, previousFailures) => RelayNeedsFunding(walletNodeId, cmdFail)
           case _ => RelayFailure(cmdFail)
         }
     }
@@ -460,7 +457,7 @@ class ChannelRelay private(nodeParams: NodeParams,
     featureOk && liquidityIssue && relayParamsOk
   }
 
-  def makeCmdFailHtlc(originHtlcId: Long, failure: FailureMessage, delay_opt: Option[FiniteDuration] = None): CMD_FAIL_HTLC = {
+  private def makeCmdFailHtlc(originHtlcId: Long, failure: FailureMessage, delay_opt: Option[FiniteDuration] = None): CMD_FAIL_HTLC = {
     val attribution = FailureAttributionData(htlcReceivedAt = upstream.receivedAt, trampolineReceivedAt_opt = None)
     CMD_FAIL_HTLC(originHtlcId, FailureReason.LocalFailure(failure), Some(attribution), delay_opt, commit = true)
   }

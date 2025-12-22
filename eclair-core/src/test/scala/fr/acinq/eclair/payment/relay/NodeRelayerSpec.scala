@@ -42,7 +42,6 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived,
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.payment.send.{BlindedRecipient, ClearRecipient}
-import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, PaymentRouteNotFound, RouteRequest}
 import fr.acinq.eclair.router.{BalanceTooLow, BlindedRouteCreation, RouteNotFound, Router}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
@@ -1224,7 +1223,7 @@ object NodeRelayerSpec {
 
   def createValidIncomingPacket(amountIn: MilliSatoshi, totalAmountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry, receivedAt: TimestampMilli, accountableIn: Boolean = false): RelayToTrampolinePacket = {
     val outerPayload = FinalPayload.Standard.createPayload(amountIn, totalAmountIn, expiryIn, incomingSecret, None, upgradeAccountability = false)
-    val tlvs = if (accountableIn) TlvStream[UpdateAddHtlcTlv](UpdateAddHtlcTlv.Accountable) else TlvStream.empty[UpdateAddHtlcTlv]
+    val tlvs = if (accountableIn) TlvStream[UpdateAddHtlcTlv](UpdateAddHtlcTlv.Accountable()) else TlvStream.empty[UpdateAddHtlcTlv]
     RelayToTrampolinePacket(
       UpdateAddHtlc(randomBytes32(), Random.nextInt(100), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket, tlvs),
       outerPayload,

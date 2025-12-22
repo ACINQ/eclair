@@ -475,7 +475,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
   override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse] = {
     getRouteParams(pathFindingExperimentName_opt) match {
       case Right(routeParams) =>
-        val target = ClearRecipient(targetNodeId, Features.empty, amount, CltvExpiry(appKit.nodeParams.currentBlockHeight), ByteVector32.Zeroes, extraEdges, upgradeAccountability = true)
+        val target = ClearRecipient(targetNodeId, Features.empty, amount, CltvExpiry(appKit.nodeParams.currentBlockHeight), ByteVector32.Zeroes, upgradeAccountability = true, extraEdges)
         val routeParams1 = routeParams.copy(
           includeLocalChannelCost = includeLocalChannelCost,
           boundaries = routeParams.boundaries.copy(

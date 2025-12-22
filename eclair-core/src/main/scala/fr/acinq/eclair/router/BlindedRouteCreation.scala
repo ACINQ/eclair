@@ -21,7 +21,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.wire.protocol.{RouteBlindingEncryptedDataCodecs, RouteBlindingEncryptedDataTlv, TlvStream}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, MilliSatoshi, MilliSatoshiLong, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, MilliSatoshi, MilliSatoshiLong, randomKey}
 import scodec.bits.ByteVector
 
 object BlindedRouteCreation {
@@ -48,14 +48,14 @@ object BlindedRouteCreation {
     val finalPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(
       RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, routeMinAmount),
       RouteBlindingEncryptedDataTlv.PathId(pathId),
-      RouteBlindingEncryptedDataTlv.UpgradeAccountability,
+      RouteBlindingEncryptedDataTlv.UpgradeAccountability(),
     )).require.bytes
     val payloads = hops.map(channel =>
       TlvStream[RouteBlindingEncryptedDataTlv](
         RouteBlindingEncryptedDataTlv.OutgoingChannelId(channel.shortChannelId),
         RouteBlindingEncryptedDataTlv.PaymentRelay(channel.cltvExpiryDelta, channel.params.relayFees.feeProportionalMillionths, channel.params.relayFees.feeBase),
         RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, routeMinAmount),
-        RouteBlindingEncryptedDataTlv.UpgradeAccountability,
+        RouteBlindingEncryptedDataTlv.UpgradeAccountability(),
       )
     )
     /*
@@ -96,13 +96,13 @@ object BlindedRouteCreation {
     val finalPayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream(
       RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, minAmount),
       RouteBlindingEncryptedDataTlv.PathId(pathId),
-      RouteBlindingEncryptedDataTlv.UpgradeAccountability,
+      RouteBlindingEncryptedDataTlv.UpgradeAccountability(),
     )).require.bytes
     val intermediatePayload = RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec.encode(TlvStream[RouteBlindingEncryptedDataTlv](
       RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.WithPublicKey.Wallet(hop.nextNodeId)),
       RouteBlindingEncryptedDataTlv.PaymentRelay(hop.cltvExpiryDelta, hop.params.relayFees.feeProportionalMillionths, hop.params.relayFees.feeBase),
       RouteBlindingEncryptedDataTlv.PaymentConstraints(routeExpiry, minAmount),
-      RouteBlindingEncryptedDataTlv.UpgradeAccountability,
+      RouteBlindingEncryptedDataTlv.UpgradeAccountability(),
     )).require.bytes
     Sphinx.RouteBlinding.create(randomKey(), Seq(hop.nodeId, hop.nextNodeId), Seq(intermediatePayload, finalPayload))
   }
