@@ -303,6 +303,28 @@ class RouterSpec extends BaseRouterSpec {
       router ! Router.TickBroadcast
       eventListener.expectNoMessage(100 millis)
     }
+    {
+      // funding tx spent (splice)
+      val priv_z = randomKey()
+      val priv_funding_z = randomKey()
+      val chan_az = channelAnnouncement(RealShortChannelId(BlockHeight(420000), 0, 0), priv_z, priv_a, priv_funding_z, priv_funding_a)
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az))
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_az)
+      watcher.send(router, ValidateResult(chan_az, Right(Transaction(2, Nil, TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, 0), UtxoStatus.Unspent)))
+      peerConnection.expectMsg(TransportHandler.ReadAck(chan_az))
+      peerConnection.expectMsg(GossipDecision.Accepted(chan_az))
+      assert(watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId == chan_az.shortChannelId)
+      eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(chan_az, 1000000 sat, None, None) :: Nil))
+      peerConnection.expectNoMessage(100 millis)
+      eventListener.expectNoMessage(100 millis)
+      // The channel is spent by a splice transaction: it is removed from the rebroadcast list.
+      router ! WatchExternalChannelSpentTriggered(RealShortChannelId(BlockHeight(420000), 0, 0), Some(spendingTx(funding_a, priv_funding_z.publicKey)))
+      watcher.expectMsgType[WatchTxConfirmed]
+      // We notify front nodes to ensure they also stop broadcasting this channel.
+      eventListener.expectMsg(ChannelLost(RealShortChannelId(BlockHeight(420000), 0, 0)))
+      router ! Router.TickBroadcast
+      eventListener.expectNoMessage(100 millis)
+    }
 
     watcher.expectNoMessage(100 millis)
   }
@@ -343,6 +365,7 @@ class RouterSpec extends BaseRouterSpec {
 
     router ! WatchExternalChannelSpentTriggered(scid_ab, Some(spendingTx(funding_a, funding_b)))
     watcher.expectMsgType[WatchTxConfirmed]
+    eventListener.expectMsg(ChannelLost(scid_ab))
     router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_a, funding_b))
     watcher.expectMsg(UnwatchExternalChannelSpent(channels(scid_ab).fundingTxId, ShortChannelId.outputIndex(scid_ab)))
     eventListener.expectMsg(ChannelLost(scid_ab))
@@ -365,6 +388,7 @@ class RouterSpec extends BaseRouterSpec {
 
     router ! WatchExternalChannelSpentTriggered(scid_bc, Some(spendingTx(funding_b, funding_c)))
     watcher.expectMsgType[WatchTxConfirmed]
+    eventListener.expectMsg(ChannelLost(scid_bc))
     router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_b, funding_c))
     watcher.expectMsg(UnwatchExternalChannelSpent(channels(scid_bc).fundingTxId, ShortChannelId.outputIndex(scid_bc)))
     eventListener.expectMsg(ChannelLost(scid_bc))
@@ -406,6 +430,7 @@ class RouterSpec extends BaseRouterSpec {
     // The channel is closed, now we can remove it from the DB.
     router ! WatchExternalChannelSpentTriggered(scid_au, Some(spendingTx(funding_a, priv_funding_u.publicKey)))
     assert(watcher.expectMsgType[WatchTxConfirmed].txId == spendingTx(funding_a, priv_funding_u.publicKey).txid)
+    eventListener.expectMsg(ChannelLost(scid_au))
     router ! WatchTxConfirmedTriggered(BlockHeight(0), 0, spendingTx(funding_a, priv_funding_u.publicKey))
     watcher.expectMsg(UnwatchExternalChannelSpent(channels(scid_au).fundingTxId, ShortChannelId.outputIndex(scid_au)))
     eventListener.expectMsg(ChannelLost(scid_au))
@@ -1196,6 +1221,7 @@ class RouterSpec extends BaseRouterSpec {
       assert(w.txId == spliceTx1.txid)
       assert(w.minDepth == 12)
     }
+    eventListener.expectMsg(ChannelLost(scid_ab))
     eventListener.expectNoMessage(100 millis)
 
     // Channel ab is spent and confirmed by an RBF of splice tx.
@@ -1206,6 +1232,7 @@ class RouterSpec extends BaseRouterSpec {
       assert(w.txId == spliceTx2.txid)
       assert(w.minDepth == 12)
     }
+    eventListener.expectMsg(ChannelLost(scid_ab))
     eventListener.expectNoMessage(100 millis)
 
     // The splice of channel ab is announced.
@@ -1246,6 +1273,7 @@ class RouterSpec extends BaseRouterSpec {
       assert(w.txId == spliceTx_ab.txid)
       assert(w.minDepth == 12)
     }
+    eventListener.expectMsg(ChannelLost(scid_ab))
 
     // Channel bc is spent by a splice tx.
     router ! WatchExternalChannelSpentTriggered(scid_bc, Some(spliceTx_bc))
@@ -1253,6 +1281,7 @@ class RouterSpec extends BaseRouterSpec {
       assert(w.txId == spliceTx_bc.txid)
       assert(w.minDepth == 12)
     }
+    eventListener.expectMsg(ChannelLost(scid_bc))
 
     // Channel bc2 is spent by a splice tx.
     router ! WatchExternalChannelSpentTriggered(scid_bc2, Some(spliceTx_bc2))
@@ -1260,6 +1289,7 @@ class RouterSpec extends BaseRouterSpec {
       assert(w.txId == spliceTx_bc2.txid)
       assert(w.minDepth == 12)
     }
+    eventListener.expectMsg(ChannelLost(scid_bc2))
 
     // Channels ab, bc and bc2 are all spent by the same batch splice tx.
     router ! WatchExternalChannelSpentTriggered(scid_ab, Some(batchSpliceTx))
@@ -1267,16 +1297,19 @@ class RouterSpec extends BaseRouterSpec {
       assert(w.txId == batchSpliceTx.txid)
       assert(w.minDepth == 12)
     }
+    eventListener.expectMsg(ChannelLost(scid_ab))
     router ! WatchExternalChannelSpentTriggered(scid_bc, Some(batchSpliceTx))
     inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
       assert(w.txId == batchSpliceTx.txid)
       assert(w.minDepth == 12)
     }
+    eventListener.expectMsg(ChannelLost(scid_bc))
     router ! WatchExternalChannelSpentTriggered(scid_bc2, Some(batchSpliceTx))
     inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
       assert(w.txId == batchSpliceTx.txid)
       assert(w.minDepth == 12)
     }
+    eventListener.expectMsg(ChannelLost(scid_bc2))
 
     // Channels ab, bc and bc2 are also all spent by an RBF of the batch splice tx.
     val newCapacity_ab_RBF = newCapacity_ab - 1000.sat
@@ -1286,16 +1319,19 @@ class RouterSpec extends BaseRouterSpec {
       assert(w.txId == batchSpliceTx_RBF.txid)
       assert(w.minDepth == 12)
     }
+    eventListener.expectMsg(ChannelLost(scid_ab))
     router ! WatchExternalChannelSpentTriggered(scid_bc, Some(batchSpliceTx_RBF))
     inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
       assert(w.txId == batchSpliceTx_RBF.txid)
       assert(w.minDepth == 12)
     }
+    eventListener.expectMsg(ChannelLost(scid_bc))
     router ! WatchExternalChannelSpentTriggered(scid_bc2, Some(batchSpliceTx_RBF))
     inside(watcher.expectMsgType[WatchTxConfirmed]) { w =>
       assert(w.txId == batchSpliceTx_RBF.txid)
       assert(w.minDepth == 12)
     }
+    eventListener.expectMsg(ChannelLost(scid_bc2))
 
     // The router tracks the possible spending txs for channels ab, bc and bc2.
     val sender = TestProbe()
