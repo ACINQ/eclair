@@ -22,7 +22,6 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystem
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy, typed}
 import akka.pattern.after
 import akka.util.Timeout
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BlockId, ByteVector32, Satoshi, Script, ScriptElt, addressToPublicKeyScript}
 import fr.acinq.eclair.NodeParams.hashFromChain
 import fr.acinq.eclair.Setup.Seeds
@@ -250,7 +249,12 @@ class Setup(val datadir: File,
       feeProvider = nodeParams.chainHash match {
         case Block.RegtestGenesisBlock.hash | Block.SignetGenesisBlock.hash =>
           FallbackFeeProvider(ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
+        case Block.Testnet3GenesisBlock.hash | Block.Testnet4GenesisBlock.hash =>
+          // On testnet, we fallback to default feerates when there aren't enough block data to estimate fees.
+          val smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
+          FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case _ =>
+          // On mainnet, we always use blockchain data to estimate fees and ignore configured fallbacks.
           val smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
           FallbackFeeProvider(SmoothFeeProvider(BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
       }
