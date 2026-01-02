@@ -31,7 +31,7 @@ trait SpendFromChannelAddress {
       Right(pubKeyScript) = addressToPublicKeyScript(appKit.nodeParams.chainHash, address).map(Script.write)
       channelKeys = appKit.nodeParams.channelKeyManager.channelKeys(ChannelConfig.standard, fundingKeyPath)
       localFundingPubkey = channelKeys.fundingKey(fundingTxIndex).publicKey
-      isTaproot = Script.isPay2tr(Script.parse(pubKeyScript))
+      isTaproot = Script.isPay2tr(Script.parse(inputTx.txOut(outPoint.index.toInt).publicKeyScript))
       (localNonce_opt, dummyWitness) = if (isTaproot) {
         val serverNonce = Musig2.generateNonce(randomBytes32(), Right(localFundingPubkey), Seq(localFundingPubkey), None, None)
         nonces.put(serverNonce.publicNonce, serverNonce)
