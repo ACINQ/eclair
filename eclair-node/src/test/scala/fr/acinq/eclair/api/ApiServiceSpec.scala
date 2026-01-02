@@ -1002,7 +1002,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
-    eclair.findRoute(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(Router.RouteResponse(Seq(Router.Route(456.msat, mockHops, None))))
+    eclair.findRoute(any, any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(Router.RouteResponse(Seq(Router.Route(456.msat, mockHops, None))))
 
     // invalid format
     Post("/findroute", FormData("format" -> "invalid-output-format", "invoice" -> serializedInvoice, "amountMsat" -> "456")) ~>
@@ -1012,7 +1012,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == BadRequest)
-        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any)(any[Timeout]).wasNever(called)
+        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any)(any[Timeout]).wasNever(called)
       }
 
     // default format
@@ -1025,7 +1025,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val response = entityAs[String]
         matchTestJson("findroute-nodeid", response)
-        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any)(any[Timeout]).wasCalled(once)
+        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
 
     Post("/findroute", FormData("format" -> "nodeId", "invoice" -> serializedInvoice, "amountMsat" -> "456")) ~>
@@ -1037,7 +1037,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val response = entityAs[String]
         matchTestJson("findroute-nodeid", response)
-        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any)(any[Timeout]).wasCalled(twice)
+        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(twice)
       }
 
     Post("/findroute", FormData("format" -> "shortChannelId", "invoice" -> serializedInvoice, "amountMsat" -> "456")) ~>
@@ -1049,7 +1049,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val response = entityAs[String]
         matchTestJson("findroute-scid", response)
-        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any)(any[Timeout]).wasCalled(threeTimes)
+        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(threeTimes)
       }
 
     Post("/findroute", FormData("format" -> "full", "invoice" -> serializedInvoice, "amountMsat" -> "456")) ~>
@@ -1061,7 +1061,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         val response = entityAs[String]
         matchTestJson("findroute-full", response)
-        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any)(any[Timeout]).wasCalled(fourTimes)
+        eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any, any)(any[Timeout]).wasCalled(fourTimes)
       }
   }
 

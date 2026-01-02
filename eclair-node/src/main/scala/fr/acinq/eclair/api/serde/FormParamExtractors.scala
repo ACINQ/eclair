@@ -29,7 +29,7 @@ import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.OfferCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId, TimestampSecond}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -67,6 +67,8 @@ object FormParamExtractors {
   implicit val satoshiUnmarshaller: Unmarshaller[String, Satoshi] = Unmarshaller.strict { str => Satoshi(str.toLong) }
 
   implicit val millisatoshiUnmarshaller: Unmarshaller[String, MilliSatoshi] = Unmarshaller.strict { str => MilliSatoshi(str.toLong) }
+
+  implicit val cltvExpiryDeltaUnmarshaller: Unmarshaller[String, CltvExpiryDelta] = Unmarshaller.strict { str => CltvExpiryDelta(str.toInt) }
 
   implicit val feeratePerByteUnmarshaller: Unmarshaller[String, FeeratePerByte] = Unmarshaller.strict { str => FeeratePerByte(Satoshi(str.toLong)) }
 

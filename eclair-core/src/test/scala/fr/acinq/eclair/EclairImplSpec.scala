@@ -343,7 +343,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kit)
     val route = PredefinedNodeRoute(1000 msat, Seq(randomKey().publicKey))
     val parentId = UUID.randomUUID()
-    val secret = randomBytes32()
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), Right(randomBytes32()), CltvExpiryDelta(18))
     eclair.sendToRoute(Some(1200 msat), Some("42"), Some(parentId), pr, route)
     val sendPaymentToRoute = paymentInitiator.expectMsgType[SendPaymentToRoute]
