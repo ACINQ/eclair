@@ -161,11 +161,18 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay()
 
     case Event(TickBroadcast, d) =>
-      if (d.rebroadcast.channels.isEmpty && d.rebroadcast.updates.isEmpty && d.rebroadcast.nodes.isEmpty) {
+      // We don't rebroadcast channels that have recently been spent: it may be a splice, but it makes more sense for
+      // the receiver to directly receive the post-splice announcement.
+      val spentChannels = d.spentChannels.values.flatten.toSet[ShortChannelId]
+      val rebroadcast = d.rebroadcast.copy(
+        channels = d.rebroadcast.channels.filterNot { case (c, _) => spentChannels.contains(c.shortChannelId) },
+        updates = d.rebroadcast.updates.filterNot { case (u, _) => spentChannels.contains(u.shortChannelId) }
+      )
+      if (rebroadcast.channels.isEmpty && rebroadcast.updates.isEmpty && rebroadcast.nodes.isEmpty) {
         stay()
       } else {
-        log.debug("staggered broadcast details: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
-        context.system.eventStream.publish(d.rebroadcast)
+        log.debug("staggered broadcast details: channels={} updates={} nodes={}", rebroadcast.channels.size, rebroadcast.updates.size, rebroadcast.nodes.size)
+        context.system.eventStream.publish(rebroadcast)
         stay() using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
 
@@ -312,14 +319,18 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay() using Sync.handleSendChannelQuery(d, s)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d) =>
-      Sync.handleQueryChannelRange(d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
+      val spentChannels = d.spentChannels.values.flatten.toSet
+      val channels = d.channels.filterNot { case (scid, _) => spentChannels.contains(scid) }
+      Sync.handleQueryChannelRange(channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
       stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyChannelRange), d) =>
       stay() using Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d) =>
-      Sync.handleQueryShortChannelIds(d.nodes, d.channels, RemoteGossip(peerConnection, remoteNodeId), q)
+      val spentChannels = d.spentChannels.values.flatten.toSet
+      val channels = d.channels.filterNot { case (scid, _) => spentChannels.contains(scid) }
+      Sync.handleQueryShortChannelIds(d.nodes, channels, RemoteGossip(peerConnection, remoteNodeId), q)
       stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d) =>

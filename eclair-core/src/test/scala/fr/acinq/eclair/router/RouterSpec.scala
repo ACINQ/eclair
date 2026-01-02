@@ -303,6 +303,26 @@ class RouterSpec extends BaseRouterSpec {
       router ! Router.TickBroadcast
       eventListener.expectNoMessage(100 millis)
     }
+    {
+      // funding tx spent (splice)
+      val priv_z = randomKey()
+      val priv_funding_z = randomKey()
+      val chan_az = channelAnnouncement(RealShortChannelId(BlockHeight(420000), 0, 0), priv_z, priv_a, priv_funding_z, priv_funding_a)
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az))
+      assert(watcher.expectMsgType[ValidateRequest].ann == chan_az)
+      watcher.send(router, ValidateResult(chan_az, Right(Transaction(2, Nil, TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, 0), UtxoStatus.Unspent)))
+      peerConnection.expectMsg(TransportHandler.ReadAck(chan_az))
+      peerConnection.expectMsg(GossipDecision.Accepted(chan_az))
+      assert(watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId == chan_az.shortChannelId)
+      eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(chan_az, 1000000 sat, None, None) :: Nil))
+      peerConnection.expectNoMessage(100 millis)
+      eventListener.expectNoMessage(100 millis)
+      // The channel is spent by a splice transaction: it is removed from the rebroadcast list.
+      router ! WatchExternalChannelSpentTriggered(RealShortChannelId(BlockHeight(420000), 0, 0), Some(spendingTx(funding_a, priv_funding_z.publicKey)))
+      watcher.expectMsgType[WatchTxConfirmed]
+      router ! Router.TickBroadcast
+      eventListener.expectNoMessage(100 millis)
+    }
 
     watcher.expectNoMessage(100 millis)
   }
