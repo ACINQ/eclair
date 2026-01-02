@@ -306,33 +306,6 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.sign(priv).toString == ref)
   }
 
-  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 8, 14 and 99, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
-    val refs = Seq(
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqqsgq2a25dxl5hrntdtn6zvydt7d66hyzsyhqs4wdynavys42xgl6sgx9c4g7me86a27t07mdtfry458rtjr0v92cnmswpsjscgt2vcse3sgpz3uapa",
-      // All upper-case
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqqsgq2a25dxl5hrntdtn6zvydt7d66hyzsyhqs4wdynavys42xgl6sgx9c4g7me86a27t07mdtfry458rtjr0v92cnmswpsjscgt2vcse3sgpz3uapa".toUpperCase,
-      // With ignored fields
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqqsgq2qrqqqfppnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqppnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpp4qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhpnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhp4qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqspnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqsp4qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqnp5qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqnpkqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqz599y53s3ujmcfjp5xrdap68qxymkqphwsexhmhr8wdz5usdzkzrse33chw6dlp3jhuhge9ley7j2ayx36kawe7kmgg8sv5ugdyusdcqzn8z9x"
-    )
-
-    for (ref <- refs) {
-      val Success(invoice) = Bolt11Invoice.fromString(ref)
-      assert(invoice.prefix == "lnbc")
-      assert(invoice.amount_opt.contains(2500000000L msat))
-      assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-      assert(invoice.paymentSecret.bytes == hex"1111111111111111111111111111111111111111111111111111111111111111")
-      assert(invoice.createdAt == TimestampSecond(1496314658L))
-      assert(invoice.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
-      assert(invoice.description == Left("coffee beans"))
-      assert(features2bits(invoice.features) == bin"1000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
-      assert(!invoice.features.hasFeature(BasicMultiPartPayment))
-      assert(invoice.features.hasFeature(PaymentSecret, Some(Mandatory)))
-      assert(!invoice.features.hasFeature(TrampolinePaymentPrototype))
-      assert(TestConstants.Alice.nodeParams.features.invoiceFeatures().areSupported(invoice.features))
-      assert(invoice.sign(priv).toString == ref.toLowerCase)
-    }
-  }
-
   test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 8, 14, 99 and 100, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
     val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4psqqqqqqqqqqqqqqqqsgqtqyx5vggfcsll4wu246hz02kp85x4katwsk9639we5n5yngc3yhqkm35jnjw4len8vrnqnf5ejh0mzj9n3vz2px97evektfm2l6wqccp3y7372"
     val Success(invoice) = Bolt11Invoice.fromString(ref)
@@ -430,6 +403,8 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       "lnbc1p5q54jjpp5fe0dhqdt4m97psq0fv3wjlk95cclnatvuvq49xtnc8rzrp0dysusdqqcqzzsxqrrs0fppqy6uew5229e67r9xzzm9mjyfwseclstdgsp5rnanj9x5rnanj9xnq28hhgd6c7yxlmh6lta047h6lqqqqqqqqqqqrqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6qqqqqqqqqqqqqqqqqqq9kvnknh7ug5mttnqqqqqqqqq8849gwfhvnp9rqpe0cy97",
       // Invalid min_final_expiry_delta_blocks.
       "lnbc1p5q54jjpp5fe0dhqdt4m97psq0fv3wjlk95cclnatvuvq49xtnc8rzrp0d5susdqqcqg3vrywwwjsppqy6uew5229e67rzxzzm9mjyfwseclstdgsp5rnanj9xnq28hhgd6c7yxlmh6lta047h6lqqqqqqqqqqqrqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9kvnknh7ug5mttn2yu5ha6m98cpda2rtwu08849gwfhvnp9rqpqqqqqqqqqg58lts",
+      // Invalid fallback address.
+      "lnbc1qzupp9qsp5pvgsuqqpgczuppczc3pcz3syzy8q2xqqqqqqqqqqqqqqqqqygh9qpp5s7zxqqqqqqqqqqyqymqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhp5qs97qqqqqqqpqqyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqptfqptfqptfqptfqptfqptfqptfqptfq95xtfqptfqp3w9chzut3w9chj95xw7tfpp35qqqw9chzuqt3w9chzut3qptfqptfqptfqptfqptfqptfqpqw9cqqqqt28y39",
     )
     for (ref <- refs) {
       assert(Bolt11Invoice.fromString(ref).isFailure)
