@@ -29,7 +29,7 @@ import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.blockchain.fee.ConfirmationPriority
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
-import fr.acinq.eclair.{MilliSatoshi, Paginated, ShortChannelId, TimestampSecond}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, Paginated, ShortChannelId, TimestampSecond}
 
 import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
@@ -52,6 +52,7 @@ trait ExtraDirectives extends Directives {
   val ignoreNodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "ignoreNodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val ignoreShortChannelIdsFormParam: NameUnmarshallerReceptacle[List[ShortChannelId]] = "ignoreShortChannelIds".as[List[ShortChannelId]](shortChannelIdsUnmarshaller)
   val maxFeeMsatFormParam: NameReceptacle[MilliSatoshi] = "maxFeeMsat".as[MilliSatoshi]
+  val maxCltvExpiryDeltaFormParam: NameReceptacle[CltvExpiryDelta] = "maxCltvExpiryDelta".as[CltvExpiryDelta]
   val countFormParam: NameReceptacle[Int] = "count".as[Int]
   val skipFormParam: NameReceptacle[Int] = "skip".as[Int]
   val offerFormParam: NameUnmarshallerReceptacle[Offer] = "offer".as[Offer](offerUnmarshaller)
