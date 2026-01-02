@@ -276,6 +276,8 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
         case Some(spendingTx) =>
           log.info("funding tx txId={} of channelId={} has been spent by txId={}: waiting for the spending tx to have enough confirmations before removing the channel from the graph", fundingTxId, shortChannelId, spendingTx.txid)
           watcher ! WatchTxConfirmed(self, spendingTx.txid, nodeParams.routerConf.channelSpentSpliceDelay)
+          // We immediately notify front nodes, to ensure that we stop broadcasting this channel to our peers.
+          context.system.eventStream.publish(ChannelLost(shortChannelId))
           stay() using d.copy(spentChannels = d.spentChannels.updated(spendingTx.txid, d.spentChannels.getOrElse(spendingTx.txid, Set.empty) + shortChannelId))
         case None =>
           // If the channel was spent by a transaction that is already confirmed, it would be very inefficient to scan
