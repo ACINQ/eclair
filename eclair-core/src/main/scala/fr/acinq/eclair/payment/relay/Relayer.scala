@@ -146,7 +146,8 @@ object Relayer extends Logging {
                          minTrampolineFees: RelayFees,
                          enforcementDelay: FiniteDuration,
                          asyncPaymentsParams: AsyncPaymentsParams,
-                         peerReputationConfig: Reputation.Config) {
+                         peerReputationConfig: Reputation.Config,
+                         reservedBucket: Double) {
     def defaultFees(announceChannel: Boolean): RelayFees = {
       if (announceChannel) {
         publicChannelFees
@@ -154,6 +155,8 @@ object Relayer extends Logging {
         privateChannelFees
       }
     }
+
+    def incomingChannelCongested(incomingChannelOccupancy: Double): Boolean = incomingChannelOccupancy > 1 - reservedBucket
   }
 
   case class RelayForward(add: UpdateAddHtlc, originNode: PublicKey, incomingChannelOccupancy: Double)

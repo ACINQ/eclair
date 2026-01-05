@@ -21,7 +21,6 @@ import akka.actor.{ActorRef, FSM, Props, typed}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.Upstream.Hot
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
@@ -79,14 +78,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       reputationRecorder_opt match {
         case Some(reputationRecorder) =>
           val cltvExpiry = route.fullRoute.map(_.cltvExpiryDelta).foldLeft(request.recipient.expiry)(_ + _)
-          reputationRecorder ! GetConfidence(self, cfg.upstream, Some(route.hops.head.nextNodeId), route.hops.head.fee(request.amount), nodeParams.currentBlockHeight, cltvExpiry)
+          reputationRecorder ! GetConfidence(self, route.hops.head.nextNodeId, route.hops.head.fee(request.amount), nodeParams.currentBlockHeight, cltvExpiry, cfg.accountable)
         case None =>
-          val endorsement = cfg.upstream match {
-            case Hot.Channel(add, _, _, _) => add.endorsement
-            case Hot.Trampoline(received) => received.map(_.add.endorsement).min
-            case Upstream.Local(_) => Reputation.maxEndorsement
-          }
-          self ! Reputation.Score.fromEndorsement(endorsement)
+          self ! Reputation.Score.max(cfg.accountable)
       }
       goto(WAITING_FOR_CONFIDENCE) using WaitingForConfidence(request, failures, ignore, route)
 
@@ -484,7 +478,7 @@ object PaymentLifecycle {
     require(route.fold(r => !r.isEmpty, r => r.hops.nonEmpty || r.finalHop_opt.nonEmpty), "payment route must not be empty")
 
     override val maxAttempts: Int = 1
-    override val amount = route.fold(_.amount, _.amount)
+    override val amount: MilliSatoshi = route.fold(_.amount, _.amount)
 
     def printRoute(): String = route match {
       case Left(PredefinedChannelRoute(_, _, channels, _)) => channels.mkString("->")
@@ -502,7 +496,7 @@ object PaymentLifecycle {
    */
   case class SendPaymentToNode(replyTo: ActorRef, recipient: Recipient, maxAttempts: Int, routeParams: RouteParams) extends SendPayment {
     require(recipient.totalAmount > 0.msat, "amount must be > 0")
-    override val amount = recipient.totalAmount
+    override val amount: MilliSatoshi = recipient.totalAmount
   }
 
   // @formatter:off
@@ -511,7 +505,7 @@ object PaymentLifecycle {
   case class WaitingForRoute(request: SendPayment, failures: Seq[PaymentFailure], ignore: Ignore) extends Data
   case class WaitingForConfidence(request: SendPayment, failures: Seq[PaymentFailure], ignore: Ignore, route: Route) extends Data
   case class WaitingForComplete(request: SendPayment, cmd: CMD_ADD_HTLC, failures: Seq[PaymentFailure], sharedSecrets: Seq[Sphinx.SharedSecret], ignore: Ignore, route: Route) extends Data {
-    val recipient = request.recipient
+    val recipient: Recipient = request.recipient
   }
 
   sealed trait State
@@ -521,9 +515,9 @@ object PaymentLifecycle {
   case object WAITING_FOR_PAYMENT_COMPLETE extends State
 
   /** custom exceptions to handle corner cases */
-  case object UpdateMalformedException extends RuntimeException("first hop returned an UpdateFailMalformedHtlc message")
-  case object ChannelFailureException extends RuntimeException("a channel failure occurred with the first hop")
-  case object DisconnectedException extends RuntimeException("a disconnection occurred with the first hop")
+  private case object UpdateMalformedException extends RuntimeException("first hop returned an UpdateFailMalformedHtlc message")
+  private case object ChannelFailureException extends RuntimeException("a channel failure occurred with the first hop")
+  private case object DisconnectedException extends RuntimeException("a disconnection occurred with the first hop")
   // @formatter:on
 
 }

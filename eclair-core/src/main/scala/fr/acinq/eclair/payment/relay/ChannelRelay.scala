@@ -16,11 +16,11 @@
 
 package fr.acinq.eclair.payment.relay
 
-import akka.actor.{ActorRef, typed}
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
@@ -77,11 +77,22 @@ object ChannelRelay {
         paymentHash_opt = Some(r.add.paymentHash),
         nodeAlias_opt = Some(nodeParams.alias))) {
         val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), r.receivedAt, originNode, incomingChannelOccupancy)
-        reputationRecorder_opt match {
-          case Some(reputationRecorder) =>
-            reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), upstream, channels.values.headOption.map(_.nextNodeId), r.relayFeeMsat, nodeParams.currentBlockHeight, r.outgoingCltv)
-          case None =>
-            context.self ! WrappedReputationScore(Reputation.Score.fromEndorsement(r.add.endorsement))
+        val accountable0 = r.add.accountable || nodeParams.relayParams.incomingChannelCongested(upstream.incomingChannelOccupancy)
+        val accountable = if (accountable0 && !r.payload.upgradeAccountability) {
+          // We don't yet enforce channel jamming protections: we log and update metrics as if we had failed that payment,
+          // but we currently relay it anyway. This will let us analyze data before actually activating jamming protection.
+          Metrics.recordPaymentRelayFailed(Tags.FailureType.Jamming, Tags.RelayType.Channel)
+          context.log.info("payment would have been rejected if jamming protection was activated")
+          false
+        } else {
+          accountable0
+        }
+        val nextNodeId_opt = channels.values.headOption.map(_.nextNodeId)
+        (reputationRecorder_opt, nextNodeId_opt) match {
+          case (Some(reputationRecorder), Some(nextNodeId)) =>
+            reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), nextNodeId, r.relayFeeMsat, nodeParams.currentBlockHeight, r.outgoingCltv, accountable)
+          case _ =>
+            context.self ! WrappedReputationScore(Reputation.Score.max(accountable))
         }
         Behaviors.receiveMessagePartial {
           case WrappedReputationScore(score) =>
@@ -234,8 +245,8 @@ class ChannelRelay private(nodeParams: NodeParams,
   private def waitForAddSettled(): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill)) =>
-        context.log.info("relaying fulfill to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.incomingConfidence, upstream.receivedFrom, htlc.channelId)
-        Metrics.relayFulfill(reputationScore.incomingConfidence)
+        context.log.info("relaying fulfill to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.outgoingConfidence, upstream.receivedFrom, htlc.channelId)
+        Metrics.relayFulfill(reputationScore.outgoingConfidence)
         val downstreamAttribution_opt = fulfill match {
           case HtlcResult.RemoteFulfill(fulfill) => fulfill.attribution_opt
           case HtlcResult.OnChainFulfill(_) => None
@@ -247,8 +258,8 @@ class ChannelRelay private(nodeParams: NodeParams,
         safeSendAndStop(upstream.add.channelId, cmd)
 
       case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fail: HtlcResult.Fail)) =>
-        context.log.info("relaying fail to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.incomingConfidence, upstream.receivedFrom, htlc.channelId)
-        Metrics.relayFail(reputationScore.incomingConfidence)
+        context.log.info("relaying fail to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.outgoingConfidence, upstream.receivedFrom, htlc.channelId)
+        Metrics.relayFail(reputationScore.outgoingConfidence)
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
         val cmd = translateRelayFailure(upstream.add.id, fail, Some(upstream.receivedAt))
         recordRelayDuration(isSuccess = false)

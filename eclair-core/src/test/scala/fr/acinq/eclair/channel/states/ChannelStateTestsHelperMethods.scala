@@ -490,7 +490,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
     val paymentHash = Crypto.sha256(paymentPreimage)
     val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight)
     val recipient = SpontaneousRecipient(destination, amount, expiry, paymentPreimage)
-    val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(replyTo, upstream), paymentHash, makeSingleHopRoute(amount, destination), recipient, Reputation.Score.max)
+    val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(replyTo, upstream), paymentHash, makeSingleHopRoute(amount, destination), recipient, Reputation.Score.max(accountable = false))
     (paymentPreimage, payment.cmd.copy(commit = false))
   }
 

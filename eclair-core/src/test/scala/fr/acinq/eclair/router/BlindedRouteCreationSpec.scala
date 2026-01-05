@@ -104,7 +104,7 @@ class BlindedRouteCreationSpec extends AnyFunSuite with ParallelTestExecution {
       ChannelHop(scid5, e.publicKey, f.publicKey, HopRelayParams.FromAnnouncement(makeUpdateShort(scid5, e.publicKey, f.publicKey, 999999999 msat, 999999999, cltvDelta = CltvExpiryDelta(65000)))),
     )
     val route = createBlindedRouteFromHops(hops, f.publicKey, randomBytes32(), 0 msat, CltvExpiry(0))
-    assert(route.route.encryptedPayloads.dropRight(1).forall(_.length == 54))
+    assert(route.route.encryptedPayloads.dropRight(1).forall(_.length == 56))
   }
 
 }

@@ -78,7 +78,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(request.ignore == ignore)
     assert(request.paymentContext.contains(cfg.paymentContext))
   }
-  
+
   case class PaymentFixture(cfg: SendPaymentConfig,
                             nodeParams: NodeParams,
                             paymentFSM: TestFSMRef[PaymentLifecycle.State, PaymentLifecycle.Data, PaymentLifecycle],
@@ -92,11 +92,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   def createPaymentLifecycle(invoice: Invoice, storeInDb: Boolean = true, publishEvent: Boolean = true, recordMetrics: Boolean = true): PaymentFixture = {
     val (id, parentId) = (UUID.randomUUID(), UUID.randomUUID())
     val nodeParams = TestConstants.Alice.nodeParams.copy(nodeKeyManager = testNodeKeyManager, channelKeyManager = testChannelKeyManager)
-    val cfg = SendPaymentConfig(id, parentId, Some(defaultExternalId), defaultPaymentHash, invoice.nodeId, Upstream.Local(id), Some(invoice), None, storeInDb, publishEvent, recordMetrics)
+    val cfg = SendPaymentConfig(id, parentId, Some(defaultExternalId), defaultPaymentHash, invoice.nodeId, Upstream.Local(id), Some(invoice), None, storeInDb, publishEvent, recordMetrics, accountable = false)
     val (routerForwarder, register, sender, monitor, eventListener, metricsListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
     val reputationRecorder = system.spawnAnonymous(Behaviors.receiveMessage[ReputationRecorder.GetConfidence](getConfidence => {
-      assert(getConfidence.upstream.isInstanceOf[Upstream.Local])
-      getConfidence.replyTo ! Reputation.Score.max
+      getConfidence.replyTo ! Reputation.Score.max(accountable = false)
       Behaviors.same
     }))
     val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, cfg, routerForwarder.ref, register.ref, Some(reputationRecorder)))
@@ -110,7 +109,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   def addCompleted(result: HtlcResult) = {
     RES_ADD_SETTLED(
       origin = defaultOrigin,
-      htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, defaultAmountMsat, defaultPaymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None),
+      htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, defaultAmountMsat, defaultPaymentHash, defaultExpiry, TestConstants.emptyOnionPacket, None, accountable = false, None),
       result)
   }
 
@@ -217,7 +216,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val recipientNodeId = randomKey().publicKey
     val route = PredefinedNodeRoute(defaultAmountMsat, Seq(a, b, c, recipientNodeId))
     val extraEdges = Seq(ExtraEdge(c, recipientNodeId, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144), 1 msat, None))
-    val recipient = ClearRecipient(recipientNodeId, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, extraEdges)
+    val recipient = ClearRecipient(recipientNodeId, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, upgradeAccountability = false, extraEdges)
     val request = SendPaymentToRoute(sender.ref, Left(route), recipient)
 
     sender.send(paymentFSM, request)
@@ -273,7 +272,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, ClearRecipient(f, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret), 5, defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, ClearRecipient(f, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, upgradeAccountability = false), 5, defaultRouteParams)
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val routeRequest = routerForwarder.expectMsgType[RouteRequest]
@@ -331,7 +330,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     val paymentMetadataTooBig = ByteVector.fromValidHex("01" * 1300)
-    val request = SendPaymentToNode(sender.ref, ClearRecipient(d, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, paymentMetadata_opt = Some(paymentMetadataTooBig)), 5, defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, ClearRecipient(d, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, paymentMetadata_opt = Some(paymentMetadataTooBig), upgradeAccountability = false), 5, defaultRouteParams)
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val routeRequest = routerForwarder.expectMsgType[RouteRequest]
@@ -616,7 +615,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     // we build an assisted route for channel bc and cd
-    val recipient = ClearRecipient(d, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, Seq(
+    val recipient = ClearRecipient(d, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, upgradeAccountability = false, Seq(
       ExtraEdge(b, c, scid_bc, update_bc.feeBaseMsat, update_bc.feeProportionalMillionths, update_bc.cltvExpiryDelta, 1 msat, None),
       ExtraEdge(c, d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta, 1 msat, None)
     ))
@@ -658,7 +657,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     // we build an assisted route for channel cd
-    val recipient = ClearRecipient(d, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, Seq(
+    val recipient = ClearRecipient(d, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, upgradeAccountability = false, Seq(
       ExtraEdge(c, d, scid_cd, update_cd.feeBaseMsat, update_cd.feeProportionalMillionths, update_cd.cltvExpiryDelta, 1 msat, None)
     ))
     val request = SendPaymentToNode(sender.ref, recipient, 1, defaultRouteParams)
@@ -813,7 +812,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
 
     // we send a payment to H
-    val request = SendPaymentToNode(sender.ref, ClearRecipient(h, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret), 5, defaultRouteParams)
+    val request = SendPaymentToNode(sender.ref, ClearRecipient(h, Features.empty, defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret, upgradeAccountability = false), 5, defaultRouteParams)
     sender.send(paymentFSM, request)
     routerForwarder.expectMsgType[RouteRequest]
 

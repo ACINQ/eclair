@@ -513,7 +513,7 @@ class RouterSpec extends BaseRouterSpec {
     val extraHop_cx = ExtraHop(c, ShortChannelId(1), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_xy = ExtraHop(x, ShortChannelId(2), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20 msat, 21, CltvExpiryDelta(22))
-    val recipient = ClearRecipient(z, Features.empty, DEFAULT_AMOUNT_MSAT, DEFAULT_EXPIRY, ByteVector32.One, Bolt11Invoice.toExtraEdges(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil, z))
+    val recipient = ClearRecipient(z, Features.empty, DEFAULT_AMOUNT_MSAT, DEFAULT_EXPIRY, ByteVector32.One, upgradeAccountability = false, Bolt11Invoice.toExtraEdges(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil, z))
     router ! RouteRequest(sender.ref, a, recipient, DEFAULT_ROUTE_PARAMS)
     val res = sender.expectMessageType[RouteResponse]
     assert(route2NodeIds(res.routes.head) == Seq(a, b, c, x, y, z))
@@ -524,7 +524,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TypedProbe[PaymentRouteResponse]()(system.toTyped)
     val routeParams = DEFAULT_ROUTE_PARAMS.copy(boundaries = SearchBoundaries(15 msat, 0.0, 6, CltvExpiryDelta(1008)))
-    val recipient = ClearRecipient(c, Features.empty, 500_000 msat, DEFAULT_EXPIRY, randomBytes32())
+    val recipient = ClearRecipient(c, Features.empty, 500_000 msat, DEFAULT_EXPIRY, randomBytes32(), upgradeAccountability = false)
     router ! RouteRequest(sender.ref, a, recipient, routeParams)
     val route1 = sender.expectMessageType[RouteResponse].routes.head
     assert(route1.amount == 500_000.msat)
