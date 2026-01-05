@@ -47,6 +47,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
   require(tags.collect { case _: Bolt11Invoice.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case Bolt11Invoice.Description(_) | Bolt11Invoice.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
   require(tags.collect { case _: Bolt11Invoice.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag")
+  require(tags.collect { case f: Bolt11Invoice.FallbackAddress => Try(FallbackAddress(Bolt11Invoice.FallbackAddress.toAddress(f, prefix))) }.forall(_.isSuccess), "invalid fallback address")
   require(Features.validateFeatureGraph(features).isEmpty, Features.validateFeatureGraph(features).map(_.message))
 
   lazy val paymentHash: ByteVector32 = tags.collectFirst { case p: Bolt11Invoice.PaymentHash => p.hash }.get
@@ -269,16 +270,15 @@ object Bolt11Invoice {
     }
 
     def toAddress(f: FallbackAddress, prefix: String): String = {
-      import f.data
       f.version match {
-        case 17 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.PubkeyAddress, data.toArray)
-        case 18 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.ScriptAddress, data.toArray)
-        case 17 if prefix == "lntb" || prefix == "lnbcrt" || prefix == "lntbs" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, data.toArray)
-        case 18 if prefix == "lntb" || prefix == "lnbcrt" || prefix == "lntbs" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, data.toArray)
-        case version if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, data.toArray)
-        case version if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, data.toArray)
-        case version if prefix == "lnbcrt" => Bech32.encodeWitnessAddress("bcrt", version, data.toArray)
-        case version if prefix == "lntbs" => Bech32.encodeWitnessAddress("tb", version, data.toArray)
+        case 17 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.PubkeyAddress, f.data.toArray)
+        case 18 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.ScriptAddress, f.data.toArray)
+        case 17 if prefix == "lntb" || prefix == "lnbcrt" || prefix == "lntbs" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, f.data.toArray)
+        case 18 if prefix == "lntb" || prefix == "lnbcrt" || prefix == "lntbs" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, f.data.toArray)
+        case version if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, f.data.toArray)
+        case version if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, f.data.toArray)
+        case version if prefix == "lnbcrt" => Bech32.encodeWitnessAddress("bcrt", version, f.data.toArray)
+        case version if prefix == "lntbs" => Bech32.encodeWitnessAddress("tb", version, f.data.toArray)
       }
     }
   }
@@ -516,11 +516,11 @@ object Bolt11Invoice {
     val lowercaseInput = input.toLowerCase
     val separatorIndex = lowercaseInput.lastIndexOf('1')
     val hrp = lowercaseInput.take(separatorIndex)
-    val prefix: String = prefixes.values.toSeq.sortBy(_.length).findLast(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
+    val prefix = prefixes.values.toSeq.sortBy(_.length).findLast(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
     val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.length - 6)) // 6 == checksum size
     val bolt11Data = Codecs.bolt11DataCodec.decode(data).require.value
     val signature = ByteVector64(bolt11Data.signature.take(64))
-    val message: ByteVector = ByteVector.view(hrp.getBytes) ++ data.dropRight(520).toByteVector // we drop the sig bytes
+    val message = ByteVector.view(hrp.getBytes) ++ data.dropRight(520).toByteVector // we drop the sig bytes
     val recid = bolt11Data.signature.last
     val pub = Crypto.recoverPublicKey(signature, Crypto.sha256(message), recid)
     // README: since we use pubkey recovery to compute the node id from the message and signature, we don't check the signature.
