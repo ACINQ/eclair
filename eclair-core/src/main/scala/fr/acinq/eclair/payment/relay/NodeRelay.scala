@@ -340,11 +340,14 @@ class NodeRelay private(nodeParams: NodeParams,
     context.log.debug("relaying trampoline payment (amountIn={} expiryIn={} amountOut={} expiryOut={} isWallet={})", upstream.amountIn, upstream.expiryIn, amountOut, expiryOut, walletNodeId_opt.isDefined)
     // We only make one try when it's a direct payment to a wallet.
     val maxPaymentAttempts = if (walletNodeId_opt.isDefined) 1 else nodeParams.maxPaymentAttempts
-    val accountable = upstream.accountable || nodeParams.relayParams.incomingChannelCongested(upstream.incomingChannelOccupancy)
-    if (accountable && !upgradeAccountability) {
+    val accountable0 = upstream.accountable || nodeParams.relayParams.incomingChannelCongested(upstream.incomingChannelOccupancy)
+    val accountable = if (accountable0 && !upgradeAccountability) {
       // We don't yet enforce channel jamming protections: we log that we would have failed that payment, but we
       // currently relay it anyway. This will let us analyze data before actually activating jamming protection.
       context.log.info("payment would have been rejected if jamming protection was activated")
+      false
+    } else {
+      accountable0
     }
     val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, recipient.nodeId, upstream, None, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, accountable)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, amountOut, expiryOut)

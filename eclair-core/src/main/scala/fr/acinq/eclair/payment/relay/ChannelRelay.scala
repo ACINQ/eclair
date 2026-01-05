@@ -77,7 +77,16 @@ object ChannelRelay {
         paymentHash_opt = Some(r.add.paymentHash),
         nodeAlias_opt = Some(nodeParams.alias))) {
         val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), r.receivedAt, originNode, incomingChannelOccupancy)
-        val accountable = r.add.accountable || nodeParams.relayParams.incomingChannelCongested(upstream.incomingChannelOccupancy)
+        val accountable0 = r.add.accountable || nodeParams.relayParams.incomingChannelCongested(upstream.incomingChannelOccupancy)
+        val accountable = if (accountable0 && !r.payload.upgradeAccountability) {
+          // We don't yet enforce channel jamming protections: we log and update metrics as if we had failed that payment,
+          // but we currently relay it anyway. This will let us analyze data before actually activating jamming protection.
+          Metrics.recordPaymentRelayFailed(Tags.FailureType.Jamming, Tags.RelayType.Channel)
+          context.log.info("payment would have been rejected if jamming protection was activated")
+          false
+        } else {
+          accountable0
+        }
         val nextNodeId_opt = channels.values.headOption.map(_.nextNodeId)
         (reputationRecorder_opt, nextNodeId_opt) match {
           case (Some(reputationRecorder), Some(nextNodeId)) =>
@@ -166,13 +175,6 @@ class ChannelRelay private(nodeParams: NodeParams,
   private case class PreviouslyTried(channelId: ByteVector32, failure: RES_ADD_FAILED[ChannelException])
 
   def start(): Behavior[Command] = {
-    val accountable = r.add.accountable || nodeParams.relayParams.incomingChannelCongested(upstream.incomingChannelOccupancy)
-    if (accountable && !r.payload.upgradeAccountability) {
-      // We don't yet enforce channel jamming protections: we log and update metrics as if we had failed that payment,
-      // but we currently relay it anyway. This will let us analyze data before actually activating jamming protection.
-      Metrics.recordPaymentRelayFailed(Tags.FailureType.Jamming, Tags.RelayType.Channel)
-      context.log.info("payment would have been rejected if jamming protection was activated")
-    }
     walletNodeId_opt match {
       case Some(walletNodeId) if nodeParams.peerWakeUpConfig.enabled => wakeUp(walletNodeId)
       case _ =>
