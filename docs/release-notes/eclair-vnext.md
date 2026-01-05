@@ -15,7 +15,7 @@ If you still have such channels, eclair won't start: you will need to close thos
 
 ### API changes
 
-<insert changes>
+- `findroute`, `findroutetonode` and `findroutebetweennodes` now include a `maxCltvExpiryDelta` parameter (#3234)
 
 ### Miscellaneous improvements and bug fixes
 
