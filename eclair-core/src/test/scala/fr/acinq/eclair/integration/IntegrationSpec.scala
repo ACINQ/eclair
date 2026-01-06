@@ -113,6 +113,10 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     s"eclair.features.${AnchorOutputsZeroFeeHtlcTx.rfcName}" -> "optional"
   ).asJava).withFallback(commonFeatures)
 
+  val withTaprootChannels = ConfigFactory.parseMap(Map(
+    s"eclair.features.${SimpleTaprootChannels.rfcName}" -> "optional"
+  ).asJava).withFallback(commonFeatures)
+
   val withDualFunding = ConfigFactory.parseMap(Map(
     s"eclair.features.${DualFunding.rfcName}" -> "optional"
   ).asJava).withFallback(commonFeatures)

@@ -56,6 +56,7 @@ trait BitcoindService extends Logging {
   val bitcoindRpcPort: Int = TestUtils.availablePort
   val bitcoindZmqBlockPort: Int = TestUtils.availablePort
   val bitcoindZmqTxPort: Int = TestUtils.availablePort
+  val bitcoindZmqRawBlockPort: Int = TestUtils.availablePort
 
   val INTEGRATION_TMP_DIR: File = TestUtils.newIntegrationTmpDir()
   logger.info(s"using tmp dir: $INTEGRATION_TMP_DIR")
@@ -103,6 +104,7 @@ trait BitcoindService extends Logging {
           .replace("28332", bitcoindRpcPort.toString)
           .replace("28334", bitcoindZmqBlockPort.toString)
           .replace("28335", bitcoindZmqTxPort.toString)
+          .replace("28336", bitcoindZmqRawBlockPort.toString)
           .appendedAll(defaultAddressType_opt.map(addressType => s"addresstype=$addressType\n").getOrElse(""))
           .appendedAll(changeAddressType_opt.map(addressType => s"changetype=$addressType\n").getOrElse(""))
           .appendedAll(mempoolSize_opt.map(mempoolSize => s"maxmempool=$mempoolSize\n").getOrElse(""))
