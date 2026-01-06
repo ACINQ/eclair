@@ -168,7 +168,7 @@ object Sync {
     var updateCount = 0
     var nodeCount = 0
 
-    processChannelQuery(nodes, channels)(
+    processChannelQuery(nodes, channels,
       q.shortChannelIds.array,
       flags,
       ca => {
@@ -291,13 +291,13 @@ object Sync {
    * @param onNode    called when a node announcement matches
    *
    */
-  def processChannelQuery(nodes: Map[PublicKey, NodeAnnouncement],
-                          channels: SortedMap[RealShortChannelId, PublicChannel])(
-                           ids: List[RealShortChannelId],
-                           flags: List[Long],
-                           onChannel: ChannelAnnouncement => Unit,
-                           onUpdate: ChannelUpdate => Unit,
-                           onNode: NodeAnnouncement => Unit)(implicit log: LoggingAdapter): Unit = {
+  private def processChannelQuery(nodes: Map[PublicKey, NodeAnnouncement],
+                                  channels: SortedMap[RealShortChannelId, PublicChannel],
+                                  ids: List[RealShortChannelId],
+                                  flags: List[Long],
+                                  onChannel: ChannelAnnouncement => Unit,
+                                  onUpdate: ChannelUpdate => Unit,
+                                  onNode: NodeAnnouncement => Unit)(implicit log: LoggingAdapter): Unit = {
     import QueryShortChannelIdsTlv.QueryFlagType
 
     // we loop over channel ids and query flag. We track node Ids for node announcement
@@ -500,7 +500,7 @@ object Sync {
       checksums = checksums)
   }
 
-  def addToSync(syncMap: Map[PublicKey, Syncing], current: Syncing, remoteNodeId: PublicKey, pending: List[QueryShortChannelIds]): (Map[PublicKey, Syncing], Option[QueryShortChannelIds]) = {
+  private def addToSync(syncMap: Map[PublicKey, Syncing], current: Syncing, remoteNodeId: PublicKey, pending: List[QueryShortChannelIds]): (Map[PublicKey, Syncing], Option[QueryShortChannelIds]) = {
     pending match {
       case head :: rest =>
         // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not
