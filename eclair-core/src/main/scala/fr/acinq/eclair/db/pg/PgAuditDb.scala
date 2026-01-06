@@ -131,7 +131,6 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, mining_fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
 
-          statement.executeUpdate("CREATE TABLE audit.channel_errors (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal BOOLEAN NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON audit.sent(timestamp)")
           statement.executeUpdate("CREATE INDEX received_timestamp_idx ON audit.received(timestamp)")
           statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON audit.relayed(timestamp)")
@@ -140,7 +139,6 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON audit.relayed_trampoline(payment_hash)")
           statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON audit.relayed(channel_id)")
           statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON audit.channel_events(timestamp)")
-          statement.executeUpdate("CREATE INDEX channel_errors_timestamp_idx ON audit.channel_errors(timestamp)")
           statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON audit.channel_updates(channel_id)")
           statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON audit.channel_updates(node_id)")
           statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON audit.channel_updates(timestamp)")
@@ -300,24 +298,6 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setString(2, e.channelId.toHex)
         statement.setString(3, e.remoteNodeId.value.toHex)
         statement.setTimestamp(4, Timestamp.from(Instant.now()))
-        statement.executeUpdate()
-      }
-    }
-  }
-
-  override def add(e: ChannelErrorOccurred): Unit = withMetrics("audit/add-channel-error", DbBackends.Postgres) {
-    inTransaction { pg =>
-      using(pg.prepareStatement("INSERT INTO audit.channel_errors VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-        val (errorName, errorMessage) = e.error match {
-          case LocalError(t) => (t.getClass.getSimpleName, t.getMessage)
-          case RemoteError(error) => ("remote", error.toAscii)
-        }
-        statement.setString(1, e.channelId.toHex)
-        statement.setString(2, e.remoteNodeId.value.toHex)
-        statement.setString(3, errorName)
-        statement.setString(4, errorMessage)
-        statement.setBoolean(5, e.isFatal)
-        statement.setTimestamp(6, Timestamp.from(Instant.now()))
         statement.executeUpdate()
       }
     }

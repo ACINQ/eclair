@@ -38,8 +38,6 @@ trait AuditDb {
 
   def add(txConfirmed: TransactionConfirmed): Unit
 
-  def add(channelErrorOccurred: ChannelErrorOccurred): Unit
-
   def addChannelUpdate(channelUpdateParametersChanged: ChannelUpdateParametersChanged): Unit
 
   def addPathFindingExperimentMetrics(metrics: PathFindingExperimentMetrics): Unit
