@@ -124,7 +124,6 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE relayed (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, channel_id BLOB NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE relayed_trampoline (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, next_node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL)")
         statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, mining_fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
@@ -138,7 +137,6 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON relayed_trampoline(timestamp)")
         statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON relayed_trampoline(payment_hash)")
         statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON channel_events(timestamp)")
-        statement.executeUpdate("CREATE INDEX channel_errors_timestamp_idx ON channel_errors(timestamp)")
         statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON channel_updates(channel_id)")
         statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON channel_updates(node_id)")
         statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON channel_updates(timestamp)")
@@ -284,22 +282,6 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(2, e.channelId.toArray)
       statement.setBytes(3, e.remoteNodeId.value.toArray)
       statement.setLong(4, TimestampMilli.now().toLong)
-      statement.executeUpdate()
-    }
-  }
-
-  override def add(e: ChannelErrorOccurred): Unit = withMetrics("audit/add-channel-error", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO channel_errors VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-      val (errorName, errorMessage) = e.error match {
-        case LocalError(t) => (t.getClass.getSimpleName, t.getMessage)
-        case RemoteError(error) => ("remote", error.toAscii)
-      }
-      statement.setBytes(1, e.channelId.toArray)
-      statement.setBytes(2, e.remoteNodeId.value.toArray)
-      statement.setString(3, errorName)
-      statement.setString(4, errorMessage)
-      statement.setBoolean(5, e.isFatal)
-      statement.setLong(6, TimestampMilli.now().toLong)
       statement.executeUpdate()
     }
   }

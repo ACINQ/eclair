@@ -100,7 +100,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
     case e: ChannelLiquidityPurchased => liquidityDb.addPurchase(e)
 
     case e: TransactionPublished =>
-      log.info(s"paying mining fee=${e.miningFee} for txid=${e.tx.txid} desc=${e.desc}")
+      log.info("paying mining fee={} for txid={} desc={}", e.miningFee, e.tx.txid, e.desc)
       auditDb.add(e)
 
     case e: TransactionConfirmed =>
@@ -108,15 +108,13 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
       auditDb.add(e)
 
     case e: ChannelErrorOccurred =>
-      // first pattern matching level is to ignore some errors, second level is to separate between different kind of errors
+      // The first pattern matching level is to ignore some errors, the second level is to separate between different kind of errors.
       e.error match {
         case LocalError(_: CannotAffordFees) => () // will be thrown at each new block if our balance is too low to update the commitment fee
-        case _ =>
-          e.error match {
-            case LocalError(_) => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Local).withTag(ChannelTags.Fatal, value = e.isFatal).increment()
-            case RemoteError(_) => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Remote).increment()
-          }
-          auditDb.add(e)
+        case _ => e.error match {
+          case LocalError(_) => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Local).withTag(ChannelTags.Fatal, value = e.isFatal).increment()
+          case RemoteError(_) => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Remote).increment()
+        }
       }
 
     case e: ChannelStateChanged =>
@@ -127,7 +125,6 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
           val event = ChannelEvent.EventType.Created
           auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.latest.capacity, commitments.localChannelParams.isChannelOpener, !commitments.announceChannel, event))
           channelsDb.updateChannelMeta(channelId, event)
-        case ChannelStateChanged(_, _, _, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
         case ChannelStateChanged(_, channelId, _, _, OFFLINE, SYNCING, _) =>
           channelsDb.updateChannelMeta(channelId, ChannelEvent.EventType.Connected)
         case ChannelStateChanged(_, _, _, _, _, CLOSING, _) =>
