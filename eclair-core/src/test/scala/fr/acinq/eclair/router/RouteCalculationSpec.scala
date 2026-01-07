@@ -125,7 +125,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     )), 1 day)
 
     val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 7 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000))
-    val weightedPath = Graph.pathWeight(graph.balances, a, route2Edges(route), amount, BlockHeight(0), NO_WEIGHT_RATIOS, includeLocalChannelCost = false)
+    val weightedPath = Graph.pathWeight(graph.balances, a, route2Edges(route), amount, BlockHeight(0), NO_WEIGHT_RATIOS, includeLocalChannelCost = false, graph.graph, enableInboundFees = false)
     assert(route2Ids(route) == 4 :: 5 :: 6 :: Nil)
     assert(weightedPath.length == 3)
     assert(weightedPath.amount == expectedCost)
@@ -787,7 +787,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     for (_ <- 0 to 10) {
       val Success(routes) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, strictFee, numRoutes = 3, routeParams = strictFeeParams, currentBlockHeight = BlockHeight(400000))
       assert(routes.length == 2, routes)
-      val weightedPath = Graph.pathWeight(g.balances, a, route2Edges(routes.head), DEFAULT_AMOUNT_MSAT, BlockHeight(400000), NO_WEIGHT_RATIOS, includeLocalChannelCost = false)
+      val weightedPath = Graph.pathWeight(g.balances, a, route2Edges(routes.head), DEFAULT_AMOUNT_MSAT, BlockHeight(400000), NO_WEIGHT_RATIOS, includeLocalChannelCost = false, g.graph, enableInboundFees = false)
       val totalFees = weightedPath.amount - DEFAULT_AMOUNT_MSAT
       // over the three routes we could only get the 2 cheapest because the third is too expensive (over 7 msat of fees)
       assert(totalFees == 5.msat || totalFees == 6.msat)
