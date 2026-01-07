@@ -6,8 +6,8 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.channel.ChannelReadyForPayments
 import fr.acinq.eclair.{Logs, NodeParams}
-import fr.acinq.eclair.channel.ChannelOpened
 import fr.acinq.eclair.io.IncomingConnectionsTracker.Command
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.Peer.{Disconnect, DisconnectResponse}
@@ -46,7 +46,7 @@ object IncomingConnectionsTracker {
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(category_opt = Some(LogCategory.CONNECTION))) {
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerDisconnected](c => ForgetIncomingConnection(c.nodeId)))
-        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelOpened](c => ForgetIncomingConnection(c.remoteNodeId)))
+        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelReadyForPayments](c => ForgetIncomingConnection(c.remoteNodeId)))
         new IncomingConnectionsTracker(nodeParams, switchboard, context).tracking(Map.empty)
       }
     }

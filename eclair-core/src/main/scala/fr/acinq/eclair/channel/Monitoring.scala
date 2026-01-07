@@ -94,6 +94,7 @@ object Monitoring {
 
     object Events {
       val Created = "created"
+      val Spliced = "spliced"
       val Closing = "closing"
       val Closed = "closed"
     }

@@ -114,18 +114,18 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     bob.underlyingActor.nodeParams.db.peers.addOrUpdateRelayFees(alice.underlyingActor.nodeParams.nodeId, RelayFees(25 msat, 90))
 
     val listenerA = TestProbe()
-    alice.underlying.system.eventStream.subscribe(listenerA.ref, classOf[ChannelOpened])
+    alice.underlying.system.eventStream.subscribe(listenerA.ref, classOf[ChannelReadyForPayments])
     val listenerB = TestProbe()
-    bob.underlying.system.eventStream.subscribe(listenerB.ref, classOf[ChannelOpened])
+    bob.underlying.system.eventStream.subscribe(listenerB.ref, classOf[ChannelReadyForPayments])
 
     val aliceChannelReady = alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob, aliceChannelReady)
-    listenerB.expectMsg(ChannelOpened(bob, alice.underlyingActor.nodeParams.nodeId, channelId(bob)))
+    assert(listenerB.expectMsgType[ChannelReadyForPayments].channelId == channelId(bob))
     awaitCond(bob.stateName == NORMAL)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val bobChannelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice, bobChannelReady)
-    listenerA.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
+    assert(listenerA.expectMsgType[ChannelReadyForPayments].channelId == channelId(alice))
     awaitCond(alice.stateName == NORMAL)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
 
@@ -172,18 +172,18 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     import f._
 
     val listenerA = TestProbe()
-    alice.underlying.system.eventStream.subscribe(listenerA.ref, classOf[ChannelOpened])
+    alice.underlying.system.eventStream.subscribe(listenerA.ref, classOf[ChannelReadyForPayments])
     val listenerB = TestProbe()
-    bob.underlying.system.eventStream.subscribe(listenerB.ref, classOf[ChannelOpened])
+    bob.underlying.system.eventStream.subscribe(listenerB.ref, classOf[ChannelReadyForPayments])
 
     val aliceChannelReady = alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob, aliceChannelReady)
-    listenerB.expectMsg(ChannelOpened(bob, alice.underlyingActor.nodeParams.nodeId, channelId(bob)))
+    assert(listenerB.expectMsgType[ChannelReadyForPayments].channelId == channelId(bob))
     awaitCond(bob.stateName == NORMAL)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val bobChannelReady = bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice, bobChannelReady)
-    listenerA.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
+    assert(listenerA.expectMsgType[ChannelReadyForPayments].channelId == channelId(alice))
     awaitCond(alice.stateName == NORMAL)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
 

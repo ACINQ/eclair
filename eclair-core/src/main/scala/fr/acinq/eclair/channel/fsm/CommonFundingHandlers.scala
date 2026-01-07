@@ -102,6 +102,8 @@ trait CommonFundingHandlers extends CommonHandlers {
             // Children splice transactions may already spend that confirmed funding transaction.
             val spliceSpendingTxs = commitments1.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
             watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet, None)
+            // We notify listeners that this funding transaction is now confirmed.
+            context.system.eventStream.publish(ChannelFundingConfirmed(self, d.channelId, remoteNodeId, w.tx.txid, c.fundingTxIndex, w.blockHeight, commitments1))
             // We can unwatch the previous funding transaction(s), which have been spent by this splice transaction.
             d.commitments.all.collect { case c if c.fundingTxIndex < commitment.fundingTxIndex => blockchain ! UnwatchFundingSpent(c.fundingTxId, c.fundingInput.index.toInt) }
             // In the dual-funding/splicing case we can forget all other transactions (RBF attempts), they have been
@@ -144,7 +146,8 @@ trait CommonFundingHandlers extends CommonHandlers {
     aliases1.remoteAlias_opt.foreach(_ => context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, None, aliases1, remoteNodeId)))
     log.info("shortIds: real={} localAlias={} remoteAlias={}", commitments.latest.shortChannelId_opt.getOrElse("none"), aliases1.localAlias, aliases1.remoteAlias_opt.getOrElse("none"))
     // We notify that the channel is now ready to route payments.
-    context.system.eventStream.publish(ChannelOpened(self, remoteNodeId, commitments.channelId))
+    context.system.eventStream.publish(ChannelReadyForPayments(self, remoteNodeId, commitments.channelId, commitments.latest.fundingTxId, fundingTxIndex = 0))
+    peer ! ChannelReadyForPayments(self, remoteNodeId, commitments.channelId, commitments.latest.fundingTxId, fundingTxIndex = 0)
     // We create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced.
     val scidForChannelUpdate = Helpers.scidForChannelUpdate(channelAnnouncement_opt = None, aliases1.localAlias)
     log.info("using shortChannelId={} for initial channel_update", scidForChannelUpdate)
@@ -161,7 +164,6 @@ trait CommonFundingHandlers extends CommonHandlers {
       remoteNextCommitInfo = Right(channelReady.nextPerCommitmentPoint)
     )
     channelReady.nextCommitNonce_opt.foreach(nonce => remoteNextCommitNonces = remoteNextCommitNonces + (commitments.latest.fundingTxId -> nonce))
-    peer ! ChannelReadyForPayments(self, remoteNodeId, commitments.channelId, fundingTxIndex = 0)
     DATA_NORMAL(commitments1, aliases1, None, initialChannelUpdate, SpliceStatus.NoSplice, None, None, None)
   }
 

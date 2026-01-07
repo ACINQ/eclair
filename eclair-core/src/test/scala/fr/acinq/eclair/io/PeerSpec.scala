@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentFeerates, DummyOnChainWallet}
@@ -752,7 +753,7 @@ class PeerSpec extends FixtureSpec {
     val peerConnection1 = peerConnection
     nodeParams.db.peers.updateStorage(remoteNodeId, hex"abcdef")
     connect(remoteNodeId, peer, peerConnection1, switchboard, channels = Set(channel), peerStorage = Some(hex"abcdef"))
-    peer ! ChannelReadyForPayments(ActorRef.noSender, channel.remoteNodeId, channel.channelId, channel.commitments.latest.fundingTxIndex)
+    peer ! ChannelReadyForPayments(ActorRef.noSender, channel.remoteNodeId, channel.channelId, channel.commitments.latest.fundingTxId, channel.commitments.latest.fundingTxIndex)
     peerConnection1.send(peer, PeerStorageStore(hex"deadbeef"))
     peerConnection1.send(peer, PeerStorageStore(hex"0123456789"))
 
@@ -798,7 +799,7 @@ class PeerSpec extends FixtureSpec {
 
     // A channel is created, so we update the remote features in our DB.
     // We don't update the address because this was an incoming connection.
-    peer ! ChannelReadyForPayments(ActorRef.noSender, remoteNodeId, randomBytes32(), 0)
+    peer ! ChannelReadyForPayments(ActorRef.noSender, remoteNodeId, randomBytes32(), randomTxId(), 0)
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     assert(probe.expectMsgType[Peer.PeerInfo].features.contains(remoteFeatures2))
     assert(nodeParams.db.peers.getPeer(remoteNodeId).contains(nodeInfo1.copy(features = remoteFeatures2)))
@@ -827,7 +828,7 @@ class PeerSpec extends FixtureSpec {
 
     // The channel confirms, so we store the remote features in our DB.
     // We don't store the remote address because this was an incoming connection.
-    peer ! ChannelReadyForPayments(ActorRef.noSender, remoteNodeId, randomBytes32(), 0)
+    peer ! ChannelReadyForPayments(ActorRef.noSender, remoteNodeId, randomBytes32(), randomTxId(), 0)
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.DISCONNECTED)
     assert(nodeParams.db.peers.getPeer(remoteNodeId).contains(NodeInfo(remoteInit.features, None)))

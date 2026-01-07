@@ -30,6 +30,7 @@ import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshi, RealShortChannelId,
 
 trait ChannelEvent
 
+/** This event is sent when a channel has been created: however, it may not be ready to process payments yet (see [[ChannelReadyForPayments]]). */
 case class ChannelCreated(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isOpener: Boolean, temporaryChannelId: ByteVector32, commitTxFeerate: FeeratePerKw, fundingTxFeerate: Option[FeeratePerKw]) extends ChannelEvent
 
 // This trait can be used by non-standard channels to inject themselves into Register actor and thus make them usable for routing
@@ -50,11 +51,11 @@ case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, an
 /** This event will be sent if a channel was aborted before completing the opening flow. */
 case class ChannelAborted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32) extends ChannelEvent
 
-/** This event will be sent once a channel has been successfully opened and is ready to process payments. */
-case class ChannelOpened(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32) extends ChannelEvent
+/** This event is sent once a funding transaction (channel creation or splice) has been confirmed. */
+case class ChannelFundingConfirmed(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, fundingTxId: TxId, fundingTxIndex: Long, blockHeight: BlockHeight, commitments: Commitments) extends ChannelEvent
 
-/** This event is sent once channel_ready or splice_locked have been exchanged. */
-case class ChannelReadyForPayments(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, fundingTxIndex: Long) extends ChannelEvent
+/** This event is sent once channel_ready or splice_locked have been exchanged: the channel is ready to process payments. */
+case class ChannelReadyForPayments(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, fundingTxId: TxId, fundingTxIndex: Long) extends ChannelEvent
 
 case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, aliases: ShortIdAliases, remoteNodeId: PublicKey, announcement_opt: Option[AnnouncedCommitment], channelUpdate: ChannelUpdate, commitments: Commitments) extends ChannelEvent {
   /**
@@ -103,7 +104,7 @@ case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelI
 
 case class LocalCommitConfirmed(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, refundAtBlock: BlockHeight) extends ChannelEvent
 
-case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, commitments: Commitments) extends ChannelEvent
+case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, closingTxId: TxId, commitments: Commitments) extends ChannelEvent
 
 case class OutgoingHtlcAdded(add: UpdateAddHtlc, remoteNodeId: PublicKey, fee: MilliSatoshi)
 

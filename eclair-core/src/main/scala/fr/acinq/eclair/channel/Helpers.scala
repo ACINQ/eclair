@@ -603,14 +603,30 @@ object Helpers {
   object Closing {
 
     // @formatter:off
-    sealed trait ClosingType
-    case class MutualClose(tx: ClosingTx) extends ClosingType { override def toString: String = "mutual-close" }
-    case class LocalClose(localCommit: LocalCommit, localCommitPublished: LocalCommitPublished) extends ClosingType { override def toString: String = "local-close" }
-    sealed trait RemoteClose extends ClosingType { def remoteCommit: RemoteCommit; def remoteCommitPublished: RemoteCommitPublished }
+    sealed trait ClosingType { def closingTxId: TxId }
+    case class MutualClose(tx: ClosingTx) extends ClosingType {
+      override def closingTxId: TxId = tx.tx.txid
+      override def toString: String = "mutual-close"
+    }
+    case class LocalClose(localCommit: LocalCommit, localCommitPublished: LocalCommitPublished) extends ClosingType {
+      override def closingTxId: TxId = localCommitPublished.commitTx.txid
+      override def toString: String = "local-close"
+    }
+    sealed trait RemoteClose extends ClosingType {
+      def remoteCommit: RemoteCommit
+      def remoteCommitPublished: RemoteCommitPublished
+      override def closingTxId: TxId = remoteCommitPublished.commitTx.txid
+    }
     case class CurrentRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose { override def toString: String = "remote-close" }
     case class NextRemoteClose(remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished) extends RemoteClose { override def toString: String = "next-remote-close" }
-    case class RecoveryClose(remoteCommitPublished: RemoteCommitPublished) extends ClosingType { override def toString: String = "recovery-close" }
-    case class RevokedClose(revokedCommitPublished: RevokedCommitPublished) extends ClosingType { override def toString: String = "revoked-close" }
+    case class RecoveryClose(remoteCommitPublished: RemoteCommitPublished) extends ClosingType {
+      override def closingTxId: TxId = remoteCommitPublished.commitTx.txid
+      override def toString: String = "recovery-close"
+    }
+    case class RevokedClose(revokedCommitPublished: RevokedCommitPublished) extends ClosingType {
+      override def closingTxId: TxId = revokedCommitPublished.commitTx.txid
+      override def toString: String = "revoked-close"
+    }
     // @formatter:on
 
     /**

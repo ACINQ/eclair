@@ -2281,7 +2281,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       Closing.isClosed(d1, Some(tx)) match {
         case Some(closingType) =>
           log.info("channel closed (type={})", EventType.Closed(closingType).label)
-          context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.commitments))
+          context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, closingType.closingTxId, d.commitments))
           goto(CLOSED) using DATA_CLOSED(d1, closingType)
         case None =>
           stay() using d1 storing()
@@ -2746,8 +2746,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
               // We tell the peer that the channel is ready to process payments that may be queued.
               if (!shutdownInProgress) {
-                val fundingTxIndex = commitments1.active.map(_.fundingTxIndex).min
-                peer ! ChannelReadyForPayments(self, remoteNodeId, d.channelId, fundingTxIndex)
+                val c = commitments1.active.minBy(_.fundingTxIndex)
+                peer ! ChannelReadyForPayments(self, remoteNodeId, d.channelId, c.fundingTxId, c.fundingTxIndex)
               }
 
               goto(NORMAL) using d.copy(commitments = commitments1, spliceStatus = spliceStatus1, localShutdown = shutdown_opt) sending sendQueue
@@ -3033,7 +3033,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       val closingTx = d.findClosingTx(tx).get
       val closingType = MutualClose(closingTx)
       log.info("channel closed (type={})", EventType.Closed(closingType).label)
-      context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.commitments))
+      context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, closingType.closingTxId, d.commitments))
       goto(CLOSED) using DATA_CLOSED(d, closingTx)
 
     case Event(WatchFundingSpentTriggered(tx), d: ChannelDataWithCommitments) =>
@@ -3339,8 +3339,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     if (oldCommitments.active.size != newCommitments.active.size) {
       // Some commitments have been deactivated, which means our available balance changed, which may allow forwarding
       // payments that couldn't be forwarded before.
-      val fundingTxIndex = newCommitments.active.map(_.fundingTxIndex).min
-      peer ! ChannelReadyForPayments(self, remoteNodeId, newCommitments.channelId, fundingTxIndex)
+      val c = newCommitments.active.minBy(_.fundingTxIndex)
+      peer ! ChannelReadyForPayments(self, remoteNodeId, newCommitments.channelId, c.fundingTxId, c.fundingTxIndex)
     }
   }
 

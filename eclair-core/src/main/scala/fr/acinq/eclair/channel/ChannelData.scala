@@ -765,14 +765,7 @@ object DATA_CLOSED {
     commitmentFormat = d.commitments.latest.commitmentFormat.toString,
     announced = d.commitments.latest.channelParams.announceChannel,
     capacity = d.commitments.latest.capacity,
-    closingTxId = closingType match {
-      case Closing.MutualClose(closingTx) => closingTx.tx.txid
-      case Closing.LocalClose(_, localCommitPublished) => localCommitPublished.commitTx.txid
-      case Closing.CurrentRemoteClose(_, remoteCommitPublished) => remoteCommitPublished.commitTx.txid
-      case Closing.NextRemoteClose(_, remoteCommitPublished) => remoteCommitPublished.commitTx.txid
-      case Closing.RecoveryClose(remoteCommitPublished) => remoteCommitPublished.commitTx.txid
-      case Closing.RevokedClose(revokedCommitPublished) => revokedCommitPublished.commitTx.txid
-    },
+    closingTxId = closingType.closingTxId,
     closingType = closingType.toString,
     closingScript = d.finalScriptPubKey,
     localBalance = closingType match {
