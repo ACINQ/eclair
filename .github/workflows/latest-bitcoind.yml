@@ -26,7 +26,7 @@ jobs:
         working-directory: ./bitcoin
 
       - name: Init and configure cmake build
-        run: cmake -B build -DWITH_ZMQ=ON -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTS=OFF -DBUILD_BENCH=OFF
+        run: cmake -B build -DWITH_ZMQ=ON -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTS=OFF -DBUILD_BENCH=OFF -DENABLE_IPC=OFF
         working-directory: ./bitcoin
 
       - name: Build bitcoind
