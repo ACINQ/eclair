@@ -9,6 +9,23 @@
 We remove the code used to support legacy channels that don't use anchor outputs or taproot.
 If you still have such channels, eclair won't start: you will need to close those channels, and will only be able to update eclair once they have been successfully closed.
 
+### Channel lifecyle events rework
+
+Eclair emits several events during a channel lifecycle, which can be received by plugins or through the websocket.
+We reworked these events to be compatible with splicing and consistent with 0-conf:
+
+- we removed the `channel-opened` event
+- we introduced a `channel-confirmed` event
+- we introduced a `channel-ready` event
+
+The `channel-confirmed` event is emitted when the funding transaction or a splice transaction has enough confirmations.
+Listeners can use the `fundingTxIndex` to detect whether this is the initial channel funding (`fundingTxIndex = 0`) or a splice (`fundingTxIndex > 0`).
+
+The `channel-ready` event is emitted when the channel is ready to process payments, which generally happens after the `channel-confirmed` event.
+However, when using zero-conf, this event may be emitted before the `channel-confirmed` event.
+
+See #3237 for more details.
+
 ### Channel jamming accountability
 
 We update our channel jamming mitigation to match the latest draft of the [spec](https://github.com/lightning/bolts/pull/1280).
@@ -29,6 +46,7 @@ eclair.relay.reserved-for-accountable = 0.0
 ### API changes
 
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now include a `maxCltvExpiryDelta` parameter (#3234)
+- `channel-opened` was removed from the websocket in favor of `channel-confirmed` and `channel-ready` (#3237)
 
 ### Miscellaneous improvements and bug fixes
 

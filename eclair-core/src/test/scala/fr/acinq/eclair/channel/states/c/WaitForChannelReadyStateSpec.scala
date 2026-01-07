@@ -108,10 +108,10 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     assert(channelReady.alias_opt.contains(bobIds.localAlias))
     val listener = TestProbe()
-    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelOpened])
+    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelReadyForPayments])
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
-    listener.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
+    assert(listener.expectMsgType[ChannelReadyForPayments].channelId == channelId(alice))
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
@@ -156,9 +156,9 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     assert(channelReady.alias_opt.contains(bobIds.localAlias))
     val listener = TestProbe()
-    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelOpened])
+    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelReadyForPayments])
     bob2alice.forward(alice)
-    listener.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
+    assert(listener.expectMsgType[ChannelReadyForPayments].channelId == channelId(alice))
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)

@@ -22,6 +22,7 @@ import com.softwaremill.quicklens.ModifyPimp
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Transaction, TxId, TxOut}
+import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.filterPendingChannels
 import fr.acinq.eclair.router.Router.{GetNode, PublicNode, UnknownNode}
@@ -188,8 +189,8 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     system.eventStream ! Publish(ChannelIdAssigned(null, randomKey().publicKey, channelIdPrivate1, newChannelIdPrivate1))
 
     // ignore confirm/close/abort events for channels not tracked for a public peer
-    system.eventStream ! Publish(ChannelOpened(null, peerAtLimit1, newChannelId1))
-    system.eventStream ! Publish(ChannelClosed(null, channelIdAtLimit1, null, commitments(peerBelowLimit1, randomBytes32())))
+    system.eventStream ! Publish(ChannelReadyForPayments(null, peerAtLimit1, newChannelId1, randomTxId(), 0))
+    system.eventStream ! Publish(ChannelClosed(null, channelIdAtLimit1, null, randomTxId(), commitments(peerBelowLimit1, randomBytes32())))
     system.eventStream ! Publish(ChannelAborted(null, peerBelowLimit2, randomBytes32()))
 
     // after channel events for untracked channels, new channel requests for public peers are still rejected
@@ -202,8 +203,8 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     // stop tracking channels that are confirmed/closed/aborted for a public peer
     limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = true)
     val pendingChannels = requests.expectMessageType[Int]
-    system.eventStream ! Publish(ChannelOpened(null, peerAtLimit1, channelIdAtLimit1))
-    system.eventStream ! Publish(ChannelClosed(null, newChannelId1, null, commitments(peerBelowLimit1, newChannelId1)))
+    system.eventStream ! Publish(ChannelReadyForPayments(null, peerAtLimit1, channelIdAtLimit1, randomTxId(), 0))
+    system.eventStream ! Publish(ChannelClosed(null, newChannelId1, null, randomTxId(), commitments(peerBelowLimit1, newChannelId1)))
     system.eventStream ! Publish(ChannelAborted(null, peerBelowLimit2, newChannelId2))
     eventually {
       limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = true)
@@ -260,8 +261,8 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     system.eventStream ! Publish(ChannelIdAssigned(null, peerBelowLimit2, channelIdBelowLimit2, newChannelId2))
 
     // ignore confirm/close/abort events for node/channel pairs not tracked for a private peer
-    system.eventStream ! Publish(ChannelOpened(null, privatePeer1, newChannelId1))
-    system.eventStream ! Publish(ChannelClosed(null, newChannelId1, null, commitments(privatePeer2, newChannelId1)))
+    system.eventStream ! Publish(ChannelReadyForPayments(null, privatePeer1, newChannelId1, randomTxId(), 0))
+    system.eventStream ! Publish(ChannelClosed(null, newChannelId1, null, randomTxId(), commitments(privatePeer2, newChannelId1)))
     system.eventStream ! Publish(ChannelAborted(null, peerBelowLimit2, newChannelIdPrivate1))
 
     // after channel events for untracked channels, new channel requests for private peers are still rejected
@@ -272,8 +273,8 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     // stop tracking channels that are confirmed/closed/aborted for a private peer
     limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = false)
     requests.expectMessage(2)
-    system.eventStream ! Publish(ChannelOpened(null, privatePeer1, newChannelIdPrivate1))
-    system.eventStream ! Publish(ChannelClosed(null, channelIdPrivate2, null, commitments(privatePeer2, channelIdPrivate2)))
+    system.eventStream ! Publish(ChannelReadyForPayments(null, privatePeer1, newChannelIdPrivate1, randomTxId(), 0))
+    system.eventStream ! Publish(ChannelClosed(null, channelIdPrivate2, null, randomTxId(), commitments(privatePeer2, channelIdPrivate2)))
     eventually {
       limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = false)
       requests.expectMessage(0)
@@ -384,7 +385,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
 
     // when the first pending channel request is confirmed, the first tracked private channel is removed
     // AND the peer becomes public, but still has a tracked channel request as a private node
-    system.eventStream ! Publish(ChannelOpened(null, peer, channelId1))
+    system.eventStream ! Publish(ChannelReadyForPayments(null, peer, channelId1, randomTxId(), 0))
     eventually {
       limiter ! PendingChannelsRateLimiter.CountOpenChannelRequests(requests.ref, publicPeers = false)
       requests.expectMessage(1)

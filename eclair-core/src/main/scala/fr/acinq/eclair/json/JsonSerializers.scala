@@ -553,10 +553,20 @@ object ChannelEventSerializer extends MinimalSerializer({
     JField("commitTxFeeratePerKw", JLong(e.commitTxFeerate.toLong)),
     JField("fundingTxFeeratePerKw", e.fundingTxFeerate.map(f => JLong(f.toLong)).getOrElse(JNothing))
   )
-  case e: ChannelOpened => JObject(
-    JField("type", JString("channel-opened")),
+  case e: ChannelFundingConfirmed => JObject(
+    JField("type", JString("channel-confirmed")),
     JField("remoteNodeId", JString(e.remoteNodeId.toString())),
     JField("channelId", JString(e.channelId.toHex)),
+    JField("fundingTxId", JString(e.fundingTxId.value.toHex)),
+    JField("fundingTxIndex", JLong(e.fundingTxIndex)),
+    JField("blockHeight", JLong(e.blockHeight.toLong)),
+  )
+  case e: ChannelReadyForPayments => JObject(
+    JField("type", JString("channel-ready")),
+    JField("remoteNodeId", JString(e.remoteNodeId.toString())),
+    JField("channelId", JString(e.channelId.toHex)),
+    JField("fundingTxId", JString(e.fundingTxId.value.toHex)),
+    JField("fundingTxIndex", JLong(e.fundingTxIndex)),
   )
   case e: ChannelStateChanged => JObject(
     JField("type", JString("channel-state-changed")),
@@ -568,7 +578,8 @@ object ChannelEventSerializer extends MinimalSerializer({
   case e: ChannelClosed => JObject(
     JField("type", JString("channel-closed")),
     JField("channelId", JString(e.channelId.toHex)),
-    JField("closingType", JString(e.closingType.getClass.getSimpleName))
+    JField("closingType", JString(e.closingType.getClass.getSimpleName)),
+    JField("closingTxId", JString(e.closingTxId.value.toHex)),
   )
 })
 

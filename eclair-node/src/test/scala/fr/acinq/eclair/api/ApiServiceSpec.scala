@@ -1115,6 +1115,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("the websocket should return typed objects") {
     val mockService = new MockService(mock[Eclair])
     val fixedUUID = UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f")
+    val fundingTxId = TxId.fromValidHex("9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692")
     val wsClient = WSProbe()
 
     WS("/ws", wsClient.flow) ~>
@@ -1163,11 +1164,17 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         system.eventStream.publish(chcr)
         wsClient.expectMessage(expectedSerializedChcr)
 
-        val chop = ChannelOpened(system.deadLetters, bobNodeId, ByteVector32.One)
-        val expectedSerializedChop = """{"type":"channel-opened","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","channelId":"0100000000000000000000000000000000000000000000000000000000000000"}"""
-        assert(serialization.write(chop) == expectedSerializedChop)
-        system.eventStream.publish(chop)
-        wsClient.expectMessage(expectedSerializedChop)
+        val chfc = ChannelFundingConfirmed(system.deadLetters, ByteVector32.One, bobNodeId, fundingTxId, 0, BlockHeight(900000), null)
+        val expectedSerializedChfc = """{"type":"channel-confirmed","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","channelId":"0100000000000000000000000000000000000000000000000000000000000000","fundingTxId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","fundingTxIndex":0,"blockHeight":900000}"""
+        assert(serialization.write(chfc) == expectedSerializedChfc)
+        system.eventStream.publish(chfc)
+        wsClient.expectMessage(expectedSerializedChfc)
+
+        val chrp = ChannelReadyForPayments(system.deadLetters, bobNodeId, ByteVector32.One, fundingTxId, 1)
+        val expectedSerializedChrp = """{"type":"channel-ready","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","channelId":"0100000000000000000000000000000000000000000000000000000000000000","fundingTxId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","fundingTxIndex":1}"""
+        assert(serialization.write(chrp) == expectedSerializedChrp)
+        system.eventStream.publish(chrp)
+        wsClient.expectMessage(expectedSerializedChrp)
 
         val chsc = ChannelStateChanged(system.deadLetters, ByteVector32.One, system.deadLetters, bobNodeId, OFFLINE, NORMAL, null)
         val expectedSerializedChsc = """{"type":"channel-state-changed","channelId":"0100000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","previousState":"OFFLINE","currentState":"NORMAL"}"""
@@ -1175,8 +1182,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         system.eventStream.publish(chsc)
         wsClient.expectMessage(expectedSerializedChsc)
 
-        val chcl = ChannelClosed(system.deadLetters, ByteVector32.One, Closing.NextRemoteClose(null, null), null)
-        val expectedSerializedChcl = """{"type":"channel-closed","channelId":"0100000000000000000000000000000000000000000000000000000000000000","closingType":"NextRemoteClose"}"""
+        val chcl = ChannelClosed(system.deadLetters, ByteVector32.One, Closing.NextRemoteClose(null, null), fundingTxId, null)
+        val expectedSerializedChcl = """{"type":"channel-closed","channelId":"0100000000000000000000000000000000000000000000000000000000000000","closingType":"NextRemoteClose","closingTxId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"}"""
         assert(serialization.write(chcl) == expectedSerializedChcl)
         system.eventStream.publish(chcl)
         wsClient.expectMessage(expectedSerializedChcl)
