@@ -167,4 +167,20 @@ class RouteBlindingSpec extends AnyFunSuiteLike {
     }
   }
 
+  test("decode payment onion route blinding data for accountable invoice") {
+    // See https://github.com/lightning/bolts/blob/master/bolt04/blinded-payment-onion-test.json
+    val payloads = Map[ByteVector, TlvStream[RouteBlindingEncryptedDataTlv]](
+      hex"01200000000000000000000000000000000000000000000000000000000000000000 02080000000000000001 0300 0a080032000000002710 0c05000b724632 0e00" -> TlvStream(Padding(hex"0000000000000000000000000000000000000000000000000000000000000000"), OutgoingChannelId(ShortChannelId(1)), UpgradeAccountability(), PaymentRelay(CltvExpiryDelta(50), 0, 10000 msat), PaymentConstraints(CltvExpiry(750150), 50 msat), AllowedFeatures(Features.empty)),
+      hex"02080000000000000002 0300 0821031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 0a07004b0000009664 0c05000b721432 0e00" -> TlvStream(OutgoingChannelId(ShortChannelId(2)), UpgradeAccountability(), NextPathKey(PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")), PaymentRelay(CltvExpiryDelta(75), 150, 100 msat), PaymentConstraints(CltvExpiry(750100), 50 msat), AllowedFeatures(Features.empty)),
+      hex"012200000000000000000000000000000000000000000000000000000000000000000000 02080000000000000003 0300 0a06001900000064 0c05000b71c932 0e00" -> TlvStream(Padding(hex"00000000000000000000000000000000000000000000000000000000000000000000"), OutgoingChannelId(ShortChannelId(3)), UpgradeAccountability(), PaymentRelay(CltvExpiryDelta(25), 100, 0 msat), PaymentConstraints(CltvExpiry(750025), 50 msat), AllowedFeatures(Features.empty)),
+      hex"011c00000000000000000000000000000000000000000000000000000000 0300 0616c9cf92f45ade68345bc20ae672e2012f4af487ed4415 0c05000b71b032 0e00" -> TlvStream(Padding(hex"00000000000000000000000000000000000000000000000000000000"), UpgradeAccountability(), PathId(hex"c9cf92f45ade68345bc20ae672e2012f4af487ed4415"), PaymentConstraints(CltvExpiry(750000), 50 msat), AllowedFeatures(Features.empty)),
+    )
+
+    for ((encoded, data) <- payloads) {
+      val decoded = blindedRouteDataCodec.decode(encoded.bits).require.value
+      assert(decoded == data)
+      val reEncoded = blindedRouteDataCodec.encode(data).require.bytes
+      assert(reEncoded == encoded)
+    }
+  }
 }
