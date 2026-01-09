@@ -347,7 +347,8 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
               MilliSatoshi(rs.getLong("recipient_amount_msat")),
               PublicKey(rs.getByteVector("recipient_node_id")),
               Seq(part),
-              None)
+              None,
+              part.startedAt)
           }
           sentByParentId + (parentId -> sent)
         }.values.toSeq.sortBy(_.settledAt)

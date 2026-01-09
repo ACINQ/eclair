@@ -176,7 +176,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val parts = d.parts ++ ps.parts
       val pending = d.pending - ps.parts.head.id
       if (pending.isEmpty) {
-        myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, parts, d.remainingAttribution_opt)))
+        myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, parts, d.remainingAttribution_opt, start)))
       } else {
         stay() using d.copy(parts = parts, pending = pending)
       }
@@ -187,7 +187,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       log.warning(s"payment succeeded but partial payment failed (id=${pf.id})")
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts, d.remainingAttribution_opt)))
+        myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts, d.remainingAttribution_opt, start)))
       } else {
         stay() using d.copy(pending = pending)
       }
@@ -217,7 +217,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       d.request.replyTo ! PreimageReceived(paymentHash, d.preimage, d.remainingAttribution_opt)
     }
     if (d.pending.isEmpty) {
-      myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts, d.remainingAttribution_opt)))
+      myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts, d.remainingAttribution_opt, start)))
     } else
       goto(PAYMENT_SUCCEEDED) using d
   }

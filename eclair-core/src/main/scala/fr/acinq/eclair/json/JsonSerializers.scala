@@ -383,8 +383,8 @@ object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFail
 ))
 // @formatter:on
 
-private case class PaymentSentJson(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment])
-object PaymentSentSerializer extends ConvertClassSerializer[PaymentSent](p => PaymentSentJson(p.id, p.paymentHash, p.paymentPreimage, p.recipientAmount, p.recipientNodeId, p.parts))
+private case class PaymentSentJson(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment], fees: MilliSatoshi, startedAt: TimestampMilli, settledAt: TimestampMilli)
+object PaymentSentSerializer extends ConvertClassSerializer[PaymentSent](p => PaymentSentJson(p.id, p.paymentHash, p.paymentPreimage, p.recipientAmount, p.recipientNodeId, p.parts, p.feesPaid, p.startedAt, p.settledAt))
 
 object ThrowableSerializer extends MinimalSerializer({
   case t: Throwable if t.getMessage != null => JString(t.getMessage)

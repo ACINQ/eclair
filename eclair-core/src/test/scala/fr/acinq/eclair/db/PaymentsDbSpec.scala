@@ -200,7 +200,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         val ps6 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("3"), randomBytes32(), PaymentType.Standard, 789 msat, 789 msat, bob, 1250 unixms, None, None, OutgoingPaymentStatus.Failed(Nil, 1300 unixms))
         db.addOutgoingPayment(ps4)
         db.addOutgoingPayment(ps5.copy(status = OutgoingPaymentStatus.Pending))
-        db.updateOutgoingPayment(PaymentSent(ps5.parentId, preimage1, ps5.amount, ps5.recipientNodeId, Seq(PaymentSent.PartialPayment(ps5.id, ps5.amount, 42 msat, randomBytes32(), None, 1000 unixms, 1180 unixms)), None))
+        db.updateOutgoingPayment(PaymentSent(ps5.parentId, preimage1, ps5.amount, ps5.recipientNodeId, Seq(PaymentSent.PartialPayment(ps5.id, ps5.amount, 42 msat, randomBytes32(), None, 1000 unixms, 1180 unixms)), None, 900 unixms))
         db.addOutgoingPayment(ps6.copy(status = OutgoingPaymentStatus.Pending))
         db.updateOutgoingPayment(PaymentFailed(ps6.id, ps6.paymentHash, Nil, 1100 unixms, 1300 unixms))
 
@@ -772,12 +772,12 @@ class PaymentsDbSpec extends AnyFunSuite {
       assert(db.getOutgoingPayment(s4.id).contains(ss4))
 
       // can't update again once it's in a final state
-      assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentSent(parentId, preimage1, s3.recipientAmount, s3.recipientNodeId, Seq(PaymentSent.PartialPayment(s3.id, s3.amount, 42 msat, randomBytes32(), None, startedAt = 100 unixms, settledAt = 500 unixms)), None)))
+      assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentSent(parentId, preimage1, s3.recipientAmount, s3.recipientNodeId, Seq(PaymentSent.PartialPayment(s3.id, s3.amount, 42 msat, randomBytes32(), None, startedAt = 100 unixms, settledAt = 500 unixms)), None, 100 unixms)))
 
       val paymentSent = PaymentSent(parentId, preimage1, 600 msat, carol, Seq(
         PaymentSent.PartialPayment(s1.id, s1.amount, 15 msat, randomBytes32(), None, startedAt = 200 unixms, settledAt = 400 unixms),
         PaymentSent.PartialPayment(s2.id, s2.amount, 20 msat, randomBytes32(), Some(Seq(hop_ab, hop_bc)), startedAt = 210 unixms, settledAt = 410 unixms)
-      ), None)
+      ), None, startedAt = 100 unixms)
       val ss1 = s1.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 15 msat, Nil, 400 unixms))
       val ss2 = s2.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 20 msat, Seq(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)), 410 unixms))
       db.updateOutgoingPayment(paymentSent)

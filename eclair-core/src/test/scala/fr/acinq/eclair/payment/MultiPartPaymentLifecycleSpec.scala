@@ -580,7 +580,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(payFsm.stateName == PAYMENT_ABORTED)
 
     sender.watch(payFsm)
-    childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentPreimage, finalAmount, e, Seq(PaymentSent.PartialPayment(successId, successRoute.amount, successRoute.channelFee(false), randomBytes32(), Some(successRoute.fullRoute), 100 unixms, 250 unixms)), None))
+    childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentPreimage, finalAmount, e, Seq(PaymentSent.PartialPayment(successId, successRoute.amount, successRoute.channelFee(false), randomBytes32(), Some(successRoute.fullRoute), 100 unixms, 250 unixms)), None, 75 unixms))
     sender.expectMsg(PreimageReceived(paymentHash, paymentPreimage, None))
     val result = sender.expectMsgType[PaymentSent]
     assert(result.id == cfg.id)
@@ -608,7 +608,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
     val (childId, route) :: (failedId, failedRoute) :: Nil = payFsm.stateData.asInstanceOf[PaymentProgress].pending.toSeq
-    childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentPreimage, finalAmount, e, Seq(PaymentSent.PartialPayment(childId, route.amount, route.channelFee(false), randomBytes32(), Some(route.fullRoute), 100 unixms, 250 unixms)), None))
+    childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentPreimage, finalAmount, e, Seq(PaymentSent.PartialPayment(childId, route.amount, route.channelFee(false), randomBytes32(), Some(route.fullRoute), 100 unixms, 250 unixms)), None, 75 unixms))
     sender.expectMsg(PreimageReceived(paymentHash, paymentPreimage, None))
     awaitCond(payFsm.stateName == PAYMENT_SUCCEEDED)
 
@@ -634,7 +634,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val partialPayments = pending.map {
       case (childId, route) => PaymentSent.PartialPayment(childId, route.amount, route.channelFee(false) + route.blindedFee, randomBytes32(), Some(route.fullRoute), 100 unixms, 250 unixms)
     }
-    partialPayments.foreach(pp => childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentPreimage, finalAmount, e, Seq(pp), None)))
+    partialPayments.foreach(pp => childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentPreimage, finalAmount, e, Seq(pp), None, 100 unixms)))
     sender.expectMsg(PreimageReceived(paymentHash, paymentPreimage, None))
     val result = sender.expectMsgType[PaymentSent]
     assert(result.id == cfg.id)
