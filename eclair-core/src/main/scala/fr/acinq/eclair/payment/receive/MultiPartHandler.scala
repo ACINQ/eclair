@@ -187,8 +187,8 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
             // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
             // expensive code path by fetching the preimage from DB.
             case p: MultiPartPaymentFSM.HtlcPart => db.getIncomingPayment(paymentHash).foreach(record => {
-              val received = PaymentReceived(paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
-              if (db.receiveIncomingPayment(paymentHash, p.amount, received.timestamp)) {
+              val received = PaymentReceived(paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId, p.receivedAt) :: Nil)
+              if (db.receiveIncomingPayment(paymentHash, p.amount, received.settledAt)) {
                 val attribution = FulfillAttributionData(htlcReceivedAt = p.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = None)
                 PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, Some(attribution), commit = true))
                 ctx.system.eventStream.publish(received)
@@ -207,17 +207,17 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
         log.debug("fulfilling payment for amount={}", parts.map(_.amount).sum)
         val received = PaymentReceived(paymentHash, parts.flatMap {
-          case p: MultiPartPaymentFSM.HtlcPart => Some(PaymentReceived.PartialPayment(p.amount, p.htlc.channelId))
+          case p: MultiPartPaymentFSM.HtlcPart => Some(PaymentReceived.PartialPayment(p.amount, p.htlc.channelId, p.receivedAt))
           case _: MultiPartPaymentFSM.RecipientBlindedPathFeePart => None
         })
         val recordedInDb = payment match {
           // Incoming offer payments are not stored in the database until they have been paid.
           case IncomingBlindedPayment(invoice, preimage, paymentType, _, _) =>
-            db.receiveIncomingOfferPayment(invoice, preimage, received.amount, received.timestamp, paymentType)
+            db.receiveIncomingOfferPayment(invoice, preimage, received.amount, received.settledAt, paymentType)
             true
           // Incoming standard payments are already stored and need to be marked as received.
           case _: IncomingStandardPayment =>
-            db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
+            db.receiveIncomingPayment(paymentHash, received.amount, received.settledAt)
         }
         if (recordedInDb) {
           parts.collect {

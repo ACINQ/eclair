@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.send.BlindedPathsResolver.ResolvedPath
 import fr.acinq.eclair.payment.send.PaymentError._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, NodeParams}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -57,7 +57,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         case invoice: Bolt12Invoice => BlindedRecipient(invoice, r.resolvedPaths, r.recipientAmount, finalExpiry, r.userCustomTlvs)
       }
       if (!nodeParams.features.invoiceFeatures().areSupported(recipient.features)) {
-        replyTo ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(recipient.features)) :: Nil)
+        replyTo ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(recipient.features)) :: Nil, startedAt = TimestampMilli.now(), settledAt = TimestampMilli.now())
       } else if (Features.canUseFeature(nodeParams.features.invoiceFeatures(), recipient.features, Features.BasicMultiPartPayment)) {
         val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg, publishPreimage = !r.blockUntilComplete)
         fsm ! MultiPartPaymentLifecycle.SendMultiPartPayment(self, recipient, r.maxAttempts, r.routeParams)
@@ -84,7 +84,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         r.replyTo ! paymentId
       }
       if (r.invoice.amount_opt.isEmpty) {
-        r.replyTo ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, new IllegalArgumentException("test trampoline payments must not use amount-less invoices")) :: Nil)
+        r.replyTo ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, new IllegalArgumentException("test trampoline payments must not use amount-less invoices")) :: Nil, startedAt = TimestampMilli.now(), settledAt = TimestampMilli.now())
       } else {
         log.info(s"sending trampoline payment with trampolineNodeId=${r.trampolineNodeId} and invoice=${r.invoice.toString}")
         val fsm = outgoingPaymentFactory.spawnOutgoingTrampolinePayment(context)
@@ -96,7 +96,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val paymentId = UUID.randomUUID()
       val parentPaymentId = r.parentId.getOrElse(UUID.randomUUID())
       if (!nodeParams.features.invoiceFeatures().areSupported(r.invoice.features)) {
-        sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(r.invoice.features)) :: Nil)
+        sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(r.invoice.features)) :: Nil, startedAt = TimestampMilli.now(), settledAt = TimestampMilli.now())
       } else {
         sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId)
         val paymentCfg = SendPaymentConfig(paymentId, parentPaymentId, r.externalId, r.paymentHash, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, accountable = false)
@@ -227,7 +227,7 @@ object PaymentInitiator {
                                    trampolineNodeId: PublicKey,
                                    routeParams: RouteParams,
                                    blockUntilComplete: Boolean = false) extends SendRequestedPayment {
-    override val recipientAmount = invoice.amount_opt.getOrElse(0 msat)
+    override val recipientAmount: MilliSatoshi = invoice.amount_opt.getOrElse(0 msat)
   }
 
   /**
@@ -270,7 +270,7 @@ object PaymentInitiator {
                                     routeParams: RouteParams,
                                     userCustomTlvs: Set[GenericTlv] = Set.empty,
                                     recordPathFindingMetrics: Boolean = false) {
-    val paymentHash = Crypto.sha256(paymentPreimage)
+    val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
   }
 
   /**
@@ -331,12 +331,14 @@ object PaymentInitiator {
                                recordPathFindingMetrics: Boolean,
                                accountable: Boolean) {
     val paymentContext: PaymentContext = PaymentContext(id, parentId, paymentHash)
-    val paymentType = invoice match {
+    val paymentType: String = invoice match {
       case Some(_: Bolt12Invoice) => PaymentType.Blinded
       case _ => PaymentType.Standard
     }
 
-    def createPaymentSent(recipient: Recipient, preimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment], remainingAttribution_opt: Option[ByteVector]) = PaymentSent(parentId, paymentHash, preimage, recipient.totalAmount, recipient.nodeId, parts, remainingAttribution_opt)
+    def createPaymentSent(recipient: Recipient, preimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment], remainingAttribution_opt: Option[ByteVector]): PaymentSent = {
+      PaymentSent(parentId, preimage, recipient.totalAmount, recipient.nodeId, parts, remainingAttribution_opt)
+    }
   }
 
 }

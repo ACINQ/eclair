@@ -2276,7 +2276,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       Closing
         .onChainOutgoingHtlcs(d.commitments.latest.localCommit, d.commitments.latest.remoteCommit, d.commitments.latest.nextRemoteCommit_opt, tx)
         .map(add => (add, d.commitments.originChannels.get(add.id).map(_.upstream).collect { case Upstream.Local(id) => id })) // we resolve the payment id if this was a local payment
-        .collect { case (add, Some(id)) => context.system.eventStream.publish(PaymentSettlingOnChain(id, amount = add.amountMsat, add.paymentHash)) }
+        .collect { case (add, Some(id)) => context.system.eventStream.publish(PaymentSettlingOnChain(id, d.channelId, add.amountMsat, add.paymentHash)) }
       // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay()
       Closing.isClosed(d1, Some(tx)) match {
         case Some(closingType) =>

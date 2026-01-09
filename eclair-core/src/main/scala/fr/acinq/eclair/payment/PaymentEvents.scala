@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.payment
 
-import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.HoldTime
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
@@ -39,8 +39,12 @@ import scala.util.{Failure, Success, Try}
  */
 
 sealed trait PaymentEvent {
-  val paymentHash: ByteVector32
-  val timestamp: TimestampMilli
+  // @formatter:off
+  def paymentHash: ByteVector32
+  def startedAt: TimestampMilli
+  def settledAt: TimestampMilli
+  def duration: FiniteDuration = settledAt - startedAt
+  // @formatter:on
 }
 
 /**
@@ -48,18 +52,19 @@ sealed trait PaymentEvent {
  *
  * @param id                       id of the whole payment attempt (if using multi-part, there will be multiple parts,
  *                                 each with a different id).
- * @param paymentHash              payment hash.
  * @param paymentPreimage          payment preimage (proof of payment).
  * @param recipientAmount          amount that has been received by the final recipient.
  * @param recipientNodeId          id of the final recipient.
  * @param parts                    child payments (actual outgoing HTLCs).
  * @param remainingAttribution_opt for relayed trampoline payments, the attribution data that needs to be sent upstream
  */
-case class PaymentSent(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment], remainingAttribution_opt: Option[ByteVector]) extends PaymentEvent {
+case class PaymentSent(id: UUID, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment], remainingAttribution_opt: Option[ByteVector]) extends PaymentEvent {
   require(parts.nonEmpty, "must have at least one payment part")
+  val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
   val amountWithFees: MilliSatoshi = parts.map(_.amountWithFees).sum
   val feesPaid: MilliSatoshi = amountWithFees - recipientAmount // overall fees for this payment
-  val timestamp: TimestampMilli = parts.map(_.timestamp).min // we use min here because we receive the proof of payment as soon as the first partial payment is fulfilled
+  val startedAt: TimestampMilli = parts.map(_.startedAt).min
+  val settledAt: TimestampMilli = parts.map(_.settledAt).max
 }
 
 object PaymentSent {
@@ -72,42 +77,40 @@ object PaymentSent {
    * @param feesPaid    fees paid to route to the target node.
    * @param toChannelId id of the channel used.
    * @param route       payment route used.
-   * @param timestamp   absolute time in milli-seconds since UNIX epoch when the payment was fulfilled.
+   * @param startedAt   absolute time in milliseconds since UNIX epoch when the payment was started.
+   * @param settledAt   absolute time in milliseconds since UNIX epoch when the payment was fulfilled.
    */
-  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Option[Seq[Hop]], timestamp: TimestampMilli = TimestampMilli.now()) {
+  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Option[Seq[Hop]], startedAt: TimestampMilli, settledAt: TimestampMilli) {
     require(route.isEmpty || route.get.nonEmpty, "route must be None or contain at least one hop")
     val amountWithFees: MilliSatoshi = amount + feesPaid
+    val duration: FiniteDuration = settledAt - startedAt
   }
 
 }
 
-case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure], timestamp: TimestampMilli = TimestampMilli.now()) extends PaymentEvent
+case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure], startedAt: TimestampMilli, settledAt: TimestampMilli = TimestampMilli.now()) extends PaymentEvent
 
 sealed trait PaymentRelayed extends PaymentEvent {
   val amountIn: MilliSatoshi
   val amountOut: MilliSatoshi
-  val receivedAt: TimestampMilli
+  val startedAt: TimestampMilli
   val settledAt: TimestampMilli
 }
 
-case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, receivedAt: TimestampMilli, settledAt: TimestampMilli) extends PaymentRelayed {
-  override val timestamp: TimestampMilli = settledAt
-}
+case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, startedAt: TimestampMilli, settledAt: TimestampMilli) extends PaymentRelayed
 
 case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, nextTrampolineNodeId: PublicKey, nextTrampolineAmount: MilliSatoshi) extends PaymentRelayed {
   override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
   override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
-  override val receivedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
+  override val startedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
   override val settledAt: TimestampMilli = outgoing.map(_.settledAt).maxOption.getOrElse(TimestampMilli.now())
-  override val timestamp: TimestampMilli = settledAt
 }
 
 case class OnTheFlyFundingPaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing) extends PaymentRelayed {
   override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
   override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
-  override val receivedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
+  override val startedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
   override val settledAt: TimestampMilli = outgoing.map(_.settledAt).maxOption.getOrElse(TimestampMilli.now())
-  override val timestamp: TimestampMilli = settledAt
 }
 
 object PaymentRelayed {
@@ -123,20 +126,19 @@ object PaymentRelayed {
 case class PaymentReceived(paymentHash: ByteVector32, parts: Seq[PaymentReceived.PartialPayment]) extends PaymentEvent {
   require(parts.nonEmpty, "must have at least one payment part")
   val amount: MilliSatoshi = parts.map(_.amount).sum
-  val timestamp: TimestampMilli = parts.map(_.timestamp).max // we use max here because we fulfill the payment only once we received all the parts
+  val startedAt: TimestampMilli = parts.map(_.receivedAt).min // we use min here (when we receive the first payment part)
+  val settledAt: TimestampMilli = parts.map(_.receivedAt).max // we use max here because we fulfill the payment only once we received all the parts
 }
 
 object PaymentReceived {
 
-  case class PartialPayment(amount: MilliSatoshi, fromChannelId: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now())
+  case class PartialPayment(amount: MilliSatoshi, fromChannelId: ByteVector32, receivedAt: TimestampMilli = TimestampMilli.now())
 
 }
 
 case class PaymentMetadataReceived(paymentHash: ByteVector32, paymentMetadata: ByteVector)
 
-case class PaymentSettlingOnChain(id: UUID, amount: MilliSatoshi, paymentHash: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now()) extends PaymentEvent
-
-case class WaitingToRelayPayment(remoteNodeId: PublicKey, paymentHash: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now()) extends PaymentEvent
+case class PaymentSettlingOnChain(id: UUID, channelId: ByteVector32, amount: MilliSatoshi, paymentHash: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now())
 
 sealed trait PaymentFailure {
   // @formatter:off
@@ -149,10 +151,14 @@ sealed trait PaymentFailure {
 case class LocalFailure(amount: MilliSatoshi, route: Seq[Hop], t: Throwable) extends PaymentFailure
 
 /** A remote node failed the payment and we were able to decrypt the onion failure packet. */
-case class RemoteFailure(amount: MilliSatoshi, route: Seq[Hop], e: Sphinx.DecryptedFailurePacket) extends PaymentFailure
+case class RemoteFailure(amount: MilliSatoshi, route: Seq[Hop], e: Sphinx.DecryptedFailurePacket, startedAt: TimestampMilli, failedAt: TimestampMilli) extends PaymentFailure {
+  val duration: FiniteDuration = failedAt - startedAt
+}
 
 /** A remote node failed the payment but we couldn't decrypt the failure (e.g. a malicious node tampered with the message). */
-case class UnreadableRemoteFailure(amount: MilliSatoshi, route: Seq[Hop], e: Sphinx.CannotDecryptFailurePacket, holdTimes: Seq[HoldTime]) extends PaymentFailure
+case class UnreadableRemoteFailure(amount: MilliSatoshi, route: Seq[Hop], e: Sphinx.CannotDecryptFailurePacket, startedAt: TimestampMilli, failedAt: TimestampMilli, holdTimes: Seq[HoldTime]) extends PaymentFailure {
+  val duration: FiniteDuration = failedAt - startedAt
+}
 
 object PaymentFailure {
 
@@ -194,7 +200,7 @@ object PaymentFailure {
    */
   def hasAlreadyFailedOnce(nodeId: PublicKey, failures: Seq[PaymentFailure]): Boolean =
     failures
-      .collectFirst { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, _, u: Update)) if origin == nodeId => u.update_opt }
+      .collectFirst { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, _, u: Update), _, _) if origin == nodeId => u.update_opt }
       .isDefined
 
   /** Ignore the channel outgoing from the given nodeId in the given route. */
@@ -213,12 +219,12 @@ object PaymentFailure {
 
   /** Update the set of nodes and channels to ignore in retries depending on the failure we received. */
   def updateIgnored(failure: PaymentFailure, ignore: Ignore): Ignore = failure match {
-    case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _, _)) if nodeId == hops.last.nextNodeId =>
+    case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _, _), _, _) if nodeId == hops.last.nextNodeId =>
       // The failure came from the final recipient: the payment should be aborted without penalizing anyone in the route.
       ignore
-    case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(nodeId, _, _: Node)) =>
+    case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(nodeId, _, _: Node), _, _) =>
       ignore + nodeId
-    case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _, failureMessage: Update)) =>
+    case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _, failureMessage: Update), _, _) =>
       if (failureMessage.update_opt.forall(update => Announcements.checkSig(update, nodeId))) {
         val shouldIgnore = failureMessage match {
           case _: TemporaryChannelFailure => true
@@ -235,9 +241,9 @@ object PaymentFailure {
         // This node is fishy, it gave us a bad channel update signature, so let's filter it out.
         ignore + nodeId
       }
-    case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _, _)) =>
+    case RemoteFailure(_, hops, Sphinx.DecryptedFailurePacket(nodeId, _, _), _, _) =>
       ignoreNodeOutgoingEdge(nodeId, hops, ignore)
-    case UnreadableRemoteFailure(_, hops, _, holdTimes) =>
+    case UnreadableRemoteFailure(_, hops, _, _, _, holdTimes) =>
       // TODO: Once everyone supports attributable errors, we should only exclude two nodes: the last for which we have attribution data and the next one.
       // We don't know which node is sending garbage, let's blacklist all nodes except:
       //  - the nodes that returned attribution data (except the last one)
@@ -267,7 +273,7 @@ object PaymentFailure {
         // We're only interested in the last channel update received per channel.
         val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
           case (current, failure) => failure match {
-            case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, _, f: Update)) => f.update_opt match {
+            case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, _, f: Update), _, _) => f.update_opt match {
               case Some(update) => current.updated(update.shortChannelId, update)
               case None => current
             }
