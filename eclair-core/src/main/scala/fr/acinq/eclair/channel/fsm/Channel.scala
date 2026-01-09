@@ -859,6 +859,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         case c => c
       }))
 
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.latest.fundingTxIndex > 0 =>
+      log.info("ignoring remote splice announcement_signatures for scid={} to test reconnection logic", remoteAnnSigs.shortChannelId)
+      stay()
+
     // Channels are publicly announced if both parties want it: we ignore this message if we don't want to announce the channel.
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
       d.commitments.resolveCommitment(remoteAnnSigs.shortChannelId) match {
