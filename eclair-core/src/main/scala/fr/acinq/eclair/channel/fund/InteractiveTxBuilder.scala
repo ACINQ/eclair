@@ -979,8 +979,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
           remoteCommit,
           liquidityPurchase_opt.map(_.basicInfo(isBuyer = fundingParams.isInitiator))
         )
-        // TODO: comment here to test abort on reconnection
-        replyTo ! Succeeded(signingSession, commitSig, liquidityPurchase_opt, nextRemoteCommitNonce_opt.map(n => signedTx.txId -> n))
+        if (purpose.fundingTxIndex == 0) {
+          replyTo ! Succeeded(signingSession, commitSig, liquidityPurchase_opt, nextRemoteCommitNonce_opt.map(n => signedTx.txId -> n))
+        } else {
+          log.info("stopping splice before exchanging commit_sig: restart the eclair node now to test abort on reconnection")
+        }
         Behaviors.stopped
       case WalletFailure(t) =>
         log.error("could not sign funding transaction: ", t)
