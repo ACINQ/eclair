@@ -215,7 +215,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.setString(7, e.paymentPreimage.toHex)
           statement.setString(8, e.recipientNodeId.value.toHex)
           statement.setString(9, p.toChannelId.toHex)
-          statement.setTimestamp(10, p.timestamp.toSqlTimestamp)
+          statement.setTimestamp(10, p.settledAt.toSqlTimestamp)
           statement.addBatch()
         })
         statement.executeBatch()
@@ -230,7 +230,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.setLong(1, p.amount.toLong)
           statement.setString(2, e.paymentHash.toHex)
           statement.setString(3, p.fromChannelId.toHex)
-          statement.setTimestamp(4, p.timestamp.toSqlTimestamp)
+          statement.setTimestamp(4, p.receivedAt.toSqlTimestamp)
           statement.addBatch()
         })
         statement.executeBatch()
@@ -251,7 +251,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             statement.setString(1, e.paymentHash.toHex)
             statement.setLong(2, nextTrampolineAmount.toLong)
             statement.setString(3, nextTrampolineNodeId.value.toHex)
-            statement.setTimestamp(4, e.timestamp.toSqlTimestamp)
+            statement.setTimestamp(4, e.settledAt.toSqlTimestamp)
             statement.executeUpdate()
           }
           // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
@@ -362,20 +362,22 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
               MilliSatoshi(rs.getLong("fees_msat")),
               rs.getByteVector32FromHex("to_channel_id"),
               None, // we don't store the route in the audit DB
-              TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
+              // TODO: store startedAt when updating the DB schema instead of duplicating settledAt.
+              startedAt = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")),
+              settledAt = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
             val sent = sentByParentId.get(parentId) match {
               case Some(s) => s.copy(parts = s.parts :+ part)
               case None => PaymentSent(
                 parentId,
-                rs.getByteVector32FromHex("payment_hash"),
                 rs.getByteVector32FromHex("payment_preimage"),
                 MilliSatoshi(rs.getLong("recipient_amount_msat")),
                 PublicKey(rs.getByteVectorFromHex("recipient_node_id")),
                 Seq(part),
-                None)
+                None,
+                part.startedAt)
             }
             sentByParentId + (parentId -> sent)
-          }.values.toSeq.sortBy(_.timestamp)
+          }.values.toSeq.sortBy(_.settledAt)
         paginated_opt match {
           case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
           case None => result
@@ -400,7 +402,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
               case None => PaymentReceived(paymentHash, Seq(part))
             }
             receivedByHash + (paymentHash -> received)
-          }.values.toSeq.sortBy(_.timestamp)
+          }.values.toSeq.sortBy(_.settledAt)
         paginated_opt match {
           case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
           case None => result
@@ -454,7 +456,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
               Seq(OnTheFlyFundingPaymentRelayed(paymentHash, incoming, outgoing))
             case _ => Nil
           }
-      }.toSeq.sortBy(_.timestamp)
+      }.toSeq.sortBy(_.settledAt)
       paginated_opt match {
         case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
         case None => result

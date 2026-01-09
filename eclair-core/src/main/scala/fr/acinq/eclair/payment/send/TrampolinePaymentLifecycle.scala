@@ -33,7 +33,7 @@ import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.{PaymentOnion, PaymentOnionCodecs}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, Logs, MilliSatoshi, NodeParams, TimestampMilli, randomBytes32}
 
 import java.util.UUID
 
@@ -113,7 +113,7 @@ object TrampolinePaymentLifecycle {
       val add = CMD_ADD_HTLC(addHtlcAdapter.toClassic, outgoing.trampolineAmount, paymentHash, outgoing.trampolineExpiry, outgoing.onion.packet, None, Reputation.Score.max(accountable = false), None, origin, commit = true)
       channelInfo.channel ! add
       val channelId = channelInfo.data.asInstanceOf[DATA_NORMAL].channelId
-      val part = PartialPayment(cmd.paymentId, amount, computeFees(amount, attemptNumber), channelId, None)
+      val part = PartialPayment(cmd.paymentId, amount, computeFees(amount, attemptNumber), channelId, None, startedAt = TimestampMilli.now(), settledAt = TimestampMilli.now()) // we will update settledAt below
       waitForSettlement(part, outgoing.onion.sharedSecrets, outgoing.trampolineOnion.sharedSecrets)
     }
 
@@ -137,7 +137,7 @@ object TrampolinePaymentLifecycle {
                 }
               case _: HtlcResult.OnChainFulfill => Nil
             }
-            parent ! HtlcSettled(fulfill, part, holdTimes)
+            parent ! HtlcSettled(fulfill, part.copy(settledAt = TimestampMilli.now()), holdTimes)
             Behaviors.stopped
           case fail: HtlcResult.Fail =>
             val holdTimes = fail match {
@@ -145,7 +145,7 @@ object TrampolinePaymentLifecycle {
                 Sphinx.FailurePacket.decrypt(updateFail.reason, updateFail.attribution_opt, outerOnionSecrets).holdTimes
               case _ => Nil
             }
-            parent ! HtlcSettled(fail, part, holdTimes)
+            parent ! HtlcSettled(fail, part.copy(settledAt = TimestampMilli.now()), holdTimes)
             Behaviors.stopped
         }
       }
@@ -161,6 +161,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
   import TrampolinePayment._
   import TrampolinePaymentLifecycle._
 
+  private val startedAt = TimestampMilli.now()
   private val paymentHash = cmd.invoice.paymentHash
   private val totalAmount = cmd.invoice.amount_opt.get
 
@@ -174,7 +175,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case TrampolinePeerNotFound(nodeId) =>
         context.log.warn("could not send trampoline payment: we don't have channels with trampoline node {}", nodeId)
-        cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("no channels with trampoline node")) :: Nil)
+        cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("no channels with trampoline node")) :: Nil, startedAt, settledAt = TimestampMilli.now())
         Behaviors.stopped
       case WrappedPeerChannels(channels) =>
         sendPayment(channels, attemptNumber)
@@ -194,7 +195,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
     val expiry = CltvExpiry(nodeParams.currentBlockHeight) + CltvExpiryDelta(36)
     if (filtered.isEmpty) {
       context.log.warn("no usable channel with trampoline node {}", cmd.trampolineNodeId)
-      cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("no usable channel with trampoline node")) :: Nil)
+      cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("no usable channel with trampoline node")) :: Nil, startedAt, settledAt = TimestampMilli.now())
       Behaviors.stopped
     } else {
       val amount1 = totalAmount / 2
@@ -220,7 +221,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
           waitForSettlement(remaining - 1, attemptNumber, fulfilledParts)
         } else {
           context.log.warn("trampoline payment failed")
-          cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, failure) :: Nil)
+          cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, failure) :: Nil, startedAt, settledAt = TimestampMilli.now())
           Behaviors.stopped
         }
       case HtlcSettled(result: HtlcResult, part, holdTimes) =>
@@ -235,7 +236,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
               waitForSettlement(remaining - 1, attemptNumber, part +: fulfilledParts)
             } else {
               context.log.info("trampoline payment succeeded")
-              cmd.replyTo ! PaymentSent(cmd.paymentId, paymentHash, fulfill.paymentPreimage, totalAmount, cmd.invoice.nodeId, part +: fulfilledParts, None)
+              cmd.replyTo ! PaymentSent(cmd.paymentId, fulfill.paymentPreimage, totalAmount, cmd.invoice.nodeId, part +: fulfilledParts, None, startedAt)
               Behaviors.stopped
             }
           case fail: HtlcResult.Fail =>
@@ -254,11 +255,11 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
     val nextFees = computeFees(totalAmount, attemptNumber)
     if (attemptNumber > 3) {
       context.log.warn("cannot retry trampoline payment: retries exceeded")
-      cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("maximum trampoline retries exceeded")) :: Nil)
+      cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("maximum trampoline retries exceeded")) :: Nil, startedAt, settledAt = TimestampMilli.now())
       Behaviors.stopped
     } else if (cmd.routeParams.getMaxFee(totalAmount) < nextFees) {
       context.log.warn("cannot retry trampoline payment: maximum fees exceeded ({} > {})", nextFees, cmd.routeParams.getMaxFee(totalAmount))
-      cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("maximum trampoline fees exceeded")) :: Nil)
+      cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("maximum trampoline fees exceeded")) :: Nil, startedAt, settledAt = TimestampMilli.now())
       Behaviors.stopped
     } else {
       context.log.info("retrying trampoline payment with fees={}", nextFees)

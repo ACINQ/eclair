@@ -184,12 +184,12 @@ object NodeRelay {
       case _ =>
         // Otherwise, we try to find a downstream error that we could decrypt.
         val outgoingNodeFailure = nextPayload match {
-          case nextPayload: IntermediatePayload.NodeRelay.Standard => failures.collectFirst { case RemoteFailure(_, _, e) if e.originNode == nextPayload.outgoingNodeId => e.failureMessage }
-          case nextPayload: IntermediatePayload.NodeRelay.ToNonTrampoline => failures.collectFirst { case RemoteFailure(_, _, e) if e.originNode == nextPayload.outgoingNodeId => e.failureMessage }
+          case nextPayload: IntermediatePayload.NodeRelay.Standard => failures.collectFirst { case f: RemoteFailure if f.e.originNode == nextPayload.outgoingNodeId => f.e.failureMessage }
+          case nextPayload: IntermediatePayload.NodeRelay.ToNonTrampoline => failures.collectFirst { case f: RemoteFailure if f.e.originNode == nextPayload.outgoingNodeId => f.e.failureMessage }
           // When using blinded paths, we will never get a failure from the final node (for privacy reasons).
           case _: IntermediatePayload.NodeRelay.ToBlindedPaths => None
         }
-        val otherNodeFailure = failures.collectFirst { case RemoteFailure(_, _, e) => e.failureMessage }
+        val otherNodeFailure = failures.collectFirst { case f: RemoteFailure => f.e.failureMessage }
         val failure = outgoingNodeFailure.getOrElse(otherNodeFailure.getOrElse(TemporaryNodeFailure()))
         Some(failure)
     }
@@ -405,13 +405,13 @@ class NodeRelay private(nodeParams: NodeParams,
           context.log.warn("trampoline payment failed downstream but was fulfilled upstream")
           recordRelayDuration(startedAt, isSuccess = true)
           stopping()
-        case WrappedPaymentFailed(PaymentFailed(_, _, failures, _)) =>
+        case WrappedPaymentFailed(e) =>
           walletNodeId_opt match {
-            case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(nodeParams, recipientFeatures_opt, failures)(context) =>
+            case Some(walletNodeId) if shouldAttemptOnTheFlyFunding(nodeParams, recipientFeatures_opt, e.failures)(context) =>
               context.log.info("trampoline payment failed, attempting on-the-fly funding")
-              attemptOnTheFlyFunding(upstream, walletNodeId, recipient, nextPayload, failures, startedAt)
+              attemptOnTheFlyFunding(upstream, walletNodeId, recipient, nextPayload, e.failures, startedAt)
             case _ =>
-              rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))
+              rejectPayment(upstream, translateError(nodeParams, e.failures, upstream, nextPayload))
               recordRelayDuration(startedAt, isSuccess = false)
               stopping()
           }
@@ -516,7 +516,7 @@ class NodeRelay private(nodeParams: NodeParams,
       fulfillPayment(upstream, paymentSent.paymentPreimage, paymentSent.remainingAttribution_opt)
     }
     val incoming = upstream.received.map(r => PaymentRelayed.IncomingPart(r.add.amountMsat, r.add.channelId, r.receivedAt))
-    val outgoing = paymentSent.parts.map(part => PaymentRelayed.OutgoingPart(part.amountWithFees, part.toChannelId, part.timestamp))
+    val outgoing = paymentSent.parts.map(part => PaymentRelayed.OutgoingPart(part.amountWithFees, part.toChannelId, part.settledAt))
     context.system.eventStream ! EventStream.Publish(TrampolinePaymentRelayed(paymentHash, incoming, outgoing, paymentSent.recipientNodeId, paymentSent.recipientAmount))
   }
 

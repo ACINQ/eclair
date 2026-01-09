@@ -207,7 +207,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.setBytes(7, e.paymentPreimage.toArray)
         statement.setBytes(8, e.recipientNodeId.value.toArray)
         statement.setBytes(9, p.toChannelId.toArray)
-        statement.setLong(10, p.timestamp.toLong)
+        statement.setLong(10, p.settledAt.toLong)
         statement.addBatch()
       })
       statement.executeBatch()
@@ -220,7 +220,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.setLong(1, p.amount.toLong)
         statement.setBytes(2, e.paymentHash.toArray)
         statement.setBytes(3, p.fromChannelId.toArray)
-        statement.setLong(4, p.timestamp.toLong)
+        statement.setLong(4, p.receivedAt.toLong)
         statement.addBatch()
       })
       statement.executeBatch()
@@ -239,7 +239,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           statement.setBytes(1, e.paymentHash.toArray)
           statement.setLong(2, nextTrampolineAmount.toLong)
           statement.setBytes(3, nextTrampolineNodeId.value.toArray)
-          statement.setLong(4, e.timestamp.toLong)
+          statement.setLong(4, e.settledAt.toLong)
           statement.executeUpdate()
         }
         // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
@@ -336,20 +336,22 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
             MilliSatoshi(rs.getLong("fees_msat")),
             rs.getByteVector32("to_channel_id"),
             None, // we don't store the route in the audit DB
-            TimestampMilli(rs.getLong("timestamp")))
+            // TODO: store startedAt when updating the DB schema instead of duplicating settledAt.
+            startedAt = TimestampMilli(rs.getLong("timestamp")),
+            settledAt = TimestampMilli(rs.getLong("timestamp")))
           val sent = sentByParentId.get(parentId) match {
             case Some(s) => s.copy(parts = s.parts :+ part)
             case None => PaymentSent(
               parentId,
-              rs.getByteVector32("payment_hash"),
               rs.getByteVector32("payment_preimage"),
               MilliSatoshi(rs.getLong("recipient_amount_msat")),
               PublicKey(rs.getByteVector("recipient_node_id")),
               Seq(part),
-              None)
+              None,
+              part.startedAt)
           }
           sentByParentId + (parentId -> sent)
-        }.values.toSeq.sortBy(_.timestamp)
+        }.values.toSeq.sortBy(_.settledAt)
       paginated_opt match {
         case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
         case None => result
@@ -372,7 +374,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
             case None => PaymentReceived(paymentHash, Seq(part))
           }
           receivedByHash + (paymentHash -> received)
-        }.values.toSeq.sortBy(_.timestamp)
+        }.values.toSeq.sortBy(_.settledAt)
       paginated_opt match {
         case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
         case None => result
@@ -425,7 +427,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
             Seq(OnTheFlyFundingPaymentRelayed(paymentHash, incoming, outgoing))
           case _ => Nil
         }
-    }.toSeq.sortBy(_.timestamp)
+    }.toSeq.sortBy(_.settledAt)
     paginated_opt match {
       case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
       case None => result

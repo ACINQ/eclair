@@ -38,7 +38,7 @@ import fr.acinq.eclair.router.BlindedRouteCreation
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, Features, MilliSatoshiLong, NodeParams, PaymentFinalExpiryConf, TestConstants, TestKitBaseClass, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.{Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, Features, MilliSatoshiLong, NodeParams, PaymentFinalExpiryConf, TestConstants, TestKitBaseClass, TimestampMilliLong, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -183,7 +183,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(payment.paymentId, invoice.paymentHash, PendingPaymentToRoute(sender.ref, request)))
 
-    val pf = PaymentFailed(payment.paymentId, invoice.paymentHash, Nil)
+    val pf = PaymentFailed(payment.paymentId, invoice.paymentHash, Nil, 100 unixms, 200 unixms)
     payFsm.send(initiator, pf)
     sender.expectMsg(pf)
     eventListener.expectNoMessage(100 millis)
@@ -208,7 +208,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
 
-    val pf = PaymentFailed(id, invoice.paymentHash, Nil)
+    val pf = PaymentFailed(id, invoice.paymentHash, Nil, 0 unixms, 150 unixms)
     payFsm.send(initiator, pf)
     sender.expectMsg(pf)
     eventListener.expectNoMessage(100 millis)
@@ -231,7 +231,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
 
-    val ps = PaymentSent(id, invoice.paymentHash, randomBytes32(), finalAmount, priv_c.publicKey, Seq(PartialPayment(UUID.randomUUID(), finalAmount, 0 msat, randomBytes32(), None)), None)
+    val ps = PaymentSent(id, paymentPreimage, finalAmount, priv_c.publicKey, Seq(PartialPayment(UUID.randomUUID(), finalAmount, 0 msat, randomBytes32(), None, 100 unixms, 200 unixms)), None, 80 unixms)
     payFsm.send(initiator, ps)
     sender.expectMsg(ps)
     eventListener.expectNoMessage(100 millis)
@@ -275,7 +275,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(payment.paymentId, invoice.paymentHash, PendingPaymentToRoute(sender.ref, req)))
 
-    val pf = PaymentFailed(payment.paymentId, invoice.paymentHash, Nil)
+    val pf = PaymentFailed(payment.paymentId, invoice.paymentHash, Nil, 100 unixms, 200 unixms)
     payFsm.send(initiator, pf)
     sender.expectMsg(pf)
     eventListener.expectNoMessage(100 millis)
@@ -317,7 +317,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
 
-    val pf = PaymentFailed(id, invoice.paymentHash, Nil)
+    val pf = PaymentFailed(id, invoice.paymentHash, Nil, 100 unixms, 200 unixms)
     payFsm.send(initiator, pf)
     sender.expectMsg(pf)
     eventListener.expectNoMessage(100 millis)
@@ -350,7 +350,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
 
-    val ps = PaymentSent(id, invoice.paymentHash, paymentPreimage, finalAmount, invoice.nodeId, Seq(PartialPayment(UUID.randomUUID(), finalAmount, 0 msat, randomBytes32(), None)), None)
+    val ps = PaymentSent(id, paymentPreimage, finalAmount, invoice.nodeId, Seq(PartialPayment(UUID.randomUUID(), finalAmount, 0 msat, randomBytes32(), None, 100 unixms, 200 unixms)), None, 100 unixms)
     payFsm.send(initiator, ps)
     sender.expectMsg(ps)
     eventListener.expectNoMessage(100 millis)

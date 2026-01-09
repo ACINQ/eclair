@@ -375,13 +375,16 @@ object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFail
     val route = f.route.map(_.nodeId) ++ f.route.lastOption.map(_.nextNodeId)
     val message = f match {
       case LocalFailure(_, _, t) => t.getMessage
-      case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, _, failureMessage)) => s"$origin returned: ${failureMessage.message}"
+      case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, _, failureMessage), _, _) => s"$origin returned: ${failureMessage.message}"
       case _: UnreadableRemoteFailure => "unreadable remote failure"
     }
     PaymentFailureSummaryJson(f.amount, route, message)
   })
 ))
 // @formatter:on
+
+private case class PaymentSentJson(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment], fees: MilliSatoshi, startedAt: TimestampMilli, settledAt: TimestampMilli)
+object PaymentSentSerializer extends ConvertClassSerializer[PaymentSent](p => PaymentSentJson(p.id, p.paymentHash, p.paymentPreimage, p.recipientAmount, p.recipientNodeId, p.parts, p.feesPaid, p.startedAt, p.settledAt))
 
 object ThrowableSerializer extends MinimalSerializer({
   case t: Throwable if t.getMessage != null => JString(t.getMessage)
@@ -680,10 +683,11 @@ object CustomTypeHints {
 
   val paymentEvent: CustomTypeHints = CustomTypeHints(Map(
     classOf[PaymentSent] -> "payment-sent",
+    classOf[PaymentSentJson] -> "payment-sent",
     classOf[ChannelPaymentRelayed] -> "payment-relayed",
     classOf[TrampolinePaymentRelayed] -> "trampoline-payment-relayed",
+    classOf[OnTheFlyFundingPaymentRelayed] -> "on-the-fly-funding-payment-relayed",
     classOf[PaymentReceived] -> "payment-received",
-    classOf[PaymentSettlingOnChain] -> "payment-settling-onchain",
     classOf[PaymentFailed] -> "payment-failed",
   ))
 
@@ -795,6 +799,7 @@ object JsonSerializers {
     GlobalBalanceSerializer +
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +
+    PaymentSentSerializer +
     OnionMessageReceivedSerializer +
     ShortIdAliasesSerializer +
     FundingTxStatusSerializer +

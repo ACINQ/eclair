@@ -30,7 +30,7 @@ import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.OfferData
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.PeerInfo
-import fr.acinq.eclair.payment.{Invoice, PaymentSettlingOnChain}
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, Invoice}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc, Transactions}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs
@@ -404,8 +404,8 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   test("type hints") {
-    val e1 = PaymentSettlingOnChain(UUID.randomUUID, 42 msat, randomBytes32())
-    assert(JsonSerializers.serialization.writePretty(e1)(JsonSerializers.formats).contains("\"type\" : \"payment-settling-onchain\""))
+    val e1 = ChannelPaymentRelayed(110 msat, 100 msat, randomBytes32(), randomBytes32(), randomBytes32(), 100 unixms, 150 unixms)
+    assert(JsonSerializers.serialization.writePretty(e1)(JsonSerializers.formats).contains("\"type\" : \"payment-relayed\""))
   }
 
   test("transaction serializer") {

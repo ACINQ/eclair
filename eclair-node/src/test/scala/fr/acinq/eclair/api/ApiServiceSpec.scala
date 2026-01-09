@@ -623,7 +623,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockService = new MockService(eclair)
 
     val uuid = UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f")
-    val paymentSent = PaymentSent(uuid, ByteVector32.Zeroes, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PartialPayment(uuid, 21 msat, 1 msat, ByteVector32.Zeroes, None, TimestampMilli(1553784337711L))), None)
+    val paymentSent = PaymentSent(uuid, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PartialPayment(uuid, 28 msat, 1 msat, ByteVector32.Zeroes, None, TimestampMilli(1553784337650L), TimestampMilli(1553784337711L))), None, TimestampMilli(1553784337120L))
     eclair.sendBlocking(any, any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(paymentSent))
     Post("/payinvoice", FormData("invoice" -> invoice, "blocking" -> "true").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -632,11 +632,11 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val response = entityAs[String]
-        val expected = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","recipientAmount":25,"recipientNodeId":"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0","parts":[{"id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"feesPaid":1,"toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}]}"""
+        val expected = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"01d0fabd251fcbbe2b93b4b927b26ad2a1a99077152e45ded1e678afa45dbec5","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","recipientAmount":25,"recipientNodeId":"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0","parts":[{"id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":28,"feesPaid":1,"toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","startedAt":{"iso":"2019-03-28T14:45:37.650Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}],"fees":4,"startedAt":{"iso":"2019-03-28T14:45:37.120Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}"""
         assert(response == expected)
       }
 
-    val paymentFailed = PaymentFailed(uuid, ByteVector32.Zeroes, failures = Seq.empty, timestamp = TimestampMilli(1553784963659L))
+    val paymentFailed = PaymentFailed(uuid, ByteVector32.Zeroes, failures = Seq.empty, startedAt = TimestampMilli(1553784963507L), settledAt = TimestampMilli(1553784963659L))
     eclair.sendBlocking(any, any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(paymentFailed))
     Post("/payinvoice", FormData("invoice" -> invoice, "blocking" -> "true").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -645,7 +645,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val response = entityAs[String]
-        val expected = """{"type":"payment-failed","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[],"timestamp":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}"""
+        val expected = """{"type":"payment-failed","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[],"startedAt":{"iso":"2019-03-28T14:56:03.507Z","unix":1553784963},"settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}"""
         assert(response == expected)
       }
   }
@@ -1109,7 +1109,6 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         eclair.audit(123456 unixsec, 654321 unixsec, Some(Paginated(count = 1, skip = 2)))(any[Timeout]).wasCalled(once)
       }
-
   }
 
   test("the websocket should return typed objects") {
@@ -1122,20 +1121,20 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       mockService.webSocket ~>
       check {
-        val pf = PaymentFailed(fixedUUID, ByteVector32.Zeroes, failures = Seq.empty, timestamp = TimestampMilli(1553784963659L))
-        val expectedSerializedPf = """{"type":"payment-failed","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[],"timestamp":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}"""
+        val pf = PaymentFailed(fixedUUID, ByteVector32.Zeroes, failures = Seq.empty, startedAt = TimestampMilli(1553784963221L), settledAt = TimestampMilli(1553784963659L))
+        val expectedSerializedPf = """{"type":"payment-failed","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","failures":[],"startedAt":{"iso":"2019-03-28T14:56:03.221Z","unix":1553784963},"settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}"""
         assert(serialization.write(pf) == expectedSerializedPf)
         system.eventStream.publish(pf)
         wsClient.expectMessage(expectedSerializedPf)
 
-        val ps = PaymentSent(fixedUUID, ByteVector32.Zeroes, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PartialPayment(fixedUUID, 21 msat, 1 msat, ByteVector32.Zeroes, None, TimestampMilli(1553784337711L))), None)
-        val expectedSerializedPs = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","recipientAmount":25,"recipientNodeId":"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0","parts":[{"id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"feesPaid":1,"toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}]}"""
+        val ps = PaymentSent(fixedUUID, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PartialPayment(fixedUUID, 28 msat, 1 msat, ByteVector32.Zeroes, None, startedAt = TimestampMilli(1553784337539L), settledAt = TimestampMilli(1553784337711L))), None, startedAt = TimestampMilli(1553784337073L))
+        val expectedSerializedPs = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"01d0fabd251fcbbe2b93b4b927b26ad2a1a99077152e45ded1e678afa45dbec5","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","recipientAmount":25,"recipientNodeId":"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0","parts":[{"id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":28,"feesPaid":1,"toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","startedAt":{"iso":"2019-03-28T14:45:37.539Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}],"fees":4,"startedAt":{"iso":"2019-03-28T14:45:37.073Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}"""
         assert(serialization.write(ps) == expectedSerializedPs)
         system.eventStream.publish(ps)
         wsClient.expectMessage(expectedSerializedPs)
 
         val prel = ChannelPaymentRelayed(21 msat, 20 msat, ByteVector32.Zeroes, ByteVector32.Zeroes, ByteVector32.One, TimestampMilli(1553784961048L), TimestampMilli(1553784963659L))
-        val expectedSerializedPrel = """{"type":"payment-relayed","amountIn":21,"amountOut":20,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","toChannelId":"0100000000000000000000000000000000000000000000000000000000000000","receivedAt":{"iso":"2019-03-28T14:56:01.048Z","unix":1553784961},"settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}"""
+        val expectedSerializedPrel = """{"type":"payment-relayed","amountIn":21,"amountOut":20,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","toChannelId":"0100000000000000000000000000000000000000000000000000000000000000","startedAt":{"iso":"2019-03-28T14:56:01.048Z","unix":1553784961},"settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}"""
         assert(serialization.write(prel) == expectedSerializedPrel)
         system.eventStream.publish(prel)
         wsClient.expectMessage(expectedSerializedPrel)
@@ -1147,16 +1146,10 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         wsClient.expectMessage(expectedSerializedPtrel)
 
         val precv = PaymentReceived(ByteVector32.Zeroes, Seq(PaymentReceived.PartialPayment(21 msat, ByteVector32.Zeroes, TimestampMilli(1553784963659L))))
-        val expectedSerializedPrecv = """{"type":"payment-received","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","parts":[{"amount":21,"fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}]}"""
+        val expectedSerializedPrecv = """{"type":"payment-received","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","parts":[{"amount":21,"fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","receivedAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}]}"""
         assert(serialization.write(precv) == expectedSerializedPrecv)
         system.eventStream.publish(precv)
         wsClient.expectMessage(expectedSerializedPrecv)
-
-        val pset = PaymentSettlingOnChain(fixedUUID, 21 msat, ByteVector32.One, timestamp = TimestampMilli(1553785442676L))
-        val expectedSerializedPset = """{"type":"payment-settling-onchain","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":21,"paymentHash":"0100000000000000000000000000000000000000000000000000000000000000","timestamp":{"iso":"2019-03-28T15:04:02.676Z","unix":1553785442}}"""
-        assert(serialization.write(pset) == expectedSerializedPset)
-        system.eventStream.publish(pset)
-        wsClient.expectMessage(expectedSerializedPset)
 
         val chcr = ChannelCreated(system.deadLetters, system.deadLetters, bobNodeId, isOpener = true, ByteVector32.One, FeeratePerKw(25 sat), Some(FeeratePerKw(20 sat)))
         val expectedSerializedChcr = """{"type":"channel-created","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","isOpener":true,"temporaryChannelId":"0100000000000000000000000000000000000000000000000000000000000000","commitTxFeeratePerKw":25,"fundingTxFeeratePerKw":20}"""

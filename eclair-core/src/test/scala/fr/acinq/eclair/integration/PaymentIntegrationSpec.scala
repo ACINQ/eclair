@@ -48,7 +48,7 @@ import fr.acinq.eclair.router.Router.{ChannelHop, GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferPaths}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails}
-import fr.acinq.eclair.{CltvExpiryDelta, EclairImpl, EncodedNodeId, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, EclairImpl, EncodedNodeId, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli,TimestampMilliLong, randomBytes32, randomKey}
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -369,6 +369,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.feesPaid > 0.msat, paymentSent)
     assert(paymentSent.parts.forall(p => p.id != paymentSent.id), paymentSent)
     assert(paymentSent.parts.forall(p => p.route.isDefined), paymentSent)
+    assert(paymentSent.startedAt >= start)
 
     val paymentParts = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
     assert(paymentParts.length == paymentSent.parts.length, paymentParts)
@@ -380,7 +381,14 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     awaitCond(nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now()).nonEmpty)
     val sent = nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now())
     assert(sent.length == 1, sent)
-    assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) == paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp), remainingAttribution_opt = None), sent)
+    val paymentSent1 = paymentSent.copy(
+      // We don't store the route in the DB, and don't store the startedAt timestamp yet (we set it to the same value as settledAt).
+      parts = paymentSent.parts.map(p => p.copy(route = None, startedAt = p.settledAt)).sortBy(_.settledAt),
+      // We don't store attribution data in the DB.
+      remainingAttribution_opt = None,
+      startedAt = 0 unixms,
+    )
+    assert(sent.head.copy(parts = sent.head.parts.sortBy(_.settledAt), startedAt = 0 unixms) == paymentSent1)
 
     awaitCond(nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingStandardPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("D").nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
