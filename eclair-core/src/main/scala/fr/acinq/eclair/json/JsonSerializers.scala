@@ -383,6 +383,9 @@ object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFail
 ))
 // @formatter:on
 
+private case class PaymentSentJson(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment])
+object PaymentSentSerializer extends ConvertClassSerializer[PaymentSent](p => PaymentSentJson(p.id, p.paymentHash, p.paymentPreimage, p.recipientAmount, p.recipientNodeId, p.parts))
+
 object ThrowableSerializer extends MinimalSerializer({
   case t: Throwable if t.getMessage != null => JString(t.getMessage)
   case t: Throwable => JString(t.getClass.getSimpleName)
@@ -680,6 +683,7 @@ object CustomTypeHints {
 
   val paymentEvent: CustomTypeHints = CustomTypeHints(Map(
     classOf[PaymentSent] -> "payment-sent",
+    classOf[PaymentSentJson] -> "payment-sent",
     classOf[ChannelPaymentRelayed] -> "payment-relayed",
     classOf[TrampolinePaymentRelayed] -> "trampoline-payment-relayed",
     classOf[OnTheFlyFundingPaymentRelayed] -> "on-the-fly-funding-payment-relayed",
@@ -795,6 +799,7 @@ object JsonSerializers {
     GlobalBalanceSerializer +
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +
+    PaymentSentSerializer +
     OnionMessageReceivedSerializer +
     ShortIdAliasesSerializer +
     FundingTxStatusSerializer +
