@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment.send
 
 import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
-import akka.actor.{ActorRef, FSM, Props, Status}
+import akka.actor.{ActorRef, FSM, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.channel.{HtlcOverriddenByLocalCommit, HtlcsTimedoutDownstream, HtlcsWillTimeoutUpstream, Upstream}
@@ -49,9 +49,9 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   require(cfg.id == cfg.parentId, "multi-part payment cannot have a parent payment")
 
-  val id = cfg.id
-  val paymentHash = cfg.paymentHash
-  val start = TimestampMilli.now()
+  val id: UUID = cfg.id
+  val paymentHash: ByteVector32 = cfg.paymentHash
+  val start: TimestampMilli = TimestampMilli.now()
   private var retriedFailedChannels = false
 
   startWith(WAIT_FOR_PAYMENT_REQUEST, WaitingForRequest)
@@ -101,7 +101,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
           // payment, which may be confusing for users.
           val dummyPayment = OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, cfg.paymentType, d.request.recipient.totalAmount, d.request.recipient.totalAmount, d.request.recipient.nodeId, TimestampMilli.now(), cfg.invoice, cfg.payerKey_opt, OutgoingPaymentStatus.Pending)
           nodeParams.db.payments.addOutgoingPayment(dummyPayment)
-          nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(id, paymentHash, failure :: Nil))
+          nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(id, paymentHash, failure :: Nil, startedAt = start, settledAt = TimestampMilli.now()))
         }
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures :+ failure, d.pending.keySet))
       }
@@ -154,7 +154,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val failures = d.failures ++ pf.failures
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        myStop(d.request, Left(PaymentFailed(id, paymentHash, failures)))
+        myStop(d.request, Left(PaymentFailed(id, paymentHash, failures, startedAt = start, settledAt = TimestampMilli.now())))
       } else {
         stay() using d.copy(failures = failures, pending = pending)
       }
@@ -176,7 +176,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val parts = d.parts ++ ps.parts
       val pending = d.pending - ps.parts.head.id
       if (pending.isEmpty) {
-        myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, parts, d.remainingAttribution_opt)))
+        myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, parts, d.remainingAttribution_opt, start)))
       } else {
         stay() using d.copy(parts = parts, pending = pending)
       }
@@ -187,7 +187,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       log.warning(s"payment succeeded but partial payment failed (id=${pf.id})")
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts, d.remainingAttribution_opt)))
+        myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts, d.remainingAttribution_opt, start)))
       } else {
         stay() using d.copy(pending = pending)
       }
@@ -207,7 +207,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   private def gotoAbortedOrStop(d: PaymentAborted): State = {
     if (d.pending.isEmpty) {
-      myStop(d.request, Left(PaymentFailed(id, paymentHash, d.failures)))
+      myStop(d.request, Left(PaymentFailed(id, paymentHash, d.failures, startedAt = start, settledAt = TimestampMilli.now())))
     } else
       goto(PAYMENT_ABORTED) using d
   }
@@ -217,7 +217,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       d.request.replyTo ! PreimageReceived(paymentHash, d.preimage, d.remainingAttribution_opt)
     }
     if (d.pending.isEmpty) {
-      myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts, d.remainingAttribution_opt)))
+      myStop(d.request, Right(cfg.createPaymentSent(d.request.recipient, d.preimage, d.parts, d.remainingAttribution_opt, start)))
     } else
       goto(PAYMENT_SUCCEEDED) using d
   }
@@ -255,7 +255,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
               // in case of a relayed payment, we need to take into account the fee of the first channels
               paymentSent.parts.collect {
                 // NB: the route attribute will always be defined here
-                case p@PartialPayment(_, _, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
+                case p@PartialPayment(_, _, _, _, Some(route), _, _) => route.head.fee(p.amountWithFees)
               }.sum
           }
           paymentSent.feesPaid + localFees

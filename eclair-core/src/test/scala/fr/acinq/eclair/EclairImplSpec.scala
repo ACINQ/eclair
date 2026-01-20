@@ -581,9 +581,10 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     import f._
 
     val eclair = new EclairImpl(kit)
+    val startedAt = TimestampMilli.now()
 
     // A first payment has been sent out and is currently pending.
-    val pendingPayment1 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, randomBytes32(), "test", 500 msat, 750 msat, randomKey().publicKey, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Pending)
+    val pendingPayment1 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, randomBytes32(), "test", 500 msat, 750 msat, randomKey().publicKey, startedAt, None, None, OutgoingPaymentStatus.Pending)
     kit.nodeParams.db.payments.addOutgoingPayment(pendingPayment1)
     eclair.sentInfo(PaymentIdentifier.PaymentUUID(pendingPayment1.parentId)).pipeTo(sender.ref)
     sender.expectMsg(Seq(pendingPayment1))
@@ -611,9 +612,9 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     // A third payment is fully settled in the DB and not being retried.
     val failedAt = TimestampMilli.now()
-    val failedPayment = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, spontaneousPayment.paymentHash, "test", 700 msat, 900 msat, randomKey().publicKey, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Failed(Nil, failedAt))
+    val failedPayment = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, spontaneousPayment.paymentHash, "test", 700 msat, 900 msat, randomKey().publicKey, startedAt, None, None, OutgoingPaymentStatus.Failed(Nil, failedAt))
     kit.nodeParams.db.payments.addOutgoingPayment(failedPayment.copy(status = OutgoingPaymentStatus.Pending))
-    kit.nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(failedPayment.id, failedPayment.paymentHash, Nil, failedAt))
+    kit.nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(failedPayment.id, failedPayment.paymentHash, Nil, startedAt, failedAt))
     eclair.sentInfo(PaymentIdentifier.PaymentUUID(failedPayment.parentId)).pipeTo(sender.ref)
     paymentInitiator.expectMsg(GetPayment(PaymentIdentifier.PaymentUUID(failedPayment.parentId)))
     paymentInitiator.reply(NoPendingPayment(PaymentIdentifier.PaymentUUID(failedPayment.parentId)))

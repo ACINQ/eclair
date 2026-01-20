@@ -49,7 +49,7 @@ import fr.acinq.eclair.wire.protocol.PaymentOnion.{FinalPayload, IntermediatePay
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{AllowedFeatures, PathId, PaymentConstraints}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TestConstants, TimestampMilli, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{Alias, BlockHeight, Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, ShortChannelId, TestConstants, TimestampMilli, TimestampMilliLong, UInt64, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -485,7 +485,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val nodeRelayerAdapters = mockPayFSM.expectMessageType[SendMultiPartPayment].replyTo
 
     // The proposed fees are low, so we ask the sender to raise them.
-    nodeRelayerAdapters ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil)
+    nodeRelayerAdapters ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil, 100 unixms, 150 unixms)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
@@ -537,8 +537,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     router.expectMessageType[RouteRequest]
 
     // If we're having a hard time finding routes, raising the fee/cltv will likely help.
-    val failures = LocalFailure(outgoingAmount, Nil, RouteNotFound) :: RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, 1, PermanentNodeFailure())) :: LocalFailure(outgoingAmount, Nil, RouteNotFound) :: Nil
-    payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
+    val failures = LocalFailure(outgoingAmount, Nil, RouteNotFound) :: RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, 1, PermanentNodeFailure()), 100 unixms, 150 unixms) :: LocalFailure(outgoingAmount, Nil, RouteNotFound) :: Nil
+    payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures, 100 unixms, 150 unixms)
 
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
@@ -562,8 +562,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
     router.expectMessageType[RouteRequest]
 
-    val failures = RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, 1, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(outgoingAmount, Nil, Sphinx.CannotDecryptFailurePacket(ByteVector.empty, None), Nil) :: Nil
-    payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
+    val failures = RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, 1, FinalIncorrectHtlcAmount(42 msat)), 100 unixms, 150 unixms) :: UnreadableRemoteFailure(outgoingAmount, Nil, Sphinx.CannotDecryptFailurePacket(ByteVector.empty, None), 100 unixms, 150 unixms, Nil) :: Nil
+    payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures, 100 unixms, 150 unixms)
 
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
@@ -668,7 +668,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // The corresponding commands conflict with the previous fulfill and are ignored.
     val downstreamHtlc = UpdateAddHtlc(randomBytes32(), 7, outgoingAmount, paymentHash, outgoingExpiry, TestConstants.emptyOnionPacket, None, accountable = false, None)
     val failure = LocalFailure(outgoingAmount, Nil, HtlcOverriddenByLocalCommit(randomBytes32(), downstreamHtlc))
-    nodeRelayerAdapters ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, Seq(failure))
+    nodeRelayerAdapters ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, Seq(failure), 100 unixms, 150 unixms)
     eventListener.expectNoMessage(100 millis) // the payment didn't succeed, but didn't fail either, so we just ignore it
     parent.expectMessageType[NodeRelayer.RelayComplete]
     register.expectNoMessage(100 millis)
@@ -738,7 +738,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     validateOutgoingPayment(outgoingPayment)
 
     // The outgoing payment fails because we don't have enough balance: we trigger on-the-fly funding.
-    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil)
+    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil, 100 unixms, 150 unixms)
     val fwd = register.expectMessageType[Register.ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
     assert(fwd.nodeId == outgoingNodeId)
     assert(fwd.message.nextPathKey_opt.isEmpty)
@@ -784,7 +784,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     validateOutgoingPayment(outgoingPayment)
 
     // The outgoing payment fails, but it's not a liquidity issue.
-    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, 1, TemporaryNodeFailure())) :: Nil)
+    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, 1, TemporaryNodeFailure()), 100 unixms, 150 unixms) :: Nil, 100 unixms, 150 unixms)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == p.add.channelId)
@@ -1039,7 +1039,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
 
     // The outgoing payment fails because we don't have enough balance: we trigger on-the-fly funding.
-    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil)
+    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil, 100 unixms, 150 unixms)
     val fwd = register.expectMessageType[Register.ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
     assert(fwd.nodeId == outgoingNodeId)
     assert(fwd.message.nextPathKey_opt.nonEmpty)
@@ -1078,7 +1078,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
 
     // The outgoing payment fails because we don't have enough balance: we trigger on-the-fly funding, but can't reach our peer.
-    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil)
+    outgoingPayment.replyTo ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil, 100 unixms, 110 unixms)
     val fwd = register.expectMessageType[Register.ForwardNodeId[Peer.ProposeOnTheFlyFunding]]
     fwd.message.replyTo ! Peer.ProposeOnTheFlyFundingResponse.NotAvailable("peer disconnected")
     // We fail the payments immediately since the recipient isn't available.
@@ -1185,25 +1185,25 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
 object NodeRelayerSpec {
 
-  val relayId = UUID.randomUUID()
+  val relayId: UUID = UUID.randomUUID()
 
-  val paymentPreimage = randomBytes32()
-  val paymentHash = Crypto.sha256(paymentPreimage)
-  val paymentSecret = randomBytes32()
+  val paymentPreimage: ByteVector32 = randomBytes32()
+  val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
+  val paymentSecret: ByteVector32 = randomBytes32()
 
-  val outgoingAmount = 40_000_000 msat
-  val outgoingExpiry = CltvExpiry(490000)
-  val outgoingNodeKey = randomKey()
-  val outgoingNodeId = outgoingNodeKey.publicKey
+  val outgoingAmount: MilliSatoshi = 40_000_000 msat
+  val outgoingExpiry: CltvExpiry = CltvExpiry(490000)
+  val outgoingNodeKey: PrivateKey = randomKey()
+  val outgoingNodeId: PublicKey = outgoingNodeKey.publicKey
 
-  val incomingAmount = 41_000_000 msat
-  val incomingSecret = randomBytes32()
-  val incomingMultiPart = Seq(
-    createValidIncomingPacket(15_000_000 msat, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry, TimestampMilli(1000), accountableIn = false),
-    createValidIncomingPacket(15_000_000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry, TimestampMilli(2000), accountableIn = false),
-    createValidIncomingPacket(11_000_000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry, TimestampMilli(3000), accountableIn = false)
+  val incomingAmount: MilliSatoshi = 41_000_000 msat
+  val incomingSecret: ByteVector32 = randomBytes32()
+  val incomingMultiPart: Seq[RelayToTrampolinePacket] = Seq(
+    createValidIncomingPacket(15_000_000 msat, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry, TimestampMilli(1000)),
+    createValidIncomingPacket(15_000_000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry, TimestampMilli(2000)),
+    createValidIncomingPacket(11_000_000 msat, incomingAmount, CltvExpiry(499999), outgoingAmount, outgoingExpiry, TimestampMilli(3000))
   )
-  val incomingSinglePart = createValidIncomingPacket(incomingAmount, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry, TimestampMilli(5000))
+  val incomingSinglePart: RelayToTrampolinePacket = createValidIncomingPacket(incomingAmount, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry, TimestampMilli(5000))
   val incomingAsyncPayment: Seq[RelayToTrampolinePacket] = incomingMultiPart.map(p => p.copy(innerPayload = IntermediatePayload.NodeRelay.Standard.createNodeRelayForAsyncPayment(p.innerPayload.amountToForward, p.innerPayload.outgoingCltv, outgoingNodeId, upgradeAccountability = false)))
 
   def asyncTimeoutHeight(nodeParams: NodeParams): BlockHeight =
@@ -1213,7 +1213,7 @@ object NodeRelayerSpec {
     (paymentPackets.map(_.outerPayload.expiry).min - nodeParams.relayParams.asyncPaymentsParams.cancelSafetyBeforeTimeout).blockHeight
 
   def createSuccessEvent(): PaymentSent =
-    PaymentSent(relayId, paymentHash, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), outgoingAmount, 10 msat, randomBytes32(), None)), None)
+    PaymentSent(relayId, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), outgoingAmount, 10 msat, randomBytes32(), None, 0 unixms, 50 unixms)), None, 0 unixms)
 
   def createTrampolinePacket(amount: MilliSatoshi, expiry: CltvExpiry): OnionRoutingPacket = {
     val payload = NodePayload(outgoingNodeId, FinalPayload.Standard.createPayload(amount, amount, expiry, paymentSecret, upgradeAccountability = false))
