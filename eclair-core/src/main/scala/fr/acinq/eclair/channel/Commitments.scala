@@ -12,7 +12,6 @@ import fr.acinq.eclair.channel.fsm.Channel.ChannelConf
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.crypto.{NonceGenerator, ShaChain}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
-import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -460,7 +459,7 @@ case class Commitment(fundingTxIndex: Long,
     localCommit.spec.htlcs.collect(DirectedHtlc.incoming).filter(nearlyExpired)
   }
 
-  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf, reputationScore: Reputation.Score): Either[ChannelException, Unit] = {
+  def canSendAdd(amount: MilliSatoshi, params: ChannelParams, changes: CommitmentChanges, feeConf: OnChainFeeConf): Either[ChannelException, Unit] = {
     // let's compute the current commitments *as seen by them* with the additional htlc
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
     val remoteCommit1 = nextRemoteCommit_opt.getOrElse(remoteCommit)
@@ -901,7 +900,7 @@ case class Commitments(channelParams: ChannelParams,
     val changes1 = changes.addLocalProposal(add).copy(localNextHtlcId = changes.localNextHtlcId + 1)
     val originChannels1 = originChannels + (add.id -> cmd.origin)
     // we verify that this htlc is allowed in every active commitment
-    val failures = active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feeConf, cmd.reputationScore))
+    val failures = active.map(_.canSendAdd(add.amountMsat, channelParams, changes1, feeConf))
       // and that we don't exceed the authorized channel occupancy (jamming)
       .appended(cmd.reputationScore.checkIncomingChannelOccupancy(cmd.origin.upstream.incomingChannelOccupancy, channelId))
       .collect { case Left(f) => f }
@@ -1144,12 +1143,12 @@ case class Commitments(channelParams: ChannelParams,
           case fail: UpdateFailHtlc =>
             val origin = originChannels(fail.id)
             val add = remoteSpec.findIncomingHtlcById(fail.id).map(_.add).get
-            RES_ADD_SETTLED(origin, add, HtlcResult.RemoteFail(fail))
+            RES_ADD_SETTLED(origin, remoteNodeId, add, HtlcResult.RemoteFail(fail))
           // same as above
           case fail: UpdateFailMalformedHtlc =>
             val origin = originChannels(fail.id)
             val add = remoteSpec.findIncomingHtlcById(fail.id).map(_.add).get
-            RES_ADD_SETTLED(origin, add, HtlcResult.RemoteFailMalformed(fail))
+            RES_ADD_SETTLED(origin, remoteNodeId, add, HtlcResult.RemoteFailMalformed(fail))
         }
         val (acceptedHtlcs, rejectedHtlcs) = {
           // the received htlcs have already been added to commitments (they've been signed by our peer), and may already

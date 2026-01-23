@@ -619,11 +619,12 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   test("'send' method should allow blocking until payment completes") {
     val invoice = "lnbc12580n1pw2ywztsp563x9gq6keftcu8kh9kh5qdj4p5wpmc3h802ekxwspcgfwpz2g25qpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqmfe0a6"
+    val nextNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
 
     val uuid = UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f")
-    val paymentSent = PaymentSent(uuid, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PartialPayment(uuid, 28 msat, 1 msat, ByteVector32.Zeroes, None, TimestampMilli(1553784337650L), TimestampMilli(1553784337711L))), None, TimestampMilli(1553784337120L))
+    val paymentSent = PaymentSent(uuid, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PaymentPart(uuid, PaymentEvent.OutgoingPayment(ByteVector32.Zeroes, nextNodeId, 28 msat, TimestampMilli(1553784337711L)), 3 msat, None, TimestampMilli(1553784337650L))), None, TimestampMilli(1553784337120L))
     eclair.sendBlocking(any, any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(paymentSent))
     Post("/payinvoice", FormData("invoice" -> invoice, "blocking" -> "true").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -632,7 +633,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val response = entityAs[String]
-        val expected = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"01d0fabd251fcbbe2b93b4b927b26ad2a1a99077152e45ded1e678afa45dbec5","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","recipientAmount":25,"recipientNodeId":"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0","parts":[{"id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":28,"feesPaid":1,"toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","startedAt":{"iso":"2019-03-28T14:45:37.650Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}],"fees":4,"startedAt":{"iso":"2019-03-28T14:45:37.120Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}"""
+        val expected = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"01d0fabd251fcbbe2b93b4b927b26ad2a1a99077152e45ded1e678afa45dbec5","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","recipientAmount":25,"recipientNodeId":"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0","parts":[{"id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","channelId":"0000000000000000000000000000000000000000000000000000000000000000","nextNodeId":"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87","amountWithFees":28,"fees":3,"startedAt":{"iso":"2019-03-28T14:45:37.650Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}],"fees":3,"startedAt":{"iso":"2019-03-28T14:45:37.120Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}"""
         assert(response == expected)
       }
 
@@ -1115,6 +1116,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockService = new MockService(mock[Eclair])
     val fixedUUID = UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f")
     val fundingTxId = TxId.fromValidHex("9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692")
+    val previousNodeId = PublicKey(hex"02e899d99662f2e64ea0eeaecb53c4628fa40a22d7185076e42e8a3d67fcb7b8e6")
+    val nextNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
     val wsClient = WSProbe()
 
     WS("/ws", wsClient.flow) ~>
@@ -1127,26 +1130,26 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         system.eventStream.publish(pf)
         wsClient.expectMessage(expectedSerializedPf)
 
-        val ps = PaymentSent(fixedUUID, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PartialPayment(fixedUUID, 28 msat, 1 msat, ByteVector32.Zeroes, None, startedAt = TimestampMilli(1553784337539L), settledAt = TimestampMilli(1553784337711L))), None, startedAt = TimestampMilli(1553784337073L))
-        val expectedSerializedPs = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"01d0fabd251fcbbe2b93b4b927b26ad2a1a99077152e45ded1e678afa45dbec5","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","recipientAmount":25,"recipientNodeId":"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0","parts":[{"id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","amount":28,"feesPaid":1,"toChannelId":"0000000000000000000000000000000000000000000000000000000000000000","startedAt":{"iso":"2019-03-28T14:45:37.539Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}],"fees":4,"startedAt":{"iso":"2019-03-28T14:45:37.073Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}"""
+        val ps = PaymentSent(fixedUUID, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PaymentPart(fixedUUID, PaymentEvent.OutgoingPayment(ByteVector32.Zeroes, nextNodeId, 28 msat, settledAt = TimestampMilli(1553784337711L)), 3 msat, None, startedAt = TimestampMilli(1553784337539L))), None, startedAt = TimestampMilli(1553784337073L))
+        val expectedSerializedPs = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"01d0fabd251fcbbe2b93b4b927b26ad2a1a99077152e45ded1e678afa45dbec5","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","recipientAmount":25,"recipientNodeId":"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0","parts":[{"id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","channelId":"0000000000000000000000000000000000000000000000000000000000000000","nextNodeId":"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87","amountWithFees":28,"fees":3,"startedAt":{"iso":"2019-03-28T14:45:37.539Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}],"fees":3,"startedAt":{"iso":"2019-03-28T14:45:37.073Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}"""
         assert(serialization.write(ps) == expectedSerializedPs)
         system.eventStream.publish(ps)
         wsClient.expectMessage(expectedSerializedPs)
 
-        val prel = ChannelPaymentRelayed(21 msat, 20 msat, ByteVector32.Zeroes, ByteVector32.Zeroes, ByteVector32.One, TimestampMilli(1553784961048L), TimestampMilli(1553784963659L))
-        val expectedSerializedPrel = """{"type":"payment-relayed","amountIn":21,"amountOut":20,"paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","toChannelId":"0100000000000000000000000000000000000000000000000000000000000000","startedAt":{"iso":"2019-03-28T14:56:01.048Z","unix":1553784961},"settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}"""
+        val prel = ChannelPaymentRelayed(ByteVector32.Zeroes, PaymentEvent.IncomingPayment(ByteVector32.Zeroes, previousNodeId, 21 msat, TimestampMilli(1553784961048L)), PaymentEvent.OutgoingPayment(ByteVector32.One, nextNodeId, 20 msat, TimestampMilli(1553784963659L)))
+        val expectedSerializedPrel = """{"type":"payment-relayed","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","paymentIn":{"channelId":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"02e899d99662f2e64ea0eeaecb53c4628fa40a22d7185076e42e8a3d67fcb7b8e6","amount":21,"receivedAt":{"iso":"2019-03-28T14:56:01.048Z","unix":1553784961}},"paymentOut":{"channelId":"0100000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87","amount":20,"settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}}"""
         assert(serialization.write(prel) == expectedSerializedPrel)
         system.eventStream.publish(prel)
         wsClient.expectMessage(expectedSerializedPrel)
 
-        val ptrel = TrampolinePaymentRelayed(ByteVector32.Zeroes, Seq(PaymentRelayed.IncomingPart(21 msat, ByteVector32.Zeroes, TimestampMilli(1553784963659L))), Seq(PaymentRelayed.OutgoingPart(8 msat, ByteVector32.Zeroes, TimestampMilli(1553784963659L)), PaymentRelayed.OutgoingPart(10 msat, ByteVector32.One, TimestampMilli(1553784963659L))), bobNodeId, 17 msat)
-        val expectedSerializedPtrel = """{"type":"trampoline-payment-relayed","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","incoming":[{"amount":21,"channelId":"0000000000000000000000000000000000000000000000000000000000000000","receivedAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}],"outgoing":[{"amount":8,"channelId":"0000000000000000000000000000000000000000000000000000000000000000","settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}},{"amount":10,"channelId":"0100000000000000000000000000000000000000000000000000000000000000","settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}],"nextTrampolineNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","nextTrampolineAmount":17}"""
+        val ptrel = TrampolinePaymentRelayed(ByteVector32.Zeroes, Seq(PaymentEvent.IncomingPayment(ByteVector32.Zeroes, previousNodeId, 21 msat, TimestampMilli(1553784963659L))), Seq(PaymentEvent.OutgoingPayment(ByteVector32.Zeroes, nextNodeId, 8 msat, TimestampMilli(1553784963659L)), PaymentEvent.OutgoingPayment(ByteVector32.One, nextNodeId, 10 msat, TimestampMilli(1553784963659L))), bobNodeId, 17 msat)
+        val expectedSerializedPtrel = """{"type":"trampoline-payment-relayed","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","incoming":[{"channelId":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"02e899d99662f2e64ea0eeaecb53c4628fa40a22d7185076e42e8a3d67fcb7b8e6","amount":21,"receivedAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}],"outgoing":[{"channelId":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87","amount":8,"settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}},{"channelId":"0100000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87","amount":10,"settledAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}],"nextTrampolineNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","nextTrampolineAmount":17}"""
         assert(serialization.write(ptrel) == expectedSerializedPtrel)
         system.eventStream.publish(ptrel)
         wsClient.expectMessage(expectedSerializedPtrel)
 
-        val precv = PaymentReceived(ByteVector32.Zeroes, Seq(PaymentReceived.PartialPayment(21 msat, ByteVector32.Zeroes, TimestampMilli(1553784963659L))))
-        val expectedSerializedPrecv = """{"type":"payment-received","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","parts":[{"amount":21,"fromChannelId":"0000000000000000000000000000000000000000000000000000000000000000","receivedAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}]}"""
+        val precv = PaymentReceived(ByteVector32.Zeroes, Seq(PaymentEvent.IncomingPayment(ByteVector32.Zeroes, previousNodeId, 21 msat, TimestampMilli(1553784963659L))))
+        val expectedSerializedPrecv = """{"type":"payment-received","paymentHash":"0000000000000000000000000000000000000000000000000000000000000000","parts":[{"channelId":"0000000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"02e899d99662f2e64ea0eeaecb53c4628fa40a22d7185076e42e8a3d67fcb7b8e6","amount":21,"receivedAt":{"iso":"2019-03-28T14:56:03.659Z","unix":1553784963}}]}"""
         assert(serialization.write(precv) == expectedSerializedPrecv)
         system.eventStream.publish(precv)
         wsClient.expectMessage(expectedSerializedPrecv)

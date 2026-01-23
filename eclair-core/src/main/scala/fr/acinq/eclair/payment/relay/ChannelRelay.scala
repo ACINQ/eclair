@@ -30,7 +30,7 @@ import fr.acinq.eclair.io.Peer.ProposeOnTheFlyFundingResponse
 import fr.acinq.eclair.io.{Peer, PeerReadyNotifier}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.{OutgoingChannel, OutgoingChannelParams}
-import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentEvent}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.reputation.ReputationRecorder.GetConfidence
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
@@ -244,7 +244,7 @@ class ChannelRelay private(nodeParams: NodeParams,
 
   private def waitForAddSettled(): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill)) =>
+      case WrappedAddResponse(RES_ADD_SETTLED(_, remoteNodeId, htlc, fulfill: HtlcResult.Fulfill)) =>
         val now = TimestampMilli.now()
         context.log.info("relaying fulfill to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, now, reputationScore.outgoingConfidence, upstream.receivedFrom, htlc.channelId)
         Metrics.relayFulfill(reputationScore.outgoingConfidence)
@@ -254,10 +254,12 @@ class ChannelRelay private(nodeParams: NodeParams,
         }
         val attribution = FulfillAttributionData(htlcReceivedAt = upstream.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = downstreamAttribution_opt)
         val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, Some(attribution), commit = true)
-        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(upstream.amountIn, htlc.amountMsat, htlc.paymentHash, upstream.add.channelId, htlc.channelId, upstream.receivedAt, now))
+        val incoming = PaymentEvent.IncomingPayment(upstream.add.channelId, upstream.receivedFrom, upstream.amountIn, upstream.receivedAt)
+        val outgoing = PaymentEvent.OutgoingPayment(htlc.channelId, remoteNodeId, htlc.amountMsat, now)
+        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(htlc.paymentHash, incoming, outgoing))
         recordRelayDuration(isSuccess = true)
         safeSendAndStop(upstream.add.channelId, cmd)
-      case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fail: HtlcResult.Fail)) =>
+      case WrappedAddResponse(RES_ADD_SETTLED(_, _, htlc, fail: HtlcResult.Fail)) =>
         val now = TimestampMilli.now()
         context.log.info("relaying fail to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, now, reputationScore.outgoingConfidence, upstream.receivedFrom, htlc.channelId)
         Metrics.relayFail(reputationScore.outgoingConfidence)

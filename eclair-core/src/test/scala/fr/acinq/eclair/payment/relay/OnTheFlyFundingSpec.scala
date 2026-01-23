@@ -860,9 +860,9 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // The payments are fulfilled.
     val (add1, add2) = if (cmd1.paymentHash == paymentHash1) (cmd1, cmd2) else (cmd2, cmd1)
     val outgoing = Seq(add1, add2).map(add => UpdateAddHtlc(purchase.channelId, randomHtlcId(), add.amount, add.paymentHash, add.cltvExpiry, add.onion, add.nextPathKey_opt, add.reputationScore.accountable, add.fundingFee_opt))
-    add1.replyTo ! RES_ADD_SETTLED(add1.origin, outgoing.head, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(purchase.channelId, outgoing.head.id, preimage1)))
+    add1.replyTo ! RES_ADD_SETTLED(add1.origin, remoteNodeId, outgoing.head, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(purchase.channelId, outgoing.head.id, preimage1)))
     verifyFulfilledUpstream(upstream1, preimage1)
-    add2.replyTo ! RES_ADD_SETTLED(add2.origin, outgoing.last, HtlcResult.OnChainFulfill(preimage2))
+    add2.replyTo ! RES_ADD_SETTLED(add2.origin, remoteNodeId, outgoing.last, HtlcResult.OnChainFulfill(preimage2))
     verifyFulfilledUpstream(upstream2, preimage2)
     awaitCond(nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId).isEmpty, interval = 100 millis)
     register.expectNoMessage(100 millis)
@@ -914,7 +914,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val htlc = UpdateAddHtlc(channelId, randomHtlcId(), add.amount, paymentHash, add.cltvExpiry, add.onion, add.nextPathKey_opt, add.reputationScore.accountable, add.fundingFee_opt)
       val fail = UpdateFailHtlc(channelId, htlc.id, randomBytes(50))
       add.replyTo ! RES_SUCCESS(add, purchase.channelId)
-      add.replyTo ! RES_ADD_SETTLED(add.origin, htlc, HtlcResult.RemoteFail(fail))
+      add.replyTo ! RES_ADD_SETTLED(add.origin, remoteNodeId, htlc, HtlcResult.RemoteFail(fail))
     })
     adds1.last.replyTo ! RES_ADD_FAILED(adds1.last, TooManyAcceptedHtlcs(channelId, 5), None)
     register.expectNoMessage(100 millis)
@@ -932,7 +932,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // The payment succeeds.
     adds2.foreach(add => {
       val htlc = UpdateAddHtlc(channelId, randomHtlcId(), add.amount, paymentHash, add.cltvExpiry, add.onion, add.nextPathKey_opt, add.reputationScore.accountable, add.fundingFee_opt)
-      add.replyTo ! RES_ADD_SETTLED(add.origin, htlc, HtlcResult.OnChainFulfill(preimage))
+      add.replyTo ! RES_ADD_SETTLED(add.origin, remoteNodeId, htlc, HtlcResult.OnChainFulfill(preimage))
     })
     val fwds = Seq(
       register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]],
@@ -1002,7 +1002,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     channel.expectNoMessage(100 millis)
 
     // The payment is fulfilled by our peer.
-    cmd2.replyTo ! RES_ADD_SETTLED(cmd2.origin, htlc, HtlcResult.OnChainFulfill(preimage))
+    cmd2.replyTo ! RES_ADD_SETTLED(cmd2.origin, remoteNodeId, htlc, HtlcResult.OnChainFulfill(preimage))
     verifyFulfilledUpstream(upstream, preimage)
     nodeParams.db.liquidity.addOnTheFlyFundingPreimage(preimage)
     register.expectNoMessage(100 millis)
@@ -1044,7 +1044,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     channel.expectNoMessage(100 millis)
 
     val add = UpdateAddHtlc(purchase.channelId, randomHtlcId(), cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion, cmd.nextPathKey_opt, cmd.reputationScore.accountable, cmd.fundingFee_opt)
-    cmd.replyTo ! RES_ADD_SETTLED(cmd.origin, add, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(purchase.channelId, add.id, preimage2)))
+    cmd.replyTo ! RES_ADD_SETTLED(cmd.origin, remoteNodeId, add, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(purchase.channelId, add.id, preimage2)))
     verifyFulfilledUpstream(upstream2, preimage2)
     register.expectNoMessage(100 millis)
     awaitCond(nodeParams.db.liquidity.getFeeCredit(remoteNodeId) == 0.msat, interval = 100 millis)

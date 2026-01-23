@@ -383,8 +383,12 @@ object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFail
 ))
 // @formatter:on
 
-private case class PaymentSentJson(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment], fees: MilliSatoshi, startedAt: TimestampMilli, settledAt: TimestampMilli)
-object PaymentSentSerializer extends ConvertClassSerializer[PaymentSent](p => PaymentSentJson(p.id, p.paymentHash, p.paymentPreimage, p.recipientAmount, p.recipientNodeId, p.parts, p.feesPaid, p.startedAt, p.settledAt))
+private case class PaymentPartJson(id: UUID, channelId: ByteVector32, nextNodeId: PublicKey, amountWithFees: MilliSatoshi, fees: MilliSatoshi, route: Option[Seq[Hop]], startedAt: TimestampMilli, settledAt: TimestampMilli)
+private case class PaymentSentJson(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentPartJson], fees: MilliSatoshi, startedAt: TimestampMilli, settledAt: TimestampMilli)
+object PaymentSentSerializer extends ConvertClassSerializer[PaymentSent](p => {
+  val parts = p.parts.map(pp => PaymentPartJson(pp.id, pp.channelId, pp.remoteNodeId, pp.amountWithFees, pp.feesPaid, pp.route, pp.startedAt, pp.settledAt))
+  PaymentSentJson(p.id, p.paymentHash, p.paymentPreimage, p.recipientAmount, p.recipientNodeId, parts, p.feesPaid, p.startedAt, p.settledAt)
+})
 
 object ThrowableSerializer extends MinimalSerializer({
   case t: Throwable if t.getMessage != null => JString(t.getMessage)
@@ -591,6 +595,7 @@ object OriginSerializer extends MinimalSerializer({
     case u: Upstream.Local => JObject(JField("paymentId", JString(u.id.toString)))
     case u: Upstream.Hot.Channel => JObject(
       JField("channelId", JString(u.add.channelId.toHex)),
+      JField("remoteNodeId", JString(u.receivedFrom.toHex)),
       JField("htlcId", JLong(u.add.id)),
       JField("amount", JLong(u.add.amountMsat.toLong)),
       JField("expiry", JLong(u.add.cltvExpiry.toLong)),
@@ -599,6 +604,7 @@ object OriginSerializer extends MinimalSerializer({
     case u: Upstream.Hot.Trampoline => JArray(u.received.map { htlc =>
       JObject(
         JField("channelId", JString(htlc.add.channelId.toHex)),
+        JField("remoteNodeId", JString(htlc.receivedFrom.toHex)),
         JField("htlcId", JLong(htlc.add.id)),
         JField("amount", JLong(htlc.add.amountMsat.toLong)),
         JField("expiry", JLong(htlc.add.cltvExpiry.toLong)),
@@ -607,12 +613,14 @@ object OriginSerializer extends MinimalSerializer({
     })
     case o: Upstream.Cold.Channel => JObject(
       JField("channelId", JString(o.originChannelId.toHex)),
+      JField("remoteNodeId", JString(o.originNodeId.toHex)),
       JField("htlcId", JLong(o.originHtlcId)),
       JField("amount", JLong(o.amountIn.toLong)),
     )
     case o: Upstream.Cold.Trampoline => JArray(o.originHtlcs.map { htlc =>
       JObject(
         JField("channelId", JString(htlc.originChannelId.toHex)),
+        JField("remoteNodeId", JString(htlc.originNodeId.toHex)),
         JField("htlcId", JLong(htlc.originHtlcId)),
         JField("amount", JLong(htlc.amountIn.toLong)),
       )

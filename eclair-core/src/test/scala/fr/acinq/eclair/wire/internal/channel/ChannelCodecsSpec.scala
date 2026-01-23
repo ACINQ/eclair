@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.internal.channel
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -26,7 +26,6 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, LocalChannelKeyManager, LocalNodeKeyManager, NodeKeyManager}
 import fr.acinq.eclair.json.JsonSerializers
-import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
 import fr.acinq.eclair.transactions._
@@ -156,7 +155,7 @@ object ChannelCodecsSpec {
   val normal: DATA_NORMAL = {
     val origins = Map(
       42L -> Origin.Cold(Upstream.Local(UUID.randomUUID)),
-      15000L -> Origin.Cold(Upstream.Cold.Channel(ByteVector32(ByteVector.fill(32)(42)), 43, 11_000_000 msat))
+      15000L -> Origin.Cold(Upstream.Cold.Channel(ByteVector32(ByteVector.fill(32)(42)), PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), 43, 11_000_000 msat))
     )
     makeChannelDataNormal(htlcs, origins)
   }

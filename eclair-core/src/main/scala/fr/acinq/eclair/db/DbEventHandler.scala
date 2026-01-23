@@ -63,7 +63,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
       PaymentMetrics.PaymentFees.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(e.feesPaid.truncateToSatoshi.toLong)
       PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(e.parts.length)
       auditDb.add(e)
-      e.parts.foreach(p => channelsDb.updateChannelMeta(p.toChannelId, ChannelEvent.EventType.PaymentSent))
+      e.parts.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentSent))
 
     case _: PaymentFailed =>
       PaymentMetrics.PaymentFailed.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).increment()
@@ -72,7 +72,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
       PaymentMetrics.PaymentAmount.withTag(PaymentTags.Direction, PaymentTags.Directions.Received).record(e.amount.truncateToSatoshi.toLong)
       PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Received).record(e.parts.length)
       auditDb.add(e)
-      e.parts.foreach(p => channelsDb.updateChannelMeta(p.fromChannelId, ChannelEvent.EventType.PaymentReceived))
+      e.parts.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentReceived))
 
     case e: PaymentRelayed =>
       PaymentMetrics.PaymentAmount
@@ -89,9 +89,9 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
           PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(outgoing.length)
           incoming.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentReceived))
           outgoing.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentSent))
-        case ChannelPaymentRelayed(_, _, _, fromChannelId, toChannelId, _, _) =>
-          channelsDb.updateChannelMeta(fromChannelId, ChannelEvent.EventType.PaymentReceived)
-          channelsDb.updateChannelMeta(toChannelId, ChannelEvent.EventType.PaymentSent)
+        case ChannelPaymentRelayed(_, incoming, outgoing) =>
+          channelsDb.updateChannelMeta(incoming.channelId, ChannelEvent.EventType.PaymentReceived)
+          channelsDb.updateChannelMeta(outgoing.channelId, ChannelEvent.EventType.PaymentSent)
         case OnTheFlyFundingPaymentRelayed(_, incoming, outgoing) =>
           incoming.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentReceived))
           outgoing.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentSent))

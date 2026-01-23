@@ -28,6 +28,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.receive.MultiPartHandler
 import fr.acinq.eclair.reputation.{Reputation, ReputationRecorder}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams, RealShortChannelId, TimestampMilli}
@@ -68,7 +69,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
       IncomingPaymentPacket.decrypt(add, nodeParams.privateKey, nodeParams.features) match {
         case Right(p: IncomingPaymentPacket.FinalPacket) =>
           log.debug(s"forwarding htlc #${add.id} to payment-handler")
-          paymentHandler forward p
+          paymentHandler forward MultiPartHandler.ReceivePacket(p, originNode)
         case Right(r: IncomingPaymentPacket.ChannelRelayPacket) =>
           channelRelayer ! ChannelRelayer.Relay(r, originNode, incomingChannelOccupancy)
         case Right(r: IncomingPaymentPacket.NodeRelayPacket) =>

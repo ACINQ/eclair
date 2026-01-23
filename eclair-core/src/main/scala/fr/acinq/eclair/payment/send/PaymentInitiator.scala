@@ -336,7 +336,7 @@ object PaymentInitiator {
       case _ => PaymentType.Standard
     }
 
-    def createPaymentSent(recipient: Recipient, preimage: ByteVector32, parts: Seq[PaymentSent.PartialPayment], remainingAttribution_opt: Option[ByteVector], startedAt: TimestampMilli): PaymentSent = {
+    def createPaymentSent(recipient: Recipient, preimage: ByteVector32, parts: Seq[PaymentSent.PaymentPart], remainingAttribution_opt: Option[ByteVector], startedAt: TimestampMilli): PaymentSent = {
       PaymentSent(parentId, preimage, recipient.totalAmount, recipient.nodeId, parts, remainingAttribution_opt, startedAt)
     }
   }

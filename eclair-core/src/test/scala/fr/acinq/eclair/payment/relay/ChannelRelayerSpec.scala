@@ -680,7 +680,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       receiveConfidence(Reputation.Score.max(accountable = false))
       val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, outAccountable = false)
       fwd.message.replyTo ! RES_SUCCESS(fwd.message, channelId1)
-      fwd.message.origin.replyTo ! RES_ADD_SETTLED(fwd.message.origin, downstream_htlc, testCase.result)
+      fwd.message.origin.replyTo ! RES_ADD_SETTLED(fwd.message.origin, remoteNodeId1, downstream_htlc, testCase.result)
       expectFwdFail(register, r.add.channelId, testCase.cmd)
     }
   }
@@ -707,7 +707,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
         receiveConfidence(Reputation.Score(1.0, accountable = false))
         val fwd = expectFwdAdd(register, channelId1, outgoingAmount, outgoingExpiry, outAccountable = false)
         fwd.message.replyTo ! RES_SUCCESS(fwd.message, channelId1)
-        fwd.message.origin.replyTo ! RES_ADD_SETTLED(fwd.message.origin, downstream, htlcResult)
+        fwd.message.origin.replyTo ! RES_ADD_SETTLED(fwd.message.origin, remoteNodeId1, downstream, htlcResult)
         val cmd = register.expectMessageType[Register.Forward[channel.Command]]
         assert(cmd.channelId == r.add.channelId)
         if (isIntroduction) {
@@ -753,7 +753,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
       val fwd1 = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, outAccountable = false)
       fwd1.message.replyTo ! RES_SUCCESS(fwd1.message, channelId1)
-      fwd1.message.origin.replyTo ! RES_ADD_SETTLED(fwd1.message.origin, downstream_htlc, testCase.result)
+      fwd1.message.origin.replyTo ! RES_ADD_SETTLED(fwd1.message.origin, remoteNodeId2, downstream_htlc, testCase.result)
 
       val fwd2 = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd2.channelId == r.add.channelId)
@@ -763,9 +763,11 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val paymentRelayed = eventListener.expectMessageType[ChannelPaymentRelayed]
       assert(paymentRelayed.paymentHash == r.add.paymentHash)
       assert(paymentRelayed.amountIn == r.add.amountMsat)
-      assert(paymentRelayed.fromChannelId == r.add.channelId)
+      assert(paymentRelayed.paymentIn.channelId == r.add.channelId)
+      assert(paymentRelayed.paymentIn.remoteNodeId == TestConstants.Alice.nodeParams.nodeId)
       assert(paymentRelayed.amountOut == r.amountToForward)
-      assert(paymentRelayed.toChannelId == channelId1)
+      assert(paymentRelayed.paymentOut.channelId == channelId1)
+      assert(paymentRelayed.paymentOut.remoteNodeId == remoteNodeId2)
       assert(paymentRelayed.startedAt == r.receivedAt)
       assert(paymentRelayed.settledAt >= now)
     }
@@ -787,7 +789,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     // The downstream HTLC is fulfilled.
     val downstream = UpdateAddHtlc(randomBytes32(), 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket, None, accountable = false, None)
-    fwd1.message.origin.replyTo ! RES_ADD_SETTLED(fwd1.message.origin, downstream, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(downstream.channelId, downstream.id, paymentPreimage)))
+    fwd1.message.origin.replyTo ! RES_ADD_SETTLED(fwd1.message.origin, remoteNodeId2, downstream, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(downstream.channelId, downstream.id, paymentPreimage)))
     val fulfill = inside(register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]) { fwd =>
       assert(fwd.channelId == r.add.channelId)
       assert(fwd.message.id == r.add.id)
@@ -799,7 +801,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     eventually(assert(nodeParams.db.pendingCommands.listSettlementCommands(r.add.channelId) == Seq(fulfill.copy(commit = false))))
 
     // The downstream HTLC is now failed (e.g. because a revoked commitment confirmed that doesn't include it): this conflicting command is ignored.
-    fwd1.message.origin.replyTo ! RES_ADD_SETTLED(fwd1.message.origin, downstream, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(downstream.channelId, downstream)))
+    fwd1.message.origin.replyTo ! RES_ADD_SETTLED(fwd1.message.origin, remoteNodeId2, downstream, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(downstream.channelId, downstream)))
     register.expectNoMessage(100 millis)
     assert(nodeParams.db.pendingCommands.listSettlementCommands(r.add.channelId) == Seq(fulfill.copy(commit = false)))
   }
@@ -868,7 +870,9 @@ object ChannelRelayerSpec {
   val localAlias2: Alias = Alias(222000)
 
   val channelId1: ByteVector32 = randomBytes32()
+  val remoteNodeId1: PublicKey = randomKey().publicKey
   val channelId2: ByteVector32 = randomBytes32()
+  val remoteNodeId2: PublicKey = randomKey().publicKey
 
   val channelIds: Map[ShortChannelId, ByteVector32] = Map(
     realScid1 -> channelId1,

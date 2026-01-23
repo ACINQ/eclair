@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.channel.{HtlcOverriddenByLocalCommit, HtlcsTimedoutDownstream, HtlcsWillTimeoutUpstream, Upstream}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.PaymentSent.PartialPayment
+import fr.acinq.eclair.payment.PaymentSent.PaymentPart
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
@@ -255,7 +255,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
               // in case of a relayed payment, we need to take into account the fee of the first channels
               paymentSent.parts.collect {
                 // NB: the route attribute will always be defined here
-                case p@PartialPayment(_, _, _, _, Some(route), _, _) => route.head.fee(p.amountWithFees)
+                case p@PaymentPart(_, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
               }.sum
           }
           paymentSent.feesPaid + localFees
@@ -369,7 +369,7 @@ object MultiPartPaymentLifecycle {
    * @param parts    fulfilled child payments.
    * @param pending  pending child payments (we are waiting for them to be fulfilled downstream).
    */
-  case class PaymentSucceeded(request: SendMultiPartPayment, preimage: ByteVector32, parts: Seq[PartialPayment], pending: Set[UUID], remainingAttribution_opt: Option[ByteVector]) extends Data
+  case class PaymentSucceeded(request: SendMultiPartPayment, preimage: ByteVector32, parts: Seq[PaymentPart], pending: Set[UUID], remainingAttribution_opt: Option[ByteVector]) extends Data
 
   private def createRouteRequest(replyTo: ActorRef, nodeParams: NodeParams, routeParams: RouteParams, d: PaymentProgress, cfg: SendPaymentConfig): RouteRequest = {
     RouteRequest(replyTo.toTyped, nodeParams.nodeId, d.request.recipient, routeParams, d.ignore, allowMultiPart = true, d.pending.values.toSeq, Some(cfg.paymentContext))

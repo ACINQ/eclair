@@ -510,7 +510,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // We forward preimages as soon as possible to the upstream channel because it allows us to pull funds.
       msg match {
         case fulfill: UpdateFulfillHtlc => d.commitments.receiveFulfill(fulfill) match {
-          case Right((_, origin, htlc)) => relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
+          case Right((_, origin, htlc)) => relayer ! RES_ADD_SETTLED(origin, remoteNodeId, htlc, HtlcResult.RemoteFulfill(fulfill))
           case _ => ()
         }
         case _ => ()
@@ -562,7 +562,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       d.commitments.receiveFulfill(fulfill) match {
         case Right((commitments1, origin, htlc)) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-          relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
+          relayer ! RES_ADD_SETTLED(origin, remoteNodeId, htlc, HtlcResult.RemoteFulfill(fulfill))
           context.system.eventStream.publish(OutgoingHtlcFulfilled(fulfill))
           log.info("OutgoingHtlcFulfilled: channelId={}, id={}", fulfill.channelId.toHex, fulfill.id)
           stay() using d.copy(commitments = commitments1)
@@ -1562,7 +1562,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, d.channelUpdate.relayFees, enable = false)
         // NB: the htlcs stay in the commitments.localChange, they will be cleaned up after reconnection
         d.commitments.changes.localChanges.proposed.collect {
-          case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.DisconnectedBeforeSigned(channelUpdate1))
+          case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), remoteNodeId, add, HtlcResult.DisconnectedBeforeSigned(channelUpdate1))
         }
         goto(OFFLINE) using d1.copy(channelUpdate = channelUpdate1) storing()
       } else {
@@ -1599,7 +1599,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       d.commitments.receiveFulfill(fulfill) match {
         case Right((commitments1, origin, htlc)) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-          relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
+          relayer ! RES_ADD_SETTLED(origin, remoteNodeId, htlc, HtlcResult.RemoteFulfill(fulfill))
           stay() using d.copy(commitments = commitments1)
         case Left(cause) => handleLocalError(cause, d, Some(fulfill))
       }
@@ -2153,7 +2153,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               d.commitments.originChannels.get(add.id) match {
                 case Some(origin) =>
                   log.info("failing htlc #{} paymentHash={} origin={}: overridden by revoked remote commit", add.id, add.paymentHash, origin)
-                  relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
+                  relayer ! RES_ADD_SETTLED(origin, remoteNodeId, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
                 case None => ()
               }
             }
@@ -2176,7 +2176,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         d.commitments.originChannels.get(htlc.id) match {
           case Some(origin) =>
             log.info("fulfilling htlc #{} paymentHash={} origin={}", htlc.id, htlc.paymentHash, origin)
-            relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFulfill(preimage))
+            relayer ! RES_ADD_SETTLED(origin, remoteNodeId, htlc, HtlcResult.OnChainFulfill(preimage))
           case None =>
             // If we don't have the origin, it means that we already have forwarded the fulfill so that's not a big deal.
             // This can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it.
@@ -2254,7 +2254,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
             log.info("failing htlc #{} paymentHash={} origin={}: htlc timed out", add.id, add.paymentHash, origin)
-            relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(d.channelId, Set(add))))
+            relayer ! RES_ADD_SETTLED(origin, remoteNodeId, add, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(d.channelId, Set(add))))
           case None =>
             // same as for fulfilling the htlc (no big deal)
             log.info("cannot fail timed out htlc #{} paymentHash={} (origin not found)", add.id, add.paymentHash)
@@ -2266,7 +2266,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
             log.info("failing htlc #{} paymentHash={} origin={}: overridden by local commit", add.id, add.paymentHash, origin)
-            relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
+            relayer ! RES_ADD_SETTLED(origin, remoteNodeId, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
           case None =>
             // same as for fulfilling the htlc (no big deal)
             log.info("cannot fail overridden htlc #{} paymentHash={} (origin not found)", add.id, add.paymentHash)
@@ -3189,7 +3189,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       nextStateData match {
         case d: DATA_CLOSING =>
           d.commitments.changes.localChanges.proposed.collect {
-            case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.ChannelFailureBeforeSigned)
+            case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), remoteNodeId, add, HtlcResult.ChannelFailureBeforeSigned)
           }
         case _ => ()
       }

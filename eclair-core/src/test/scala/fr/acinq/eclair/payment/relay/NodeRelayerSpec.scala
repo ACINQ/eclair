@@ -1213,7 +1213,7 @@ object NodeRelayerSpec {
     (paymentPackets.map(_.outerPayload.expiry).min - nodeParams.relayParams.asyncPaymentsParams.cancelSafetyBeforeTimeout).blockHeight
 
   def createSuccessEvent(): PaymentSent =
-    PaymentSent(relayId, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), outgoingAmount, 10 msat, randomBytes32(), None, 0 unixms, 50 unixms)), None, 0 unixms)
+    PaymentSent(relayId, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PaymentPart(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, outgoingAmount, 50 unixms), 10 msat, None, 0 unixms)), None, 0 unixms)
 
   def createTrampolinePacket(amount: MilliSatoshi, expiry: CltvExpiry): OnionRoutingPacket = {
     val payload = NodePayload(outgoingNodeId, FinalPayload.Standard.createPayload(amount, amount, expiry, paymentSecret, upgradeAccountability = false))

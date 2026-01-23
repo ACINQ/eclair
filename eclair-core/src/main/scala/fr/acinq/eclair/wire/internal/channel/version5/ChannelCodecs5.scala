@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.wire.internal.channel.version5
 
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.crypto.ShaChain
@@ -335,15 +336,24 @@ private[channel] object ChannelCodecs5 {
         ("localNextHtlcId" | uint64overflow) ::
         ("remoteNextHtlcId" | uint64overflow)).as[CommitmentChanges]
 
+    private val upstreamChannelCodecWithoutNodeId: Codec[Upstream.Cold.Channel] = (
+      ("originChannelId" | bytes32) ::
+        ("originNodeId" | provide(PrivateKey(ByteVector32.One).publicKey)) ::
+        ("originHtlcId" | int64) ::
+        ("amountIn" | millisatoshi)).as[Upstream.Cold.Channel]
+
     private val upstreamChannelCodec: Codec[Upstream.Cold.Channel] = (
       ("originChannelId" | bytes32) ::
+        ("originNodeId" | publicKey) ::
         ("originHtlcId" | int64) ::
         ("amountIn" | millisatoshi)).as[Upstream.Cold.Channel]
 
     private val coldUpstreamCodec: Codec[Upstream.Cold] = discriminated[Upstream.Cold].by(uint16)
       // NB: order matters!
-      .typecase(0x03, upstreamChannelCodec)
-      .typecase(0x02, listOfN(uint16, upstreamChannelCodec).as[Upstream.Cold.Trampoline])
+      .typecase(0x05, listOfN(uint16, upstreamChannelCodec).as[Upstream.Cold.Trampoline])
+      .typecase(0x04, upstreamChannelCodec)
+      .typecase(0x03, upstreamChannelCodecWithoutNodeId)
+      .typecase(0x02, listOfN(uint16, upstreamChannelCodecWithoutNodeId).as[Upstream.Cold.Trampoline])
       .typecase(0x01, ("id" | uuid).as[Upstream.Local])
 
     private val originCodec: Codec[Origin] = coldUpstreamCodec.xmap[Origin](

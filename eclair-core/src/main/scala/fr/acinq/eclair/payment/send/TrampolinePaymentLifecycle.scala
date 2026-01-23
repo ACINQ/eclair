@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.{NodePayload, buildOnion}
-import fr.acinq.eclair.payment.PaymentSent.PartialPayment
+import fr.acinq.eclair.payment.PaymentSent.PaymentPart
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.TrampolinePayment.{buildOutgoingPayment, computeFees}
 import fr.acinq.eclair.reputation.Reputation
@@ -59,7 +59,7 @@ object TrampolinePaymentLifecycle {
   }
   private case class TrampolinePeerNotFound(trampolineNodeId: PublicKey) extends Command
   private case class CouldntAddHtlc(failure: Throwable) extends Command
-  private case class HtlcSettled(result: HtlcResult, part: PartialPayment, holdTimes: Seq[Sphinx.HoldTime]) extends Command
+  private case class HtlcSettled(result: HtlcResult, part: PaymentPart, holdTimes: Seq[Sphinx.HoldTime]) extends Command
   private case class WrappedPeerChannels(channels: Seq[Peer.ChannelInfo]) extends Command
   // @formatter:on
 
@@ -113,11 +113,12 @@ object TrampolinePaymentLifecycle {
       val add = CMD_ADD_HTLC(addHtlcAdapter.toClassic, outgoing.trampolineAmount, paymentHash, outgoing.trampolineExpiry, outgoing.onion.packet, None, Reputation.Score.max(accountable = false), None, origin, commit = true)
       channelInfo.channel ! add
       val channelId = channelInfo.data.asInstanceOf[DATA_NORMAL].channelId
-      val part = PartialPayment(cmd.paymentId, amount, computeFees(amount, attemptNumber), channelId, None, startedAt = TimestampMilli.now(), settledAt = TimestampMilli.now()) // we will update settledAt below
+      val trampolineFees = computeFees(amount, attemptNumber)
+      val part = PaymentPart(cmd.paymentId, PaymentEvent.OutgoingPayment(channelId, cmd.trampolineNodeId, amount + trampolineFees, settledAt = TimestampMilli.now()), trampolineFees, None, startedAt = TimestampMilli.now()) // we will update settledAt below
       waitForSettlement(part, outgoing.onion.sharedSecrets, outgoing.trampolineOnion.sharedSecrets)
     }
 
-    def waitForSettlement(part: PartialPayment, outerOnionSecrets: Seq[Sphinx.SharedSecret], trampolineOnionSecrets: Seq[Sphinx.SharedSecret]): Behavior[PartHandler.Command] = {
+    def waitForSettlement(part: PaymentPart, outerOnionSecrets: Seq[Sphinx.SharedSecret], trampolineOnionSecrets: Seq[Sphinx.SharedSecret]): Behavior[PartHandler.Command] = {
       Behaviors.receiveMessagePartial {
         case WrappedAddHtlcResponse(response) => response match {
           case _: CommandSuccess[_] =>
@@ -137,7 +138,7 @@ object TrampolinePaymentLifecycle {
                 }
               case _: HtlcResult.OnChainFulfill => Nil
             }
-            parent ! HtlcSettled(fulfill, part.copy(settledAt = TimestampMilli.now()), holdTimes)
+            parent ! HtlcSettled(fulfill, part.copy(payment = part.payment.copy(settledAt = TimestampMilli.now())), holdTimes)
             Behaviors.stopped
           case fail: HtlcResult.Fail =>
             val holdTimes = fail match {
@@ -145,7 +146,7 @@ object TrampolinePaymentLifecycle {
                 Sphinx.FailurePacket.decrypt(updateFail.reason, updateFail.attribution_opt, outerOnionSecrets).holdTimes
               case _ => Nil
             }
-            parent ! HtlcSettled(fail, part.copy(settledAt = TimestampMilli.now()), holdTimes)
+            parent ! HtlcSettled(fail, part.copy(payment = part.payment.copy(settledAt = TimestampMilli.now())), holdTimes)
             Behaviors.stopped
         }
       }
@@ -212,7 +213,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
     }
   }
 
-  private def waitForSettlement(remaining: Int, attemptNumber: Int, fulfilledParts: Seq[PartialPayment]): Behavior[Command] = {
+  private def waitForSettlement(remaining: Int, attemptNumber: Int, fulfilledParts: Seq[PaymentPart]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case CouldntAddHtlc(failure) =>
         context.log.warn("HTLC could not be sent: {}", failure.getMessage)
