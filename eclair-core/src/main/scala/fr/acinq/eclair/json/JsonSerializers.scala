@@ -383,10 +383,10 @@ object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFail
 ))
 // @formatter:on
 
-private case class PartialPaymentJson(id: UUID, channelId: ByteVector32, nextNodeId: PublicKey, amountWithFees: MilliSatoshi, fees: MilliSatoshi, route: Option[Seq[Hop]], startedAt: TimestampMilli, settledAt: TimestampMilli)
-private case class PaymentSentJson(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PartialPaymentJson], fees: MilliSatoshi, startedAt: TimestampMilli, settledAt: TimestampMilli)
+private case class PaymentPartJson(id: UUID, channelId: ByteVector32, nextNodeId: PublicKey, amountWithFees: MilliSatoshi, fees: MilliSatoshi, route: Option[Seq[Hop]], startedAt: TimestampMilli, settledAt: TimestampMilli)
+private case class PaymentSentJson(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentPartJson], fees: MilliSatoshi, startedAt: TimestampMilli, settledAt: TimestampMilli)
 object PaymentSentSerializer extends ConvertClassSerializer[PaymentSent](p => {
-  val parts = p.parts.map(pp => PartialPaymentJson(pp.id, pp.channelId, pp.remoteNodeId, pp.amountWithFees, pp.feesPaid, pp.route, pp.startedAt, pp.settledAt))
+  val parts = p.parts.map(pp => PaymentPartJson(pp.id, pp.channelId, pp.remoteNodeId, pp.amountWithFees, pp.feesPaid, pp.route, pp.startedAt, pp.settledAt))
   PaymentSentJson(p.id, p.paymentHash, p.paymentPreimage, p.recipientAmount, p.recipientNodeId, parts, p.feesPaid, p.startedAt, p.settledAt)
 })
 

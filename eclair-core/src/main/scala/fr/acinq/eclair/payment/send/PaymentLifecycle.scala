@@ -26,7 +26,7 @@ import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.PaymentSent.PartialPayment
+import fr.acinq.eclair.payment.PaymentSent.PaymentPart
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
@@ -114,7 +114,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(RES_ADD_SETTLED(_, remoteNodeId, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
       router ! Router.RouteDidRelay(d.route)
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
-      val p = PartialPayment(id, PaymentEvent.OutgoingPayment(htlc.channelId, remoteNodeId, d.cmd.amount, settledAt = TimestampMilli.now()), d.cmd.amount - d.request.amount, Some(d.route.fullRoute), startedAt = d.sentAt)
+      val p = PaymentPart(id, PaymentEvent.OutgoingPayment(htlc.channelId, remoteNodeId, d.cmd.amount, settledAt = TimestampMilli.now()), d.cmd.amount - d.request.amount, Some(d.route.fullRoute), startedAt = d.sentAt)
       val remainingAttribution_opt = fulfill match {
         case HtlcResult.RemoteFulfill(updateFulfill) =>
           updateFulfill.attribution_opt match {
@@ -418,7 +418,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               // in case of a relayed payment, we need to take into account the fee of the first channels
               paymentSent.parts.collect {
                 // NB: the route attribute will always be defined here
-                case p@PartialPayment(_, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
+                case p@PaymentPart(_, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
               }.sum
           }
           paymentSent.feesPaid + localFees

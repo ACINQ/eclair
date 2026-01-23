@@ -624,7 +624,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockService = new MockService(eclair)
 
     val uuid = UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f")
-    val paymentSent = PaymentSent(uuid, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PartialPayment(uuid, PaymentEvent.OutgoingPayment(ByteVector32.Zeroes, nextNodeId, 28 msat, TimestampMilli(1553784337711L)), 3 msat, None, TimestampMilli(1553784337650L))), None, TimestampMilli(1553784337120L))
+    val paymentSent = PaymentSent(uuid, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PaymentPart(uuid, PaymentEvent.OutgoingPayment(ByteVector32.Zeroes, nextNodeId, 28 msat, TimestampMilli(1553784337711L)), 3 msat, None, TimestampMilli(1553784337650L))), None, TimestampMilli(1553784337120L))
     eclair.sendBlocking(any, any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(paymentSent))
     Post("/payinvoice", FormData("invoice" -> invoice, "blocking" -> "true").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -1130,7 +1130,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         system.eventStream.publish(pf)
         wsClient.expectMessage(expectedSerializedPf)
 
-        val ps = PaymentSent(fixedUUID, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PartialPayment(fixedUUID, PaymentEvent.OutgoingPayment(ByteVector32.Zeroes, nextNodeId, 28 msat, settledAt = TimestampMilli(1553784337711L)), 3 msat, None, startedAt = TimestampMilli(1553784337539L))), None, startedAt = TimestampMilli(1553784337073L))
+        val ps = PaymentSent(fixedUUID, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PaymentPart(fixedUUID, PaymentEvent.OutgoingPayment(ByteVector32.Zeroes, nextNodeId, 28 msat, settledAt = TimestampMilli(1553784337711L)), 3 msat, None, startedAt = TimestampMilli(1553784337539L))), None, startedAt = TimestampMilli(1553784337073L))
         val expectedSerializedPs = """{"type":"payment-sent","id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","paymentHash":"01d0fabd251fcbbe2b93b4b927b26ad2a1a99077152e45ded1e678afa45dbec5","paymentPreimage":"0100000000000000000000000000000000000000000000000000000000000000","recipientAmount":25,"recipientNodeId":"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0","parts":[{"id":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","channelId":"0000000000000000000000000000000000000000000000000000000000000000","nextNodeId":"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87","amountWithFees":28,"fees":3,"startedAt":{"iso":"2019-03-28T14:45:37.539Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}],"fees":3,"startedAt":{"iso":"2019-03-28T14:45:37.073Z","unix":1553784337},"settledAt":{"iso":"2019-03-28T14:45:37.711Z","unix":1553784337}}"""
         assert(serialization.write(ps) == expectedSerializedPs)
         system.eventStream.publish(ps)

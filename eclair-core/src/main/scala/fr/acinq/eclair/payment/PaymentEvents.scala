@@ -79,7 +79,7 @@ object PaymentEvent {
  * @param parts                    child payments (actual outgoing HTLCs).
  * @param remainingAttribution_opt for relayed trampoline payments, the attribution data that needs to be sent upstream
  */
-case class PaymentSent(id: UUID, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PartialPayment], remainingAttribution_opt: Option[ByteVector], startedAt: TimestampMilli) extends PaymentEvent {
+case class PaymentSent(id: UUID, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PaymentPart], remainingAttribution_opt: Option[ByteVector], startedAt: TimestampMilli) extends PaymentEvent {
   require(parts.nonEmpty, "must have at least one payment part")
   val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
   val amountWithFees: MilliSatoshi = parts.map(_.amountWithFees).sum
@@ -97,7 +97,7 @@ object PaymentSent {
    * @param route     payment route used.
    * @param startedAt absolute time in milliseconds since UNIX epoch when the payment was started.
    */
-  case class PartialPayment(id: UUID, payment: PaymentEvent.OutgoingPayment, feesPaid: MilliSatoshi, route: Option[Seq[Hop]], startedAt: TimestampMilli) {
+  case class PaymentPart(id: UUID, payment: PaymentEvent.OutgoingPayment, feesPaid: MilliSatoshi, route: Option[Seq[Hop]], startedAt: TimestampMilli) {
     require(route.isEmpty || route.get.nonEmpty, "route must be None or contain at least one hop")
     val channelId: ByteVector32 = payment.channelId
     val remoteNodeId: PublicKey = payment.remoteNodeId

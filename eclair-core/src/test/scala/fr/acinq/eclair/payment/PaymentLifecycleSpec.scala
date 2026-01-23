@@ -34,7 +34,7 @@ import fr.acinq.eclair.crypto.{Sphinx, SphinxSpec}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
-import fr.acinq.eclair.payment.PaymentSent.PartialPayment
+import fr.acinq.eclair.payment.PaymentSent.PaymentPart
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
@@ -847,7 +847,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     sender.send(paymentFSM, addCompleted(HtlcResult.OnChainFulfill(defaultPaymentPreimage)))
     val paymentOK = sender.expectMsgType[PaymentSent]
-    val PaymentSent(_, paymentOK.paymentPreimage, finalAmount, _, PartialPayment(_, part, fee, _, _) :: Nil, _, _) = eventListener.expectMsgType[PaymentSent]
+    val PaymentSent(_, paymentOK.paymentPreimage, finalAmount, _, PaymentPart(_, part, fee, _, _) :: Nil, _, _) = eventListener.expectMsgType[PaymentSent]
     assert(part.amount == request.amount)
     assert(finalAmount == defaultAmountMsat)
 

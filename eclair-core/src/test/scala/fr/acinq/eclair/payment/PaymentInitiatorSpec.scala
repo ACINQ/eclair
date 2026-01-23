@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel.Upstream
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment.PaymentPacketSpec._
-import fr.acinq.eclair.payment.PaymentSent.PartialPayment
+import fr.acinq.eclair.payment.PaymentSent.PaymentPart
 import fr.acinq.eclair.payment.send.BlindedPathsResolver.{FullBlindedRoute, ResolvedPath}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentError.UnsupportedFeatures
@@ -231,7 +231,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
 
-    val ps = PaymentSent(id, paymentPreimage, finalAmount, priv_c.publicKey, Seq(PartialPayment(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, finalAmount, 200 unixms), 0 msat, None, 100 unixms)), None, 80 unixms)
+    val ps = PaymentSent(id, paymentPreimage, finalAmount, priv_c.publicKey, Seq(PaymentPart(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, finalAmount, 200 unixms), 0 msat, None, 100 unixms)), None, 80 unixms)
     payFsm.send(initiator, ps)
     sender.expectMsg(ps)
     eventListener.expectNoMessage(100 millis)
@@ -350,7 +350,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
 
-    val ps = PaymentSent(id, paymentPreimage, finalAmount, invoice.nodeId, Seq(PartialPayment(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, finalAmount, 200 unixms), 0 msat, None, 100 unixms)), None, 100 unixms)
+    val ps = PaymentSent(id, paymentPreimage, finalAmount, invoice.nodeId, Seq(PaymentPart(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, finalAmount, 200 unixms), 0 msat, None, 100 unixms)), None, 100 unixms)
     payFsm.send(initiator, ps)
     sender.expectMsg(ps)
     eventListener.expectNoMessage(100 millis)

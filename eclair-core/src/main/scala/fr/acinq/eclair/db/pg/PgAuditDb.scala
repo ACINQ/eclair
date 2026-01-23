@@ -356,7 +356,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         val result = statement.executeQuery()
           .foldLeft(Map.empty[UUID, PaymentSent]) { (sentByParentId, rs) =>
             val parentId = UUID.fromString(rs.getString("parent_payment_id"))
-            val part = PaymentSent.PartialPayment(
+            val part = PaymentSent.PaymentPart(
               id = UUID.fromString(rs.getString("payment_id")),
               payment = PaymentEvent.OutgoingPayment(
                 channelId = rs.getByteVector32FromHex("to_channel_id"),
