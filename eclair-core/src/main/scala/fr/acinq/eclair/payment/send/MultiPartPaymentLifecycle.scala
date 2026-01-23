@@ -255,7 +255,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
               // in case of a relayed payment, we need to take into account the fee of the first channels
               paymentSent.parts.collect {
                 // NB: the route attribute will always be defined here
-                case p@PartialPayment(_, _, _, _, Some(route), _, _) => route.head.fee(p.amountWithFees)
+                case p@PartialPayment(_, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
               }.sum
           }
           paymentSent.feesPaid + localFees

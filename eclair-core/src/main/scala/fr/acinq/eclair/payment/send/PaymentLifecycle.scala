@@ -111,10 +111,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(_: Register.ForwardShortIdFailure[_], d: WaitingForComplete) =>
       handleLocalFail(d, DisconnectedException, isFatal = false)
 
-    case Event(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
+    case Event(RES_ADD_SETTLED(_, remoteNodeId, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
       router ! Router.RouteDidRelay(d.route)
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
-      val p = PartialPayment(id, d.request.amount, d.cmd.amount - d.request.amount, htlc.channelId, Some(d.route.fullRoute), startedAt = d.sentAt, settledAt = TimestampMilli.now())
+      val p = PartialPayment(id, PaymentEvent.OutgoingPayment(htlc.channelId, remoteNodeId, d.cmd.amount, settledAt = TimestampMilli.now()), d.cmd.amount - d.request.amount, Some(d.route.fullRoute), startedAt = d.sentAt)
       val remainingAttribution_opt = fulfill match {
         case HtlcResult.RemoteFulfill(updateFulfill) =>
           updateFulfill.attribution_opt match {
@@ -130,7 +130,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       }
       myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, remainingAttribution_opt, start)))
 
-    case Event(RES_ADD_SETTLED(_, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
+    case Event(RES_ADD_SETTLED(_, _, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
       fail match {
         case HtlcResult.RemoteFail(fail) => handleRemoteFail(d, fail)
         case HtlcResult.RemoteFailMalformed(fail) =>
@@ -418,7 +418,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               // in case of a relayed payment, we need to take into account the fee of the first channels
               paymentSent.parts.collect {
                 // NB: the route attribute will always be defined here
-                case p@PartialPayment(_, _, _, _, Some(route), _, _) => route.head.fee(p.amountWithFees)
+                case p@PartialPayment(_, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
               }.sum
           }
           paymentSent.feesPaid + localFees

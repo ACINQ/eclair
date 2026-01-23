@@ -31,7 +31,7 @@ import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.io.{Peer, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
-import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
+import fr.acinq.eclair.payment.receive.{ForwardHandler, MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.transactions.{OutgoingHtlc, Scripts, Transactions}
@@ -143,7 +143,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     val paymentId = paymentSender.expectMsgType[UUID]
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds).add
+    val htlc = htlcReceiver.expectMsgType[MultiPartHandler.ReceivePacket](max = 60 seconds).packet.add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Register.Forward(sender.ref.toTyped[Any], htlc.channelId, CMD_GET_CHANNEL_DATA(ActorRef.noSender)))
     val dataC = sender.expectMsgType[RES_GET_CHANNEL_DATA[DATA_NORMAL]].data
@@ -372,19 +372,19 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     val buffer = TestProbe()
     send(100000000 msat, paymentHandlerF, nodes("C").paymentInitiator)
-    forwardHandlerF.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds)
+    forwardHandlerF.expectMsgType[MultiPartHandler.ReceivePacket](max = 60 seconds)
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(110000000 msat, paymentHandlerF, nodes("C").paymentInitiator)
-    forwardHandlerF.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds)
+    forwardHandlerF.expectMsgType[MultiPartHandler.ReceivePacket](max = 60 seconds)
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(120000000 msat, paymentHandlerC, nodes("F").paymentInitiator)
-    forwardHandlerC.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds)
+    forwardHandlerC.expectMsgType[MultiPartHandler.ReceivePacket](max = 60 seconds)
     forwardHandlerC.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(130000000 msat, paymentHandlerC, nodes("F").paymentInitiator)
-    forwardHandlerC.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds)
+    forwardHandlerC.expectMsgType[MultiPartHandler.ReceivePacket](max = 60 seconds)
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMessage(1 second)
@@ -402,19 +402,19 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     assert(htlcTimeoutTxs.size == 2)
     assert(htlcSuccessTxs.size == 2)
     // we fulfill htlcs to get the preimages
-    buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
+    buffer.expectMsgType[MultiPartHandler.ReceivePacket]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     val preimage1 = sender.expectMsgType[PaymentSent].paymentPreimage
-    buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
+    buffer.expectMsgType[MultiPartHandler.ReceivePacket]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     val preimage2 = sender.expectMsgType[PaymentSent].paymentPreimage
-    buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
+    buffer.expectMsgType[MultiPartHandler.ReceivePacket]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSent]
-    buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
+    buffer.expectMsgType[MultiPartHandler.ReceivePacket]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PaymentSent]

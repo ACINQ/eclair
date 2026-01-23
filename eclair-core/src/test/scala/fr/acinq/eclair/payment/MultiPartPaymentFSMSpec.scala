@@ -21,10 +21,9 @@ import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM._
-import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilli, randomBytes32}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilli, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -92,7 +91,7 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     f.parent.send(f.handler, extraPart)
     val fail = f.parent.expectMsgType[ExtraPaymentReceived[PaymentPart]]
     assert(fail.paymentHash == paymentHash)
-    assert(fail.failure == Some(protocol.PaymentTimeout()))
+    assert(fail.failure.contains(protocol.PaymentTimeout()))
     assert(fail.payment == extraPart)
 
     f.parent.expectNoMessage(50 millis)
@@ -228,13 +227,13 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
 object MultiPartPaymentFSMSpec {
 
-  val paymentHash = randomBytes32()
+  val paymentHash: ByteVector32 = randomBytes32()
 
   def htlcIdToChannelId(htlcId: Long) = ByteVector32(ByteVector.fromLong(htlcId).padLeft(32))
 
   def createMultiPartHtlc(totalAmount: MilliSatoshi, htlcAmount: MilliSatoshi, htlcId: Long): HtlcPart = {
     val htlc = UpdateAddHtlc(htlcIdToChannelId(htlcId), htlcId, htlcAmount, paymentHash, CltvExpiry(42), TestConstants.emptyOnionPacket, None, accountable = false, None)
-    HtlcPart(totalAmount, htlc, TimestampMilli.now())
+    HtlcPart(totalAmount, htlc, randomKey().publicKey, TimestampMilli.now())
   }
 
 }

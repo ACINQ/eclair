@@ -181,14 +181,14 @@ object Upstream {
   object Cold {
     def apply(hot: Hot): Cold = hot match {
       case Local(id) => Local(id)
-      case Hot.Channel(add, _, _, _) => Cold.Channel(add.channelId, add.id, add.amountMsat)
-      case Hot.Trampoline(received) => Cold.Trampoline(received.map(r => Cold.Channel(r.add.channelId, r.add.id, r.add.amountMsat)))
+      case Hot.Channel(add, _, receivedFrom, _) => Cold.Channel(add.channelId, receivedFrom, add.id, add.amountMsat)
+      case Hot.Trampoline(received) => Cold.Trampoline(received.map(r => Cold.Channel(r.add.channelId, r.receivedFrom, r.add.id, r.add.amountMsat)))
     }
 
     /** Our node is forwarding a single incoming HTLC. */
-    case class Channel(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi) extends Cold
+    case class Channel(originChannelId: ByteVector32, originNodeId: PublicKey, originHtlcId: Long, amountIn: MilliSatoshi) extends Cold
     object Channel {
-      def apply(add: UpdateAddHtlc): Channel = Channel(add.channelId, add.id, add.amountMsat)
+      def apply(add: UpdateAddHtlc, remoteNodeId: PublicKey): Channel = Channel(add.channelId, remoteNodeId, add.id, add.amountMsat)
     }
 
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
@@ -313,7 +313,7 @@ object HtlcResult {
   case object ChannelFailureBeforeSigned extends Fail
   case class DisconnectedBeforeSigned(channelUpdate: ChannelUpdate) extends Fail { require(!channelUpdate.channelFlags.isEnabled, "channel update must have disabled flag set") }
 }
-final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
+final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, remoteNodeId: PublicKey, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
 /** other specific responses */
 final case class RES_BUMP_FUNDING_FEE(rbfIndex: Int, fundingTxId: TxId, fee: Satoshi) extends CommandSuccess[CMD_BUMP_FUNDING_FEE]

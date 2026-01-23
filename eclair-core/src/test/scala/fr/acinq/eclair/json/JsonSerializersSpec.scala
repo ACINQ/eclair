@@ -30,7 +30,7 @@ import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.OfferData
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.io.Peer.PeerInfo
-import fr.acinq.eclair.payment.{ChannelPaymentRelayed, Invoice}
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, Invoice, PaymentEvent}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc, Transactions}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs
@@ -282,16 +282,16 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
     val expectedLocalOrigin = """{"paymentId":"11111111-1111-1111-1111-111111111111"}"""
     JsonSerializers.serialization.write(localOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedLocalOrigin
 
-    val channelOrigin = Origin.Cold(Upstream.Cold.Channel(ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 7, 500 msat))
-    val expectedChannelOrigin = """{"channelId":"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f","htlcId":7,"amount":500}"""
+    val channelOrigin = Origin.Cold(Upstream.Cold.Channel(ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), 7, 500 msat))
+    val expectedChannelOrigin = """{"channelId":"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f","remoteNodeId":"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","htlcId":7,"amount":500}"""
     JsonSerializers.serialization.write(channelOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedChannelOrigin
 
     val relayedHtlcs = List(
-      Upstream.Cold.Channel(ByteVector32(hex"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3, 600 msat),
-      Upstream.Cold.Channel(ByteVector32(hex"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), 7, 500 msat),
+      Upstream.Cold.Channel(ByteVector32(hex"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), 3, 600 msat),
+      Upstream.Cold.Channel(ByteVector32(hex"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"), 7, 500 msat),
     )
     val trampolineOrigin = Origin.Cold(Upstream.Cold.Trampoline(relayedHtlcs))
-    val expectedTrampolineOrigin = """[{"channelId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","htlcId":3,"amount":600},{"channelId":"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","htlcId":7,"amount":500}]"""
+    val expectedTrampolineOrigin = """[{"channelId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","remoteNodeId":"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","htlcId":3,"amount":600},{"channelId":"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","remoteNodeId":"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f","htlcId":7,"amount":500}]"""
     JsonSerializers.serialization.write(trampolineOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedTrampolineOrigin
   }
 
@@ -404,7 +404,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   test("type hints") {
-    val e1 = ChannelPaymentRelayed(110 msat, 100 msat, randomBytes32(), randomBytes32(), randomBytes32(), 100 unixms, 150 unixms)
+    val e1 = ChannelPaymentRelayed(randomBytes32(), PaymentEvent.IncomingPayment(randomBytes32(), randomKey().publicKey, 110 msat, 100 unixms), PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, 100 msat, 150 unixms))
     assert(JsonSerializers.serialization.writePretty(e1)(JsonSerializers.formats).contains("\"type\" : \"payment-relayed\""))
   }
 

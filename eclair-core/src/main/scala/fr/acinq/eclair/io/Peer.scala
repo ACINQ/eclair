@@ -41,7 +41,7 @@ import fr.acinq.eclair.io.OpenChannelInterceptor.{OpenChannelInitiator, OpenChan
 import fr.acinq.eclair.io.PeerConnection.KillReason
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
-import fr.acinq.eclair.payment.{OnTheFlyFundingPaymentRelayed, PaymentRelayed}
+import fr.acinq.eclair.payment.{OnTheFlyFundingPaymentRelayed, PaymentEvent}
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol
@@ -814,12 +814,12 @@ class Peer(val nodeParams: NodeParams,
                 case OnTheFlyFunding.Proposal(htlc, upstream, _) => upstream match {
                   case _: Upstream.Local => ()
                   case u: Upstream.Hot.Channel =>
-                    val incoming = PaymentRelayed.IncomingPart(u.add.amountMsat, u.add.channelId, u.receivedAt)
-                    val outgoing = PaymentRelayed.OutgoingPart(htlc.amount, success.channelId, TimestampMilli.now())
+                    val incoming = PaymentEvent.IncomingPayment(u.add.channelId, u.receivedFrom, u.add.amountMsat, u.receivedAt)
+                    val outgoing = PaymentEvent.OutgoingPayment(success.channelId, remoteNodeId, htlc.amount, TimestampMilli.now())
                     context.system.eventStream.publish(OnTheFlyFundingPaymentRelayed(htlc.paymentHash, Seq(incoming), Seq(outgoing)))
                   case u: Upstream.Hot.Trampoline =>
-                    val incoming = u.received.map(r => PaymentRelayed.IncomingPart(r.add.amountMsat, r.add.channelId, r.receivedAt))
-                    val outgoing = PaymentRelayed.OutgoingPart(htlc.amount, success.channelId, TimestampMilli.now())
+                    val incoming = u.received.map(r => PaymentEvent.IncomingPayment(r.add.channelId, r.receivedFrom, r.add.amountMsat, r.receivedAt))
+                    val outgoing = PaymentEvent.OutgoingPayment(success.channelId, remoteNodeId, htlc.amount, TimestampMilli.now())
                     context.system.eventStream.publish(OnTheFlyFundingPaymentRelayed(htlc.paymentHash, incoming, Seq(outgoing)))
                 }
               }

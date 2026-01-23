@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Script, Transaction, TxOut}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
 import fr.acinq.eclair.TestUtils.randomTxId
@@ -61,36 +61,39 @@ class AuditDbSpec extends AnyFunSuite {
   test("add/list events") {
     forAllDbs { dbs =>
       val db = dbs.audit
+      // We don't yet store the remote node_id in our DB: we use this placeholder instead.
+      // TODO: update this test once we store the remote node_id for incoming/outgoing payments.
+      val dummyRemoteNodeId = PrivateKey(ByteVector32.One).publicKey
 
       val now = TimestampMilli.now()
-      val e1 = PaymentSent(ZERO_UUID, randomBytes32(), 40000 msat, randomKey().publicKey, PaymentSent.PartialPayment(ZERO_UUID, 42000 msat, 1000 msat, randomBytes32(), None, now, now) :: Nil, None, now)
-      val pp2a = PaymentReceived.PartialPayment(42000 msat, randomBytes32())
-      val pp2b = PaymentReceived.PartialPayment(42100 msat, randomBytes32())
+      val e1 = PaymentSent(ZERO_UUID, randomBytes32(), 40000 msat, randomKey().publicKey, PaymentSent.PartialPayment(ZERO_UUID, PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 42000 msat, now), 1000 msat, None, now) :: Nil, None, now)
+      val pp2a = PaymentEvent.IncomingPayment(randomBytes32(), dummyRemoteNodeId, 42000 msat, now)
+      val pp2b = PaymentEvent.IncomingPayment(randomBytes32(), dummyRemoteNodeId, 42100 msat, now)
       val e2 = PaymentReceived(randomBytes32(), pp2a :: pp2b :: Nil)
-      val e3 = ChannelPaymentRelayed(42000 msat, 1000 msat, randomBytes32(), randomBytes32(), randomBytes32(), now - 3.seconds, now)
+      val e3 = ChannelPaymentRelayed(randomBytes32(), PaymentEvent.IncomingPayment(randomBytes32(), dummyRemoteNodeId, 42000 msat, now - 3.seconds), PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 1000 msat, now))
       val e4a = TransactionPublished(randomBytes32(), randomKey().publicKey, Transaction(0, Seq.empty, Seq.empty, 0), 42 sat, "mutual")
       val e4b = TransactionConfirmed(e4a.channelId, e4a.remoteNodeId, e4a.tx)
       val e4c = TransactionConfirmed(randomBytes32(), randomKey().publicKey, Transaction(2, Nil, TxOut(500 sat, hex"1234") :: Nil, 0))
-      val pp5a = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, startedAt = 0 unixms, settledAt = 0 unixms)
-      val pp5b = PaymentSent.PartialPayment(UUID.randomUUID(), 42100 msat, 900 msat, randomBytes32(), None, startedAt = 1 unixms, settledAt = 1 unixms)
+      val pp5a = PaymentSent.PartialPayment(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 42000 msat, 0 unixms), 1000 msat, None, startedAt = 0 unixms)
+      val pp5b = PaymentSent.PartialPayment(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 42100 msat, 1 unixms), 900 msat, None, startedAt = 1 unixms)
       val e5 = PaymentSent(UUID.randomUUID(), randomBytes32(), 84100 msat, randomKey().publicKey, pp5a :: pp5b :: Nil, None, startedAt = 0 unixms)
-      val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, startedAt = now + 10.minutes, settledAt = now + 10.minutes)
+      val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 42000 msat, settledAt = now + 10.minutes), 1000 msat, None, startedAt = now + 10.minutes)
       val e6 = PaymentSent(UUID.randomUUID(), randomBytes32(), 42000 msat, randomKey().publicKey, pp6 :: Nil, None, startedAt = now + 10.minutes)
       val e7 = ChannelEvent(randomBytes32(), randomKey().publicKey, randomTxId(), 456123000 sat, isChannelOpener = true, isPrivate = false, ChannelEvent.EventType.Closed(MutualClose(null)))
       val e10 = TrampolinePaymentRelayed(randomBytes32(),
         Seq(
-          PaymentRelayed.IncomingPart(20000 msat, randomBytes32(), now - 7.seconds),
-          PaymentRelayed.IncomingPart(22000 msat, randomBytes32(), now - 5.seconds)
+          PaymentEvent.IncomingPayment(randomBytes32(), dummyRemoteNodeId, 20000 msat, now - 7.seconds),
+          PaymentEvent.IncomingPayment(randomBytes32(), dummyRemoteNodeId, 22000 msat, now - 5.seconds)
         ),
         Seq(
-          PaymentRelayed.OutgoingPart(10000 msat, randomBytes32(), now + 1.milli),
-          PaymentRelayed.OutgoingPart(12000 msat, randomBytes32(), now + 2.milli),
-          PaymentRelayed.OutgoingPart(15000 msat, randomBytes32(), now + 3.milli)
+          PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 10000 msat, now + 1.milli),
+          PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 12000 msat, now + 2.milli),
+          PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 15000 msat, now + 3.milli)
         ),
         randomKey().publicKey, 30000 msat)
       val multiPartPaymentHash = randomBytes32()
-      val e11 = ChannelPaymentRelayed(13000 msat, 11000 msat, multiPartPaymentHash, randomBytes32(), randomBytes32(), now - 5.seconds, now + 4.milli)
-      val e12 = ChannelPaymentRelayed(15000 msat, 12500 msat, multiPartPaymentHash, randomBytes32(), randomBytes32(), now - 4.seconds, now + 5.milli)
+      val e11 = ChannelPaymentRelayed(multiPartPaymentHash, PaymentEvent.IncomingPayment(randomBytes32(), dummyRemoteNodeId, 13000 msat, now - 5.seconds), PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 11000 msat, now + 4.milli))
+      val e12 = ChannelPaymentRelayed(multiPartPaymentHash, PaymentEvent.IncomingPayment(randomBytes32(), dummyRemoteNodeId, 15000 msat, now - 4.seconds), PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 12500 msat, now + 5.milli))
 
       db.add(e1)
       db.add(e2)
@@ -141,13 +144,13 @@ class AuditDbSpec extends AnyFunSuite {
       val c5 = c1.copy(bytes = 0x05b +: c1.tail)
       val c6 = c1.copy(bytes = 0x06b +: c1.tail)
 
-      db.add(ChannelPaymentRelayed(46000 msat, 44000 msat, randomBytes32(), c6, c1, 1000 unixms, 1001 unixms))
-      db.add(ChannelPaymentRelayed(41000 msat, 40000 msat, randomBytes32(), c6, c1, 1002 unixms, 1003 unixms))
-      db.add(ChannelPaymentRelayed(43000 msat, 42000 msat, randomBytes32(), c5, c1, 1004 unixms, 1005 unixms))
-      db.add(ChannelPaymentRelayed(42000 msat, 40000 msat, randomBytes32(), c5, c2, 1006 unixms, 1007 unixms))
-      db.add(ChannelPaymentRelayed(45000 msat, 40000 msat, randomBytes32(), c5, c6, 1008 unixms, 1009 unixms))
-      db.add(TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.IncomingPart(25000 msat, c6, 1010 unixms)), Seq(PaymentRelayed.OutgoingPart(20000 msat, c4, 1011 unixms)), randomKey().publicKey, 15000 msat))
-      db.add(TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.IncomingPart(46000 msat, c6, 1012 unixms)), Seq(PaymentRelayed.OutgoingPart(16000 msat, c2, 1013 unixms), PaymentRelayed.OutgoingPart(10000 msat, c4, 1014 unixms), PaymentRelayed.OutgoingPart(14000 msat, c4, 1015 unixms)), randomKey().publicKey, 37000 msat))
+      db.add(ChannelPaymentRelayed(randomBytes32(), PaymentEvent.IncomingPayment(c6, randomKey().publicKey, 46000 msat, 1000 unixms), PaymentEvent.OutgoingPayment(c1, randomKey().publicKey, 44000 msat, 1001 unixms)))
+      db.add(ChannelPaymentRelayed(randomBytes32(), PaymentEvent.IncomingPayment(c6, randomKey().publicKey, 41000 msat, 1002 unixms), PaymentEvent.OutgoingPayment(c1, randomKey().publicKey, 40000 msat, 1003 unixms)))
+      db.add(ChannelPaymentRelayed(randomBytes32(), PaymentEvent.IncomingPayment(c5, randomKey().publicKey, 43000 msat, 1004 unixms), PaymentEvent.OutgoingPayment(c1, randomKey().publicKey, 42000 msat, 1005 unixms)))
+      db.add(ChannelPaymentRelayed(randomBytes32(), PaymentEvent.IncomingPayment(c5, randomKey().publicKey, 42000 msat, 1006 unixms), PaymentEvent.OutgoingPayment(c2, randomKey().publicKey, 40000 msat, 1007 unixms)))
+      db.add(ChannelPaymentRelayed(randomBytes32(), PaymentEvent.IncomingPayment(c5, randomKey().publicKey, 45000 msat, 1008 unixms), PaymentEvent.OutgoingPayment(c6, randomKey().publicKey, 40000 msat, 1009 unixms)))
+      db.add(TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentEvent.IncomingPayment(c6, randomKey().publicKey, 25000 msat, 1010 unixms)), Seq(PaymentEvent.OutgoingPayment(c4, randomKey().publicKey, 20000 msat, 1011 unixms)), randomKey().publicKey, 15000 msat))
+      db.add(TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentEvent.IncomingPayment(c6, randomKey().publicKey, 46000 msat, 1012 unixms)), Seq(PaymentEvent.OutgoingPayment(c2, randomKey().publicKey, 16000 msat, 1013 unixms), PaymentEvent.OutgoingPayment(c4, randomKey().publicKey, 10000 msat, 1014 unixms), PaymentEvent.OutgoingPayment(c4, randomKey().publicKey, 14000 msat, 1015 unixms)), randomKey().publicKey, 37000 msat))
 
       // The following confirmed txs will be taken into account.
       db.add(TransactionPublished(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(5000 sat, hex"12345")), 0), 200 sat, "funding"))
@@ -209,12 +212,12 @@ class AuditDbSpec extends AnyFunSuite {
         // 25% trampoline relays.
         if (Random.nextInt(4) == 0) {
           val outgoingCount = 1 + Random.nextInt(4)
-          val incoming = Seq(PaymentRelayed.IncomingPart(10000 msat, randomBytes32(), TimestampMilli.now() - 3.seconds))
-          val outgoing = (1 to outgoingCount).map(_ => PaymentRelayed.OutgoingPart(Random.nextInt(2000).msat, channelIds(Random.nextInt(channelCount)), TimestampMilli.now()))
+          val incoming = Seq(PaymentEvent.IncomingPayment(randomBytes32(), randomKey().publicKey, 10000 msat, TimestampMilli.now() - 3.seconds))
+          val outgoing = (1 to outgoingCount).map(_ => PaymentEvent.OutgoingPayment(channelIds(Random.nextInt(channelCount)), randomKey().publicKey, Random.nextInt(2000).msat, TimestampMilli.now()))
           db.add(TrampolinePaymentRelayed(randomBytes32(), incoming, outgoing, randomKey().publicKey, 5000 msat))
         } else {
           val toChannelId = channelIds(Random.nextInt(channelCount))
-          db.add(ChannelPaymentRelayed(10000 msat, Random.nextInt(10000).msat, randomBytes32(), randomBytes32(), toChannelId, TimestampMilli.now() - 2.seconds, TimestampMilli.now()))
+          db.add(ChannelPaymentRelayed(randomBytes32(), PaymentEvent.IncomingPayment(randomBytes32(), randomKey().publicKey, 10000 msat, TimestampMilli.now() - 2.seconds), PaymentEvent.OutgoingPayment(toChannelId, randomKey().publicKey, Random.nextInt(10000).msat, TimestampMilli.now())))
         }
       })
       // Test starts here.

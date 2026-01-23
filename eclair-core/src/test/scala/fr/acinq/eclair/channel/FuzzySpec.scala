@@ -134,10 +134,10 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
             sendChannel ! buildCmdAdd(invoice)
             context become {
               case RES_SUCCESS(_: CMD_ADD_HTLC, _) => ()
-              case RES_ADD_SETTLED(_, htlc, _: HtlcResult.Fulfill) =>
+              case RES_ADD_SETTLED(_, _, htlc, _: HtlcResult.Fulfill) =>
                 log.info(s"successfully sent htlc #${htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
-              case RES_ADD_SETTLED(_, htlc, _: HtlcResult.Fail) =>
+              case RES_ADD_SETTLED(_, _, htlc, _: HtlcResult.Fail) =>
                 log.warning(s"htlc failed: ${htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
               case RES_ADD_FAILED(_, t: Throwable, _) =>

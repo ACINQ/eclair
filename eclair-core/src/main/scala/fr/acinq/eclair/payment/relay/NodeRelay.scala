@@ -226,7 +226,7 @@ class NodeRelay private(nodeParams: NodeParams,
       case Relay(packet: IncomingPaymentPacket.NodeRelayPacket, originNode, incomingChannelOccupancy) =>
         require(packet.outerPayload.paymentSecret == paymentSecret, "payment secret mismatch")
         context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", packet.add.id, packet.add.channelId)
-        handler ! MultiPartPaymentFSM.HtlcPart(packet.outerPayload.totalAmount, packet.add, packet.receivedAt)
+        handler ! MultiPartPaymentFSM.HtlcPart(packet.outerPayload.totalAmount, packet.add, originNode, packet.receivedAt)
         receiving(htlcs :+ Upstream.Hot.Channel(packet.add.removeUnknownTlvs(), packet.receivedAt, originNode, incomingChannelOccupancy), nextPayload, nextPacket_opt, handler, upgradeAccountability && packet.innerPayload.upgradeAccountability)
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
@@ -515,8 +515,8 @@ class NodeRelay private(nodeParams: NodeParams,
     if (!fulfilledUpstream) {
       fulfillPayment(upstream, paymentSent.paymentPreimage, paymentSent.remainingAttribution_opt)
     }
-    val incoming = upstream.received.map(r => PaymentRelayed.IncomingPart(r.add.amountMsat, r.add.channelId, r.receivedAt))
-    val outgoing = paymentSent.parts.map(part => PaymentRelayed.OutgoingPart(part.amountWithFees, part.toChannelId, part.settledAt))
+    val incoming = upstream.received.map(r => PaymentEvent.IncomingPayment(r.add.channelId, r.receivedFrom, r.add.amountMsat, r.receivedAt))
+    val outgoing = paymentSent.parts.map(p => PaymentEvent.OutgoingPayment(p.channelId, p.remoteNodeId, p.amountWithFees, p.settledAt))
     context.system.eventStream ! EventStream.Publish(TrampolinePaymentRelayed(paymentHash, incoming, outgoing, paymentSent.recipientNodeId, paymentSent.recipientAmount))
   }
 

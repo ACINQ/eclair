@@ -231,7 +231,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
 
-    val ps = PaymentSent(id, paymentPreimage, finalAmount, priv_c.publicKey, Seq(PartialPayment(UUID.randomUUID(), finalAmount, 0 msat, randomBytes32(), None, 100 unixms, 200 unixms)), None, 80 unixms)
+    val ps = PaymentSent(id, paymentPreimage, finalAmount, priv_c.publicKey, Seq(PartialPayment(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, finalAmount, 200 unixms), 0 msat, None, 100 unixms)), None, 80 unixms)
     payFsm.send(initiator, ps)
     sender.expectMsg(ps)
     eventListener.expectNoMessage(100 millis)
@@ -350,7 +350,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, GetPayment(PaymentIdentifier.PaymentHash(invoice.paymentHash)))
     sender.expectMsg(PaymentIsPending(id, invoice.paymentHash, PendingPaymentToNode(sender.ref, req)))
 
-    val ps = PaymentSent(id, paymentPreimage, finalAmount, invoice.nodeId, Seq(PartialPayment(UUID.randomUUID(), finalAmount, 0 msat, randomBytes32(), None, 100 unixms, 200 unixms)), None, 100 unixms)
+    val ps = PaymentSent(id, paymentPreimage, finalAmount, invoice.nodeId, Seq(PartialPayment(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, finalAmount, 200 unixms), 0 msat, None, 100 unixms)), None, 100 unixms)
     payFsm.send(initiator, ps)
     sender.expectMsg(ps)
     eventListener.expectNoMessage(100 millis)

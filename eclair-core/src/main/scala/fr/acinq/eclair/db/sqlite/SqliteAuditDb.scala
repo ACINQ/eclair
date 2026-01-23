@@ -198,7 +198,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
   override def add(e: PaymentSent): Unit = withMetrics("audit/add-payment-sent", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       e.parts.foreach(p => {
-        statement.setLong(1, p.amount.toLong)
+        statement.setLong(1, p.amountWithFees.toLong)
         statement.setLong(2, p.feesPaid.toLong)
         statement.setLong(3, e.recipientAmount.toLong)
         statement.setString(4, p.id.toString)
@@ -206,7 +206,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.setBytes(6, e.paymentHash.toArray)
         statement.setBytes(7, e.paymentPreimage.toArray)
         statement.setBytes(8, e.recipientNodeId.value.toArray)
-        statement.setBytes(9, p.toChannelId.toArray)
+        statement.setBytes(9, p.channelId.toArray)
         statement.setLong(10, p.settledAt.toLong)
         statement.addBatch()
       })
@@ -219,7 +219,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       e.parts.foreach(p => {
         statement.setLong(1, p.amount.toLong)
         statement.setBytes(2, e.paymentHash.toArray)
-        statement.setBytes(3, p.fromChannelId.toArray)
+        statement.setBytes(3, p.channelId.toArray)
         statement.setLong(4, p.receivedAt.toLong)
         statement.addBatch()
       })
@@ -229,10 +229,10 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
 
   override def add(e: PaymentRelayed): Unit = withMetrics("audit/add-payment-relayed", DbBackends.Sqlite) {
     val payments = e match {
-      case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, startedAt, settledAt) =>
+      case e: ChannelPaymentRelayed =>
         // non-trampoline relayed payments have one input and one output
-        val in = Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", startedAt))
-        val out = Seq(RelayedPart(toChannelId, amountOut, "OUT", "channel", settledAt))
+        val in = Seq(RelayedPart(e.paymentIn.channelId, e.paymentIn.amount, "IN", "channel", e.startedAt))
+        val out = Seq(RelayedPart(e.paymentOut.channelId, e.paymentOut.amount, "OUT", "channel", e.settledAt))
         in ++ out
       case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) =>
         using(sqlite.prepareStatement("INSERT INTO relayed_trampoline VALUES (?, ?, ?, ?)")) { statement =>
@@ -331,14 +331,17 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         .foldLeft(Map.empty[UUID, PaymentSent]) { (sentByParentId, rs) =>
           val parentId = UUID.fromString(rs.getString("parent_payment_id"))
           val part = PaymentSent.PartialPayment(
-            UUID.fromString(rs.getString("payment_id")),
-            MilliSatoshi(rs.getLong("amount_msat")),
-            MilliSatoshi(rs.getLong("fees_msat")),
-            rs.getByteVector32("to_channel_id"),
-            None, // we don't store the route in the audit DB
+            id = UUID.fromString(rs.getString("payment_id")),
+            payment = PaymentEvent.OutgoingPayment(
+              channelId = rs.getByteVector32("to_channel_id"),
+              remoteNodeId = PrivateKey(ByteVector32.One).publicKey, // we're not storing the remote node_id yet
+              amount = MilliSatoshi(rs.getLong("amount_msat")),
+              settledAt = TimestampMilli(rs.getLong("timestamp"))
+            ),
+            feesPaid = MilliSatoshi(rs.getLong("fees_msat")),
+            route = None, // we don't store the route in the audit DB
             // TODO: store startedAt when updating the DB schema instead of duplicating settledAt.
-            startedAt = TimestampMilli(rs.getLong("timestamp")),
-            settledAt = TimestampMilli(rs.getLong("timestamp")))
+            startedAt = TimestampMilli(rs.getLong("timestamp")))
           val sent = sentByParentId.get(parentId) match {
             case Some(s) => s.copy(parts = s.parts :+ part)
             case None => PaymentSent(
@@ -365,10 +368,11 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       val result = statement.executeQuery()
         .foldLeft(Map.empty[ByteVector32, PaymentReceived]) { (receivedByHash, rs) =>
           val paymentHash = rs.getByteVector32("payment_hash")
-          val part = PaymentReceived.PartialPayment(
-            MilliSatoshi(rs.getLong("amount_msat")),
-            rs.getByteVector32("from_channel_id"),
-            TimestampMilli(rs.getLong("timestamp")))
+          val part = PaymentEvent.IncomingPayment(
+            channelId = rs.getByteVector32("from_channel_id"),
+            remoteNodeId = PrivateKey(ByteVector32.One).publicKey, // we're not storing the remote node_id yet
+            amount = MilliSatoshi(rs.getLong("amount_msat")),
+            receivedAt = TimestampMilli(rs.getLong("timestamp")))
           val received = receivedByHash.get(paymentHash) match {
             case Some(r) => r.copy(parts = r.parts :+ part)
             case None => PaymentReceived(paymentHash, Seq(part))
@@ -413,11 +417,11 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       case (paymentHash, parts) =>
         // We may have been routing multiple payments for the same payment_hash (MPP) in both cases (trampoline and channel).
         // NB: we may link the wrong in-out parts, but the overall sum will be correct: we sort by amounts to minimize the risk of mismatch.
-        val incoming = parts.filter(_.direction == "IN").map(p => PaymentRelayed.IncomingPart(p.amount, p.channelId, p.timestamp)).sortBy(_.amount)
-        val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentRelayed.OutgoingPart(p.amount, p.channelId, p.timestamp)).sortBy(_.amount)
+        val incoming = parts.filter(_.direction == "IN").map(p => PaymentEvent.IncomingPayment(p.channelId, PrivateKey(ByteVector32.One).publicKey, p.amount, p.timestamp)).sortBy(_.amount)
+        val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentEvent.OutgoingPayment(p.channelId, PrivateKey(ByteVector32.One).publicKey, p.amount, p.timestamp)).sortBy(_.amount)
         parts.headOption match {
           case Some(RelayedPart(_, _, _, "channel", _)) => incoming.zip(outgoing).map {
-            case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, in.receivedAt, out.settledAt)
+            case (in, out) => ChannelPaymentRelayed(paymentHash, in, out)
           }
           case Some(RelayedPart(_, _, _, "trampoline", _)) => trampolineByHash.get(paymentHash) match {
             case Some((nextTrampolineAmount, nextTrampolineNodeId)) => TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) :: Nil
@@ -453,7 +457,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
   override def stats(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[Stats] = {
     case class Relayed(amount: MilliSatoshi, fee: MilliSatoshi, direction: String)
 
-    def aggregateRelayStats(previous: Map[ByteVector32, Seq[Relayed]], incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing): Map[ByteVector32, Seq[Relayed]] = {
+    def aggregateRelayStats(previous: Map[ByteVector32, Seq[Relayed]], incoming: Seq[PaymentEvent.IncomingPayment], outgoing: Seq[PaymentEvent.OutgoingPayment]): Map[ByteVector32, Seq[Relayed]] = {
       // We ensure trampoline payments are counted only once per channel and per direction (if multiple HTLCs were sent
       // from/to the same channel, we group them).
       val amountIn = incoming.map(_.amount).sum
@@ -470,8 +474,8 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       // NB: we must avoid counting the fee twice: we associate it to the outgoing channels rather than the incoming ones.
       val current = e match {
         case c: ChannelPaymentRelayed => Map(
-          c.fromChannelId -> (Relayed(c.amountIn, 0 msat, "IN") +: previous.getOrElse(c.fromChannelId, Nil)),
-          c.toChannelId -> (Relayed(c.amountOut, c.amountIn - c.amountOut, "OUT") +: previous.getOrElse(c.toChannelId, Nil)),
+          c.paymentIn.channelId -> (Relayed(c.amountIn, 0 msat, "IN") +: previous.getOrElse(c.paymentIn.channelId, Nil)),
+          c.paymentOut.channelId -> (Relayed(c.amountOut, c.amountIn - c.amountOut, "OUT") +: previous.getOrElse(c.paymentOut.channelId, Nil)),
         )
         case t: TrampolinePaymentRelayed =>
           aggregateRelayStats(previous, t.incoming, t.outgoing)

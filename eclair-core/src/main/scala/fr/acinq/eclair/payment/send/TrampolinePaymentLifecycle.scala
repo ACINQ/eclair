@@ -113,7 +113,8 @@ object TrampolinePaymentLifecycle {
       val add = CMD_ADD_HTLC(addHtlcAdapter.toClassic, outgoing.trampolineAmount, paymentHash, outgoing.trampolineExpiry, outgoing.onion.packet, None, Reputation.Score.max(accountable = false), None, origin, commit = true)
       channelInfo.channel ! add
       val channelId = channelInfo.data.asInstanceOf[DATA_NORMAL].channelId
-      val part = PartialPayment(cmd.paymentId, amount, computeFees(amount, attemptNumber), channelId, None, startedAt = TimestampMilli.now(), settledAt = TimestampMilli.now()) // we will update settledAt below
+      val trampolineFees = computeFees(amount, attemptNumber)
+      val part = PartialPayment(cmd.paymentId, PaymentEvent.OutgoingPayment(channelId, cmd.trampolineNodeId, amount + trampolineFees, settledAt = TimestampMilli.now()), trampolineFees, None, startedAt = TimestampMilli.now()) // we will update settledAt below
       waitForSettlement(part, outgoing.onion.sharedSecrets, outgoing.trampolineOnion.sharedSecrets)
     }
 
@@ -137,7 +138,7 @@ object TrampolinePaymentLifecycle {
                 }
               case _: HtlcResult.OnChainFulfill => Nil
             }
-            parent ! HtlcSettled(fulfill, part.copy(settledAt = TimestampMilli.now()), holdTimes)
+            parent ! HtlcSettled(fulfill, part.copy(payment = part.payment.copy(settledAt = TimestampMilli.now())), holdTimes)
             Behaviors.stopped
           case fail: HtlcResult.Fail =>
             val holdTimes = fail match {
@@ -145,7 +146,7 @@ object TrampolinePaymentLifecycle {
                 Sphinx.FailurePacket.decrypt(updateFail.reason, updateFail.attribution_opt, outerOnionSecrets).holdTimes
               case _ => Nil
             }
-            parent ! HtlcSettled(fail, part.copy(settledAt = TimestampMilli.now()), holdTimes)
+            parent ! HtlcSettled(fail, part.copy(payment = part.payment.copy(settledAt = TimestampMilli.now())), holdTimes)
             Behaviors.stopped
         }
       }

@@ -383,7 +383,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(sent.length == 1, sent)
     val paymentSent1 = paymentSent.copy(
       // We don't store the route in the DB, and don't store the startedAt timestamp yet (we set it to the same value as settledAt).
-      parts = paymentSent.parts.map(p => p.copy(route = None, startedAt = p.settledAt)).sortBy(_.settledAt),
+      parts = paymentSent.parts.map(p => p.copy(payment = p.payment.copy(remoteNodeId = PrivateKey(ByteVector32.One).publicKey), route = None, startedAt = p.settledAt)).sortBy(_.settledAt),
       // We don't store attribution data in the DB.
       remainingAttribution_opt = None,
       startedAt = 0 unixms,

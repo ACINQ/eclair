@@ -32,6 +32,7 @@ import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.payment.IncomingPaymentPacket.FinalPacket
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.{NodePayload, buildOnion, buildOutgoingPayment}
 import fr.acinq.eclair.payment.PaymentPacketSpec._
+import fr.acinq.eclair.payment.receive.MultiPartHandler
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.send.{ClearRecipient, TrampolinePayment}
 import fr.acinq.eclair.reputation.{Reputation, ReputationRecorder}
@@ -76,8 +77,8 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     withFixture(test.toNoArgTest(FixtureParam(nodeParams, relayer, router, register, childActors, paymentHandler, reputationRecorder)))
   }
 
-  val channelId_ab = randomBytes32()
-  val channelId_bc = randomBytes32()
+  val channelId_ab: ByteVector32 = randomBytes32()
+  val channelId_bc: ByteVector32 = randomBytes32()
 
   test("relay an htlc-add") { f =>
     import f._
@@ -112,7 +113,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None, accountable = false, None)
     relayer ! RelayForward(add_ab, priv_a.publicKey, 0.05)
 
-    val fp = paymentHandler.expectMessageType[FinalPacket]
+    val fp = paymentHandler.expectMessageType[MultiPartHandler.ReceivePacket].packet
     assert(fp.add == add_ab)
     assert(fp.payload == FinalPayload.Standard.createPayload(finalAmount, finalAmount, finalExpiry, paymentSecret, upgradeAccountability = false))
 
@@ -133,7 +134,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val add_ab = UpdateAddHtlc(channelId_ab, 123456, payment.cmd.amount, payment.cmd.paymentHash, payment.cmd.cltvExpiry, payment.cmd.onion, None, accountable = false, None)
     relayer ! RelayForward(add_ab, priv_a.publicKey, 0.05)
 
-    val fp = paymentHandler.expectMessageType[FinalPacket]
+    val fp = paymentHandler.expectMessageType[MultiPartHandler.ReceivePacket].packet
     assert(fp.add == add_ab)
     assert(fp.payload.isInstanceOf[FinalPayload.Standard])
     assert(fp.payload.amount == finalAmount)
@@ -225,14 +226,14 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val trampolineOrigin = Origin.Hot(replyTo.ref.toClassic, Upstream.Hot.Trampoline(List(Upstream.Hot.Channel(add_ab, TimestampMilli.now(), priv_a.publicKey, 0.1))))
 
     val addSettled = Seq(
-      RES_ADD_SETTLED(channelOrigin, add_bc, HtlcResult.OnChainFulfill(randomBytes32())),
-      RES_ADD_SETTLED(channelOrigin, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, randomBytes32()))),
-      RES_ADD_SETTLED(channelOrigin, add_bc, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(channelId_bc, Set(add_bc)))),
-      RES_ADD_SETTLED(channelOrigin, add_bc, HtlcResult.RemoteFail(UpdateFailHtlc(add_bc.channelId, add_bc.id, randomBytes32()))),
-      RES_ADD_SETTLED(trampolineOrigin, add_bc, HtlcResult.OnChainFulfill(randomBytes32())),
-      RES_ADD_SETTLED(trampolineOrigin, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, randomBytes32()))),
-      RES_ADD_SETTLED(trampolineOrigin, add_bc, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(channelId_bc, Set(add_bc)))),
-      RES_ADD_SETTLED(trampolineOrigin, add_bc, HtlcResult.RemoteFail(UpdateFailHtlc(add_bc.channelId, add_bc.id, randomBytes32())))
+      RES_ADD_SETTLED(channelOrigin, priv_a.publicKey, add_bc, HtlcResult.OnChainFulfill(randomBytes32())),
+      RES_ADD_SETTLED(channelOrigin, priv_a.publicKey, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, randomBytes32()))),
+      RES_ADD_SETTLED(channelOrigin, priv_a.publicKey, add_bc, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(channelId_bc, Set(add_bc)))),
+      RES_ADD_SETTLED(channelOrigin, priv_a.publicKey, add_bc, HtlcResult.RemoteFail(UpdateFailHtlc(add_bc.channelId, add_bc.id, randomBytes32()))),
+      RES_ADD_SETTLED(trampolineOrigin, priv_a.publicKey, add_bc, HtlcResult.OnChainFulfill(randomBytes32())),
+      RES_ADD_SETTLED(trampolineOrigin, priv_a.publicKey, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, randomBytes32()))),
+      RES_ADD_SETTLED(trampolineOrigin, priv_a.publicKey, add_bc, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(channelId_bc, Set(add_bc)))),
+      RES_ADD_SETTLED(trampolineOrigin, priv_a.publicKey, add_bc, HtlcResult.RemoteFail(UpdateFailHtlc(add_bc.channelId, add_bc.id, randomBytes32())))
     )
 
     for (res <- addSettled) {
@@ -251,10 +252,10 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val originCold = Origin.Cold(originHot)
 
     val addFulfilled = Seq(
-      RES_ADD_SETTLED(originHot, add_bc, HtlcResult.OnChainFulfill(randomBytes32())),
-      RES_ADD_SETTLED(originHot, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, randomBytes32()))),
-      RES_ADD_SETTLED(originCold, add_bc, HtlcResult.OnChainFulfill(randomBytes32())),
-      RES_ADD_SETTLED(originCold, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, randomBytes32()))),
+      RES_ADD_SETTLED(originHot, randomKey().publicKey, add_bc, HtlcResult.OnChainFulfill(randomBytes32())),
+      RES_ADD_SETTLED(originHot, randomKey().publicKey, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, randomBytes32()))),
+      RES_ADD_SETTLED(originCold, randomKey().publicKey, add_bc, HtlcResult.OnChainFulfill(randomBytes32())),
+      RES_ADD_SETTLED(originCold, randomKey().publicKey, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, randomBytes32()))),
     )
 
     for (res <- addFulfilled) {
