@@ -95,13 +95,23 @@ object UpdateFailMalformedHtlcTlv {
 sealed trait CommitSigTlv extends Tlv
 
 object CommitSigTlv {
+  /**
+   * While a splice is ongoing and not locked, we have multiple valid commitments.
+   * We send one [[CommitSig]] message for each valid commitment: this field maps it to the corresponding funding transaction.
+   *
+   * @param txId the funding transaction spent by this commitment.
+   */
+  case class FundingTx(txId: TxId) extends CommitSigTlv
 
-  /** @param size the number of [[CommitSig]] messages in the batch */
-  case class BatchTlv(size: Int) extends CommitSigTlv
+  private val fundingTxTlv: Codec[FundingTx] = tlvField(txIdAsHash)
 
-  object BatchTlv {
-    val codec: Codec[BatchTlv] = tlvField(tu16)
-  }
+  /**
+   * The experimental version of splicing included the number of [[CommitSig]] messages in the batch.
+   * This TLV can be removed once Phoenix users have upgraded to the official version of splicing.
+   */
+  case class ExperimentalBatchTlv(size: Int) extends CommitSigTlv
+
+  private val experimentalBatchTlv: Codec[ExperimentalBatchTlv] = tlvField(tu16)
 
   /** Partial signature signature for the current commitment transaction, along with the signing nonce used (when using taproot channels). */
   case class PartialSignatureWithNonceTlv(partialSigWithNonce: PartialSignatureWithNonce) extends CommitSigTlv
@@ -111,8 +121,9 @@ object CommitSigTlv {
   }
 
   val commitSigTlvCodec: Codec[TlvStream[CommitSigTlv]] = tlvStream(discriminated[CommitSigTlv].by(varint)
+    .typecase(UInt64(1), fundingTxTlv)
     .typecase(UInt64(2), PartialSignatureWithNonceTlv.codec)
-    .typecase(UInt64(0x47010005), BatchTlv.codec)
+    .typecase(UInt64(0x47010005), experimentalBatchTlv)
   )
 
 }
