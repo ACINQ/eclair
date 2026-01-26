@@ -71,6 +71,7 @@ class PeerSpec extends FixtureSpec {
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.AnchorOutputsPhoenix))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional))
+      .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.ZeroFeeCommitments))(Features(ZeroFeeCommitments -> Optional))
       .modify(_.features).setToIf(testData.tags.contains(ChannelStateTestsTags.DualFunding))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, DualFunding -> Optional))
       .modify(_.channelConf.maxHtlcValueInFlightMsat).setToIf(testData.tags.contains("max-htlc-value-in-flight-percent"))(100_000_000 msat)
       .modify(_.channelConf.maxHtlcValueInFlightPercent).setToIf(testData.tags.contains("max-htlc-value-in-flight-percent"))(25)
@@ -567,6 +568,24 @@ class PeerSpec extends FixtureSpec {
     assert(!init.dualFunded)
     assert(init.fundingAmount == 15000.sat)
     assert(init.commitTxFeerate == TestConstants.anchorOutputsFeeratePerKw)
+    assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing))
+  }
+
+  test("use correct on-chain fee rates when spawning a channel (zero-fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    import f._
+
+    val probe = TestProbe()
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(ZeroFeeCommitments -> Optional)))
+    assert(peer.stateData.channels.isEmpty)
+
+    // We ensure the current network feerate is higher than the default anchor output feerate.
+    nodeParams.setBitcoinCoreFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2).copy(minimum = FeeratePerKw(250 sat)))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, Some(ChannelTypes.ZeroFeeCommitments()), None, None, None, None, None, None))
+    val init = channel.expectMsgType[INPUT_INIT_CHANNEL_INITIATOR]
+    assert(init.channelType == ChannelTypes.ZeroFeeCommitments())
+    assert(!init.dualFunded)
+    assert(init.fundingAmount == 15000.sat)
+    assert(init.commitTxFeerate == FeeratePerKw(0 sat))
     assert(init.fundingTxFeerate == nodeParams.onChainFeeConf.getFundingFeerate(nodeParams.currentFeeratesForFundingClosing))
   }
 

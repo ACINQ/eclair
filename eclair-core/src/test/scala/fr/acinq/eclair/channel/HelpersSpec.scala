@@ -114,7 +114,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     val rcp = bob.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
     rcp.anchorOutput_opt.foreach(_ => bob2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx])
-    rcp.localOutput_opt.foreach(_ => bob2blockchain.expectFinalTxPublished("remote-main-delayed"))
+    rcp.localOutput_opt.foreach(_ => bob2blockchain.expectFinalTxPublished("remote-main"))
     // Bob is missing the preimage for 2 of the HTLCs she received.
     assert(rcp.htlcOutputs.size == 6)
     val claimHtlcTxs = (0 until 4).map(_ => bob2blockchain.expectMsgType[PublishReplaceableTx])
