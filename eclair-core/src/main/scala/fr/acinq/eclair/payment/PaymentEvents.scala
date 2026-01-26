@@ -145,6 +145,19 @@ case class PaymentReceived(paymentHash: ByteVector32, parts: Seq[PaymentEvent.In
   val settledAt: TimestampMilli = parts.map(_.receivedAt).max // we use max here because we fulfill the payment only once we received all the parts
 }
 
+/**
+ * This event is emitted when we couldn't relay a payment and the reason is *likely* a liquidity issue.
+ * This can help figure out where liquidity is needed to earn more routing fees by funding channels.
+ *
+ * Note that this event is *not* emitted on *every* payment relay failure. This event does *not* guarantee that the
+ * failure was a liquidity issue, and malicious senders can force this event to be triggered for payments that they
+ * would not have fulfilled. Listeners must add their own heuristics and gather additional data in order to efficiently
+ * allocate liquidity and optimize their routing fees.
+ *
+ * @param fees fees we would have earned if we had successfully relayed that payment (can be gamed by malicious senders).
+ */
+case class PaymentNotRelayed(paymentHash: ByteVector32, remoteNodeId: PublicKey, fees: MilliSatoshi)
+
 case class PaymentMetadataReceived(paymentHash: ByteVector32, paymentMetadata: ByteVector)
 
 case class PaymentSettlingOnChain(id: UUID, channelId: ByteVector32, amount: MilliSatoshi, paymentHash: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now())

@@ -30,7 +30,7 @@ import fr.acinq.eclair.io.Peer.ProposeOnTheFlyFundingResponse
 import fr.acinq.eclair.io.{Peer, PeerReadyNotifier}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.{OutgoingChannel, OutgoingChannelParams}
-import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentEvent}
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentEvent, PaymentNotRelayed}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.reputation.ReputationRecorder.GetConfidence
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
@@ -210,6 +210,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           case RelayFailure(cmdFail) =>
             Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
             context.log.info("rejecting htlc reason={}", cmdFail.reason)
+            channels.headOption.map(_._2.nextNodeId).foreach(nextNodeId => context.system.eventStream ! EventStream.Publish(PaymentNotRelayed(r.add.paymentHash, nextNodeId, fees = upstream.amountIn - r.amountToForward)))
             safeSendAndStop(r.add.channelId, cmdFail)
           case RelayNeedsFunding(nextNodeId, cmdFail) =>
             // Note that in the channel relay case, we don't have any outgoing onion shared secrets.
@@ -230,6 +231,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         context.log.warn(s"couldn't resolve downstream channel $channelId, failing htlc #${upstream.add.id}")
         val cmdFail = makeCmdFailHtlc(upstream.add.id, UnknownNextPeer())
         Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
+        channels.headOption.map(_._2.nextNodeId).foreach(nextNodeId => context.system.eventStream ! EventStream.Publish(PaymentNotRelayed(r.add.paymentHash, nextNodeId, fees = upstream.amountIn - r.amountToForward)))
         safeSendAndStop(upstream.add.channelId, cmdFail)
 
       case WrappedAddResponse(addFailed: RES_ADD_FAILED[_]) =>

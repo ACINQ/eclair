@@ -270,6 +270,9 @@ class NodeRelay private(nodeParams: NodeParams,
           rejectExtraHtlcPartialFunction orElse {
             case WrappedResolvedPaths(resolved) if resolved.isEmpty =>
               context.log.warn("rejecting trampoline payment to blinded paths: no usable blinded path")
+              payloadOut.outgoingBlindedPaths.map(_.route.firstNodeId).collectFirst { case n: EncodedNodeId.WithPublicKey => n.publicKey }.foreach(nodeId => {
+                context.system.eventStream ! EventStream.Publish(PaymentNotRelayed(paymentHash, nodeId, fees = upstream.amountIn - outgoingAmount(upstream, nextPayload)))
+              })
               rejectPayment(upstream, Some(UnknownNextPeer()))
               stopping()
             case WrappedResolvedPaths(resolved) =>
@@ -411,6 +414,7 @@ class NodeRelay private(nodeParams: NodeParams,
               context.log.info("trampoline payment failed, attempting on-the-fly funding")
               attemptOnTheFlyFunding(upstream, walletNodeId, recipient, nextPayload, e.failures, startedAt)
             case _ =>
+              context.system.eventStream ! EventStream.Publish(PaymentNotRelayed(paymentHash, recipient.nodeId, fees = upstream.amountIn - outgoingAmount(upstream, nextPayload)))
               rejectPayment(upstream, translateError(nodeParams, e.failures, upstream, nextPayload))
               recordRelayDuration(startedAt, isSuccess = false)
               stopping()
