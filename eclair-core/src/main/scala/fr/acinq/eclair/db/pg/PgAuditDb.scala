@@ -35,7 +35,7 @@ import javax.sql.DataSource
 
 object PgAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 13
+  val CURRENT_VERSION = 14
 }
 
 class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
@@ -117,6 +117,17 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_channel_id_idx ON audit.relayed(channel_id)")
       }
 
+      def migration1314(statement: Statement): Unit = {
+        // We add the funding_txid and channel_type fields to channel_events.
+        statement.executeUpdate("ALTER TABLE audit.channel_events RENAME TO channel_events_before_v14")
+        statement.executeUpdate("DROP INDEX audit.channel_events_timestamp_idx")
+        statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, channel_type TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_opener BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+        // We recreate indexes for updated tables.
+        statement.executeUpdate("CREATE INDEX channel_events_cid_idx ON audit.channel_events(channel_id)")
+        statement.executeUpdate("CREATE INDEX channel_events_nid_idx ON audit.channel_events(node_id)")
+        statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON audit.channel_events(timestamp)")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA audit")
@@ -125,7 +136,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE TABLE audit.received (amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.relayed_trampoline (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, next_node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
-          statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, channel_type TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_opener BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL, cltv_expiry_delta BIGINT NOT NULL, htlc_minimum_msat BIGINT NOT NULL, htlc_maximum_msat BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, status TEXT NOT NULL, duration_ms BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, is_mpp BOOLEAN NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id TEXT NOT NULL, payment_hash TEXT, routing_hints JSONB)")
           statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, mining_fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
@@ -138,6 +149,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON audit.relayed_trampoline(timestamp)")
           statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON audit.relayed_trampoline(payment_hash)")
           statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON audit.relayed(channel_id)")
+          statement.executeUpdate("CREATE INDEX channel_events_cid_idx ON audit.channel_events(channel_id)")
+          statement.executeUpdate("CREATE INDEX channel_events_nid_idx ON audit.channel_events(node_id)")
           statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON audit.channel_events(timestamp)")
           statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON audit.channel_updates(channel_id)")
           statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON audit.channel_updates(node_id)")
@@ -151,7 +164,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON audit.transactions_published(channel_id)")
           statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
           statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
-        case Some(v@(4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12)) =>
+        case Some(v@(4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 5) {
             migration45(statement)
@@ -180,6 +193,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           if (v < 13) {
             migration1213(statement)
           }
+          if (v < 14) {
+            migration1314(statement)
+          }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
@@ -189,14 +205,16 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def add(e: ChannelEvent): Unit = withMetrics("audit/add-channel-lifecycle", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("INSERT INTO audit.channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      using(pg.prepareStatement("INSERT INTO audit.channel_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, e.channelId.toHex)
-        statement.setString(2, e.remoteNodeId.value.toHex)
-        statement.setLong(3, e.capacity.toLong)
-        statement.setBoolean(4, e.isChannelOpener)
-        statement.setBoolean(5, e.isPrivate)
-        statement.setString(6, e.event)
-        statement.setTimestamp(7, Timestamp.from(Instant.now()))
+        statement.setString(2, e.remoteNodeId.toHex)
+        statement.setString(3, e.fundingTxId.value.toHex)
+        statement.setString(4, e.channelType)
+        statement.setLong(5, e.capacity.toLong)
+        statement.setBoolean(6, e.isChannelOpener)
+        statement.setBoolean(7, e.isPrivate)
+        statement.setString(8, e.event)
+        statement.setTimestamp(9, e.timestamp.toSqlTimestamp)
         statement.executeUpdate()
       }
     }
@@ -343,6 +361,52 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setString(1, channelId.toHex)
         statement.executeQuery().map { rs =>
           PublishedTransaction(TxId.fromValidHex(rs.getString("tx_id")), rs.getString("tx_type"), rs.getLong("mining_fee_sat").sat)
+        }.toSeq
+      }
+    }
+  }
+
+  override def listChannelEvents(channelId: ByteVector32, from: TimestampMilli, to: TimestampMilli): Seq[ChannelEvent] = withMetrics("audit/list-channel-events-by-channel-id", DbBackends.Postgres) {
+    inTransaction { pg =>
+      using(pg.prepareStatement("SELECT * FROM audit.channel_events WHERE channel_id = ? AND timestamp BETWEEN ? AND ?")) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.setTimestamp(2, from.toSqlTimestamp)
+        statement.setTimestamp(3, to.toSqlTimestamp)
+        statement.executeQuery().map { rs =>
+          ChannelEvent(
+            channelId = channelId,
+            remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
+            fundingTxId = TxId(rs.getByteVector32FromHex("funding_txid")),
+            channelType = rs.getString("channel_type"),
+            capacity = Satoshi(rs.getLong("capacity_sat")),
+            isChannelOpener = rs.getBoolean("is_opener"),
+            isPrivate = rs.getBoolean("is_private"),
+            event = rs.getString("event"),
+            timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")),
+          )
+        }.toSeq
+      }
+    }
+  }
+
+  override def listChannelEvents(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): Seq[ChannelEvent] = withMetrics("audit/list-channel-events-by-node-id", DbBackends.Postgres) {
+    inTransaction { pg =>
+      using(pg.prepareStatement("SELECT * FROM audit.channel_events WHERE node_id = ? AND timestamp BETWEEN ? AND ?")) { statement =>
+        statement.setString(1, remoteNodeId.toHex)
+        statement.setTimestamp(2, from.toSqlTimestamp)
+        statement.setTimestamp(3, to.toSqlTimestamp)
+        statement.executeQuery().map { rs =>
+          ChannelEvent(
+            channelId = rs.getByteVector32FromHex("channel_id"),
+            remoteNodeId = remoteNodeId,
+            fundingTxId = TxId(rs.getByteVector32FromHex("funding_txid")),
+            channelType = rs.getString("channel_type"),
+            capacity = Satoshi(rs.getLong("capacity_sat")),
+            isChannelOpener = rs.getBoolean("is_opener"),
+            isPrivate = rs.getBoolean("is_private"),
+            event = rs.getString("event"),
+            timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")),
+          )
         }.toSeq
       }
     }
