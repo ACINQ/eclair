@@ -18,7 +18,7 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Script, Transaction, TxOut}
-import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
+import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
@@ -26,6 +26,7 @@ import fr.acinq.eclair.db.AuditDb.Stats
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgAuditDb
+import fr.acinq.eclair.db.pg.PgUtils.{getVersion, setVersion}
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
@@ -78,7 +79,7 @@ class AuditDbSpec extends AnyFunSuite {
       val e5 = PaymentSent(UUID.randomUUID(), randomBytes32(), 84100 msat, randomKey().publicKey, pp5a :: pp5b :: Nil, None, startedAt = 0 unixms)
       val pp6 = PaymentSent.PaymentPart(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 42000 msat, settledAt = now + 10.minutes), 1000 msat, None, startedAt = now + 10.minutes)
       val e6 = PaymentSent(UUID.randomUUID(), randomBytes32(), 42000 msat, randomKey().publicKey, pp6 :: Nil, None, startedAt = now + 10.minutes)
-      val e7 = ChannelEvent(randomBytes32(), randomKey().publicKey, randomTxId(), "anchor_outputs", 456123000 sat, isChannelOpener = true, isPrivate = false, "mutual-close")
+      val e7 = ChannelEvent(randomBytes32(), randomKey().publicKey, randomTxId(), "anchor_outputs", 456123000 sat, isChannelOpener = true, isPrivate = false, "mutual-close", now)
       val e10 = TrampolinePaymentRelayed(randomBytes32(),
         Seq(
           PaymentEvent.IncomingPayment(randomBytes32(), dummyRemoteNodeId, 20000 msat, now - 7.seconds),
@@ -125,6 +126,12 @@ class AuditDbSpec extends AnyFunSuite {
       assert(db.listRelayed(from = TimestampMilli(0L), to = now + 1.minute, Some(Paginated(count = 2, skip = 4))).toList == List())
       assert(db.listNetworkFees(from = TimestampMilli(0L), to = now + 1.minute).size == 1)
       assert(db.listNetworkFees(from = TimestampMilli(0L), to = now + 1.minute).head.txType == "mutual")
+      assert(db.listChannelEvents(randomBytes32(), from = TimestampMilli(0L), to = now + 1.minute).isEmpty)
+      assert(db.listChannelEvents(e7.channelId, from = TimestampMilli(0L), to = now + 1.minute) == Seq(e7))
+      assert(db.listChannelEvents(e7.channelId, from = TimestampMilli(0L), to = now - 1.minute).isEmpty)
+      assert(db.listChannelEvents(randomKey().publicKey, from = TimestampMilli(0L), to = now + 1.minute).isEmpty)
+      assert(db.listChannelEvents(e7.remoteNodeId, from = TimestampMilli(0L), to = now + 1.minute) == Seq(e7))
+      assert(db.listChannelEvents(e7.remoteNodeId, from = TimestampMilli(0L), to = now - 1.minute).isEmpty)
     }
   }
 
@@ -323,6 +330,101 @@ class AuditDbSpec extends AnyFunSuite {
         }
         assert(!result.next())
       }
+    }
+  }
+
+  test("migrate audit db to v14") {
+    val channelId = randomBytes32()
+    val remoteNodeId = randomKey().publicKey
+    val fundingTxId = randomTxId()
+    val now = TimestampMilli.now()
+    val channelCreated = ChannelEvent(channelId, remoteNodeId, fundingTxId, "anchor_outputs", 100_000 sat, isChannelOpener = true, isPrivate = false, "created", now)
+    forAllDbs {
+      case dbs: TestPgDatabases =>
+        migrationCheck(
+          dbs = dbs,
+          initializeTables = connection => {
+            // We simulate the DB as it was before eclair v14.
+            using(connection.createStatement()) { statement =>
+              statement.executeUpdate("CREATE SCHEMA audit")
+              statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON audit.channel_events(timestamp)")
+              setVersion(statement, "audit", 13)
+            }
+            // We insert some data into the tables we'll modify.
+            using(connection.prepareStatement("INSERT INTO audit.channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+              statement.setString(1, channelId.toHex)
+              statement.setString(2, remoteNodeId.toHex)
+              statement.setLong(3, 100_000)
+              statement.setBoolean(4, true)
+              statement.setBoolean(5, false)
+              statement.setString(6, "mutual")
+              statement.setTimestamp(7, now.toSqlTimestamp)
+              statement.executeUpdate()
+            }
+          },
+          dbName = PgAuditDb.DB_NAME,
+          targetVersion = PgAuditDb.CURRENT_VERSION,
+          postCheck = connection => {
+            val migratedDb = dbs.audit
+            using(connection.createStatement()) { statement => assert(getVersion(statement, "audit").contains(PgAuditDb.CURRENT_VERSION)) }
+            // We've created new tables: previous data from the existing tables isn't available anymore through the API.
+            assert(migratedDb.listChannelEvents(channelId, 0 unixms, now + 1.minute).isEmpty)
+            assert(migratedDb.listChannelEvents(remoteNodeId, 0 unixms, now + 1.minute).isEmpty)
+            // But the data is still available in the database.
+            using(connection.prepareStatement("SELECT * FROM audit.channel_events_before_v14")) { statement =>
+              val result = statement.executeQuery()
+              assert(result.next())
+            }
+            // We can use the new tables immediately.
+            migratedDb.add(channelCreated)
+            assert(migratedDb.listChannelEvents(channelId, 0 unixms, now + 1.minute) == Seq(channelCreated))
+          }
+        )
+      case dbs: TestSqliteDatabases =>
+        migrationCheck(
+          dbs = dbs,
+          initializeTables = connection => {
+            // We simulate the DB as it was before eclair v14.
+            using(connection.createStatement()) { statement =>
+              statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON channel_events(timestamp)")
+              statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON channel_updates(channel_id)")
+              statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON channel_updates(node_id)")
+              statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON channel_updates(timestamp)")
+              setVersion(statement, "audit", 10)
+            }
+            // We insert some data into the tables we'll modify.
+            using(connection.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+              statement.setBytes(1, channelId.toArray)
+              statement.setBytes(2, remoteNodeId.value.toArray)
+              statement.setLong(3, 100_000)
+              statement.setBoolean(4, true)
+              statement.setBoolean(5, false)
+              statement.setString(6, "mutual")
+              statement.setLong(7, now.toLong)
+              statement.executeUpdate()
+            }
+          },
+          dbName = SqliteAuditDb.DB_NAME,
+          targetVersion = SqliteAuditDb.CURRENT_VERSION,
+          postCheck = connection => {
+            val migratedDb = dbs.audit
+            using(connection.createStatement()) { statement => assert(getVersion(statement, "audit").contains(SqliteAuditDb.CURRENT_VERSION)) }
+            // We've created new tables: previous data from the existing tables isn't available anymore through the API.
+            assert(migratedDb.listChannelEvents(channelId, 0 unixms, now + 1.minute).isEmpty)
+            assert(migratedDb.listChannelEvents(remoteNodeId, 0 unixms, now + 1.minute).isEmpty)
+            // But the data is still available in the database.
+            using(connection.prepareStatement("SELECT * FROM channel_events_before_v14")) { statement =>
+              val result = statement.executeQuery()
+              assert(result.next())
+            }
+            // We can use the new tables immediately.
+            migratedDb.add(channelCreated)
+            assert(migratedDb.listChannelEvents(channelId, 0 unixms, now + 1.minute) == Seq(channelCreated))
+          }
+        )
     }
   }
 
