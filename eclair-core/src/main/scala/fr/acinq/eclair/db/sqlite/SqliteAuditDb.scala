@@ -33,7 +33,7 @@ import java.util.UUID
 
 object SqliteAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 10
+  val CURRENT_VERSION = 11
 }
 
 class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
@@ -117,14 +117,34 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON relayed(channel_id)")
     }
 
+    def migration1011(statement: Statement): Unit = {
+      // We add the funding_txid and channel_type fields to channel_events and use TEXT instead of BLOBs.
+      statement.executeUpdate("ALTER TABLE channel_events RENAME TO channel_events_before_v14")
+      statement.executeUpdate("DROP INDEX channel_events_timestamp_idx")
+      statement.executeUpdate("CREATE TABLE channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, channel_type TEXT NOT NULL, capacity_sat INTEGER NOT NULL, is_opener BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+      // We update the channel_updates table to use TEXT instead of BLOBs.
+      statement.executeUpdate("ALTER TABLE channel_updates RENAME TO channel_updates_before_v14")
+      statement.executeUpdate("DROP INDEX channel_updates_cid_idx")
+      statement.executeUpdate("DROP INDEX channel_updates_nid_idx")
+      statement.executeUpdate("DROP INDEX channel_updates_timestamp_idx")
+      statement.executeUpdate("CREATE TABLE channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+      // We recreate indexes for updated tables.
+      statement.executeUpdate("CREATE INDEX channel_events_cid_idx ON channel_events(channel_id)")
+      statement.executeUpdate("CREATE INDEX channel_events_nid_idx ON channel_events(node_id)")
+      statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON channel_events(timestamp)")
+      statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON channel_updates(channel_id)")
+      statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON channel_updates(node_id)")
+      statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON channel_updates(timestamp)")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE relayed (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, channel_id BLOB NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE relayed_trampoline (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, next_node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, channel_type TEXT NOT NULL, capacity_sat INTEGER NOT NULL, is_opener BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL)")
         statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, mining_fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
@@ -136,6 +156,8 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON relayed(channel_id)")
         statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON relayed_trampoline(timestamp)")
         statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON relayed_trampoline(payment_hash)")
+        statement.executeUpdate("CREATE INDEX channel_events_cid_idx ON channel_events(channel_id)")
+        statement.executeUpdate("CREATE INDEX channel_events_nid_idx ON channel_events(node_id)")
         statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON channel_events(timestamp)")
         statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON channel_updates(channel_id)")
         statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON channel_updates(node_id)")
@@ -147,7 +169,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON transactions_published(channel_id)")
         statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON transactions_published(timestamp)")
         statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
-      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9)) =>
+      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -176,6 +198,9 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         if (v < 10) {
           migration910(statement)
         }
+        if (v < 11) {
+          migration1011(statement)
+        }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
@@ -183,14 +208,16 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def add(e: ChannelEvent): Unit = withMetrics("audit/add-channel-lifecycle", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, e.channelId.toArray)
-      statement.setBytes(2, e.remoteNodeId.value.toArray)
-      statement.setLong(3, e.capacity.toLong)
-      statement.setBoolean(4, e.isChannelOpener)
-      statement.setBoolean(5, e.isPrivate)
-      statement.setString(6, e.event)
-      statement.setLong(7, TimestampMilli.now().toLong)
+    using(sqlite.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setString(1, e.channelId.toHex)
+      statement.setString(2, e.remoteNodeId.toHex)
+      statement.setString(3, e.fundingTxId.value.toHex)
+      statement.setString(4, e.channelType)
+      statement.setLong(5, e.capacity.toLong)
+      statement.setBoolean(6, e.isChannelOpener)
+      statement.setBoolean(7, e.isPrivate)
+      statement.setString(8, e.event)
+      statement.setLong(9, e.timestamp.toLong)
       statement.executeUpdate()
     }
   }
@@ -319,6 +346,48 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(1, channelId.toArray)
       statement.executeQuery().map { rs =>
         PublishedTransaction(TxId(rs.getByteVector32("tx_id")), rs.getString("tx_type"), rs.getLong("mining_fee_sat").sat)
+      }.toSeq
+    }
+  }
+
+  override def listChannelEvents(channelId: ByteVector32, from: TimestampMilli, to: TimestampMilli): Seq[ChannelEvent] = withMetrics("audit/list-channel-events-by-channel-id", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT * FROM channel_events WHERE channel_id = ? AND timestamp >= ? AND timestamp < ?")) { statement =>
+      statement.setString(1, channelId.toHex)
+      statement.setLong(2, from.toLong)
+      statement.setLong(3, to.toLong)
+      statement.executeQuery().map { rs =>
+        ChannelEvent(
+          channelId = channelId,
+          remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
+          fundingTxId = TxId(rs.getByteVector32FromHex("funding_txid")),
+          channelType = rs.getString("channel_type"),
+          capacity = Satoshi(rs.getLong("capacity_sat")),
+          isChannelOpener = rs.getBoolean("is_opener"),
+          isPrivate = rs.getBoolean("is_private"),
+          event = rs.getString("event"),
+          timestamp = TimestampMilli(rs.getLong("timestamp")),
+        )
+      }.toSeq
+    }
+  }
+
+  override def listChannelEvents(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): Seq[ChannelEvent] = withMetrics("audit/list-channel-events-by-node-id", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT * FROM channel_events WHERE node_id = ? AND timestamp >= ? AND timestamp < ?")) { statement =>
+      statement.setString(1, remoteNodeId.toHex)
+      statement.setLong(2, from.toLong)
+      statement.setLong(3, to.toLong)
+      statement.executeQuery().map { rs =>
+        ChannelEvent(
+          channelId = rs.getByteVector32FromHex("channel_id"),
+          remoteNodeId = remoteNodeId,
+          fundingTxId = TxId(rs.getByteVector32FromHex("funding_txid")),
+          channelType = rs.getString("channel_type"),
+          capacity = Satoshi(rs.getLong("capacity_sat")),
+          isChannelOpener = rs.getBoolean("is_opener"),
+          isPrivate = rs.getBoolean("is_private"),
+          event = rs.getString("event"),
+          timestamp = TimestampMilli(rs.getLong("timestamp")),
+        )
       }.toSeq
     }
   }
