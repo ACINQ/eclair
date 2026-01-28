@@ -971,11 +971,12 @@ object Helpers {
       }
     }
 
-    /** Compute the fee paid by a commitment transaction. */
-    def commitTxFee(commitInput: InputInfo, commitTx: Transaction, localPaysCommitTxFees: Boolean): Satoshi = {
+    /** Compute the fee paid by a commitment transaction. The first result is the fee paid by us, the second one is the fee paid by our peer. */
+    def commitTxFee(commitInput: InputInfo, commitTx: Transaction, localPaysCommitTxFees: Boolean): (Satoshi, Satoshi) = {
       require(commitTx.txIn.size == 1, "transaction must have only one input")
       require(commitTx.txIn.exists(txIn => txIn.outPoint == commitInput.outPoint), "transaction must spend the funding output")
-      if (localPaysCommitTxFees) commitInput.txOut.amount - commitTx.txOut.map(_.amount).sum else 0 sat
+      val commitFee = commitInput.txOut.amount - commitTx.txOut.map(_.amount).sum
+      if (localPaysCommitTxFees) (commitFee, 0 sat) else (0 sat, commitFee)
     }
 
     /** Return the confirmation target that should be used for our local commitment. */
