@@ -18,6 +18,7 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, TxId}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, PublishedTransaction, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -44,6 +45,8 @@ trait AuditDb {
 
   def listPublished(channelId: ByteVector32): Seq[PublishedTransaction]
 
+  def listPublished(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): Seq[PublishedTransaction]
+
   def listChannelEvents(channelId: ByteVector32, from: TimestampMilli, to: TimestampMilli): Seq[ChannelEvent]
 
   def listChannelEvents(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): Seq[ChannelEvent]
@@ -62,7 +65,11 @@ trait AuditDb {
 
 object AuditDb {
 
-  case class PublishedTransaction(txId: TxId, desc: String, miningFee: Satoshi)
+  case class PublishedTransaction(txId: TxId, desc: String, localMiningFee: Satoshi, remoteMiningFee: Satoshi, feerate: FeeratePerKw, timestamp: TimestampMilli)
+
+  object PublishedTransaction {
+    def apply(tx: TransactionPublished): PublishedTransaction = PublishedTransaction(tx.tx.txid, tx.desc, tx.localMiningFee, tx.remoteMiningFee, tx.feerate, tx.timestamp)
+  }
 
   case class NetworkFee(remoteNodeId: PublicKey, channelId: ByteVector32, txId: ByteVector32, fee: Satoshi, txType: String, timestamp: TimestampMilli)
 
