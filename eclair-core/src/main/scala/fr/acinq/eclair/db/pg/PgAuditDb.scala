@@ -142,14 +142,24 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX transactions_confirmed_channel_id_idx ON audit.transactions_confirmed(channel_id)")
         statement.executeUpdate("CREATE INDEX transactions_confirmed_node_id_idx ON audit.transactions_confirmed(node_id)")
         statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
+        // We update the sent payment table to include outgoing_node_id and started_at, and rename columns for clarity.
+        statement.executeUpdate("ALTER TABLE audit.sent RENAME TO sent_before_v14")
+        statement.executeUpdate("DROP INDEX audit.sent_timestamp_idx")
+        statement.executeUpdate("CREATE TABLE audit.sent (payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, amount_with_fees_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_total_amount_msat BIGINT NOT NULL, recipient_node_id TEXT NOT NULL, outgoing_channel_id TEXT NOT NULL, outgoing_node_id TEXT NOT NULL, started_at TIMESTAMP WITH TIME ZONE NOT NULL, settled_at TIMESTAMP WITH TIME ZONE NOT NULL)")
+        statement.executeUpdate("CREATE INDEX sent_settled_at_idx ON audit.sent(settled_at)")
+        // We update the received payment table to include the incoming_node_id, and rename columns for clarity.
+        statement.executeUpdate("ALTER TABLE audit.received RENAME TO received_before_v14")
+        statement.executeUpdate("DROP INDEX audit.received_timestamp_idx")
+        statement.executeUpdate("CREATE TABLE audit.received (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, incoming_channel_id TEXT NOT NULL, incoming_node_id TEXT NOT NULL, received_at TIMESTAMP WITH TIME ZONE NOT NULL)")
+        statement.executeUpdate("CREATE INDEX received_at_idx ON audit.received(received_at)")
       }
 
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA audit")
 
-          statement.executeUpdate("CREATE TABLE audit.sent (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_amount_msat BIGINT NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, recipient_node_id TEXT NOT NULL, to_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
-          statement.executeUpdate("CREATE TABLE audit.received (amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.sent (payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, amount_with_fees_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_total_amount_msat BIGINT NOT NULL, recipient_node_id TEXT NOT NULL, outgoing_channel_id TEXT NOT NULL, outgoing_node_id TEXT NOT NULL, started_at TIMESTAMP WITH TIME ZONE NOT NULL, settled_at TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.received (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, incoming_channel_id TEXT NOT NULL, incoming_node_id TEXT NOT NULL, received_at TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.relayed_trampoline (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, next_node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, channel_type TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_opener BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
@@ -158,8 +168,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, local_mining_fee_sat BIGINT NOT NULL, remote_mining_fee_sat BIGINT NOT NULL, feerate_sat_per_kw BIGINT NOT NULL, input_count BIGINT NOT NULL, output_count BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, input_count BIGINT NOT NULL, output_count BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
 
-          statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON audit.sent(timestamp)")
-          statement.executeUpdate("CREATE INDEX received_timestamp_idx ON audit.received(timestamp)")
+          statement.executeUpdate("CREATE INDEX sent_settled_at_idx ON audit.sent(settled_at)")
+          statement.executeUpdate("CREATE INDEX received_at_idx ON audit.received(received_at)")
           statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON audit.relayed(timestamp)")
           statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON audit.relayed(payment_hash)")
           statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON audit.relayed_trampoline(timestamp)")
@@ -241,18 +251,20 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def add(e: PaymentSent): Unit = withMetrics("audit/add-payment-sent", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("INSERT INTO audit.sent VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      using(pg.prepareStatement("INSERT INTO audit.sent VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
         e.parts.foreach(p => {
-          statement.setLong(1, p.amountWithFees.toLong)
-          statement.setLong(2, p.feesPaid.toLong)
-          statement.setLong(3, e.recipientAmount.toLong)
-          statement.setString(4, p.id.toString)
-          statement.setString(5, e.id.toString)
-          statement.setString(6, e.paymentHash.toHex)
-          statement.setString(7, e.paymentPreimage.toHex)
+          statement.setString(1, p.id.toString)
+          statement.setString(2, e.id.toString)
+          statement.setString(3, e.paymentHash.toHex)
+          statement.setString(4, e.paymentPreimage.toHex)
+          statement.setLong(5, p.amountWithFees.toLong)
+          statement.setLong(6, p.feesPaid.toLong)
+          statement.setLong(7, e.recipientAmount.toLong)
           statement.setString(8, e.recipientNodeId.value.toHex)
           statement.setString(9, p.payment.channelId.toHex)
-          statement.setTimestamp(10, p.settledAt.toSqlTimestamp)
+          statement.setString(10, p.payment.remoteNodeId.toHex)
+          statement.setTimestamp(11, p.startedAt.toSqlTimestamp)
+          statement.setTimestamp(12, p.settledAt.toSqlTimestamp)
           statement.addBatch()
         })
         statement.executeBatch()
@@ -262,12 +274,13 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def add(e: PaymentReceived): Unit = withMetrics("audit/add-payment-received", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("INSERT INTO audit.received VALUES (?, ?, ?, ?)")) { statement =>
+      using(pg.prepareStatement("INSERT INTO audit.received VALUES (?, ?, ?, ?, ?)")) { statement =>
         e.parts.foreach(p => {
-          statement.setLong(1, p.amount.toLong)
-          statement.setString(2, e.paymentHash.toHex)
+          statement.setString(1, e.paymentHash.toHex)
+          statement.setLong(2, p.amount.toLong)
           statement.setString(3, p.channelId.toHex)
-          statement.setTimestamp(4, p.receivedAt.toSqlTimestamp)
+          statement.setString(4, p.remoteNodeId.toHex)
+          statement.setTimestamp(5, p.receivedAt.toSqlTimestamp)
           statement.addBatch()
         })
         statement.executeBatch()
@@ -466,7 +479,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listSent(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentSent] =
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM audit.sent WHERE timestamp BETWEEN ? AND ?")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM audit.sent WHERE settled_at BETWEEN ? AND ?")) { statement =>
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
         val result = statement.executeQuery()
@@ -475,21 +488,20 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             val part = PaymentSent.PaymentPart(
               id = UUID.fromString(rs.getString("payment_id")),
               payment = PaymentEvent.OutgoingPayment(
-                channelId = rs.getByteVector32FromHex("to_channel_id"),
-                remoteNodeId = PrivateKey(ByteVector32.One).publicKey, // we're not storing the remote node_id yet
-                amount = MilliSatoshi(rs.getLong("amount_msat")),
-                settledAt = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp"))
+                channelId = rs.getByteVector32FromHex("outgoing_channel_id"),
+                remoteNodeId = PublicKey(rs.getByteVectorFromHex("outgoing_node_id")),
+                amount = MilliSatoshi(rs.getLong("amount_with_fees_msat")),
+                settledAt = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("settled_at"))
               ),
               feesPaid = MilliSatoshi(rs.getLong("fees_msat")),
               route = None, // we don't store the route in the audit DB
-              // TODO: store startedAt when updating the DB schema instead of duplicating settledAt.
-              startedAt = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
+              startedAt = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("started_at")))
             val sent = sentByParentId.get(parentId) match {
-              case Some(s) => s.copy(parts = s.parts :+ part)
+              case Some(s) => s.copy(parts = s.parts :+ part, startedAt = Seq(s.startedAt, part.startedAt).min)
               case None => PaymentSent(
                 parentId,
                 rs.getByteVector32FromHex("payment_preimage"),
-                MilliSatoshi(rs.getLong("recipient_amount_msat")),
+                MilliSatoshi(rs.getLong("recipient_total_amount_msat")),
                 PublicKey(rs.getByteVectorFromHex("recipient_node_id")),
                 Seq(part),
                 None,
@@ -506,17 +518,17 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listReceived(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentReceived] =
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM audit.received WHERE timestamp BETWEEN ? AND ?")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM audit.received WHERE received_at BETWEEN ? AND ?")) { statement =>
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
         val result = statement.executeQuery()
           .foldLeft(Map.empty[ByteVector32, PaymentReceived]) { (receivedByHash, rs) =>
             val paymentHash = rs.getByteVector32FromHex("payment_hash")
             val part = PaymentEvent.IncomingPayment(
-              channelId = rs.getByteVector32FromHex("from_channel_id"),
-              remoteNodeId = PrivateKey(ByteVector32.One).publicKey, // we're not storing the remote node_id yet
+              channelId = rs.getByteVector32FromHex("incoming_channel_id"),
+              remoteNodeId = PublicKey(rs.getByteVectorFromHex("incoming_node_id")),
               amount = MilliSatoshi(rs.getLong("amount_msat")),
-              receivedAt = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
+              receivedAt = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("received_at")))
             val received = receivedByHash.get(paymentHash) match {
               case Some(r) => r.copy(parts = r.parts :+ part)
               case None => PaymentReceived(paymentHash, Seq(part))
