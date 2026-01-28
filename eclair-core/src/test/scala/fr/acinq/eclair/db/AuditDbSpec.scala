@@ -17,12 +17,12 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, SatoshiLong, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.AuditDb.Stats
+import fr.acinq.eclair.db.AuditDb.{PublishedTransaction, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgAuditDb
@@ -58,7 +58,57 @@ class AuditDbSpec extends AnyFunSuite {
     }
   }
 
-  test("add/list events") {
+  test("add/list channel events") {
+    forAllDbs { dbs =>
+      val db = dbs.audit
+      val now = TimestampMilli.now()
+      val channelId1 = randomBytes32()
+      val channelId2 = randomBytes32()
+      val remoteNodeId = randomKey().publicKey
+      val e1 = ChannelEvent(channelId1, remoteNodeId, randomTxId(), "anchor_outputs", 100_000 sat, isChannelOpener = true, isPrivate = false, "mutual-close", now - 1.minute)
+      val e2 = ChannelEvent(channelId2, remoteNodeId, randomTxId(), "taproot", 150_000 sat, isChannelOpener = false, isPrivate = true, "funding", now)
+
+      db.add(e1)
+      db.add(e2)
+
+      assert(db.listChannelEvents(randomBytes32(), from = TimestampMilli(0L), to = now + 1.minute).isEmpty)
+      assert(db.listChannelEvents(channelId1, from = TimestampMilli(0L), to = now + 1.minute) == Seq(e1))
+      assert(db.listChannelEvents(channelId1, from = TimestampMilli(0L), to = now - 10.minute).isEmpty)
+      assert(db.listChannelEvents(randomKey().publicKey, from = TimestampMilli(0L), to = now + 1.minute).isEmpty)
+      assert(db.listChannelEvents(remoteNodeId, from = TimestampMilli(0L), to = now + 1.minute) == Seq(e1, e2))
+      assert(db.listChannelEvents(remoteNodeId, from = TimestampMilli(0L), to = now - 30.seconds) == Seq(e1))
+    }
+  }
+
+  test("add/list transaction events") {
+    forAllDbs { dbs =>
+      val db = dbs.audit
+      val now = TimestampMilli.now()
+      val channelId1 = randomBytes32()
+      val channelId2 = randomBytes32()
+      val remoteNodeId = randomKey().publicKey
+      val p1a = TransactionPublished(channelId1, remoteNodeId, Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(remoteNodeId))), 0), 50 sat, 0 sat, "funding", None, now - 10.seconds)
+      val p1b = TransactionPublished(channelId1, remoteNodeId, Transaction(2, Nil, Seq(TxOut(100_000 sat, Script.pay2wpkh(remoteNodeId))), 0), 75 sat, 25 sat, "splice", None, now - 5.seconds)
+      val p2 = TransactionPublished(channelId2, remoteNodeId, Transaction(2, Nil, Seq(TxOut(200_000 sat, Script.pay2wpkh(remoteNodeId))), 0), 0 sat, 0 sat, "local-close", None, now - 1.seconds)
+      val c1 = TransactionConfirmed(channelId1, remoteNodeId, p1a.tx, now)
+      val c2 = TransactionConfirmed(channelId2, remoteNodeId, Transaction(2, Nil, Seq(TxOut(150_000 sat, hex"1234")), 0), now)
+
+      db.add(p1a)
+      db.add(p1b)
+      db.add(p2)
+      db.add(c1)
+      db.add(c2)
+
+      assert(db.listPublished(randomBytes32()).isEmpty)
+      assert(db.listPublished(randomKey().publicKey, from = TimestampMilli(0L), to = now + 1.seconds).isEmpty)
+      assert(db.listPublished(channelId1) == Seq(PublishedTransaction(p1a), PublishedTransaction(p1b)))
+      assert(db.listPublished(channelId2) == Seq(PublishedTransaction(p2)))
+      assert(db.listPublished(remoteNodeId, from = now - 1.minute, to = now) == Seq(PublishedTransaction(p1a), PublishedTransaction(p1b), PublishedTransaction(p2)))
+      assert(db.listPublished(remoteNodeId, from = now - 6.seconds, to = now) == Seq(PublishedTransaction(p1b), PublishedTransaction(p2)))
+    }
+  }
+
+  test("add/list payment events") {
     forAllDbs { dbs =>
       val db = dbs.audit
       // We don't yet store the remote node_id in our DB: we use this placeholder instead.
@@ -71,15 +121,11 @@ class AuditDbSpec extends AnyFunSuite {
       val pp2b = PaymentEvent.IncomingPayment(randomBytes32(), dummyRemoteNodeId, 42100 msat, now)
       val e2 = PaymentReceived(randomBytes32(), pp2a :: pp2b :: Nil)
       val e3 = ChannelPaymentRelayed(randomBytes32(), Seq(PaymentEvent.IncomingPayment(randomBytes32(), dummyRemoteNodeId, 42000 msat, now - 3.seconds)), Seq(PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 1000 msat, now)))
-      val e4a = TransactionPublished(randomBytes32(), randomKey().publicKey, Transaction(0, Seq.empty, Seq.empty, 0), 42 sat, 0 sat, "mutual", None)
-      val e4b = TransactionConfirmed(e4a.channelId, e4a.remoteNodeId, e4a.tx)
-      val e4c = TransactionConfirmed(randomBytes32(), randomKey().publicKey, Transaction(2, Nil, TxOut(500 sat, hex"1234") :: Nil, 0))
       val pp5a = PaymentSent.PaymentPart(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 42000 msat, 0 unixms), 1000 msat, None, startedAt = 0 unixms)
       val pp5b = PaymentSent.PaymentPart(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 42100 msat, 1 unixms), 900 msat, None, startedAt = 1 unixms)
       val e5 = PaymentSent(UUID.randomUUID(), randomBytes32(), 84100 msat, randomKey().publicKey, pp5a :: pp5b :: Nil, None, startedAt = 0 unixms)
       val pp6 = PaymentSent.PaymentPart(UUID.randomUUID(), PaymentEvent.OutgoingPayment(randomBytes32(), dummyRemoteNodeId, 42000 msat, settledAt = now + 10.minutes), 1000 msat, None, startedAt = now + 10.minutes)
       val e6 = PaymentSent(UUID.randomUUID(), randomBytes32(), 42000 msat, randomKey().publicKey, pp6 :: Nil, None, startedAt = now + 10.minutes)
-      val e7 = ChannelEvent(randomBytes32(), randomKey().publicKey, randomTxId(), "anchor_outputs", 456123000 sat, isChannelOpener = true, isPrivate = false, "mutual-close", now)
       val e10 = TrampolinePaymentRelayed(randomBytes32(),
         Seq(
           PaymentEvent.IncomingPayment(randomBytes32(), dummyRemoteNodeId, 20000 msat, now - 7.seconds),
@@ -98,12 +144,8 @@ class AuditDbSpec extends AnyFunSuite {
       db.add(e1)
       db.add(e2)
       db.add(e3)
-      db.add(e4a)
-      db.add(e4b)
-      db.add(e4c)
       db.add(e5)
       db.add(e6)
-      db.add(e7)
       db.add(e10)
       db.add(e11)
       db.add(e12)
@@ -124,14 +166,6 @@ class AuditDbSpec extends AnyFunSuite {
       assert(db.listRelayed(from = TimestampMilli(0L), to = now + 1.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e3, e10))
       assert(db.listRelayed(from = TimestampMilli(0L), to = now + 1.minute, Some(Paginated(count = 2, skip = 1))).toList == List(e10, e11))
       assert(db.listRelayed(from = TimestampMilli(0L), to = now + 1.minute, Some(Paginated(count = 2, skip = 4))).toList == List())
-      assert(db.listNetworkFees(from = TimestampMilli(0L), to = now + 1.minute).size == 1)
-      assert(db.listNetworkFees(from = TimestampMilli(0L), to = now + 1.minute).head.txType == "mutual")
-      assert(db.listChannelEvents(randomBytes32(), from = TimestampMilli(0L), to = now + 1.minute).isEmpty)
-      assert(db.listChannelEvents(e7.channelId, from = TimestampMilli(0L), to = now + 1.minute) == Seq(e7))
-      assert(db.listChannelEvents(e7.channelId, from = TimestampMilli(0L), to = now - 1.minute).isEmpty)
-      assert(db.listChannelEvents(randomKey().publicKey, from = TimestampMilli(0L), to = now + 1.minute).isEmpty)
-      assert(db.listChannelEvents(e7.remoteNodeId, from = TimestampMilli(0L), to = now + 1.minute) == Seq(e7))
-      assert(db.listChannelEvents(e7.remoteNodeId, from = TimestampMilli(0L), to = now - 1.minute).isEmpty)
     }
   }
 
@@ -159,18 +193,18 @@ class AuditDbSpec extends AnyFunSuite {
       db.add(TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentEvent.IncomingPayment(c6, randomKey().publicKey, 46000 msat, 1012 unixms)), Seq(PaymentEvent.OutgoingPayment(c2, randomKey().publicKey, 16000 msat, 1013 unixms), PaymentEvent.OutgoingPayment(c4, randomKey().publicKey, 10000 msat, 1014 unixms), PaymentEvent.OutgoingPayment(c4, randomKey().publicKey, 14000 msat, 1015 unixms)), randomKey().publicKey, 37000 msat))
 
       // The following confirmed txs will be taken into account.
-      db.add(TransactionPublished(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(5000 sat, hex"12345")), 0), 200 sat, 0 sat, "funding", None))
-      db.add(TransactionConfirmed(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(5000 sat, hex"12345")), 0)))
-      db.add(TransactionPublished(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(4000 sat, hex"00112233")), 0), 300 sat, 0 sat, "mutual", None))
-      db.add(TransactionConfirmed(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(4000 sat, hex"00112233")), 0)))
-      db.add(TransactionPublished(c3, n3, Transaction(0, Seq.empty, Seq(TxOut(8000 sat, hex"deadbeef")), 0), 400 sat, 0 sat, "funding", None))
-      db.add(TransactionConfirmed(c3, n3, Transaction(0, Seq.empty, Seq(TxOut(8000 sat, hex"deadbeef")), 0)))
-      db.add(TransactionPublished(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(6000 sat, hex"0000000000")), 0), 500 sat, 0 sat, "funding", None))
-      db.add(TransactionConfirmed(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(6000 sat, hex"0000000000")), 0)))
+      db.add(TransactionPublished(c2, n2, Transaction(2, Nil, Seq(TxOut(5000 sat, hex"12345")), 0), 200 sat, 100 sat, "funding", None))
+      db.add(TransactionConfirmed(c2, n2, Transaction(2, Nil, Seq(TxOut(5000 sat, hex"12345")), 0)))
+      db.add(TransactionPublished(c2, n2, Transaction(2, Nil, Seq(TxOut(4000 sat, hex"00112233")), 0), 300 sat, 200 sat, "mutual", None))
+      db.add(TransactionConfirmed(c2, n2, Transaction(2, Nil, Seq(TxOut(4000 sat, hex"00112233")), 0)))
+      db.add(TransactionPublished(c3, n3, Transaction(2, Nil, Seq(TxOut(8000 sat, hex"deadbeef")), 0), 400 sat, 50 sat, "funding", None))
+      db.add(TransactionConfirmed(c3, n3, Transaction(2, Nil, Seq(TxOut(8000 sat, hex"deadbeef")), 0)))
+      db.add(TransactionPublished(c4, n4, Transaction(2, Nil, Seq(TxOut(6000 sat, hex"0000000000")), 0), 500 sat, 0 sat, "funding", None))
+      db.add(TransactionConfirmed(c4, n4, Transaction(2, Nil, Seq(TxOut(6000 sat, hex"0000000000")), 0)))
       // The following txs will not be taken into account.
-      db.add(TransactionPublished(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(5000 sat, hex"12345")), 0), 1000 sat, 0 sat, "funding", None)) // duplicate
-      db.add(TransactionPublished(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(4500 sat, hex"1111222233")), 0), 500 sat, 0 sat, "funding", None)) // unconfirmed
-      db.add(TransactionConfirmed(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(2500 sat, hex"ffffff")), 0))) // doesn't match a published tx
+      db.add(TransactionPublished(c2, n2, Transaction(2, Nil, Seq(TxOut(5000 sat, hex"12345")), 0), 1000 sat, 0 sat, "funding", None)) // duplicate
+      db.add(TransactionPublished(c4, n4, Transaction(2, Nil, Seq(TxOut(4500 sat, hex"1111222233")), 0), 500 sat, 150 sat, "funding", None)) // unconfirmed
+      db.add(TransactionConfirmed(c4, n4, Transaction(2, Nil, Seq(TxOut(2500 sat, hex"ffffff")), 0))) // doesn't match a published tx
 
       assert(db.listPublished(randomBytes32()).isEmpty)
       assert(db.listPublished(c4).map(_.txId).toSet.size == 2)
@@ -336,9 +370,11 @@ class AuditDbSpec extends AnyFunSuite {
   test("migrate audit db to v14") {
     val channelId = randomBytes32()
     val remoteNodeId = randomKey().publicKey
-    val fundingTxId = randomTxId()
+    val fundingTx = Transaction(2, Seq(TxIn(OutPoint(randomTxId(), 2), Nil, 0)), Seq(TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
     val now = TimestampMilli.now()
-    val channelCreated = ChannelEvent(channelId, remoteNodeId, fundingTxId, "anchor_outputs", 100_000 sat, isChannelOpener = true, isPrivate = false, "created", now)
+    val channelCreated = ChannelEvent(channelId, remoteNodeId, fundingTx.txid, "anchor_outputs", 100_000 sat, isChannelOpener = true, isPrivate = false, "created", now)
+    val txPublished = TransactionPublished(channelId, remoteNodeId, fundingTx, 200 sat, 100 sat, "funding", None)
+    val txConfirmed = TransactionConfirmed(channelId, remoteNodeId, fundingTx)
     forAllDbs {
       case dbs: TestPgDatabases =>
         migrationCheck(
@@ -348,7 +384,12 @@ class AuditDbSpec extends AnyFunSuite {
             using(connection.createStatement()) { statement =>
               statement.executeUpdate("CREATE SCHEMA audit")
               statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, mining_fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
               statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON audit.channel_events(timestamp)")
+              statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON audit.transactions_published(channel_id)")
+              statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
+              statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
               setVersion(statement, "audit", 13)
             }
             // We insert some data into the tables we'll modify.
@@ -362,6 +403,15 @@ class AuditDbSpec extends AnyFunSuite {
               statement.setTimestamp(7, now.toSqlTimestamp)
               statement.executeUpdate()
             }
+            using(connection.prepareStatement("INSERT INTO audit.transactions_published VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+              statement.setString(1, fundingTx.txid.value.toHex)
+              statement.setString(2, channelId.toHex)
+              statement.setString(3, remoteNodeId.toHex)
+              statement.setLong(4, txPublished.localMiningFee.toLong)
+              statement.setString(5, txPublished.desc)
+              statement.setTimestamp(6, txPublished.timestamp.toSqlTimestamp)
+              statement.executeUpdate()
+            }
           },
           dbName = PgAuditDb.DB_NAME,
           targetVersion = PgAuditDb.CURRENT_VERSION,
@@ -371,14 +421,20 @@ class AuditDbSpec extends AnyFunSuite {
             // We've created new tables: previous data from the existing tables isn't available anymore through the API.
             assert(migratedDb.listChannelEvents(channelId, 0 unixms, now + 1.minute).isEmpty)
             assert(migratedDb.listChannelEvents(remoteNodeId, 0 unixms, now + 1.minute).isEmpty)
+            assert(migratedDb.listPublished(channelId).isEmpty)
             // But the data is still available in the database.
-            using(connection.prepareStatement("SELECT * FROM audit.channel_events_before_v14")) { statement =>
-              val result = statement.executeQuery()
-              assert(result.next())
-            }
+            Seq("audit.channel_events_before_v14", "audit.transactions_published_before_v14").foreach(table => {
+              using(connection.prepareStatement(s"SELECT * FROM $table")) { statement =>
+                val result = statement.executeQuery()
+                assert(result.next())
+              }
+            })
             // We can use the new tables immediately.
             migratedDb.add(channelCreated)
             assert(migratedDb.listChannelEvents(channelId, 0 unixms, now + 1.minute) == Seq(channelCreated))
+            migratedDb.add(txPublished)
+            migratedDb.add(txConfirmed)
+            assert(migratedDb.listPublished(channelId) == Seq(PublishedTransaction(txPublished)))
           }
         )
       case dbs: TestSqliteDatabases =>
@@ -389,10 +445,15 @@ class AuditDbSpec extends AnyFunSuite {
             using(connection.createStatement()) { statement =>
               statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
               statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, mining_fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
               statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON channel_events(timestamp)")
               statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON channel_updates(channel_id)")
               statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON channel_updates(node_id)")
               statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON channel_updates(timestamp)")
+              statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON transactions_published(channel_id)")
+              statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON transactions_published(timestamp)")
+              statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
               setVersion(statement, "audit", 10)
             }
             // We insert some data into the tables we'll modify.
@@ -406,6 +467,15 @@ class AuditDbSpec extends AnyFunSuite {
               statement.setLong(7, now.toLong)
               statement.executeUpdate()
             }
+            using(connection.prepareStatement("INSERT INTO transactions_published VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+              statement.setBytes(1, fundingTx.txid.value.toArray)
+              statement.setBytes(2, channelId.toArray)
+              statement.setBytes(3, remoteNodeId.value.toArray)
+              statement.setLong(4, txPublished.localMiningFee.toLong)
+              statement.setString(5, txPublished.desc)
+              statement.setLong(6, txPublished.timestamp.toLong)
+              statement.executeUpdate()
+            }
           },
           dbName = SqliteAuditDb.DB_NAME,
           targetVersion = SqliteAuditDb.CURRENT_VERSION,
@@ -415,14 +485,20 @@ class AuditDbSpec extends AnyFunSuite {
             // We've created new tables: previous data from the existing tables isn't available anymore through the API.
             assert(migratedDb.listChannelEvents(channelId, 0 unixms, now + 1.minute).isEmpty)
             assert(migratedDb.listChannelEvents(remoteNodeId, 0 unixms, now + 1.minute).isEmpty)
+            assert(migratedDb.listPublished(channelId).isEmpty)
             // But the data is still available in the database.
-            using(connection.prepareStatement("SELECT * FROM channel_events_before_v14")) { statement =>
-              val result = statement.executeQuery()
-              assert(result.next())
-            }
+            Seq("channel_events_before_v14", "transactions_published_before_v14").foreach(table => {
+              using(connection.prepareStatement(s"SELECT * FROM $table")) { statement =>
+                val result = statement.executeQuery()
+                assert(result.next())
+              }
+            })
             // We can use the new tables immediately.
             migratedDb.add(channelCreated)
             assert(migratedDb.listChannelEvents(channelId, 0 unixms, now + 1.minute) == Seq(channelCreated))
+            migratedDb.add(txPublished)
+            migratedDb.add(txConfirmed)
+            assert(migratedDb.listPublished(channelId) == Seq(PublishedTransaction(txPublished)))
           }
         )
     }

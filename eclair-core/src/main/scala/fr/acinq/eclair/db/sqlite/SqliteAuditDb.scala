@@ -18,6 +18,7 @@ package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, TxId}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, PublishedTransaction, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -128,13 +129,28 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("DROP INDEX channel_updates_nid_idx")
       statement.executeUpdate("DROP INDEX channel_updates_timestamp_idx")
       statement.executeUpdate("CREATE TABLE channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-      // We recreate indexes for updated tables.
+      // We recreate indexes for the updated channel tables.
       statement.executeUpdate("CREATE INDEX channel_events_cid_idx ON channel_events(channel_id)")
       statement.executeUpdate("CREATE INDEX channel_events_nid_idx ON channel_events(node_id)")
       statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON channel_events(timestamp)")
       statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON channel_updates(channel_id)")
       statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON channel_updates(node_id)")
       statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON channel_updates(timestamp)")
+      // We add mining fee details, input and output counts to the transaction tables, and use TEXT instead of BLOBs.
+      statement.executeUpdate("ALTER TABLE transactions_published RENAME TO transactions_published_before_v14")
+      statement.executeUpdate("ALTER TABLE transactions_confirmed RENAME TO transactions_confirmed_before_v14")
+      statement.executeUpdate("CREATE TABLE transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, local_mining_fee_sat INTEGER NOT NULL, remote_mining_fee_sat INTEGER NOT NULL, feerate_sat_per_kw INTEGER NOT NULL, input_count INTEGER NOT NULL, output_count INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, input_count INTEGER NOT NULL, output_count INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("DROP INDEX transactions_published_channel_id_idx")
+      statement.executeUpdate("DROP INDEX transactions_published_timestamp_idx")
+      statement.executeUpdate("DROP INDEX transactions_confirmed_timestamp_idx")
+      // We recreate indexes for the updated transaction tables.
+      statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON transactions_published(channel_id)")
+      statement.executeUpdate("CREATE INDEX transactions_published_node_id_idx ON transactions_published(node_id)")
+      statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON transactions_published(timestamp)")
+      statement.executeUpdate("CREATE INDEX transactions_confirmed_channel_id_idx ON transactions_confirmed(channel_id)")
+      statement.executeUpdate("CREATE INDEX transactions_confirmed_node_id_idx ON transactions_confirmed(node_id)")
+      statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
     }
 
     getVersion(statement, DB_NAME) match {
@@ -146,8 +162,8 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, channel_type TEXT NOT NULL, capacity_sat INTEGER NOT NULL, is_opener BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL)")
-        statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, mining_fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, local_mining_fee_sat INTEGER NOT NULL, remote_mining_fee_sat INTEGER NOT NULL, feerate_sat_per_kw INTEGER NOT NULL, input_count INTEGER NOT NULL, output_count INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, input_count INTEGER NOT NULL, output_count INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
 
         statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON sent(timestamp)")
         statement.executeUpdate("CREATE INDEX received_timestamp_idx ON received(timestamp)")
@@ -167,7 +183,10 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX metrics_mpp_idx ON path_finding_metrics(is_mpp)")
         statement.executeUpdate("CREATE INDEX metrics_name_idx ON path_finding_metrics(experiment_name)")
         statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON transactions_published(channel_id)")
+        statement.executeUpdate("CREATE INDEX transactions_published_node_id_idx ON transactions_published(node_id)")
         statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON transactions_published(timestamp)")
+        statement.executeUpdate("CREATE INDEX transactions_confirmed_channel_id_idx ON transactions_confirmed(channel_id)")
+        statement.executeUpdate("CREATE INDEX transactions_confirmed_node_id_idx ON transactions_confirmed(node_id)")
         statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
       case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
@@ -292,23 +311,29 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def add(e: TransactionPublished): Unit = withMetrics("audit/add-transaction-published", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions_published VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, e.tx.txid.value.toArray)
-      statement.setBytes(2, e.channelId.toArray)
-      statement.setBytes(3, e.remoteNodeId.value.toArray)
-      statement.setLong(4, e.miningFee.toLong)
-      statement.setString(5, e.desc)
-      statement.setLong(6, TimestampMilli.now().toLong)
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions_published VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setString(1, e.tx.txid.value.toHex)
+      statement.setString(2, e.channelId.toHex)
+      statement.setString(3, e.remoteNodeId.toHex)
+      statement.setLong(4, e.localMiningFee.toLong)
+      statement.setLong(5, e.remoteMiningFee.toLong)
+      statement.setLong(6, e.feerate.toLong)
+      statement.setLong(7, e.tx.txIn.size)
+      statement.setLong(8, e.tx.txOut.size)
+      statement.setString(9, e.desc)
+      statement.setLong(10, e.timestamp.toLong)
       statement.executeUpdate()
     }
   }
 
   override def add(e: TransactionConfirmed): Unit = withMetrics("audit/add-transaction-confirmed", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions_confirmed VALUES (?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, e.tx.txid.value.toArray)
-      statement.setBytes(2, e.channelId.toArray)
-      statement.setBytes(3, e.remoteNodeId.value.toArray)
-      statement.setLong(4, TimestampMilli.now().toLong)
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions_confirmed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setString(1, e.tx.txid.value.toHex)
+      statement.setString(2, e.channelId.toHex)
+      statement.setString(3, e.remoteNodeId.toHex)
+      statement.setLong(4, e.tx.txIn.size)
+      statement.setLong(5, e.tx.txOut.size)
+      statement.setLong(6, e.timestamp.toLong)
       statement.executeUpdate()
     }
   }
@@ -341,11 +366,36 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
-  override def listPublished(channelId: ByteVector32): Seq[PublishedTransaction] = withMetrics("audit/list-published", DbBackends.Sqlite) {
+  override def listPublished(channelId: ByteVector32): Seq[PublishedTransaction] = withMetrics("audit/list-published-by-channel-id", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM transactions_published WHERE channel_id = ?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setString(1, channelId.toHex)
       statement.executeQuery().map { rs =>
-        PublishedTransaction(TxId(rs.getByteVector32("tx_id")), rs.getString("tx_type"), rs.getLong("mining_fee_sat").sat)
+        PublishedTransaction(
+          txId = TxId(rs.getByteVector32FromHex("tx_id")),
+          desc = rs.getString("tx_type"),
+          localMiningFee = rs.getLong("local_mining_fee_sat").sat,
+          remoteMiningFee = rs.getLong("remote_mining_fee_sat").sat,
+          feerate = FeeratePerKw(rs.getLong("feerate_sat_per_kw").sat),
+          timestamp = TimestampMilli(rs.getLong("timestamp"))
+        )
+      }.toSeq
+    }
+  }
+
+  override def listPublished(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): Seq[PublishedTransaction] = withMetrics("audit/list-published-by-node-id", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT * FROM transactions_published WHERE node_id = ? AND timestamp >= ? AND timestamp < ?")) { statement =>
+      statement.setString(1, remoteNodeId.toHex)
+      statement.setLong(2, from.toLong)
+      statement.setLong(3, to.toLong)
+      statement.executeQuery().map { rs =>
+        PublishedTransaction(
+          txId = TxId(rs.getByteVector32FromHex("tx_id")),
+          desc = rs.getString("tx_type"),
+          localMiningFee = rs.getLong("local_mining_fee_sat").sat,
+          remoteMiningFee = rs.getLong("remote_mining_fee_sat").sat,
+          feerate = FeeratePerKw(rs.getLong("feerate_sat_per_kw").sat),
+          timestamp = TimestampMilli(rs.getLong("timestamp"))
+        )
       }.toSeq
     }
   }
@@ -514,10 +564,10 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.executeQuery()
         .map { rs =>
           NetworkFee(
-            remoteNodeId = PublicKey(rs.getByteVector("node_id")),
-            channelId = rs.getByteVector32("channel_id"),
-            txId = rs.getByteVector32("tx_id"),
-            fee = Satoshi(rs.getLong("mining_fee_sat")),
+            remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
+            channelId = rs.getByteVector32FromHex("channel_id"),
+            txId = rs.getByteVector32FromHex("tx_id"),
+            fee = Satoshi(rs.getLong("local_mining_fee_sat")),
             txType = rs.getString("tx_type"),
             timestamp = TimestampMilli(rs.getLong("timestamp")))
         }.toSeq
