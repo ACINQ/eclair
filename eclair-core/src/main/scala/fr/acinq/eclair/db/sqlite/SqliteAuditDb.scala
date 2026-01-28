@@ -151,12 +151,22 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("CREATE INDEX transactions_confirmed_channel_id_idx ON transactions_confirmed(channel_id)")
       statement.executeUpdate("CREATE INDEX transactions_confirmed_node_id_idx ON transactions_confirmed(node_id)")
       statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
+      // We update the sent payment table to include outgoing_node_id and started_at, rename columns for clarity and use TEXT instead of BLOBs.
+      statement.executeUpdate("ALTER TABLE sent RENAME TO sent_before_v14")
+      statement.executeUpdate("DROP INDEX sent_timestamp_idx")
+      statement.executeUpdate("CREATE TABLE sent (payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, amount_with_fees_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_total_amount_msat INTEGER NOT NULL, recipient_node_id TEXT NOT NULL, outgoing_channel_id TEXT NOT NULL, outgoing_node_id TEXT NOT NULL, started_at INTEGER NOT NULL, settled_at INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE INDEX sent_settled_at_idx ON sent(settled_at)")
+      // We update the received payment table to include the incoming_node_id, rename columns for clarity and use TEXT instead of BLOBs.
+      statement.executeUpdate("ALTER TABLE received RENAME TO received_before_v14")
+      statement.executeUpdate("DROP INDEX received_timestamp_idx")
+      statement.executeUpdate("CREATE TABLE received (payment_hash TEXT NOT NULL, amount_msat INTEGER NOT NULL, incoming_channel_id TEXT NOT NULL, incoming_node_id TEXT NOT NULL, received_at INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE INDEX received_at_idx ON received(received_at)")
     }
 
     getVersion(statement, DB_NAME) match {
       case None =>
-        statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE sent (payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, amount_with_fees_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_total_amount_msat INTEGER NOT NULL, recipient_node_id TEXT NOT NULL, outgoing_channel_id TEXT NOT NULL, outgoing_node_id TEXT NOT NULL, started_at INTEGER NOT NULL, settled_at INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE received (payment_hash TEXT NOT NULL, amount_msat INTEGER NOT NULL, incoming_channel_id TEXT NOT NULL, incoming_node_id TEXT NOT NULL, received_at INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE relayed (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, channel_id BLOB NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE relayed_trampoline (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, next_node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, channel_type TEXT NOT NULL, capacity_sat INTEGER NOT NULL, is_opener BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
@@ -165,8 +175,8 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, local_mining_fee_sat INTEGER NOT NULL, remote_mining_fee_sat INTEGER NOT NULL, feerate_sat_per_kw INTEGER NOT NULL, input_count INTEGER NOT NULL, output_count INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, input_count INTEGER NOT NULL, output_count INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
 
-        statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON sent(timestamp)")
-        statement.executeUpdate("CREATE INDEX received_timestamp_idx ON received(timestamp)")
+        statement.executeUpdate("CREATE INDEX sent_settled_at_idx ON sent(settled_at)")
+        statement.executeUpdate("CREATE INDEX received_at_idx ON received(received_at)")
         statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON relayed(timestamp)")
         statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON relayed(payment_hash)")
         statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON relayed(channel_id)")
@@ -242,18 +252,20 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def add(e: PaymentSent): Unit = withMetrics("audit/add-payment-sent", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       e.parts.foreach(p => {
-        statement.setLong(1, p.amountWithFees.toLong)
-        statement.setLong(2, p.feesPaid.toLong)
-        statement.setLong(3, e.recipientAmount.toLong)
-        statement.setString(4, p.id.toString)
-        statement.setString(5, e.id.toString)
-        statement.setBytes(6, e.paymentHash.toArray)
-        statement.setBytes(7, e.paymentPreimage.toArray)
-        statement.setBytes(8, e.recipientNodeId.value.toArray)
-        statement.setBytes(9, p.channelId.toArray)
-        statement.setLong(10, p.settledAt.toLong)
+        statement.setString(1, p.id.toString)
+        statement.setString(2, e.id.toString)
+        statement.setString(3, e.paymentHash.toHex)
+        statement.setString(4, e.paymentPreimage.toHex)
+        statement.setLong(5, p.amountWithFees.toLong)
+        statement.setLong(6, p.feesPaid.toLong)
+        statement.setLong(7, e.recipientAmount.toLong)
+        statement.setString(8, e.recipientNodeId.toHex)
+        statement.setString(9, p.channelId.toHex)
+        statement.setString(10, p.remoteNodeId.toHex)
+        statement.setLong(11, p.startedAt.toLong)
+        statement.setLong(12, p.settledAt.toLong)
         statement.addBatch()
       })
       statement.executeBatch()
@@ -261,12 +273,13 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def add(e: PaymentReceived): Unit = withMetrics("audit/add-payment-received", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?, ?)")) { statement =>
       e.parts.foreach(p => {
-        statement.setLong(1, p.amount.toLong)
-        statement.setBytes(2, e.paymentHash.toArray)
-        statement.setBytes(3, p.channelId.toArray)
-        statement.setLong(4, p.receivedAt.toLong)
+        statement.setString(1, e.paymentHash.toHex)
+        statement.setLong(2, p.amount.toLong)
+        statement.setString(3, p.channelId.toHex)
+        statement.setString(4, p.remoteNodeId.toHex)
+        statement.setLong(5, p.receivedAt.toLong)
         statement.addBatch()
       })
       statement.executeBatch()
@@ -443,7 +456,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def listSent(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentSent] =
-    using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM sent WHERE settled_at >= ? AND settled_at < ?")) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
       val result = statement.executeQuery()
@@ -452,22 +465,21 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           val part = PaymentSent.PaymentPart(
             id = UUID.fromString(rs.getString("payment_id")),
             payment = PaymentEvent.OutgoingPayment(
-              channelId = rs.getByteVector32("to_channel_id"),
-              remoteNodeId = PrivateKey(ByteVector32.One).publicKey, // we're not storing the remote node_id yet
-              amount = MilliSatoshi(rs.getLong("amount_msat")),
-              settledAt = TimestampMilli(rs.getLong("timestamp"))
+              channelId = rs.getByteVector32FromHex("outgoing_channel_id"),
+              remoteNodeId = PublicKey(rs.getByteVectorFromHex("outgoing_node_id")),
+              amount = MilliSatoshi(rs.getLong("amount_with_fees_msat")),
+              settledAt = TimestampMilli(rs.getLong("settled_at"))
             ),
             feesPaid = MilliSatoshi(rs.getLong("fees_msat")),
             route = None, // we don't store the route in the audit DB
-            // TODO: store startedAt when updating the DB schema instead of duplicating settledAt.
-            startedAt = TimestampMilli(rs.getLong("timestamp")))
+            startedAt = TimestampMilli(rs.getLong("started_at")))
           val sent = sentByParentId.get(parentId) match {
-            case Some(s) => s.copy(parts = s.parts :+ part)
+            case Some(s) => s.copy(parts = s.parts :+ part, startedAt = Seq(s.startedAt, part.startedAt).min)
             case None => PaymentSent(
               parentId,
-              rs.getByteVector32("payment_preimage"),
-              MilliSatoshi(rs.getLong("recipient_amount_msat")),
-              PublicKey(rs.getByteVector("recipient_node_id")),
+              rs.getByteVector32FromHex("payment_preimage"),
+              MilliSatoshi(rs.getLong("recipient_total_amount_msat")),
+              PublicKey(rs.getByteVectorFromHex("recipient_node_id")),
               Seq(part),
               None,
               part.startedAt)
@@ -481,17 +493,17 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     }
 
   override def listReceived(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentReceived] =
-    using(sqlite.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ?")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM received WHERE received_at >= ? AND received_at < ?")) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
       val result = statement.executeQuery()
         .foldLeft(Map.empty[ByteVector32, PaymentReceived]) { (receivedByHash, rs) =>
-          val paymentHash = rs.getByteVector32("payment_hash")
+          val paymentHash = rs.getByteVector32FromHex("payment_hash")
           val part = PaymentEvent.IncomingPayment(
-            channelId = rs.getByteVector32("from_channel_id"),
-            remoteNodeId = PrivateKey(ByteVector32.One).publicKey, // we're not storing the remote node_id yet
+            channelId = rs.getByteVector32FromHex("incoming_channel_id"),
+            remoteNodeId = PublicKey(rs.getByteVectorFromHex("incoming_node_id")),
             amount = MilliSatoshi(rs.getLong("amount_msat")),
-            receivedAt = TimestampMilli(rs.getLong("timestamp")))
+            receivedAt = TimestampMilli(rs.getLong("received_at")))
           val received = receivedByHash.get(paymentHash) match {
             case Some(r) => r.copy(parts = r.parts :+ part)
             case None => PaymentReceived(paymentHash, Seq(part))
