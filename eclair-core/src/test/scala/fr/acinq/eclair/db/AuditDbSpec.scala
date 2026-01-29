@@ -135,7 +135,7 @@ class AuditDbSpec extends AnyFunSuite {
       val e4 = PaymentSent(uuid3, preimage1, 84100 msat, remoteNodeId2, pp4a :: pp4b :: Nil, None, startedAt = now - 30.seconds)
       val pp5 = PaymentSent.PaymentPart(uuid2, PaymentEvent.OutgoingPayment(channelId1, remoteNodeId1, 42000 msat, settledAt = now + 10.minutes), 1000 msat, None, startedAt = now + 9.minutes)
       val e5 = PaymentSent(uuid2, preimage1, 42000 msat, remoteNodeId1, pp5 :: Nil, None, startedAt = now + 9.minutes)
-      val e6 = TrampolinePaymentRelayed(randomBytes32(),
+      val e6 = TrampolinePaymentRelayed(paymentHash1,
         Seq(
           PaymentEvent.IncomingPayment(channelId1, remoteNodeId1, 20000 msat, now - 7.seconds),
           PaymentEvent.IncomingPayment(channelId1, remoteNodeId1, 22000 msat, now - 5.seconds)
@@ -169,10 +169,10 @@ class AuditDbSpec extends AnyFunSuite {
       assert(db.listReceived(from = now - 5.seconds, to = now + 5.seconds, Some(Paginated(count = 0, skip = 0))).toList == List())
       assert(db.listReceived(from = now - 5.seconds, to = now + 5.seconds, Some(Paginated(count = 2, skip = 0))).toList == List(e2))
       assert(db.listReceived(from = now - 5.seconds, to = now + 5.seconds, Some(Paginated(count = 2, skip = 1))).toList == List())
-      assert(db.listRelayed(from = now - 10.seconds, to = now + 1.minute).toList == List(e3, e6, e7, e8))
+      assert(db.listRelayed(from = now - 10.seconds, to = now + 1.minute).toList == List(e3, e6, ChannelPaymentRelayed(paymentHash2, e7.incoming ++ e8.incoming, e7.outgoing ++ e8.outgoing)))
       assert(db.listRelayed(from = now - 10.seconds, to = now + 1.minute, Some(Paginated(count = 0, skip = 0))).toList == List())
       assert(db.listRelayed(from = now - 10.seconds, to = now + 1.minute, Some(Paginated(count = 2, skip = 0))).toList == List(e3, e6))
-      assert(db.listRelayed(from = now - 10.seconds, to = now + 1.minute, Some(Paginated(count = 2, skip = 1))).toList == List(e6, e7))
+      assert(db.listRelayed(from = now - 10.seconds, to = now + 1.minute, Some(Paginated(count = 2, skip = 1))).toList == List(e6, ChannelPaymentRelayed(paymentHash2, e7.incoming ++ e8.incoming, e7.outgoing ++ e8.outgoing)))
       assert(db.listRelayed(from = now - 10.seconds, to = now + 1.minute, Some(Paginated(count = 2, skip = 4))).toList == List())
     }
   }
@@ -283,36 +283,40 @@ class AuditDbSpec extends AnyFunSuite {
       val isPg = dbs.isInstanceOf[TestPgDatabases]
       val table = if (isPg) "audit.relayed" else "relayed"
 
-      using(sqlite.prepareStatement(s"INSERT INTO $table (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-        if (isPg) statement.setString(1, randomBytes32().toHex) else statement.setBytes(1, randomBytes32().toArray)
+      using(sqlite.prepareStatement(s"INSERT INTO $table (payment_hash, amount_msat, channel_id, node_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+        statement.setString(1, randomBytes32().toHex)
         statement.setLong(2, 42)
-        if (isPg) statement.setString(3, randomBytes32().toHex) else statement.setBytes(3, randomBytes32().toArray)
-        statement.setString(4, "IN")
-        statement.setString(5, "unknown") // invalid relay type
-        if (isPg) statement.setTimestamp(6, Timestamp.from(Instant.ofEpochMilli(10))) else statement.setLong(6, 10)
+        statement.setString(3, randomBytes32().toHex)
+        statement.setString(4, randomKey().publicKey.toHex)
+        statement.setString(5, "IN")
+        statement.setString(6, "unknown") // invalid relay type
+        if (isPg) statement.setTimestamp(7, Timestamp.from(Instant.ofEpochMilli(10))) else statement.setLong(7, 10)
         statement.executeUpdate()
       }
 
-      using(sqlite.prepareStatement(s"INSERT INTO $table (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-        if (isPg) statement.setString(1, randomBytes32().toHex) else statement.setBytes(1, randomBytes32().toArray)
+      using(sqlite.prepareStatement(s"INSERT INTO $table (payment_hash, amount_msat, channel_id, node_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+        statement.setString(1, randomBytes32().toHex)
         statement.setLong(2, 51)
-        if (isPg) statement.setString(3, randomBytes32().toHex) else statement.setBytes(3, randomBytes32().toArray)
-        statement.setString(4, "UP") // invalid direction
-        statement.setString(5, "channel")
-        if (isPg) statement.setTimestamp(6, Timestamp.from(Instant.ofEpochMilli(20))) else statement.setLong(6, 20)
+        statement.setString(3, randomBytes32().toHex)
+        statement.setString(4, randomKey().publicKey.toHex)
+        statement.setString(5, "UP") // invalid direction
+        statement.setString(6, "channel")
+        if (isPg) statement.setTimestamp(7, Timestamp.from(Instant.ofEpochMilli(20))) else statement.setLong(7, 20)
         statement.executeUpdate()
       }
 
       val paymentHash = randomBytes32()
       val channelId = randomBytes32()
+      val nodeId = randomKey().publicKey
 
-      using(sqlite.prepareStatement(s"INSERT INTO $table (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-        if (isPg) statement.setString(1, paymentHash.toHex) else statement.setBytes(1, paymentHash.toArray)
+      using(sqlite.prepareStatement(s"INSERT INTO $table (payment_hash, amount_msat, channel_id, node_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+        statement.setString(1, paymentHash.toHex)
         statement.setLong(2, 65)
-        if (isPg) statement.setString(3, channelId.toHex) else statement.setBytes(3, channelId.toArray)
-        statement.setString(4, "IN") // missing a corresponding OUT
-        statement.setString(5, "channel")
-        if (isPg) statement.setTimestamp(6, Timestamp.from(Instant.ofEpochMilli(30))) else statement.setLong(6, 30)
+        statement.setString(3, channelId.toHex)
+        statement.setString(4, nodeId.toHex)
+        statement.setString(5, "IN") // missing a corresponding OUT
+        statement.setString(6, "channel")
+        if (isPg) statement.setTimestamp(7, Timestamp.from(Instant.ofEpochMilli(30))) else statement.setLong(7, 30)
         statement.executeUpdate()
       }
 
@@ -387,6 +391,7 @@ class AuditDbSpec extends AnyFunSuite {
     val txConfirmed = TransactionConfirmed(channelId1, remoteNodeId1, fundingTx)
     val paymentSent = PaymentSent(UUID.randomUUID(), randomBytes32(), 25_000_000 msat, remoteNodeId2, Seq(PaymentSent.PaymentPart(UUID.randomUUID(), PaymentEvent.OutgoingPayment(channelId1, remoteNodeId1, 24_999_999 msat, now), 561 msat, None, now - 10.seconds)), None, now - 10.seconds)
     val paymentReceived = PaymentReceived(randomBytes32(), Seq(PaymentEvent.IncomingPayment(channelId1, remoteNodeId1, 15_350 msat, now - 1.seconds)))
+    val paymentRelayed = ChannelPaymentRelayed(randomBytes32(), Seq(PaymentEvent.IncomingPayment(channelId1, remoteNodeId1, 1100 msat, now - 1.seconds)), Seq(PaymentEvent.OutgoingPayment(channelId2, remoteNodeId2, 1000 msat, now)))
     forAllDbs {
       case dbs: TestPgDatabases =>
         migrationCheck(
@@ -397,11 +402,18 @@ class AuditDbSpec extends AnyFunSuite {
               statement.executeUpdate("CREATE SCHEMA audit")
               statement.executeUpdate("CREATE TABLE audit.sent (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_amount_msat BIGINT NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, recipient_node_id TEXT NOT NULL, to_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
               statement.executeUpdate("CREATE TABLE audit.received (amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.relayed_trampoline (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, next_node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
               statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
               statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, mining_fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
               statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
               statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON audit.sent(timestamp)")
               statement.executeUpdate("CREATE INDEX received_timestamp_idx ON audit.received(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON audit.relayed(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON audit.relayed(payment_hash)")
+              statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON audit.relayed(channel_id)")
+              statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON audit.relayed_trampoline(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON audit.relayed_trampoline(payment_hash)")
               statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON audit.channel_events(timestamp)")
               statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON audit.transactions_published(channel_id)")
               statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
@@ -427,6 +439,24 @@ class AuditDbSpec extends AnyFunSuite {
               statement.setString(2, paymentReceived.paymentHash.toHex)
               statement.setString(3, paymentReceived.parts.head.channelId.toHex)
               statement.setTimestamp(4, paymentReceived.parts.head.receivedAt.toSqlTimestamp)
+              statement.executeUpdate()
+            }
+            using(connection.prepareStatement("INSERT INTO audit.relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+              statement.setString(1, paymentRelayed.paymentHash.toHex)
+              statement.setLong(2, paymentRelayed.incoming.head.amount.toLong)
+              statement.setString(3, paymentRelayed.incoming.head.channelId.toHex)
+              statement.setString(4, "IN")
+              statement.setString(5, "channel")
+              statement.setTimestamp(6, paymentRelayed.incoming.head.receivedAt.toSqlTimestamp)
+              statement.executeUpdate()
+            }
+            using(connection.prepareStatement("INSERT INTO audit.relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+              statement.setString(1, paymentRelayed.paymentHash.toHex)
+              statement.setLong(2, paymentRelayed.outgoing.head.amount.toLong)
+              statement.setString(3, paymentRelayed.outgoing.head.channelId.toHex)
+              statement.setString(4, "OUT")
+              statement.setString(5, "channel")
+              statement.setTimestamp(6, paymentRelayed.outgoing.head.settledAt.toSqlTimestamp)
               statement.executeUpdate()
             }
             using(connection.prepareStatement("INSERT INTO audit.channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
@@ -455,11 +485,14 @@ class AuditDbSpec extends AnyFunSuite {
             val migratedDb = dbs.audit
             using(connection.createStatement()) { statement => assert(getVersion(statement, "audit").contains(PgAuditDb.CURRENT_VERSION)) }
             // We've created new tables: previous data from the existing tables isn't available anymore through the API.
+            assert(migratedDb.listSent(0 unixms, now + 1.minute).isEmpty)
+            assert(migratedDb.listReceived(0 unixms, now + 1.minute).isEmpty)
+            assert(migratedDb.listRelayed(0 unixms, now + 1.minute).isEmpty)
             assert(migratedDb.listChannelEvents(channelId1, 0 unixms, now + 1.minute).isEmpty)
             assert(migratedDb.listChannelEvents(remoteNodeId1, 0 unixms, now + 1.minute).isEmpty)
             assert(migratedDb.listPublished(channelId1).isEmpty)
             // But the data is still available in the database.
-            Seq("audit.sent_before_v14", "audit.received_before_v14", "audit.channel_events_before_v14", "audit.transactions_published_before_v14").foreach(table => {
+            Seq("audit.sent_before_v14", "audit.received_before_v14", "audit.relayed_before_v14", "audit.channel_events_before_v14", "audit.transactions_published_before_v14").foreach(table => {
               using(connection.prepareStatement(s"SELECT * FROM $table")) { statement =>
                 val result = statement.executeQuery()
                 assert(result.next())
@@ -470,6 +503,8 @@ class AuditDbSpec extends AnyFunSuite {
             assert(migratedDb.listSent(0 unixms, now + 1.minute) == Seq(paymentSent))
             migratedDb.add(paymentReceived)
             assert(migratedDb.listReceived(0 unixms, now + 1.minute) == Seq(paymentReceived))
+            migratedDb.add(paymentRelayed)
+            assert(migratedDb.listRelayed(0 unixms, now + 1.minute) == Seq(paymentRelayed))
             migratedDb.add(channelCreated)
             assert(migratedDb.listChannelEvents(channelId1, 0 unixms, now + 1.minute) == Seq(channelCreated))
             migratedDb.add(txPublished)
@@ -485,12 +520,19 @@ class AuditDbSpec extends AnyFunSuite {
             using(connection.createStatement()) { statement =>
               statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
               statement.executeUpdate("CREATE TABLE received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE relayed (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, channel_id BLOB NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE relayed_trampoline (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, next_node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
               statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
               statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
               statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, mining_fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
               statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
               statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON sent(timestamp)")
               statement.executeUpdate("CREATE INDEX received_timestamp_idx ON received(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON relayed(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON relayed(payment_hash)")
+              statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON relayed(channel_id)")
+              statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON relayed_trampoline(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON relayed_trampoline(payment_hash)")
               statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON channel_events(timestamp)")
               statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON channel_updates(channel_id)")
               statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON channel_updates(node_id)")
@@ -521,6 +563,24 @@ class AuditDbSpec extends AnyFunSuite {
               statement.setLong(4, paymentReceived.parts.head.receivedAt.toLong)
               statement.executeUpdate()
             }
+            using(connection.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+              statement.setBytes(1, paymentRelayed.paymentHash.toArray)
+              statement.setLong(2, paymentRelayed.incoming.head.amount.toLong)
+              statement.setBytes(3, paymentRelayed.incoming.head.channelId.toArray)
+              statement.setString(4, "IN")
+              statement.setString(5, "channel")
+              statement.setLong(6, paymentRelayed.incoming.head.receivedAt.toLong)
+              statement.executeUpdate()
+            }
+            using(connection.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+              statement.setBytes(1, paymentRelayed.paymentHash.toArray)
+              statement.setLong(2, paymentRelayed.outgoing.head.amount.toLong)
+              statement.setBytes(3, paymentRelayed.outgoing.head.channelId.toArray)
+              statement.setString(4, "OUT")
+              statement.setString(5, "channel")
+              statement.setLong(6, paymentRelayed.outgoing.head.settledAt.toLong)
+              statement.executeUpdate()
+            }
             using(connection.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
               statement.setBytes(1, channelId1.toArray)
               statement.setBytes(2, remoteNodeId1.value.toArray)
@@ -547,11 +607,14 @@ class AuditDbSpec extends AnyFunSuite {
             val migratedDb = dbs.audit
             using(connection.createStatement()) { statement => assert(getVersion(statement, "audit").contains(SqliteAuditDb.CURRENT_VERSION)) }
             // We've created new tables: previous data from the existing tables isn't available anymore through the API.
+            assert(migratedDb.listSent(0 unixms, now + 1.minute).isEmpty)
+            assert(migratedDb.listReceived(0 unixms, now + 1.minute).isEmpty)
+            assert(migratedDb.listRelayed(0 unixms, now + 1.minute).isEmpty)
             assert(migratedDb.listChannelEvents(channelId1, 0 unixms, now + 1.minute).isEmpty)
             assert(migratedDb.listChannelEvents(remoteNodeId1, 0 unixms, now + 1.minute).isEmpty)
             assert(migratedDb.listPublished(channelId1).isEmpty)
             // But the data is still available in the database.
-            Seq("sent_before_v14", "received_before_v14", "channel_events_before_v14", "transactions_published_before_v14").foreach(table => {
+            Seq("sent_before_v14", "received_before_v14", "relayed_before_v14", "channel_events_before_v14", "transactions_published_before_v14").foreach(table => {
               using(connection.prepareStatement(s"SELECT * FROM $table")) { statement =>
                 val result = statement.executeQuery()
                 assert(result.next())
@@ -562,6 +625,8 @@ class AuditDbSpec extends AnyFunSuite {
             assert(migratedDb.listSent(0 unixms, now + 1.minute) == Seq(paymentSent))
             migratedDb.add(paymentReceived)
             assert(migratedDb.listReceived(0 unixms, now + 1.minute) == Seq(paymentReceived))
+            migratedDb.add(paymentRelayed)
+            assert(migratedDb.listRelayed(0 unixms, now + 1.minute) == Seq(paymentRelayed))
             migratedDb.add(channelCreated)
             assert(migratedDb.listChannelEvents(channelId1, 0 unixms, now + 1.minute) == Seq(channelCreated))
             migratedDb.add(txPublished)

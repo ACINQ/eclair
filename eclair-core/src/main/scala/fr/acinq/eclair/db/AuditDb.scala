@@ -22,8 +22,8 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, PublishedTransaction, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
-import fr.acinq.eclair.payment.{PathFindingExperimentMetrics, PaymentReceived, PaymentRelayed, PaymentSent}
-import fr.acinq.eclair.{Paginated, TimestampMilli}
+import fr.acinq.eclair.payment._
+import fr.acinq.eclair.{MilliSatoshi, Paginated, TimestampMilli}
 
 trait AuditDb {
 
@@ -74,5 +74,55 @@ object AuditDb {
   case class NetworkFee(remoteNodeId: PublicKey, channelId: ByteVector32, txId: ByteVector32, fee: Satoshi, txType: String, timestamp: TimestampMilli)
 
   case class Stats(channelId: ByteVector32, direction: String, avgPaymentAmount: Satoshi, paymentCount: Int, relayFee: Satoshi, networkFee: Satoshi)
+
+  case class RelayedPart(channelId: ByteVector32, remoteNodeId: PublicKey, amount: MilliSatoshi, direction: String, relayType: String, timestamp: TimestampMilli)
+
+  def relayType(e: PaymentRelayed): String = e match {
+    case _: ChannelPaymentRelayed => "channel"
+    case _: TrampolinePaymentRelayed => "trampoline"
+    case _: OnTheFlyFundingPaymentRelayed => "on-the-fly-funding"
+  }
+
+  private def incomingParts(parts: Seq[RelayedPart]): Seq[PaymentEvent.IncomingPayment] = {
+    parts.filter(_.direction == "IN").map(p => PaymentEvent.IncomingPayment(p.channelId, p.remoteNodeId, p.amount, p.timestamp)).sortBy(_.receivedAt)
+  }
+
+  private def outgoingParts(parts: Seq[RelayedPart]): Seq[PaymentEvent.OutgoingPayment] = {
+    parts.filter(_.direction == "OUT").map(p => PaymentEvent.OutgoingPayment(p.channelId, p.remoteNodeId, p.amount, p.timestamp)).sortBy(_.settledAt)
+  }
+
+  private def verifyInAndOut(parts: Seq[RelayedPart]): Boolean = {
+    parts.exists(_.direction == "IN") && parts.exists(_.direction == "OUT")
+  }
+
+  def listRelayedInternal(relayedByHash: Map[ByteVector32, Seq[RelayedPart]], trampolineDetails: Map[ByteVector32, (PublicKey, MilliSatoshi)], paginated_opt: Option[Paginated]): Seq[PaymentRelayed] = {
+    val result = relayedByHash.flatMap {
+      case (paymentHash, parts) =>
+        // We may have been routing multiple payments for the same payment_hash with different relay types.
+        // That's fine, we simply separate each part into the correct event.
+        val channelParts = parts.filter(_.relayType == "channel")
+        val trampolineParts = parts.filter(_.relayType == "trampoline")
+        val onTheFlyParts = parts.filter(_.relayType == "on-the-fly-funding")
+        val channelRelayed_opt = if (verifyInAndOut(channelParts)) {
+          Some(ChannelPaymentRelayed(paymentHash, incomingParts(channelParts), outgoingParts(channelParts)))
+        } else {
+          None
+        }
+        val trampolineRelayed_opt = trampolineDetails.get(paymentHash) match {
+          case Some((nextTrampolineNode, nextTrampolineAmount)) if verifyInAndOut(trampolineParts) => Some(TrampolinePaymentRelayed(paymentHash, incomingParts(trampolineParts), outgoingParts(trampolineParts), nextTrampolineNode, nextTrampolineAmount))
+          case _ => None
+        }
+        val onTheFlyRelayed_opt = if (verifyInAndOut(onTheFlyParts)) {
+          Some(OnTheFlyFundingPaymentRelayed(paymentHash, incomingParts(onTheFlyParts), outgoingParts(onTheFlyParts)))
+        } else {
+          None
+        }
+        channelRelayed_opt.toSeq ++ trampolineRelayed_opt.toSeq ++ onTheFlyRelayed_opt.toSeq
+    }.toSeq.sortBy(_.settledAt)
+    paginated_opt match {
+      case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
+      case None => result
+    }
+  }
 
 }

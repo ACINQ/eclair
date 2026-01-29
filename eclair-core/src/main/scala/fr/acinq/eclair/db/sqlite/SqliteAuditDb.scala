@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.AuditDb.{NetworkFee, PublishedTransaction, Stats}
+import fr.acinq.eclair.db.AuditDb._
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
@@ -42,8 +42,6 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
   import SqliteUtils._
   import ExtendedResultSet._
   import SqliteAuditDb._
-
-  case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: TimestampMilli)
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 
@@ -161,14 +159,29 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("DROP INDEX received_timestamp_idx")
       statement.executeUpdate("CREATE TABLE received (payment_hash TEXT NOT NULL, amount_msat INTEGER NOT NULL, incoming_channel_id TEXT NOT NULL, incoming_node_id TEXT NOT NULL, received_at INTEGER NOT NULL)")
       statement.executeUpdate("CREATE INDEX received_at_idx ON received(received_at)")
+      // We update the relayed payment table to include our channel peer's node_id, rename columns for clarity and use TEXT instead of BLOBs.
+      statement.executeUpdate("ALTER TABLE relayed RENAME TO relayed_before_v14")
+      statement.executeUpdate("ALTER TABLE relayed_trampoline RENAME TO relayed_trampoline_before_v14")
+      statement.executeUpdate("DROP INDEX relayed_timestamp_idx")
+      statement.executeUpdate("DROP INDEX relayed_payment_hash_idx")
+      statement.executeUpdate("DROP INDEX relayed_channel_id_idx")
+      statement.executeUpdate("DROP INDEX relayed_trampoline_timestamp_idx")
+      statement.executeUpdate("DROP INDEX relayed_trampoline_payment_hash_idx")
+      statement.executeUpdate("CREATE TABLE relayed (payment_hash TEXT NOT NULL, amount_msat INTEGER NOT NULL, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE relayed_trampoline (payment_hash TEXT NOT NULL, next_trampoline_amount_msat INTEGER NOT NULL, next_trampoline_node_id TEXT NOT NULL, settled_at INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON relayed(timestamp)")
+      statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON relayed(payment_hash)")
+      statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON relayed(channel_id)")
+      statement.executeUpdate("CREATE INDEX relayed_node_id_idx ON relayed(node_id)")
+      statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON relayed_trampoline(payment_hash)")
     }
 
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE sent (payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, amount_with_fees_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_total_amount_msat INTEGER NOT NULL, recipient_node_id TEXT NOT NULL, outgoing_channel_id TEXT NOT NULL, outgoing_node_id TEXT NOT NULL, started_at INTEGER NOT NULL, settled_at INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE received (payment_hash TEXT NOT NULL, amount_msat INTEGER NOT NULL, incoming_channel_id TEXT NOT NULL, incoming_node_id TEXT NOT NULL, received_at INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE relayed (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, channel_id BLOB NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE relayed_trampoline (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, next_node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE relayed (payment_hash TEXT NOT NULL, amount_msat INTEGER NOT NULL, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE relayed_trampoline (payment_hash TEXT NOT NULL, next_trampoline_amount_msat INTEGER NOT NULL, next_trampoline_node_id TEXT NOT NULL, settled_at INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, channel_type TEXT NOT NULL, capacity_sat INTEGER NOT NULL, is_opener BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL)")
@@ -180,7 +193,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON relayed(timestamp)")
         statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON relayed(payment_hash)")
         statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON relayed(channel_id)")
-        statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON relayed_trampoline(timestamp)")
+        statement.executeUpdate("CREATE INDEX relayed_node_id_idx ON relayed(node_id)")
         statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON relayed_trampoline(payment_hash)")
         statement.executeUpdate("CREATE INDEX channel_events_cid_idx ON channel_events(channel_id)")
         statement.executeUpdate("CREATE INDEX channel_events_nid_idx ON channel_events(node_id)")
@@ -287,40 +300,39 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def add(e: PaymentRelayed): Unit = withMetrics("audit/add-payment-relayed", DbBackends.Sqlite) {
-    val payments = e match {
-      case e: ChannelPaymentRelayed =>
-        // non-trampoline relayed payments have one input and one output
-        val in = e.incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "channel", i.receivedAt))
-        val out = e.outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "channel", o.settledAt))
-        in ++ out
-      case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) =>
+    e match {
+      case e: TrampolinePaymentRelayed =>
+        // For trampoline payments, we store additional metadata about the payment in a dedicated table.
         using(sqlite.prepareStatement("INSERT INTO relayed_trampoline VALUES (?, ?, ?, ?)")) { statement =>
-          statement.setBytes(1, e.paymentHash.toArray)
-          statement.setLong(2, nextTrampolineAmount.toLong)
-          statement.setBytes(3, nextTrampolineNodeId.value.toArray)
+          statement.setString(1, e.paymentHash.toHex)
+          statement.setLong(2, e.nextTrampolineAmount.toLong)
+          statement.setString(3, e.nextTrampolineNodeId.toHex)
           statement.setLong(4, e.settledAt.toLong)
           statement.executeUpdate()
         }
-        // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
-        val in = incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", i.receivedAt))
-        val out = outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", o.settledAt))
-        in ++ out
-      case OnTheFlyFundingPaymentRelayed(_, incoming, outgoing) =>
-        val in = incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "on-the-fly-funding", i.receivedAt))
-        val out = outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "on-the-fly-funding", o.settledAt))
-        in ++ out
+      case _ => ()
     }
-    for (p <- payments) {
-      using(sqlite.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setBytes(1, e.paymentHash.toArray)
-        statement.setLong(2, p.amount.toLong)
-        statement.setBytes(3, p.channelId.toArray)
-        statement.setString(4, p.direction)
-        statement.setString(5, p.relayType)
-        statement.setLong(6, p.timestamp.toLong)
-        statement.executeUpdate()
-      }
-    }
+    // We store each incoming and outgoing part in a dedicated row, to support multi-part payments.
+    e.incoming.foreach(i => using(sqlite.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setString(1, e.paymentHash.toHex)
+      statement.setLong(2, i.amount.toLong)
+      statement.setString(3, i.channelId.toHex)
+      statement.setString(4, i.remoteNodeId.toHex)
+      statement.setString(5, "IN")
+      statement.setString(6, relayType(e))
+      statement.setLong(7, i.receivedAt.toLong)
+      statement.executeUpdate()
+    })
+    e.outgoing.foreach(o => using(sqlite.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setString(1, e.paymentHash.toHex)
+      statement.setLong(2, o.amount.toLong)
+      statement.setString(3, o.channelId.toHex)
+      statement.setString(4, o.remoteNodeId.toHex)
+      statement.setString(5, "OUT")
+      statement.setString(6, relayType(e))
+      statement.setLong(7, o.settledAt.toLong)
+      statement.executeUpdate()
+    })
   }
 
   override def add(e: TransactionPublished): Unit = withMetrics("audit/add-transaction-published", DbBackends.Sqlite) {
@@ -517,56 +529,37 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     }
 
   override def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentRelayed] = {
-    val trampolineByHash = using(sqlite.prepareStatement("SELECT * FROM relayed_trampoline WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from.toLong)
-      statement.setLong(2, to.toLong)
-      statement.executeQuery()
-        .map { rs =>
-          val paymentHash = rs.getByteVector32("payment_hash")
-          val amount = MilliSatoshi(rs.getLong("amount_msat"))
-          val nodeId = PublicKey(rs.getByteVector("next_node_id"))
-          paymentHash -> (amount, nodeId)
-        }
-        .toMap
-    }
     val relayedByHash = using(sqlite.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ?")) { statement =>
       statement.setLong(1, from.toLong)
       statement.setLong(2, to.toLong)
-      statement.executeQuery()
-        .foldLeft(Map.empty[ByteVector32, Seq[RelayedPart]]) { (relayedByHash, rs) =>
-          val paymentHash = rs.getByteVector32("payment_hash")
-          val part = RelayedPart(
-            rs.getByteVector32("channel_id"),
-            MilliSatoshi(rs.getLong("amount_msat")),
-            rs.getString("direction"),
-            rs.getString("relay_type"),
-            TimestampMilli(rs.getLong("timestamp")))
-          relayedByHash + (paymentHash -> (relayedByHash.getOrElse(paymentHash, Nil) :+ part))
-        }
+      statement.executeQuery().foldLeft(Map.empty[ByteVector32, Seq[RelayedPart]]) { (relayedByHash, rs) =>
+        val paymentHash = rs.getByteVector32FromHex("payment_hash")
+        val part = RelayedPart(
+          rs.getByteVector32FromHex("channel_id"),
+          PublicKey(rs.getByteVectorFromHex("node_id")),
+          MilliSatoshi(rs.getLong("amount_msat")),
+          rs.getString("direction"),
+          rs.getString("relay_type"),
+          TimestampMilli(rs.getLong("timestamp"))
+        )
+        relayedByHash + (paymentHash -> (relayedByHash.getOrElse(paymentHash, Nil) :+ part))
+      }
     }
-    val result = relayedByHash.flatMap {
-      case (paymentHash, parts) =>
-        // We may have been routing multiple payments for the same payment_hash (MPP) in both cases (trampoline and channel).
-        // NB: we may link the wrong in-out parts, but the overall sum will be correct: we sort by amounts to minimize the risk of mismatch.
-        val incoming = parts.filter(_.direction == "IN").map(p => PaymentEvent.IncomingPayment(p.channelId, PrivateKey(ByteVector32.One).publicKey, p.amount, p.timestamp)).sortBy(_.amount)
-        val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentEvent.OutgoingPayment(p.channelId, PrivateKey(ByteVector32.One).publicKey, p.amount, p.timestamp)).sortBy(_.amount)
-        parts.headOption match {
-          case Some(RelayedPart(_, _, _, "channel", _)) => incoming.zip(outgoing).map {
-            case (in, out) => ChannelPaymentRelayed(paymentHash, Seq(in), Seq(out))
+    val trampolineDetails = relayedByHash
+      .filter { case (_, parts) => parts.exists(_.relayType == "trampoline") }
+      .map {
+        case (paymentHash, _) => using(sqlite.prepareStatement("SELECT * FROM relayed_trampoline WHERE payment_hash = ?")) { statement =>
+          statement.setString(1, paymentHash.toHex)
+          statement.executeQuery().headOption match {
+            case Some(rs) =>
+              val nextTrampolineNode = PublicKey(rs.getByteVectorFromHex("next_trampoline_node_id"))
+              val nextTrampolineAmount = MilliSatoshi(rs.getLong("next_trampoline_amount_msat"))
+              Some(paymentHash -> (nextTrampolineNode, nextTrampolineAmount))
+            case None => None
           }
-          case Some(RelayedPart(_, _, _, "trampoline", _)) => trampolineByHash.get(paymentHash) match {
-            case Some((nextTrampolineAmount, nextTrampolineNodeId)) => TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) :: Nil
-            case None => Nil
-          }
-          case Some(RelayedPart(_, _, _, "on-the-fly-funding", _)) =>
-            Seq(OnTheFlyFundingPaymentRelayed(paymentHash, incoming, outgoing))
-          case _ => Nil
         }
-    }.toSeq.sortBy(_.settledAt)
-    paginated_opt match {
-      case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
-      case None => result
-    }
+      }.flatten.toMap
+    listRelayedInternal(relayedByHash, trampolineDetails, paginated_opt)
   }
 
   override def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee] =
