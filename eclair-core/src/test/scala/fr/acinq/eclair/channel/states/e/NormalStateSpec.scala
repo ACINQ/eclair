@@ -210,12 +210,15 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CMD_ADD_HTLC (insufficient funds)") { f =>
     import f._
+    val listener = TestProbe()
+    systemA.eventStream.subscribe(listener.ref, classOf[OutgoingHtlcNotAdded])
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val add = CMD_ADD_HTLC(sender.ref, initialState.commitments.availableBalanceForSend + 1.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max(accountable = false), None, localOrigin(sender.ref))
     alice ! add
     val error = InsufficientFunds(channelId(alice), amount = add.amount, missing = 0 sat, reserve = 20000 sat, fees = 3900 sat)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
+    assert(listener.expectMsgType[OutgoingHtlcNotAdded].reason == error)
     alice2bob.expectNoMessage(100 millis)
   }
 
@@ -333,6 +336,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CMD_ADD_HTLC (over remote max inflight htlc value)", Tag(ChannelStateTestsTags.AliceLowMaxHtlcValueInFlight)) { f =>
     import f._
+    val listener = TestProbe()
+    systemB.eventStream.subscribe(listener.ref, classOf[OutgoingHtlcNotAdded])
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     assert(initialState.commitments.latest.localCommitParams.maxHtlcValueInFlight == UInt64(initialState.commitments.latest.capacity.toMilliSatoshi.toLong))
@@ -341,6 +346,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! add
     val error = HtlcValueTooHighInFlight(channelId(bob), maximum = UInt64(150_000_000), actual = 151_000_000 msat)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
+    assert(listener.expectMsgType[OutgoingHtlcNotAdded].reason == error)
     bob2alice.expectNoMessage(100 millis)
   }
 

@@ -473,6 +473,9 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
   test("fail to relay because outgoing balance isn't sufficient (low fees)") { f =>
     import f._
 
+    val listener = TestProbe[PaymentNotRelayed]()
+    system.eventStream ! EventStream.Subscribe(listener.ref)
+
     // Receive an upstream multi-part payment.
     val (nodeRelayer, _) = f.createNodeRelay(incomingMultiPart.head)
     incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p, randomKey().publicKey, 0.01))
@@ -492,8 +495,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       assert(fwd.message == CMD_FAIL_HTLC(p.add.id, FailureReason.LocalFailure(TrampolineFeeInsufficient()), Some(FailureAttributionData(p.receivedAt, Some(incomingMultiPart.last.receivedAt))), commit = true))
     }
 
+    assert(listener.expectMessageType[PaymentNotRelayed].remoteNodeId == getPeerInfo.nodeId)
     register.expectNoMessage(100 millis)
-    eventListener.expectNoMessage(100 millis)
   }
 
   test("fail to relay because outgoing balance isn't sufficient (high fees)") { f =>

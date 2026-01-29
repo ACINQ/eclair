@@ -3243,6 +3243,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getSimpleName} in state=$stateName")
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
     replyTo ! RES_ADD_FAILED(c, cause, channelUpdate)
+    context.system.eventStream.publish(OutgoingHtlcNotAdded(stateData.channelId, remoteNodeId, c.paymentHash, c.amount, c.cltvExpiry, cause))
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, LocalError(cause), isFatal = false))
     stay()
   }

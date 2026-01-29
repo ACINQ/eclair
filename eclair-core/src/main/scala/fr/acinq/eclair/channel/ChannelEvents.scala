@@ -21,8 +21,8 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.ClosingType
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, HtlcFailureMessage, LiquidityAds, UpdateAddHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshi, RealShortChannelId, ShortChannelId}
+import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, MilliSatoshi, RealShortChannelId, ShortChannelId}
 
 /**
  * Created by PM on 17/08/2016.
@@ -106,9 +106,14 @@ case class LocalCommitConfirmed(channel: ActorRef, remoteNodeId: PublicKey, chan
 
 case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, closingTxId: TxId, commitments: Commitments) extends ChannelEvent
 
-case class OutgoingHtlcAdded(add: UpdateAddHtlc, remoteNodeId: PublicKey, fee: MilliSatoshi)
+/** An outgoing HTLC was sent to our channel peer: we're waiting for it to be settled. */
+case class OutgoingHtlcAdded(add: UpdateAddHtlc, remoteNodeId: PublicKey, fee: MilliSatoshi) extends ChannelEvent
 
-sealed trait OutgoingHtlcSettled
+/** An outgoing HTLC could not be sent through the given channel. */
+case class OutgoingHtlcNotAdded(channelId: ByteVector32, remoteNodeId: PublicKey, paymentHash: ByteVector32, amount: MilliSatoshi, expiry: CltvExpiry, reason: ChannelException) extends ChannelEvent
+
+/** An outgoing HTLC was settled by our channel peer. */
+sealed trait OutgoingHtlcSettled extends ChannelEvent
 
 case class OutgoingHtlcFailed(fail: HtlcFailureMessage) extends OutgoingHtlcSettled
 

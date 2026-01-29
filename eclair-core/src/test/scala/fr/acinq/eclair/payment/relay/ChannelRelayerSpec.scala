@@ -34,7 +34,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.{Peer, PeerReadyManager, Switchboard}
 import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
-import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentPacketSpec}
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentNotRelayed, PaymentPacketSpec}
 import fr.acinq.eclair.reputation.{Reputation, ReputationRecorder}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.BlindedRouteData.PaymentRelayData
@@ -539,6 +539,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("fail to relay when there is a local error") { f =>
     import f._
 
+    val eventListener = TestProbe[PaymentNotRelayed]()
+    system.eventStream ! EventStream.Subscribe(eventListener.ref)
+
     val channelId1 = channelIds(realScid1)
     val payload = ChannelRelay.Standard(realScid1, outgoingAmount, outgoingExpiry, upgradeAccountability = false)
     val r = createValidIncomingPacket(payload)
@@ -564,6 +567,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val fwd = expectFwdAdd(register, channelIds(realScid1), outgoingAmount, outgoingExpiry, outAccountable = false)
       fwd.message.replyTo ! RES_ADD_FAILED(fwd.message, testCase.exc, Some(testCase.update))
       expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(testCase.failure), None, commit = true))
+      assert(eventListener.expectMessageType[PaymentNotRelayed].remoteNodeId == outgoingNodeId)
     }
   }
 
