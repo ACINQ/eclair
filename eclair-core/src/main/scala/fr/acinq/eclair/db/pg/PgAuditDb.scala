@@ -16,11 +16,11 @@
 
 package fr.acinq.eclair.db.pg
 
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.AuditDb.{NetworkFee, PublishedTransaction, Stats}
+import fr.acinq.eclair.db.AuditDb._
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
@@ -45,8 +45,6 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   import ExtendedResultSet._
   import PgAuditDb._
   import fr.acinq.eclair.json.JsonSerializers.{formats, serialization}
-
-  case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: TimestampMilli)
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
@@ -152,6 +150,21 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("DROP INDEX audit.received_timestamp_idx")
         statement.executeUpdate("CREATE TABLE audit.received (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, incoming_channel_id TEXT NOT NULL, incoming_node_id TEXT NOT NULL, received_at TIMESTAMP WITH TIME ZONE NOT NULL)")
         statement.executeUpdate("CREATE INDEX received_at_idx ON audit.received(received_at)")
+        // We update the relayed payment table to include our channel peer's node_id, rename columns for clarity.
+        statement.executeUpdate("ALTER TABLE audit.relayed RENAME TO relayed_before_v14")
+        statement.executeUpdate("ALTER TABLE audit.relayed_trampoline RENAME TO relayed_trampoline_before_v14")
+        statement.executeUpdate("DROP INDEX audit.relayed_timestamp_idx")
+        statement.executeUpdate("DROP INDEX audit.relayed_payment_hash_idx")
+        statement.executeUpdate("DROP INDEX audit.relayed_channel_id_idx")
+        statement.executeUpdate("DROP INDEX audit.relayed_trampoline_timestamp_idx")
+        statement.executeUpdate("DROP INDEX audit.relayed_trampoline_payment_hash_idx")
+        statement.executeUpdate("CREATE TABLE audit.relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+        statement.executeUpdate("CREATE TABLE audit.relayed_trampoline (payment_hash TEXT NOT NULL, next_trampoline_amount_msat BIGINT NOT NULL, next_trampoline_node_id TEXT NOT NULL, settled_at TIMESTAMP WITH TIME ZONE NOT NULL)")
+        statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON audit.relayed(timestamp)")
+        statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON audit.relayed(payment_hash)")
+        statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON audit.relayed(channel_id)")
+        statement.executeUpdate("CREATE INDEX relayed_node_id_idx ON audit.relayed(node_id)")
+        statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON audit.relayed_trampoline(payment_hash)")
       }
 
       getVersion(statement, DB_NAME) match {
@@ -160,8 +173,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
           statement.executeUpdate("CREATE TABLE audit.sent (payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, amount_with_fees_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_total_amount_msat BIGINT NOT NULL, recipient_node_id TEXT NOT NULL, outgoing_channel_id TEXT NOT NULL, outgoing_node_id TEXT NOT NULL, started_at TIMESTAMP WITH TIME ZONE NOT NULL, settled_at TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.received (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, incoming_channel_id TEXT NOT NULL, incoming_node_id TEXT NOT NULL, received_at TIMESTAMP WITH TIME ZONE NOT NULL)")
-          statement.executeUpdate("CREATE TABLE audit.relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
-          statement.executeUpdate("CREATE TABLE audit.relayed_trampoline (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, next_node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.relayed_trampoline (payment_hash TEXT NOT NULL, next_trampoline_amount_msat BIGINT NOT NULL, next_trampoline_node_id TEXT NOT NULL, settled_at TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, channel_type TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_opener BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL, cltv_expiry_delta BIGINT NOT NULL, htlc_minimum_msat BIGINT NOT NULL, htlc_maximum_msat BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, status TEXT NOT NULL, duration_ms BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, is_mpp BOOLEAN NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id TEXT NOT NULL, payment_hash TEXT, routing_hints JSONB)")
@@ -172,9 +185,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX received_at_idx ON audit.received(received_at)")
           statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON audit.relayed(timestamp)")
           statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON audit.relayed(payment_hash)")
-          statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON audit.relayed_trampoline(timestamp)")
-          statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON audit.relayed_trampoline(payment_hash)")
           statement.executeUpdate("CREATE INDEX relayed_channel_id_idx ON audit.relayed(channel_id)")
+          statement.executeUpdate("CREATE INDEX relayed_node_id_idx ON audit.relayed(node_id)")
+          statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON audit.relayed_trampoline(payment_hash)")
           statement.executeUpdate("CREATE INDEX channel_events_cid_idx ON audit.channel_events(channel_id)")
           statement.executeUpdate("CREATE INDEX channel_events_nid_idx ON audit.channel_events(node_id)")
           statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON audit.channel_events(timestamp)")
@@ -290,40 +303,39 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def add(e: PaymentRelayed): Unit = withMetrics("audit/add-payment-relayed", DbBackends.Postgres) {
     inTransaction { pg =>
-      val payments = e match {
-        case e: ChannelPaymentRelayed =>
-          // non-trampoline relayed payments have one input and one output
-          val in = e.incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "channel", i.receivedAt))
-          val out = e.outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "channel", o.settledAt))
-          in ++ out
-        case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) =>
+      e match {
+        case e: TrampolinePaymentRelayed =>
+          // For trampoline payments, we store additional metadata about the payment in a dedicated table.
           using(pg.prepareStatement("INSERT INTO audit.relayed_trampoline VALUES (?, ?, ?, ?)")) { statement =>
             statement.setString(1, e.paymentHash.toHex)
-            statement.setLong(2, nextTrampolineAmount.toLong)
-            statement.setString(3, nextTrampolineNodeId.value.toHex)
+            statement.setLong(2, e.nextTrampolineAmount.toLong)
+            statement.setString(3, e.nextTrampolineNodeId.toHex)
             statement.setTimestamp(4, e.settledAt.toSqlTimestamp)
             statement.executeUpdate()
           }
-          // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
-          val in = incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", i.receivedAt))
-          val out = outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", o.settledAt))
-          in ++ out
-        case OnTheFlyFundingPaymentRelayed(_, incoming, outgoing) =>
-          val in = incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "on-the-fly-funding", i.receivedAt))
-          val out = outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "on-the-fly-funding", o.settledAt))
-          in ++ out
+        case _ => ()
       }
-      for (p <- payments) {
-        using(pg.prepareStatement("INSERT INTO audit.relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-          statement.setString(1, e.paymentHash.toHex)
-          statement.setLong(2, p.amount.toLong)
-          statement.setString(3, p.channelId.toHex)
-          statement.setString(4, p.direction)
-          statement.setString(5, p.relayType)
-          statement.setTimestamp(6, p.timestamp.toSqlTimestamp)
-          statement.executeUpdate()
-        }
-      }
+      // We store each incoming and outgoing part in a dedicated row, to support multi-part payments.
+      e.incoming.foreach(i => using(pg.prepareStatement("INSERT INTO audit.relayed VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+        statement.setString(1, e.paymentHash.toHex)
+        statement.setLong(2, i.amount.toLong)
+        statement.setString(3, i.channelId.toHex)
+        statement.setString(4, i.remoteNodeId.toHex)
+        statement.setString(5, "IN")
+        statement.setString(6, relayType(e))
+        statement.setTimestamp(7, i.receivedAt.toSqlTimestamp)
+        statement.executeUpdate()
+      })
+      e.outgoing.foreach(o => using(pg.prepareStatement("INSERT INTO audit.relayed VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+        statement.setString(1, e.paymentHash.toHex)
+        statement.setLong(2, o.amount.toLong)
+        statement.setString(3, o.channelId.toHex)
+        statement.setString(4, o.remoteNodeId.toHex)
+        statement.setString(5, "OUT")
+        statement.setString(6, relayType(e))
+        statement.setTimestamp(7, o.settledAt.toSqlTimestamp)
+        statement.executeUpdate()
+      })
     }
   }
 
@@ -544,55 +556,36 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentRelayed] =
     inTransaction { pg =>
-      val trampolineByHash = using(pg.prepareStatement("SELECT * FROM audit.relayed_trampoline WHERE timestamp BETWEEN ? and ?")) { statement =>
-        statement.setTimestamp(1, from.toSqlTimestamp)
-        statement.setTimestamp(2, to.toSqlTimestamp)
-        statement.executeQuery()
-          .foldLeft(Map.empty[ByteVector32, (MilliSatoshi, PublicKey)]) { (trampolineByHash, rs) =>
-            val paymentHash = rs.getByteVector32FromHex("payment_hash")
-            val amount = MilliSatoshi(rs.getLong("amount_msat"))
-            val nodeId = PublicKey(rs.getByteVectorFromHex("next_node_id"))
-            trampolineByHash + (paymentHash -> (amount, nodeId))
-          }
-      }
       val relayedByHash = using(pg.prepareStatement("SELECT * FROM audit.relayed WHERE timestamp BETWEEN ? and ?")) { statement =>
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
-        statement.executeQuery()
-          .foldLeft(Map.empty[ByteVector32, Seq[RelayedPart]]) { (relayedByHash, rs) =>
-            val paymentHash = rs.getByteVector32FromHex("payment_hash")
-            val part = RelayedPart(
-              rs.getByteVector32FromHex("channel_id"),
-              MilliSatoshi(rs.getLong("amount_msat")),
-              rs.getString("direction"),
-              rs.getString("relay_type"),
-              TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
-            relayedByHash + (paymentHash -> (relayedByHash.getOrElse(paymentHash, Nil) :+ part))
-          }
+        statement.executeQuery().foldLeft(Map.empty[ByteVector32, Seq[RelayedPart]]) { (relayedByHash, rs) =>
+          val paymentHash = rs.getByteVector32FromHex("payment_hash")
+          val part = RelayedPart(
+            rs.getByteVector32FromHex("channel_id"),
+            PublicKey(rs.getByteVectorFromHex("node_id")),
+            MilliSatoshi(rs.getLong("amount_msat")),
+            rs.getString("direction"),
+            rs.getString("relay_type"),
+            TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
+          relayedByHash + (paymentHash -> (relayedByHash.getOrElse(paymentHash, Nil) :+ part))
+        }
       }
-      val result = relayedByHash.flatMap {
-        case (paymentHash, parts) =>
-          // We may have been routing multiple payments for the same payment_hash (MPP) in both cases (trampoline and channel).
-          // NB: we may link the wrong in-out parts, but the overall sum will be correct: we sort by amounts to minimize the risk of mismatch.
-          val incoming = parts.filter(_.direction == "IN").map(p => PaymentEvent.IncomingPayment(p.channelId, PrivateKey(ByteVector32.One).publicKey, p.amount, p.timestamp)).sortBy(_.amount)
-          val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentEvent.OutgoingPayment(p.channelId, PrivateKey(ByteVector32.One).publicKey, p.amount, p.timestamp)).sortBy(_.amount)
-          parts.headOption match {
-            case Some(RelayedPart(_, _, _, "channel", _)) => incoming.zip(outgoing).map {
-              case (in, out) => ChannelPaymentRelayed(paymentHash, Seq(in), Seq(out))
+      val trampolineDetails = relayedByHash
+        .filter { case (_, parts) => parts.exists(_.relayType == "trampoline") }
+        .map {
+          case (paymentHash, _) => using(pg.prepareStatement("SELECT * FROM audit.relayed_trampoline WHERE payment_hash = ?")) { statement =>
+            statement.setString(1, paymentHash.toHex)
+            statement.executeQuery().headOption match {
+              case Some(rs) =>
+                val nextTrampolineNode = PublicKey(rs.getByteVectorFromHex("next_trampoline_node_id"))
+                val nextTrampolineAmount = MilliSatoshi(rs.getLong("next_trampoline_amount_msat"))
+                Some(paymentHash -> (nextTrampolineNode, nextTrampolineAmount))
+              case None => None
             }
-            case Some(RelayedPart(_, _, _, "trampoline", _)) => trampolineByHash.get(paymentHash) match {
-              case Some((nextTrampolineAmount, nextTrampolineNodeId)) => TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount) :: Nil
-              case None => Nil
-            }
-            case Some(RelayedPart(_, _, _, "on-the-fly-funding", _)) =>
-              Seq(OnTheFlyFundingPaymentRelayed(paymentHash, incoming, outgoing))
-            case _ => Nil
           }
-      }.toSeq.sortBy(_.settledAt)
-      paginated_opt match {
-        case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
-        case None => result
-      }
+        }.flatten.toMap
+      listRelayedInternal(relayedByHash, trampolineDetails, paginated_opt)
     }
 
   override def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee] =
