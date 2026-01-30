@@ -23,6 +23,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{ConfirmedTransaction, PublishedTransaction, RelayStats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.wire.protocol.LiquidityAds
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, Paginated, TimestampMilli}
 
 trait AuditDb {
@@ -72,8 +73,11 @@ trait AuditDb {
     }).sum
     val incomingPayments = relayed.flatMap(_.incoming).filter(_.remoteNodeId == remoteNodeId)
     val outgoingPayments = relayed.flatMap(_.outgoing).filter(_.remoteNodeId == remoteNodeId)
-    val onChainFeePaid = listConfirmed(remoteNodeId, from, to, None).map(_.onChainFeePaid).sum
-    RelayStats(remoteNodeId, incomingPayments.size, incomingPayments.map(_.amount).sum, outgoingPayments.size, outgoingPayments.map(_.amount).sum, relayFeeEarned, onChainFeePaid, from, to)
+    val confirmedTransactions = listConfirmed(remoteNodeId, from, to, None)
+    val onChainFeePaid = confirmedTransactions.map(_.onChainFeePaid).sum
+    val liquidityFeeEarned = confirmedTransactions.flatMap(_.liquidityPurchase_opt).filter(_.isSeller).map(_.fees.total).sum
+    val liquidityFeePaid = confirmedTransactions.flatMap(_.liquidityPurchase_opt).filter(_.isBuyer).map(_.fees.total).sum
+    RelayStats(remoteNodeId, incomingPayments.size, incomingPayments.map(_.amount).sum, outgoingPayments.size, outgoingPayments.map(_.amount).sum, relayFeeEarned, confirmedTransactions.size, onChainFeePaid, liquidityFeeEarned, liquidityFeePaid, from, to)
   }
 
   def relayStats(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[RelayStats] = {
@@ -103,8 +107,11 @@ trait AuditDb {
     // We add on-chain fees paid for each node.
     val confirmedTransactions = listConfirmed(from, to)
     Paginated.paginate(perNodeStats.map(stats => {
-      val onChainFeePaid = confirmedTransactions.filter(_.remoteNodeId == stats.remoteNodeId).map(_.onChainFeePaid).sum
-      stats.copy(onChainFeePaid = onChainFeePaid)
+      val transactionsWithPeer = confirmedTransactions.filter(_.remoteNodeId == stats.remoteNodeId)
+      val onChainFeePaid = transactionsWithPeer.map(_.onChainFeePaid).sum
+      val liquidityFeeEarned = transactionsWithPeer.flatMap(_.liquidityPurchase_opt).filter(_.isSeller).map(_.fees.total).sum
+      val liquidityFeePaid = transactionsWithPeer.flatMap(_.liquidityPurchase_opt).filter(_.isBuyer).map(_.fees.total).sum
+      stats.copy(onChainTransactionsCount = transactionsWithPeer.size, onChainFeePaid = onChainFeePaid, liquidityFeeEarned = liquidityFeeEarned, liquidityFeePaid = liquidityFeePaid)
     }), paginated_opt)
   }
 
@@ -112,18 +119,18 @@ trait AuditDb {
 
 object AuditDb {
 
-  case class PublishedTransaction(txId: TxId, desc: String, localMiningFee: Satoshi, remoteMiningFee: Satoshi, feerate: FeeratePerKw, timestamp: TimestampMilli)
+  case class PublishedTransaction(txId: TxId, desc: String, localMiningFee: Satoshi, remoteMiningFee: Satoshi, feerate: FeeratePerKw, liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo], timestamp: TimestampMilli)
 
   object PublishedTransaction {
-    def apply(tx: TransactionPublished): PublishedTransaction = PublishedTransaction(tx.tx.txid, tx.desc, tx.localMiningFee, tx.remoteMiningFee, tx.feerate, tx.timestamp)
+    def apply(tx: TransactionPublished): PublishedTransaction = PublishedTransaction(tx.tx.txid, tx.desc, tx.localMiningFee, tx.remoteMiningFee, tx.feerate, tx.liquidityPurchase_opt, tx.timestamp)
   }
 
-  case class ConfirmedTransaction(remoteNodeId: PublicKey, channelId: ByteVector32, txId: TxId, onChainFeePaid: Satoshi, txType: String, timestamp: TimestampMilli)
+  case class ConfirmedTransaction(remoteNodeId: PublicKey, channelId: ByteVector32, txId: TxId, onChainFeePaid: Satoshi, txType: String, liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo], timestamp: TimestampMilli)
 
-  case class RelayStats(remoteNodeId: PublicKey, incomingPaymentCount: Int, totalAmountIn: MilliSatoshi, outgoingPaymentCount: Int, totalAmountOut: MilliSatoshi, relayFeeEarned: MilliSatoshi, onChainFeePaid: Satoshi, from: TimestampMilli, to: TimestampMilli)
+  case class RelayStats(remoteNodeId: PublicKey, incomingPaymentCount: Int, totalAmountIn: MilliSatoshi, outgoingPaymentCount: Int, totalAmountOut: MilliSatoshi, relayFeeEarned: MilliSatoshi, onChainTransactionsCount: Int, onChainFeePaid: Satoshi, liquidityFeeEarned: Satoshi, liquidityFeePaid: Satoshi, from: TimestampMilli, to: TimestampMilli)
 
   object RelayStats {
-    def apply(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): RelayStats = RelayStats(remoteNodeId, 0, 0 msat, 0, 0 msat, 0 msat, 0 sat, from, to)
+    def apply(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): RelayStats = RelayStats(remoteNodeId, 0, 0 msat, 0, 0 msat, 0 msat, 0, 0 sat, 0 sat, 0 sat, from, to)
   }
 
   case class RelayedPart(channelId: ByteVector32, remoteNodeId: PublicKey, amount: MilliSatoshi, direction: String, relayType: String, timestamp: TimestampMilli)
