@@ -27,12 +27,6 @@ trait Fees {
 
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
-  val networkFees: Route = postRequest("networkfees") { implicit t =>
-    formFields(fromFormParam(), toFormParam()) { (from, to) =>
-      complete(eclairApi.networkFees(from, to))
-    }
-  }
-
   val updateRelayFee: Route = postRequest("updaterelayfee") { implicit t =>
     withNodesIdentifier { nodes =>
       formFields("feeBaseMsat".as[MilliSatoshi], "feeProportionalMillionths".as[Long]) { (feeBase, feeProportional) =>
@@ -45,6 +39,6 @@ trait Fees {
     }
   }
 
-  val feeRoutes: Route = networkFees ~ updateRelayFee
+  val feeRoutes: Route = updateRelayFee
 
 }

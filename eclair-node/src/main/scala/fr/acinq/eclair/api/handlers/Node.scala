@@ -17,6 +17,7 @@
 package fr.acinq.eclair.api.handlers
 
 import akka.http.scaladsl.server.Route
+import fr.acinq.eclair.Paginated
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
@@ -56,6 +57,17 @@ trait Node {
     complete(eclairApi.peers())
   }
 
+  val relayStats: Route = postRequest("relaystats") { implicit t =>
+    withPaginated { paginated_opt =>
+      formFields(nodeIdFormParam.?, fromFormParam(), toFormParam()) { (remoteNodeId_opt, from, to) =>
+        remoteNodeId_opt match {
+          case Some(remoteNodeId) => complete(eclairApi.relayStats(remoteNodeId, from, to))
+          case None => complete(eclairApi.relayStats(from, to, paginated_opt.orElse(Some(Paginated(count = 10, skip = 0)))))
+        }
+      }
+    }
+  }
+
   val audit: Route = postRequest("audit") { implicit t =>
     withPaginated { paginated_opt =>
       formFields(fromFormParam(), toFormParam()) { (from, to) =>
@@ -68,5 +80,5 @@ trait Node {
     complete(eclairApi.stop())
   }
 
-  val nodeRoutes: Route = getInfo ~ connect ~ disconnect ~ peers ~ audit ~ stop
+  val nodeRoutes: Route = getInfo ~ connect ~ disconnect ~ peers ~ relayStats ~ audit ~ stop
 }

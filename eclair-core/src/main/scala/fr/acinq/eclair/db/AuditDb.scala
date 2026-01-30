@@ -17,13 +17,13 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, SatoshiLong, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.AuditDb.{NetworkFee, PublishedTransaction, Stats}
+import fr.acinq.eclair.db.AuditDb.{ConfirmedTransaction, PublishedTransaction, RelayStats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.{MilliSatoshi, Paginated, TimestampMilli}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, Paginated, TimestampMilli}
 
 trait AuditDb {
 
@@ -47,6 +47,12 @@ trait AuditDb {
 
   def listPublished(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): Seq[PublishedTransaction]
 
+  def listConfirmed(channelId: ByteVector32): Seq[ConfirmedTransaction]
+
+  def listConfirmed(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[ConfirmedTransaction]
+
+  def listConfirmed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[ConfirmedTransaction]
+
   def listChannelEvents(channelId: ByteVector32, from: TimestampMilli, to: TimestampMilli): Seq[ChannelEvent]
 
   def listChannelEvents(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): Seq[ChannelEvent]
@@ -57,9 +63,50 @@ trait AuditDb {
 
   def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentRelayed]
 
-  def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee]
+  def relayStats(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): RelayStats = {
+    val relayed = listRelayed(from, to).filter(e => e.incoming.exists(_.remoteNodeId == remoteNodeId) || e.outgoing.exists(_.remoteNodeId == remoteNodeId))
+    val relayFeeEarned = relayed.map(e => {
+      // When using MPP and trampoline, payments can be relayed through multiple nodes at once.
+      // We split the fee according to the proportional amount relayed through the requested node.
+      e.relayFee * (e.outgoing.filter(_.remoteNodeId == remoteNodeId).map(_.amount).sum.toLong.toDouble / e.amountOut.toLong)
+    }).sum
+    val incomingPayments = relayed.flatMap(_.incoming).filter(_.remoteNodeId == remoteNodeId)
+    val outgoingPayments = relayed.flatMap(_.outgoing).filter(_.remoteNodeId == remoteNodeId)
+    val onChainFeePaid = listConfirmed(remoteNodeId, from, to, None).map(_.onChainFeePaid).sum
+    RelayStats(remoteNodeId, incomingPayments.size, incomingPayments.map(_.amount).sum, outgoingPayments.size, outgoingPayments.map(_.amount).sum, relayFeeEarned, onChainFeePaid, from, to)
+  }
 
-  def stats(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[Stats]
+  def relayStats(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[RelayStats] = {
+    // We fill payment data from all relayed payments.
+    val perNodeStats = listRelayed(from, to).foldLeft(Map.empty[PublicKey, RelayStats]) {
+      case (perNodeStats, e) =>
+        val withIncoming = e.incoming.foldLeft(perNodeStats) {
+          case (perNodeStats, i) =>
+            val current = perNodeStats.getOrElse(i.remoteNodeId, RelayStats(i.remoteNodeId, from, to))
+            val updated = current.copy(incomingPaymentCount = current.incomingPaymentCount + 1, totalAmountIn = current.totalAmountIn + i.amount)
+            perNodeStats + (i.remoteNodeId -> updated)
+        }
+        val withOutgoing = e.outgoing.foldLeft(withIncoming) {
+          case (perNodeStats, o) =>
+            val current = perNodeStats.getOrElse(o.remoteNodeId, RelayStats(o.remoteNodeId, from, to))
+            val updated = current.copy(outgoingPaymentCount = current.outgoingPaymentCount + 1, totalAmountOut = current.totalAmountOut + o.amount)
+            perNodeStats + (o.remoteNodeId -> updated)
+        }
+        val withRelayFee = e.outgoing.map(_.remoteNodeId).toSet.foldLeft(withOutgoing) {
+          case (perNodeStats, remoteNodeId) =>
+            val current = perNodeStats.getOrElse(remoteNodeId, RelayStats(remoteNodeId, from, to))
+            val updated = current.copy(relayFeeEarned = current.relayFeeEarned + e.relayFee * (e.outgoing.filter(_.remoteNodeId == remoteNodeId).map(_.amount).sum.toLong.toDouble / e.amountOut.toLong))
+            perNodeStats + (remoteNodeId -> updated)
+        }
+        withRelayFee
+    }.values.toSeq.sortBy(_.relayFeeEarned)(Ordering[MilliSatoshi].reverse)
+    // We add on-chain fees paid for each node.
+    val confirmedTransactions = listConfirmed(from, to)
+    Paginated.paginate(perNodeStats.map(stats => {
+      val onChainFeePaid = confirmedTransactions.filter(_.remoteNodeId == stats.remoteNodeId).map(_.onChainFeePaid).sum
+      stats.copy(onChainFeePaid = onChainFeePaid)
+    }), paginated_opt)
+  }
 
 }
 
@@ -71,9 +118,13 @@ object AuditDb {
     def apply(tx: TransactionPublished): PublishedTransaction = PublishedTransaction(tx.tx.txid, tx.desc, tx.localMiningFee, tx.remoteMiningFee, tx.feerate, tx.timestamp)
   }
 
-  case class NetworkFee(remoteNodeId: PublicKey, channelId: ByteVector32, txId: ByteVector32, fee: Satoshi, txType: String, timestamp: TimestampMilli)
+  case class ConfirmedTransaction(remoteNodeId: PublicKey, channelId: ByteVector32, txId: TxId, onChainFeePaid: Satoshi, txType: String, timestamp: TimestampMilli)
 
-  case class Stats(channelId: ByteVector32, direction: String, avgPaymentAmount: Satoshi, paymentCount: Int, relayFee: Satoshi, networkFee: Satoshi)
+  case class RelayStats(remoteNodeId: PublicKey, incomingPaymentCount: Int, totalAmountIn: MilliSatoshi, outgoingPaymentCount: Int, totalAmountOut: MilliSatoshi, relayFeeEarned: MilliSatoshi, onChainFeePaid: Satoshi, from: TimestampMilli, to: TimestampMilli)
+
+  object RelayStats {
+    def apply(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): RelayStats = RelayStats(remoteNodeId, 0, 0 msat, 0, 0 msat, 0 msat, 0 sat, from, to)
+  }
 
   case class RelayedPart(channelId: ByteVector32, remoteNodeId: PublicKey, amount: MilliSatoshi, direction: String, relayType: String, timestamp: TimestampMilli)
 
@@ -96,7 +147,7 @@ object AuditDb {
   }
 
   def listRelayedInternal(relayedByHash: Map[ByteVector32, Seq[RelayedPart]], trampolineDetails: Map[ByteVector32, (PublicKey, MilliSatoshi)], paginated_opt: Option[Paginated]): Seq[PaymentRelayed] = {
-    val result = relayedByHash.flatMap {
+    Paginated.paginate(relayedByHash.flatMap {
       case (paymentHash, parts) =>
         // We may have been routing multiple payments for the same payment_hash with different relay types.
         // That's fine, we simply separate each part into the correct event.
@@ -118,11 +169,7 @@ object AuditDb {
           None
         }
         channelRelayed_opt.toSeq ++ trampolineRelayed_opt.toSeq ++ onTheFlyRelayed_opt.toSeq
-    }.toSeq.sortBy(_.settledAt)
-    paginated_opt match {
-      case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
-      case None => result
-    }
+    }.toSeq.sortBy(_.settledAt), paginated_opt)
   }
 
 }
