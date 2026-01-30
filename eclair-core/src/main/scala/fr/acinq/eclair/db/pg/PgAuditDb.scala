@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, Paginated, TimestampMilli}
+import fr.acinq.eclair.{MilliSatoshi, Paginated, TimestampMilli}
 import grizzled.slf4j.Logging
 
 import java.sql.{Statement, Timestamp}
@@ -443,6 +443,60 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
   }
 
+  override def listConfirmed(channelId: ByteVector32): Seq[ConfirmedTransaction] = withMetrics("audit/list-confirmed-by-channel-id", DbBackends.Postgres) {
+    inTransaction { pg =>
+      using(pg.prepareStatement("SELECT * FROM audit.transactions_confirmed INNER JOIN audit.transactions_published ON audit.transactions_published.tx_id = audit.transactions_confirmed.tx_id WHERE audit.transactions_confirmed.channel_id = ? ORDER BY audit.transactions_confirmed.timestamp")) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.executeQuery().map { rs =>
+          ConfirmedTransaction(
+            remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
+            channelId = rs.getByteVector32FromHex("channel_id"),
+            txId = TxId(rs.getByteVector32FromHex("tx_id")),
+            onChainFeePaid = Satoshi(rs.getLong("local_mining_fee_sat")),
+            txType = rs.getString("tx_type"),
+            timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
+        }.toSeq
+      }
+    }
+  }
+
+  override def listConfirmed(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[ConfirmedTransaction] = withMetrics("audit/list-confirmed-by-node-id", DbBackends.Postgres) {
+    inTransaction { pg =>
+      using(pg.prepareStatement("SELECT * FROM audit.transactions_confirmed INNER JOIN audit.transactions_published ON audit.transactions_published.tx_id = audit.transactions_confirmed.tx_id WHERE audit.transactions_confirmed.node_id = ? AND audit.transactions_confirmed.timestamp BETWEEN ? and ? ORDER BY audit.transactions_confirmed.timestamp")) { statement =>
+        statement.setString(1, remoteNodeId.toHex)
+        statement.setTimestamp(2, from.toSqlTimestamp)
+        statement.setTimestamp(3, to.toSqlTimestamp)
+        Paginated.paginate(statement.executeQuery().map { rs =>
+          ConfirmedTransaction(
+            remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
+            channelId = rs.getByteVector32FromHex("channel_id"),
+            txId = TxId(rs.getByteVector32FromHex("tx_id")),
+            onChainFeePaid = Satoshi(rs.getLong("local_mining_fee_sat")),
+            txType = rs.getString("tx_type"),
+            timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
+        }.toSeq, paginated_opt)
+      }
+    }
+  }
+
+  override def listConfirmed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[ConfirmedTransaction] = withMetrics("audit/list-confirmed", DbBackends.Postgres) {
+    inTransaction { pg =>
+      using(pg.prepareStatement("SELECT * FROM audit.transactions_confirmed INNER JOIN audit.transactions_published ON audit.transactions_published.tx_id = audit.transactions_confirmed.tx_id WHERE audit.transactions_confirmed.timestamp BETWEEN ? and ? ORDER BY audit.transactions_confirmed.timestamp")) { statement =>
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
+        Paginated.paginate(statement.executeQuery().map { rs =>
+          ConfirmedTransaction(
+            remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
+            channelId = rs.getByteVector32FromHex("channel_id"),
+            txId = TxId(rs.getByteVector32FromHex("tx_id")),
+            onChainFeePaid = Satoshi(rs.getLong("local_mining_fee_sat")),
+            txType = rs.getString("tx_type"),
+            timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
+        }.toSeq, paginated_opt)
+      }
+    }
+  }
+
   override def listChannelEvents(channelId: ByteVector32, from: TimestampMilli, to: TimestampMilli): Seq[ChannelEvent] = withMetrics("audit/list-channel-events-by-channel-id", DbBackends.Postgres) {
     inTransaction { pg =>
       using(pg.prepareStatement("SELECT * FROM audit.channel_events WHERE channel_id = ? AND timestamp BETWEEN ? AND ?")) { statement =>
@@ -494,7 +548,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       using(pg.prepareStatement("SELECT * FROM audit.sent WHERE settled_at BETWEEN ? AND ?")) { statement =>
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
-        val result = statement.executeQuery()
+        Paginated.paginate(statement.executeQuery()
           .foldLeft(Map.empty[UUID, PaymentSent]) { (sentByParentId, rs) =>
             val parentId = UUID.fromString(rs.getString("parent_payment_id"))
             val part = PaymentSent.PaymentPart(
@@ -520,11 +574,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
                 part.startedAt)
             }
             sentByParentId + (parentId -> sent)
-          }.values.toSeq.sortBy(_.settledAt)
-        paginated_opt match {
-          case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
-          case None => result
-        }
+          }.values.toSeq.sortBy(_.settledAt), paginated_opt)
       }
     }
 
@@ -533,7 +583,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       using(pg.prepareStatement("SELECT * FROM audit.received WHERE received_at BETWEEN ? AND ?")) { statement =>
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
-        val result = statement.executeQuery()
+        Paginated.paginate(statement.executeQuery()
           .foldLeft(Map.empty[ByteVector32, PaymentReceived]) { (receivedByHash, rs) =>
             val paymentHash = rs.getByteVector32FromHex("payment_hash")
             val part = PaymentEvent.IncomingPayment(
@@ -546,11 +596,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
               case None => PaymentReceived(paymentHash, Seq(part))
             }
             receivedByHash + (paymentHash -> received)
-          }.values.toSeq.sortBy(_.settledAt)
-        paginated_opt match {
-          case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
-          case None => result
-        }
+          }.values.toSeq.sortBy(_.settledAt), paginated_opt)
       }
     }
 
@@ -587,69 +633,4 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         }.flatten.toMap
       listRelayedInternal(relayedByHash, trampolineDetails, paginated_opt)
     }
-
-  override def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee] =
-    inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM audit.transactions_confirmed INNER JOIN audit.transactions_published ON audit.transactions_published.tx_id = audit.transactions_confirmed.tx_id  WHERE audit.transactions_confirmed.timestamp BETWEEN ? and ? ORDER BY audit.transactions_confirmed.timestamp")) { statement =>
-        statement.setTimestamp(1, from.toSqlTimestamp)
-        statement.setTimestamp(2, to.toSqlTimestamp)
-        statement.executeQuery().map { rs =>
-          NetworkFee(
-            remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
-            channelId = rs.getByteVector32FromHex("channel_id"),
-            txId = rs.getByteVector32FromHex("tx_id"),
-            fee = Satoshi(rs.getLong("local_mining_fee_sat")),
-            txType = rs.getString("tx_type"),
-            timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
-        }.toSeq
-      }
-    }
-
-  override def stats(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[Stats] = {
-    case class Relayed(amount: MilliSatoshi, fee: MilliSatoshi, direction: String)
-
-    def aggregateRelayStats(previous: Map[ByteVector32, Seq[Relayed]], incoming: Seq[PaymentEvent.IncomingPayment], outgoing: Seq[PaymentEvent.OutgoingPayment]): Map[ByteVector32, Seq[Relayed]] = {
-      // We ensure trampoline payments are counted only once per channel and per direction (if multiple HTLCs were sent
-      // from/to the same channel, we group them).
-      val amountIn = incoming.map(_.amount).sum
-      val amountOut = outgoing.map(_.amount).sum
-      val in = incoming.groupBy(_.channelId).map { case (channelId, parts) => (channelId, Relayed(parts.map(_.amount).sum, 0 msat, "IN")) }.toSeq
-      val out = outgoing.groupBy(_.channelId).map { case (channelId, parts) =>
-        val fee = (amountIn - amountOut) * parts.length / outgoing.length // we split the fee among outgoing channels
-        (channelId, Relayed(parts.map(_.amount).sum, fee, "OUT"))
-      }.toSeq
-      (in ++ out).groupBy(_._1).map { case (channelId, payments) => (channelId, payments.map(_._2) ++ previous.getOrElse(channelId, Nil)) }
-    }
-
-    val relayed = listRelayed(from, to).foldLeft(Map.empty[ByteVector32, Seq[Relayed]]) { (previous, e) =>
-      // NB: we must avoid counting the fee twice: we associate it to the outgoing channels rather than the incoming ones.
-      val current = aggregateRelayStats(previous, e.incoming, e.outgoing)
-      previous ++ current
-    }
-
-    val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
-      feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
-    }
-
-    // Channels opened by our peers won't have any network fees paid by us, but we still want to compute stats for them.
-    val allChannels = networkFees.keySet ++ relayed.keySet
-    val result = allChannels.toSeq.flatMap(channelId => {
-      val networkFee = networkFees.getOrElse(channelId, 0 sat)
-      val (in, out) = relayed.getOrElse(channelId, Nil).partition(_.direction == "IN")
-      ((in, "IN") :: (out, "OUT") :: Nil).map { case (r, direction) =>
-        val paymentCount = r.length
-        if (paymentCount == 0) {
-          Stats(channelId, direction, 0 sat, 0, 0 sat, networkFee)
-        } else {
-          val avgPaymentAmount = r.map(_.amount).sum / paymentCount
-          val relayFee = r.map(_.fee).sum
-          Stats(channelId, direction, avgPaymentAmount.truncateToSatoshi, paymentCount, relayFee.truncateToSatoshi, networkFee)
-        }
-      }
-    }).sortBy(s => s.channelId.toHex + s.direction)
-    paginated_opt match {
-      case Some(paginated) => result.slice(paginated.skip, paginated.skip + paginated.count)
-      case None => result
-    }
-  }
 }
