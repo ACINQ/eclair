@@ -26,10 +26,11 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.wire.protocol.LiquidityAds
 import fr.acinq.eclair.{MilliSatoshi, Paginated, TimestampMilli}
 import grizzled.slf4j.Logging
 
-import java.sql.{Statement, Timestamp}
+import java.sql.{ResultSet, Statement, Timestamp}
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
@@ -131,7 +132,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("DROP INDEX audit.transactions_published_channel_id_idx")
         statement.executeUpdate("DROP INDEX audit.transactions_published_timestamp_idx")
         statement.executeUpdate("DROP INDEX audit.transactions_confirmed_timestamp_idx")
-        statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, local_mining_fee_sat BIGINT NOT NULL, remote_mining_fee_sat BIGINT NOT NULL, feerate_sat_per_kw BIGINT NOT NULL, input_count BIGINT NOT NULL, output_count BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+        statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, local_mining_fee_sat BIGINT NOT NULL, remote_mining_fee_sat BIGINT NOT NULL, feerate_sat_per_kw BIGINT NOT NULL, is_buying_liquidity BOOLEAN NOT NULL, liquidity_amount_sat BIGINT NOT NULL, liquidity_mining_fee_sat BIGINT NOT NULL, liquidity_service_fee_sat BIGINT NOT NULL, input_count BIGINT NOT NULL, output_count BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
         statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, input_count BIGINT NOT NULL, output_count BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
         // We recreate indexes for the updated transaction tables.
         statement.executeUpdate("CREATE INDEX transactions_published_channel_id_idx ON audit.transactions_published(channel_id)")
@@ -178,7 +179,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, channel_type TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_opener BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL, cltv_expiry_delta BIGINT NOT NULL, htlc_minimum_msat BIGINT NOT NULL, htlc_maximum_msat BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, status TEXT NOT NULL, duration_ms BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, is_mpp BOOLEAN NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id TEXT NOT NULL, payment_hash TEXT, routing_hints JSONB)")
-          statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, local_mining_fee_sat BIGINT NOT NULL, remote_mining_fee_sat BIGINT NOT NULL, feerate_sat_per_kw BIGINT NOT NULL, input_count BIGINT NOT NULL, output_count BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, local_mining_fee_sat BIGINT NOT NULL, remote_mining_fee_sat BIGINT NOT NULL, feerate_sat_per_kw BIGINT NOT NULL, is_buying_liquidity BOOLEAN NOT NULL, liquidity_amount_sat BIGINT NOT NULL, liquidity_mining_fee_sat BIGINT NOT NULL, liquidity_service_fee_sat BIGINT NOT NULL, input_count BIGINT NOT NULL, output_count BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, input_count BIGINT NOT NULL, output_count BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
 
           statement.executeUpdate("CREATE INDEX sent_settled_at_idx ON audit.sent(settled_at)")
@@ -341,17 +342,21 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def add(e: TransactionPublished): Unit = withMetrics("audit/add-transaction-published", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("INSERT INTO audit.transactions_published VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
+      using(pg.prepareStatement("INSERT INTO audit.transactions_published VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
         statement.setString(1, e.tx.txid.value.toHex)
         statement.setString(2, e.channelId.toHex)
         statement.setString(3, e.remoteNodeId.toHex)
         statement.setLong(4, e.localMiningFee.toLong)
         statement.setLong(5, e.remoteMiningFee.toLong)
         statement.setLong(6, e.feerate.toLong)
-        statement.setLong(7, e.tx.txIn.size)
-        statement.setLong(8, e.tx.txOut.size)
-        statement.setString(9, e.desc)
-        statement.setTimestamp(10, e.timestamp.toSqlTimestamp)
+        statement.setBoolean(7, e.liquidityPurchase_opt.exists(_.isBuyer))
+        statement.setLong(8, e.liquidityPurchase_opt.map(_.amount.toLong).getOrElse(0))
+        statement.setLong(9, e.liquidityPurchase_opt.map(_.fees.miningFee.toLong).getOrElse(0))
+        statement.setLong(10, e.liquidityPurchase_opt.map(_.fees.serviceFee.toLong).getOrElse(0))
+        statement.setLong(11, e.tx.txIn.size)
+        statement.setLong(12, e.tx.txOut.size)
+        statement.setString(13, e.desc)
+        statement.setTimestamp(14, e.timestamp.toSqlTimestamp)
         statement.executeUpdate()
       }
     }
@@ -405,6 +410,17 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
   }
 
+  private def readLiquidityPurchase(rs: ResultSet): Option[LiquidityAds.PurchaseBasicInfo] = {
+    rs.getLong("liquidity_amount_sat") match {
+      case 0 => None
+      case amount => Some(LiquidityAds.PurchaseBasicInfo(
+        isBuyer = rs.getBoolean("is_buying_liquidity"),
+        amount = Satoshi(amount),
+        fees = LiquidityAds.Fees(miningFee = Satoshi(rs.getLong("liquidity_mining_fee_sat")), serviceFee = Satoshi(rs.getLong("liquidity_service_fee_sat"))),
+      ))
+    }
+  }
+
   override def listPublished(channelId: ByteVector32): Seq[PublishedTransaction] = withMetrics("audit/list-published-by-channel-id", DbBackends.Postgres) {
     inTransaction { pg =>
       using(pg.prepareStatement("SELECT * FROM audit.transactions_published WHERE channel_id = ?")) { statement =>
@@ -416,6 +432,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             localMiningFee = rs.getLong("local_mining_fee_sat").sat,
             remoteMiningFee = rs.getLong("remote_mining_fee_sat").sat,
             feerate = FeeratePerKw(rs.getLong("feerate_sat_per_kw").sat),
+            liquidityPurchase_opt = readLiquidityPurchase(rs),
             timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp"))
           )
         }.toSeq
@@ -436,6 +453,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             localMiningFee = rs.getLong("local_mining_fee_sat").sat,
             remoteMiningFee = rs.getLong("remote_mining_fee_sat").sat,
             feerate = FeeratePerKw(rs.getLong("feerate_sat_per_kw").sat),
+            liquidityPurchase_opt = readLiquidityPurchase(rs),
             timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp"))
           )
         }.toSeq
@@ -454,6 +472,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             txId = TxId(rs.getByteVector32FromHex("tx_id")),
             onChainFeePaid = Satoshi(rs.getLong("local_mining_fee_sat")),
             txType = rs.getString("tx_type"),
+            liquidityPurchase_opt = readLiquidityPurchase(rs),
             timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
         }.toSeq
       }
@@ -473,6 +492,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             txId = TxId(rs.getByteVector32FromHex("tx_id")),
             onChainFeePaid = Satoshi(rs.getLong("local_mining_fee_sat")),
             txType = rs.getString("tx_type"),
+            liquidityPurchase_opt = readLiquidityPurchase(rs),
             timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
         }.toSeq, paginated_opt)
       }
@@ -491,6 +511,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             txId = TxId(rs.getByteVector32FromHex("tx_id")),
             onChainFeePaid = Satoshi(rs.getLong("local_mining_fee_sat")),
             txType = rs.getString("tx_type"),
+            liquidityPurchase_opt = readLiquidityPurchase(rs),
             timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
         }.toSeq, paginated_opt)
       }

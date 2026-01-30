@@ -31,6 +31,7 @@ import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.wire.protocol.LiquidityAds
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
 
@@ -85,7 +86,8 @@ class AuditDbSpec extends AnyFunSuite {
       val channelId1 = randomBytes32()
       val channelId2 = randomBytes32()
       val remoteNodeId = randomKey().publicKey
-      val p1a = TransactionPublished(channelId1, remoteNodeId, Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(remoteNodeId))), 0), 50 sat, 0 sat, "funding", None, now - 10.seconds)
+      val liquidityPurchase = LiquidityAds.PurchaseBasicInfo(isBuyer = true, 50_000 sat, LiquidityAds.Fees(10 sat, 5 sat))
+      val p1a = TransactionPublished(channelId1, remoteNodeId, Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(remoteNodeId))), 0), 50 sat, 0 sat, "funding", Some(liquidityPurchase), now - 10.seconds)
       val p1b = TransactionPublished(channelId1, remoteNodeId, Transaction(2, Nil, Seq(TxOut(100_000 sat, Script.pay2wpkh(remoteNodeId))), 0), 75 sat, 25 sat, "splice", None, now - 5.seconds)
       val p2 = TransactionPublished(channelId2, remoteNodeId, Transaction(2, Nil, Seq(TxOut(200_000 sat, Script.pay2wpkh(remoteNodeId))), 0), 0 sat, 0 sat, "local-close", None, now - 1.seconds)
       val c1 = TransactionConfirmed(channelId1, remoteNodeId, p1a.tx, now)
@@ -105,9 +107,9 @@ class AuditDbSpec extends AnyFunSuite {
       assert(db.listPublished(remoteNodeId, from = now - 6.seconds, to = now) == Seq(PublishedTransaction(p1b), PublishedTransaction(p2)))
       assert(db.listConfirmed(randomBytes32()).isEmpty)
       assert(db.listConfirmed(randomKey().publicKey, from = 0 unixms, to = now + 1.seconds, None).isEmpty)
-      assert(db.listConfirmed(channelId1) == Seq(ConfirmedTransaction(remoteNodeId, channelId1, p1a.tx.txid, 50 sat, "funding", now)))
+      assert(db.listConfirmed(channelId1) == Seq(ConfirmedTransaction(remoteNodeId, channelId1, p1a.tx.txid, 50 sat, "funding", p1a.liquidityPurchase_opt, now)))
       assert(db.listConfirmed(channelId2).isEmpty) // this isn't a transaction we published ourselves, so we're not paying any fees for it
-      assert(db.listConfirmed(remoteNodeId, from = 0 unixms, to = now + 1.seconds, None) == Seq(ConfirmedTransaction(remoteNodeId, channelId1, p1a.tx.txid, 50 sat, "funding", now)))
+      assert(db.listConfirmed(remoteNodeId, from = 0 unixms, to = now + 1.seconds, None) == Seq(ConfirmedTransaction(remoteNodeId, channelId1, p1a.tx.txid, 50 sat, "funding", p1a.liquidityPurchase_opt, now)))
     }
   }
 
@@ -206,11 +208,11 @@ class AuditDbSpec extends AnyFunSuite {
       db.add(TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentEvent.IncomingPayment(randomBytes32(), n1, 110_000 msat, 1012 unixms)), Seq(PaymentEvent.OutgoingPayment(randomBytes32(), n2, 25_000 msat, 1013 unixms), PaymentEvent.OutgoingPayment(randomBytes32(), n2, 15_000 msat, 1014 unixms), PaymentEvent.OutgoingPayment(randomBytes32(), n3, 60_000 msat, 1015 unixms)), randomKey().publicKey, 37000 msat))
 
       // The following confirmed txs will be taken into account:
-      //  - n2 paid 100 sat of on-chain fees
+      //  - n2 paid 100 sat of on-chain fees, 15 sat of liquidity fees, and earned 10 sat of liquidity fees
       //  - n3 paid 5 sat of on-chain fees
-      db.add(TransactionPublished(randomBytes32(), n2, Transaction(2, Nil, Seq(TxOut(5000 sat, hex"12345")), 0), 30 sat, 110 sat, "funding", None))
+      db.add(TransactionPublished(randomBytes32(), n2, Transaction(2, Nil, Seq(TxOut(5000 sat, hex"12345")), 0), 30 sat, 110 sat, "funding", Some(LiquidityAds.PurchaseBasicInfo(isBuyer = false, 50_000 sat, LiquidityAds.Fees(7 sat, 3 sat)))))
       db.add(TransactionConfirmed(randomBytes32(), n2, Transaction(2, Nil, Seq(TxOut(5000 sat, hex"12345")), 0)))
-      db.add(TransactionPublished(randomBytes32(), n2, Transaction(2, Nil, Seq(TxOut(4000 sat, hex"00112233")), 0), 70 sat, 80 sat, "mutual", None))
+      db.add(TransactionPublished(randomBytes32(), n2, Transaction(2, Nil, Seq(TxOut(4000 sat, hex"00112233")), 0), 70 sat, 80 sat, "mutual", Some(LiquidityAds.PurchaseBasicInfo(isBuyer = true, 40_000 sat, LiquidityAds.Fees(10 sat, 5 sat)))))
       db.add(TransactionConfirmed(randomBytes32(), n2, Transaction(2, Nil, Seq(TxOut(4000 sat, hex"00112233")), 0)))
       db.add(TransactionPublished(randomBytes32(), n3, Transaction(2, Nil, Seq(TxOut(8000 sat, hex"deadbeef")), 0), 5 sat, 50 sat, "funding", None))
       db.add(TransactionConfirmed(randomBytes32(), n3, Transaction(2, Nil, Seq(TxOut(8000 sat, hex"deadbeef")), 0)))
@@ -222,15 +224,17 @@ class AuditDbSpec extends AnyFunSuite {
       // We list nodes with the highest fee earners first.
       val (from, to) = (0 unixms, TimestampMilli.now() + 1.milli)
       assert(db.relayStats(from, to) == Seq(
-        RelayStats(n2, incomingPaymentCount = 1, totalAmountIn = 20_000 msat, outgoingPaymentCount = 4, totalAmountOut = 110_000 msat, relayFeeEarned = 59_000 msat, onChainFeePaid = 100 sat, from, to),
-        RelayStats(n3, incomingPaymentCount = 2, totalAmountIn = 150_010 msat, outgoingPaymentCount = 2, totalAmountOut = 76_000 msat, relayFeeEarned = 6_500 msat, onChainFeePaid = 5 sat, from, to),
-        RelayStats(n4, incomingPaymentCount = 1, totalAmountIn = 40_000 msat, outgoingPaymentCount = 1, totalAmountOut = 15_000 msat, relayFeeEarned = 5_000 msat, onChainFeePaid = 0 sat, from, to),
-        RelayStats(n1, incomingPaymentCount = 3, totalAmountIn = 151_500 msat, outgoingPaymentCount = 2, totalAmountOut = 90_000 msat, relayFeeEarned = 10 msat, onChainFeePaid = 0 sat, from, to),
+        RelayStats(n2, incomingPaymentCount = 1, totalAmountIn = 20_000 msat, outgoingPaymentCount = 4, totalAmountOut = 110_000 msat, relayFeeEarned = 59_000 msat, onChainTransactionsCount = 2, onChainFeePaid = 100 sat, liquidityFeeEarned = 10 sat, liquidityFeePaid = 15 sat, from, to),
+        RelayStats(n3, incomingPaymentCount = 2, totalAmountIn = 150_010 msat, outgoingPaymentCount = 2, totalAmountOut = 76_000 msat, relayFeeEarned = 6_500 msat, onChainTransactionsCount = 1, onChainFeePaid = 5 sat, liquidityFeeEarned = 0 sat, liquidityFeePaid = 0 sat, from, to),
+        RelayStats(n4, incomingPaymentCount = 1, totalAmountIn = 40_000 msat, outgoingPaymentCount = 1, totalAmountOut = 15_000 msat, relayFeeEarned = 5_000 msat, onChainTransactionsCount = 0, onChainFeePaid = 0 sat, liquidityFeeEarned = 0 sat, liquidityFeePaid = 0 sat, from, to),
+        RelayStats(n1, incomingPaymentCount = 3, totalAmountIn = 151_500 msat, outgoingPaymentCount = 2, totalAmountOut = 90_000 msat, relayFeeEarned = 10 msat, onChainTransactionsCount = 0, onChainFeePaid = 0 sat, liquidityFeeEarned = 0 sat, liquidityFeePaid = 0 sat, from, to),
       ))
       assert(db.relayStats(from, to, Some(Paginated(count = 2, skip = 1))) == Seq(
-        RelayStats(n3, incomingPaymentCount = 2, totalAmountIn = 150_010 msat, outgoingPaymentCount = 2, totalAmountOut = 76_000 msat, relayFeeEarned = 6_500 msat, onChainFeePaid = 5 sat, from, to),
-        RelayStats(n4, incomingPaymentCount = 1, totalAmountIn = 40_000 msat, outgoingPaymentCount = 1, totalAmountOut = 15_000 msat, relayFeeEarned = 5_000 msat, onChainFeePaid = 0 sat, from, to),
+        RelayStats(n3, incomingPaymentCount = 2, totalAmountIn = 150_010 msat, outgoingPaymentCount = 2, totalAmountOut = 76_000 msat, relayFeeEarned = 6_500 msat, onChainTransactionsCount = 1, onChainFeePaid = 5 sat, liquidityFeeEarned = 0 sat, liquidityFeePaid = 0 sat, from, to),
+        RelayStats(n4, incomingPaymentCount = 1, totalAmountIn = 40_000 msat, outgoingPaymentCount = 1, totalAmountOut = 15_000 msat, relayFeeEarned = 5_000 msat, onChainTransactionsCount = 0, onChainFeePaid = 0 sat, liquidityFeeEarned = 0 sat, liquidityFeePaid = 0 sat, from, to),
       ))
+      assert(db.relayStats(n3, from, to) == RelayStats(n3, incomingPaymentCount = 2, totalAmountIn = 150_010 msat, outgoingPaymentCount = 2, totalAmountOut = 76_000 msat, relayFeeEarned = 6_500 msat, onChainTransactionsCount = 1, onChainFeePaid = 5 sat, liquidityFeeEarned = 0 sat, liquidityFeePaid = 0 sat, from, to))
+      assert(db.relayStats(n1, from, to) == RelayStats(n1, incomingPaymentCount = 3, totalAmountIn = 151_500 msat, outgoingPaymentCount = 2, totalAmountOut = 90_000 msat, relayFeeEarned = 10 msat, onChainTransactionsCount = 0, onChainFeePaid = 0 sat, liquidityFeeEarned = 0 sat, liquidityFeePaid = 0 sat, from, to))
     }
   }
 
