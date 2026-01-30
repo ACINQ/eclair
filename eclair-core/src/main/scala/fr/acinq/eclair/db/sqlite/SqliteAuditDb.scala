@@ -26,10 +26,11 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.wire.protocol.LiquidityAds
 import fr.acinq.eclair.{MilliSatoshi, Paginated, TimestampMilli}
 import grizzled.slf4j.Logging
 
-import java.sql.{Connection, Statement}
+import java.sql.{Connection, ResultSet, Statement}
 import java.util.UUID
 
 object SqliteAuditDb {
@@ -137,7 +138,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
       // We add mining fee details, input and output counts to the transaction tables, and use TEXT instead of BLOBs.
       statement.executeUpdate("ALTER TABLE transactions_published RENAME TO transactions_published_before_v14")
       statement.executeUpdate("ALTER TABLE transactions_confirmed RENAME TO transactions_confirmed_before_v14")
-      statement.executeUpdate("CREATE TABLE transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, local_mining_fee_sat INTEGER NOT NULL, remote_mining_fee_sat INTEGER NOT NULL, feerate_sat_per_kw INTEGER NOT NULL, input_count INTEGER NOT NULL, output_count INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, local_mining_fee_sat INTEGER NOT NULL, remote_mining_fee_sat INTEGER NOT NULL, feerate_sat_per_kw INTEGER NOT NULL, is_buying_liquidity BOOLEAN NOT NULL, liquidity_amount_sat INTEGER NOT NULL, liquidity_mining_fee_sat INTEGER NOT NULL, liquidity_service_fee_sat INTEGER NOT NULL, input_count INTEGER NOT NULL, output_count INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
       statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, input_count INTEGER NOT NULL, output_count INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
       statement.executeUpdate("DROP INDEX transactions_published_channel_id_idx")
       statement.executeUpdate("DROP INDEX transactions_published_timestamp_idx")
@@ -185,7 +186,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, funding_txid TEXT NOT NULL, channel_type TEXT NOT NULL, capacity_sat INTEGER NOT NULL, is_opener BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL)")
-        statement.executeUpdate("CREATE TABLE transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, local_mining_fee_sat INTEGER NOT NULL, remote_mining_fee_sat INTEGER NOT NULL, feerate_sat_per_kw INTEGER NOT NULL, input_count INTEGER NOT NULL, output_count INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, local_mining_fee_sat INTEGER NOT NULL, remote_mining_fee_sat INTEGER NOT NULL, feerate_sat_per_kw INTEGER NOT NULL, is_buying_liquidity BOOLEAN NOT NULL, liquidity_amount_sat INTEGER NOT NULL, liquidity_mining_fee_sat INTEGER NOT NULL, liquidity_service_fee_sat INTEGER NOT NULL, input_count INTEGER NOT NULL, output_count INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, input_count INTEGER NOT NULL, output_count INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
 
         statement.executeUpdate("CREATE INDEX sent_settled_at_idx ON sent(settled_at)")
@@ -336,17 +337,21 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def add(e: TransactionPublished): Unit = withMetrics("audit/add-transaction-published", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions_published VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions_published VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setString(1, e.tx.txid.value.toHex)
       statement.setString(2, e.channelId.toHex)
       statement.setString(3, e.remoteNodeId.toHex)
       statement.setLong(4, e.localMiningFee.toLong)
       statement.setLong(5, e.remoteMiningFee.toLong)
       statement.setLong(6, e.feerate.toLong)
-      statement.setLong(7, e.tx.txIn.size)
-      statement.setLong(8, e.tx.txOut.size)
-      statement.setString(9, e.desc)
-      statement.setLong(10, e.timestamp.toLong)
+      statement.setBoolean(7, e.liquidityPurchase_opt.exists(_.isBuyer))
+      statement.setLong(8, e.liquidityPurchase_opt.map(_.amount.toLong).getOrElse(0))
+      statement.setLong(9, e.liquidityPurchase_opt.map(_.fees.miningFee.toLong).getOrElse(0))
+      statement.setLong(10, e.liquidityPurchase_opt.map(_.fees.serviceFee.toLong).getOrElse(0))
+      statement.setLong(11, e.tx.txIn.size)
+      statement.setLong(12, e.tx.txOut.size)
+      statement.setString(13, e.desc)
+      statement.setLong(14, e.timestamp.toLong)
       statement.executeUpdate()
     }
   }
@@ -391,6 +396,17 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
+  private def readLiquidityPurchase(rs: ResultSet): Option[LiquidityAds.PurchaseBasicInfo] = {
+    rs.getLong("liquidity_amount_sat") match {
+      case 0 => None
+      case amount => Some(LiquidityAds.PurchaseBasicInfo(
+        isBuyer = rs.getBoolean("is_buying_liquidity"),
+        amount = Satoshi(amount),
+        fees = LiquidityAds.Fees(miningFee = Satoshi(rs.getLong("liquidity_mining_fee_sat")), serviceFee = Satoshi(rs.getLong("liquidity_service_fee_sat"))),
+      ))
+    }
+  }
+
   override def listPublished(channelId: ByteVector32): Seq[PublishedTransaction] = withMetrics("audit/list-published-by-channel-id", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM transactions_published WHERE channel_id = ?")) { statement =>
       statement.setString(1, channelId.toHex)
@@ -401,6 +417,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           localMiningFee = rs.getLong("local_mining_fee_sat").sat,
           remoteMiningFee = rs.getLong("remote_mining_fee_sat").sat,
           feerate = FeeratePerKw(rs.getLong("feerate_sat_per_kw").sat),
+          liquidityPurchase_opt = readLiquidityPurchase(rs),
           timestamp = TimestampMilli(rs.getLong("timestamp"))
         )
       }.toSeq
@@ -419,6 +436,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           localMiningFee = rs.getLong("local_mining_fee_sat").sat,
           remoteMiningFee = rs.getLong("remote_mining_fee_sat").sat,
           feerate = FeeratePerKw(rs.getLong("feerate_sat_per_kw").sat),
+          liquidityPurchase_opt = readLiquidityPurchase(rs),
           timestamp = TimestampMilli(rs.getLong("timestamp"))
         )
       }.toSeq
@@ -435,6 +453,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           txId = TxId(rs.getByteVector32FromHex("tx_id")),
           onChainFeePaid = Satoshi(rs.getLong("local_mining_fee_sat")),
           txType = rs.getString("tx_type"),
+          liquidityPurchase_opt = readLiquidityPurchase(rs),
           timestamp = TimestampMilli(rs.getLong("timestamp")))
       }.toSeq
     }
@@ -452,6 +471,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           txId = TxId(rs.getByteVector32FromHex("tx_id")),
           onChainFeePaid = Satoshi(rs.getLong("local_mining_fee_sat")),
           txType = rs.getString("tx_type"),
+          liquidityPurchase_opt = readLiquidityPurchase(rs),
           timestamp = TimestampMilli(rs.getLong("timestamp")))
       }.toSeq, paginated_opt)
     }
@@ -468,6 +488,7 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
           txId = TxId(rs.getByteVector32FromHex("tx_id")),
           onChainFeePaid = Satoshi(rs.getLong("local_mining_fee_sat")),
           txType = rs.getString("tx_type"),
+          liquidityPurchase_opt = readLiquidityPurchase(rs),
           timestamp = TimestampMilli(rs.getLong("timestamp")))
       }.toSeq, paginated_opt)
     }
