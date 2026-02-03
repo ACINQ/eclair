@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.payment.Monitoring.{Metrics => PaymentMetrics, Tags => PaymentTags}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.{Logs, NodeParams}
+import fr.acinq.eclair.{Logs, NodeParams, TimestampMilli}
 
 /**
  * This actor sits at the interface between our event stream and the database.
@@ -90,8 +90,8 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
           incoming.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentReceived))
           outgoing.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentSent))
         case ChannelPaymentRelayed(_, incoming, outgoing) =>
-          channelsDb.updateChannelMeta(incoming.channelId, ChannelEvent.EventType.PaymentReceived)
-          channelsDb.updateChannelMeta(outgoing.channelId, ChannelEvent.EventType.PaymentSent)
+          incoming.foreach(i => channelsDb.updateChannelMeta(i.channelId, ChannelEvent.EventType.PaymentReceived))
+          outgoing.foreach(o => channelsDb.updateChannelMeta(o.channelId, ChannelEvent.EventType.PaymentSent))
         case OnTheFlyFundingPaymentRelayed(_, incoming, outgoing) =>
           incoming.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentReceived))
           outgoing.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentSent))
@@ -124,7 +124,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
         case ChannelStateChanged(_, channelId, _, remoteNodeId, WAIT_FOR_CHANNEL_READY | WAIT_FOR_DUAL_FUNDING_READY, NORMAL, Some(commitments)) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Created).increment()
           val event = ChannelEvent.EventType.Created
-          auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.latest.fundingTxId, commitments.latest.capacity, commitments.localChannelParams.isChannelOpener, !commitments.announceChannel, event))
+          auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.latest.fundingTxId, commitments.latest.commitmentFormat.toString, commitments.latest.capacity, commitments.localChannelParams.isChannelOpener, !commitments.announceChannel, event.label))
           channelsDb.updateChannelMeta(channelId, event)
         case ChannelStateChanged(_, channelId, _, _, OFFLINE, SYNCING, _) =>
           channelsDb.updateChannelMeta(channelId, ChannelEvent.EventType.Connected)
@@ -141,7 +141,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
         case 0 => ChannelEvent.EventType.Confirmed
         case _ => ChannelEvent.EventType.Spliced
       }
-      auditDb.add(ChannelEvent(e.channelId, e.remoteNodeId, e.fundingTxId, e.commitments.latest.capacity, e.commitments.localChannelParams.isChannelOpener, !e.commitments.announceChannel, event))
+      auditDb.add(ChannelEvent(e.channelId, e.remoteNodeId, e.fundingTxId, e.commitments.latest.commitmentFormat.toString, e.commitments.latest.capacity, e.commitments.localChannelParams.isChannelOpener, !e.commitments.announceChannel, event.label))
 
     case e: ChannelClosed =>
       ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closed).increment()
@@ -150,7 +150,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
       // spent by the closing transaction.
       val capacity = e.commitments.latest.capacity
       val fundingTxId = e.commitments.latest.fundingTxId
-      auditDb.add(ChannelEvent(e.channelId, e.commitments.remoteNodeId, fundingTxId, capacity, e.commitments.localChannelParams.isChannelOpener, !e.commitments.announceChannel, event))
+      auditDb.add(ChannelEvent(e.channelId, e.commitments.remoteNodeId, fundingTxId, e.commitments.latest.commitmentFormat.toString, capacity, e.commitments.localChannelParams.isChannelOpener, !e.commitments.announceChannel, event.label))
       channelsDb.updateChannelMeta(e.channelId, event)
 
     case u: ChannelUpdateParametersChanged =>
@@ -178,7 +178,7 @@ object DbEventHandler {
   def props(nodeParams: NodeParams): Props = Props(new DbEventHandler(nodeParams))
 
   // @formatter:off
-  case class ChannelEvent(channelId: ByteVector32, remoteNodeId: PublicKey, fundingTxId: TxId, capacity: Satoshi, isChannelOpener: Boolean, isPrivate: Boolean, event: ChannelEvent.EventType)
+  case class ChannelEvent(channelId: ByteVector32, remoteNodeId: PublicKey, fundingTxId: TxId, channelType: String, capacity: Satoshi, isChannelOpener: Boolean, isPrivate: Boolean, event: String, timestamp: TimestampMilli = TimestampMilli.now())
   object ChannelEvent {
     sealed trait EventType { def label: String }
     object EventType {
@@ -190,12 +190,12 @@ object DbEventHandler {
       object PaymentReceived extends EventType { override def label: String = "received" }
       case class Closed(closingType: ClosingType) extends EventType {
         override def label: String = closingType match {
-          case _: MutualClose => "mutual"
-          case _: LocalClose => "local"
-          case _: CurrentRemoteClose => "remote"
-          case _: NextRemoteClose => "remote"
-          case _: RecoveryClose => "recovery"
-          case _: RevokedClose => "revoked"
+          case _: MutualClose => "mutual-close"
+          case _: LocalClose => "local-close"
+          case _: CurrentRemoteClose => "remote-close"
+          case _: NextRemoteClose => "remote-close"
+          case _: RecoveryClose => "recovery-close"
+          case _: RevokedClose => "revoked-close"
         }
       }
     }

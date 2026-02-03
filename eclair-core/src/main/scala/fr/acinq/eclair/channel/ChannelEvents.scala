@@ -21,8 +21,9 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.ClosingType
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, MilliSatoshi, RealShortChannelId, ShortChannelId}
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli}
 
 /**
  * Created by PM on 17/08/2016.
@@ -92,10 +93,19 @@ case class ChannelLiquidityPurchased(channel: ActorRef, channelId: ByteVector32,
 
 case class ChannelErrorOccurred(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, error: ChannelError, isFatal: Boolean) extends ChannelEvent
 
-// NB: the fee should be set to 0 when we're not paying it.
-case class TransactionPublished(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction, miningFee: Satoshi, desc: String) extends ChannelEvent
+/**
+ * We published a transaction related to the given [[channelId]].
+ *
+ * @param localMiningFee        mining fee paid by us in the given [[tx]].
+ * @param remoteMiningFee       mining fee paid by our channel peer in the given [[tx]].
+ * @param liquidityPurchase_opt optional liquidity purchase included in this transaction.
+ */
+case class TransactionPublished(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction, localMiningFee: Satoshi, remoteMiningFee: Satoshi, desc: String, liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo], timestamp: TimestampMilli = TimestampMilli.now()) extends ChannelEvent {
+  val miningFee: Satoshi = localMiningFee + remoteMiningFee
+  val feerate: FeeratePerKw = Transactions.fee2rate(miningFee, tx.weight())
+}
 
-case class TransactionConfirmed(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction) extends ChannelEvent
+case class TransactionConfirmed(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction, timestamp: TimestampMilli = TimestampMilli.now()) extends ChannelEvent
 
 // NB: this event is only sent when the channel is available.
 case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, aliases: ShortIdAliases, commitments: Commitments, lastAnnouncement_opt: Option[ChannelAnnouncement]) extends ChannelEvent

@@ -258,7 +258,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, Some(attribution), commit = true)
         val incoming = PaymentEvent.IncomingPayment(upstream.add.channelId, upstream.receivedFrom, upstream.amountIn, upstream.receivedAt)
         val outgoing = PaymentEvent.OutgoingPayment(htlc.channelId, remoteNodeId, htlc.amountMsat, now)
-        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(htlc.paymentHash, incoming, outgoing))
+        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(htlc.paymentHash, Seq(incoming), Seq(outgoing)))
         recordRelayDuration(isSuccess = true)
         safeSendAndStop(upstream.add.channelId, cmd)
       case WrappedAddResponse(RES_ADD_SETTLED(_, _, htlc, fail: HtlcResult.Fail)) =>

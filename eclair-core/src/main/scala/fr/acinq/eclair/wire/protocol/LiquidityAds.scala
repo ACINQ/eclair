@@ -249,7 +249,9 @@ object LiquidityAds {
   case class WillFundPurchase(willFund: WillFund, purchase: Purchase)
 
   /** Minimal information about a liquidity purchase, useful for example when RBF-ing transactions. */
-  case class PurchaseBasicInfo(isBuyer: Boolean, amount: Satoshi, fees: Fees)
+  case class PurchaseBasicInfo(isBuyer: Boolean, amount: Satoshi, fees: Fees) {
+    val isSeller: Boolean = !isBuyer
+  }
 
   object Codecs {
     val fundingRate: Codec[FundingRate] = (
