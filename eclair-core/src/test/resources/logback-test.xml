@@ -55,6 +55,7 @@
 
     <logger name="fr.acinq.eclair.channel" level="WARN"/>
     <logger name="fr.acinq.eclair.channel.publish" level="DEBUG"/>
+    <logger name="fr.acinq.eclair.profit" level="DEBUG"/>
     <logger name="fr.acinq.eclair.Diagnostics" level="OFF"/>
     <logger name="fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher" level="OFF"/>
     <logger name="fr.acinq.eclair.db.FileBackupHandler" level="OFF"/>
