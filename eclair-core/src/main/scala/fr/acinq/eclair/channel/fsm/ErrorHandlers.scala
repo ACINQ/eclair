@@ -232,8 +232,8 @@ trait ErrorHandlers extends CommonHandlers {
 
   /** Publish 2nd-stage transactions for our local commitment. */
   def doPublish(lcp: LocalCommitPublished, txs: Closing.LocalClose.SecondStageTransactions, commitment: FullCommitment): Unit = {
-    val (localCommitFee, _) = Closing.commitTxFee(commitment.commitInput(channelKeys), lcp.commitTx, commitment.localChannelParams.paysCommitTxFees)
-    val publishCommitTx = PublishFinalTx(lcp.commitTx, commitment.fundingInput, "commit-tx", localCommitFee, None)
+    val (localFee, _) = Closing.commitTxFee(commitment.commitInput(channelKeys), lcp.commitTx, commitment.localChannelParams.paysCommitTxFees)
+    val publishCommitTx = PublishFinalTx(lcp.commitTx, commitment.fundingInput, "commit-tx", localFee, None)
     val publishAnchorTx_opt = txs.anchorTx_opt match {
       case Some(anchorTx) if !lcp.isConfirmed =>
         val confirmationTarget = Closing.confirmationTarget(commitment.localCommit, commitment.localCommitParams.dustLimit, commitment.commitmentFormat, nodeParams.onChainFeeConf)
@@ -275,8 +275,8 @@ trait ErrorHandlers extends CommonHandlers {
       case closing: DATA_CLOSING => nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, closing.maxClosingFeerate_opt)
       case _ => nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, maxClosingFeerateOverride_opt = None)
     }
-    val (localCommitFee, remoteCommitFee) = Closing.commitTxFee(commitments.commitInput(channelKeys), commitTx, d.commitments.localChannelParams.paysCommitTxFees)
-    context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, localCommitFee, remoteCommitFee, "remote-commit", None))
+    val (localFee, remoteFee) = Closing.commitTxFee(commitments.commitInput(channelKeys), commitTx, d.commitments.localChannelParams.paysCommitTxFees)
+    context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, localFee, remoteFee, "remote-commit", None))
     val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitments, commitments.remoteCommit, commitTx, closingFeerate, finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
@@ -298,8 +298,8 @@ trait ErrorHandlers extends CommonHandlers {
       case closing: DATA_CLOSING => nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, closing.maxClosingFeerate_opt)
       case _ => nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, maxClosingFeerateOverride_opt = None)
     }
-    val (localCommitFee, remoteCommitFee) = Closing.commitTxFee(commitment.commitInput(channelKeys), commitTx, d.commitments.localChannelParams.paysCommitTxFees)
-    context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, localCommitFee, remoteCommitFee, "next-remote-commit", None))
+    val (localFee, remoteFee) = Closing.commitTxFee(commitment.commitInput(channelKeys), commitTx, d.commitments.localChannelParams.paysCommitTxFees)
+    context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, commitTx, localFee, remoteFee, "next-remote-commit", None))
     val (remoteCommitPublished, closingTxs) = Closing.RemoteClose.claimCommitTxOutputs(channelKeys, commitment, remoteCommit, commitTx, closingFeerate, finalScriptPubKey, nodeParams.onChainFeeConf.spendAnchorWithoutHtlcs)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
@@ -353,8 +353,8 @@ trait ErrorHandlers extends CommonHandlers {
         val dustLimit = commitment.localCommitParams.dustLimit
         val (revokedCommitPublished, closingTxs) = Closing.RevokedClose.claimCommitTxOutputs(d.commitments.channelParams, channelKeys, tx, commitmentNumber, remotePerCommitmentSecret, toSelfDelay, commitmentFormat, nodeParams.db.channels, dustLimit, nodeParams.currentBitcoinCoreFeerates, nodeParams.onChainFeeConf, finalScriptPubKey)
         log.warning("txid={} was a revoked commitment, publishing the penalty tx", tx.txid)
-        val (localCommitFee, remoteCommitFee) = Closing.commitTxFee(commitment.commitInput(channelKeys), tx, d.commitments.localChannelParams.paysCommitTxFees)
-        context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, localCommitFee, remoteCommitFee, "revoked-commit", None))
+        val (localFee, remoteFee) = Closing.commitTxFee(commitment.commitInput(channelKeys), tx, d.commitments.localChannelParams.paysCommitTxFees)
+        context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, localFee, remoteFee, "revoked-commit", None))
         val exc = FundingTxSpent(d.channelId, tx.txid)
         val error = Error(d.channelId, exc.getMessage)
         val nextData = d match {
@@ -368,8 +368,8 @@ trait ErrorHandlers extends CommonHandlers {
       case None => d match {
         case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT =>
           log.warning("they published a future commit (because we asked them to) in txid={}", tx.txid)
-          val (localCommitFee, remoteCommitFee) = Closing.commitTxFee(d.commitments.latest.commitInput(channelKeys), tx, d.commitments.localChannelParams.paysCommitTxFees)
-          context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, localCommitFee, remoteCommitFee, "future-remote-commit", None))
+          val (localFee, remoteFee) = Closing.commitTxFee(d.commitments.latest.commitInput(channelKeys), tx, d.commitments.localChannelParams.paysCommitTxFees)
+          context.system.eventStream.publish(TransactionPublished(d.channelId, remoteNodeId, tx, localFee, remoteFee, "future-remote-commit", None))
           val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
           val commitKeys = d.commitments.latest.remoteKeys(channelKeys, remotePerCommitmentPoint)
           val closingFeerate = nodeParams.onChainFeeConf.getClosingFeerate(nodeParams.currentBitcoinCoreFeerates, maxClosingFeerateOverride_opt = None)
