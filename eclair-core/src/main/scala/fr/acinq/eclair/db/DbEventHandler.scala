@@ -30,6 +30,7 @@ import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.payment.Monitoring.{Metrics => PaymentMetrics, Tags => PaymentTags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.{Logs, NodeParams, TimestampMilli}
+import kamon.tag.TagSet
 
 /**
  * This actor sits at the interface between our event stream and the database.
@@ -112,10 +113,17 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
       // The first pattern matching level is to ignore some errors, the second level is to separate between different kind of errors.
       e.error match {
         case LocalError(_: CannotAffordFees) => () // will be thrown at each new block if our balance is too low to update the commitment fee
-        case _ => e.error match {
-          case LocalError(_) => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Local).withTag(ChannelTags.Fatal, value = e.isFatal).increment()
-          case RemoteError(_) => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Remote).increment()
-        }
+        case _ =>
+          val tags = e.error match {
+            case LocalError(t) => TagSet.Empty
+              .withTag(ChannelTags.Origin, ChannelTags.Origins.Local)
+              .withTag(ChannelTags.Fatal, value = e.isFatal)
+              .withTag(ChannelTags.ErrorType, t.getClass.getSimpleName)
+            case RemoteError(_) => TagSet.Empty
+              .withTag(ChannelTags.Origin, ChannelTags.Origins.Remote)
+              .withTag(ChannelTags.Fatal, value = true) // remote errors are always fatal
+          }
+          ChannelMetrics.ChannelErrors.withTags(tags).increment()
       }
 
     case e: ChannelStateChanged =>
