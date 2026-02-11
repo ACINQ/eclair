@@ -114,39 +114,15 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
       e.error match {
         case LocalError(_: CannotAffordFees) => () // will be thrown at each new block if our balance is too low to update the commitment fee
         case _ =>
-          val tags =
-          e.error match {
-          case LocalError(t) => TagSet.Empty
-            .withTag(ChannelTags.Origin, ChannelTags.Origins.Local)
-            .withTag(ChannelTags.Fatal, value = e.isFatal)
-            .withTag(ChannelTags.ErrorType, t.getClass.getSimpleName)
-          case RemoteError(msg) =>
-            val errorType = msg.toAscii match {
-              case ascii if ascii.equals("Awaiting unilateral close") => ascii
-              case ascii if ascii.equals("internal error") => ascii
-              case ascii if ascii.equals("We can't be together anymore.") => ascii
-              case ascii if ascii.equals("forced local commit") => ascii
-              case ascii if ascii.equals("invalid revocation") => ascii
-              case ascii if ascii.equals("Channel open canceled by us") => ascii
-              case ascii if ascii.equals("Number of pending channels exceed maximum") => ascii
-              case ascii if ascii.equals("channel rejected") => ascii
-              case ascii if ascii.equals("funding failed due to internal error") => ascii
-              case ascii if ascii.equals("unable to resume channel, recovery required") => ascii
-              case ascii if ascii.equals("Channel is closed and forgotten") => ascii
-              case ascii if ascii.equals("unknown channel") => ascii
-              case ascii if ascii.startsWith("funding tx has been spent") => "funding tx has been spent"
-              case ascii if ascii.startsWith("invalid commitment signature") => "invalid commitment signature"
-              case ascii if ascii.startsWith("one or more htlcs timed out downstream") => "one or more htlcs timed out downstream"
-              case ascii if ascii.startsWith("one or more htlcs that should be fulfilled are close to timing outm") => "one or more htlcs that should be fulfilled are close to timing out"
-              case ascii if ascii.startsWith("channeld: received ERROR channel") => "channeld: received ERROR channel"
-              case ascii if ascii.startsWith("Witnesses lower effective feerate below agreed upon rate") => "Witnesses lower effective feerate below agreed upon rate"
-              case _ => "other"
-            }
-            TagSet.Empty
-            .withTag(ChannelTags.Origin, ChannelTags.Origins.Remote)
-            .withTag(ChannelTags.Fatal, value = true) // remote errors are always fatal
-            .withTag(ChannelTags.ErrorType, errorType)
-        }
+          val tags = e.error match {
+            case LocalError(t) => TagSet.Empty
+              .withTag(ChannelTags.Origin, ChannelTags.Origins.Local)
+              .withTag(ChannelTags.Fatal, value = e.isFatal)
+              .withTag(ChannelTags.ErrorType, t.getClass.getSimpleName)
+            case RemoteError(_) => TagSet.Empty
+              .withTag(ChannelTags.Origin, ChannelTags.Origins.Remote)
+              .withTag(ChannelTags.Fatal, value = true) // remote errors are always fatal
+          }
           ChannelMetrics.ChannelErrors.withTags(tags).increment()
       }
 
