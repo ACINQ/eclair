@@ -156,15 +156,30 @@ private class PeerScorer(nodeParams: NodeParams, statsTracker: ActorRef[PeerStat
       .sortBy(p => Seq(score(p, Bucket.bucketsPerDay, totalDailyProfit), score(p, BucketedPeerStats.bucketsCount, totalWeeklyProfit)).max)(Ordering[Double].reverse)
     if (bestScoringPeers.nonEmpty) {
       log.info("top {} peers:", bestScoringPeers.size)
-      log.info("| rank |                               node_id                              | daily_score | weekly_score | current_profit_sat | previous_profit_sat | daily_profit_sat | weekly_profit_sat | current_amount_in_sat | current_amount_out_sat | previous_amount_in_sat | previous_amount_out_sat | daily_amount_in_sat | daily_amount_out_sat | weekly_amount_in_sat | weekly_amount_out_sat | can_send_sat | can_receive_sat | capacity_sat |")
-      log.info("|------|--------------------------------------------------------------------|-------------|--------------|--------------------|---------------------|------------------|-------------------|-----------------------|------------------------|------------------------|-------------------------|---------------------|----------------------|----------------------|-----------------------|--------------|-----------------|--------------|")
+      // Display scores.
+      log.info("| rank |                               node_id                              | daily_score | weekly_score |")
+      log.info("|------|--------------------------------------------------------------------|-------------|--------------|")
+      bestScoringPeers.zipWithIndex.foreach { case (p, i) =>
+        val dailyScore = score(p, Bucket.bucketsPerDay, totalDailyProfit)
+        val weeklyScore = score(p, BucketedPeerStats.bucketsCount, totalWeeklyProfit)
+        log.info(f"| ${i + 1}%4d | ${p.remoteNodeId} |        $dailyScore%.2f |         $weeklyScore%.2f |")
+      }
+      log.info("|------|--------------------------------------------------------------------|-------------|--------------|")
+      // Display profit.
+      log.info("| rank |                               node_id                              | current_profit_sat | previous_profit_sat | daily_profit_sat | weekly_profit_sat |")
+      log.info("|------|--------------------------------------------------------------------|--------------------|---------------------|------------------|-------------------|")
       bestScoringPeers.zipWithIndex.foreach { case (p, i) =>
         val currentProfit = p.stats.headOption.map(_.profit.truncateToSatoshi).getOrElse(0 sat).toLong
         val previousProfit = p.stats.drop(1).headOption.map(_.profit.truncateToSatoshi).getOrElse(0 sat).toLong
         val dailyProfit = p.stats.take(Bucket.bucketsPerDay).map(_.profit).sum.truncateToSatoshi.toLong
-        val dailyScore = score(p, Bucket.bucketsPerDay, totalDailyProfit)
         val weeklyProfit = p.stats.map(_.profit).sum.truncateToSatoshi.toLong
-        val weeklyScore = score(p, BucketedPeerStats.bucketsCount, totalWeeklyProfit)
+        log.info(f"| ${i + 1}%4d | ${p.remoteNodeId} | $currentProfit%18d | $previousProfit%19d | $dailyProfit%16d | $weeklyProfit%17d |")
+      }
+      log.info("|------|--------------------------------------------------------------------|--------------------|---------------------|------------------|-------------------|")
+      // Display payment volume.
+      log.info("| rank |                               node_id                              | current_amount_in_sat | current_amount_out_sat | previous_amount_in_sat | previous_amount_out_sat | daily_amount_in_sat | daily_amount_out_sat | weekly_amount_in_sat | weekly_amount_out_sat |")
+      log.info("|------|--------------------------------------------------------------------|-----------------------|------------------------|------------------------|-------------------------|---------------------|----------------------|----------------------|-----------------------|")
+      bestScoringPeers.zipWithIndex.foreach { case (p, i) =>
         val currentAmountOut = p.stats.headOption.map(_.totalAmountOut.truncateToSatoshi).getOrElse(0 sat).toLong
         val previousAmountOut = p.stats.drop(1).headOption.map(_.totalAmountOut.truncateToSatoshi).getOrElse(0 sat).toLong
         val dailyAmountOut = p.stats.take(Bucket.bucketsPerDay).map(_.totalAmountOut).sum.truncateToSatoshi.toLong
@@ -173,9 +188,16 @@ private class PeerScorer(nodeParams: NodeParams, statsTracker: ActorRef[PeerStat
         val previousAmountIn = p.stats.drop(1).headOption.map(_.totalAmountIn.truncateToSatoshi).getOrElse(0 sat).toLong
         val dailyAmountIn = p.stats.take(Bucket.bucketsPerDay).map(_.totalAmountIn).sum.truncateToSatoshi.toLong
         val weeklyAmountIn = p.stats.map(_.totalAmountIn).sum.truncateToSatoshi.toLong
-        log.info(f"| ${i + 1}%4d | ${p.remoteNodeId} |        $dailyScore%.2f |         $weeklyScore%.2f | $currentProfit%18d | $previousProfit%19d | $dailyProfit%16d | $weeklyProfit%17d | $currentAmountIn%21d | $currentAmountOut%22d | $previousAmountIn%22d | $previousAmountOut%23d | $dailyAmountIn%19d | $dailyAmountOut%20d | $weeklyAmountIn%20d | $weeklyAmountOut%21d | ${p.canSend.truncateToSatoshi.toLong}%12d | ${p.canReceive.truncateToSatoshi.toLong}%15d | ${p.capacity.toLong}%12d |")
+        log.info(f"| ${i + 1}%4d | ${p.remoteNodeId} | $currentAmountIn%21d | $currentAmountOut%22d | $previousAmountIn%22d | $previousAmountOut%23d | $dailyAmountIn%19d | $dailyAmountOut%20d | $weeklyAmountIn%20d | $weeklyAmountOut%21d |")
       }
-      log.info("|------|--------------------------------------------------------------------|-------------|--------------|--------------------|---------------------|------------------|-------------------|-----------------------|------------------------|------------------------|-------------------------|---------------------|----------------------|----------------------|-----------------------|--------------|-----------------|--------------|")
+      log.info("|------|--------------------------------------------------------------------|-----------------------|------------------------|------------------------|-------------------------|---------------------|----------------------|----------------------|-----------------------|")
+      // Display channel capacity and balance.
+      log.info("| rank |                               node_id                              | can_send_sat | can_receive_sat | capacity_sat |")
+      log.info("|------|--------------------------------------------------------------------|--------------|-----------------|--------------|")
+      bestScoringPeers.zipWithIndex.foreach { case (p, i) =>
+        log.info(f"| ${i + 1}%4d | ${p.remoteNodeId} | ${p.canSend.truncateToSatoshi.toLong}%12d | ${p.canReceive.truncateToSatoshi.toLong}%15d | ${p.capacity.toLong}%12d |")
+      }
+      log.info("|------|--------------------------------------------------------------------|--------------|-----------------|--------------|")
     }
 
     // If very profitable peers exhausted their liquidity more than a week ago, they won't get a good score.
