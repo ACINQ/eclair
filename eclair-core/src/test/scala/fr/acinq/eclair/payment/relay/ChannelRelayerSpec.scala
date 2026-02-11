@@ -575,31 +575,36 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     import f._
 
     /** This is just a simplified helper function with random values for fields we are not using here */
-    def dummyLocalUpdate(shortChannelId: RealShortChannelId, remoteNodeId: PublicKey, availableBalanceForSend: MilliSatoshi, capacity: Satoshi) = {
+    def dummyLocalUpdate(shortChannelId: RealShortChannelId, remoteNodeId: PublicKey, availableBalanceForSend: MilliSatoshi, capacity: Satoshi, isPublic: Boolean = true): LocalChannelUpdate = {
       val channelId = randomBytes32()
       val update = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey(), remoteNodeId, shortChannelId, CltvExpiryDelta(10), 100 msat, 1000 msat, 100, capacity.toMilliSatoshi)
-      val ann = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, TestConstants.Alice.nodeParams.nodeId, outgoingNodeId, randomKey().publicKey, randomKey().publicKey, randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64())
-      val commitments = PaymentPacketSpec.makeCommitments(channelId, availableBalanceForSend, testCapacity = capacity, announcement_opt = Some(ann))
+      val ann_opt = if (isPublic) {
+        Some(Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, TestConstants.Alice.nodeParams.nodeId, outgoingNodeId, randomKey().publicKey, randomKey().publicKey, randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64()))
+      } else {
+        None
+      }
+      val commitments = PaymentPacketSpec.makeCommitments(channelId, availableBalanceForSend, testCapacity = capacity, announcement_opt = ann_opt)
       val aliases = ShortIdAliases(localAlias = ShortChannelId.generateLocalAlias(), remoteAlias_opt = None)
-      LocalChannelUpdate(null, channelId, aliases, remoteNodeId, Some(AnnouncedCommitment(commitments.latest.commitment, ann)), update, commitments)
+      LocalChannelUpdate(null, channelId, aliases, remoteNodeId, ann_opt.map(ann => AnnouncedCommitment(commitments.latest.commitment, ann)), update, commitments)
     }
 
     val (a, b) = (randomKey().publicKey, randomKey().publicKey)
 
     val channelUpdates = Map(
-      ShortChannelId(11111) -> dummyLocalUpdate(RealShortChannelId(11111), a, 100000000 msat, 200000 sat),
-      ShortChannelId(12345) -> dummyLocalUpdate(RealShortChannelId(12345), a, 10000000 msat, 200000 sat),
-      ShortChannelId(22222) -> dummyLocalUpdate(RealShortChannelId(22222), a, 10000000 msat, 100000 sat),
-      ShortChannelId(22223) -> dummyLocalUpdate(RealShortChannelId(22223), a, 9000000 msat, 50000 sat),
-      ShortChannelId(33333) -> dummyLocalUpdate(RealShortChannelId(33333), a, 100000 msat, 50000 sat),
-      ShortChannelId(44444) -> dummyLocalUpdate(RealShortChannelId(44444), b, 1000000 msat, 10000 sat),
+      ShortChannelId(11111) -> dummyLocalUpdate(RealShortChannelId(11111), a, 100_000_000 msat, 200_000 sat),
+      ShortChannelId(12345) -> dummyLocalUpdate(RealShortChannelId(12345), a, 10_000_000 msat, 200_000 sat),
+      ShortChannelId(22222) -> dummyLocalUpdate(RealShortChannelId(22222), a, 10_000_000 msat, 100_000 sat),
+      ShortChannelId(22223) -> dummyLocalUpdate(RealShortChannelId(22223), a, 9_000_000 msat, 50_000 sat),
+      ShortChannelId(33333) -> dummyLocalUpdate(RealShortChannelId(33333), a, 100_000 msat, 50_000 sat),
+      ShortChannelId(33334) -> dummyLocalUpdate(RealShortChannelId(33334), a, 150_000 msat, 75_000 sat, isPublic = false),
+      ShortChannelId(44444) -> dummyLocalUpdate(RealShortChannelId(44444), b, 1_000_000 msat, 10_000 sat),
     )
 
     channelUpdates.values.foreach(u => channelRelayer ! WrappedLocalChannelUpdate(u))
 
     {
-      val payload = ChannelRelay.Standard(ShortChannelId(12345), 998900 msat, CltvExpiry(60), upgradeAccountability = false)
-      val r = createValidIncomingPacket(payload, 1000000 msat, CltvExpiry(70))
+      val payload = ChannelRelay.Standard(ShortChannelId(12345), 998_900 msat, CltvExpiry(60), upgradeAccountability = false)
+      val r = createValidIncomingPacket(payload, 1_000_000 msat, CltvExpiry(70))
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
       receiveConfidence(Reputation.Score(1.0, accountable = false))
       // select the channel to the same node, with the lowest capacity and balance but still high enough to handle the payment
@@ -618,41 +623,43 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(TemporaryChannelFailure(Some(channelUpdates(ShortChannelId(12345)).channelUpdate))), None, commit = true))
     }
     {
-      // higher amount payment (have to increased incoming htlc amount for fees to be sufficient)
-      val payload = ChannelRelay.Standard(ShortChannelId(12345), 50000000 msat, CltvExpiry(60), upgradeAccountability = false)
-      val r = createValidIncomingPacket(payload, 60000000 msat, CltvExpiry(70))
+      // higher amount payment (have to increase incoming htlc amount for fees to be sufficient)
+      val payload = ChannelRelay.Standard(ShortChannelId(12345), 50_000_000 msat, CltvExpiry(60), upgradeAccountability = false)
+      val r = createValidIncomingPacket(payload, 60_000_000 msat, CltvExpiry(70))
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
       receiveConfidence(Reputation.Score(1.0, accountable = false))
       expectFwdAdd(register, channelUpdates(ShortChannelId(11111)).channelId, r.amountToForward, r.outgoingCltv, outAccountable = false).message
     }
     {
-      // lower amount payment
+      // lower payment amount, which adds more candidate channels: we prioritize private channels regardless of capacity
       val payload = ChannelRelay.Standard(ShortChannelId(12345), 1000 msat, CltvExpiry(60), upgradeAccountability = false)
-      val r = createValidIncomingPacket(payload, 60000000 msat, CltvExpiry(70))
+      val r = createValidIncomingPacket(payload, 60_000_000 msat, CltvExpiry(70))
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
       receiveConfidence(Reputation.Score(1.0, accountable = false))
+      val cmd1 = expectFwdAdd(register, channelUpdates(ShortChannelId(33334)).channelId, r.amountToForward, r.outgoingCltv, outAccountable = false).message
+      cmd1.replyTo ! RES_ADD_FAILED(cmd1, ChannelUnavailable(randomBytes32()), None)
       expectFwdAdd(register, channelUpdates(ShortChannelId(33333)).channelId, r.amountToForward, r.outgoingCltv, outAccountable = false).message
     }
     {
       // payment too high, no suitable channel found, we keep the requested one
-      val payload = ChannelRelay.Standard(ShortChannelId(12345), 1000000000 msat, CltvExpiry(60), upgradeAccountability = false)
-      val r = createValidIncomingPacket(payload, 1010000000 msat, CltvExpiry(70))
+      val payload = ChannelRelay.Standard(ShortChannelId(12345), 1_000_000_000 msat, CltvExpiry(60), upgradeAccountability = false)
+      val r = createValidIncomingPacket(payload, 1_010_000_000 msat, CltvExpiry(70))
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
       receiveConfidence(Reputation.Score(1.0, accountable = false))
       expectFwdAdd(register, channelUpdates(ShortChannelId(12345)).channelId, r.amountToForward, r.outgoingCltv, outAccountable = false).message
     }
     {
       // cltv expiry larger than our requirements
-      val payload = ChannelRelay.Standard(ShortChannelId(12345), 998900 msat, CltvExpiry(50), upgradeAccountability = false)
-      val r = createValidIncomingPacket(payload, 1000000 msat, CltvExpiry(70))
+      val payload = ChannelRelay.Standard(ShortChannelId(12345), 998_900 msat, CltvExpiry(50), upgradeAccountability = false)
+      val r = createValidIncomingPacket(payload, 1_000_000 msat, CltvExpiry(70))
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
       receiveConfidence(Reputation.Score(1.0, accountable = false))
       expectFwdAdd(register, channelUpdates(ShortChannelId(22223)).channelId, r.amountToForward, r.outgoingCltv, outAccountable = false).message
     }
     {
       // cltv expiry too small, no suitable channel found
-      val payload = ChannelRelay.Standard(ShortChannelId(12345), 998900 msat, CltvExpiry(61), upgradeAccountability = false)
-      val r = createValidIncomingPacket(payload, 1000000 msat, CltvExpiry(70))
+      val payload = ChannelRelay.Standard(ShortChannelId(12345), 998_900 msat, CltvExpiry(61), upgradeAccountability = false)
+      val r = createValidIncomingPacket(payload, 1_000_000 msat, CltvExpiry(70))
       channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
       receiveConfidence(Reputation.Score(1.0, accountable = false))
       expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(IncorrectCltvExpiry(CltvExpiry(61), Some(channelUpdates(ShortChannelId(12345)).channelUpdate))), None, commit = true))
