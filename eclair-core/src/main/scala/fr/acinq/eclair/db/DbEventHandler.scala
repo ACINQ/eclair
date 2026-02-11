@@ -136,6 +136,8 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
               case ascii if ascii.equals("unknown channel") => ascii
               case ascii if ascii.startsWith("funding tx has been spent") => "funding tx has been spent"
               case ascii if ascii.startsWith("invalid commitment signature") => "invalid commitment signature"
+              case ascii if ascii.startsWith("one or more htlcs timed out downstream") => "one or more htlcs timed out downstream"
+              case ascii if ascii.startsWith("one or more htlcs that should be fulfilled are close to timing outm") => "one or more htlcs that should be fulfilled are close to timing out"
               case ascii if ascii.startsWith("channeld: received ERROR channel") => "channeld: received ERROR channel"
               case ascii if ascii.startsWith("Witnesses lower effective feerate below agreed upon rate") => "Witnesses lower effective feerate below agreed upon rate"
               case _ => "other"
