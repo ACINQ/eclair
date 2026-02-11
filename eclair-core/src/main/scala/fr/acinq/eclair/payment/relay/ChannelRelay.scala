@@ -382,24 +382,20 @@ class ChannelRelay private(nodeParams: NodeParams,
           })
         (channel, relayResult)
       }
-      .collect {
-        // we only keep channels that have enough balance to handle this payment
-        case (channel, _: RelaySuccess) if channel.commitments.availableBalanceForSend > r.amountToForward => channel
-      }
+      // we only keep channels that have enough balance to handle this payment
+      .collect { case (channel, _: RelaySuccess) if channel.commitments.availableBalanceForSend > r.amountToForward => channel }
       .toList // needed for ordering
-      // we want to use the channel with:
-      //  - the lowest available capacity to ensure we keep high-capacity channels for big payments
-      //  - the lowest available balance to increase our incoming liquidity
-      .sortBy { channel => (channel.commitments.latest.capacity, channel.commitments.availableBalanceForSend) }
-      .headOption match {
-      case Some(channel) =>
-        if (requestedChannelId_opt.contains(channel.channelId)) {
-          context.log.debug("requested short channel id is our preferred channel")
-          Some(channel)
-        } else {
-          context.log.debug("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId_opt, channel.channelUpdate.shortChannelId, channel.commitments.availableBalanceForSend)
-          Some(channel)
-        }
+      .sortWith {
+        // we always prioritize private channels to avoid exhausting our public channels and disabling them or lowering their htlc_maximum_msat
+        case (channel1, channel2) if channel1.commitments.announceChannel != channel2.commitments.announceChannel => !channel1.commitments.announceChannel
+        // otherwise, we use the channel with the smallest capacity to ensure we keep high-capacity channels enabled
+        // (if we ran out of liquidity in a large channels, we would send a channel_update to disable it, which would
+        // negatively impact our score in path-finding algorithms)
+        case (channel1, channel2) if channel1.commitments.capacity != channel2.commitments.capacity => channel1.commitments.capacity <= channel2.commitments.capacity
+        // otherwise, we use the channel with the smallest balance, to ensure we keep higher balances for larger payments
+        case (channel1, channel2) => channel1.commitments.availableBalanceForSend <= channel2.commitments.availableBalanceForSend
+      }.headOption match {
+      case Some(channel) => Some(channel)
       case None =>
         val requestedChannel_opt = requestedChannelId_opt.flatMap(channels.get)
         requestedChannel_opt match {
