@@ -86,6 +86,7 @@ object Monitoring {
     val Direction = "direction"
     val Event = "event"
     val Fatal = "fatal"
+    val ErrorType = "error-type"
     val Origin = "origin"
     val State = "state"
     val CommitmentFormat = "commitment-format"
