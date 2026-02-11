@@ -173,7 +173,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
       db.network.addNode(Announcements.makeNodeAnnouncement(randomKey(), "node-A", Color(50, 99, -80), Nil, Features.empty, TimestampSecond.now() - 45.days))
       db.network.addNode(Announcements.makeNodeAnnouncement(randomKey(), "node-B", Color(50, 99, -80), Nil, Features.empty, TimestampSecond.now() - 3.days))
       db.network.addNode(Announcements.makeNodeAnnouncement(randomKey(), "node-C", Color(50, 99, -80), Nil, Features.empty, TimestampSecond.now() - 7.minutes))
-      db.audit.add(ChannelPaymentRelayed(randomBytes32(), PaymentEvent.IncomingPayment(randomBytes32(), randomKey().publicKey, 421 msat, TimestampMilli.now() - 5.seconds), PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, 400 msat, TimestampMilli.now() - 3.seconds)))
+      db.audit.add(ChannelPaymentRelayed(randomBytes32(), Seq(PaymentEvent.IncomingPayment(randomBytes32(), randomKey().publicKey, 421 msat, TimestampMilli.now() - 5.seconds)), Seq(PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, 400 msat, TimestampMilli.now() - 3.seconds))))
       db.dataSource.close()
     }
 

@@ -32,6 +32,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.{TransactionConfirmed, TransactionPublished}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.BeforeAndAfterAll
+import org.scalatest.Inside.inside
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 import java.util.UUID
@@ -279,7 +280,11 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     generateBlocks(2)
     monitor ! WrappedCurrentBlockHeight(currentBlockHeight())
-    eventListener.expectMsg(TransactionConfirmed(txPublished.channelId, txPublished.remoteNodeId, tx))
+    inside(eventListener.expectMsgType[TransactionConfirmed]) { e =>
+      assert(e.channelId == txPublished.channelId)
+      assert(e.remoteNodeId == txPublished.remoteNodeId)
+      assert(e.tx == tx)
+    }
   }
 
 }

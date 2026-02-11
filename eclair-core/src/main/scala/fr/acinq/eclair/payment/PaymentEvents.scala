@@ -120,16 +120,14 @@ sealed trait PaymentRelayed extends PaymentEvent {
   def outgoing: Seq[PaymentEvent.OutgoingPayment]
   def amountIn: MilliSatoshi = incoming.map(_.amount).sum
   def amountOut: MilliSatoshi = outgoing.map(_.amount).sum
+  def relayFee: MilliSatoshi = amountIn - amountOut
   override def startedAt: TimestampMilli = incoming.map(_.receivedAt).minOption.getOrElse(TimestampMilli.now())
   override def settledAt: TimestampMilli = outgoing.map(_.settledAt).maxOption.getOrElse(TimestampMilli.now())
   // @formatter:on
 }
 
-/** A payment was successfully relayed from a single incoming channel to a single outgoing channel. */
-case class ChannelPaymentRelayed(paymentHash: ByteVector32, paymentIn: PaymentEvent.IncomingPayment, paymentOut: PaymentEvent.OutgoingPayment) extends PaymentRelayed {
-  override val incoming: Seq[PaymentEvent.IncomingPayment] = Seq(paymentIn)
-  override val outgoing: Seq[PaymentEvent.OutgoingPayment] = Seq(paymentOut)
-}
+/** A payment was successfully relayed from incoming channels to outgoing channels. */
+case class ChannelPaymentRelayed(paymentHash: ByteVector32, incoming: Seq[PaymentEvent.IncomingPayment], outgoing: Seq[PaymentEvent.OutgoingPayment]) extends PaymentRelayed
 
 /** A trampoline payment was successfully relayed, using potentially multiple incoming and outgoing channels. */
 case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: Seq[PaymentEvent.IncomingPayment], outgoing: Seq[PaymentEvent.OutgoingPayment], nextTrampolineNodeId: PublicKey, nextTrampolineAmount: MilliSatoshi) extends PaymentRelayed

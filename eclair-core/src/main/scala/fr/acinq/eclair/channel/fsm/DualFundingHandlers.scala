@@ -51,7 +51,7 @@ trait DualFundingHandlers extends CommonFundingHandlers {
         // to publish and we may be able to RBF.
         wallet.publishTransaction(fundingTx.signedTx).onComplete {
           case Success(_) =>
-            context.system.eventStream.publish(TransactionPublished(dualFundedTx.fundingParams.channelId, remoteNodeId, fundingTx.signedTx, fundingTx.tx.localFees.truncateToSatoshi, "funding"))
+            context.system.eventStream.publish(TransactionPublished(dualFundedTx.fundingParams.channelId, remoteNodeId, fundingTx.signedTx, localMiningFee = fundingTx.tx.localFees.truncateToSatoshi, remoteMiningFee = fundingTx.tx.remoteFees.truncateToSatoshi, "funding", dualFundedTx.liquidityPurchase_opt))
             // We rely on Bitcoin Core ZMQ notifications to learn about transactions that appear in our mempool, but
             // it doesn't provide strong guarantees that we'll always receive an event. This can be an issue for 0-conf
             // funding transactions, where we end up delaying our channel_ready or splice_locked.

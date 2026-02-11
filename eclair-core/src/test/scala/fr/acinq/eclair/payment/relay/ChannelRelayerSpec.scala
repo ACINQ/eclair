@@ -767,11 +767,11 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val paymentRelayed = eventListener.expectMessageType[ChannelPaymentRelayed]
       assert(paymentRelayed.paymentHash == r.add.paymentHash)
       assert(paymentRelayed.amountIn == r.add.amountMsat)
-      assert(paymentRelayed.paymentIn.channelId == r.add.channelId)
-      assert(paymentRelayed.paymentIn.remoteNodeId == TestConstants.Alice.nodeParams.nodeId)
+      assert(paymentRelayed.incoming.map(_.channelId) == Seq(r.add.channelId))
+      assert(paymentRelayed.incoming.map(_.remoteNodeId) == Seq(TestConstants.Alice.nodeParams.nodeId))
       assert(paymentRelayed.amountOut == r.amountToForward)
-      assert(paymentRelayed.paymentOut.channelId == channelId1)
-      assert(paymentRelayed.paymentOut.remoteNodeId == remoteNodeId2)
+      assert(paymentRelayed.outgoing.map(_.channelId) == Seq(channelId1))
+      assert(paymentRelayed.outgoing.map(_.remoteNodeId) == Seq(remoteNodeId2))
       assert(paymentRelayed.startedAt == r.receivedAt)
       assert(paymentRelayed.settledAt >= now)
     }

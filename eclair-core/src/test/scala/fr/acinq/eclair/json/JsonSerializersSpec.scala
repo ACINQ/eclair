@@ -404,7 +404,7 @@ class JsonSerializersSpec extends TestKitBaseClass with AnyFunSuiteLike with Mat
   }
 
   test("type hints") {
-    val e1 = ChannelPaymentRelayed(randomBytes32(), PaymentEvent.IncomingPayment(randomBytes32(), randomKey().publicKey, 110 msat, 100 unixms), PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, 100 msat, 150 unixms))
+    val e1 = ChannelPaymentRelayed(randomBytes32(), Seq(PaymentEvent.IncomingPayment(randomBytes32(), randomKey().publicKey, 110 msat, 100 unixms)), Seq(PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, 100 msat, 150 unixms)))
     assert(JsonSerializers.serialization.writePretty(e1)(JsonSerializers.formats).contains("\"type\" : \"payment-relayed\""))
   }
 

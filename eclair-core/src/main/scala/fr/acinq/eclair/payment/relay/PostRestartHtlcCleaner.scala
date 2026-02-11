@@ -211,7 +211,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
           }
           PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, u.originChannelId, CMD_FULFILL_HTLC(u.originHtlcId, paymentPreimage, None, commit = true))
           // We don't know when we received this HTLC so we just pretend that we received it just now.
-          context.system.eventStream.publish(ChannelPaymentRelayed(fulfilledHtlc.paymentHash, PaymentEvent.IncomingPayment(u.originChannelId, u.originNodeId, u.amountIn, TimestampMilli.now()), PaymentEvent.OutgoingPayment(fulfilledHtlc.channelId, downstreamNodeId, fulfilledHtlc.amountMsat, TimestampMilli.now())))
+          context.system.eventStream.publish(ChannelPaymentRelayed(fulfilledHtlc.paymentHash, Seq(PaymentEvent.IncomingPayment(u.originChannelId, u.originNodeId, u.amountIn, TimestampMilli.now())), Seq(PaymentEvent.OutgoingPayment(fulfilledHtlc.channelId, downstreamNodeId, fulfilledHtlc.amountMsat, TimestampMilli.now()))))
           Metrics.PendingRelayedOut.decrement()
           context become main(brokenHtlcs.copy(relayedOut = brokenHtlcs.relayedOut - origin))
         case u: Upstream.Cold.Trampoline =>
