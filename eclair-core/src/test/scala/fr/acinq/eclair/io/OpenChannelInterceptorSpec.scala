@@ -282,4 +282,26 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     eventListener.expectMessageType[ChannelAborted]
   }
 
+  test("don't spawn a channel if we cannot find a satisfying channel type") { f =>
+    import f._
+
+    val probe = TestProbe[Any]()
+
+    // If we both support anchor outputs, it is selected by default.
+    {
+      val features = Features[InitFeature](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, ChannelType -> Optional, ScidAlias -> Optional)
+      val open = Peer.OpenChannel(remoteNodeId, 500_000 sat, None, None, None, None, None, None, None)
+      openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, open, features, features)
+      assert(peer.expectMessageType[Peer.SpawnChannelInitiator].channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true))
+    }
+    // If our peer doesn't support anchor outputs, we can't find a satisfying channel type.
+    {
+      val localFeatures = Features[InitFeature](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, ChannelType -> Optional, ScidAlias -> Optional)
+      val remoteFeatures = Features[InitFeature](StaticRemoteKey -> Optional, ChannelType -> Optional, ScidAlias -> Optional)
+      val open = Peer.OpenChannel(remoteNodeId, 500_000 sat, None, None, None, None, None, None, None)
+      openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, open, localFeatures, remoteFeatures)
+      assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason == "channel_type must be provided and compatible with our peer's features")
+    }
+  }
+
 }

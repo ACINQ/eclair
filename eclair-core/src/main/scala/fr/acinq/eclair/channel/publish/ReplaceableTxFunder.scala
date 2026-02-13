@@ -126,6 +126,7 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
 
   private val dustLimit = commitment.localCommitParams.dustLimit
   private val commitFee: Satoshi = commitment.capacity - commitTx.txOut.map(_.amount).sum
+  private val commitFeerate: FeeratePerKw = Transactions.fee2rate(commitFee, commitTx.weight())
 
   private val log = context.log
 
@@ -133,7 +134,6 @@ private class ReplaceableTxFunder(replyTo: ActorRef[ReplaceableTxFunder.FundingR
     log.info("funding {} tx (targetFeerate={})", tx.desc, targetFeerate)
     tx match {
       case anchorTx: ClaimAnchorTx =>
-        val commitFeerate = commitment.localCommit.spec.commitTxFeerate
         if (targetFeerate <= commitFeerate) {
           log.info("skipping {}: commit feerate is high enough (feerate={})", tx.desc, commitFeerate)
           // We set retry = true in case the on-chain feerate rises before the commit tx is confirmed: if that happens
