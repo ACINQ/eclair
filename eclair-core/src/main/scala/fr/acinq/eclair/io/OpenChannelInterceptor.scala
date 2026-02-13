@@ -108,23 +108,23 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
   }
 
   private def sanityCheckInitiator(request: OpenChannelInitiator): Behavior[Command] = {
+    val channelType_opt = request.open.channelType_opt.orElse(ChannelTypes.preferredForPublicChannels(request.localFeatures, request.remoteFeatures))
     if (request.open.fundingAmount >= Channel.MAX_FUNDING_WITHOUT_WUMBO && !request.localFeatures.hasFeature(Wumbo)) {
       request.replyTo ! OpenChannelResponse.Rejected(s"fundingAmount=${request.open.fundingAmount} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING_WITHOUT_WUMBO} (see eclair.conf)")
       waitForRequest()
     } else if (request.open.fundingAmount >= Channel.MAX_FUNDING_WITHOUT_WUMBO && !request.remoteFeatures.hasFeature(Wumbo)) {
       request.replyTo ! OpenChannelResponse.Rejected(s"fundingAmount=${request.open.fundingAmount} is too big, the remote peer doesn't support wumbo")
       waitForRequest()
-    } else if (request.open.channelType_opt.isEmpty) {
-      request.replyTo ! OpenChannelResponse.Rejected("channel_type must be provided")
+    } else if (channelType_opt.isEmpty) {
+      request.replyTo ! OpenChannelResponse.Rejected("channel_type must be provided and compatible with our peer's features")
       waitForRequest()
     } else {
-      val channelType = request.open.channelType_opt.get
       val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
       val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
       // If we're purchasing liquidity, we expect our peer to contribute at least the amount we're purchasing, otherwise we'll cancel the funding attempt.
       val expectedFundingAmount = request.open.fundingAmount + request.open.requestFunding_opt.map(_.requestedAmount).getOrElse(0 sat)
       val localParams = createLocalParams(nodeParams, request.localFeatures, upfrontShutdownScript, isChannelOpener = true, paysCommitTxFees = true, dualFunded = dualFunded, expectedFundingAmount)
-      peer ! Peer.SpawnChannelInitiator(request.replyTo, request.open, ChannelConfig.standard, channelType, localParams)
+      peer ! Peer.SpawnChannelInitiator(request.replyTo, request.open, ChannelConfig.standard, channelType_opt.get, localParams)
       waitForRequest()
     }
   }
