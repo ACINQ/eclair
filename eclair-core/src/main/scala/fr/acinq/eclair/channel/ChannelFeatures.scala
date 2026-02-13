@@ -116,7 +116,6 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = PhoenixSimpleTaprootChannelCommitmentFormat
     override def toString: String = "phoenix_simple_taproot_channel"
   }
-
   // @formatter:on
 
   private val features2ChannelType: Map[Features[_ <: InitFeature], SupportedChannelType] = Set(
@@ -147,6 +146,15 @@ object ChannelTypes {
     // We ensure that we support the features necessary for this channel type.
     case Some(proposedChannelType: SupportedChannelType) if proposedChannelType.features.forall(f => localFeatures.hasFeature(f)) => Right(proposedChannelType)
     case Some(proposedChannelType: SupportedChannelType) => Left(InvalidChannelType(channelId, proposedChannelType))
+  }
+
+  /** Returns our preferred channel type for public channels, if supported by our peer. */
+  def preferredForPublicChannels(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): Option[SupportedChannelType] = {
+    if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputsZeroFeeHtlcTx)) {
+      Some(AnchorOutputsZeroFeeHtlcTx(scidAlias = Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias)))
+    } else {
+      None
+    }
   }
 
 }
