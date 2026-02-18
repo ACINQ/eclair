@@ -264,22 +264,24 @@ object TestConstants {
       peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour),
       peerScoringConfig = PeerScorer.Config(
         enabled = true,
-        scoringFrequency = 1 hour,
+        scoringFrequency = 1 day,
         topPeersCount = 10,
+        topPeersWhitelist = Set.empty,
         liquidity = PeerScorer.LiquidityConfig(
           autoFund = true,
-          dailyFlowMultiplier = 3,
-          minFundingAmount = 50_000_000 sat,
-          maxFundingAmount = 500_000_000 sat,
-          minOnChainBalance = 50_000_000 sat,
-          maxFeerate = FeeratePerByte(10 sat).perKw,
-          maxFrequency = 1 hour
+          autoClose = true,
+          minFundingAmount = 1_000_000 sat, // 0.01 BTC
+          maxFundingAmount = 100_000_000 sat, // 1 BTC
+          minOnChainBalance = 5_000_000 sat, // 0.05 BTC
+          maxFeerate = FeeratePerByte(100 sat).perKw,
+          maxFundingTxPerDay = 100,
         ),
         relayFees = PeerScorer.RelayFeesConfig(
           autoUpdate = true,
-          minRelayFees = RelayFees(1 msat, 1000),
+          minRelayFees = RelayFees(1 msat, 500),
           maxRelayFees = RelayFees(10_000 msat, 5000),
-          relayFeeUpdateMinVolume = 10_000_000 sat,
+          dailyPaymentVolumeThreshold = 1_000_000 sat, // 0.01 BTC
+          dailyPaymentVolumeThresholdPercent = 0.1,
         )
       ),
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
@@ -476,22 +478,24 @@ object TestConstants {
       peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour),
       peerScoringConfig = PeerScorer.Config(
         enabled = true,
-        scoringFrequency = 1 hour,
+        scoringFrequency = 1 day,
         topPeersCount = 10,
+        topPeersWhitelist = Set.empty,
         liquidity = PeerScorer.LiquidityConfig(
           autoFund = true,
-          dailyFlowMultiplier = 3,
-          minFundingAmount = 50_000_000 sat,
-          maxFundingAmount = 500_000_000 sat,
-          minOnChainBalance = 50_000_000 sat,
-          maxFeerate = FeeratePerByte(10 sat).perKw,
-          maxFrequency = 1 hour
+          autoClose = true,
+          minFundingAmount = 1_000_000 sat, // 0.01 BTC
+          maxFundingAmount = 100_000_000 sat, // 1 BTC
+          minOnChainBalance = 5_000_000 sat, // 0.05 BTC
+          maxFeerate = FeeratePerByte(100 sat).perKw,
+          maxFundingTxPerDay = 100,
         ),
         relayFees = PeerScorer.RelayFeesConfig(
           autoUpdate = true,
-          minRelayFees = RelayFees(1 msat, 1000),
+          minRelayFees = RelayFees(1 msat, 500),
           maxRelayFees = RelayFees(10_000 msat, 5000),
-          relayFeeUpdateMinVolume = 10_000_000 sat,
+          dailyPaymentVolumeThreshold = 1_000_000 sat, // 0.01 BTC
+          dailyPaymentVolumeThresholdPercent = 0.1,
         )
       ),
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),

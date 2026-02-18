@@ -87,6 +87,13 @@ object PeerStatsTracker {
       val date = ZonedDateTime.ofInstant(Instant.ofEpochMilli(ts.toLong), ZoneId.of("UTC"))
       Bucket(date.getDayOfMonth, date.getMonthValue, date.getYear, date.getHour * bucketsPerDay / 24)
     }
+
+    /** Returns the percentage (between 0.00 and 1.00) of the bucket consumed at the given timestamp. */
+    def consumed(ts: TimestampMilli): Double = {
+      val bucket = from(ts)
+      val start = ZonedDateTime.of(bucket.year, bucket.month, bucket.day, bucket.slot * 24 / bucketsPerDay, 0, 0, 0, ZoneId.of("UTC")).toEpochSecond
+      (ts.toTimestampSecond.toLong - start).toDouble / duration.toSeconds
+    }
   }
 
   case class PeerStats(totalAmountIn: MilliSatoshi, totalAmountOut: MilliSatoshi, relayFeeEarned: MilliSatoshi, onChainFeePaid: Satoshi, liquidityFeeEarned: Satoshi, liquidityFeePaid: Satoshi) {
@@ -117,6 +124,17 @@ object PeerStatsTracker {
     /** Returns stats for the given bucket. */
     private def getPeerStatsForBucket(remoteNodeId: PublicKey, bucket: Bucket): PeerStats = {
       stats.get(remoteNodeId).flatMap(_.get(bucket)).getOrElse(PeerStats.empty)
+    }
+
+    /**
+     * When our first channel with a peer is created, we want to add an entry for it, even though there are no payments yet.
+     * This lets us detect new peers that are idle, which can be useful in many scenarios.
+     */
+    def initializePeerIfNeeded(remoteNodeId: PublicKey): BucketedPeerStats = {
+      stats.get(remoteNodeId) match {
+        case Some(_) => this // already initialized
+        case None => this.copy(stats = stats + (remoteNodeId -> Map.empty))
+      }
     }
 
     private def addOrUpdate(remoteNodeId: PublicKey, bucket: Bucket, peerStats: PeerStats): BucketedPeerStats = {
@@ -201,6 +219,8 @@ object PeerStatsTracker {
 
     def getUpdate(remoteNodeId: PublicKey): Option[ChannelUpdate] = updates.get(remoteNodeId)
 
+    def hasChannels(remoteNodeId: PublicKey): Boolean = channels.contains(remoteNodeId)
+
     def hasPendingChannel(remoteNodeId: PublicKey): Boolean = pending.contains(remoteNodeId)
 
     def updateChannel(e: LocalChannelUpdate): PeerChannels = {
@@ -221,7 +241,7 @@ object PeerStatsTracker {
         copy(channels = channels + (commitments.remoteNodeId -> peerChannels1))
       } else {
         // We filter out channels with mobile wallets.
-        this
+        copy(channels = channels - commitments.remoteNodeId)
       }
     }
 
@@ -268,7 +288,7 @@ object PeerStatsTracker {
       channels.foldLeft(PeerChannels(Map.empty[PublicKey, Seq[ChannelInfo]], Map.empty[PublicKey, ChannelUpdate], Map.empty[PublicKey, Set[ByteVector32]])) {
         case (current, channel) => channel match {
           // We include pending channels.
-          case _: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED | _: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED | _: DATA_WAIT_FOR_DUAL_FUNDING_READY | _: DATA_WAIT_FOR_FUNDING_CONFIRMED | _: DATA_WAIT_FOR_CHANNEL_READY =>
+          case _: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED | _: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED | _: DATA_WAIT_FOR_DUAL_FUNDING_READY | _: DATA_WAIT_FOR_FUNDING_CONFIRMED | _: DATA_WAIT_FOR_CHANNEL_READY if !channel.channelParams.channelFeatures.hasFeature(Features.PhoenixZeroReserve) =>
             val pending1 = current.pending.getOrElse(channel.remoteNodeId, Set.empty) + channel.channelId
             current.copy(pending = current.pending + (channel.remoteNodeId -> pending1))
           // We filter out channels with mobile wallets.
@@ -328,7 +348,7 @@ private class PeerStatsTracker(db: AuditDb, timers: TimerScheduler[PeerStatsTrac
       case e: ChannelCreationAborted =>
         listening(stats, channels.removeChannel(e))
       case WrappedLocalChannelUpdate(e) =>
-        listening(stats, channels.updateChannel(e))
+        listening(stats.initializePeerIfNeeded(e.remoteNodeId), channels.updateChannel(e))
       case WrappedAvailableBalanceChanged(e) =>
         listening(stats, channels.updateChannel(e))
       case WrappedLocalChannelDown(e) =>
@@ -347,9 +367,11 @@ private class PeerStatsTracker(db: AuditDb, timers: TimerScheduler[PeerStatsTrac
         //  storage). We'll need the listConfirmed() function added in https://github.com/ACINQ/eclair/pull/3245.
         log.debug("statistics available for {} peers", stats.peers.size)
         val now = TimestampMilli.now()
-        val latest = stats.peers.map(remoteNodeId => {
-          PeerInfo(remoteNodeId, stats.getPeerStats(remoteNodeId, now), channels.getChannels(remoteNodeId), channels.getUpdate(remoteNodeId), channels.hasPendingChannel(remoteNodeId))
-        }).toSeq
+        val latest = stats.peers
+          // We only return statistics for peers with whom we have channels available for payments.
+          .filter(nodeId => channels.hasChannels(nodeId))
+          .map(nodeId => PeerInfo(nodeId, stats.getPeerStats(nodeId, now), channels.getChannels(nodeId), channels.getUpdate(nodeId), channels.hasPendingChannel(nodeId)))
+          .toSeq
         replyTo ! LatestStats(latest)
         listening(stats, channels)
     }

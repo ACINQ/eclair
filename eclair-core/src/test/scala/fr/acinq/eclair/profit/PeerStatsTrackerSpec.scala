@@ -78,6 +78,17 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
     assert(Seq(b3, b6, b5, b1, b4, b2, b7).sorted == Seq(b1, b2, b3, b4, b5, b6, b7))
   }
 
+  test("evaluate consumed bucket ratio") {
+    // February 5th 2026 at 12h00 UTC.
+    val timestamp = TimestampMilli(1770292800000L)
+    assert(Bucket.consumed(timestamp) == 0.00)
+    assert(Bucket.consumed(timestamp + Bucket.duration / 3) == 1.0 / 3)
+    assert(Bucket.consumed(timestamp + Bucket.duration / 2) == 0.5)
+    assert(Bucket.consumed(timestamp + Bucket.duration * 2 / 3) == 2.0 / 3)
+    assert(Bucket.consumed(timestamp - 10.seconds) >= 0.99)
+    assert(Bucket.consumed(timestamp - 10.seconds) < 1.0)
+  }
+
   test("keep track of channel balances and state") {
     val now = TimestampMilli.now()
     val probe = TestProbe[LatestStats]()
@@ -110,7 +121,8 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
     ))
     tracker.ref ! GetLatestStats(probe.ref)
     inside(probe.expectMessageType[LatestStats]) { s =>
-      assert(s.peers.map(_.remoteNodeId).toSet == Set(remoteNodeId1, remoteNodeId2, remoteNodeId3))
+      // We only have active channels with our first peer.
+      assert(s.peers.map(_.remoteNodeId).toSet == Set(remoteNodeId1))
       // We only take into account the two active channels with our first peer.
       val peer1 = s.peers.find(_.remoteNodeId == remoteNodeId1).get
       assert(peer1.channels.map(_.channelId).toSet == Set(c1b.channelId, c1c.channelId))
@@ -119,11 +131,6 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
       assert(peer1.hasPendingChannel)
       assert(0.21.btc.toMilliSatoshi <= peer1.canSend && peer1.canSend <= 0.22.btc.toMilliSatoshi)
       assert(0.27.btc.toMilliSatoshi <= peer1.canReceive && peer1.canReceive <= 0.28.btc.toMilliSatoshi)
-      // We don't have any active channel with our other peers.
-      assert(s.peers.find(_.remoteNodeId == remoteNodeId2).get.channels.isEmpty)
-      assert(s.peers.find(_.remoteNodeId == remoteNodeId2).get.hasPendingChannel)
-      assert(s.peers.find(_.remoteNodeId == remoteNodeId3).get.channels.isEmpty)
-      assert(s.peers.find(_.remoteNodeId == remoteNodeId3).get.hasPendingChannel)
     }
 
     // Our pending channel with our second peer becomes ready.

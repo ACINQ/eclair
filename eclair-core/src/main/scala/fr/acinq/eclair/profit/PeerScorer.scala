@@ -18,15 +18,21 @@ package fr.acinq.eclair.profit
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
+import akka.actor.{ActorRef => UntypedActorRef}
+import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Satoshi, SatoshiLong}
+import fr.acinq.eclair.blockchain.OnChainBalanceChecker
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.{CMD_CLOSE, CMD_UPDATE_RELAY_FEE, ChannelFlags, Register}
+import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.profit.PeerStatsTracker._
-import fr.acinq.eclair.wire.protocol.ChannelUpdate
-import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli}
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.util.{Failure, Random, Success}
 
 /**
  * Created by t-bast on 30/01/2026.
@@ -36,77 +42,70 @@ object PeerScorer {
 
   // @formatter:off
   sealed trait Command
-  case class ScorePeers(replyTo_opt: Option[ActorRef[ScoreBoard]]) extends Command
+  case class ScorePeers(replyTo_opt: Option[ActorRef[Seq[PeerInfo]]]) extends Command
   private case class WrappedLatestStats(peers: Seq[PeerInfo]) extends Command
+  private case class OnChainBalance(confirmed: Satoshi, unconfirmed: Satoshi) extends Command
+  private case class WalletError(e: Throwable) extends Command
   // @formatter:on
 
   /**
-   * @param enabled          the [[PeerStatsTracker]] actor should only be created when [[enabled]] is true.
-   * @param scoringFrequency frequency at which we run our peer scoring algorithm.
-   * @param topPeersCount    maximum number of peers to select as candidates for liquidity and relay fee updates.
+   * @param enabled           the [[PeerStatsTracker]] actor should only be created when [[enabled]] is true.
+   * @param scoringFrequency  frequency at which we run our peer scoring algorithm.
+   * @param topPeersCount     maximum number of peers to select as candidates for liquidity and relay fee updates.
+   * @param topPeersWhitelist a whitelist of peers that the node operator wants to prioritize.
    */
-  case class Config(enabled: Boolean, scoringFrequency: FiniteDuration, topPeersCount: Int, liquidity: LiquidityConfig, relayFees: RelayFeesConfig)
+  case class Config(enabled: Boolean, scoringFrequency: FiniteDuration, topPeersCount: Int, topPeersWhitelist: Set[PublicKey], liquidity: LiquidityConfig, relayFees: RelayFeesConfig)
 
   /**
-   * @param autoFund            if true, we will automatically fund channels.
-   * @param dailyFlowMultiplier we fund channels with enough liquidity for [[dailyFlowMultiplier]] days of outgoing flow.
-   * @param minFundingAmount    we only fund channels if at least this amount is necessary.
-   * @param maxFundingAmount    we never fund channels with more than this amount.
-   * @param minOnChainBalance   we stop funding channels if our on-chain balance is below this amount.
-   * @param maxFeerate          we stop funding channels if the on-chain feerate is above this value.
-   * @param maxFrequency        rate-limit the frequency at which we automatically fund channels.
+   * @param autoFund           if true, we will automatically fund channels.
+   * @param autoClose          if true, we will automatically close unused channels to reclaim liquidity.
+   * @param minFundingAmount   we always fund channels with at least this amount.
+   * @param maxFundingAmount   we never fund channels with more than this amount.
+   * @param maxFundingTxPerDay we rate-limit the number of transactions we make per day (on average).
+   * @param minOnChainBalance  we stop funding channels if our on-chain balance is below this amount.
+   * @param maxFeerate         we stop funding channels if the on-chain feerate is above this value.
    */
-  case class LiquidityConfig(autoFund: Boolean, dailyFlowMultiplier: Int, minFundingAmount: Satoshi, maxFundingAmount: Satoshi, minOnChainBalance: Satoshi, maxFeerate: FeeratePerKw, maxFrequency: FiniteDuration)
+  case class LiquidityConfig(autoFund: Boolean, autoClose: Boolean, minFundingAmount: Satoshi, maxFundingAmount: Satoshi, maxFundingTxPerDay: Int, minOnChainBalance: Satoshi, maxFeerate: FeeratePerKw)
 
   /**
-   * @param autoUpdate              if true, we will automatically update our relay fees.
-   * @param minRelayFees            we will not lower our relay fees below this value.
-   * @param maxRelayFees            we will not raise our relay fees above this value.
-   * @param relayFeeUpdateMinVolume we won't update our relay fees if the payment volume is below this value.
+   * @param autoUpdate                         if true, we will automatically update our relay fees.
+   * @param minRelayFees                       we will not lower our relay fees below this value.
+   * @param maxRelayFees                       we will not raise our relay fees above this value.
+   * @param dailyPaymentVolumeThreshold        we only increase fees if the daily outgoing payment volume exceeds this threshold or [[dailyPaymentVolumeThresholdPercent]].
+   * @param dailyPaymentVolumeThresholdPercent we only increase fees if the daily outgoing payment volume exceeds this percentage of our peer capacity or [[dailyPaymentVolumeThreshold]].
    */
-  case class RelayFeesConfig(autoUpdate: Boolean, minRelayFees: RelayFees, maxRelayFees: RelayFees, relayFeeUpdateMinVolume: Satoshi)
+  case class RelayFeesConfig(autoUpdate: Boolean, minRelayFees: RelayFees, maxRelayFees: RelayFees, dailyPaymentVolumeThreshold: Satoshi, dailyPaymentVolumeThresholdPercent: Double)
 
-  case class ScoreBoard(bestPeers: Seq[PeerInfo], liquiditySuggestions: Seq[LiquiditySuggestion], routingFeeSuggestions: Seq[RoutingFeeSuggestion], channelsToClose: Seq[ChannelInfo])
-
-  /** We recommend adding [[fundingAmount]] to a channel with [[remoteNodeId]]. */
-  case class LiquiditySuggestion(remoteNodeId: PublicKey, fundingAmount: Satoshi)
-
-  /** We recommend increasing or decreasing our routing fees with [[remoteNodeId]] because we detected a variation in payment volume. */
-  case class RoutingFeeSuggestion(remoteNodeId: PublicKey, volumeVariation: Double, increase: Boolean, current: ChannelUpdate) {
-    val decrease: Boolean = !increase
+  private case class LiquidityDecision(peer: PeerInfo, fundingAmount: Satoshi) {
+    val remoteNodeId: PublicKey = peer.remoteNodeId
   }
 
-  def score(peer: PeerInfo, bucketCount: Int, totalProfit: MilliSatoshi): Double = {
-    // We compute a profit score based on:
-    //  - volume relative to channel capacity: this indicator allows smaller peers that perform well to attract
-    //    more liquidity and become larger peers (avoid always allocating to the already large peers).
-    //  - fees earned relative to other peers: this indicator favors larger peers, but is useful because smaller peers
-    //    that perform well won't necessarily perform as well for larger volumes, so the previous indicator alone is
-    //    insufficient.
-    val profit = peer.stats.take(bucketCount).map(_.profit).sum
-    val volumeOut = peer.stats.take(bucketCount).map(_.totalAmountOut).sum
-    if (peer.capacity > 0.sat && totalProfit > 0.msat) {
-      (volumeOut.toLong.toDouble / peer.capacity.toMilliSatoshi.toLong) + (profit.toLong.toDouble / totalProfit.toLong)
-    } else {
-      0.0
-    }
+  private def rollingDailyStats(p: PeerInfo): Seq[Seq[PeerStats]] = {
+    (0 until (p.stats.size - Bucket.bucketsPerDay)).map(i => p.stats.slice(i, i + Bucket.bucketsPerDay))
   }
 
-  def apply(nodeParams: NodeParams, statsTracker: ActorRef[PeerStatsTracker.GetLatestStats]): Behavior[Command] = {
+  private def bestDailyVolumeOut(p: PeerInfo): MilliSatoshi = rollingDailyStats(p).map(s => s.map(_.totalAmountOut).sum).max
+
+  private def bestDailyProfit(p: PeerInfo): MilliSatoshi = rollingDailyStats(p).map(s => s.map(_.profit).sum).max
+
+  private def bestDailyOutgoingFlow(p: PeerInfo): MilliSatoshi = rollingDailyStats(p).map(s => s.map(_.outgoingFlow).sum).max
+
+  def apply(nodeParams: NodeParams, wallet: OnChainBalanceChecker, statsTracker: ActorRef[PeerStatsTracker.GetLatestStats], register: UntypedActorRef): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         timers.startTimerWithFixedDelay(ScorePeers(None), nodeParams.peerScoringConfig.scoringFrequency)
-        new PeerScorer(nodeParams, statsTracker, context).run()
+        new PeerScorer(nodeParams, wallet, statsTracker, register, context).run()
       }
     }
   }
 
 }
 
-private class PeerScorer(nodeParams: NodeParams, statsTracker: ActorRef[PeerStatsTracker.GetLatestStats], context: ActorContext[PeerScorer.Command]) {
+private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, statsTracker: ActorRef[PeerStatsTracker.GetLatestStats], register: UntypedActorRef, context: ActorContext[PeerScorer.Command]) {
 
   import PeerScorer._
 
+  implicit val ec: ExecutionContext = context.system.executionContext
   private val log = context.log
   private val config = nodeParams.peerScoringConfig
 
@@ -114,208 +113,270 @@ private class PeerScorer(nodeParams: NodeParams, statsTracker: ActorRef[PeerStat
     Behaviors.receiveMessagePartial {
       case ScorePeers(replyTo_opt) =>
         statsTracker ! PeerStatsTracker.GetLatestStats(context.messageAdapter[PeerStatsTracker.LatestStats](e => WrappedLatestStats(e.peers)))
-        waitingForStats(replyTo_opt)
+        waitForStats(replyTo_opt)
     }
   }
 
-  private def waitingForStats(replyTo_opt: Option[ActorRef[ScoreBoard]]): Behavior[Command] = {
+  private def waitForStats(replyTo_opt: Option[ActorRef[Seq[PeerInfo]]]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedLatestStats(peers) => scoring(replyTo_opt, peers)
+      case WrappedLatestStats(peers) => scorePeers(replyTo_opt, peers)
     }
   }
 
-  private def scoring(replyTo_opt: Option[ActorRef[ScoreBoard]], peers: Seq[PeerInfo]): Behavior[Command] = {
-    val now = TimestampMilli.now()
+  private def scorePeers(replyTo_opt: Option[ActorRef[Seq[PeerInfo]]], peers: Seq[PeerInfo]): Behavior[Command] = {
     log.info("scoring {} peers", peers.size)
+    val dailyProfit = peers.map(_.stats.take(Bucket.bucketsPerDay).map(_.profit).sum).sum.truncateToSatoshi.toMilliBtc
+    val weeklyProfit = peers.map(_.stats.map(_.profit).sum).sum.truncateToSatoshi.toMilliBtc
+    log.info("rolling daily profit = {} and weekly profit = {}", dailyProfit, weeklyProfit)
 
-    // We compute the overall daily and weekly profit.
-    val (totalDailyProfit, totalWeeklyProfit) = peers.map(p => {
-      (p.stats.take(Bucket.bucketsPerDay).map(_.profit).sum, p.stats.map(_.profit).sum)
-    }).reduceOption {
-      (current, next) => (current._1 + next._1, current._2 + next._2)
-    }.getOrElse(0 msat, 0 msat)
-    log.info("rolling daily profit = {} and weekly profit = {}", totalDailyProfit, totalWeeklyProfit)
-
-    // We start by selecting the top most profitable peers of the past day and week.
-    val mostProfitableWeeklyPeers = peers
-      .map(p => (p, p.stats.map(_.profit).sum))
-      .filter { case (_, profit) => profit > 0.msat }
-      .sortBy { case (_, profit) => profit }(Ordering[MilliSatoshi].reverse)
+    // We select peers that have the largest outgoing payment volume of the past day.
+    // This biases towards nodes that already have a large capacity and have liquidity available.
+    val bestPeersByVolume = peers
+      .map(p => (p, p.stats.take(Bucket.bucketsPerDay).map(_.totalAmountOut).sum))
+      .filter(_._2 > 0.msat)
+      .sortBy(_._2)(Ordering[MilliSatoshi].reverse)
       .take(config.topPeersCount)
       .map(_._1)
-    val mostProfitableDailyPeers = peers
-      .map(p => (p, p.stats.take(Bucket.bucketsPerDay).map(_.profit).sum))
-      .filter { case (_, profit) => profit > 0.msat }
-      .sortBy { case (_, profit) => profit }(Ordering[MilliSatoshi].reverse)
+    log.debug("top {} peers:", bestPeersByVolume.size)
+    printDailyStats(bestPeersByVolume)
+
+    // We select peers that have a low outgoing balance but were previously good peers, by looking at the largest daily
+    // outgoing payment volume of the past week, using a rolling daily window. This also biases towards nodes that
+    // already have a large capacity, but lets us identify good peers that ran out of liquidity.
+    val bestPeersWithoutLiquidityByVolume = peers
+      .filter(p => p.canSend <= p.capacity * 0.1)
+      .map(p => (p, bestDailyVolumeOut(p)))
+      .sortBy(_._2)(Ordering[MilliSatoshi].reverse)
       .take(config.topPeersCount)
       .map(_._1)
-    // We assign a score to each of those nodes which lets us prioritize liquidity allocation.
-    // We use the best of their daily and weekly scores.
-    val bestScoringPeers = (mostProfitableDailyPeers ++ mostProfitableWeeklyPeers)
-      .distinct
-      .sortBy(p => Seq(score(p, Bucket.bucketsPerDay, totalDailyProfit), score(p, BucketedPeerStats.bucketsCount, totalWeeklyProfit)).max)(Ordering[Double].reverse)
-    if (bestScoringPeers.nonEmpty) {
-      log.info("top {} peers:", bestScoringPeers.size)
-      // Display scores.
-      log.info("| rank |                               node_id                              | daily_score | weekly_score |")
-      log.info("|------|--------------------------------------------------------------------|-------------|--------------|")
-      bestScoringPeers.zipWithIndex.foreach { case (p, i) =>
-        val dailyScore = score(p, Bucket.bucketsPerDay, totalDailyProfit)
-        val weeklyScore = score(p, BucketedPeerStats.bucketsCount, totalWeeklyProfit)
-        log.info(f"| ${i + 1}%4d | ${p.remoteNodeId} |        $dailyScore%.2f |         $weeklyScore%.2f |")
-      }
-      log.info("|------|--------------------------------------------------------------------|-------------|--------------|")
-      // Display profit.
-      log.info("| rank |                               node_id                              | current_profit_sat | previous_profit_sat | daily_profit_sat | weekly_profit_sat |")
-      log.info("|------|--------------------------------------------------------------------|--------------------|---------------------|------------------|-------------------|")
-      bestScoringPeers.zipWithIndex.foreach { case (p, i) =>
-        val currentProfit = p.stats.headOption.map(_.profit.truncateToSatoshi).getOrElse(0 sat).toLong
-        val previousProfit = p.stats.drop(1).headOption.map(_.profit.truncateToSatoshi).getOrElse(0 sat).toLong
-        val dailyProfit = p.stats.take(Bucket.bucketsPerDay).map(_.profit).sum.truncateToSatoshi.toLong
-        val weeklyProfit = p.stats.map(_.profit).sum.truncateToSatoshi.toLong
-        log.info(f"| ${i + 1}%4d | ${p.remoteNodeId} | $currentProfit%18d | $previousProfit%19d | $dailyProfit%16d | $weeklyProfit%17d |")
-      }
-      log.info("|------|--------------------------------------------------------------------|--------------------|---------------------|------------------|-------------------|")
-      // Display payment volume.
-      log.info("| rank |                               node_id                              | current_amount_in_sat | current_amount_out_sat | previous_amount_in_sat | previous_amount_out_sat | daily_amount_in_sat | daily_amount_out_sat | weekly_amount_in_sat | weekly_amount_out_sat |")
-      log.info("|------|--------------------------------------------------------------------|-----------------------|------------------------|------------------------|-------------------------|---------------------|----------------------|----------------------|-----------------------|")
-      bestScoringPeers.zipWithIndex.foreach { case (p, i) =>
-        val currentAmountOut = p.stats.headOption.map(_.totalAmountOut.truncateToSatoshi).getOrElse(0 sat).toLong
-        val previousAmountOut = p.stats.drop(1).headOption.map(_.totalAmountOut.truncateToSatoshi).getOrElse(0 sat).toLong
-        val dailyAmountOut = p.stats.take(Bucket.bucketsPerDay).map(_.totalAmountOut).sum.truncateToSatoshi.toLong
-        val weeklyAmountOut = p.stats.map(_.totalAmountOut).sum.truncateToSatoshi.toLong
-        val currentAmountIn = p.stats.headOption.map(_.totalAmountIn.truncateToSatoshi).getOrElse(0 sat).toLong
-        val previousAmountIn = p.stats.drop(1).headOption.map(_.totalAmountIn.truncateToSatoshi).getOrElse(0 sat).toLong
-        val dailyAmountIn = p.stats.take(Bucket.bucketsPerDay).map(_.totalAmountIn).sum.truncateToSatoshi.toLong
-        val weeklyAmountIn = p.stats.map(_.totalAmountIn).sum.truncateToSatoshi.toLong
-        log.info(f"| ${i + 1}%4d | ${p.remoteNodeId} | $currentAmountIn%21d | $currentAmountOut%22d | $previousAmountIn%22d | $previousAmountOut%23d | $dailyAmountIn%19d | $dailyAmountOut%20d | $weeklyAmountIn%20d | $weeklyAmountOut%21d |")
-      }
-      log.info("|------|--------------------------------------------------------------------|-----------------------|------------------------|------------------------|-------------------------|---------------------|----------------------|----------------------|-----------------------|")
-      // Display channel capacity and balance.
-      log.info("| rank |                               node_id                              | can_send_sat | can_receive_sat | capacity_sat |")
-      log.info("|------|--------------------------------------------------------------------|--------------|-----------------|--------------|")
-      bestScoringPeers.zipWithIndex.foreach { case (p, i) =>
-        log.info(f"| ${i + 1}%4d | ${p.remoteNodeId} | ${p.canSend.truncateToSatoshi.toLong}%12d | ${p.canReceive.truncateToSatoshi.toLong}%15d | ${p.capacity.toLong}%12d |")
-      }
-      log.info("|------|--------------------------------------------------------------------|--------------|-----------------|--------------|")
+
+    // We identify peers that need additional liquidity.
+    val bestPeersThatNeedLiquidity = bestPeersByVolume
+      // We select peers that have a large outgoing flow, which means they will run out of liquidity in the next days.
+      .filter(p => p.stats.take(Bucket.bucketsPerDay).map(_.outgoingFlow).sum >= p.canSend * 0.2)
+      // And peers that have already ran out of liquidity.
+      .appendedAll(bestPeersWithoutLiquidityByVolume)
+      .distinctBy(_.remoteNodeId)
+      // We order them by their best daily profit of the past week.
+      .map(p => (p, bestDailyProfit(p)))
+      .sortBy(_._2)(Ordering[MilliSatoshi].reverse)
+      .take(config.topPeersCount)
+      // We fund a multiple of our daily outgoing flow, to ensure we have enough liquidity for a few days.
+      .map { case (p, _) => LiquidityDecision(p, (bestDailyOutgoingFlow(p) * 4).truncateToSatoshi) }
+      .filter(_.fundingAmount > 0.sat)
+    if (bestPeersThatNeedLiquidity.nonEmpty) {
+      log.debug("top {} peers that need liquidity:", bestPeersThatNeedLiquidity.size)
+      printDailyStats(bestPeersThatNeedLiquidity.map(_.peer))
     }
 
-    // If very profitable peers exhausted their liquidity more than a week ago, they won't get a good score.
-    // We may thus incorrectly prioritize peers that have recent payment activity but are less profitable.
-    // We try to find older peers that were profitable and reallocate liquidity towards them, if relevant.
-    val olderPeersWithExhaustedLiquidity = peers
-      // We look for channels where most of the liquidity is on the other side.
-      .filter(p => (p.canSend.toLong.toDouble / p.capacity.toMilliSatoshi.toLong) < 0.1)
-      // And that haven't had a lot of activity in the past week (and thus have exhausted their liquidity before that).
-      .filter(p => p.stats.map(_.totalAmountOut).sum < p.capacity * 0.1)
+    // We select peers that are performing well relative to their capacity, which lets us identify good peers that may
+    // have a smaller capacity and may deserve a capacity increase.
+    val goodSmallPeers = peers
+      .map(p => (p, bestDailyVolumeOut(p).truncateToSatoshi.toLong.toDouble / p.capacity.toLong))
+      .filter(_._2 > 0)
+      .sortBy(_._2)(Ordering[Double].reverse)
+      .take(config.topPeersCount)
+      // We only keep peers that may run out of liquidity in the next days.
+      .filter { case (p, _) => p.stats.take(Bucket.bucketsPerDay).map(_.outgoingFlow).sum >= p.canSend * 0.2 }
+      .map(_._1)
+      // We'd like to increase their capacity by 50%.
+      .map(p => LiquidityDecision(p, p.capacity * 0.5))
+    if (goodSmallPeers.nonEmpty) {
+      log.debug("we've identified {} smaller peers that perform well relative to their capacity", goodSmallPeers.size)
+      printDailyStats(goodSmallPeers.map(_.peer))
+    }
+
+    // We try to identify peers that may have ran out of liquidity a long time ago but are interesting for us.
+    val peersToRevive = peers
+      // We prioritize peers that the node operator whitelisted.
+      .filter(p => config.topPeersWhitelist.contains(p.remoteNodeId))
       .sortBy(_.capacity)(Ordering[Satoshi].reverse)
-      .take(config.topPeersCount)
-    if (olderPeersWithExhaustedLiquidity.nonEmpty && bestScoringPeers.exists(_.stats.drop(Bucket.bucketsPerDay).exists(_ != PeerStats.empty))) {
-      // TODO: we should read older payment events from the DB and compare the profit earned by those peers with our
-      //  current best scoring peers.
-      log.info("the following {} peers have exhausted their outgoing liquidity but may be profitable peers", olderPeersWithExhaustedLiquidity.size)
-      log.info("|                               node_id                              | can_send_sat | capacity_sat |")
-      log.info("|--------------------------------------------------------------------|--------------|--------------|")
-      olderPeersWithExhaustedLiquidity.foreach(p => {
-        log.info(f"| ${p.remoteNodeId} | ${p.canSend.truncateToSatoshi.toLong}%12d | ${p.capacity.toLong}%12d |")
-      })
-      log.info("|--------------------------------------------------------------------|--------------|--------------|")
-    }
+      // And we add peers with a large capacity that have a low balance.
+      .appendedAll(peers
+        .sortBy(_.capacity)(Ordering[Satoshi].reverse)
+        .take(config.topPeersCount)
+        .filter(p => p.canSend <= p.capacity * 0.1)
+      )
+      .distinctBy(_.remoteNodeId)
+      // We'd like to increase their capacity by 25%.
+      .map(p => LiquidityDecision(p, p.capacity * 0.25))
 
-    // We compute suggestions for liquidity allocation based on estimated future outgoing flow.
-    val liquidity = bestScoringPeers
-      // We only consider allocating liquidity if there isn't already a channel being created.
-      .filter(p => !p.hasPendingChannel)
-      // We only consider allocating liquidity to nodes that have a positive outgoing flow.
-      .filter(p => p.stats.map(_.outgoingFlow).sum > 0.msat || p.stats.take(Bucket.bucketsPerDay).map(_.outgoingFlow).sum > 0.msat)
-      .map(s => {
-        // We want to allocate liquidity to ensure that we can keep relaying payments for a given duration if the flow stays the same.
-        val lastFlows = s.stats.take(Bucket.bucketsPerDay).map(_.outgoingFlow).sum
-        val missing = (lastFlows * config.liquidity.dailyFlowMultiplier - s.canSend).max(0 msat).min(config.liquidity.maxFundingAmount)
-        LiquiditySuggestion(s.remoteNodeId, missing.truncateToSatoshi)
-      })
-      .filter { l => l.fundingAmount > config.liquidity.minFundingAmount }
-    if (liquidity.nonEmpty) {
-      log.info("we recommend the following {} liquidity allocations:", liquidity.size)
-      log.info("| rank |                               node_id                              | funding_amount_sat |")
-      log.info("|------|--------------------------------------------------------------------|--------------------|")
-      liquidity.zipWithIndex.foreach { case (l, i) =>
-        log.info(f"| ${i + 1}%4d | ${l.remoteNodeId} | ${l.fundingAmount.toLong}%18d |")
-      }
-      log.info("|------|--------------------------------------------------------------------|--------------------|")
-    }
-
-    // We compute suggestions for updating our relay fees to match changes in outgoing volume.
-    val routing = bestScoringPeers.flatMap(s => {
-      val liquidityAvailable = s.canSend > config.relayFees.relayFeeUpdateMinVolume
-      val current = s.stats.headOption.map(_.totalAmountOut).getOrElse(0 msat)
-      val previous = s.stats.drop(1).headOption.map(_.totalAmountOut).getOrElse(0 msat)
-      val older = s.stats.drop(2).headOption.map(_.totalAmountOut).getOrElse(0 msat)
-      s.latestUpdate_opt match {
-        case Some(u) if current > Seq(previous, config.relayFees.relayFeeUpdateMinVolume.toMilliSatoshi).max && previous > 0.msat && liquidityAvailable && u.timestamp.toTimestampMilli < now - Bucket.duration =>
-          // If the current flow (which doesn't have a whole bucket of data yet) is greater than the previous flow
-          // (which has a full bucket of data), and greater than a given threshold, we can try to increase our routing
-          // fees if we haven't done so recently already.
-          val variation = (current - previous).toLong.toDouble / previous.toLong
-          Some(RoutingFeeSuggestion(s.remoteNodeId, variation, increase = true, u))
-        case Some(u) if older > 0.msat && older > current + previous && liquidityAvailable && u.timestamp.toTimestampMilli < now - Bucket.duration =>
-          // If the flow of the current and previous buckets are smaller than the flow of the bucket before that, and
-          // we haven't already updated our fees recently, we may want to decrease our routing fees to attract traffic.
-          val variation = (older - current - previous).toLong.toDouble / older.toLong
-          Some(RoutingFeeSuggestion(s.remoteNodeId, variation, increase = false, u))
-        case _ =>
-          None
-      }
-    })
-    if (routing.nonEmpty) {
-      log.info("we recommend the following {} routing fee changes", routing.size)
-      log.info("|                               node_id                              | decision | volume_variation | current_fee_base_msat | current_fee_proportional |")
-      log.info("|--------------------------------------------------------------------|----------|------------------|-----------------------|--------------------------|")
-      routing.foreach(r => {
-        log.info(f"| ${r.remoteNodeId} | ${if (r.increase) "increase" else "decrease"} |             ${r.volumeVariation}%.2f | ${r.current.feeBaseMsat.toLong}%21d | ${r.current.feeProportionalMillionths}%24d |")
-      })
-      log.info("|--------------------------------------------------------------------|----------|------------------|-----------------------|--------------------------|")
-    }
-
-    // We compute suggestions for channels that can be closed to reclaim liquidity.
-    // Since we're not yet reading past events from the DB, we need to wait until we have collected enough data.
-    val channelsToClose = if (bestScoringPeers.exists(_.stats.drop(Bucket.bucketsPerDay).exists(_ != PeerStats.empty))) {
-      peers
-        .filter(_.channels.size > 1)
-        .flatMap(p => {
-          // Peers for which most of the liquidity is idle on our side are good candidates for reclaiming liquidity.
-          val unbalanced = p.canSend >= p.canReceive * 4
-          val volumeOut = p.stats.map(_.totalAmountOut).sum
-          val lowVolume = volumeOut <= p.canSend * 0.1
-          if (unbalanced && lowVolume) {
-            // We always want to keep at least one channel with every peer, and want to keep the one with the best score
-            // for routing algorithms (mostly influenced by capacity). We want to avoid closing the largest channel if
-            // it isn't unbalanced, so we also take into account current balances in that channel.
-            val maxCapacity = p.channels.map(_.capacity).max
-            val channelToKeep = p.channels.filter(_.isPublic).map(c => {
-              val score = 4 * (c.capacity.toLong.toDouble / maxCapacity.toLong) + (c.canSend.toLong.toDouble / c.capacity.toMilliSatoshi.toLong)
-              (score, c)
-            }).sortBy(_._1).lastOption.map(_._2.channelId)
-            p.channels.filter(b => !channelToKeep.contains(b.channelId))
-          } else {
-            Nil
-          }
-        })
+    // Since we're not yet reading past events from the DB, we need to wait until we have collected enough data before
+    // taking some actions such as opening or closing channels or updating relay fees.
+    // TODO: remove this once we start reading past data from the AuditDb on restart.
+    val hasPastData = bestPeersByVolume.exists(_.stats.drop(Bucket.bucketsPerDay).exists(_ != PeerStats.empty))
+    if (hasPastData && replyTo_opt.isEmpty) {
+      closeChannelsIfNeeded(peers)
+      updateRelayFeesIfNeeded(peers)
+      fundChannelsIfNeeded(bestPeersThatNeedLiquidity, goodSmallPeers, peersToRevive)
     } else {
-      Nil
+      replyTo_opt.foreach(_ ! bestPeersThatNeedLiquidity.map(_.peer))
+      run()
     }
-    if (channelsToClose.nonEmpty) {
-      log.info("we recommend closing the following {} channels to reclaim {}", channelsToClose.size, channelsToClose.map(_.canSend).sum)
-      log.info("|                            channel_id                            | local_balance_sat | capacity_sat |")
-      log.info("|------------------------------------------------------------------|-------------------|--------------|")
-      channelsToClose.foreach(c => {
-        log.info(f"| ${c.channelId} | ${c.canSend.truncateToSatoshi.toLong}%17d | ${c.capacity.toLong}%12d |")
-      })
-      log.info("|------------------------------------------------------------------|-------------------|--------------|")
-    }
+  }
 
-    replyTo_opt.foreach(_ ! ScoreBoard(bestScoringPeers, liquidity, routing, channelsToClose))
-    run()
+  private def printDailyStats(peers: Seq[PeerInfo]): Unit = {
+    log.debug("| rank |                               node_id                              |  daily_volume |  daily_profit |      can_send |   can_receive |")
+    log.debug("|------|--------------------------------------------------------------------|---------------|---------------|---------------|---------------|")
+    peers.zipWithIndex.foreach { case (p, i) =>
+      val dailyStats = p.stats.take(Bucket.bucketsPerDay)
+      val dailyVolume = dailyStats.map(_.totalAmountOut).sum.truncateToSatoshi.toMilliBtc
+      val dailyProfit = dailyStats.map(_.profit).sum.truncateToSatoshi.toMilliBtc
+      val canSend = p.canSend.truncateToSatoshi.toMilliBtc
+      val canReceive = p.canReceive.truncateToSatoshi.toMilliBtc
+      log.debug(f"| ${i + 1}%4d | ${p.remoteNodeId} | ${dailyVolume.toDouble}%8.2f mbtc | ${dailyProfit.toDouble}%8.2f mbtc | ${canSend.toDouble}%8.2f mbtc | ${canReceive.toDouble}%8.2f mbtc |")
+    }
+    log.debug("|------|--------------------------------------------------------------------|---------------|---------------|---------------|---------------|")
+  }
+
+  private def closeChannelsIfNeeded(peers: Seq[PeerInfo]): Unit = {
+    peers
+      // We only close channels when we have more than one.
+      .filter(_.channels.size > 1)
+      // We only close channels for which most of the liquidity is idle on our side.
+      .filter(p => p.canSend >= p.capacity * 0.8 && p.stats.map(_.totalAmountOut).sum <= p.capacity * 0.05)
+      .foreach(p => {
+        val channels = p.channels.sortWith {
+          // We want to keep a public channel over a private channel.
+          case (c1, c2) if c1.isPublic != c2.isPublic => c1.isPublic
+          // Otherwise, we keep the channel with the largest capacity.
+          case (c1, c2) if c1.capacity != c2.capacity => c1.capacity >= c2.capacity
+          // Otherwise, we keep the channel with the smallest balance (and thus highest inbound liquidity).
+          case (c1, c2) => c1.canSend <= c2.canSend
+        }
+        // We keep the best channel and close the others.
+        channels.tail.foreach { c =>
+          log.debug("we should close channel_id={} with remote_node_id={} (local={}, remote={})", c.channelId, p.remoteNodeId, c.canSend.truncateToSatoshi.toMilliBtc, c.canReceive.truncateToSatoshi.toMilliBtc)
+          if (config.liquidity.autoClose && nodeParams.currentFeeratesForFundingClosing.medium <= config.liquidity.maxFeerate) {
+            log.info("closing channel_id={} with remote_node_id={} (local={}, remote={})", c.channelId, p.remoteNodeId, c.canSend.truncateToSatoshi.toMilliBtc, c.canReceive.truncateToSatoshi.toMilliBtc)
+            val cmd = CMD_CLOSE(UntypedActorRef.noSender, None, None)
+            register ! Register.Forward(context.system.ignoreRef, c.channelId, cmd)
+          }
+        }
+      })
+  }
+
+  private def updateRelayFeesIfNeeded(peers: Seq[PeerInfo]): Unit = {
+    // We configure *daily* absolute and proportional payment volume targets. We look at events from the current period
+    // and the previous period, so we need to get the right ratio to convert those daily amounts.
+    val now = TimestampMilli.now()
+    val lastTwoBucketsRatio = 1.0 + Bucket.consumed(now)
+    val lastTwoBucketsDailyRatio = (Bucket.duration * lastTwoBucketsRatio).toSeconds.toDouble / (24 * 3600)
+    // We increase fees of channels that are performing better than we expected.
+    log.debug("we should update our relay fees with the following peers:")
+    log.debug("|                               node_id                              |  volume_variation | decision | current_fee | next_fee |")
+    log.debug("|--------------------------------------------------------------------|-------------------|----------|-------------|----------|")
+    peers
+      // We select peers that have exceeded our payment volume target in the past two periods.
+      .filter(p => p.stats.take(2).map(_.totalAmountOut).sum >= Seq(config.relayFees.dailyPaymentVolumeThreshold * lastTwoBucketsDailyRatio, p.capacity * config.relayFees.dailyPaymentVolumeThresholdPercent * lastTwoBucketsDailyRatio).min)
+      // And that have an increasing payment volume compared to the period before that.
+      .filter(p => p.stats.slice(2, 3).map(_.totalAmountOut).sum > 0.msat)
+      .filter(p => (p.stats.take(2).map(_.totalAmountOut).sum / lastTwoBucketsRatio) > p.stats.slice(2, 3).map(_.totalAmountOut).sum * 1.1)
+      .foreach(p => {
+        p.latestUpdate_opt match {
+          // And for which we haven't updated our relay fees recently already.
+          case Some(u) if u.timestamp <= now.toTimestampSecond - (Bucket.duration * 1.5).toSeconds =>
+            val next = u.relayFees.feeProportionalMillionths + 500
+            val volumeVariation = p.stats.take(2).map(_.totalAmountOut).sum.toLong.toDouble / (p.stats.slice(2, 3).map(_.totalAmountOut).sum.toLong * lastTwoBucketsRatio)
+            log.debug(f"| ${p.remoteNodeId} |             $volumeVariation%.2f | increase | ${u.feeProportionalMillionths}%11d | $next%8d |")
+            if (config.relayFees.autoUpdate && next <= config.relayFees.maxRelayFees.feeProportionalMillionths) {
+              val cmd = CMD_UPDATE_RELAY_FEE(UntypedActorRef.noSender, u.relayFees.feeBase, next)
+              p.channels.foreach(c => register ! Register.Forward(context.system.ignoreRef, c.channelId, cmd))
+            }
+          case _ => ()
+        }
+      })
+    // We decrease fees of channels that aren't performing well.
+    peers
+      // We select peers that have a recent 15% decrease in outgoing payment volume.
+      .filter(p => p.stats.slice(2, 3).map(_.totalAmountOut).sum > 0.msat)
+      .filter(p => p.stats.take(2).map(_.totalAmountOut).sum <= p.stats.slice(2, 3).map(_.totalAmountOut).sum * 0.85)
+      // For which the volume was previously already stable or decreasing.
+      .filter(p => p.stats.slice(2, 3).map(_.totalAmountOut).sum <= p.stats.slice(3, 4).map(_.totalAmountOut).sum)
+      // And that have enough liquidity to relay outgoing payments.
+      .filter(p => p.canSend >= Seq(config.relayFees.dailyPaymentVolumeThreshold, p.capacity * config.relayFees.dailyPaymentVolumeThresholdPercent).min)
+      .foreach(p => {
+        p.latestUpdate_opt match {
+          // And for which we haven't updated our relay fees recently already.
+          case Some(u) if u.timestamp <= now.toTimestampSecond - (Bucket.duration * 1.5).toSeconds =>
+            val next = u.relayFees.feeProportionalMillionths - 500
+            val volumeVariation = p.stats.take(2).map(_.totalAmountOut).sum.toLong.toDouble / (p.stats.slice(2, 3).map(_.totalAmountOut).sum.toLong * lastTwoBucketsRatio)
+            log.debug(f"| ${p.remoteNodeId} |             $volumeVariation%.2f | decrease | ${u.feeProportionalMillionths}%11d | $next%8d |")
+            if (config.relayFees.autoUpdate && next >= config.relayFees.minRelayFees.feeProportionalMillionths) {
+              val cmd = CMD_UPDATE_RELAY_FEE(UntypedActorRef.noSender, u.relayFees.feeBase, next)
+              p.channels.foreach(c => register ! Register.Forward(context.system.ignoreRef, c.channelId, cmd))
+            }
+          case _ => ()
+        }
+      })
+    log.debug("|--------------------------------------------------------------------|-------------------|----------|-------------|----------|")
+  }
+
+  private def fundChannelsIfNeeded(bestPeers: Seq[LiquidityDecision], smallPeers: Seq[LiquidityDecision], toRevive: Seq[LiquidityDecision]): Behavior[Command] = {
+    // We don't want to fund peers every time our scoring algorithm runs, otherwise we may create too many on-chain
+    // transactions. We draw from a random distribution to ensure that on average:
+    //  - we follow our rate-limit for funding best peers and fund at most 3 at a time
+    //  - we fund a small peer once every 3 days, chosen at random between our top 3
+    //  - we revive an older peer once every day, chosen at random between our top 3
+    val toFund = {
+      val scoringPerDay = (1 day).toSeconds / config.scoringFrequency.toSeconds
+      val bestPeersToFund = bestPeers.headOption match {
+        case Some(_) if Random.nextDouble() <= config.liquidity.maxFundingTxPerDay.toDouble / (scoringPerDay * bestPeers.size.min(3)) => bestPeers.take(3)
+        case _ => Nil
+      }
+      val smallPeerToFund_opt = smallPeers.headOption match {
+        case Some(_) if Random.nextDouble() <= (1.0 / (scoringPerDay * 3)) => Random.shuffle(smallPeers.take(3)).headOption
+        case _ => None
+      }
+      val toReviveNotAlreadySelected = toRevive.filterNot(p => bestPeers.exists(_.remoteNodeId == p.remoteNodeId) || smallPeerToFund_opt.exists(_.remoteNodeId == p.remoteNodeId))
+      val toRevive_opt = toReviveNotAlreadySelected.headOption match {
+        case Some(_) if Random.nextDouble() <= (1.0 / scoringPerDay) => Random.shuffle(toReviveNotAlreadySelected.take(3)).headOption
+        case _ => None
+      }
+      (bestPeersToFund ++ toRevive_opt ++ smallPeerToFund_opt).distinctBy(_.remoteNodeId)
+    }
+    if (bestPeers.isEmpty && smallPeers.isEmpty && toRevive.isEmpty) {
+      log.info("we haven't identified peers that require liquidity yet")
+      run()
+    } else if (toFund.isEmpty) {
+      log.info("we skip funding peers because of per-day rate-limits: increase eclair.peer-scoring.liquidity.max-funding-tx-per-day to fund more often")
+      run()
+    } else if (config.liquidity.maxFeerate < nodeParams.currentFeeratesForFundingClosing.medium) {
+      log.info("we skip funding peers because current feerate is too high ({} < {}): increase eclair.peer-scoring.liquidity.max-feerate-sat-per-byte to start funding again", config.liquidity.maxFeerate, nodeParams.currentFeeratesForFundingClosing.medium)
+      run()
+    } else {
+      context.pipeToSelf(wallet.onChainBalance()) {
+        case Success(b) => OnChainBalance(b.confirmed, b.unconfirmed)
+        case Failure(e) => WalletError(e)
+      }
+      Behaviors.receiveMessagePartial {
+        case WalletError(e) =>
+          log.warn("cannot get on-chain balance: {}", e.getMessage)
+          run()
+        case OnChainBalance(confirmed, unconfirmed) =>
+          if (confirmed <= config.liquidity.minOnChainBalance) {
+            log.info("we don't have enough on-chain balance to fund new channels (confirmed={}, unconfirmed={})", confirmed.toMilliBtc, unconfirmed.toMilliBtc)
+          } else {
+            toFund
+              // We don't fund peers that are already being funded.
+              .filterNot(_.peer.hasPendingChannel)
+              // And we apply our configured funding limits to the liquidity suggestions.
+              .map(f => f.copy(fundingAmount = f.fundingAmount.max(config.liquidity.minFundingAmount).min(config.liquidity.maxFundingAmount)))
+              .foldLeft(confirmed - config.liquidity.minOnChainBalance) {
+                case (available, f) if available < f.fundingAmount * 0.5 => available
+                case (available, f) =>
+                  val fundingAmount = f.fundingAmount.min(available)
+                  log.info("funding channel with remote_node_id={} (funding_amount={})", f.remoteNodeId, fundingAmount.toMilliBtc)
+                  // TODO: when do we want to create a private channel? Maybe if we already have a bigger public channel?
+                  val channelFlags = ChannelFlags(announceChannel = true)
+                  val cmd = OpenChannel(f.remoteNodeId, fundingAmount, None, None, None, None, None, Some(channelFlags), Some(Timeout(60 seconds)))
+                  register ! Register.ForwardNodeId(context.system.ignoreRef, f.remoteNodeId, cmd)
+                  available - fundingAmount
+              }
+          }
+          run()
+      }
+    }
   }
 
 }

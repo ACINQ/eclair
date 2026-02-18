@@ -720,17 +720,18 @@ object NodeParams extends Logging {
         enabled = config.getBoolean("peer-scoring.enabled"),
         scoringFrequency = FiniteDuration(config.getDuration("peer-scoring.frequency").getSeconds, TimeUnit.SECONDS),
         topPeersCount = config.getInt("peer-scoring.top-peers-count"),
+        topPeersWhitelist = config.getStringList("peer-scoring.top-peers-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet,
         liquidity = PeerScorer.LiquidityConfig(
           autoFund = config.getBoolean("peer-scoring.liquidity.auto-fund"),
-          dailyFlowMultiplier = config.getInt("peer-scoring.liquidity.daily-flow-multiplier"),
+          autoClose = config.getBoolean("peer-scoring.liquidity.auto-close"),
           minFundingAmount = config.getLong("peer-scoring.liquidity.min-funding-amount-satoshis").sat,
           maxFundingAmount = config.getLong("peer-scoring.liquidity.max-funding-amount-satoshis").sat,
+          maxFundingTxPerDay = config.getInt("peer-scoring.liquidity.max-funding-tx-per-day"),
           minOnChainBalance = config.getLong("peer-scoring.liquidity.min-on-chain-balance-satoshis").sat,
           maxFeerate = FeeratePerByte(config.getLong("peer-scoring.liquidity.max-feerate-sat-per-byte").sat).perKw,
-          maxFrequency = FiniteDuration(config.getDuration("peer-scoring.liquidity.max-frequency").getSeconds, TimeUnit.SECONDS),
         ),
         relayFees = PeerScorer.RelayFeesConfig(
-          autoUpdate = config.getBoolean("peer-scoring.relay-fees.auto-udpate"),
+          autoUpdate = config.getBoolean("peer-scoring.relay-fees.auto-update"),
           minRelayFees = RelayFees(
             feeBase = config.getLong("peer-scoring.relay-fees.min-fee-base-msat").msat,
             feeProportionalMillionths = config.getLong("peer-scoring.relay-fees.min-fee-proportional-millionths"),
@@ -739,7 +740,8 @@ object NodeParams extends Logging {
             feeBase = config.getLong("peer-scoring.relay-fees.max-fee-base-msat").msat,
             feeProportionalMillionths = config.getLong("peer-scoring.relay-fees.max-fee-proportional-millionths"),
           ),
-          relayFeeUpdateMinVolume = config.getLong("peer-scoring.relay-fees.update-min-volume-satoshis").sat,
+          dailyPaymentVolumeThreshold = config.getLong("peer-scoring.relay-fees.daily-payment-volume-threshold-satoshis").sat,
+          dailyPaymentVolumeThresholdPercent = config.getDouble("peer-scoring.relay-fees.daily-payment-volume-threshold-percent"),
         )
       ),
       offersConfig = OffersConfig(

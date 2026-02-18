@@ -404,7 +404,7 @@ class Setup(val datadir: File,
       postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard, router.toTyped, register, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
       _ = if (nodeParams.peerScoringConfig.enabled) {
         val statsTracker = system.spawn(Behaviors.supervise(PeerStatsTracker(nodeParams.db.audit, channels)).onFailure(typed.SupervisorStrategy.restart), name = "peer-stats-tracker")
-        system.spawn(Behaviors.supervise(PeerScorer(nodeParams, statsTracker)).onFailure(typed.SupervisorStrategy.restart), name = "peer-scorer")
+        system.spawn(Behaviors.supervise(PeerScorer(nodeParams, bitcoinClient, statsTracker, register)).onFailure(typed.SupervisorStrategy.restart), name = "peer-scorer")
       }
 
       kit = Kit(
