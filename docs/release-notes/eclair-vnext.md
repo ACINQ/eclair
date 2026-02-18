@@ -26,6 +26,19 @@ However, when using zero-conf, this event may be emitted before the `channel-con
 
 See #3237 for more details.
 
+### Major changes to the AuditDb
+
+We make a collection of backwards-incompatible changes to all tables of the `audit` database.
+The main change is that it is way more relevant to track statistics for peer nodes instead of individual channels, so we want to track the `node_id` associated with each event.
+We also track more data about transactions we make and relayed payments, to more easily score peers based on the fees we're earning vs the fees we're paying (for on-chain transactions or for liquidity purchases).
+
+Note that we cannot migrate existing data (since it is lacking information that we now need), so we simply rename older tables with a `_before_v14` suffix and create new ones.
+Past data will thus not be accessible through the APIs, but can be queried directly using SQL if necessary.
+It should be acceptable, since liquidity decisions should be taken based on relatively recent data (a few weeks) in order to be economically relevant (nodes that generated fees months ago but aren't generating any new fees since then are probably not good peers).
+
+We expose a now `relaystats` API that ranks peers based on the routing fees they're generating.
+See #3245 for more details.
+
 ### Channel jamming accountability
 
 We update our channel jamming mitigation to match the latest draft of the [spec](https://github.com/lightning/bolts/pull/1280).
@@ -47,6 +60,7 @@ eclair.relay.reserved-for-accountable = 0.0
 
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now include a `maxCltvExpiryDelta` parameter (#3234)
 - `channel-opened` was removed from the websocket in favor of `channel-confirmed` and `channel-ready` (#3237)
+- `networkfees` and `channelstats` are removed in favor in `relaystats` (#3245)
 
 ### Miscellaneous improvements and bug fixes
 
