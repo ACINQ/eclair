@@ -20,6 +20,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, SatoshiLong, TxId}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.blockchain.BlockingOnChainWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
@@ -40,6 +41,7 @@ import scala.concurrent.duration._
 
 class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
+  private val BlockingOnChainWallet = "blocking_on_chain_wallet"
   private val HighRemoteDustLimit = "high_remote_dust_limit"
 
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, listener: TestProbe)
@@ -48,7 +50,8 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import com.softwaremill.quicklens._
 
     val aliceNodeParams = Alice.nodeParams.modify(_.channelConf.maxRemoteDustLimit).setToIf(test.tags.contains(HighRemoteDustLimit))(15_000 sat)
-    val setup = init(aliceNodeParams, Bob.nodeParams, tags = test.tags)
+    val wallet_opt = if (test.tags.contains(BlockingOnChainWallet)) Some(new BlockingOnChainWallet()) else None
+    val setup = init(aliceNodeParams, Bob.nodeParams, tags = test.tags, walletA_opt = wallet_opt)
     import setup._
 
     val channelParams = computeChannelParams(setup, test.tags)
@@ -64,7 +67,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     }
   }
 
-  test("recv AcceptChannel (anchor outputs zero fee htlc txs)") { f =>
+  test("recv AcceptChannel (anchor outputs zero fee htlc txs)", Tag(BlockingOnChainWallet)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // Since https://github.com/lightningnetwork/lightning-rfc/pull/714 we must include an empty upfront_shutdown_script.
@@ -76,7 +79,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectNoMessage()
   }
 
-  test("recv AcceptChannel (anchor outputs zero fee htlc txs and scid alias)", Tag(ChannelStateTestsTags.ScidAlias)) { f =>
+  test("recv AcceptChannel (anchor outputs zero fee htlc txs and scid alias)", Tag(ChannelStateTestsTags.ScidAlias), Tag(BlockingOnChainWallet)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true)))
@@ -86,7 +89,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectNoMessage()
   }
 
-  test("recv AcceptChannel (simple taproot channels phoenix)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix)) { f =>
+  test("recv AcceptChannel (simple taproot channels phoenix)", Tag(ChannelStateTestsTags.OptionSimpleTaprootPhoenix), Tag(BlockingOnChainWallet)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.channelType_opt.contains(ChannelTypes.SimpleTaprootChannelsPhoenix))

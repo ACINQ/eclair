@@ -31,7 +31,7 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.{TimestampSecond, randomBytes32}
 import scodec.bits._
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.{Failure, Random, Success}
 
 /**
@@ -227,6 +227,14 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainAddressCache {
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(doubleSpent.contains(tx.txid))
 
   override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = p2trScript
+}
+
+/** A wallet that blocks when called to fund transactions (useful to test events happening while funding). */
+class BlockingOnChainWallet extends SingleKeyOnChainWallet {
+  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw, feeBudget_opt: Option[Satoshi])(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
+    // We create a dummy promise that will never be completed.
+    Promise().future
+  }
 }
 
 object DummyOnChainWallet {
