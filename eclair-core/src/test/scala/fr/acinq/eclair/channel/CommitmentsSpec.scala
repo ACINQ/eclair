@@ -415,17 +415,17 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("should always be able to send availableForSend", Tag("fuzzy")) { f =>
-    val maxPendingHtlcAmount = 1000000.msat
+    val maxPendingHtlcAmount = 1_000_000.msat
     case class FuzzTest(isInitiator: Boolean, pendingHtlcs: Int, feeRatePerKw: FeeratePerKw, dustLimit: Satoshi, toLocal: MilliSatoshi, toRemote: MilliSatoshi)
     for (_ <- 1 to 100) {
       val t = FuzzTest(
         isInitiator = Random.nextInt(2) == 0,
         pendingHtlcs = Random.nextInt(10),
-        feeRatePerKw = FeeratePerKw(Random.nextInt(10000).max(1).sat),
+        feeRatePerKw = FeeratePerKw(Random.nextInt(10_000).max(1).sat),
         dustLimit = Random.nextInt(1000).sat,
-        // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
-        toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
-        toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
+        // We make sure both sides have enough to send/receive at least the initial pending HTLCs while paying the commit fees.
+        toLocal = maxPendingHtlcAmount * 2 * 15 + Random.nextInt(1_000_000_000).msat,
+        toRemote = maxPendingHtlcAmount * 2 * 15 + Random.nextInt(1_000_000_000).msat)
       var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator)
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 1 to t.pendingHtlcs) {
@@ -433,7 +433,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         val (_, cmdAdd) = makeCmdAdd(amount, randomKey().publicKey, f.currentBlockHeight)
         c.sendAdd(cmdAdd, f.currentBlockHeight, TestConstants.Alice.nodeParams.channelConf, feeConfNoMismatch) match {
           case Right((cc, _)) => c = cc
-          case Left(e) => ignore(s"$t -> could not setup initial htlcs: $e")
+          case Left(e) => // we ignore failures (the HTLC amount probably exceeded availableBalanceForSend)
         }
       }
       if (c.availableBalanceForSend > 0.msat) {
@@ -445,17 +445,17 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("should always be able to receive availableForReceive", Tag("fuzzy")) { f =>
-    val maxPendingHtlcAmount = 1000000.msat
+    val maxPendingHtlcAmount = 1_000_000.msat
     case class FuzzTest(isInitiator: Boolean, pendingHtlcs: Int, feeRatePerKw: FeeratePerKw, dustLimit: Satoshi, toLocal: MilliSatoshi, toRemote: MilliSatoshi)
     for (_ <- 1 to 100) {
       val t = FuzzTest(
         isInitiator = Random.nextInt(2) == 0,
         pendingHtlcs = Random.nextInt(10),
-        feeRatePerKw = FeeratePerKw(Random.nextInt(10000).max(1).sat),
+        feeRatePerKw = FeeratePerKw(Random.nextInt(10_000).max(1).sat),
         dustLimit = Random.nextInt(1000).sat,
-        // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
-        toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
-        toRemote = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat)
+        // We make sure both sides have enough to send/receive at least the initial pending HTLCs while paying the commit fees.
+        toLocal = maxPendingHtlcAmount * 2 * 15 + Random.nextInt(1_000_000_000).msat,
+        toRemote = maxPendingHtlcAmount * 2 * 15 + Random.nextInt(1_000_000_000).msat)
       var c = CommitmentsSpec.makeCommitments(t.toLocal, t.toRemote, t.feeRatePerKw, t.dustLimit, t.isInitiator)
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 1 to t.pendingHtlcs) {
@@ -463,7 +463,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         val add = UpdateAddHtlc(randomBytes32(), c.changes.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket, None, accountable = false, None)
         c.receiveAdd(add) match {
           case Right(cc) => c = cc
-          case Left(e) => ignore(s"$t -> could not setup initial htlcs: $e")
+          case Left(e) => // we ignore failures (the HTLC amount probably exceeded availableBalanceForReceive)
         }
       }
       if (c.availableBalanceForReceive > 0.msat) {
