@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel.states.b
 import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.eclair.blockchain.BlockingOnChainWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.TickChannelOpenTimeout
@@ -40,7 +41,8 @@ class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFu
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceOpenReplyTo: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, listener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init(tags = test.tags)
+    // Note that we use a dummy wallet that doesn't complete its transaction funding.
+    val setup = init(tags = test.tags, walletA_opt = Some(new BlockingOnChainWallet()))
     import setup._
     val channelParams = computeChannelParams(setup, test.tags)
     val listener = TestProbe()
