@@ -28,3 +28,5 @@ DeleteMe*.*
 jdbcUrlFile_*.tmp
 
 .DS_Store
+
+.claude*
