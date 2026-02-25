@@ -44,6 +44,7 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
       minOnChainBalance = 5_000_000 sat, // 0.05 BTC
       maxFeerate = FeeratePerByte(100 sat).perKw,
       maxFundingTxPerDay = 100,
+      fundingCooldown = 72 hours,
     ),
     relayFees = PeerScorer.RelayFeesConfig(
       autoUpdate = true,
@@ -506,6 +507,251 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
       inside(tracker.expectMessageType[GetLatestStats]) { msg =>
         msg.replyTo ! LatestStats(Seq(peerInfo))
       }
+      register.expectNoMessage(100 millis)
+    }
+  }
+
+  test("don't fund the same peer within cooldown period") {
+    withFixture(onChainBalance = 10 btc) { f =>
+      import f._
+
+      // We have a stable, large outgoing flow with a single peer and not much liquidity left: we should add liquidity.
+      val stats = Seq.fill(weeklyBuckets)(peerStats(totalAmountOut = 1 btc, relayFeeEarned = 0.01 btc))
+      val channel = channelInfo(canSend = 0.1 btc, canReceive = 4.9 btc)
+
+      // First scoring cycle: we fund the peer.
+      scorer ! ScorePeers(None)
+      inside(tracker.expectMessageType[GetLatestStats]) { msg =>
+        msg.replyTo ! LatestStats(Seq(PeerInfo(remoteNodeId1, stats, Seq(channel), None, hasPendingChannel = false)))
+      }
+      inside(register.expectMessageType[Register.ForwardNodeId[OpenChannel]]) { cmd =>
+        assert(cmd.nodeId == remoteNodeId1)
+      }
+      register.expectNoMessage(100 millis)
+
+      // Second scoring cycle with the same volume: we don't fund again because the cooldown is active and volume hasn't improved.
+      scorer ! ScorePeers(None)
+      inside(tracker.expectMessageType[GetLatestStats]) { msg =>
+        msg.replyTo ! LatestStats(Seq(PeerInfo(remoteNodeId1, stats, Seq(channel), None, hasPendingChannel = false)))
+      }
+      register.expectNoMessage(100 millis)
+
+      // Third scoring cycle: volume improved by more than 10%, so we fund again despite cooldown.
+      scorer ! ScorePeers(None)
+      inside(tracker.expectMessageType[GetLatestStats]) { msg =>
+        val improvedStats = Seq.fill(weeklyBuckets)(peerStats(totalAmountOut = 1.2 btc, relayFeeEarned = 0.012 btc))
+        msg.replyTo ! LatestStats(Seq(PeerInfo(remoteNodeId1, improvedStats, Seq(channel), None, hasPendingChannel = false)))
+      }
+      inside(register.expectMessageType[Register.ForwardNodeId[OpenChannel]]) { cmd =>
+        assert(cmd.nodeId == remoteNodeId1)
+      }
+      register.expectNoMessage(100 millis)
+    }
+  }
+
+  test("revert fee increase when volume drops") {
+    withFixture(onChainBalance = 0 btc) { f =>
+      import f._
+
+      val channel = channelInfo(canSend = 0.3 btc, canReceive = 0.5 btc)
+      val initialFee = RelayFees(250 msat, 1000)
+      val latestUpdate = channelUpdate(channel.capacity, fees = initialFee, timestamp = TimestampSecond.now() - Bucket.duration * 3)
+
+      // First cycle: increasing volume triggers a fee increase.
+      val bucketRatio = Bucket.consumed(TimestampMilli.now())
+      val peerInfo1 = PeerInfo(
+        remoteNodeId = remoteNodeId1,
+        stats = Seq(
+          peerStats(totalAmountOut = 0.02.btc * bucketRatio, relayFeeEarned = 0.00015.btc * bucketRatio),
+          peerStats(totalAmountOut = 0.012 btc, relayFeeEarned = 0.0001 btc),
+          peerStats(totalAmountOut = 0.005 btc, relayFeeEarned = 0.00007 btc),
+          peerStats(totalAmountOut = 0.003 btc, relayFeeEarned = 0.00005 btc),
+          peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc),
+        ) ++ Seq.fill(weeklyBuckets - 5)(peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc)),
+        channels = Seq(channel),
+        latestUpdate_opt = Some(latestUpdate),
+        hasPendingChannel = false
+      )
+
+      scorer ! ScorePeers(None)
+      inside(tracker.expectMessageType[GetLatestStats]) { msg =>
+        msg.replyTo ! LatestStats(Seq(peerInfo1))
+      }
+      inside(register.expectMessageType[Register.Forward[CMD_UPDATE_RELAY_FEE]]) { cmd =>
+        assert(cmd.message.feeProportionalMillionths == 1500)
+      }
+      register.expectNoMessage(100 millis)
+
+      // Second cycle: the fee increase is now in effect (channel update reflects new fee), but volume has dropped >20%.
+      // The update timestamp is within the evaluation window (6h-24h ago).
+      val newUpdate = channelUpdate(channel.capacity, fees = RelayFees(250 msat, 1500), timestamp = TimestampSecond.now() - Bucket.duration * 3)
+      val peerInfo2 = PeerInfo(
+        remoteNodeId = remoteNodeId1,
+        stats = Seq(
+          // Volume has dropped significantly (>20% of what it was when we increased fees).
+          peerStats(totalAmountOut = 0.001.btc * bucketRatio, relayFeeEarned = 0.00001.btc * bucketRatio),
+          peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc),
+          peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc),
+          peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc),
+        ) ++ Seq.fill(weeklyBuckets - 4)(peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc)),
+        channels = Seq(channel),
+        latestUpdate_opt = Some(newUpdate),
+        hasPendingChannel = false
+      )
+
+      scorer ! ScorePeers(None)
+      inside(tracker.expectMessageType[GetLatestStats]) { msg =>
+        msg.replyTo ! LatestStats(Seq(peerInfo2))
+      }
+      // The fee should be reverted to the original value.
+      inside(register.expectMessageType[Register.Forward[CMD_UPDATE_RELAY_FEE]]) { cmd =>
+        assert(cmd.message.feeProportionalMillionths == initialFee.feeProportionalMillionths)
+      }
+      register.expectNoMessage(100 millis)
+    }
+  }
+
+  test("revert fee decrease when volume doesn't recover") {
+    withFixture(onChainBalance = 0 btc) { f =>
+      import f._
+
+      val channel = channelInfo(canSend = 0.5 btc, canReceive = 0.5 btc)
+      val initialFee = RelayFees(250 msat, 2000)
+      val latestUpdate = channelUpdate(channel.capacity, fees = initialFee, timestamp = TimestampSecond.now() - Bucket.duration * 3)
+
+      // First cycle: decreasing volume triggers a fee decrease.
+      val bucketRatio = Bucket.consumed(TimestampMilli.now())
+      val peerInfo1 = PeerInfo(
+        remoteNodeId = remoteNodeId1,
+        stats = Seq(
+          peerStats(totalAmountOut = 0.003.btc * bucketRatio, relayFeeEarned = 0.00003.btc * bucketRatio),
+          peerStats(totalAmountOut = 0.003 btc, relayFeeEarned = 0.00003 btc),
+          peerStats(totalAmountOut = 0.01 btc, relayFeeEarned = 0.0001 btc),
+          peerStats(totalAmountOut = 0.012 btc, relayFeeEarned = 0.00012 btc),
+        ) ++ Seq.fill(weeklyBuckets - 4)(peerStats(totalAmountOut = 0.012 btc, relayFeeEarned = 0.00012 btc)),
+        channels = Seq(channel),
+        latestUpdate_opt = Some(latestUpdate),
+        hasPendingChannel = false
+      )
+
+      scorer ! ScorePeers(None)
+      inside(tracker.expectMessageType[GetLatestStats]) { msg =>
+        msg.replyTo ! LatestStats(Seq(peerInfo1))
+      }
+      inside(register.expectMessageType[Register.Forward[CMD_UPDATE_RELAY_FEE]]) { cmd =>
+        assert(cmd.message.feeProportionalMillionths == 1500)
+      }
+      register.expectNoMessage(100 millis)
+
+      // Second cycle: the fee decrease is in effect but volume hasn't recovered (below 90% of what it was).
+      val newUpdate = channelUpdate(channel.capacity, fees = RelayFees(250 msat, 1500), timestamp = TimestampSecond.now() - Bucket.duration * 3)
+      val peerInfo2 = PeerInfo(
+        remoteNodeId = remoteNodeId1,
+        stats = Seq(
+          // Volume is still very low (well below 90% of dailyVolumeOutAtChange).
+          peerStats(totalAmountOut = 0.001.btc * bucketRatio, relayFeeEarned = 0.00001.btc * bucketRatio),
+          peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc),
+          peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc),
+          peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc),
+        ) ++ Seq.fill(weeklyBuckets - 4)(peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc)),
+        channels = Seq(channel),
+        latestUpdate_opt = Some(newUpdate),
+        hasPendingChannel = false
+      )
+
+      scorer ! ScorePeers(None)
+      inside(tracker.expectMessageType[GetLatestStats]) { msg =>
+        msg.replyTo ! LatestStats(Seq(peerInfo2))
+      }
+      // The fee should be reverted to the original value.
+      inside(register.expectMessageType[Register.Forward[CMD_UPDATE_RELAY_FEE]]) { cmd =>
+        assert(cmd.message.feeProportionalMillionths == initialFee.feeProportionalMillionths)
+      }
+      register.expectNoMessage(100 millis)
+    }
+  }
+
+  test("fee reverts should not oscillate") {
+    withFixture(onChainBalance = 0 btc) { f =>
+      import f._
+
+      val channel = channelInfo(canSend = 0.3 btc, canReceive = 0.5 btc)
+      val initialFee = RelayFees(250 msat, 1000)
+      val latestUpdate = channelUpdate(channel.capacity, fees = initialFee, timestamp = TimestampSecond.now() - Bucket.duration * 3)
+
+      // Cycle 1: increasing volume triggers a fee increase (1000 -> 1500).
+      val bucketRatio = Bucket.consumed(TimestampMilli.now())
+      val peerInfo1 = PeerInfo(
+        remoteNodeId = remoteNodeId1,
+        stats = Seq(
+          peerStats(totalAmountOut = 0.02.btc * bucketRatio, relayFeeEarned = 0.00015.btc * bucketRatio),
+          peerStats(totalAmountOut = 0.012 btc, relayFeeEarned = 0.0001 btc),
+          peerStats(totalAmountOut = 0.005 btc, relayFeeEarned = 0.00007 btc),
+          peerStats(totalAmountOut = 0.003 btc, relayFeeEarned = 0.00005 btc),
+          peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc),
+        ) ++ Seq.fill(weeklyBuckets - 5)(peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc)),
+        channels = Seq(channel),
+        latestUpdate_opt = Some(latestUpdate),
+        hasPendingChannel = false
+      )
+
+      scorer ! ScorePeers(None)
+      inside(tracker.expectMessageType[GetLatestStats]) { msg =>
+        msg.replyTo ! LatestStats(Seq(peerInfo1))
+      }
+      inside(register.expectMessageType[Register.Forward[CMD_UPDATE_RELAY_FEE]]) { cmd =>
+        assert(cmd.message.feeProportionalMillionths == 1500)
+      }
+      register.expectNoMessage(100 millis)
+
+      // Cycle 2: volume dropped >20% after the increase: we revert back to 1000.
+      val increasedFeeUpdate = channelUpdate(channel.capacity, fees = RelayFees(250 msat, 1500), timestamp = TimestampSecond.now() - Bucket.duration * 3)
+      val peerInfo2 = PeerInfo(
+        remoteNodeId = remoteNodeId1,
+        stats = Seq(
+          peerStats(totalAmountOut = 0.001.btc * bucketRatio, relayFeeEarned = 0.00001.btc * bucketRatio),
+          peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc),
+          peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc),
+          peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc),
+        ) ++ Seq.fill(weeklyBuckets - 4)(peerStats(totalAmountOut = 0.001 btc, relayFeeEarned = 0.00001 btc)),
+        channels = Seq(channel),
+        latestUpdate_opt = Some(increasedFeeUpdate),
+        hasPendingChannel = false
+      )
+
+      scorer ! ScorePeers(None)
+      inside(tracker.expectMessageType[GetLatestStats]) { msg =>
+        msg.replyTo ! LatestStats(Seq(peerInfo2))
+      }
+      inside(register.expectMessageType[Register.Forward[CMD_UPDATE_RELAY_FEE]]) { cmd =>
+        assert(cmd.message.feeProportionalMillionths == 1000) // reverted
+      }
+      register.expectNoMessage(100 millis)
+
+      // Cycle 3: the revert is now in effect, but volume continues to decline. The revert recorded a FeeDecrease in
+      // the history (from 1500 back to 1000). If the code treats this revert as a regular fee decrease decision, the
+      // revert logic would trigger again (volume < 90% of what it was at revert time) and flip the fee back to 1500,
+      // creating an oscillation: 1000 -> 1500 -> 1000 -> 1500 -> ...
+      // A revert should be final and not subject to further revert evaluation.
+      val revertedFeeUpdate = channelUpdate(channel.capacity, fees = RelayFees(250 msat, 1000), timestamp = TimestampSecond.now() - Bucket.duration * 3)
+      val peerInfo3 = PeerInfo(
+        remoteNodeId = remoteNodeId1,
+        stats = Seq(
+          peerStats(totalAmountOut = 0.0005.btc * bucketRatio, relayFeeEarned = 0.000005.btc * bucketRatio),
+          peerStats(totalAmountOut = 0.0005 btc, relayFeeEarned = 0.000005 btc),
+          peerStats(totalAmountOut = 0.0005 btc, relayFeeEarned = 0.000005 btc),
+          peerStats(totalAmountOut = 0.0005 btc, relayFeeEarned = 0.000005 btc),
+        ) ++ Seq.fill(weeklyBuckets - 4)(peerStats(totalAmountOut = 0.0005 btc, relayFeeEarned = 0.000005 btc)),
+        channels = Seq(channel),
+        latestUpdate_opt = Some(revertedFeeUpdate),
+        hasPendingChannel = false
+      )
+
+      scorer ! ScorePeers(None)
+      inside(tracker.expectMessageType[GetLatestStats]) { msg =>
+        msg.replyTo ! LatestStats(Seq(peerInfo3))
+      }
+      // The fee should NOT change again: the revert was a correction, not a new decision to evaluate.
       register.expectNoMessage(100 millis)
     }
   }

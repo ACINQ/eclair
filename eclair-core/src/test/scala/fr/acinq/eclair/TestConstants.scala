@@ -275,6 +275,7 @@ object TestConstants {
           minOnChainBalance = 5_000_000 sat, // 0.05 BTC
           maxFeerate = FeeratePerByte(100 sat).perKw,
           maxFundingTxPerDay = 100,
+          fundingCooldown = 72 hours,
         ),
         relayFees = PeerScorer.RelayFeesConfig(
           autoUpdate = true,
@@ -489,6 +490,7 @@ object TestConstants {
           minOnChainBalance = 5_000_000 sat, // 0.05 BTC
           maxFeerate = FeeratePerByte(100 sat).perKw,
           maxFundingTxPerDay = 100,
+          fundingCooldown = 72 hours,
         ),
         relayFees = PeerScorer.RelayFeesConfig(
           autoUpdate = true,
