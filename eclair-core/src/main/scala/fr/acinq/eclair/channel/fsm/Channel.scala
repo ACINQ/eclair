@@ -685,6 +685,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 val minDepth_opt = d.commitments.channelParams.minDepth(nodeParams.channelConf.minDepth)
                 watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
                 val commitments1 = d.commitments.add(signingSession1.commitment)
+                context.system.eventStream.publish(ChannelFundingCreated(self, d.channelId, remoteNodeId, Right(signingSession1.fundingTx.signedTx_opt.getOrElse(signingSession1.fundingTx.sharedTx.tx.buildUnsignedTx())), signingSession1.commitment.fundingTxIndex, commitments1))
                 val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
                 stay() using d1 storing() sending signingSession1.localSigs calling endQuiescence(d1)
             }
@@ -1457,6 +1458,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   val minDepth_opt = d.commitments.channelParams.minDepth(nodeParams.channelConf.minDepth)
                   watchFundingConfirmed(signingSession.fundingTx.txId, minDepth_opt, delay_opt = None)
                   val commitments1 = d.commitments.add(signingSession1.commitment)
+                  context.system.eventStream.publish(ChannelFundingCreated(self, d.channelId, remoteNodeId, Right(signingSession1.fundingTx.signedTx_opt.getOrElse(signingSession1.fundingTx.sharedTx.tx.buildUnsignedTx())), signingSession1.commitment.fundingTxIndex, commitments1))
                   val d1 = d.copy(commitments = commitments1, spliceStatus = SpliceStatus.NoSplice)
                   log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, signingSession1.fundingTx.sharedTx.txId)
                   Metrics.recordSplice(signingSession1.fundingTx.fundingParams, signingSession1.fundingTx.sharedTx.tx)

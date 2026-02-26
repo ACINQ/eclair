@@ -334,6 +334,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
                   txPublisher ! SetChannelId(remoteNodeId, channelId)
                   context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
                   context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
+                  context.system.eventStream.publish(ChannelFundingCreated(self, channelId, remoteNodeId, Left(commitment.fundingTxId), commitment.fundingTxIndex, commitments))
                   // NB: we don't send a ChannelSignatureSent for the first commit
                   log.info("waiting for them to publish the funding tx for channelId={} fundingTxid={}", channelId, commitment.fundingTxId)
                   watchFundingConfirmed(commitment.fundingTxId, d.channelParams.minDepth(nodeParams.channelConf.minDepth), delay_opt = None)
@@ -391,6 +392,7 @@ trait ChannelOpenSingleFunded extends SingleFundingHandlers with ErrorHandlers {
             originChannels = Map.empty)
           val blockHeight = nodeParams.currentBlockHeight
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
+          context.system.eventStream.publish(ChannelFundingCreated(self, d.channelId, remoteNodeId, Right(d.fundingTx), commitment.fundingTxIndex, commitments))
           log.info("publishing funding tx fundingTxId={}", commitment.fundingTxId)
           watchFundingConfirmed(commitment.fundingTxId, d.channelParams.minDepth(nodeParams.channelConf.minDepth), delay_opt = None)
           // we will publish the funding tx only after the channel state has been written to disk because we want to

@@ -52,6 +52,11 @@ case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, an
 /** This event will be sent if a channel was aborted before completing the opening flow. */
 case class ChannelAborted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32) extends ChannelEvent
 
+/** This event is sent once a funding transaction (channel creation or splice) is ready to be published. */
+case class ChannelFundingCreated(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, fundingTx: Either[TxId, Transaction], fundingTxIndex: Long, commitments: Commitments) extends ChannelEvent {
+  val fundingTxId: TxId = fundingTx.fold(txId => txId, tx => tx.txid)
+}
+
 /** This event is sent once a funding transaction (channel creation or splice) has been confirmed. */
 case class ChannelFundingConfirmed(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, fundingTxId: TxId, fundingTxIndex: Long, blockHeight: BlockHeight, commitments: Commitments) extends ChannelEvent
 

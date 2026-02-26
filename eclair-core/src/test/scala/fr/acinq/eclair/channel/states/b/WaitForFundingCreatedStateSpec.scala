@@ -70,6 +70,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
 
   test("recv FundingCreated") { f =>
     import f._
+    bob.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelFundingCreated])
     alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
@@ -77,6 +78,8 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     val watchConfirmed = bob2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(watchConfirmed.minDepth == Bob.nodeParams.channelConf.minDepth)
+    val fundingCreated = listener.expectMsgType[ChannelFundingCreated]
+    assert(fundingCreated.fundingTx == Left(watchConfirmed.txId))
   }
 
   test("recv FundingCreated (funder can't pay fees)", Tag(FunderBelowCommitFees)) { f =>
