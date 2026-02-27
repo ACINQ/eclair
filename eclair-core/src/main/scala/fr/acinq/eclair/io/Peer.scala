@@ -89,14 +89,9 @@ class Peer(val nodeParams: NodeParams,
         FinalChannelId(state.channelId) -> channel
       }.toMap
       context.system.eventStream.publish(PeerCreated(self, remoteNodeId))
-      val peerStorageData = if (nodeParams.features.hasFeature(Features.ProvideStorage)) {
-        nodeParams.db.peers.getStorage(remoteNodeId)
-      } else {
-        None
-      }
       // When we restart, we will attempt to reconnect right away, but then we'll wait.
       // We don't fetch our peer's features from the DB: if the connection succeeds, we will get them from their init message, which saves a DB call.
-      goto(DISCONNECTED) using DisconnectedData(channels, activeChannels = Set.empty, PeerStorage(peerStorageData, written = true), remoteFeatures_opt = None)
+      goto(DISCONNECTED) using DisconnectedData(channels, activeChannels = Set.empty, peerStorage = PeerStorage.Uninitialized, remoteFeatures_opt = None)
   }
 
   when(DISCONNECTED) {
@@ -150,13 +145,14 @@ class Peer(val nodeParams: NodeParams,
 
     case Event(_: LightningMessage, _) => stay() // we probably just got disconnected and that's the last messages we received
 
-    case Event(WritePeerStorage, d: DisconnectedData) =>
-      d.peerStorage.data.foreach(nodeParams.db.peers.updateStorage(remoteNodeId, _))
-      stay() using d.copy(peerStorage = d.peerStorage.copy(written = true))
+    case Event(TickWritePeerStorage, d: DisconnectedData) =>
+      val peerStorage1 = writePeerStorage(d.peerStorage)
+      stay() using d.copy(peerStorage = peerStorage1)
 
     case Event(e: ChannelReadyForPayments, d: DisconnectedData) =>
-      if (!d.peerStorage.written && !isTimerActive(WritePeerStorageTimerKey)) {
-        startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.getWriteDelay(remoteNodeId, d.remoteFeatures_opt.map(_.features)))
+      d.peerStorage match {
+        case _: PeerStorage.PendingWrite => maybeScheduleWritePeerStorageTick(d.remoteFeatures_opt.map(_.features))
+        case _ => ()
       }
       val remoteFeatures_opt = d.remoteFeatures_opt match {
         case Some(remoteFeatures) if !remoteFeatures.written =>
@@ -503,8 +499,9 @@ class Peer(val nodeParams: NodeParams,
                 }
             }
         }
-        if (!d.peerStorage.written && !isTimerActive(WritePeerStorageTimerKey)) {
-          startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.getWriteDelay(remoteNodeId, Some(d.remoteFeatures)))
+        d.peerStorage match {
+          case _: PeerStorage.PendingWrite => maybeScheduleWritePeerStorageTick(Some(d.remoteFeatures))
+          case _ => ()
         }
         if (!d.remoteFeaturesWritten) {
           // We have a channel, so we can write to the DB without any DoS risk.
@@ -624,18 +621,18 @@ class Peer(val nodeParams: NodeParams,
           // writing to the DB and may never store our peer's backup.
           if (d.activeChannels.isEmpty) {
             log.debug("received peer storage from peer with no active channel")
-          } else if (!isTimerActive(WritePeerStorageTimerKey)) {
-            startSingleTimer(WritePeerStorageTimerKey, WritePeerStorage, nodeParams.peerStorageConfig.getWriteDelay(remoteNodeId, Some(d.remoteFeatures)))
+          } else {
+            maybeScheduleWritePeerStorageTick(Some(d.remoteFeatures))
           }
-          stay() using d.copy(peerStorage = PeerStorage(Some(store.blob), written = false))
+          stay() using d.copy(peerStorage = PeerStorage.PendingWrite(store.blob))
         } else {
           log.debug("ignoring peer storage, feature disabled")
           stay()
         }
 
-      case Event(WritePeerStorage, d: ConnectedData) =>
-        d.peerStorage.data.foreach(nodeParams.db.peers.updateStorage(remoteNodeId, _))
-        stay() using d.copy(peerStorage = d.peerStorage.copy(written = true))
+      case Event(TickWritePeerStorage, d: ConnectedData) =>
+        val peerStorage1 = writePeerStorage(d.peerStorage)
+        stay() using d.copy(peerStorage = peerStorage1)
 
       case Event(unhandledMsg: LightningMessage, _) =>
         log.warning("ignoring message {}", unhandledMsg)
@@ -895,7 +892,23 @@ class Peer(val nodeParams: NodeParams,
     }
 
     // If we have some data stored from our peer, we send it to them before doing anything else.
-    peerStorage.data.foreach(connectionReady.peerConnection ! PeerStorageRetrieval(_))
+    val peerStorage1 = peerStorage match {
+      case PeerStorage.Uninitialized =>
+        val peerStorageData_opt = if (nodeParams.features.hasFeature(Features.ProvideStorage)) {
+          nodeParams.db.peers.getStorage(remoteNodeId)
+        } else {
+          None
+        }
+        peerStorageData_opt.map(PeerStorage.WrittenToDb(_)).getOrElse(PeerStorage.Empty)
+      case other => other
+    }
+    val peerStorageData_opt = peerStorage1 match {
+      case PeerStorage.Uninitialized => None // impossible!
+      case PeerStorage.Empty => None
+      case PeerStorage.PendingWrite(data) => Some(data)
+      case PeerStorage.WrittenToDb(data) => Some(data)
+    }
+    peerStorageData_opt.foreach(connectionReady.peerConnection ! PeerStorageRetrieval(_))
 
     // let's bring existing/requested channels online
     channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
@@ -914,7 +927,7 @@ class Peer(val nodeParams: NodeParams,
       connectionReady.peerConnection ! CurrentFeeCredit(nodeParams.chainHash, feeCredit.getOrElse(0 msat))
     }
 
-    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, activeChannels, feerates, None, peerStorage, remoteFeaturesWritten = connectionReady.outgoing)
+    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, activeChannels, feerates, None, peerStorage1, remoteFeaturesWritten = connectionReady.outgoing)
   }
 
   /**
@@ -988,8 +1001,9 @@ class Peer(val nodeParams: NodeParams,
   private val openChannelInterceptor = context.spawnAnonymous(Behaviors.supervise(OpenChannelInterceptor(context.self.toTyped, nodeParams, remoteNodeId, wallet, pendingChannelsRateLimiter)).onFailure(typed.SupervisorStrategy.resume))
 
   private def stopPeer(peerStorage: PeerStorage): State = {
-    if (!peerStorage.written) {
-      peerStorage.data.foreach(nodeParams.db.peers.updateStorage(remoteNodeId, _))
+    peerStorage match {
+      case PeerStorage.PendingWrite(data) => nodeParams.db.peers.updateStorage(remoteNodeId, data)
+      case _ => ()
     }
     log.info("removing peer from db")
     cancelUnsignedOnTheFlyFunding()
@@ -1025,12 +1039,28 @@ class Peer(val nodeParams: NodeParams,
     Logs.mdc(LogCategory(currentMessage), Some(remoteNodeId), Logs.channelId(currentMessage), nodeAlias_opt = Some(nodeParams.alias))
   }
 
-  private val WritePeerStorageTimerKey = "peer-storage-write"
+  private def maybeScheduleWritePeerStorageTick(remoteFeatures_opt: Option[Features[InitFeature]]): Unit = {
+    if (!isTimerActive(WRITE_PEER_STORAGE_TIMER_KEY)) {
+      startSingleTimer(WRITE_PEER_STORAGE_TIMER_KEY, TickWritePeerStorage, nodeParams.peerStorageConfig.getWriteDelay(remoteNodeId, remoteFeatures_opt))
+    }
+  }
+
+  private def writePeerStorage(peerStorage: PeerStorage): PeerStorage = {
+    peerStorage match {
+      case PeerStorage.PendingWrite(data) =>
+        nodeParams.db.peers.updateStorage(remoteNodeId, data)
+        PeerStorage.WrittenToDb(data)
+      case other => other
+    }
+  }
+
 }
 
 object Peer {
 
   val CHANNELID_ZERO: ByteVector32 = ByteVector32.Zeroes
+
+  private val WRITE_PEER_STORAGE_TIMER_KEY = "tick-write-peer-storage"
 
   trait ChannelFactory {
     def spawn(context: ActorContext, remoteNodeId: PublicKey, channelKeys: ChannelKeys): ActorRef
@@ -1053,7 +1083,13 @@ object Peer {
   case class TemporaryChannelId(id: ByteVector32) extends ChannelId
   case class FinalChannelId(id: ByteVector32) extends ChannelId
 
-  case class PeerStorage(data: Option[ByteVector], written: Boolean)
+  sealed trait PeerStorage
+  object PeerStorage {
+    case object Uninitialized extends PeerStorage
+    case object Empty extends PeerStorage
+    case class PendingWrite(data: ByteVector) extends PeerStorage
+    case class WrittenToDb(data: ByteVector) extends PeerStorage
+  }
 
   case class LastRemoteFeatures(features: Features[InitFeature], written: Boolean)
 
@@ -1065,7 +1101,7 @@ object Peer {
   case object Nothing extends Data {
     override def channels: Map[_ <: ChannelId, ActorRef] = Map.empty
     override def activeChannels: Set[ByteVector32] = Set.empty
-    override def peerStorage: PeerStorage = PeerStorage(None, written = true)
+    override def peerStorage: PeerStorage = PeerStorage.Uninitialized
   }
   case class DisconnectedData(channels: Map[FinalChannelId, ActorRef], activeChannels: Set[ByteVector32], peerStorage: PeerStorage, remoteFeatures_opt: Option[LastRemoteFeatures]) extends Data
   case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], activeChannels: Set[ByteVector32], currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates], peerStorage: PeerStorage, remoteFeaturesWritten: Boolean) extends Data {
@@ -1185,6 +1221,6 @@ object Peer {
 
   case class RelayUnknownMessage(unknownMessage: UnknownMessage)
 
-  case object WritePeerStorage
+  private case object TickWritePeerStorage
   // @formatter:on
 }
