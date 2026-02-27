@@ -40,13 +40,14 @@ import fr.acinq.eclair.io.OpenChannelInterceptor.makeChannelParams
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, InputInfo, PhoenixSimpleTaprootChannelCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Feature, FeatureSupport, Features, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, randomBytes32, randomKey}
+import fr.acinq.eclair.{Feature, FeatureSupport, Features, MilliSatoshiLong, NodeParams, PluginParams, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, UInt64, ValidateInteractiveTxPlugin, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
 import scala.reflect.ClassTag
 
@@ -218,8 +219,11 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
-  private def createFixtureParams(channelType: SupportedChannelType, fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false), nonInitiatorPaysCommitTxFees: Boolean = false): FixtureParams = {
-    val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(features = Features(channelType.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport])))
+  private def createFixtureParams(channelType: SupportedChannelType, fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false), nonInitiatorPaysCommitTxFees: Boolean = false, plugins: Seq[PluginParams] = Nil): FixtureParams = {
+    val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(
+      features = Features(channelType.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport]),
+      pluginParams = plugins,
+    ))
     val localChannelParamsA = makeChannelParams(nodeParamsA, nodeParamsA.features.initFeatures(), None, isChannelOpener = true, paysCommitTxFees = !nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountA)
     val commitParamsA = CommitParams(nodeParamsA.channelConf.dustLimit, nodeParamsA.channelConf.htlcMinimum, nodeParamsA.channelConf.maxHtlcValueInFlight(fundingAmountA + fundingAmountB, unlimited = false), nodeParamsA.channelConf.maxAcceptedHtlcs, nodeParamsB.channelConf.toRemoteDelay)
     val localChannelParamsB = makeChannelParams(nodeParamsB, nodeParamsB.features.initFeatures(), None, isChannelOpener = false, paysCommitTxFees = nonInitiatorPaysCommitTxFees, dualFunded = true, fundingAmountB)
@@ -285,7 +289,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     }
   }
 
-  private def withFixture(channelType: SupportedChannelType, fundingAmountA: Satoshi, utxosA: Seq[Satoshi], fundingAmountB: Satoshi, utxosB: Seq[Satoshi], targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None)(testFun: Fixture => Any): Unit = {
+  private def withFixture(channelType: SupportedChannelType, fundingAmountA: Satoshi, utxosA: Seq[Satoshi], fundingAmountB: Satoshi, utxosB: Seq[Satoshi], targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs, liquidityPurchase_opt: Option[LiquidityAds.Purchase] = None, plugins: Seq[PluginParams] = Nil)(testFun: Fixture => Any): Unit = {
     // Initialize wallets with a few confirmed utxos.
     val probe = TestProbe()
     val rpcClientA = createWallet(UUID.randomUUID().toString)
@@ -296,7 +300,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     utxosB.foreach(amount => addUtxo(walletB, amount, probe))
     generateBlocks(1)
 
-    val fixtureParams = createFixtureParams(channelType, fundingAmountA, fundingAmountB, targetFeerate, dustLimit, lockTime, requireConfirmedInputs, nonInitiatorPaysCommitTxFees = liquidityPurchase_opt.nonEmpty)
+    val fixtureParams = createFixtureParams(channelType, fundingAmountA, fundingAmountB, targetFeerate, dustLimit, lockTime, requireConfirmedInputs, nonInitiatorPaysCommitTxFees = liquidityPurchase_opt.nonEmpty, plugins)
     val alice = fixtureParams.spawnTxBuilderAlice(walletA, liquidityPurchase_opt = liquidityPurchase_opt)
     val bob = fixtureParams.spawnTxBuilderBob(walletB, liquidityPurchase_opt = liquidityPurchase_opt)
     testFun(Fixture(alice, bob, fixtureParams, walletA, rpcClientA, walletB, rpcClientB, TestProbe(), TestProbe()))
@@ -2309,7 +2313,78 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice --- tx_complete --> Bob
       fwdSplice.forwardAlice2Bob[TxComplete]
       // Alice detects that Bob will drop below the channel reserve and fails.
-      assert(alice2bob.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(bobParams.channelId))
+      assert(alice2bob.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(bobParams.channelId, "channel reserve requirements not met"))
+    }
+  }
+
+  test("plugin accepts funding transaction") {
+    // Our plugin accepts the funding transaction.
+    val plugin = new ValidateInteractiveTxPlugin {
+      override val name: String = "accept all the things"
+      override def validateSharedTx(remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit] = Future.successful(())
+    }
+    withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100_000 sat, Seq(180_000 sat, 175_000 sat), 40_000 sat, Seq(100_000 sat), FeeratePerKw(1000 sat), 660 sat, 42, RequireConfirmedInputs(forLocal = true, forRemote = true), plugins = Seq(plugin)) { f =>
+      import f._
+
+      alice ! Start(alice2bob.ref)
+      bob ! Start(bob2alice.ref)
+
+      // Alice --- tx_add_input --> Bob
+      fwd.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_add_input --- Bob
+      fwd.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_add_output --- Bob
+      fwd.forwardBob2Alice[TxAddOutput]
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+
+      // Bob sends signatures first as he contributed less than Alice.
+      val successA = alice2bob.expectMsgType[Succeeded]
+      val successB = bob2alice.expectMsgType[Succeeded]
+    }
+  }
+
+  test("plugin rejects funding transaction") {
+    // Our first plugin accepts the funding transaction.
+    val plugin1 = new ValidateInteractiveTxPlugin {
+      override val name: String = "accept all the things"
+      override def validateSharedTx(remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit] = Future.successful(())
+    }
+    // But our second plugin rejects it.
+    val plugin2 = new ValidateInteractiveTxPlugin {
+      override val name: String = "reject all the things"
+      override def validateSharedTx(remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit] = Future.failed(new IllegalArgumentException("nope"))
+    }
+    withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100_000 sat, Seq(180_000 sat, 175_000 sat), 40_000 sat, Seq(100_000 sat), FeeratePerKw(1000 sat), 660 sat, 42, RequireConfirmedInputs(forLocal = true, forRemote = true), plugins = Seq(plugin1, plugin2)) { f =>
+      import f._
+
+      alice ! Start(alice2bob.ref)
+      bob ! Start(bob2alice.ref)
+
+      // Alice --- tx_add_input --> Bob
+      fwd.forwardAlice2Bob[TxAddInput]
+      // Alice <-- tx_add_input --- Bob
+      fwd.forwardBob2Alice[TxAddInput]
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_add_output --- Bob
+      fwd.forwardBob2Alice[TxAddOutput]
+      // Alice --- tx_add_output --> Bob
+      fwd.forwardAlice2Bob[TxAddOutput]
+      // Alice <-- tx_complete --- Bob
+      fwd.forwardBob2Alice[TxComplete]
+      // Alice --- tx_complete --> Bob
+      fwd.forwardAlice2Bob[TxComplete]
+
+      // Bob sends signatures first as he contributed less than Alice.
+      assert(alice2bob.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(fixtureParams.channelId, "nope"))
+      assert(bob2alice.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(fixtureParams.channelId, "nope"))
     }
   }
 
@@ -2651,7 +2726,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     // Alice --- tx_complete --> Bob
     probe.expectMsgType[SendMessage]
     alice ! ReceiveMessage(TxComplete(params.channelId))
-    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId))
+    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId, "too many inputs or outputs"))
   }
 
   test("too many outputs") {
@@ -2669,7 +2744,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     // Alice --- tx_complete --> Bob
     probe.expectMsgType[SendMessage]
     alice ! ReceiveMessage(TxComplete(params.channelId))
-    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId))
+    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId, "too many inputs or outputs"))
   }
 
   test("missing funding output") {
@@ -2689,7 +2764,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     probe.expectMsgType[SendMessage]
     // Alice --- tx_complete --> Bob
     bob ! ReceiveMessage(TxComplete(params.channelId))
-    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId))
+    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId, "funding outpoint not included"))
   }
 
   test("multiple funding outputs") {
@@ -2712,7 +2787,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     probe.expectMsgType[SendMessage]
     // Alice --- tx_complete --> Bob
     bob ! ReceiveMessage(TxComplete(params.channelId))
-    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId))
+    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId, "funding script included multiple times"))
   }
 
   test("missing shared input") {
@@ -2733,7 +2808,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     probe.expectMsgType[SendMessage]
     // Alice --- tx_complete --> Bob
     bob ! ReceiveMessage(TxComplete(params.channelId))
-    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId))
+    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId, "funding outpoint not included"))
   }
 
   test("invalid funding amount") {
@@ -2817,7 +2892,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     probe.expectMsgType[SendMessage]
     // Alice --- tx_complete --> Bob
     bob ! ReceiveMessage(TxComplete(params.channelId))
-    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId))
+    assert(probe.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(params.channelId, "input amount is too small to cover outputs"))
   }
 
   test("minimum fee not met") {
@@ -2902,7 +2977,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
       // Alice --- tx_complete --> Bob
       fwdRbf.forwardAlice2Bob[TxComplete]
       // Alice <-- error --- Bob
-      assert(bob2alice.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(fixtureParams.channelId))
+      assert(bob2alice.expectMsgType[RemoteFailure].cause == InvalidCompleteInteractiveTx(fixtureParams.channelId, "RBF attempts must double-spend all previous transactions"))
     }
   }
 

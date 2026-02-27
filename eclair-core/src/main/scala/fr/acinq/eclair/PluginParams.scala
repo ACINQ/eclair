@@ -18,11 +18,13 @@ package fr.acinq.eclair
 
 import akka.actor.typed.ActorRef
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, TxOut}
 import fr.acinq.eclair.channel.Origin
 import fr.acinq.eclair.io.OpenChannelInterceptor.OpenChannelNonInitiator
 import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.IncomingHtlc
 import fr.acinq.eclair.wire.protocol.{Error, LiquidityAds}
+
+import scala.concurrent.Future
 
 /** Custom plugin parameters. */
 trait PluginParams {
@@ -57,6 +59,24 @@ trait CustomCommitmentsPlugin extends PluginParams {
    * returned by this method.
    */
   def getHtlcsRelayedOut(htlcsIn: Seq[IncomingHtlc], nodeParams: NodeParams, log: LoggingAdapter): Map[Origin.Cold, Set[(ByteVector32, Long)]]
+}
+
+/**
+ * Plugins implementing this trait will be called to validate the remote inputs and outputs used in interactive-tx.
+ * This can be used for example to reject interactive transactions that send to specific addresses before signing them.
+ */
+trait ValidateInteractiveTxPlugin extends PluginParams {
+  /**
+   * This function will be called for every interactive-tx, before signing it. The plugin should return:
+   *  - [[Future.successful(())]] to accept the transaction
+   *  - [[Future.failed(...)]] to reject it: the error message will be sent to the remote node, so make sure you don't
+   *    include information that should stay private.
+   *
+   * Note that eclair will run standard validation on its own: you don't need for example to verify that inputs exist
+   * and aren't already spent. This function should only be used for custom, non-standard validation that node operators
+   * want to apply.
+   */
+  def validateSharedTx(remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit]
 }
 
 // @formatter:off

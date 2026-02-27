@@ -30,6 +30,35 @@ However, when using zero-conf, this event may be emitted before the `channel-con
 
 See #3237 for more details.
 
+### Plugin validation of interactive transactions
+
+We add a new `ValidateInteractiveTxPlugin` trait that can be extended by plugins that want to perform custom validation of remote inputs and outputs added to interactive transactions.
+This can be used for example to reject transactions that send to specific addresses or use specific UTXOs.
+
+Here is the trait definition:
+
+```scala
+/**
+ * Plugins implementing this trait will be called to validate the remote inputs and outputs used in interactive-tx.
+ * This can be used for example to reject interactive transactions that send to specific addresses before signing them.
+ */
+trait ValidateInteractiveTxPlugin extends PluginParams {
+  /**
+   * This function will be called for every interactive-tx, before signing it. The plugin should return:
+   *  - [[Future.successful(())]] to accept the transaction
+   *  - [[Future.failed(...)]] to reject it: the error message will be sent to the remote node, so make sure you don't
+   *    include information that should stay private.
+   *
+   * Note that eclair will run standard validation on its own: you don't need for example to verify that inputs exist
+   * and aren't already spent. This function should only be used for custom, non-standard validation that node operators
+   * want to apply.
+   */
+  def validateSharedTx(remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit]
+}
+```
+
+See #3258 for more details.
+
 ### Channel jamming accountability
 
 We update our channel jamming mitigation to match the latest draft of the [spec](https://github.com/lightning/bolts/pull/1280).

@@ -40,7 +40,7 @@ import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, Remo
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{BlockHeight, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ToMilliSatoshiConversion, UInt64}
+import fr.acinq.eclair.{BlockHeight, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, ToMilliSatoshiConversion, UInt64, ValidateInteractiveTxPlugin}
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -706,15 +706,27 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
   private def validateAndSign(session: InteractiveTxSession): Behavior[Command] = {
     require(session.isComplete, "interactive session was not completed")
-    if (fundingParams.requireConfirmedInputs.forRemote) {
-      // We ignore the shared input: we know it is a valid input since it comes from our commitment.
-      context.pipeToSelf(checkInputsConfirmed(session.remoteInputs.collect { case i: Input.Remote => i })) {
-        case Failure(t) => WalletFailure(t)
-        case Success(false) => WalletFailure(UnconfirmedInteractiveTxInputs(fundingParams.channelId))
-        case Success(true) => ValidateSharedTx
-      }
+    // We ignore the shared input: we know it is a valid input since it comes from our commitment.
+    val remoteOnlyInputs = session.remoteInputs.collect { case i: Input.Remote => i }
+    // Similarly, we ignore the shared output, which has been validated separately.
+    val remoteOnlyOutputs = session.remoteOutputs.collect { case o: Output.Remote => o }
+    val confirmationValidation = if (fundingParams.requireConfirmedInputs.forRemote) {
+      checkInputsConfirmed(remoteOnlyInputs)
     } else {
-      context.self ! ValidateSharedTx
+      Future.successful(())
+    }
+    val pluginValidation = nodeParams.pluginParams.collect {
+      case p: ValidateInteractiveTxPlugin => p.validateSharedTx(remoteOnlyInputs.map(i => i.outPoint -> i.txOut).toMap, remoteOnlyOutputs.map(o => TxOut(o.amount, o.pubkeyScript)))
+    }
+    // We run all checks, stopping at the first failing one.
+    context.pipeToSelf((confirmationValidation +: pluginValidation).foldLeft(Future.successful(())) {
+      case (current, nextCheck) => current.transformWith {
+        case Success(_) => nextCheck
+        case Failure(t) => Future.failed(t)
+      }
+    }) {
+      case Success(_) => ValidateSharedTx
+      case Failure(t) => WalletFailure(t)
     }
     Behaviors.receiveMessagePartial {
       case ValidateSharedTx => validateTx(session) match {
@@ -724,8 +736,11 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         case Right(completeTx) =>
           signCommitTx(completeTx, session.txCompleteReceived.flatMap(_.fundingNonce_opt), session.txCompleteReceived.flatMap(_.commitNonces_opt))
       }
-      case _: WalletFailure =>
-        replyTo ! RemoteFailure(UnconfirmedInteractiveTxInputs(fundingParams.channelId))
+      case WalletFailure(t) =>
+        t match {
+          case e: ChannelException => replyTo ! RemoteFailure(e)
+          case _ => replyTo ! RemoteFailure(InvalidCompleteInteractiveTx(fundingParams.channelId, t.getMessage))
+        }
         unlockAndStop(session)
       case ReceiveMessage(msg) =>
         replyTo ! RemoteFailure(UnexpectedInteractiveTxMessage(fundingParams.channelId, msg))
@@ -735,7 +750,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  private def checkInputsConfirmed(inputs: Seq[Input.Remote]): Future[Boolean] = {
+  private def checkInputsConfirmed(inputs: Seq[Input.Remote]): Future[Unit] = {
     // We check inputs sequentially and stop at the first unconfirmed one.
     inputs.map(_.outPoint).toSet.foldLeft(Future.successful(true)) {
       case (current, outpoint) => current.transformWith {
@@ -751,13 +766,16 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         case Success(false) => Future.successful(false)
         case Failure(t) => Future.failed(t)
       }
+    }.flatMap {
+      case true => Future.successful(())
+      case false => Future.failed(UnconfirmedInteractiveTxInputs(fundingParams.channelId))
     }
   }
 
   private def validateTx(session: InteractiveTxSession): Either[ChannelException, SharedTransaction] = {
     if (session.localInputs.length + session.remoteInputs.length > 252 || session.localOutputs.length + session.remoteOutputs.length > 252) {
       log.warn("invalid interactive tx ({} local inputs, {} remote inputs, {} local outputs and {} remote outputs)", session.localInputs.length, session.remoteInputs.length, session.localOutputs.length, session.remoteOutputs.length)
-      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "too many inputs or outputs"))
     }
 
     val sharedInputs = session.localInputs.collect { case i: Input.Shared => i } ++ session.remoteInputs.collect { case i: Input.Shared => i }
@@ -769,13 +787,13 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
 
     if (sharedOutputs.length > 1) {
       log.warn("invalid interactive tx: funding script included multiple times")
-      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "funding script included multiple times"))
     }
     val sharedOutput = sharedOutputs.headOption match {
       case Some(output) => output
       case None =>
         log.warn("invalid interactive tx: funding outpoint not included")
-        return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+        return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "funding outpoint not included"))
     }
 
     val sharedInput_opt = fundingParams.sharedInput_opt.map(sharedInput => {
@@ -788,12 +806,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         val remoteReserve = (fundingParams.fundingAmount / 100).max(fundingParams.dustLimit)
         if (sharedOutput.remoteAmount < remoteReserve) {
           log.warn("invalid interactive tx: peer takes too much funds out and falls below the channel reserve ({} < {})", sharedOutput.remoteAmount, remoteReserve)
-          return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+          return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "channel reserve requirements not met"))
         }
       }
       if (sharedInputs.length > 1) {
         log.warn("invalid interactive tx: shared input included multiple times")
-        return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+        return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "shared input included multiple times"))
       }
       sharedInput.commitmentFormat match {
         case _: SegwitV0CommitmentFormat => ()
@@ -806,7 +824,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         case Some(input) => input
         case None =>
           log.warn("invalid interactive tx: shared input not included")
-          return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+          return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "shared input not included"))
       }
     })
 
@@ -814,7 +832,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val tx = sharedTx.buildUnsignedTx()
     if (sharedTx.localAmountIn < sharedTx.localAmountOut || sharedTx.remoteAmountIn < sharedTx.remoteAmountOut) {
       log.warn("invalid interactive tx: input amount is too small (localIn={}, localOut={}, remoteIn={}, remoteOut={})", sharedTx.localAmountIn, sharedTx.localAmountOut, sharedTx.remoteAmountIn, sharedTx.remoteAmountOut)
-      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "input amount is too small to cover outputs"))
     }
 
     // If we're using taproot, our peer must provide commit nonces for the funding transaction.
@@ -829,7 +847,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     // so we use empty witnesses to provide a lower bound on the transaction weight.
     if (tx.weight() > Transactions.MAX_STANDARD_TX_WEIGHT) {
       log.warn("invalid interactive tx: exceeds standard weight (weight={})", tx.weight())
-      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "transaction weight too large"))
     }
 
     liquidityPurchase_opt match {
@@ -837,7 +855,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         val currentFeeCredit = nodeParams.db.liquidity.getFeeCredit(remoteNodeId)
         if (currentFeeCredit < p.feeCreditUsed) {
           log.warn("not enough fee credit: our peer may be malicious ({} < {})", currentFeeCredit, p.feeCreditUsed)
-          return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+          return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "fee credit already consumed"))
         }
       case _ => ()
     }
@@ -884,7 +902,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val doubleSpendsPreviousTransactions = previousTransactions.forall(previousTx => previousTx.tx.buildUnsignedTx().txIn.map(_.outPoint).exists(o => currentInputs.contains(o)))
     if (!doubleSpendsPreviousTransactions) {
       log.warn("invalid interactive tx: it doesn't double-spend all previous transactions")
-      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId))
+      return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "RBF attempts must double-spend all previous transactions"))
     }
 
     Right(sharedTx)
