@@ -1160,6 +1160,12 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         system.eventStream.publish(chcr)
         wsClient.expectMessage(expectedSerializedChcr)
 
+        val chfcr = ChannelFundingCreated(system.deadLetters, ByteVector32.One, bobNodeId, Left(fundingTxId), 0, null)
+        val expectedSerializedChfcr = """{"type":"channel-funding-created","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","channelId":"0100000000000000000000000000000000000000000000000000000000000000","fundingTxId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","fundingTxIndex":0}"""
+        assert(serialization.write(chfcr) == expectedSerializedChfcr)
+        system.eventStream.publish(chfcr)
+        wsClient.expectMessage(expectedSerializedChfcr)
+
         val chfc = ChannelFundingConfirmed(system.deadLetters, ByteVector32.One, bobNodeId, fundingTxId, 0, BlockHeight(900000), null)
         val expectedSerializedChfc = """{"type":"channel-confirmed","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","channelId":"0100000000000000000000000000000000000000000000000000000000000000","fundingTxId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","fundingTxIndex":0,"blockHeight":900000}"""
         assert(serialization.write(chfc) == expectedSerializedChfc)

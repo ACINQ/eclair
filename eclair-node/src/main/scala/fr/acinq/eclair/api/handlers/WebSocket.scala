@@ -52,6 +52,7 @@ trait WebSocket {
       override def preStart(): Unit = {
         context.system.eventStream.subscribe(self, classOf[PaymentEvent])
         context.system.eventStream.subscribe(self, classOf[ChannelCreated])
+        context.system.eventStream.subscribe(self, classOf[ChannelFundingCreated])
         context.system.eventStream.subscribe(self, classOf[ChannelFundingConfirmed])
         context.system.eventStream.subscribe(self, classOf[ChannelReadyForPayments])
         context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
@@ -62,6 +63,7 @@ trait WebSocket {
       def receive: Receive = {
         case message: PaymentEvent => flowInput.offer(serialization.write(message))
         case message: ChannelCreated => flowInput.offer(serialization.write(message))
+        case message: ChannelFundingCreated => flowInput.offer(serialization.write(message))
         case message: ChannelFundingConfirmed => flowInput.offer(serialization.write(message))
         case message: ChannelReadyForPayments => flowInput.offer(serialization.write(message))
         case message: ChannelStateChanged =>

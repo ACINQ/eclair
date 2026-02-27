@@ -1394,6 +1394,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     systemA.eventStream.subscribe(aliceEvents.ref, classOf[AvailableBalanceChanged])
     systemA.eventStream.subscribe(aliceEvents.ref, classOf[LocalChannelUpdate])
     systemA.eventStream.subscribe(aliceEvents.ref, classOf[LocalChannelDown])
+    systemA.eventStream.subscribe(aliceEvents.ref, classOf[ChannelFundingCreated])
     systemB.eventStream.subscribe(bobEvents.ref, classOf[ForgetHtlcInfos])
     systemB.eventStream.subscribe(bobEvents.ref, classOf[AvailableBalanceChanged])
     systemB.eventStream.subscribe(bobEvents.ref, classOf[LocalChannelUpdate])
@@ -1402,6 +1403,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val fundingInput = alice.commitments.latest.fundingInput
     val fundingTx1 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     checkWatchConfirmed(f, fundingTx1)
+    inside(aliceEvents.expectMsgType[ChannelFundingCreated]) { e =>
+      assert(e.fundingTx == Right(fundingTx1))
+      assert(e.fundingTxIndex == 1)
+    }
 
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     bob2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx1.txid)
@@ -1413,6 +1418,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val fundingTx2 = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat)))
     checkWatchConfirmed(f, fundingTx2)
+    inside(aliceEvents.expectMsgType[ChannelFundingCreated]) { e =>
+      assert(e.fundingTx == Right(fundingTx2))
+      assert(e.fundingTxIndex == 2)
+    }
 
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     alice2bob.expectMsgType[SpliceLocked]

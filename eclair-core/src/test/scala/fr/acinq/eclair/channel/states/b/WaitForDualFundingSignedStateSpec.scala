@@ -97,8 +97,11 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
   test("complete interactive-tx protocol", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
 
-    val listener = TestProbe()
-    alice.underlyingActor.context.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+    val listenerA = TestProbe()
+    alice.underlyingActor.context.system.eventStream.subscribe(listenerA.ref, classOf[TransactionPublished])
+    alice.underlyingActor.context.system.eventStream.subscribe(listenerA.ref, classOf[ChannelFundingCreated])
+    val listenerB = TestProbe()
+    bob.underlyingActor.context.system.eventStream.subscribe(listenerB.ref, classOf[ChannelFundingCreated])
 
     bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
@@ -106,17 +109,19 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     alice2bob.forward(bob)
 
     // Bob sends its signatures first as he contributed less than Alice.
-    bob2alice.expectMsgType[TxSignatures]
+    bob2alice.expectMsgType[TxSignatures].txId
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)
     val bobData = bob.stateData.asInstanceOf[DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED]
     assert(bobData.commitments.channelParams.channelFeatures.hasFeature(Features.DualFunding))
     assert(bobData.latestFundingTx.sharedTx.isInstanceOf[PartiallySignedSharedTransaction])
     val fundingTxId = bobData.latestFundingTx.sharedTx.asInstanceOf[PartiallySignedSharedTransaction].txId
     assert(bob2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTxId)
+    assert(listenerB.expectMsgType[ChannelFundingCreated].fundingTxId == fundingTxId)
 
     // Alice receives Bob's signatures and sends her own signatures.
     bob2alice.forward(alice)
-    assert(listener.expectMsgType[TransactionPublished].tx.txid == fundingTxId)
+    assert(listenerA.expectMsgType[ChannelFundingCreated].fundingTxId == fundingTxId)
+    assert(listenerA.expectMsgType[TransactionPublished].tx.txid == fundingTxId)
     assert(alice2blockchain.expectMsgType[WatchFundingConfirmed].txId == fundingTxId)
     alice2bob.expectMsgType[TxSignatures]
     awaitCond(alice.stateName == WAIT_FOR_DUAL_FUNDING_CONFIRMED)

@@ -80,12 +80,16 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
     val listener = TestProbe()
     alice.underlying.system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelFundingCreated])
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     val fundingTxId = watchConfirmed.txId
     assert(watchConfirmed.minDepth == 6)
+    val fundingCreated = listener.expectMsgType[ChannelFundingCreated]
+    assert(fundingCreated.fundingTx.isRight)
+    assert(fundingCreated.fundingTx.toOption.map(_.txid).contains(fundingTxId))
     val txPublished = listener.expectMsgType[TransactionPublished]
     assert(txPublished.tx.txid == fundingTxId)
     assert(txPublished.miningFee > 0.sat)

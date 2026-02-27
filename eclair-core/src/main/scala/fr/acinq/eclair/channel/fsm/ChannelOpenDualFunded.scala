@@ -383,6 +383,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               remotePerCommitmentSecrets = ShaChain.init,
               originChannels = Map.empty
             )
+            context.system.eventStream.publish(ChannelFundingCreated(self, d.channelId, remoteNodeId, Right(signingSession1.fundingTx.signedTx_opt.getOrElse(signingSession1.fundingTx.sharedTx.tx.buildUnsignedTx())), signingSession1.commitment.fundingTxIndex, commitments))
             val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, d.localPushAmount, d.remotePushAmount, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, DualFundingStatus.WaitingForConfirmations, None)
             goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending signingSession1.localSigs
         }
@@ -406,6 +407,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                 remotePerCommitmentSecrets = ShaChain.init,
                 originChannels = Map.empty
               )
+              context.system.eventStream.publish(ChannelFundingCreated(self, d.channelId, remoteNodeId, Right(signingSession.fundingTx.signedTx_opt.getOrElse(signingSession.fundingTx.sharedTx.tx.buildUnsignedTx())), signingSession.commitment.fundingTxIndex, commitments))
               val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, d.localPushAmount, d.remotePushAmount, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, DualFundingStatus.WaitingForConfirmations, None)
               goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending signingSession.localSigs calling publishFundingTx(signingSession.fundingTx)
           }
@@ -413,7 +415,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           log.info("our peer aborted the dual funding flow: ascii='{}' bin={}", msg.toAscii, msg.data)
           rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
           d.signingSession.liquidityPurchase_opt.collect {
-            case purchase if !d.signingSession.fundingParams.isInitiator => peer ! LiquidityPurchaseAborted(d.channelId, d.signingSession.fundingTx.txId, d.signingSession.fundingTxIndex)
+            case _ if !d.signingSession.fundingParams.isInitiator => peer ! LiquidityPurchaseAborted(d.channelId, d.signingSession.fundingTx.txId, d.signingSession.fundingTxIndex)
           }
           goto(CLOSED) using IgnoreClosedData(d) sending TxAbort(d.channelId, DualFundingAborted(d.channelId).getMessage)
         case msg: InteractiveTxConstructionMessage =>

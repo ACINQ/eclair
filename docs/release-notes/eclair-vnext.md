@@ -15,8 +15,12 @@ Eclair emits several events during a channel lifecycle, which can be received by
 We reworked these events to be compatible with splicing and consistent with 0-conf:
 
 - we removed the `channel-opened` event
+- we introduced a `channel-funding-created` event
 - we introduced a `channel-confirmed` event
 - we introduced a `channel-ready` event
+
+The `channel-funding-created` event is emitted when the funding transaction or a splice transaction has been signed and can be published.
+Listeners can use the `fundingTxIndex` to detect whether this is the initial channel funding (`fundingTxIndex = 0`) or a splice (`fundingTxIndex > 0`).
 
 The `channel-confirmed` event is emitted when the funding transaction or a splice transaction has enough confirmations.
 Listeners can use the `fundingTxIndex` to detect whether this is the initial channel funding (`fundingTxIndex = 0`) or a splice (`fundingTxIndex > 0`).
@@ -46,7 +50,7 @@ eclair.relay.reserved-for-accountable = 0.0
 ### API changes
 
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now include a `maxCltvExpiryDelta` parameter (#3234)
-- `channel-opened` was removed from the websocket in favor of `channel-confirmed` and `channel-ready` (#3237)
+- `channel-opened` was removed from the websocket in favor of `channel-funding-created`, `channel-confirmed` and `channel-ready` (#3237 and #3256)
 
 ### Miscellaneous improvements and bug fixes
 
