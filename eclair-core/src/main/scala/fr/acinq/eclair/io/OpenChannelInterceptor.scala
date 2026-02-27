@@ -108,7 +108,8 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
   }
 
   private def sanityCheckInitiator(request: OpenChannelInitiator): Behavior[Command] = {
-    val channelType_opt = request.open.channelType_opt.orElse(ChannelTypes.preferredForPublicChannels(request.localFeatures, request.remoteFeatures))
+    val announceChannel = request.open.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags).announceChannel
+    val channelType_opt = request.open.channelType_opt.orElse(ChannelTypes.preferredForPublicChannels(request.localFeatures, request.remoteFeatures, announceChannel = announceChannel))
     if (request.open.fundingAmount >= Channel.MAX_FUNDING_WITHOUT_WUMBO && !request.localFeatures.hasFeature(Wumbo)) {
       request.replyTo ! OpenChannelResponse.Rejected(s"fundingAmount=${request.open.fundingAmount} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING_WITHOUT_WUMBO} (see eclair.conf)")
       waitForRequest()

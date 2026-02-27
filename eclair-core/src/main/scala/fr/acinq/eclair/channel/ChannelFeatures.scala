@@ -149,9 +149,9 @@ object ChannelTypes {
   }
 
   /** Returns our preferred channel type for public channels, if supported by our peer. */
-  def preferredForPublicChannels(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature]): Option[SupportedChannelType] = {
+  def preferredForPublicChannels(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean): Option[SupportedChannelType] = {
     if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputsZeroFeeHtlcTx)) {
-      Some(AnchorOutputsZeroFeeHtlcTx(scidAlias = Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias)))
+      Some(AnchorOutputsZeroFeeHtlcTx(scidAlias = !announceChannel && Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias)))
     } else {
       None
     }

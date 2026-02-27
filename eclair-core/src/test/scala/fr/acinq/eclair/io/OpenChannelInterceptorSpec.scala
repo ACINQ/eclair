@@ -292,6 +292,14 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
       val features = Features[InitFeature](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, ChannelType -> Optional, ScidAlias -> Optional)
       val open = Peer.OpenChannel(remoteNodeId, 500_000 sat, None, None, None, None, None, None, None)
       openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, open, features, features)
+      assert(TestConstants.Alice.nodeParams.channelConf.channelFlags.announceChannel)
+      assert(peer.expectMessageType[Peer.SpawnChannelInitiator].channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false))
+    }
+    // If we don't announce the channel, we can use scid_alias.
+    {
+      val features = Features[InitFeature](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, ChannelType -> Optional, ScidAlias -> Optional)
+      val open = Peer.OpenChannel(remoteNodeId, 500_000 sat, None, None, None, None, None, Some(ChannelFlags(announceChannel = false)), None)
+      openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, open, features, features)
       assert(peer.expectMessageType[Peer.SpawnChannelInitiator].channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true))
     }
     // If our peer doesn't support anchor outputs, we can't find a satisfying channel type.
