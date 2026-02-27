@@ -44,6 +44,7 @@ import fr.acinq.eclair.payment.offer.{DefaultOfferHandler, OfferManager}
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{AsyncPaymentTriggerer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
+import fr.acinq.eclair.profit.{PeerScorer, PeerStatsTracker}
 import fr.acinq.eclair.reputation.ReputationRecorder
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
@@ -400,8 +401,11 @@ class Setup(val datadir: File,
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
 
       balanceActor = system.spawn(BalanceActor(bitcoinClient, nodeParams.channelConf.minDepth, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
-
       postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard, router.toTyped, register, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
+      _ = if (nodeParams.peerScoringConfig.enabled) {
+        val statsTracker = system.spawn(Behaviors.supervise(PeerStatsTracker(nodeParams.db.audit, channels)).onFailure(typed.SupervisorStrategy.restart), name = "peer-stats-tracker")
+        system.spawn(Behaviors.supervise(PeerScorer(nodeParams, bitcoinClient, statsTracker, register)).onFailure(typed.SupervisorStrategy.restart), name = "peer-scorer")
+      }
 
       kit = Kit(
         nodeParams = nodeParams,

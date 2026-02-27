@@ -33,6 +33,7 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
+import fr.acinq.eclair.profit.PeerScorer
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.HeuristicsConstants
@@ -95,6 +96,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       peerWakeUpConfig: PeerReadyNotifier.WakeUpConfig,
                       onTheFlyFundingConfig: OnTheFlyFunding.Config,
                       peerStorageConfig: PeerStorageConfig,
+                      peerScoringConfig: PeerScorer.Config,
                       offersConfig: OffersConfig) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
@@ -713,6 +715,35 @@ object NodeParams extends Logging {
         writeDelay = FiniteDuration(config.getDuration("peer-storage.write-delay").getSeconds, TimeUnit.SECONDS),
         removalDelay = FiniteDuration(config.getDuration("peer-storage.removal-delay").getSeconds, TimeUnit.SECONDS),
         cleanUpFrequency = FiniteDuration(config.getDuration("peer-storage.cleanup-frequency").getSeconds, TimeUnit.SECONDS),
+      ),
+      peerScoringConfig = PeerScorer.Config(
+        enabled = config.getBoolean("peer-scoring.enabled"),
+        scoringFrequency = FiniteDuration(config.getDuration("peer-scoring.frequency").getSeconds, TimeUnit.SECONDS),
+        topPeersCount = config.getInt("peer-scoring.top-peers-count"),
+        topPeersWhitelist = config.getStringList("peer-scoring.top-peers-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet,
+        liquidity = PeerScorer.LiquidityConfig(
+          autoFund = config.getBoolean("peer-scoring.liquidity.auto-fund"),
+          autoClose = config.getBoolean("peer-scoring.liquidity.auto-close"),
+          minFundingAmount = config.getLong("peer-scoring.liquidity.min-funding-amount-satoshis").sat,
+          maxFundingAmount = config.getLong("peer-scoring.liquidity.max-funding-amount-satoshis").sat,
+          maxFundingTxPerDay = config.getInt("peer-scoring.liquidity.max-funding-tx-per-day"),
+          minOnChainBalance = config.getLong("peer-scoring.liquidity.min-on-chain-balance-satoshis").sat,
+          maxFeerate = FeeratePerByte(config.getLong("peer-scoring.liquidity.max-feerate-sat-per-byte").sat).perKw,
+          fundingCooldown = FiniteDuration(config.getDuration("peer-scoring.liquidity.funding-cooldown").getSeconds, TimeUnit.SECONDS),
+        ),
+        relayFees = PeerScorer.RelayFeesConfig(
+          autoUpdate = config.getBoolean("peer-scoring.relay-fees.auto-update"),
+          minRelayFees = RelayFees(
+            feeBase = config.getLong("peer-scoring.relay-fees.min-fee-base-msat").msat,
+            feeProportionalMillionths = config.getLong("peer-scoring.relay-fees.min-fee-proportional-millionths"),
+          ),
+          maxRelayFees = RelayFees(
+            feeBase = config.getLong("peer-scoring.relay-fees.max-fee-base-msat").msat,
+            feeProportionalMillionths = config.getLong("peer-scoring.relay-fees.max-fee-proportional-millionths"),
+          ),
+          dailyPaymentVolumeThreshold = config.getLong("peer-scoring.relay-fees.daily-payment-volume-threshold-satoshis").sat,
+          dailyPaymentVolumeThresholdPercent = config.getDouble("peer-scoring.relay-fees.daily-payment-volume-threshold-percent"),
+        )
       ),
       offersConfig = OffersConfig(
         messagePathMinLength = config.getInt("offers.message-path-min-length"),

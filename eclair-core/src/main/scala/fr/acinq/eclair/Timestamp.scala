@@ -46,6 +46,7 @@ case class TimestampMilli(private val underlying: Long) extends Ordered[Timestam
   require(underlying >= 0 && underlying <= 253402300799L * 1000, "invalid timestamp value")
   // @formatter:off
   def toLong: Long = underlying
+  def toTimestampSecond: TimestampSecond = TimestampSecond(underlying / 1000)
   def toSqlTimestamp: sql.Timestamp = sql.Timestamp.from(Instant.ofEpochMilli(underlying))
   override def toString: String = s"$underlying unixms"
   override def compare(that: TimestampMilli): Int = underlying.compareTo(that.underlying)

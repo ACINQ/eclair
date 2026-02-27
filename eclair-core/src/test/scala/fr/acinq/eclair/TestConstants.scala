@@ -29,6 +29,7 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
+import fr.acinq.eclair.profit.PeerScorer
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessageWeightRatios}
 import fr.acinq.eclair.router.Router._
@@ -261,6 +262,29 @@ object TestConstants {
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
       peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour),
+      peerScoringConfig = PeerScorer.Config(
+        enabled = true,
+        scoringFrequency = 1 day,
+        topPeersCount = 10,
+        topPeersWhitelist = Set.empty,
+        liquidity = PeerScorer.LiquidityConfig(
+          autoFund = true,
+          autoClose = true,
+          minFundingAmount = 1_000_000 sat, // 0.01 BTC
+          maxFundingAmount = 100_000_000 sat, // 1 BTC
+          minOnChainBalance = 5_000_000 sat, // 0.05 BTC
+          maxFeerate = FeeratePerByte(100 sat).perKw,
+          maxFundingTxPerDay = 100,
+          fundingCooldown = 72 hours,
+        ),
+        relayFees = PeerScorer.RelayFeesConfig(
+          autoUpdate = true,
+          minRelayFees = RelayFees(1 msat, 500),
+          maxRelayFees = RelayFees(10_000 msat, 5000),
+          dailyPaymentVolumeThreshold = 1_000_000 sat, // 0.01 BTC
+          dailyPaymentVolumeThresholdPercent = 0.1,
+        )
+      ),
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
@@ -453,6 +477,29 @@ object TestConstants {
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
       peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour),
+      peerScoringConfig = PeerScorer.Config(
+        enabled = true,
+        scoringFrequency = 1 day,
+        topPeersCount = 10,
+        topPeersWhitelist = Set.empty,
+        liquidity = PeerScorer.LiquidityConfig(
+          autoFund = true,
+          autoClose = true,
+          minFundingAmount = 1_000_000 sat, // 0.01 BTC
+          maxFundingAmount = 100_000_000 sat, // 1 BTC
+          minOnChainBalance = 5_000_000 sat, // 0.05 BTC
+          maxFeerate = FeeratePerByte(100 sat).perKw,
+          maxFundingTxPerDay = 100,
+          fundingCooldown = 72 hours,
+        ),
+        relayFees = PeerScorer.RelayFeesConfig(
+          autoUpdate = true,
+          minRelayFees = RelayFees(1 msat, 500),
+          maxRelayFees = RelayFees(10_000 msat, 5000),
+          dailyPaymentVolumeThreshold = 1_000_000 sat, // 0.01 BTC
+          dailyPaymentVolumeThresholdPercent = 0.1,
+        )
+      ),
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 

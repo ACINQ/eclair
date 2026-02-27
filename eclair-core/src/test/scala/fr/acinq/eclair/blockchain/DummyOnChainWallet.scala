@@ -251,3 +251,12 @@ object DummyOnChainWallet {
   }
 
 }
+
+class DummyBalanceChecker(var confirmedBalance: Satoshi = 0 sat, var unconfirmedBalance: Satoshi = 0 sat) extends OnChainBalanceChecker {
+  def setBalance(confirmed: Satoshi, unconfirmed: Satoshi): Unit = {
+    confirmedBalance = confirmed
+    unconfirmedBalance = unconfirmed
+  }
+
+  override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(confirmedBalance, unconfirmedBalance))
+}
