@@ -248,6 +248,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   var announcementSigsSent = Set.empty[RealShortChannelId]
   // we keep track of the splice_locked we sent after channel_reestablish and it's funding tx index to avoid sending it again
   private var spliceLockedSent = Map.empty[TxId, Long]
+  // after restart we need to read the relay fees from db (but only once)
+  var needToLoadRelayFeesFromDb = false
 
   private def trimAnnouncementSigsStashIfNeeded(): Unit = {
     if (announcementSigsStash.size >= 10) {
@@ -452,14 +454,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           goto(CLOSING) using closing
         case normal: DATA_NORMAL =>
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.lastAnnouncement_opt, normal.aliases, remoteNodeId))
-          // we check the configuration because the values for channel_update may have changed while eclair was down
-          val fees = getRelayFees(nodeParams, remoteNodeId, normal.commitments.announceChannel)
-          if (fees.feeBase != normal.channelUpdate.feeBaseMsat ||
-            fees.feeProportionalMillionths != normal.channelUpdate.feeProportionalMillionths ||
-            nodeParams.channelConf.expiryDelta != normal.channelUpdate.cltvExpiryDelta) {
-            log.debug("refreshing channel_update due to configuration changes")
-            self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths)
-          }
+          // at the next reconnection we will make sure the relay fees are in sync with the conf and the db, but only need this once
+          needToLoadRelayFeesFromDb = true
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
           // we take into account the date of the last update so that we don't send superfluous updates when we restart the app
           val periodicRefreshInitialDelay = Helpers.nextChannelUpdateRefresh(normal.channelUpdate.timestamp)
@@ -2720,6 +2716,18 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                   val shutdown1 = createShutdown(commitments1, shutdown.scriptPubKey)
                   sendQueue = sendQueue :+ shutdown1
                   Some(shutdown1)
+              }
+
+              // we check the configuration because the values for channel_update may have changed while eclair was down
+              if (needToLoadRelayFeesFromDb) {
+                val relayFees = getRelayFees(nodeParams, remoteNodeId, d.commitments.announceChannel)
+                if (relayFees.feeBase != d.channelUpdate.feeBaseMsat ||
+                  relayFees.feeProportionalMillionths != d.channelUpdate.feeProportionalMillionths ||
+                  nodeParams.channelConf.expiryDelta != d.channelUpdate.cltvExpiryDelta) {
+                  log.debug("refreshing channel_update due to configuration changes")
+                  self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, relayFees.feeBase, relayFees.feeProportionalMillionths)
+                }
+                needToLoadRelayFeesFromDb = false
               }
 
               if (d.commitments.announceChannel) {

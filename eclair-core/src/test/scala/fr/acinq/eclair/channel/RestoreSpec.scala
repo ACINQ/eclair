@@ -124,11 +124,6 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, Alice.channelKeys(), aliceWallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
       newAlice ! INPUT_RESTORED(oldStateData)
 
-      val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]
-      assert(!Announcements.areSameRelayParams(u1.channelUpdate, oldStateData.channelUpdate))
-      assert(u1.channelUpdate.feeBaseMsat == newConfig.relayParams.privateChannelFees.feeBase)
-      assert(u1.channelUpdate.feeProportionalMillionths == newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
-      assert(u1.channelUpdate.cltvExpiryDelta == newConfig.channelConf.expiryDelta)
 
       newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
       bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
@@ -144,6 +139,11 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       awaitCond(newAlice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
 
+      val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]
+      assert(!Announcements.areSameRelayParams(u1.channelUpdate, oldStateData.channelUpdate))
+      assert(u1.channelUpdate.feeBaseMsat == newConfig.relayParams.privateChannelFees.feeBase)
+      assert(u1.channelUpdate.feeProportionalMillionths == newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
+      assert(u1.channelUpdate.cltvExpiryDelta == newConfig.channelConf.expiryDelta)
       channelUpdateListener.expectNoMessage()
 
       // we simulate a disconnection
