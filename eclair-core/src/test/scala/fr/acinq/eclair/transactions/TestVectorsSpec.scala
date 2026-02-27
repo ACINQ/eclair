@@ -18,17 +18,20 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong, Script, Transaction}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
-import fr.acinq.eclair.reputation.Reputation
+import fr.acinq.eclair.crypto.NonceGenerator
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{ChannelTypeFeature, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants}
 import grizzled.slf4j.Logging
+import org.json4s.DefaultFormats
+import org.json4s.jackson.JsonMethods
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
+import java.io.File
 import scala.io.Source
 
 trait TestVectorsSpec extends AnyFunSuite with Logging {
@@ -454,4 +457,160 @@ class AnchorOutputsZeroFeeHtlcTxTestVectorSpec extends TestVectorsSpec {
   override def filename: String = "/bolt3-tx-test-vectors-anchor-outputs-zero-fee-htlc-tx-format.txt"
   override def channelFeatures: Set[ChannelTypeFeature] = Set(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
   // @formatter:on
+}
+
+class SimpleTaprootCommitmentsTestVectorSpec extends AnyFunSuite {
+
+  implicit val formats: DefaultFormats.type = DefaultFormats
+
+  case class TestFixture(params: TestParams, scripts: TestScripts, transactions: Seq[TestVector]) {
+    val fundingTx: Transaction = Transaction.read(scripts.funding.funding_tx_hex)
+    val fundingInfo: RedeemInfo = makeFundingScript(
+      params.keys.localFundingKey.publicKey,
+      params.keys.remoteFundingKey.publicKey,
+      ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
+    )
+    val commitInput: InputInfo = makeFundingInputInfo(
+      fundingTx.txid,
+      0,
+      Satoshi(params.funding_amount_satoshis),
+      params.keys.localFundingKey.publicKey,
+      params.keys.remoteFundingKey.publicKey,
+      ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
+    )
+  }
+
+  case class TestParams(seed: String,
+                        funding_amount_satoshis: Long,
+                        dust_limit_satoshis: Long,
+                        csv_delay: Int,
+                        commit_height: Long,
+                        nums_point: String,
+                        keys: TestKeys) {
+    val dustLimit: Satoshi = Satoshi(dust_limit_satoshis)
+    val toSelfDelay: CltvExpiryDelta = CltvExpiryDelta(csv_delay)
+    // Private keys used to generate and sign our local commitment transaction and HTLC transactions.
+    val localKeys: LocalCommitmentKeys = LocalCommitmentKeys(
+      ourDelayedPaymentKey = ChannelKeys.derivePerCommitmentKey(PrivateKey(ByteVector.fromValidHex(keys.local_delayed_payment_basepoint_secret)), PublicKey(ByteVector.fromValidHex(keys.local_per_commit_point))),
+      theirPaymentPublicKey = PrivateKey(ByteVector.fromValidHex(keys.remote_payment_basepoint_secret)).publicKey,
+      ourPaymentBasePoint = PrivateKey(ByteVector.fromValidHex(keys.local_payment_basepoint_secret)).publicKey,
+      ourHtlcKey = ChannelKeys.derivePerCommitmentKey(PrivateKey(ByteVector.fromValidHex(keys.local_htlc_basepoint_secret)), PublicKey(ByteVector.fromValidHex(keys.local_per_commit_point))),
+      theirHtlcPublicKey = ChannelKeys.remotePerCommitmentPublicKey(PrivateKey(ByteVector.fromValidHex(keys.remote_htlc_basepoint_secret)).publicKey, PublicKey(ByteVector.fromValidHex(keys.local_per_commit_point))),
+      revocationPublicKey = ChannelKeys.revocationPublicKey(PublicKey(ByteVector.fromValidHex(keys.remote_revocation_basepoint)), PublicKey(ByteVector.fromValidHex(keys.local_per_commit_point)))
+    )
+    // Keys used to sign our HTLC transactions by the remote peer.
+    val remoteKeys: RemoteCommitmentKeys = RemoteCommitmentKeys(
+      ourPaymentKey = PrivateKey(ByteVector.fromValidHex(keys.remote_payment_basepoint_secret)),
+      theirDelayedPaymentPublicKey = localKeys.ourDelayedPaymentKey.publicKey,
+      ourPaymentBasePoint = PrivateKey(ByteVector.fromValidHex(keys.remote_payment_basepoint_secret)).publicKey,
+      ourHtlcKey = ChannelKeys.derivePerCommitmentKey(PrivateKey(ByteVector.fromValidHex(keys.remote_htlc_basepoint_secret)), PublicKey(ByteVector.fromValidHex(keys.local_per_commit_point))),
+      theirHtlcPublicKey = localKeys.ourHtlcKey.publicKey,
+      revocationPublicKey = localKeys.revocationPublicKey
+    )
+  }
+
+  case class TestKeys(local_funding_privkey: String,
+                      local_funding_pubkey: String,
+                      remote_funding_privkey: String,
+                      remote_funding_pubkey: String,
+                      local_payment_basepoint_secret: String,
+                      local_payment_basepoint: String,
+                      remote_payment_basepoint_secret: String,
+                      remote_payment_basepoint: String,
+                      local_delayed_payment_basepoint_secret: String,
+                      local_delayed_payment_basepoint: String,
+                      remote_revocation_basepoint_secret: String,
+                      remote_revocation_basepoint: String,
+                      local_htlc_basepoint_secret: String,
+                      local_htlc_basepoint: String,
+                      remote_htlc_basepoint_secret: String,
+                      remote_htlc_basepoint: String,
+                      local_per_commit_secret: String,
+                      local_per_commit_point: String,
+                      derived_local_delayed_pubkey: String,
+                      derived_revocation_pubkey: String,
+                      derived_local_htlc_pubkey: String,
+                      derived_remote_htlc_pubkey: String,
+                      derived_remote_payment_pubkey: String) {
+    val localFundingKey: PrivateKey = PrivateKey(ByteVector.fromValidHex(local_funding_privkey))
+    val remoteFundingKey: PrivateKey = PrivateKey(ByteVector.fromValidHex(remote_funding_privkey))
+  }
+
+  case class TestScripts(funding: TestFundingTx)
+
+  case class TestFundingTx(funding_tx_hex: String)
+
+  case class TestVector(name: String,
+                        local_balance_msat: Long,
+                        remote_balance_msat: Long,
+                        fee_per_kw: Long,
+                        htlcs: Seq[TestHtlc],
+                        remote_partial_sig: String,
+                        expected_commitment_tx_hex: String,
+                        htlc_descs: Seq[TestHtlcTx]) {
+    val spec = CommitmentSpec(
+      htlcs = htlcs.zipWithIndex.map {
+        case (htlc, i) if htlc.incoming => IncomingHtlc(htlc.withId(i))
+        case (htlc, i) => OutgoingHtlc(htlc.withId(i))
+      }.toSet,
+      commitTxFeerate = FeeratePerKw(Satoshi(fee_per_kw)),
+      toLocal = MilliSatoshi(local_balance_msat),
+      toRemote = MilliSatoshi(remote_balance_msat),
+    )
+  }
+
+  case class TestHtlc(incoming: Boolean, amount_msat: Long, expiry: Long, preimage: String) {
+    def withId(id: Long): UpdateAddHtlc = UpdateAddHtlc(ByteVector32.Zeroes, id, MilliSatoshi(amount_msat), Crypto.sha256(ByteVector32.fromValidHex(preimage)), CltvExpiry(expiry), TestConstants.emptyOnionPacket, None, accountable = false, None)
+  }
+
+  case class TestHtlcTx(remote_partial_sig_hex: String, resolution_tx_hex: String)
+
+  test("simple-taproot-commitments (Bolt3 reference test vector)") {
+    val src = Source.fromFile(new File(getClass.getResource("/bolt3-tx-test-vectors-simple-taproot-commitment-format.json").getFile))
+    val f = JsonMethods.parse(src.mkString).extract[TestFixture]
+    src.close()
+    import f._
+    import f.params._
+
+    // We verify that keys are generated correctly.
+    assert(localKeys.publicKeys == CommitmentPublicKeys(
+      localDelayedPaymentPublicKey = PublicKey(ByteVector.fromValidHex(keys.derived_local_delayed_pubkey)),
+      remotePaymentPublicKey = PublicKey(ByteVector.fromValidHex(keys.derived_remote_payment_pubkey)),
+      localHtlcPublicKey = PublicKey(ByteVector.fromValidHex(keys.derived_local_htlc_pubkey)),
+      remoteHtlcPublicKey = PublicKey(ByteVector.fromValidHex(keys.derived_remote_htlc_pubkey)),
+      revocationPublicKey = PublicKey(ByteVector.fromValidHex(keys.derived_revocation_pubkey)),
+    ))
+
+    transactions.foreach(t => {
+      // We verify that commitment transactions match.
+      val outputs = makeCommitTxOutputs(keys.localFundingKey.publicKey, keys.remoteFundingKey.publicKey, localKeys.publicKeys, payCommitTxFees = true, dustLimit, toSelfDelay, t.spec, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+      val txInfo = makeCommitTx(commitInput, commit_height, localKeys.ourPaymentBasePoint, remoteKeys.ourPaymentBasePoint, localIsChannelOpener = true, outputs)
+      val localNonce = NonceGenerator.verificationNonce(fundingTx.txid, keys.localFundingKey, keys.remoteFundingKey.publicKey, commit_height)
+      val remoteNonce = NonceGenerator.signingNonce(keys.remoteFundingKey.publicKey, keys.localFundingKey.publicKey, fundingTx.txid)
+      val localSig = txInfo.partialSign(keys.localFundingKey, keys.remoteFundingKey.publicKey, localNonce, Seq(localNonce.publicNonce, remoteNonce.publicNonce)).toOption.get
+      val remoteSig = txInfo.partialSign(keys.remoteFundingKey, keys.localFundingKey.publicKey, remoteNonce, Seq(localNonce.publicNonce, remoteNonce.publicNonce)).toOption.get
+      val commitTx = txInfo.aggregateSigs(keys.localFundingKey.publicKey, keys.remoteFundingKey.publicKey, localSig, remoteSig).toOption.get
+      Transaction.correctlySpends(commitTx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      // TODO: we need to figure out how the signature from the test vector was generated.
+      val expectedCommitTx = Transaction.read(t.expected_commitment_tx_hex)
+      assert(commitTx.updateWitness(0, ScriptWitness.empty).toString() == expectedCommitTx.updateWitness(0, ScriptWitness.empty).toString())
+      // We verify that HTLC transactions match.
+      val unsignedHtlcTxs = makeHtlcTxs(commitTx, outputs, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+      assert(unsignedHtlcTxs.size == t.htlc_descs.size)
+      assert(unsignedHtlcTxs.map(_.input.outPoint) == t.htlc_descs.map(d => Transaction.read(d.resolution_tx_hex).txIn.head.outPoint))
+      val preimages = t.htlcs.map(htlc => Crypto.sha256(ByteVector.fromValidHex(htlc.preimage)) -> ByteVector32.fromValidHex(htlc.preimage)).toMap
+      unsignedHtlcTxs.zip(t.htlc_descs).foreach { case (unsignedHtlcTx, desc) =>
+        assert(unsignedHtlcTx.tx == Transaction.read(desc.resolution_tx_hex).updateWitness(0, ScriptWitness.empty))
+        val remoteSig = ByteVector64.fromValidHex(desc.remote_partial_sig_hex)
+        assert(unsignedHtlcTx.checkRemoteSig(localKeys, remoteSig))
+        val signedTx = unsignedHtlcTx match {
+          case htlcTx: UnsignedHtlcSuccessTx => htlcTx.addRemoteSig(localKeys, remoteSig, preimages(htlcTx.paymentHash)).sign()
+          case htlcTx: UnsignedHtlcTimeoutTx => htlcTx.addRemoteSig(localKeys, remoteSig).sign()
+        }
+        Transaction.correctlySpends(signedTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assert(signedTx.toString() == desc.resolution_tx_hex)
+      }
+    })
+  }
+
 }
