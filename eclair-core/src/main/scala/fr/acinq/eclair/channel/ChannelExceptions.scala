@@ -73,7 +73,7 @@ case class OutputBelowDust                         (override val channelId: Byte
 case class InvalidSharedOutputAmount               (override val channelId: ByteVector32, serialId: UInt64, amount: Satoshi, expected: Satoshi) extends ChannelException(channelId, s"invalid shared output amount=$amount expected=$expected (serial_id=${serialId.toByteVector.toHex})")
 case class InvalidSpliceOutputScript               (override val channelId: ByteVector32, serialId: UInt64, publicKeyScript: ByteVector) extends ChannelException(channelId, s"invalid splice output publicKeyScript=$publicKeyScript (serial_id=${serialId.toByteVector.toHex})")
 case class UnconfirmedInteractiveTxInputs          (override val channelId: ByteVector32) extends ChannelException(channelId, "the completed interactive tx contains unconfirmed inputs")
-case class InvalidCompleteInteractiveTx            (override val channelId: ByteVector32) extends ChannelException(channelId, "the completed interactive tx is invalid")
+case class InvalidCompleteInteractiveTx            (override val channelId: ByteVector32, reason: String) extends ChannelException(channelId, s"the completed interactive tx is invalid: $reason")
 case class TooManyInteractiveTxRounds              (override val channelId: ByteVector32) extends ChannelException(channelId, "too many messages exchanged during interactive tx construction")
 case class RbfAttemptAborted                       (override val channelId: ByteVector32) extends ChannelException(channelId, "rbf attempt aborted")
 case class SpliceAttemptAborted                    (override val channelId: ByteVector32) extends ChannelException(channelId, "splice attempt aborted")
