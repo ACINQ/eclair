@@ -89,15 +89,9 @@ class Peer(val nodeParams: NodeParams,
         FinalChannelId(state.channelId) -> channel
       }.toMap
       context.system.eventStream.publish(PeerCreated(self, remoteNodeId))
-      val peerStorageData_opt = if (nodeParams.features.hasFeature(Features.ProvideStorage)) {
-        nodeParams.db.peers.getStorage(remoteNodeId)
-      } else {
-        None
-      }
-      val peerStorage = peerStorageData_opt.map(PeerStorage.WrittenToDb(_)).getOrElse(PeerStorage.Empty)
       // When we restart, we will attempt to reconnect right away, but then we'll wait.
       // We don't fetch our peer's features from the DB: if the connection succeeds, we will get them from their init message, which saves a DB call.
-      goto(DISCONNECTED) using DisconnectedData(channels, activeChannels = Set.empty, peerStorage, remoteFeatures_opt = None)
+      goto(DISCONNECTED) using DisconnectedData(channels, activeChannels = Set.empty, peerStorage = PeerStorage.Uninitialized, remoteFeatures_opt = None)
   }
 
   when(DISCONNECTED) {
@@ -898,7 +892,17 @@ class Peer(val nodeParams: NodeParams,
     }
 
     // If we have some data stored from our peer, we send it to them before doing anything else.
-    val peerStorageData_opt = peerStorage match {
+    val peerStorage1 = peerStorage match {
+      case PeerStorage.Uninitialized =>
+        val peerStorageData_opt = if (nodeParams.features.hasFeature(Features.ProvideStorage)) {
+          nodeParams.db.peers.getStorage(remoteNodeId)
+        } else {
+          None
+        }
+        peerStorageData_opt.map(PeerStorage.WrittenToDb(_)).getOrElse(PeerStorage.Empty)
+      case other => other
+    }
+    val peerStorageData_opt = peerStorage1 match {
       case PeerStorage.Uninitialized => None // impossible!
       case PeerStorage.Empty => None
       case PeerStorage.PendingWrite(data) => Some(data)
@@ -923,7 +927,7 @@ class Peer(val nodeParams: NodeParams,
       connectionReady.peerConnection ! CurrentFeeCredit(nodeParams.chainHash, feeCredit.getOrElse(0 msat))
     }
 
-    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, activeChannels, feerates, None, peerStorage, remoteFeaturesWritten = connectionReady.outgoing)
+    goto(CONNECTED) using ConnectedData(connectionReady.address, connectionReady.peerConnection, connectionReady.localInit, connectionReady.remoteInit, channels, activeChannels, feerates, None, peerStorage1, remoteFeaturesWritten = connectionReady.outgoing)
   }
 
   /**
