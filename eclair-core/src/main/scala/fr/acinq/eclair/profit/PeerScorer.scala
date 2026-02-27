@@ -157,7 +157,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       .sortBy(_._2)(Ordering[MilliSatoshi].reverse)
       .take(config.topPeersCount)
       .map(_._1)
-    log.debug("top {} peers:", bestPeersByVolume.size)
+    log.info("top {} peers:", bestPeersByVolume.size)
     printDailyStats(bestPeersByVolume)
 
     // We select peers that have a low outgoing balance but were previously good peers, by looking at the largest daily
@@ -185,7 +185,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       .map { case (p, _) => FundingProposal(p, (bestDailyOutgoingFlow(p) * 4).truncateToSatoshi) }
       .filter(_.fundingAmount > 0.sat)
     if (bestPeersThatNeedLiquidity.nonEmpty) {
-      log.debug("top {} peers that need liquidity:", bestPeersThatNeedLiquidity.size)
+      log.info("top {} peers that need liquidity:", bestPeersThatNeedLiquidity.size)
       printDailyStats(bestPeersThatNeedLiquidity.map(_.peer))
     }
 
@@ -202,7 +202,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       // We'd like to increase their capacity by 50%.
       .map(p => FundingProposal(p, p.capacity * 0.5))
     if (goodSmallPeers.nonEmpty) {
-      log.debug("we've identified {} smaller peers that perform well relative to their capacity", goodSmallPeers.size)
+      log.info("we've identified {} smaller peers that perform well relative to their capacity", goodSmallPeers.size)
       printDailyStats(goodSmallPeers.map(_.peer))
     }
 
@@ -236,17 +236,17 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
   }
 
   private def printDailyStats(peers: Seq[PeerInfo]): Unit = {
-    log.debug("| rank |                               node_id                              |  daily_volume |  daily_profit |      can_send |   can_receive |")
-    log.debug("|------|--------------------------------------------------------------------|---------------|---------------|---------------|---------------|")
+    log.info("| rank |                               node_id                              |  daily_volume |  daily_profit |      can_send |   can_receive |")
+    log.info("|------|--------------------------------------------------------------------|---------------|---------------|---------------|---------------|")
     peers.zipWithIndex.foreach { case (p, i) =>
       val dailyStats = p.stats.take(Bucket.bucketsPerDay)
       val dailyVolume = dailyStats.map(_.totalAmountOut).sum.truncateToSatoshi.toMilliBtc
       val dailyProfit = dailyStats.map(_.profit).sum.truncateToSatoshi.toMilliBtc
       val canSend = p.canSend.truncateToSatoshi.toMilliBtc
       val canReceive = p.canReceive.truncateToSatoshi.toMilliBtc
-      log.debug(f"| ${i + 1}%4d | ${p.remoteNodeId} | ${dailyVolume.toDouble}%8.2f mbtc | ${dailyProfit.toDouble}%8.2f mbtc | ${canSend.toDouble}%8.2f mbtc | ${canReceive.toDouble}%8.2f mbtc |")
+      log.info(f"| ${i + 1}%4d | ${p.remoteNodeId} | ${dailyVolume.toDouble}%8.2f mbtc | ${dailyProfit.toDouble}%8.2f mbtc | ${canSend.toDouble}%8.2f mbtc | ${canReceive.toDouble}%8.2f mbtc |")
     }
-    log.debug("|------|--------------------------------------------------------------------|---------------|---------------|---------------|---------------|")
+    log.info("|------|--------------------------------------------------------------------|---------------|---------------|---------------|---------------|")
   }
 
   private def closeChannelsIfNeeded(peers: Seq[PeerInfo]): Unit = {
@@ -266,7 +266,9 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
         }
         // We keep the best channel and close the others.
         channels.tail.foreach { c =>
-          log.debug("we should close channel_id={} with remote_node_id={} (local={}, remote={})", c.channelId, p.remoteNodeId, c.canSend.truncateToSatoshi.toMilliBtc, c.canReceive.truncateToSatoshi.toMilliBtc)
+          if (!config.liquidity.autoClose) {
+            log.info("we should close channel_id={} with remote_node_id={} (local={}, remote={})", c.channelId, p.remoteNodeId, c.canSend.truncateToSatoshi.toMilliBtc, c.canReceive.truncateToSatoshi.toMilliBtc)
+          }
           if (config.liquidity.autoClose && nodeParams.currentFeeratesForFundingClosing.medium <= config.liquidity.maxFeerate) {
             log.info("closing channel_id={} with remote_node_id={} (local={}, remote={})", c.channelId, p.remoteNodeId, c.canSend.truncateToSatoshi.toMilliBtc, c.canReceive.truncateToSatoshi.toMilliBtc)
             val cmd = CMD_CLOSE(UntypedActorRef.noSender, None, None)
@@ -360,17 +362,17 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       }.toMap
     // We print the results to help debugging.
     if (feeIncreases.nonEmpty || feeDecreases.nonEmpty || feeReverts.nonEmpty) {
-      log.debug("we should update our relay fees with the following peers:")
-      log.debug("|                               node_id                              |  volume_variation | decision | current_fee | next_fee |")
-      log.debug("|--------------------------------------------------------------------|-------------------|----------|-------------|----------|")
+      log.info("we should update our relay fees with the following peers:")
+      log.info("|                               node_id                              |  volume_variation | decision | current_fee | next_fee |")
+      log.info("|--------------------------------------------------------------------|-------------------|----------|-------------|----------|")
       (feeIncreases.toSeq ++ feeDecreases.toSeq ++ feeReverts.toSeq).foreach { case (remoteNodeId, decision) =>
         val volumeVariation = peers.find(_.remoteNodeId == remoteNodeId) match {
           case Some(p) if p.stats.slice(2, 3).map(_.totalAmountOut).sum != 0.msat => p.stats.take(2).map(_.totalAmountOut).sum.toLong.toDouble / (p.stats.slice(2, 3).map(_.totalAmountOut).sum.toLong * lastTwoBucketsRatio)
           case _ => 0.0
         }
-        log.debug(f"| $remoteNodeId |             $volumeVariation%.2f | ${decision.direction} | ${decision.previousFee.feeProportionalMillionths}%11d | ${decision.newFee.feeProportionalMillionths}%8d |")
+        log.info(f"| $remoteNodeId |             $volumeVariation%.2f | ${decision.direction} | ${decision.previousFee.feeProportionalMillionths}%11d | ${decision.newFee.feeProportionalMillionths}%8d |")
       }
-      log.debug("|--------------------------------------------------------------------|-------------------|----------|-------------|----------|")
+      log.info("|--------------------------------------------------------------------|-------------------|----------|-------------|----------|")
     }
     if (config.relayFees.autoUpdate) {
       (feeIncreases.toSeq ++ feeDecreases.toSeq ++ feeReverts.toSeq).foreach { case (remoteNodeId, decision) =>
