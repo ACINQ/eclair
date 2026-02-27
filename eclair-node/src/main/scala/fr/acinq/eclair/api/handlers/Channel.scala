@@ -153,18 +153,10 @@ trait Channel {
     }
   }
 
-  val channelStats: Route = postRequest("channelstats") { implicit t =>
-    withPaginated { paginated_opt =>
-      formFields(fromFormParam(), toFormParam()) { (from, to) =>
-        complete(eclairApi.channelStats(from, to, paginated_opt.orElse(Some(Paginated(count = 10, skip = 0)))))
-      }
-    }
-  }
-
   val channelBalances: Route = postRequest("channelbalances") { implicit t =>
     complete(eclairApi.channelBalances())
   }
 
-  val channelRoutes: Route = open ~ rbfOpen ~ spliceIn ~ spliceOut ~ rbfSplice ~ close ~ forceClose ~ bumpForceClose ~ channel ~ channels ~ closedChannels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
+  val channelRoutes: Route = open ~ rbfOpen ~ spliceIn ~ spliceOut ~ rbfSplice ~ close ~ forceClose ~ bumpForceClose ~ channel ~ channels ~ closedChannels ~ allChannels ~ allUpdates ~ channelBalances
 
 }
