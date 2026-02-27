@@ -777,6 +777,31 @@ class PeerSpec extends FixtureSpec {
     assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111"))
   }
 
+  test("lazily load peer storage on first connection") { f =>
+    import f._
+
+    // Peer storage is not loaded after initialization.
+    switchboard.send(peer, Peer.Init(Set.empty, Map.empty))
+    assert(peer.stateData.peerStorage == PeerStorage.Uninitialized)
+
+    // Store some data in the DB for this peer.
+    nodeParams.db.peers.updateStorage(remoteNodeId, hex"abcdef")
+
+    // On first connection, peer storage is lazily loaded from DB.
+    val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
+    switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress, outgoing = true, localInit, protocol.Init(Bob.nodeParams.features.initFeatures())))
+    peerConnection.expectMsg(PeerStorageRetrieval(hex"abcdef"))
+    peerConnection.expectMsgType[RecommendedFeerates]
+    assert(peer.stateData.peerStorage == PeerStorage.WrittenToDb(hex"abcdef"))
+
+    // On reconnection, peer storage stays loaded (no DB re-read).
+    val peerConnection2 = TestProbe()
+    switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection2.ref, remoteNodeId, fakeIPAddress, outgoing = true, localInit, protocol.Init(Bob.nodeParams.features.initFeatures())))
+    peerConnection2.expectMsg(PeerStorageRetrieval(hex"abcdef"))
+    peerConnection2.expectMsgType[RecommendedFeerates]
+    assert(peer.stateData.peerStorage == PeerStorage.WrittenToDb(hex"abcdef"))
+  }
+
   test("store remote features when channel confirms") { f =>
     import f._
 
