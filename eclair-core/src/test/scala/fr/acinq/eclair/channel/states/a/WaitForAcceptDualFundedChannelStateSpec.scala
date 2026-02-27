@@ -181,10 +181,20 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
   test("recv AcceptDualFundedChannel (invalid max accepted htlcs)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
-    val invalidMaxAcceptedHtlcs = Channel.MAX_ACCEPTED_HTLCS + 1
-    alice ! accept.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)
+    alice ! accept.copy(maxAcceptedHtlcs = 484)
     val error = alice2bob.expectMsgType[Error]
-    assert(error == Error(accept.temporaryChannelId, InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage))
+    assert(error == Error(accept.temporaryChannelId, InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, maxAcceptedHtlcs = 484, max = 483).getMessage))
+    listener.expectMsgType[ChannelAborted]
+    awaitCond(alice.stateName == CLOSED)
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
+  }
+
+  test("recv AcceptDualFundedChannel (invalid max accepted htlcs, zero-fee commitments)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
+    alice ! accept.copy(maxAcceptedHtlcs = 115)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error == Error(accept.temporaryChannelId, InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, maxAcceptedHtlcs = 115, max = 114).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]

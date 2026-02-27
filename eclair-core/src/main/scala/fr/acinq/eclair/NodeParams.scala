@@ -21,9 +21,9 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.fsm.Channel.{BalanceThreshold, ChannelConf, UnhandledExceptionStrategy}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelTypes}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager, OnChainKeyManager}
 import fr.acinq.eclair.db._
@@ -361,7 +361,7 @@ object NodeParams extends Logging {
     require(htlcMinimum > 0.msat, "channel.htlc-minimum-msat must be strictly greater than 0")
 
     val maxAcceptedHtlcs = config.getInt("channel.max-accepted-htlcs")
-    require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"channel.max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
+    require(maxAcceptedHtlcs <= Channel.maxAcceptedHtlcs(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), s"channel.max-accepted-htlcs must be lower than ${Channel.maxAcceptedHtlcs(ChannelTypes.AnchorOutputsZeroFeeHtlcTx())}")
 
     val maxToLocalCLTV = CltvExpiryDelta(config.getInt("channel.max-to-local-delay-blocks"))
     val offeredCLTV = CltvExpiryDelta(config.getInt("channel.to-remote-delay-blocks"))

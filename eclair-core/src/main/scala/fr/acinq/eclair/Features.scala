@@ -277,6 +277,12 @@ object Features {
     val mandatory = 38
   }
 
+  // TODO: once the spec is final, set feature bit to 40 and activate in reference.conf
+  case object ZeroFeeCommitments extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "zero_fee_commitments"
+    val mandatory = 140
+  }
+
   case object ProvideStorage extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_provide_storage"
     val mandatory = 42
@@ -392,6 +398,7 @@ object Features {
     Quiescence,
     AttributionData,
     OnionMessages,
+    ZeroFeeCommitments,
     ProvideStorage,
     ChannelType,
     ScidAlias,
