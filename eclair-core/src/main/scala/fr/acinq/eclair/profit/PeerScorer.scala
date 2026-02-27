@@ -409,6 +409,9 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
     if (bestPeers.isEmpty && smallPeers.isEmpty && toRevive.isEmpty) {
       log.info("we haven't identified peers that require liquidity yet")
       run(history)
+    } else if (!config.liquidity.autoFund) {
+      log.debug("auto-funding peers is disabled")
+      run(history)
     } else if (toFund.isEmpty) {
       log.info("we skip funding peers because of per-day rate-limits: increase eclair.peer-scoring.liquidity.max-funding-tx-per-day to fund more often")
       run(history)

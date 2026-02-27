@@ -391,6 +391,24 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
     }
   }
 
+  test("don't fund channels if auto-funding is disabled") {
+    val config = defaultConfig.copy(liquidity = defaultConfig.liquidity.copy(autoFund = false))
+    withFixture(onChainBalance = 1.5 btc, config = config) { f =>
+      import f._
+
+      // We have a stable, large outgoing flow with a single peer and not much liquidity left: we should add liquidity.
+      val stats = Seq.fill(weeklyBuckets)(peerStats(totalAmountOut = 1 btc, relayFeeEarned = 0.01 btc))
+      val channel = channelInfo(canSend = 0.1 btc, canReceive = 4.9 btc)
+
+      // But auto-funding peers is disabled, so we don't do anything.
+      scorer ! ScorePeers(None)
+      inside(tracker.expectMessageType[GetLatestStats]) { msg =>
+        msg.replyTo ! LatestStats(Seq(PeerInfo(remoteNodeId1, stats, Seq(channel), None, hasPendingChannel = false)))
+      }
+      register.expectNoMessage(100 millis)
+    }
+  }
+
   test("don't update relay fees too frequently") {
     withFixture(onChainBalance = 0 btc) { f =>
       import f._
