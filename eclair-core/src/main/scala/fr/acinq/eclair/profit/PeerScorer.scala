@@ -377,7 +377,13 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
     if (config.relayFees.autoUpdate) {
       (feeIncreases.toSeq ++ feeDecreases.toSeq ++ feeReverts.toSeq).foreach { case (remoteNodeId, decision) =>
         val cmd = CMD_UPDATE_RELAY_FEE(UntypedActorRef.noSender, decision.newFee.feeBase, decision.newFee.feeProportionalMillionths)
-        peers.find(_.remoteNodeId == remoteNodeId).map(_.channels).getOrElse(Nil).foreach(c => register ! Register.Forward(context.system.ignoreRef, c.channelId, cmd))
+        peers.find(_.remoteNodeId == remoteNodeId) match {
+          case Some(p) =>
+            // We store our decision in the DB, which ensures that it will not be reverted to default fees on reconnection.
+            nodeParams.db.peers.addOrUpdateRelayFees(remoteNodeId, decision.newFee)
+            p.channels.foreach(c => register ! Register.Forward(context.system.ignoreRef, c.channelId, cmd))
+          case None => ()
+        }
       }
     }
     // Note that in order to avoid oscillating between reverts (reverting a revert), we remove the previous records when

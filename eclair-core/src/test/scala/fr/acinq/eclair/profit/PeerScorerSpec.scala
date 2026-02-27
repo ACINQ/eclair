@@ -15,7 +15,7 @@ import fr.acinq.eclair.profit.PeerScorer._
 import fr.acinq.eclair.profit.PeerStatsTracker._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import fr.acinq.eclair.wire.protocol.ChannelUpdate.{ChannelFlags, MessageFlags}
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, RealShortChannelId, TestConstants, TimestampMilli, TimestampSecond, ToMilliSatoshiConversion, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, NodeParams, RealShortChannelId, TestConstants, TimestampMilli, TimestampSecond, ToMilliSatoshiConversion, randomBytes32}
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.HexStringSyntax
@@ -55,7 +55,7 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
     )
   )
 
-  private case class Fixture(tracker: TestProbe[GetLatestStats], register: TestProbe[Any], wallet: DummyBalanceChecker, scorer: ActorRef[PeerScorer.Command])
+  private case class Fixture(nodeParams: NodeParams, tracker: TestProbe[GetLatestStats], register: TestProbe[Any], wallet: DummyBalanceChecker, scorer: ActorRef[PeerScorer.Command])
 
   private def withFixture(config: Config = defaultConfig, onChainBalance: BtcAmount = 0 sat)(testFun: Fixture => Any): Unit = {
     val tracker = TestProbe[GetLatestStats]()
@@ -63,7 +63,7 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
     val wallet = new DummyBalanceChecker(confirmedBalance = onChainBalance.toMilliSatoshi.truncateToSatoshi)
     val nodeParams = TestConstants.Alice.nodeParams.copy(peerScoringConfig = config)
     val scorer = testKit.spawn(PeerScorer(nodeParams, wallet, tracker.ref, register.ref.toClassic))
-    testFun(Fixture(tracker, register, wallet, scorer))
+    testFun(Fixture(nodeParams, tracker, register, wallet, scorer))
   }
 
   private def channelUpdate(capacity: BtcAmount, fees: RelayFees = RelayFees(250 msat, 1000), timestamp: TimestampSecond = TimestampSecond.now(), announceChannel: Boolean = true): ChannelUpdate = {
@@ -168,11 +168,14 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
       )
       assert(feeIncreases.map(_.channelId).toSet == Set(c2a.channelId, c2b.channelId))
       assert(feeIncreases.map(_.message.feeProportionalMillionths).toSet == Set(1500))
+      assert(nodeParams.db.peers.getRelayFees(remoteNodeId2).contains(RelayFees(250 msat, 1500)))
       // We decrease our relay fees with our third peer.
       inside(register.expectMessageType[Register.Forward[CMD_UPDATE_RELAY_FEE]]) { cmd =>
         assert(cmd.channelId == c3.channelId)
         assert(cmd.message.feeProportionalMillionths == 500)
       }
+      assert(nodeParams.db.peers.getRelayFees(remoteNodeId3).contains(RelayFees(250 msat, 500)))
+      assert(nodeParams.db.peers.getRelayFees(remoteNodeId1).isEmpty)
       // We fund channels with all of our peers.
       val funding = Seq(
         register.expectMessageType[Register.ForwardNodeId[OpenChannel]],
