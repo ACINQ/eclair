@@ -403,3 +403,13 @@ object ClosingSigTlv {
   )
 }
 
+sealed trait StartBatchTlv extends Tlv
+
+object StartBatchTlv {
+  /** Type of [[LightningMessage]] that is included in the batch, when batching a single message type. */
+  case class MessageType(tag: Int) extends StartBatchTlv
+
+  val startBatchTlvCodec: Codec[TlvStream[StartBatchTlv]] = tlvStream(discriminated[StartBatchTlv].by(varint)
+    .typecase(UInt64(1), tlvField(uint16.as[MessageType]))
+  )
+}

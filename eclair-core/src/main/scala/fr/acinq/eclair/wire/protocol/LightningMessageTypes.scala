@@ -478,6 +478,15 @@ case class ClosingSig(channelId: ByteVector32, closerScriptPubKey: ByteVector, c
   val nextCloseeNonce_opt: Option[IndividualNonce] = tlvStream.get[ClosingSigTlv.NextCloseeNonce].map(_.nonce)
 }
 
+/** This message is used to indicate that the next [[batchSize]] messages form a single logical message. */
+case class StartBatch(channelId: ByteVector32, batchSize: Int, tlvStream: TlvStream[StartBatchTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val messageType_opt: Option[Long] = tlvStream.get[StartBatchTlv.MessageType].map(_.tag)
+}
+
+object StartBatch {
+  def commitSigBatch(channelId: ByteVector32, batchSize: Int): StartBatch = StartBatch(channelId, batchSize, TlvStream(StartBatchTlv.MessageType(132)))
+}
+
 case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,
                          amountMsat: MilliSatoshi,

@@ -108,7 +108,7 @@ object CommitSigTlv {
 
   /**
    * The experimental version of splicing included the number of [[CommitSig]] messages in the batch.
-   * This TLV can be removed once Phoenix users have upgraded to the official version of splicing.
+   * This TLV can be removed once Phoenix users have upgraded to the official version of splicing and use the [[StartBatch]] message.
    */
   case class ExperimentalBatchTlv(size: Int) extends CommitSigTlv
 
