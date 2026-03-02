@@ -350,7 +350,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         // receive the whole batch before forwarding.
         msg match {
           case msg: CommitSig =>
-            msg.tlvStream.get[CommitSigTlv.BatchTlv].map(_.size) match {
+            msg.tlvStream.get[CommitSigTlv.ExperimentalBatchTlv].map(_.size) match {
               case Some(batchSize) if batchSize > 25 =>
                 log.warning("received legacy batch of commit_sig exceeding our threshold ({} > 25), processing messages individually", batchSize)
                 // We don't want peers to be able to exhaust our memory by sending batches of dummy messages that we keep in RAM.
