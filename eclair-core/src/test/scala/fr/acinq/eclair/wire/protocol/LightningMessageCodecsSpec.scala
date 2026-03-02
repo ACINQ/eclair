@@ -441,6 +441,23 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     }
   }
 
+  test("encode/decode start_batch message") {
+    val channelId = ByteVector32(hex"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    val testCases = Seq(
+      StartBatch(channelId, 1) -> hex"007f aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0001",
+      StartBatch(channelId, 7) -> hex"007f aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0007",
+      StartBatch.commitSigBatch(channelId, 7) -> hex"007f aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0007 01020084",
+      StartBatch(channelId, 7, TlvStream(StartBatchTlv.MessageType(57331))) -> hex"007f aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0007 0102dff3",
+      StartBatch(channelId, 32000) -> hex"007f aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 7d00",
+    )
+    testCases.foreach { case (msg, bin) =>
+      val decoded = lightningMessageCodec.decode(bin.bits).require.value
+      assert(decoded == msg)
+      val encoded = lightningMessageCodec.encode(msg).require.bytes
+      assert(encoded == bin)
+    }
+  }
+
   test("encode/decode closing_signed") {
     val defaultSig = ByteVector64(hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101")
     val testCases = Seq(
