@@ -9,6 +9,12 @@
 We remove the code used to support legacy channels that don't use anchor outputs or taproot.
 If you still have such channels, eclair won't start: you will need to close those channels, and will only be able to update eclair once they have been successfully closed.
 
+### Auto-refresh relay fees from configuration can be disabled
+
+There is a performance hit on restart if there is a large number (> 100s) of channels, so it can be disabled with a new `eclair.relay.fees.reset-existing-channels` setting.
+
+The default behavior is unchanged.
+
 ### Channel lifecyle events rework
 
 Eclair emits several events during a channel lifecycle, which can be received by plugins or through the websocket.

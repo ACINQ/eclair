@@ -452,13 +452,15 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           goto(CLOSING) using closing
         case normal: DATA_NORMAL =>
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.lastAnnouncement_opt, normal.aliases, remoteNodeId))
-          // we check the configuration because the values for channel_update may have changed while eclair was down
-          val fees = getRelayFees(nodeParams, remoteNodeId, normal.commitments.announceChannel)
-          if (fees.feeBase != normal.channelUpdate.feeBaseMsat ||
-            fees.feeProportionalMillionths != normal.channelUpdate.feeProportionalMillionths ||
-            nodeParams.channelConf.expiryDelta != normal.channelUpdate.cltvExpiryDelta) {
-            log.debug("refreshing channel_update due to configuration changes")
-            self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths)
+          if (nodeParams.relayParams.resetExistingChannels) {
+            // we refresh the relay fee settings if eclair has been restarted with a new conf
+            val fees = getRelayFees(nodeParams, remoteNodeId, normal.commitments.announceChannel)
+            if (fees.feeBase != normal.channelUpdate.feeBaseMsat ||
+              fees.feeProportionalMillionths != normal.channelUpdate.feeProportionalMillionths ||
+              nodeParams.channelConf.expiryDelta != normal.channelUpdate.cltvExpiryDelta) {
+              log.debug("refreshing channel_update due to configuration changes")
+              self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths)
+            }
           }
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
           // we take into account the date of the last update so that we don't send superfluous updates when we restart the app
