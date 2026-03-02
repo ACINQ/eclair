@@ -220,7 +220,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
   }
 
   private def createFixtureParams(channelType: SupportedChannelType, fundingAmountA: Satoshi, fundingAmountB: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, lockTime: Long, requireConfirmedInputs: RequireConfirmedInputs = RequireConfirmedInputs(forLocal = false, forRemote = false), nonInitiatorPaysCommitTxFees: Boolean = false, plugins: Seq[PluginParams] = Nil): FixtureParams = {
-    val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(_.copy(
+    val Seq(nodeParamsA, nodeParamsB) = Seq(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams).map(nodeParams => nodeParams.copy(
       features = Features(channelType.features.map(f => f -> FeatureSupport.Optional).toMap[Feature, FeatureSupport]),
       pluginParams = plugins,
     ))

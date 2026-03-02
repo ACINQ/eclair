@@ -710,21 +710,18 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val remoteOnlyInputs = session.remoteInputs.collect { case i: Input.Remote => i }
     // Similarly, we ignore the shared output, which has been validated separately.
     val remoteOnlyOutputs = session.remoteOutputs.collect { case o: Output.Remote => o }
-    val confirmationValidation = if (fundingParams.requireConfirmedInputs.forRemote) {
-      checkInputsConfirmed(remoteOnlyInputs)
+    val confirmationValidation: () => Future[Unit] = if (fundingParams.requireConfirmedInputs.forRemote) {
+      () => checkInputsConfirmed(remoteOnlyInputs, minConfirmations = 1, maxConfirmations_opt = None)
     } else {
-      Future.successful(())
+      () => Future.successful(())
     }
     val pluginValidation: Seq[() => Future[Unit]] = nodeParams.pluginParams.collect {
       case p: ValidateInteractiveTxPlugin => () => p.validateSharedTx(remoteOnlyInputs.map(i => i.outPoint -> i.txOut).toMap, remoteOnlyOutputs.map(o => TxOut(o.amount, o.pubkeyScript)))
     }
     // We run all checks, stopping at the first failing one. Note that plugin validation is only called if the previous
     // checks completed without errors.
-    context.pipeToSelf(((() => confirmationValidation) +: pluginValidation).foldLeft(Future.successful(())) {
-      case (current, nextCheck) => current.transformWith {
-        case Success(_) => nextCheck()
-        case Failure(t) => Future.failed(t)
-      }
+    context.pipeToSelf((confirmationValidation +: pluginValidation).foldLeft(Future.successful(())) {
+      case (current, nextCheck) => current.flatMap(_ => nextCheck()) // NB: sequential execution
     }) {
       case Success(_) => ValidateSharedTx
       case Failure(t) => WalletFailure(t)
@@ -751,12 +748,12 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     }
   }
 
-  private def checkInputsConfirmed(inputs: Seq[Input.Remote]): Future[Unit] = {
+  private def checkInputsConfirmed(inputs: Seq[Input.Remote], minConfirmations: Int, maxConfirmations_opt: Option[Int]): Future[Unit] = {
     // We check inputs sequentially and stop at the first unconfirmed one.
     inputs.map(_.outPoint).toSet.foldLeft(Future.successful(true)) {
       case (current, outpoint) => current.transformWith {
         case Success(true) => wallet.getTxConfirmations(outpoint.txid).flatMap {
-          case Some(confirmations) if confirmations > 0 =>
+          case Some(confirmations) if minConfirmations <= confirmations && maxConfirmations_opt.forall(max => confirmations <= max) =>
             // The input is confirmed, so we can reliably check whether it is unspent, We don't check this for
             // unconfirmed inputs, because if they are valid but not in our mempool we would incorrectly consider
             // them unspendable (unknown). We want to reject unspendable inputs to immediately fail the funding
