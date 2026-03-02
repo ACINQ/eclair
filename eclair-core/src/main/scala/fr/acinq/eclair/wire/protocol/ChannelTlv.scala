@@ -255,8 +255,16 @@ sealed trait ChannelReestablishTlv extends Tlv
 
 object ChannelReestablishTlv {
 
+  /**
+   * When disconnected in the middle of an interactive-tx session, this field is used to request a retransmission of
+   * [[TxSignatures]] for the given [[txId]].
+   */
   case class NextFundingTlv(txId: TxId) extends ChannelReestablishTlv
+
+  /** The txid of the last [[ChannelReady]] or [[SpliceLocked]] message received before disconnecting, if any. */
   case class YourLastFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
+
+  /** The txid of our latest outgoing [[ChannelReady]] or [[SpliceLocked]] for this channel. */
   case class MyCurrentFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
 
   /**
