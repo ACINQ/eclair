@@ -180,6 +180,7 @@ object TestConstants {
         minTrampolineFees = RelayFees(
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
+        resetExistingChannels = true,
         enforcementDelay = 10 minutes,
         asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
         peerReputationConfig = Reputation.Config(enabled = true, 1 day, 10 minutes),
@@ -372,6 +373,7 @@ object TestConstants {
         minTrampolineFees = RelayFees(
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
+        resetExistingChannels = true,
         enforcementDelay = 10 minutes,
         asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
         peerReputationConfig = Reputation.Config(enabled = true, 2 day, 20 minutes),

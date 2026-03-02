@@ -124,11 +124,11 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, Alice.channelKeys(), aliceWallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
       newAlice ! INPUT_RESTORED(oldStateData)
 
-      val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]
-      assert(!Announcements.areSameRelayParams(u1.channelUpdate, oldStateData.channelUpdate))
-      assert(u1.channelUpdate.feeBaseMsat == newConfig.relayParams.privateChannelFees.feeBase)
-      assert(u1.channelUpdate.feeProportionalMillionths == newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
-      assert(u1.channelUpdate.cltvExpiryDelta == newConfig.channelConf.expiryDelta)
+      val cup = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]
+      assert(!Announcements.areSameRelayParams(cup.channelUpdate, oldStateData.channelUpdate))
+      assert(cup.channelUpdate.feeBaseMsat == newConfig.relayParams.privateChannelFees.feeBase)
+      assert(cup.channelUpdate.feeProportionalMillionths == newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
+      assert(cup.channelUpdate.cltvExpiryDelta == newConfig.channelConf.expiryDelta)
 
       newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
       bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
@@ -136,7 +136,9 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       bob2alice.expectMsgType[ChannelReestablish]
       alice2bob.forward(bob)
       bob2alice.forward(newAlice)
-      alice2bob.expectMsgType[ChannelUpdate]
+      val u1 = alice2bob.expectMsgType[ChannelUpdate]
+      assert(cup.channelUpdate.feeBaseMsat == u1.feeBaseMsat)
+      assert(cup.channelUpdate.feeProportionalMillionths == u1.feeProportionalMillionths)
       bob2alice.expectMsgType[ChannelUpdate]
       alice2bob.expectNoMessage()
       bob2alice.expectNoMessage()
