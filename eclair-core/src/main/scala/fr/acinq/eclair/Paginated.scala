@@ -27,3 +27,10 @@ case class Paginated(count: Int, skip: Int) {
   require(count >= 0, "count must be a positive number")
   require(skip >= 0, "skip must be a positive number")
 }
+
+object Paginated {
+  def paginate[T](results: Seq[T], paginated_opt: Option[Paginated]): Seq[T] = paginated_opt match {
+    case Some(paginated) => results.slice(paginated.skip, paginated.skip + paginated.count)
+    case None => results
+  }
+}

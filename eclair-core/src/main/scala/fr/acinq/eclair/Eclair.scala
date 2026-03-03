@@ -35,7 +35,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{AddressType, D
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
+import fr.acinq.eclair.db.AuditDb.RelayStats
 import fr.acinq.eclair.db.{IncomingPayment, OfferData, OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, OpenChannelResponse, PeerInfo}
 import fr.acinq.eclair.io._
@@ -159,9 +159,9 @@ trait Eclair {
 
   def audit(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[AuditResponse]
 
-  def networkFees(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[NetworkFee]]
+  def relayStats(remoteNodeId: PublicKey, from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[RelayStats]
 
-  def channelStats(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Stats]]
+  def relayStats(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[RelayStats]]
 
   def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[Invoice]]
 
@@ -596,12 +596,12 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     ))
   }
 
-  override def networkFees(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[NetworkFee]] = {
-    Future(appKit.nodeParams.db.audit.listNetworkFees(from.toTimestampMilli, to.toTimestampMilli))
+  override def relayStats(remoteNodeId: PublicKey, from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[RelayStats] = {
+    Future(appKit.nodeParams.db.audit.relayStats(remoteNodeId, from.toTimestampMilli, to.toTimestampMilli))
   }
 
-  override def channelStats(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Stats]] = {
-    Future(appKit.nodeParams.db.audit.stats(from.toTimestampMilli, to.toTimestampMilli, paginated_opt))
+  override def relayStats(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[RelayStats]] = {
+    Future(appKit.nodeParams.db.audit.relayStats(from.toTimestampMilli, to.toTimestampMilli, paginated_opt))
   }
 
   override def allInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]] = Future {
