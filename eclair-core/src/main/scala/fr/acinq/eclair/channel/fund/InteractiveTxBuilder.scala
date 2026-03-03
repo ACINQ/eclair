@@ -716,7 +716,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       () => Future.successful(())
     }
     val pluginValidation: Seq[() => Future[Unit]] = nodeParams.pluginParams.collect {
-      case p: ValidateInteractiveTxPlugin => () => p.validateSharedTx(remoteOnlyInputs.map(i => i.outPoint -> i.txOut).toMap, remoteOnlyOutputs.map(o => TxOut(o.amount, o.pubkeyScript)))
+      case p: ValidateInteractiveTxPlugin => () => p.validateSharedTx(remoteNodeId, remoteOnlyInputs.map(i => i.outPoint -> i.txOut).toMap, remoteOnlyOutputs.map(o => TxOut(o.amount, o.pubkeyScript)))
     }
     // We run all checks, stopping at the first failing one. Note that plugin validation is only called if the previous
     // checks completed without errors.

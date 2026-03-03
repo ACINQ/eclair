@@ -53,7 +53,7 @@ trait ValidateInteractiveTxPlugin extends PluginParams {
    * and aren't already spent. This function should only be used for custom, non-standard validation that node operators
    * want to apply.
    */
-  def validateSharedTx(remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit]
+  def validateSharedTx(remoteNodeId: PublicKey, remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit]
 }
 ```
 

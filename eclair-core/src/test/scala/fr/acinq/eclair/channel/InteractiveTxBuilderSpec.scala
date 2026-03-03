@@ -2321,7 +2321,7 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     // Our plugin accepts the funding transaction.
     val plugin = new ValidateInteractiveTxPlugin {
       override val name: String = "accept all the things"
-      override def validateSharedTx(remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit] = Future.successful(())
+      override def validateSharedTx(remoteNodeId: PublicKey, remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit] = Future.successful(())
     }
     withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100_000 sat, Seq(180_000 sat, 175_000 sat), 40_000 sat, Seq(100_000 sat), FeeratePerKw(1000 sat), 660 sat, 42, RequireConfirmedInputs(forLocal = true, forRemote = true), plugins = Seq(plugin)) { f =>
       import f._
@@ -2354,12 +2354,12 @@ class InteractiveTxBuilderSpec extends TestKitBaseClass with AnyFunSuiteLike wit
     // Our first plugin accepts the funding transaction.
     val plugin1 = new ValidateInteractiveTxPlugin {
       override val name: String = "accept all the things"
-      override def validateSharedTx(remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit] = Future.successful(())
+      override def validateSharedTx(remoteNodeId: PublicKey, remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit] = Future.successful(())
     }
     // But our second plugin rejects it.
     val plugin2 = new ValidateInteractiveTxPlugin {
       override val name: String = "reject all the things"
-      override def validateSharedTx(remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit] = Future.failed(new IllegalArgumentException("nope"))
+      override def validateSharedTx(remoteNodeId: PublicKey, remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit] = Future.failed(new IllegalArgumentException("nope"))
     }
     withFixture(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), 100_000 sat, Seq(180_000 sat, 175_000 sat), 40_000 sat, Seq(100_000 sat), FeeratePerKw(1000 sat), 660 sat, 42, RequireConfirmedInputs(forLocal = true, forRemote = true), plugins = Seq(plugin1, plugin2)) { f =>
       import f._

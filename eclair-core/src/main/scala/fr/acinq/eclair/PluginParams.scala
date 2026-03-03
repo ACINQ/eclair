@@ -18,6 +18,7 @@ package fr.acinq.eclair
 
 import akka.actor.typed.ActorRef
 import akka.event.LoggingAdapter
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, Satoshi, TxOut}
 import fr.acinq.eclair.channel.Origin
 import fr.acinq.eclair.io.OpenChannelInterceptor.OpenChannelNonInitiator
@@ -76,7 +77,7 @@ trait ValidateInteractiveTxPlugin extends PluginParams {
    * and aren't already spent. This function should only be used for custom, non-standard validation that node operators
    * want to apply.
    */
-  def validateSharedTx(remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit]
+  def validateSharedTx(remoteNodeId: PublicKey, remoteInputs: Map[OutPoint, TxOut], remoteOutputs: Seq[TxOut]): Future[Unit]
 }
 
 // @formatter:off
