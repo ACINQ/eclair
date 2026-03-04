@@ -1902,31 +1902,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     (channelReestablishAlice, channelReestablishBob)
   }
 
-  private def reconnectWithLegacyPeer(f: FixtureParam, sendReestablish: Boolean = true): (ChannelReestablish, ChannelReestablish) = {
-    import f._
-
-    // Modify both nodes' state data so they see each other as using the legacy splice protocol.
-    // This must be done before INPUT_RECONNECTED because the channel_reestablish is constructed using the current state data.
-    Seq(alice, bob).foreach { node =>
-      val data = node.stateData.asInstanceOf[DATA_NORMAL]
-      val newData = data.modify(_.commitments.channelParams.remoteParams.initFeatures).using { features =>
-        features.remove(Features.Splicing).add(Features.SplicePrototype, FeatureSupport.Optional)
-      }
-      node.setState(node.stateName, newData)
-    }
-
-    // Use legacy features for reconnection so that updateFeatures preserves the legacy setting.
-    val baseFeatures = alice.commitments.localChannelParams.initFeatures
-    val legacyInit = Init(baseFeatures.remove(Features.Splicing).add(Features.SplicePrototype, FeatureSupport.Optional))
-    alice ! INPUT_RECONNECTED(alice2bob.ref, legacyInit, legacyInit)
-    bob ! INPUT_RECONNECTED(bob2alice.ref, legacyInit, legacyInit)
-    val channelReestablishAlice = alice2bob.expectMsgType[ChannelReestablish]
-    if (sendReestablish) alice2bob.forward(bob)
-    val channelReestablishBob = bob2alice.expectMsgType[ChannelReestablish]
-    if (sendReestablish) bob2alice.forward(alice)
-    (channelReestablishAlice, channelReestablishBob)
-  }
-
   test("disconnect (tx_complete not received)") { f =>
     import f._
     // Disconnection with one side sending commit_sig
@@ -2009,7 +1984,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(channelReestablishBob1.retransmitInteractiveTxCommitSig)
     assert(channelReestablishBob1.nextLocalCommitmentNumber == bobCommitIndex + 1)
     alice2bob.forward(bob, channelReestablishAlice1)
-    bob2alice.forward(alice, channelReestablishBob1.copy(tlvStream = TlvStream(channelReestablishBob1.tlvStream.records.filterNot(_.isInstanceOf[ChannelReestablishTlv.NextFundingOrExperimentalYourLastFundingLockedTlv]))))
+    bob2alice.forward(alice, channelReestablishBob1.copy(tlvStream = TlvStream(channelReestablishBob1.tlvStream.records.filterNot(_.isInstanceOf[ChannelReestablishTlv.NextFundingTlv]))))
     // In that case Alice won't retransmit commit_sig and the splice won't complete since they haven't exchanged tx_signatures.
     assert(bob2alice.expectMsgType[CommitSig].fundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
     bob2alice.forward(alice)
@@ -2056,97 +2031,6 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
 
     resolveHtlcs(f, htlcs)
-  }
-
-  test("disconnect (commit_sig not received) with legacy peer") { f =>
-    import f._
-
-    val htlcs = setupHtlcs(f)
-    val aliceCommitIndex = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex
-    val bobCommitIndex = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex
-
-    val sender = initiateSpliceWithoutSigs(f, spliceIn_opt = Some(SpliceIn(500_000 sat)), spliceOut_opt = Some(SpliceOut(100_000 sat, defaultSpliceOutScriptPubKey)))
-    alice2bob.expectMsgType[CommitSig] // Bob doesn't receive Alice's commit_sig
-    bob2alice.expectMsgType[CommitSig] // Alice doesn't receive Bob's commit_sig
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.isInstanceOf[SpliceStatus.SpliceWaitingForSigs])
-    val spliceStatus = alice.stateData.asInstanceOf[DATA_NORMAL].spliceStatus.asInstanceOf[SpliceStatus.SpliceWaitingForSigs]
-
-    disconnect(f)
-
-    val (channelReestablishAlice, channelReestablishBob) = reconnectWithLegacyPeer(f)
-
-    // Experimental protocol uses an experimental TLV.
-    assert(channelReestablishAlice.nextFundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
-    assert(channelReestablishAlice.tlvStream.get[ChannelReestablishTlv.ExperimentalNextFundingTlv].map(_.txId).contains(spliceStatus.signingSession.fundingTx.txId))
-    // Experimental protocol doesn't use the explicit retransmit flag.
-    assert(!channelReestablishAlice.retransmitInteractiveTxCommitSig)
-    // Experimental protocol rolls back nextLocalCommitmentNumber to signal commit_sig wasn't received.
-    assert(channelReestablishAlice.nextLocalCommitmentNumber == aliceCommitIndex)
-    assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex)
-
-    // Legacy peers always retransmit channel_ready for the initial funding.
-    alice2bob.expectMsgType[ChannelReady]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[ChannelReady]
-    bob2alice.forward(alice)
-
-    // Both sides retransmit commit_sig.
-    assert(alice2bob.expectMsgType[CommitSig].fundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
-    alice2bob.forward(bob)
-    assert(bob2alice.expectMsgType[CommitSig].fundingTxId_opt.contains(spliceStatus.signingSession.fundingTx.txId))
-    bob2alice.forward(alice)
-    bob2alice.expectMsgType[TxSignatures]
-    bob2alice.forward(alice)
-    alice2bob.expectMsgType[TxSignatures]
-    alice2bob.forward(bob)
-    sender.expectMsgType[RES_SPLICE]
-
-    val spliceTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localFundingStatus.signedTx_opt.get
-    assert(spliceTx.txid == spliceStatus.signingSession.fundingTx.txId)
-    alice2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
-    bob2blockchain.expectWatchFundingConfirmed(spliceTx.txid)
-    alice ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
-    alice2bob.expectMsgType[SpliceLocked]
-    alice2bob.forward(bob)
-    bob ! WatchFundingConfirmedTriggered(BlockHeight(42), 0, spliceTx)
-    bob2alice.expectMsgType[SpliceLocked]
-    bob2alice.forward(alice)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
-
-    resolveHtlcs(f, htlcs)
-  }
-
-  test("re-send splice_locked for legacy peers") { f =>
-    import f._
-
-    val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
-    checkWatchConfirmed(f, fundingTx)
-
-    // Both sides confirm the splice and exchange splice_locked.
-    alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
-    alice2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == fundingTx.txid)
-    alice2bob.forward(bob)
-    bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx)
-    bob2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
-    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == fundingTx.txid)
-    bob2alice.forward(alice)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.size == 1)
-
-    disconnect(f)
-    val (channelReestablishAlice, channelReestablishBob) = reconnectWithLegacyPeer(f)
-
-    // With the experimental protocol, peers retransmit splice_locked on reconnection.
-    assert(channelReestablishAlice.myCurrentFundingLocked_opt.contains(fundingTx.txid))
-    assert(channelReestablishBob.myCurrentFundingLocked_opt.contains(fundingTx.txid))
-    assert(!channelReestablishAlice.retransmitAnnSigs)
-    assert(!channelReestablishBob.retransmitAnnSigs)
-    assert(alice2bob.expectMsgType[SpliceLocked].fundingTxId == fundingTx.txid)
-    alice2bob.forward(bob)
-    assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == fundingTx.txid)
-    bob2alice.forward(alice)
   }
 
   test("don't re-send splice_locked on reconnection") { f =>
