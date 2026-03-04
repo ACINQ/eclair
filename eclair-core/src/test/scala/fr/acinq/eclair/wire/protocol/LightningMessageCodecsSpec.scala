@@ -159,9 +159,16 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       hex"0023" ++ channelId ++ signature ++ hex"fe47010000 07 cccccccccccccc" -> FundingSigned(channelId, signature, TlvStream[FundingSignedTlv](Set.empty[FundingSignedTlv], Set(GenericTlv(tlvTag, hex"cccccccccccccc")))),
 
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point),
-      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"00 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.NextFundingTlv(txId))),
-      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"01 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.YourLastFundingLockedTlv(txId))),
-      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"03 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.MyCurrentFundingLockedTlv(txId))),
+      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"00 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.ExperimentalNextFundingTlv(txId))),
+      // TODO: replace those test vectors with the commented ones below when we remove support for the legacy splicing protocol.
+      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"01 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.NextFundingOrExperimentalYourLastFundingLockedTlv(txId.value.reverse))),
+      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"01 21" ++ txId.value.reverse ++ hex"00" -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.NextFundingOrExperimentalYourLastFundingLockedTlv(txId.value.reverse ++ hex"00"))),
+      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"01 21" ++ txId.value.reverse ++ hex"01" -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.NextFundingOrExperimentalYourLastFundingLockedTlv(txId.value.reverse ++ hex"01"))),
+      // hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"01 21" ++ txId.value.reverse ++ hex"00" -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.NextFundingTlv(txId, retransmitCommitSig = false))),
+      // hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"01 21" ++ txId.value.reverse ++ hex"01" -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.NextFundingTlv(txId, retransmitCommitSig = true))),
+      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"03 20" ++ txId.value.reverse -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.ExperimentalMyCurrentFundingLockedTlv(txId))),
+      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"05 21" ++ txId.value.reverse ++ hex"00" -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.MyCurrentFundingLockedTlv(txId, retransmitAnnSigs = false))),
+      hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"05 21" ++ txId.value.reverse ++ hex"01" -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.MyCurrentFundingLockedTlv(txId, retransmitAnnSigs = true))),
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"18 42" ++ nonce.data -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.CurrentCommitNonceTlv(nonce))),
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"16 c4" ++ txId.value.reverse ++ nonce.data ++ nextTxId.value.reverse ++ nextNonce.data -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream(ChannelReestablishTlv.NextLocalNoncesTlv(Seq(txId -> nonce, nextTxId -> nextNonce)))),
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 00" -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream[ChannelReestablishTlv](Set.empty[ChannelReestablishTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
@@ -886,4 +893,85 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       assert(lightningMessageCodec.encode(ref).require.bytes == bin)
     }
   }
+
+  test("channel_reestablish backwards-compatibility with legacy splice TLVs") {
+    val channelId = randomBytes32()
+    val key = randomKey()
+    val point = randomKey().publicKey
+    val txId1 = randomTxId()
+    val txId2 = randomTxId()
+    val txId3 = randomTxId()
+
+    def reestablish(tlvs: ChannelReestablishTlv*): ChannelReestablish = {
+      ChannelReestablish(channelId, 1, 0, key, point, TlvStream(tlvs: _*))
+    }
+
+    // Legacy TLVs: tag 0 (experimental next_funding) + tag 1 (experimental your_last_funding_locked) + tag 3 (experimental my_current_funding_locked).
+    {
+      val msg = reestablish(
+        ChannelReestablishTlv.ExperimentalNextFundingTlv(txId1),
+        ChannelReestablishTlv.NextFundingOrExperimentalYourLastFundingLockedTlv.asExperimentalYourLastFundingLocked(txId2),
+        ChannelReestablishTlv.ExperimentalMyCurrentFundingLockedTlv(txId3),
+      )
+      assert(msg.nextFundingTxId_opt.contains(txId1))
+      assert(!msg.retransmitInteractiveTxCommitSig)
+      assert(msg.yourLastFundingLocked_opt.contains(txId2))
+      assert(msg.myCurrentFundingLocked_opt.contains(txId3))
+      assert(!msg.retransmitAnnSigs)
+      val encoded = lightningMessageCodec.encode(msg).require
+      assert(lightningMessageCodec.decode(encoded).require.value == msg)
+    }
+
+    // Official TLVs with retransmit flags set: tag 1 (official next_funding) + tag 5 (my_current_funding_locked).
+    {
+      val msg = reestablish(
+        ChannelReestablishTlv.NextFundingOrExperimentalYourLastFundingLockedTlv.asNextFunding(txId1, retransmitCommitSig = true),
+        ChannelReestablishTlv.MyCurrentFundingLockedTlv(txId2, retransmitAnnSigs = true),
+      )
+      assert(msg.nextFundingTxId_opt.contains(txId1))
+      assert(msg.retransmitInteractiveTxCommitSig)
+      assert(msg.yourLastFundingLocked_opt.isEmpty)
+      assert(msg.myCurrentFundingLocked_opt.contains(txId2))
+      assert(msg.retransmitAnnSigs)
+      val encoded = lightningMessageCodec.encode(msg).require
+      assert(lightningMessageCodec.decode(encoded).require.value == msg)
+    }
+
+    // Official TLVs with retransmit flags unset.
+    {
+      val msg = reestablish(
+        ChannelReestablishTlv.NextFundingOrExperimentalYourLastFundingLockedTlv.asNextFunding(txId1, retransmitCommitSig = false),
+        ChannelReestablishTlv.MyCurrentFundingLockedTlv(txId2, retransmitAnnSigs = false),
+      )
+      assert(msg.nextFundingTxId_opt.contains(txId1))
+      assert(!msg.retransmitInteractiveTxCommitSig)
+      assert(msg.yourLastFundingLocked_opt.isEmpty)
+      assert(msg.myCurrentFundingLocked_opt.contains(txId2))
+      assert(!msg.retransmitAnnSigs)
+      val encoded = lightningMessageCodec.encode(msg).require
+      assert(lightningMessageCodec.decode(encoded).require.value == msg)
+    }
+
+    // my_current_funding_locked priority: official tag 5 takes priority over legacy tag 3.
+    {
+      val msg = reestablish(
+        ChannelReestablishTlv.ExperimentalMyCurrentFundingLockedTlv(txId1),
+        ChannelReestablishTlv.MyCurrentFundingLockedTlv(txId2, retransmitAnnSigs = false),
+      )
+      assert(msg.myCurrentFundingLocked_opt.contains(txId2))
+      val encoded = lightningMessageCodec.encode(msg).require
+      assert(lightningMessageCodec.decode(encoded).require.value == msg)
+    }
+
+    // Empty TLV stream: all splice-related accessors return None/false.
+    {
+      val msg = ChannelReestablish(channelId, 1, 0, key, point)
+      assert(msg.nextFundingTxId_opt.isEmpty)
+      assert(!msg.retransmitInteractiveTxCommitSig)
+      assert(msg.yourLastFundingLocked_opt.isEmpty)
+      assert(msg.myCurrentFundingLocked_opt.isEmpty)
+      assert(!msg.retransmitAnnSigs)
+    }
+  }
+
 }
