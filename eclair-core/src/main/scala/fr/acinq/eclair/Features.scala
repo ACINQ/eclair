@@ -427,12 +427,6 @@ object Features {
     val mandatory = 152
   }
 
-  // TODO: @pm47 custom splices implementation for phoenix, to be replaced once splices is spec-ed (currently reserved here: https://github.com/lightning/bolts/issues/605)
-  case object SplicePrototype extends Feature with InitFeature {
-    val rfcName = "splice_prototype"
-    val mandatory = 154
-  }
-
   case object SimpleTaprootChannelsPhoenix extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
     val rfcName = "option_simple_taproot_phoenix"
     val mandatory = 564
@@ -492,7 +486,6 @@ object Features {
     WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,
-    SplicePrototype,
     OnTheFlyFunding,
     FundingFeeCredit,
     PhoenixZeroReserve

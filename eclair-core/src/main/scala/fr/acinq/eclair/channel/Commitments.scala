@@ -33,8 +33,6 @@ case class ChannelParams(channelId: ByteVector32,
   val remoteNodeId: PublicKey = remoteParams.nodeId
   // If we've set the 0-conf feature bit for this peer, we will always use 0-conf with them.
   val zeroConf: Boolean = localParams.initFeatures.hasFeature(Features.ZeroConf)
-  // TODO: we keep supporting the legacy splicing protocol for non-upgraded Phoenix users.
-  lazy val useLegacySpliceProtocol = remoteParams.initFeatures.hasFeature(Features.SplicePrototype)
 
   /** We update local/global features at reconnection. */
   def updateFeatures(localInit: Init, remoteInit: Init): ChannelParams = copy(
