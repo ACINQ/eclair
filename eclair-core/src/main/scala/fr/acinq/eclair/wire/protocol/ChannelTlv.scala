@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, TxHash, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Satoshi, TxId}
 import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
@@ -255,31 +255,6 @@ sealed trait ChannelReestablishTlv extends Tlv
 
 object ChannelReestablishTlv {
 
-  /** TODO: replaced by [[NextFundingTlv]], remove once Phoenix users have upgraded. */
-  case class ExperimentalNextFundingTlv(txId: TxId) extends ChannelReestablishTlv
-
-  /**
-   * We unfortunately have a conflict between the splicing protocol we use for Phoenix and the official one.
-   * The official protocol uses TLV = 1 for the next_funding TLV, which should be implemented by [[NextFundingTlv]]
-   * (which is commented out below).
-   * The splicing protocol used for Phoenix also uses TLV = 1, but for a different TLV that was removed from the
-   * official splicing protocol (your_last_funding_locked), which contained the txid of the last [[ChannelReady]] or
-   * [[SpliceLocked]] message received before disconnecting, if any.
-   *
-   * To guarantee backwards-compatibility, we create a TLV field that may contain both options. When using the official
-   * splicing protocol, it will contain 33 bytes (a txid and a bitfield), while when using the legacy protocol it only
-   * contains a txid, which lets us easily distinguish the two.
-   *
-   * TODO: once we can remove support for Phoenix users with the legacy splicing protocol, this should just be replaced
-   * by [[NextFundingTlv]] which is commented out below and should be uncommented.
-   */
-  case class NextFundingOrExperimentalYourLastFundingLockedTlv(data: ByteVector) extends ChannelReestablishTlv {
-    val isOfficial: Boolean = data.size == 33
-    val txId: TxId = TxId(TxHash(ByteVector32(data.take(32))))
-    // NB: this is only used for the official splicing protocol.
-    val retransmitCommitSig: Boolean = if (isOfficial) (data.last.toInt % 2) == 1 else false
-  }
-
   /**
    * When disconnected in the middle of an interactive-tx session, this field is used to request a retransmission of
    * [[TxSignatures]] for the given [[txId]].
@@ -287,10 +262,7 @@ object ChannelReestablishTlv {
    * @param txId                the txid of the partially signed funding transaction.
    * @param retransmitCommitSig true if [[CommitSig]] must be retransmitted before [[TxSignatures]].
    */
-  // case class NextFundingTlv(txId: TxId, retransmitCommitSig: Boolean) extends ChannelReestablishTlv
-
-  /** TODO: replaced by [[MyCurrentFundingLockedTlv]], remove once Phoenix users have upgraded. */
-  case class ExperimentalMyCurrentFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
+  case class NextFundingTlv(txId: TxId, retransmitCommitSig: Boolean) extends ChannelReestablishTlv
 
   /**
    * @param txId              the txid of our latest outgoing [[ChannelReady]] or [[SpliceLocked]] for this channel.
@@ -311,27 +283,8 @@ object ChannelReestablishTlv {
    */
   case class NextLocalNoncesTlv(nonces: Seq[(TxId, IndividualNonce)]) extends ChannelReestablishTlv
 
-  object ExperimentalNextFundingTlv {
-    val codec: Codec[ExperimentalNextFundingTlv] = tlvField(txIdAsHash)
-  }
-
-  // object NextFundingTlv {
-  //   val codec: Codec[NextFundingTlv] = tlvField(("next_funding_txid" | txIdAsHash) :: ("retransmit_flags" | (ignore(7) :: bool)))
-  // }
-
-  object NextFundingOrExperimentalYourLastFundingLockedTlv {
-    def asNextFunding(txId: TxId, retransmitCommitSig: Boolean): NextFundingOrExperimentalYourLastFundingLockedTlv = {
-      val retransmitFlags = if (retransmitCommitSig) ByteVector.fromValidHex("01") else ByteVector.fromValidHex("00")
-      NextFundingOrExperimentalYourLastFundingLockedTlv(TxHash(txId).value ++ retransmitFlags)
-    }
-
-    def asExperimentalYourLastFundingLocked(txId: TxId): NextFundingOrExperimentalYourLastFundingLockedTlv = NextFundingOrExperimentalYourLastFundingLockedTlv(TxHash(txId).value)
-
-    val codec: Codec[NextFundingOrExperimentalYourLastFundingLockedTlv] = tlvField(bytes)
-  }
-
-  object ExperimentalMyCurrentFundingLockedTlv {
-    val codec: Codec[ExperimentalMyCurrentFundingLockedTlv] = tlvField("my_current_funding_locked_txid" | txIdAsHash)
+  object NextFundingTlv {
+    val codec: Codec[NextFundingTlv] = tlvField(("next_funding_txid" | txIdAsHash) :: ("retransmit_flags" | (ignore(7) :: bool)))
   }
 
   object MyCurrentFundingLockedTlv {
@@ -347,11 +300,7 @@ object ChannelReestablishTlv {
   }
 
   val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint)
-    .typecase(UInt64(0), ExperimentalNextFundingTlv.codec)
-    // TODO: replace with the commented line below when removing support for the legacy splicing protocol.
-    .typecase(UInt64(1), NextFundingOrExperimentalYourLastFundingLockedTlv.codec)
-    // .typecase(UInt64(1), NextFundingTlv.codec)
-    .typecase(UInt64(3), ExperimentalMyCurrentFundingLockedTlv.codec)
+    .typecase(UInt64(1), NextFundingTlv.codec)
     .typecase(UInt64(5), MyCurrentFundingLockedTlv.codec)
     .typecase(UInt64(22), NextLocalNoncesTlv.codec)
     .typecase(UInt64(24), CurrentCommitNonceTlv.codec)
