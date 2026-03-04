@@ -151,7 +151,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   private def checkExpectedWeight(actual: Int, expected: Int, commitmentFormat: CommitmentFormat): Unit = {
     commitmentFormat match {
       case _: SimpleTaprootChannelCommitmentFormat => assert(actual == expected)
-      case _: AnchorOutputsCommitmentFormat =>
+      case _: SegwitV0CommitmentFormat =>
         // ECDSA signatures are der-encoded, which creates some variability in signature size compared to the baseline.
         assert(actual <= expected + 4)
         assert(actual >= expected - 4)
@@ -159,13 +159,14 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("generate valid commitment with some outputs that don't materialize (anchor outputs)") {
+    val commitInput = InputInfo(OutPoint(randomTxId(), 0), TxOut(700.millibtc.toSatoshi, Script.pay2wpkh(randomKey().publicKey)))
     val spec = CommitmentSpec(htlcs = Set.empty, commitTxFeerate = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
     val commitFeeAndAnchorCost = commitTxTotalCost(localDustLimit, spec, UnsafeLegacyAnchorOutputsCommitmentFormat)
     val belowDust = (localDustLimit * 0.9).toMilliSatoshi
     val belowDustWithFeeAndAnchors = (localDustLimit + commitFeeAndAnchorCost * 0.9).toMilliSatoshi
 
     {
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, spec, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitInput, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, spec, UnsafeLegacyAnchorOutputsCommitmentFormat)
       assert(outputs.size == 4)
       assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToLocalAnchor]).get.txOut.amount == anchorAmount)
       assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToRemoteAnchor]).get.txOut.amount == anchorAmount)
@@ -174,35 +175,35 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       val toRemoteFundeeBelowDust = spec.copy(toRemote = belowDust)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, toRemoteFundeeBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitInput, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, toRemoteFundeeBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
       assert(outputs.size == 2)
       assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToLocalAnchor]).get.txOut.amount == anchorAmount)
       assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToLocal]).get.txOut.amount.toMilliSatoshi == spec.toLocal - commitFeeAndAnchorCost)
     }
     {
       val toLocalFunderBelowDust = spec.copy(toLocal = belowDustWithFeeAndAnchors)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, toLocalFunderBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitInput, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, toLocalFunderBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
       assert(outputs.size == 2)
       assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToRemoteAnchor]).get.txOut.amount == anchorAmount)
       assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToRemote]).get.txOut.amount.toMilliSatoshi == spec.toRemote)
     }
     {
       val toRemoteFunderBelowDust = spec.copy(toRemote = belowDustWithFeeAndAnchors)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = false, localDustLimit, toLocalDelay, toRemoteFunderBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitInput, localKeys.publicKeys, payCommitTxFees = false, localDustLimit, toLocalDelay, toRemoteFunderBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
       assert(outputs.size == 2)
       assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToLocalAnchor]).get.txOut.amount == anchorAmount)
       assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToLocal]).get.txOut.amount.toMilliSatoshi == spec.toLocal)
     }
     {
       val toLocalFundeeBelowDust = spec.copy(toLocal = belowDust)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = false, localDustLimit, toLocalDelay, toLocalFundeeBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitInput, localKeys.publicKeys, payCommitTxFees = false, localDustLimit, toLocalDelay, toLocalFundeeBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
       assert(outputs.size == 2)
       assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToRemoteAnchor]).get.txOut.amount == anchorAmount)
       assert(outputs.find(_.isInstanceOf[CommitmentOutput.ToRemote]).get.txOut.amount.toMilliSatoshi == spec.toRemote - commitFeeAndAnchorCost)
     }
     {
       val allBelowDust = spec.copy(toLocal = belowDust, toRemote = belowDust)
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, allBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
+      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitInput, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, allBelowDust, UnsafeLegacyAnchorOutputsCommitmentFormat)
       assert(outputs.isEmpty)
     }
   }
@@ -253,8 +254,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
     val (commitTx, commitTxOutputs, htlcTimeoutTxs, htlcSuccessTxs) = {
       val commitTxNumber = 0x404142434445L
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, spec, commitmentFormat)
-      val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localIsChannelOpener = true, outputs)
+      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitInput, localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, spec, commitmentFormat)
+      val txInfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localIsChannelOpener = true, commitmentFormat, outputs)
       val commitTx = commitmentFormat match {
         case _: SimpleTaprootChannelCommitmentFormat =>
           val Right(commitTx) = for {
@@ -266,7 +267,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
             tx <- txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localPartialSig, remotePartialSig)
           } yield tx
           commitTx
-        case _: AnchorOutputsCommitmentFormat =>
+        case _: SegwitV0CommitmentFormat =>
           val localSig = txInfo.sign(localFundingPriv, remoteFundingPriv.publicKey)
           val remoteSig = txInfo.sign(remoteFundingPriv, localFundingPriv.publicKey)
           assert(txInfo.checkRemoteSig(localFundingPubkey = localFundingPriv.publicKey, remoteFundingPriv.publicKey, remoteSig))
@@ -284,14 +285,14 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val htlcSuccessTxs = htlcTxs.collect { case tx: UnsignedHtlcSuccessTx => tx }
       val htlcTimeoutTxs = htlcTxs.collect { case tx: UnsignedHtlcTimeoutTx => tx }
       commitmentFormat match {
-        case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat =>
+        case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat | ZeroFeeCommitmentFormat =>
           assert(htlcTxs.length == 7)
           assert(expiries == Map(0 -> 300, 1 -> 310, 2 -> 310, 3 -> 295, 4 -> 300, 7 -> 300, 8 -> 302))
           assert(htlcTimeoutTxs.size == 3) // htlc1 and htlc3 and htlc7
           assert(htlcTimeoutTxs.map(_.htlcId).toSet == Set(0, 3, 7))
           assert(htlcSuccessTxs.size == 4) // htlc2a, htlc2b, htlc4 and htlc8
           assert(htlcSuccessTxs.map(_.htlcId).toSet == Set(1, 2, 4, 8))
-        case _ =>
+        case UnsafeLegacyAnchorOutputsCommitmentFormat | PhoenixSimpleTaprootChannelCommitmentFormat =>
           assert(htlcTxs.length == 5)
           assert(expiries == Map(0 -> 300, 1 -> 310, 2 -> 310, 3 -> 295, 4 -> 300))
           assert(htlcTimeoutTxs.size == 2) // htlc1 and htlc3
@@ -300,6 +301,16 @@ class TransactionsSpec extends AnyFunSuite with Logging {
           assert(htlcSuccessTxs.map(_.htlcId).toSet == Set(1, 2, 4))
       }
       (commitTx, outputs, htlcTimeoutTxs, htlcSuccessTxs)
+    }
+    commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
+        assert(commitTx.version == 2)
+        htlcTimeoutTxs.foreach(htlcTx => assert(htlcTx.tx.version == 2))
+        htlcSuccessTxs.foreach(htlcTx => assert(htlcTx.tx.version == 2))
+      case ZeroFeeCommitmentFormat =>
+        assert(commitTx.version == 3)
+        htlcTimeoutTxs.foreach(htlcTx => assert(htlcTx.tx.version == 3))
+        htlcSuccessTxs.foreach(htlcTx => assert(htlcTx.tx.version == 3))
     }
 
     {
@@ -310,7 +321,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends main delayed output
-      val Right(claimRemoteDelayedOutputTx) = ClaimRemoteDelayedOutputTx.createUnsignedTx(remoteKeys, commitTx, localDustLimit, finalPubKeyScript, feeratePerKw, commitmentFormat).map(_.sign())
+      val Right(claimRemoteDelayedOutputTx) = ClaimRemoteMainOutputTx.createUnsignedTx(remoteKeys, commitTx, localDustLimit, finalPubKeyScript, feeratePerKw, commitmentFormat).map(_.sign())
       checkExpectedWeight(claimRemoteDelayedOutputTx.weight(), commitmentFormat.toRemoteWeight, commitmentFormat)
       Transaction.correctlySpends(claimRemoteDelayedOutputTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
@@ -340,7 +351,11 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     {
       // remote spends remote anchor
       val Right(claimAnchorOutputTx) = ClaimRemoteAnchorTx.createUnsignedTx(remoteFundingPriv, remoteKeys, commitTx, commitmentFormat)
-      assert(!claimAnchorOutputTx.validate(Map.empty))
+      commitmentFormat match {
+        case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => assert(!claimAnchorOutputTx.validate(Map.empty))
+        // Standard P2A outputs are valid with an empty witness.
+        case ZeroFeeCommitmentFormat => assert(claimAnchorOutputTx.validate(Map.empty))
+      }
       val signedTx = claimAnchorOutputTx.sign()
       Transaction.correctlySpends(signedTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
@@ -448,13 +463,13 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val skipped = claimHtlcDelayedPenaltyTxs.collect { case Left(reason) => reason }
       val claimed = claimHtlcDelayedPenaltyTxs.collect { case Right(tx) => tx }
       commitmentFormat match {
-        case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat =>
+        case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat | ZeroFeeCommitmentFormat =>
           assert(claimHtlcDelayedPenaltyTxs.size == 7)
           assert(skipped.size == 2)
           assert(skipped.toSet == Set(AmountBelowDustLimit))
           assert(claimed.size == 5)
           assert(claimed.map(_.input.outPoint).toSet.size == 5)
-        case _ =>
+        case UnsafeLegacyAnchorOutputsCommitmentFormat | PhoenixSimpleTaprootChannelCommitmentFormat =>
           assert(claimHtlcDelayedPenaltyTxs.size == 5)
           assert(skipped.size == 2)
           assert(skipped.toSet == Set(AmountBelowDustLimit))
@@ -499,6 +514,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   test("generate valid commitment and htlc transactions (phoenix simple taproot channels)") {
     testCommitAndHtlcTxs(PhoenixSimpleTaprootChannelCommitmentFormat)
+  }
+
+  test("generate valid commitment and htlc transactions (zero-fee commitments)") {
+    testCommitAndHtlcTxs(ZeroFeeCommitmentFormat)
   }
 
   test("generate taproot NUMS point") {
