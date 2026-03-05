@@ -102,7 +102,10 @@ case class TxAddInput(channelId: ByteVector32,
 
 object TxAddInput {
   def apply(channelId: ByteVector32, serialId: UInt64, sharedInput: OutPoint, sequence: Long): TxAddInput = {
-    TxAddInput(channelId, serialId, None, sharedInput.index, sequence, TlvStream(TxAddInputTlv.SharedInputTxId(sharedInput.txid)))
+    val tlvs = Set[TxAddInputTlv](
+      TxAddInputTlv.SharedInputTxId(sharedInput.txid),
+    )
+    TxAddInput(channelId, serialId, None, sharedInput.index, sequence, TlvStream(tlvs))
   }
 }
 
@@ -146,12 +149,11 @@ case class TxSignatures(channelId: ByteVector32,
 
 object TxSignatures {
   def apply(channelId: ByteVector32, tx: Transaction, witnesses: Seq[ScriptWitness], previousFundingSig_opt: Option[ChannelSpendSignature]): TxSignatures = {
-    val tlvs: Set[TxSignaturesTlv] = Set(
-      previousFundingSig_opt.map {
-        case IndividualSignature(sig) => TxSignaturesTlv.PreviousFundingTxSig(sig)
-        case partialSig: PartialSignatureWithNonce => TxSignaturesTlv.PreviousFundingTxPartialSig(partialSig)
-      }
-    ).flatten
+    val tlvs: Set[TxSignaturesTlv] = previousFundingSig_opt match {
+      case Some(IndividualSignature(sig)) => Set(TxSignaturesTlv.PreviousFundingTxSig(sig))
+      case Some(partialSig: PartialSignatureWithNonce) => Set(TxSignaturesTlv.PreviousFundingTxPartialSig(partialSig))
+      case None => Set.empty
+    }
     TxSignatures(channelId, tx.txid, witnesses, TlvStream(tlvs))
   }
 }
@@ -210,8 +212,9 @@ case class ChannelReestablish(channelId: ByteVector32,
                               myCurrentPerCommitmentPoint: PublicKey,
                               tlvStream: TlvStream[ChannelReestablishTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val nextFundingTxId_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].map(_.txId)
+  val retransmitInteractiveTxCommitSig: Boolean = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].exists(_.retransmitCommitSig)
   val myCurrentFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.MyCurrentFundingLockedTlv].map(_.txId)
-  val yourLastFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.YourLastFundingLockedTlv].map(_.txId)
+  val retransmitAnnSigs: Boolean = tlvStream.get[ChannelReestablishTlv.MyCurrentFundingLockedTlv].exists(_.retransmitAnnSigs)
   val nextCommitNonces: Map[TxId, IndividualNonce] = tlvStream.get[ChannelReestablishTlv.NextLocalNoncesTlv].map(_.nonces.toMap).getOrElse(Map.empty)
   val currentCommitNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelReestablishTlv.CurrentCommitNonceTlv].map(_.nonce)
 }
@@ -476,6 +479,15 @@ case class ClosingSig(channelId: ByteVector32, closerScriptPubKey: ByteVector, c
   val nextCloseeNonce_opt: Option[IndividualNonce] = tlvStream.get[ClosingSigTlv.NextCloseeNonce].map(_.nonce)
 }
 
+/** This message is used to indicate that the next [[batchSize]] messages form a single logical message. */
+case class StartBatch(channelId: ByteVector32, batchSize: Int, tlvStream: TlvStream[StartBatchTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val messageType_opt: Option[Long] = tlvStream.get[StartBatchTlv.MessageType].map(_.tag)
+}
+
+object StartBatch {
+  def commitSigBatch(channelId: ByteVector32, batchSize: Int): StartBatch = StartBatch(channelId, batchSize, TlvStream(StartBatchTlv.MessageType(132)))
+}
+
 case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,
                          amountMsat: MilliSatoshi,
@@ -545,19 +557,21 @@ case class CommitSig(channelId: ByteVector32,
                      signature: IndividualSignature,
                      htlcSignatures: List[ByteVector64],
                      tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends CommitSigs {
+  val fundingTxId_opt: Option[TxId] = tlvStream.get[CommitSigTlv.FundingTx].map(_.txId)
   val partialSignature_opt: Option[PartialSignatureWithNonce] = tlvStream.get[CommitSigTlv.PartialSignatureWithNonceTlv].map(_.partialSigWithNonce)
   val sigOrPartialSig: ChannelSpendSignature = partialSignature_opt.getOrElse(signature)
 }
 
 object CommitSig {
-  def apply(channelId: ByteVector32, signature: ChannelSpendSignature, htlcSignatures: List[ByteVector64], batchSize: Int): CommitSig = {
+  def apply(channelId: ByteVector32, fundingTxId: TxId, signature: ChannelSpendSignature, htlcSignatures: List[ByteVector64], batchSize: Int): CommitSig = {
     val (individualSig, partialSig_opt) = signature match {
       case sig: IndividualSignature => (sig, None)
       case psig: PartialSignatureWithNonce => (IndividualSignature(ByteVector64.Zeroes), Some(psig))
     }
     val tlvs = Set(
-      if (batchSize > 1) Some(CommitSigTlv.BatchTlv(batchSize)) else None,
-      partialSig_opt.map(CommitSigTlv.PartialSignatureWithNonceTlv(_))
+      Some(CommitSigTlv.FundingTx(fundingTxId)),
+      partialSig_opt.map(CommitSigTlv.PartialSignatureWithNonceTlv(_)),
+      if (batchSize > 1) Some(CommitSigTlv.ExperimentalBatchTlv(batchSize)) else None,
     ).flatten[CommitSigTlv]
     CommitSig(channelId, individualSig, htlcSignatures, TlvStream(tlvs))
   }

@@ -208,8 +208,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
       case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.transport => // if the message doesn't originate from the transport, it is an outgoing message
         msg match {
-          case batch: CommitSigBatch => batch.messages.foreach(msg => d.transport forward msg)
-          case msg => d.transport forward msg
+          case batch: CommitSigBatch =>
+            // We insert a start_batch message to let our peer know how many commit_sig they will receive.
+            d.transport forward StartBatch.commitSigBatch(batch.channelId, batch.batchSize)
+            batch.messages.foreach(msg => d.transport forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.ExperimentalBatchTlv]))))
+          case _ => d.transport forward msg
         }
         msg match {
           // If we send any channel management message to this peer, the connection should be persistent.
@@ -349,38 +352,46 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         // We immediately forward messages to the peer, unless they are part of a batch, in which case we wait to
         // receive the whole batch before forwarding.
         msg match {
-          case msg: CommitSig =>
-            msg.tlvStream.get[CommitSigTlv.BatchTlv].map(_.size) match {
-              case Some(batchSize) if batchSize > 25 =>
-                log.warning("received legacy batch of commit_sig exceeding our threshold ({} > 25), processing messages individually", batchSize)
-                // We don't want peers to be able to exhaust our memory by sending batches of dummy messages that we keep in RAM.
-                d.peer ! msg
-                stay()
-              case Some(batchSize) if batchSize > 1 =>
-                d.legacyCommitSigBatch_opt match {
-                  case Some(pending) if pending.channelId != msg.channelId || pending.batchSize != batchSize =>
-                    log.warning("received invalid commit_sig batch while a different batch isn't complete")
-                    // This should never happen, otherwise it will likely lead to a force-close.
-                    d.peer ! CommitSigBatch(pending.received)
-                    stay() using d.copy(legacyCommitSigBatch_opt = Some(PendingCommitSigBatch(msg.channelId, batchSize, Seq(msg))))
-                  case Some(pending) =>
-                    val received1 = pending.received :+ msg
-                    if (received1.size == batchSize) {
-                      log.debug("received last commit_sig in legacy batch for channel_id={}", msg.channelId)
-                      d.peer ! CommitSigBatch(received1)
-                      stay() using d.copy(legacyCommitSigBatch_opt = None)
-                    } else {
-                      log.debug("received commit_sig {}/{} in legacy batch for channel_id={}", received1.size, batchSize, msg.channelId)
-                      stay() using d.copy(legacyCommitSigBatch_opt = Some(pending.copy(received = received1)))
-                    }
-                  case None =>
-                    log.debug("received first commit_sig in legacy batch of size {} for channel_id={}", batchSize, msg.channelId)
-                    stay() using d.copy(legacyCommitSigBatch_opt = Some(PendingCommitSigBatch(msg.channelId, batchSize, Seq(msg))))
+          case msg: StartBatch =>
+            if (!msg.messageType_opt.contains(132)) {
+              log.debug("ignoring start_batch: we only support batching commit_sig messages")
+              d.transport ! Warning(msg.channelId, "invalid start_batch message: we only support batching commit_sig messages")
+              stay()
+            } else if (msg.batchSize > 20) {
+              log.debug("ignoring start_batch with batch_size = {} > 20", msg.batchSize)
+              d.transport ! Warning(msg.channelId, "invalid start_batch message: batch_size must not be greater than 20")
+              stay()
+            } else {
+              log.debug("starting commit_sig batch of size {} for channel_id={}", msg.batchSize, msg.channelId)
+              d.commitSigBatch_opt match {
+                case Some(pending) if pending.received.nonEmpty =>
+                  log.warning("starting batch with incomplete previous batch ({}/{} received)", pending.received.size, pending.batchSize)
+                  // This is a spec violation from our peer: this will likely lead to a force-close.
+                  d.transport ! Warning(msg.channelId, "invalid start_batch message: the previous batch is not done yet")
+                  d.peer ! CommitSigBatch(pending.received)
+                case _ => ()
+              }
+              stay() using d.copy(commitSigBatch_opt = Some(PendingCommitSigBatch(msg.channelId, msg.batchSize, Nil)))
+            }
+          case msg: HasChannelId if d.commitSigBatch_opt.nonEmpty =>
+            // We only support batches of commit_sig messages: other messages will simply be relayed individually.
+            val pending = d.commitSigBatch_opt.get
+            msg match {
+              case msg: CommitSig if msg.channelId == pending.channelId =>
+                val received1 = pending.received :+ msg
+                if (received1.size == pending.batchSize) {
+                  log.debug("received last commit_sig in batch for channel_id={}", msg.channelId)
+                  d.peer ! CommitSigBatch(received1)
+                  stay() using d.copy(commitSigBatch_opt = None)
+                } else {
+                  log.debug("received commit_sig {}/{} in batch for channel_id={}", received1.size, pending.batchSize, msg.channelId)
+                  stay() using d.copy(commitSigBatch_opt = Some(pending.copy(received = received1)))
                 }
               case _ =>
-                log.debug("received individual commit_sig for channel_id={}", msg.channelId)
+                log.warning("received {} as part of a batch: we don't support batching that kind of messages", msg.getClass.getSimpleName)
+                if (pending.received.nonEmpty) d.peer ! CommitSigBatch(pending.received)
                 d.peer ! msg
-                stay()
+                stay() using d.copy(commitSigBatch_opt = None)
             }
           case _ =>
             d.peer ! msg
@@ -614,7 +625,7 @@ object PeerConnection {
                            gossipTimestampFilter: Option[GossipTimestampFilter] = None,
                            behavior: Behavior = Behavior(),
                            expectedPong_opt: Option[ExpectedPong] = None,
-                           legacyCommitSigBatch_opt: Option[PendingCommitSigBatch] = None,
+                           commitSigBatch_opt: Option[PendingCommitSigBatch] = None,
                            isPersistent: Boolean) extends Data with HasTransport
 
   case class PendingCommitSigBatch(channelId: ByteVector32, batchSize: Int, received: Seq[CommitSig])
