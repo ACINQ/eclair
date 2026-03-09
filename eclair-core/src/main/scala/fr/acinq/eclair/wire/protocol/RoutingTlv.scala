@@ -136,7 +136,6 @@ object ReplyChannelRangeTlv {
 
   val encodedTimestampsCodec: Codec[EncodedTimestamps] = tlvField(discriminated[EncodedTimestamps].by(byte)
     .\(0) { case a@EncodedTimestamps(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(timestampsCodec)).as[EncodedTimestamps])
-    .\(1) { case a@EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(timestampsCodec))).as[EncodedTimestamps])
   )
 
   val checksumsCodec: Codec[Checksums] = (
@@ -189,8 +188,6 @@ object QueryShortChannelIdsTlv {
   val encodedQueryFlagsCodec: Codec[EncodedQueryFlags] =
     discriminated[EncodedQueryFlags].by(byte)
       .\(0) { case a@EncodedQueryFlags(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(varintoverflow)).as[EncodedQueryFlags])
-      .\(1) { case a@EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(varintoverflow))).as[EncodedQueryFlags])
-
 
   val codec: Codec[TlvStream[QueryShortChannelIdsTlv]] = TlvCodecs.tlvStream(discriminated.by(varint)
     .typecase(UInt64(1), tlvField[EncodedQueryFlags, EncodedQueryFlags](encodedQueryFlagsCodec))

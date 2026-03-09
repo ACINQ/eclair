@@ -723,10 +723,10 @@ object ChannelUpdate {
 }
 
 // @formatter:off
+// NB: we use a trait here because we used to support zlib compression, which was removed from the spec in https://github.com/lightning/bolts/pull/981.
 sealed trait EncodingType
 object EncodingType {
   case object UNCOMPRESSED extends EncodingType
-  case object COMPRESSED_ZLIB extends EncodingType
 }
 // @formatter:on
 
