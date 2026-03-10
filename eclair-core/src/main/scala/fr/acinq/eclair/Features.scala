@@ -71,8 +71,6 @@ trait PermanentChannelFeature extends InitFeature // <- not in the spec
 trait ChannelTypeFeature extends InitFeature
 // @formatter:on
 
-case class UnknownFeature(bitIndex: Int)
-
 // @formatter:off
 sealed trait FeatureCompatibilityResult {
   def areCompatible: Boolean = this == FeatureCompatibilityResult.Compatible
@@ -87,66 +85,131 @@ object FeatureCompatibilityResult {
 }
 // @formatter:on
 
-case class Features[T <: Feature](activated: Map[T, FeatureSupport], unknown: Set[UnknownFeature] = Set.empty) {
+/** NB: features are encoded with the most significant bits first (and padded to byte boundaries). */
+case class EncodedFeatures(bits: BitVector) {
+  val isEmpty: Boolean = bits.isEmpty
 
-  def isEmpty: Boolean = activated.isEmpty && unknown.isEmpty
+  def hasFeature(feature: Feature, support: Option[FeatureSupport] = None): Boolean = {
+    support match {
+      case Some(support) => hasFeatureBit(feature.supportBit(support))
+      case None => hasFeature(feature, Some(FeatureSupport.Optional)) || hasFeature(feature, Some(FeatureSupport.Mandatory))
+    }
+  }
+
+  def hasFeatureBit(bitIndex: Long): Boolean = {
+    if (bitIndex < bits.size) {
+      bits.get(bits.size - 1 - bitIndex)
+    } else {
+      false
+    }
+  }
+}
+
+object EncodedFeatures {
+  def fromFeatureBits(featureBits: Set[Int]): EncodedFeatures = {
+    if (featureBits.isEmpty) {
+      EncodedFeatures(BitVector.empty)
+    } else {
+      // Note that we pad to bytes before setting feature bits (we use a byte encoding on the wire).
+      val byteSize = if ((featureBits.max + 1) % 8 == 0) {
+        featureBits.max + 1
+      } else {
+        featureBits.max + 1 + 8 - ((featureBits.max + 1) % 8)
+      }
+      var buf = BitVector.fill(byteSize)(high = false)
+      // We encode feature bits with the most significant bits first.
+      featureBits.foreach { i => buf = buf.set(byteSize - 1 - i) }
+      EncodedFeatures(buf)
+    }
+  }
+}
+
+/**
+ * @param activated   known features are parsed from the encoded features: note that this will not contain plugin features
+ *                    sent by a remote node: use [[hasFeature]] to test whether a feature is supported or not instead of
+ *                    parsing the map directly.
+ * @param encoded_opt only provided when reading encoded features, contains all feature bits.
+ */
+case class Features[T <: Feature](activated: Map[T, FeatureSupport], encoded_opt: Option[EncodedFeatures] = None) {
+
+  def isEmpty: Boolean = activated.isEmpty && encoded_opt.forall(_.isEmpty)
 
   def hasFeature(feature: T, support: Option[FeatureSupport] = None): Boolean = support match {
-    case Some(s) => activated.get(feature).contains(s)
-    case None => activated.contains(feature)
+    case Some(s) => activated.get(feature).contains(s) || encoded_opt.exists(_.hasFeature(feature, support))
+    case None => activated.contains(feature) || encoded_opt.exists(_.hasFeature(feature))
   }
 
   /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
   def testSupported(remoteFeatures: Features[T]): FeatureCompatibilityResult = {
-    // we allow unknown odd features (it's ok to be odd)
-    val incompatibleUnknownFeatures = remoteFeatures.unknown.filter(_.bitIndex % 2 == 0)
-    // we verify that we activated every mandatory feature they require
-    val incompatibleKnownFeatures = remoteFeatures.activated.filter {
+    // We verify that we activated every mandatory feature they require.
+    val incompatibleFeature_opt = remoteFeatures.activated.find {
       case (_, Optional) => false
       case (feature, Mandatory) => !hasFeature(feature)
-    }.keySet
-    val incompatibleFeatures = incompatibleUnknownFeatures.map(u => s"unknown_${u.bitIndex}") ++ incompatibleKnownFeatures.map(_.rfcName)
-    if (incompatibleFeatures.isEmpty) FeatureCompatibilityResult.Compatible else FeatureCompatibilityResult.NotCompatible(incompatibleFeatures)
+    }.map(_._1.rfcName)
+    // We also verify encoded features, which may contain plugin features and unknown features.
+    val incompatibleEncodedFeature_opt = remoteFeatures.encoded_opt match {
+      case Some(encoded) =>
+        val activatedMandatoryFeatureBits = activated.keySet.map(_.mandatory.toLong)
+        // We only need to check even feature bits (it's ok to be odd), so we step by 2.
+        (0L until encoded.bits.size by 2).find(i => {
+          if (encoded.hasFeatureBit(i)) {
+            // They have set a mandatory feature bit: we must support it as well. Note that if this is a plugin feature,
+            // it may be in the encoded features but not the activated ones if the current object is for remote features.
+            !activatedMandatoryFeatureBits.contains(i) && !encoded_opt.exists(_.hasFeatureBit(i)) && !encoded_opt.exists(_.hasFeatureBit(i + 1))
+          } else {
+            false
+          }
+        }).map(i => s"unknown_$i")
+      case None => None
+    }
+    if (incompatibleFeature_opt.isEmpty && incompatibleEncodedFeature_opt.isEmpty) {
+      FeatureCompatibilityResult.Compatible
+    } else {
+      FeatureCompatibilityResult.NotCompatible(incompatibleFeature_opt.toSet ++ incompatibleEncodedFeature_opt.toSet)
+    }
   }
 
   def areSupported(remoteFeatures: Features[T]): Boolean = testSupported(remoteFeatures).areCompatible
 
-  def initFeatures(): Features[InitFeature] = Features(activated.collect { case (f: InitFeature, s) => (f, s) }, unknown)
+  def initFeatures(): Features[InitFeature] = Features(activated.collect { case (f: InitFeature, s) => (f, s) }, encoded_opt)
 
-  def nodeAnnouncementFeatures(): Features[NodeFeature] = Features(activated.collect { case (f: NodeFeature, s) => (f, s) }, unknown)
+  def nodeAnnouncementFeatures(): Features[NodeFeature] = Features(activated.collect { case (f: NodeFeature, s) => (f, s) }, encoded_opt)
 
-  def invoiceFeatures(): Features[InvoiceFeature] = Features(activated.collect { case (f: InvoiceFeature, s) => (f, s) }, unknown)
+  def invoiceFeatures(): Features[InvoiceFeature] = Features(activated.collect { case (f: InvoiceFeature, s) => (f, s) }, encoded_opt)
 
-  def bolt11Features(): Features[Bolt11Feature] = Features(activated.collect { case (f: Bolt11Feature, s) => (f, s) }, unknown)
+  def bolt11Features(): Features[Bolt11Feature] = Features(activated.collect { case (f: Bolt11Feature, s) => (f, s) }, encoded_opt)
 
-  def bolt12Features(): Features[Bolt12Feature] = Features(activated.collect { case (f: Bolt12Feature, s) => (f, s) }, unknown)
+  def bolt12Features(): Features[Bolt12Feature] = Features(activated.collect { case (f: Bolt12Feature, s) => (f, s) }, encoded_opt)
 
-  def unscoped(): Features[Feature] = Features[Feature](activated.collect { case (f, s) => (f: Feature, s) }, unknown)
+  def unscoped(): Features[Feature] = Features[Feature](activated.collect { case (f, s) => (f: Feature, s) }, encoded_opt)
 
   def add(feature: T, support: FeatureSupport): Features[T] = copy(activated = activated + (feature -> support))
 
   def remove(feature: T): Features[T] = copy(activated = activated - feature)
 
   def toByteVector: ByteVector = {
-    val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case (feature, support) => feature.supportBit(support) }.toSet)
-    val unknownFeatureBytes = toByteVectorFromIndex(unknown.map(_.bitIndex))
-    val maxSize = activatedFeatureBytes.size.max(unknownFeatureBytes.size)
-    activatedFeatureBytes.padLeft(maxSize) | unknownFeatureBytes.padLeft(maxSize)
-  }
-
-  private def toByteVectorFromIndex(indexes: Set[Int]): ByteVector = {
-    if (indexes.isEmpty) return ByteVector.empty
-    // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to bytes *before* setting feature bits.
-    var buf = BitVector.fill(indexes.max + 1)(high = false).bytes.bits
-    indexes.foreach { i => buf = buf.set(i) }
-    buf.reverse.bytes
+    val activatedFeatureBytes = EncodedFeatures.fromFeatureBits(activated.map { case (feature, support) => feature.supportBit(support) }.toSet).bits.bytes
+    encoded_opt.map(_.bits.bytes) match {
+      case Some(encoded) =>
+        // We combine both sources of feature bits, and we minimally-encode by removing leading zeroes.
+        val maxSize = activatedFeatureBytes.size.max(encoded.size)
+        (activatedFeatureBytes.padLeft(maxSize) | encoded.padLeft(maxSize)).dropWhile(_ == 0)
+      case None => activatedFeatureBytes
+    }
   }
 
   override def toString: String = {
-    val a = activated.map { case (feature, support) => feature.rfcName + ":" + support }.mkString(",")
-    val u = unknown.map(_.bitIndex).mkString(",")
-    s"$a" + (if (unknown.nonEmpty) s" (unknown=$u)" else "")
+    activated
+      .map { case (feature, support) => feature.rfcName + ":" + support }
+      .mkString(",")
   }
+
+  override def equals(obj: Any): Boolean = obj match {
+    case features: Features[_] => this.toByteVector.equals(features.toByteVector)
+    case _ => false
+  }
+
+  override def hashCode(): Int = toByteVector.hashCode
 }
 
 object Features {
@@ -158,15 +221,27 @@ object Features {
   def apply(bytes: ByteVector): Features[Feature] = apply(bytes.bits)
 
   def apply(bits: BitVector): Features[Feature] = {
-    val all = bits.toIndexedSeq.reverse.zipWithIndex.collect {
-      case (true, idx) if knownFeatures.exists(_.optional == idx) => Right((knownFeatures.find(_.optional == idx).get, Optional))
-      case (true, idx) if knownFeatures.exists(_.mandatory == idx) => Right((knownFeatures.find(_.mandatory == idx).get, Mandatory))
-      case (true, idx) => Left(UnknownFeature(idx))
+    if (bits.isEmpty) {
+      Features.empty
+    } else {
+      // We extract all official features we support.
+      // We ensure that feature bits are already padded to bytes boundaries.
+      val encoded = if ((bits.size % 8) == 0) {
+        EncodedFeatures(bits)
+      } else {
+        EncodedFeatures(bits.padLeft(bits.size + 8 - (bits.size % 8)))
+      }
+      val activated = knownFeatures.flatMap {
+        case f if encoded.hasFeatureBit(f.optional) => Some(f -> FeatureSupport.Optional)
+        case f if encoded.hasFeatureBit(f.mandatory) => Some(f -> FeatureSupport.Mandatory)
+        case _ => None
+      }
+      Features[Feature](
+        activated = activated.toMap,
+        // Note that we keep all feature bits to allow checking whether plugin features are activated.
+        encoded_opt = Some(encoded),
+      )
     }
-    Features[Feature](
-      activated = all.collect { case Right((feature, support)) => feature -> support }.toMap,
-      unknown = all.collect { case Left(inf) => inf }.toSet
-    )
   }
 
   def fromConfiguration[T <: Feature](config: Config, validFeatures: Set[T], baseFeatures: Features[T]): Features[T] = Features[T](

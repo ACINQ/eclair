@@ -28,8 +28,7 @@
             "option_channel_type" : "mandatory",
             "basic_mpp" : "optional",
             "gossip_queries" : "optional"
-          },
-          "unknown" : [ 50001 ]
+          }
         }
       },
       "remoteParams" : {
@@ -55,8 +54,7 @@
             "option_channel_type" : "mandatory",
             "basic_mpp" : "optional",
             "gossip_queries" : "optional"
-          },
-          "unknown" : [ ]
+          }
         }
       },
       "channelFlags" : {
@@ -145,8 +143,7 @@
     "bitcoinSignature1" : "c5c3a3c582ae450844574694311cc8fda45445246b1c28be736bb306db70afc02172b3562b1b827f37290e8c113cd5617c6bddfa32328d3607845da71ba2905d",
     "bitcoinSignature2" : "9786d785aa174393b9aecc32605d89b81ae4f7f7c727f2ee455f774176c0893a2eb330de6ed8b03882459d2734b03653b84636a0b8bcf57d8c1a09c010de4309",
     "features" : {
-      "activated" : { },
-      "unknown" : [ ]
+      "activated" : { }
     },
     "chainHash" : "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
     "shortChannelId" : "400000x42x0",

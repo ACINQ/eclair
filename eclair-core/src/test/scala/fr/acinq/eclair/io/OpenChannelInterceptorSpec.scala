@@ -37,7 +37,7 @@ import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.transactions.Transactions.{ClosingTx, InputInfo}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{ChannelReestablish, Error, IPAddress, LiquidityAds, NodeAddress, OpenChannel, Shutdown, TlvStream}
-import fr.acinq.eclair.{AcceptOpenChannel, BlockHeight, FeatureSupport, Features, InitFeature, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.{AcceptOpenChannel, BlockHeight, EncodedFeatures, FeatureSupport, Features, InitFeature, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -266,7 +266,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     }
     // They want to use a channel type we don't support yet.
     {
-      val open = createOpenChannelMessage(UnsupportedChannelType(Features(activated = Map.empty, unknown = Set(UnknownFeature(120)))))
+      val open = createOpenChannelMessage(UnsupportedChannelType(Features(activated = Map.empty, encoded_opt = Some(EncodedFeatures.fromFeatureBits(Set(120))))))
       openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), defaultFeatures, defaultFeatures, peerConnection.ref, remoteAddress)
       peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=0x01000000000000000000000000000000"), peerConnection.ref.toClassic))
       eventListener.expectMessageType[ChannelAborted]

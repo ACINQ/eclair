@@ -41,8 +41,11 @@ trait CustomFeaturePlugin extends PluginParams {
   /** Feature bit that the plugin wants to advertise through Init message. */
   def feature: Feature
 
-  /** Plugin feature is always defined as unknown and optional. */
-  def pluginFeature: UnknownFeature = UnknownFeature(feature.optional)
+  /**
+   * Whether this feature is optional or mandatory for remote peers. We recommend using [[FeatureSupport.Optional]]
+   * otherwise connection will fail with nodes that don't support this feature.
+   */
+  def support: FeatureSupport
 }
 
 /** Parameters for a plugin that defines custom commitment transactions (or non-standard HTLCs). */
