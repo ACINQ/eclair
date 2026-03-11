@@ -212,7 +212,7 @@ object TestConstants {
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
         syncConf = Router.SyncConf(
           requestNodeAnnouncements = true,
-          encodingType = EncodingType.COMPRESSED_ZLIB,
+          encodingType = EncodingType.UNCOMPRESSED,
           channelRangeChunkSize = 20,
           channelQueryChunkSize = 5,
           peerLimit = 10,

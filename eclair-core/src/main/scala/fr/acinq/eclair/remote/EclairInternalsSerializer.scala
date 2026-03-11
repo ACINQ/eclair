@@ -96,9 +96,7 @@ object EclairInternalsSerializer {
 
   val syncConfCodec: Codec[Router.SyncConf] = (
     ("requestNodeAnnouncements" | bool(8)) ::
-      ("encodingType" | discriminated[EncodingType].by(uint8)
-        .typecase(0, provide(EncodingType.UNCOMPRESSED))
-        .typecase(1, provide(EncodingType.COMPRESSED_ZLIB))) ::
+      ("encodingType" | discriminated[EncodingType].by(uint8).typecase(0, provide(EncodingType.UNCOMPRESSED))) ::
       ("channelRangeChunkSize" | int32) ::
       ("channelQueryChunkSize" | int32) ::
       ("peerLimit" | int32) ::
