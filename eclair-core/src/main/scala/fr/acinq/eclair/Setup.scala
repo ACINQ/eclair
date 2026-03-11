@@ -402,10 +402,10 @@ class Setup(val datadir: File,
 
       balanceActor = system.spawn(BalanceActor(bitcoinClient, nodeParams.channelConf.minDepth, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
       postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard, router.toTyped, register, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
-      _ = if (nodeParams.peerScoringConfig.enabled) {
+      peerScorer_opt = if (nodeParams.peerScoringConfig.enabled) {
         val statsTracker = system.spawn(Behaviors.supervise(PeerStatsTracker(nodeParams.db.audit, channels)).onFailure(typed.SupervisorStrategy.restart), name = "peer-stats-tracker")
-        system.spawn(Behaviors.supervise(PeerScorer(nodeParams, bitcoinClient, statsTracker, register)).onFailure(typed.SupervisorStrategy.restart), name = "peer-scorer")
-      }
+        Some(system.spawn(Behaviors.supervise(PeerScorer(nodeParams, bitcoinClient, statsTracker, register)).onFailure(typed.SupervisorStrategy.restart), name = "peer-scorer"))
+      } else None
 
       kit = Kit(
         nodeParams = nodeParams,
@@ -423,6 +423,7 @@ class Setup(val datadir: File,
         postman = postman,
         offerManager = offerManager,
         defaultOfferHandler = defaultOfferHandler,
+        peerScorer_opt = peerScorer_opt,
         wallet = bitcoinClient)
 
       zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
@@ -493,6 +494,7 @@ case class Kit(nodeParams: NodeParams,
                postman: typed.ActorRef[Postman.Command],
                offerManager: typed.ActorRef[OfferManager.Command],
                defaultOfferHandler: typed.ActorRef[OfferManager.HandlerCommand],
+               peerScorer_opt: Option[typed.ActorRef[PeerScorer.Command]],
                wallet: OnChainWallet with OnChainAddressCache)
 
 object Kit {

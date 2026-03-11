@@ -43,6 +43,7 @@ object PeerScorer {
   // @formatter:off
   sealed trait Command
   case class ScorePeers(replyTo_opt: Option[ActorRef[Seq[PeerInfo]]]) extends Command
+  case class UpdateConfig(replyTo: ActorRef[Boolean], cfg: ConfigOverrides) extends Command
   private case class WrappedLatestStats(peers: Seq[PeerInfo]) extends Command
   private case class OnChainBalance(confirmed: Satoshi, unconfirmed: Satoshi) extends Command
   private case class WalletError(e: Throwable) extends Command
@@ -99,6 +100,21 @@ object PeerScorer {
                              dailyPaymentVolumeThreshold: Satoshi,
                              dailyPaymentVolumeThresholdPercent: Double)
 
+  case class ConfigOverrides(autoFundOverride_opt: Option[Boolean],
+                             autoCloseOverride_opt: Option[Boolean],
+                             autoUpdateFeesOverride_opt: Option[Boolean],
+                             addWhiteListedPeers: Set[PublicKey],
+                             removeWhiteListedPeers: Set[PublicKey],
+                             minFundingAmountOverride_opt: Option[Satoshi],
+                             maxFundingAmountOverride_opt: Option[Satoshi],
+                             maxPerPeerCapacityOverride_opt: Option[Satoshi],
+                             maxFundingTxPerDayOverride_opt: Option[Int],
+                             localBalanceClosingThresholdOverride_opt: Option[Satoshi],
+                             remoteBalanceClosingThresholdOverride_opt: Option[Satoshi],
+                             minOnChainBalanceOverride_opt: Option[Satoshi],
+                             maxFeerateOverride_opt: Option[FeeratePerKw],
+                             fundingCooldownOverride_opt: Option[FiniteDuration])
+
   private case class FundingProposal(peer: PeerInfo, fundingAmount: Satoshi) {
     val remoteNodeId: PublicKey = peer.remoteNodeId
   }
@@ -149,19 +165,44 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
 
   implicit val ec: ExecutionContext = context.system.executionContext
   private val log = context.log
-  private val config = nodeParams.peerScoringConfig
+  private var config = nodeParams.peerScoringConfig
 
   private def run(history: DecisionHistory): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case ScorePeers(replyTo_opt) =>
         statsTracker ! PeerStatsTracker.GetLatestStats(context.messageAdapter[PeerStatsTracker.LatestStats](e => WrappedLatestStats(e.peers)))
         waitForStats(replyTo_opt, history)
+      case UpdateConfig(replyTo, cfg) =>
+        config = config.copy(
+          topPeersWhitelist = config.topPeersWhitelist -- cfg.removeWhiteListedPeers ++ cfg.addWhiteListedPeers,
+          liquidity = config.liquidity.copy(
+            autoFund = cfg.autoFundOverride_opt.getOrElse(config.liquidity.autoFund),
+            autoClose = cfg.autoCloseOverride_opt.getOrElse(config.liquidity.autoClose),
+            minFundingAmount = cfg.minFundingAmountOverride_opt.getOrElse(config.liquidity.minFundingAmount),
+            maxFundingAmount = cfg.maxFundingAmountOverride_opt.getOrElse(config.liquidity.maxFundingAmount),
+            maxPerPeerCapacity = cfg.maxPerPeerCapacityOverride_opt.getOrElse(config.liquidity.maxPerPeerCapacity),
+            maxFundingTxPerDay = cfg.maxFundingTxPerDayOverride_opt.getOrElse(config.liquidity.maxFundingTxPerDay),
+            localBalanceClosingThreshold = cfg.localBalanceClosingThresholdOverride_opt.getOrElse(config.liquidity.localBalanceClosingThreshold),
+            remoteBalanceClosingThreshold = cfg.remoteBalanceClosingThresholdOverride_opt.getOrElse(config.liquidity.remoteBalanceClosingThreshold),
+            minOnChainBalance = cfg.minOnChainBalanceOverride_opt.getOrElse(config.liquidity.minOnChainBalance),
+            maxFeerate = cfg.maxFeerateOverride_opt.getOrElse(config.liquidity.maxFeerate),
+            fundingCooldown = cfg.fundingCooldownOverride_opt.getOrElse(config.liquidity.fundingCooldown),
+          ),
+          relayFees = config.relayFees.copy(
+            autoUpdate = cfg.autoUpdateFeesOverride_opt.getOrElse(config.relayFees.autoUpdate)
+          )
+        )
+        replyTo ! true
+        Behaviors.same
     }
   }
 
   private def waitForStats(replyTo_opt: Option[ActorRef[Seq[PeerInfo]]], history: DecisionHistory): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedLatestStats(peers) => scorePeers(replyTo_opt, peers, history)
+      case UpdateConfig(replyTo, _) =>
+        replyTo ! false
+        Behaviors.same
     }
   }
 
@@ -464,6 +505,9 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
         case Failure(e) => WalletError(e)
       }
       Behaviors.receiveMessagePartial {
+        case UpdateConfig(replyTo, _) =>
+          replyTo ! false
+          Behaviors.same
         case WalletError(e) =>
           log.warn("cannot get on-chain balance: {}", e.getMessage)
           run(history)
