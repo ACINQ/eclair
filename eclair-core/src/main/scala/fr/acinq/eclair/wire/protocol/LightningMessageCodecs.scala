@@ -244,6 +244,11 @@ object LightningMessageCodecs {
       ("lockTime" | uint32) ::
       ("tlvStream" | ClosingSigTlv.closingSigTlvCodec)).as[ClosingSig]
 
+  val startBatchCodec: Codec[StartBatch] = (
+    ("channelId" | bytes32) ::
+      ("batchSize" | uint16) ::
+      ("tlvStream" | StartBatchTlv.startBatchTlvCodec)).as[StartBatch]
+
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
       ("id" | uint64overflow) ::
@@ -525,6 +530,7 @@ object LightningMessageCodecs {
     .typecase(72, txInitRbfCodec)
     .typecase(73, txAckRbfCodec)
     .typecase(74, txAbortCodec)
+    .typecase(127, startBatchCodec)
     .typecase(128, updateAddHtlcCodec)
     .typecase(130, updateFulfillHtlcCodec)
     .typecase(131, updateFailHtlcCodec)
