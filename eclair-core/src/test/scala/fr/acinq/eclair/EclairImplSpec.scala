@@ -74,6 +74,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val postman = TestProbe()
     val offerManager = TestProbe()
     val defaultOfferHandler = TestProbe()
+    val peerScorer = TestProbe()
     val kit = Kit(
       TestConstants.Alice.nodeParams,
       system,
@@ -90,6 +91,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       postman.ref.toTyped,
       offerManager.ref.toTyped,
       defaultOfferHandler.ref.toTyped,
+      Some(peerScorer.ref.toTyped),
       new DummyOnChainWallet()
     )
     withFixture(test.toNoArgTest(FixtureParam(register, relayer, router, paymentInitiator, switchboard, paymentHandler, TestProbe(), kit)))
