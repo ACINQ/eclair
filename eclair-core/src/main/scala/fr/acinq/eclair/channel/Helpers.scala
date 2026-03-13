@@ -114,12 +114,6 @@ object Helpers {
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
 
-    // BOLT #2: The receiving node MUST fail the channel if: max_accepted_htlcs is greater than 483.
-    if (open.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
-
-    // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing.
-    if (isFeeTooSmall(open.feeratePerKw)) return Left(FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw))
-
     if (open.dustLimitSatoshis > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimitSatoshis, nodeParams.channelConf.maxRemoteDustLimit))
 
     // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
@@ -140,8 +134,14 @@ object Helpers {
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
     channelType.commitmentFormat match {
       case _: SimpleTaprootChannelCommitmentFormat => if (open.commitNonce_opt.isEmpty) return Left(MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), commitmentNumber = 0))
-      case _: AnchorOutputsCommitmentFormat => ()
+      case _: SegwitV0CommitmentFormat => ()
     }
+
+    // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing.
+    if (isFeeTooSmall(open.feeratePerKw, channelType)) return Left(FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw))
+
+    // BOLT #2: The receiving node MUST fail the channel if max_accepted_htlcs is too high.
+    if (open.maxAcceptedHtlcs > Channel.maxAcceptedHtlcs(channelType)) return Left(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.maxAcceptedHtlcs(channelType)))
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
     val localFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelType.commitmentFormat)
@@ -178,12 +178,6 @@ object Helpers {
     // BOLT #2: The receiving node MUST fail the channel if: to_self_delay is unreasonably large.
     if (open.toSelfDelay > nodeParams.channelConf.maxToLocalDelay) return Left(ToSelfDelayTooHigh(open.temporaryChannelId, open.toSelfDelay, nodeParams.channelConf.maxToLocalDelay))
 
-    // BOLT #2: The receiving node MUST fail the channel if: max_accepted_htlcs is greater than 483.
-    if (open.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
-
-    // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing.
-    if (isFeeTooSmall(open.commitmentFeerate)) return Left(FeerateTooSmall(open.temporaryChannelId, open.commitmentFeerate))
-
     if (open.dustLimit < Channel.MIN_DUST_LIMIT) return Left(DustLimitTooSmall(open.temporaryChannelId, open.dustLimit, Channel.MIN_DUST_LIMIT))
     if (open.dustLimit > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, open.dustLimit, nodeParams.channelConf.maxRemoteDustLimit))
 
@@ -192,6 +186,12 @@ object Helpers {
       case Right(proposedChannelType) => proposedChannelType
     }
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
+
+    // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing.
+    if (isFeeTooSmall(open.commitmentFeerate, channelType)) return Left(FeerateTooSmall(open.temporaryChannelId, open.commitmentFeerate))
+
+    // BOLT #2: The receiving node MUST fail the channel if max_accepted_htlcs is too high.
+    if (open.maxAcceptedHtlcs > Channel.maxAcceptedHtlcs(channelType)) return Left(InvalidMaxAcceptedHtlcs(open.temporaryChannelId, open.maxAcceptedHtlcs, Channel.maxAcceptedHtlcs(channelType)))
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
     val localFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(nodeParams.currentBitcoinCoreFeerates, remoteNodeId, channelType.commitmentFormat)
@@ -218,7 +218,7 @@ object Helpers {
       case Right(channelType) => channelType
     }
 
-    if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
+    if (accept.maxAcceptedHtlcs > Channel.maxAcceptedHtlcs(channelType)) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.maxAcceptedHtlcs(channelType)))
 
     if (accept.dustLimitSatoshis > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, accept.dustLimitSatoshis, nodeParams.channelConf.maxRemoteDustLimit))
     if (accept.dustLimitSatoshis < Channel.MIN_DUST_LIMIT) return Left(DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUST_LIMIT))
@@ -244,7 +244,7 @@ object Helpers {
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
     channelType.commitmentFormat match {
       case _: SimpleTaprootChannelCommitmentFormat => if (accept.commitNonce_opt.isEmpty) return Left(MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), commitmentNumber = 0))
-      case _: AnchorOutputsCommitmentFormat => ()
+      case _: SegwitV0CommitmentFormat => ()
     }
     extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
@@ -268,7 +268,7 @@ object Helpers {
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (accept.pushAmount > accept.fundingAmount) return Left(InvalidPushAmount(accept.temporaryChannelId, accept.pushAmount, accept.fundingAmount.toMilliSatoshi))
 
-    if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
+    if (accept.maxAcceptedHtlcs > Channel.maxAcceptedHtlcs(channelType)) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.maxAcceptedHtlcs(channelType)))
 
     if (accept.dustLimit < Channel.MIN_DUST_LIMIT) return Left(DustLimitTooSmall(accept.temporaryChannelId, accept.dustLimit, Channel.MIN_DUST_LIMIT))
     if (accept.dustLimit > nodeParams.channelConf.maxRemoteDustLimit) return Left(DustLimitTooLarge(open.temporaryChannelId, accept.dustLimit, nodeParams.channelConf.maxRemoteDustLimit))
@@ -291,8 +291,12 @@ object Helpers {
    * @param remoteFeeratePerKw remote fee rate per kiloweight
    * @return true if the remote fee rate is too small
    */
-  private def isFeeTooSmall(remoteFeeratePerKw: FeeratePerKw): Boolean = {
-    remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
+  private def isFeeTooSmall(remoteFeeratePerKw: FeeratePerKw, channelType: SupportedChannelType): Boolean = {
+    channelType match {
+      case _: ChannelTypes.AnchorOutputs | _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx => remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
+      case _: ChannelTypes.SimpleTaprootChannelsStaging | ChannelTypes.SimpleTaprootChannelsPhoenix => remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
+      case _: ChannelTypes.ZeroFeeCommitments => false
+    }
   }
 
   /** Compute the temporaryChannelId of a dual-funded channel. */
@@ -778,7 +782,7 @@ object Helpers {
           dummyClosingTxs.preferred_opt match {
             case Some(dummyTx) =>
               commitment.commitmentFormat match {
-                case _: AnchorOutputsCommitmentFormat =>
+                case _: SegwitV0CommitmentFormat =>
                   val dummyPubkey = commitment.remoteFundingPubKey
                   val dummySig = IndividualSignature(Transactions.PlaceHolderSig)
                   val dummySignedTx = dummyTx.aggregateSigs(dummyPubkey, dummyPubkey, dummySig, dummySig)
@@ -816,7 +820,7 @@ object Helpers {
                   closingTxs.remoteOnly_opt.flatMap(tx => localSig(tx, localNonces.remoteOnly)).map(ClosingCompleteTlv.CloseeOutputOnlyPartialSignature(_)),
                 ).flatten[ClosingCompleteTlv])
             }
-          case _: AnchorOutputsCommitmentFormat => TlvStream(Set(
+          case _: SegwitV0CommitmentFormat => TlvStream(Set(
             closingTxs.localAndRemote_opt.map(tx => ClosingTlv.CloserAndCloseeOutputs(tx.sign(localFundingKey, commitment.remoteFundingPubKey).sig)),
             closingTxs.localOnly_opt.map(tx => ClosingTlv.CloserOutputOnly(tx.sign(localFundingKey, commitment.remoteFundingPubKey).sig)),
             closingTxs.remoteOnly_opt.map(tx => ClosingTlv.CloseeOutputOnly(tx.sign(localFundingKey, commitment.remoteFundingPubKey).sig)),
@@ -870,7 +874,7 @@ object Helpers {
                 case None => Left(MissingCloseSignature(commitment.channelId))
               }
           }
-          case _: AnchorOutputsCommitmentFormat =>
+          case _: SegwitV0CommitmentFormat =>
             (closingTxs.localAndRemote_opt, closingTxs.localOnly_opt) match {
               case (Some(_), Some(_)) if closingComplete.closerAndCloseeOutputsSig_opt.isEmpty && closingComplete.closeeOutputOnlySig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
               case (Some(_), None) if closingComplete.closerAndCloseeOutputsSig_opt.isEmpty => return Left(MissingCloseSignature(commitment.channelId))
@@ -1054,7 +1058,7 @@ object Helpers {
       /** Create outputs of the local commitment transaction, allowing us for example to identify HTLC outputs. */
       def makeLocalCommitTxOutputs(channelKeys: ChannelKeys, commitKeys: LocalCommitmentKeys, commitment: FullCommitment): Seq[CommitmentOutput] = {
         val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
-        makeCommitTxOutputs(fundingKey.publicKey, commitment.remoteFundingPubKey, commitKeys.publicKeys, commitment.localChannelParams.paysCommitTxFees, commitment.localCommitParams.dustLimit, commitment.localCommitParams.toSelfDelay, commitment.localCommit.spec, commitment.commitmentFormat)
+        makeCommitTxOutputs(fundingKey.publicKey, commitment.remoteFundingPubKey, commitment.commitInput(channelKeys), commitKeys.publicKeys, commitment.localChannelParams.paysCommitTxFees, commitment.localCommitParams.dustLimit, commitment.localCommitParams.toSelfDelay, commitment.localCommit.spec, commitment.commitmentFormat)
       }
 
       /**
@@ -1187,10 +1191,10 @@ object Helpers {
     object RemoteClose {
 
       /** Transactions spending outputs of a remote commitment transaction. */
-      case class SecondStageTransactions(mainTx_opt: Option[ClaimRemoteDelayedOutputTx], anchorTx_opt: Option[ClaimRemoteAnchorTx], htlcTxs: Seq[ClaimHtlcTx])
+      case class SecondStageTransactions(mainTx_opt: Option[ClaimRemoteMainOutputTx], anchorTx_opt: Option[ClaimRemoteAnchorTx], htlcTxs: Seq[ClaimHtlcTx])
 
       /** Claim all the outputs that belong to us in the remote commitment transaction (which can be either their current or next commitment). */
-      def claimCommitTxOutputs(channelKeys: ChannelKeys, commitment: FullCommitment, remoteCommit: RemoteCommit, commitTx: Transaction, closingFeerate: FeeratePerKw, finalScriptPubKey: ByteVector, spendAnchorWithoutHtlcs: Boolean)(implicit log: LoggingAdapter): (RemoteCommitPublished, SecondStageTransactions) = {
+      def claimCommitTxOutputs(channelKeys: ChannelKeys, commitment: FullCommitment, remoteCommit: RemoteCommit, commitTx: Transaction, closingFeerate: FeeratePerKw, feerates: FeeratesPerKw, finalScriptPubKey: ByteVector, spendAnchorWithoutHtlcs: Boolean)(implicit log: LoggingAdapter): (RemoteCommitPublished, SecondStageTransactions) = {
         require(remoteCommit.txId == commitTx.txid, "txid mismatch, provided tx is not the current remote commit tx")
         val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
         val commitKeys = commitment.remoteKeys(channelKeys, remoteCommit.remotePerCommitmentPoint)
@@ -1199,8 +1203,16 @@ object Helpers {
         val (incomingHtlcs, htlcSuccessTxs) = claimIncomingHtlcOutputs(commitKeys, commitTx, outputs, commitment, remoteCommit, finalScriptPubKey)
         val (outgoingHtlcs, htlcTimeoutTxs) = claimOutgoingHtlcOutputs(commitKeys, commitTx, outputs, commitment, remoteCommit, finalScriptPubKey)
         val anchorOutput_opt = ClaimRemoteAnchorTx.findInput(commitTx, fundingKey, commitKeys, commitment.commitmentFormat).toOption
+        // When using v3 transactions, we can use our main output to pay commit fees if it's large enough.
+        // In that case, we don't need to create a dedicated anchor transaction which avoids using wallet inputs.
+        val useMainTxForAnchor = commitment.commitmentFormat match {
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => false
+          case ZeroFeeCommitmentFormat =>
+            val commitFee = Transactions.weight2fee(feerates.fastest, commitTx.weight())
+            mainTx_opt.exists(_.tx.txOut.map(_.amount).sum > commitFee)
+        }
         val spendAnchor = incomingHtlcs.nonEmpty || outgoingHtlcs.nonEmpty || spendAnchorWithoutHtlcs
-        val anchorTx_opt = if (spendAnchor) {
+        val anchorTx_opt = if (spendAnchor && !useMainTxForAnchor) {
           claimAnchor(fundingKey, commitKeys, commitTx, commitment.commitmentFormat)
         } else {
           None
@@ -1224,10 +1236,10 @@ object Helpers {
       }
 
       /** Claim our main output from the remote commitment transaction, if available. */
-      def claimMainOutput(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, dustLimit: Satoshi, commitmentFormat: CommitmentFormat, feerate: FeeratePerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Option[ClaimRemoteDelayedOutputTx] = {
+      def claimMainOutput(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, dustLimit: Satoshi, commitmentFormat: CommitmentFormat, feerate: FeeratePerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Option[ClaimRemoteMainOutputTx] = {
         commitmentFormat match {
-          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
-            ClaimRemoteDelayedOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerate, commitmentFormat)
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat | ZeroFeeCommitmentFormat => withTxGenerationLog("remote-main") {
+            ClaimRemoteMainOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerate, commitmentFormat)
           }
         }
       }
@@ -1235,7 +1247,7 @@ object Helpers {
       /** Create outputs of the remote commitment transaction, allowing us for example to identify HTLC outputs. */
       def makeRemoteCommitTxOutputs(channelKeys: ChannelKeys, commitKeys: RemoteCommitmentKeys, commitment: FullCommitment, remoteCommit: RemoteCommit): Seq[CommitmentOutput] = {
         val fundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
-        makeCommitTxOutputs(commitment.remoteFundingPubKey, fundingKey.publicKey, commitKeys.publicKeys, !commitment.localChannelParams.paysCommitTxFees, commitment.remoteCommitParams.dustLimit, commitment.remoteCommitParams.toSelfDelay, remoteCommit.spec, commitment.commitmentFormat)
+        makeCommitTxOutputs(commitment.remoteFundingPubKey, fundingKey.publicKey, commitment.commitInput(channelKeys), commitKeys.publicKeys, !commitment.localChannelParams.paysCommitTxFees, commitment.remoteCommitParams.dustLimit, commitment.remoteCommitParams.toSelfDelay, remoteCommit.spec, commitment.commitmentFormat)
       }
 
       /**
@@ -1346,7 +1358,7 @@ object Helpers {
     object RevokedClose {
 
       /** Transactions spending outputs of a revoked remote commitment transactions. */
-      case class SecondStageTransactions(mainTx_opt: Option[ClaimRemoteDelayedOutputTx], mainPenaltyTx_opt: Option[MainPenaltyTx], htlcPenaltyTxs: Seq[HtlcPenaltyTx])
+      case class SecondStageTransactions(mainTx_opt: Option[ClaimRemoteMainOutputTx], mainPenaltyTx_opt: Option[MainPenaltyTx], htlcPenaltyTxs: Seq[HtlcPenaltyTx])
 
       /** Transactions spending outputs of confirmed remote HTLC transactions. */
       case class ThirdStageTransactions(htlcDelayedPenaltyTxs: Seq[ClaimHtlcDelayedOutputPenaltyTx])
@@ -1394,8 +1406,8 @@ object Helpers {
 
         // First we will claim our main output right away.
         val mainTx_opt = commitmentFormat match {
-          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
-            ClaimRemoteDelayedOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerateMain, commitmentFormat)
+          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat | ZeroFeeCommitmentFormat => withTxGenerationLog("remote-main") {
+            ClaimRemoteMainOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerateMain, commitmentFormat)
           }
         }
 

@@ -1102,6 +1102,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     testRecvCommitSigMultipleHtlcZeroFees(f)
   }
 
+  test("recv CommitSig (multiple htlcs in both directions, zero fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    testRecvCommitSigMultipleHtlcZeroFees(f)
+  }
+
   test("recv CommitSig (multiple htlcs in both directions) (without fundingTxId tlv)") { f =>
     import f._
 
@@ -1642,6 +1646,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     testRevokeAndAckHtlc(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
   }
 
+  test("recv RevokeAndAck (one htlc sent, zero_fee_commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    testRevokeAndAckHtlc(f, ZeroFeeCommitmentFormat)
+  }
+
   test("recv RevocationTimeout") { f =>
     import f._
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1683,6 +1691,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CMD_FULFILL_HTLC (option_simple_taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     testReceiveCmdFulfillHtlc(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  }
+
+  test("recv CMD_FULFILL_HTLC (zero_fee_commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    testReceiveCmdFulfillHtlc(f, ZeroFeeCommitmentFormat)
   }
 
   test("recv CMD_FULFILL_HTLC (unknown htlc id)") { f =>
@@ -1855,6 +1867,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CMD_FAIL_HTLC (option_simple_taproot)", Tag(ChannelStateTestsTags.OptionSimpleTaproot)) { f =>
     testCmdFailHtlc(f, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat)
+  }
+
+  test("recv CMD_FAIL_HTLC (zero_fee_commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    testCmdFailHtlc(f, ZeroFeeCommitmentFormat)
   }
 
   test("recv CMD_FAIL_HTLC (with delay)") { f =>
@@ -2156,6 +2172,15 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     alice2blockchain.expectFinalTxPublished("local-main-delayed")
     alice2blockchain.expectWatchTxConfirmed(tx.txid)
+  }
+
+  test("recv UpdateFee (zero-fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    import f._
+    val tx = bob.signCommitTx()
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    bob ! UpdateFee(ByteVector32.Zeroes, TestConstants.anchorOutputsFeeratePerKw)
+    bob2alice.expectMsgType[Error]
+    awaitCond(bob.stateName == CLOSING)
   }
 
   test("recv UpdateFee (sender can't afford it)", Tag(ChannelStateTestsTags.HighFeerateMismatchTolerance)) { f =>
@@ -2740,6 +2765,15 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectNoMessage(100 millis)
   }
 
+  test("recv CurrentFeerate (when funder, doesn't trigger and UpdateFee with zero-fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    import f._
+    assert(alice.commitments.latest.localCommit.spec.commitTxFeerate == FeeratePerKw(0 sat))
+    val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(5000 sat)).copy(minimum = FeeratePerKw(250 sat)))
+    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
+    alice ! event
+    alice2bob.expectNoMessage(100 millis)
+  }
+
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are close)") { f =>
     import f._
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
@@ -2803,7 +2837,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // in response to that, alice publishes her claim txs
     val claimAnchor = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx
+    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main").tx
     // in addition to her main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
@@ -2890,7 +2924,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // in response to that, alice publishes her claim txs
     val claimAnchor = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx
+    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main").tx
     // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx])
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
@@ -2969,7 +3003,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val rvk = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head
     assert(rvk.htlcOutputs.size == 4)
 
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main").tx
     val mainPenaltyTx = alice2blockchain.expectFinalTxPublished("main-penalty").tx
     val htlcPenaltyTxs = (0 until 4).map(_ => alice2blockchain.expectFinalTxPublished("htlc-penalty").tx)
     // let's make sure that htlc-penalty txs each spend a different output
@@ -3025,7 +3059,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
 
-    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main-delayed").tx
+    val mainTx = alice2blockchain.expectFinalTxPublished("remote-main").tx
     val mainPenaltyTx = alice2blockchain.expectFinalTxPublished("main-penalty").tx
     val htlcPenaltyTxs = (0 until 2).map(_ => alice2blockchain.expectFinalTxPublished("htlc-penalty").tx)
     // let's make sure that htlc-penalty txs each spend a different output

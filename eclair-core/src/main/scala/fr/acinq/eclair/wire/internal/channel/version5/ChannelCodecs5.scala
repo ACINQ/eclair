@@ -83,6 +83,7 @@ private[channel] object ChannelCodecs5 {
       .typecase(0x02, provide(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat))
       .typecase(0x03, provide(Transactions.PhoenixSimpleTaprootChannelCommitmentFormat))
       .typecase(0x04, provide(Transactions.ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat))
+      .typecase(0x05, provide(Transactions.ZeroFeeCommitmentFormat))
       // 0x00 was used for pre-anchor channels, which have been deprecated after eclair v0.13.1.
       .typecase(0x00, fail[Transactions.CommitmentFormat](Err("some of your channels are not using anchor outputs: you must restart with your previous eclair version and close those channels before updating to this version of eclair (see the release notes for more details)")))
 
