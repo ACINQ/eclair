@@ -49,7 +49,7 @@ object TxAddInputTlv {
 
   val txAddInputTlvCodec: Codec[TlvStream[TxAddInputTlv]] = tlvStream(discriminated[TxAddInputTlv].by(varint)
     // Note that we actually encode as a tx_hash to be consistent with other lightning messages.
-    .typecase(UInt64(1105), tlvField(txIdAsHash.as[SharedInputTxId]))
+    .typecase(UInt64(0), tlvField(txIdAsHash.as[SharedInputTxId]))
     .typecase(UInt64(1111), PrevTxOut.codec)
   )
 }
@@ -103,8 +103,8 @@ object TxSignaturesTlv {
   case class PreviousFundingTxPartialSig(partialSigWithNonce: PartialSignatureWithNonce) extends TxSignaturesTlv
 
   val txSignaturesTlvCodec: Codec[TlvStream[TxSignaturesTlv]] = tlvStream(discriminated[TxSignaturesTlv].by(varint)
+    .typecase(UInt64(0), tlvField(bytes64.as[PreviousFundingTxSig]))
     .typecase(UInt64(2), tlvField(partialSignatureWithNonce.as[PreviousFundingTxPartialSig]))
-    .typecase(UInt64(601), tlvField(bytes64.as[PreviousFundingTxSig]))
   )
 }
 
