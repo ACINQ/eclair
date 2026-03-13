@@ -152,7 +152,7 @@ object Bolt11Invoice {
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
         Some(Accountable()),
         // We want to keep invoices as small as possible, so we explicitly remove unknown features.
-        Some(InvoiceFeatures(features.copy(unknown = Set.empty).unscoped()))
+        Some(InvoiceFeatures(features.copy(encoded_opt = None).unscoped()))
       ).flatten
       val routingInfoTags = extraHops.filter(_.nonEmpty).map(RoutingInfo)
       defaultTags ++ routingInfoTags
