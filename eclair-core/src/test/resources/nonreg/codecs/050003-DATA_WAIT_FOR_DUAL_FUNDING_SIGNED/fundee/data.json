@@ -26,8 +26,7 @@
           "option_channel_type" : "mandatory",
           "basic_mpp" : "optional",
           "gossip_queries" : "optional"
-        },
-        "unknown" : [ ]
+        }
       }
     },
     "remoteParams" : {
@@ -54,8 +53,7 @@
           "option_channel_type" : "mandatory",
           "basic_mpp" : "optional",
           "gossip_queries" : "optional"
-        },
-        "unknown" : [ 50001 ]
+        }
       }
     },
     "channelFlags" : {

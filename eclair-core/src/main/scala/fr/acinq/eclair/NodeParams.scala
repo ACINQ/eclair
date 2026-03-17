@@ -410,20 +410,21 @@ object NodeParams extends Logging {
     require(pluginMessageParams.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
     require(pluginMessageParams.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
     require(pluginMessageParams.flatMap(_.messageTags).forall(_ > 32768), "Plugin messages tags must be > 32768")
-    val pluginFeatureSet = pluginMessageParams.map(_.feature.mandatory).toSet
-    require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
-    require(pluginFeatureSet.size == pluginMessageParams.size, "Duplicate plugin feature bits found")
+    require(Features.knownFeatures.map(_.mandatory).intersect(pluginMessageParams.map(_.feature.mandatory).toSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
+    require(pluginMessageParams.map(_.feature.mandatory).toSet.size == pluginMessageParams.size, "Duplicate plugin feature bits found")
 
     val interceptOpenChannelPlugins = pluginParams.collect { case p: InterceptOpenChannelPlugin => p }
     require(interceptOpenChannelPlugins.size <= 1, s"At most one plugin is allowed to intercept channel open messages, but multiple such plugins were registered: ${interceptOpenChannelPlugins.map(_.getClass.getSimpleName).mkString(", ")}. Disable conflicting plugins and restart eclair.")
 
-    val coreAndPluginFeatures: Features[Feature] = features.copy(unknown = features.unknown ++ pluginMessageParams.map(_.pluginFeature))
+    val pluginFeatures = pluginMessageParams.map(p => p.feature -> p.support).toMap
+    val coreAndPluginFeatures: Features[Feature] = features.copy(activated = features.activated ++ pluginFeatures)
 
     val overrideInitFeatures: Map[PublicKey, Features[InitFeature]] = config.getConfigList("override-init-features").asScala.map { e =>
-      val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
-      val f = Features.fromConfiguration[InitFeature](e.getConfig("features"), Features.knownFeatures.collect { case f: InitFeature => f }, features.initFeatures())
-      validateFeatures(f.unscoped())
-      p -> (f.copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature)): Features[InitFeature])
+      val remoteNodeId = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
+      val initFeatures = Features.fromConfiguration[InitFeature](e.getConfig("features"), Features.knownFeatures.collect { case f: InitFeature => f }, features.initFeatures())
+      validateFeatures(initFeatures.unscoped())
+      val pluginInitFeatures = pluginFeatures.collect { case (f: InitFeature, s) => f -> s }
+      remoteNodeId -> initFeatures.copy(activated = initFeatures.activated ++ pluginInitFeatures)
     }.toMap
 
     val socksProxy_opt = parseSocks5ProxyParams(config)

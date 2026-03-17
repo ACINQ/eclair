@@ -38,7 +38,7 @@ import fr.acinq.eclair.router.BlindedRouteCreation
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, Features, MilliSatoshiLong, NodeParams, PaymentFinalExpiryConf, TestConstants, TestKitBaseClass, TimestampMilliLong, TimestampSecond, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.{Bolt11Feature, Bolt12Feature, CltvExpiry, CltvExpiryDelta, EncodedFeatures, EncodedNodeId, Feature, Features, MilliSatoshiLong, NodeParams, PaymentFinalExpiryConf, TestConstants, TestKitBaseClass, TimestampMilliLong, TimestampSecond, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -146,7 +146,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     val testCases: Seq[Features[Feature]] = Seq(
       Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, PaymentMetadata -> Mandatory),
-      Features(Map(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), unknown = Set(UnknownFeature(42))),
+      Features(Map(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), encoded_opt = Some(EncodedFeatures.fromFeatureBits(Set(42)))),
     )
     testCases.foreach { invoiceFeatures =>
       val taggedFields = List(

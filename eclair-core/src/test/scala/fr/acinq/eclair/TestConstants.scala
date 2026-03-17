@@ -61,7 +61,7 @@ object TestConstants {
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
   val emptyOrigin: Origin.Hot = Origin.Hot(ActorRef.noSender, Upstream.Local(UUID.randomUUID()))
 
-  case object TestFeature extends Feature with InitFeature with NodeFeature {
+  case object PluginFeature extends Feature with InitFeature with NodeFeature {
     val rfcName = "test_feature"
     val mandatory = 50000
   }
@@ -69,7 +69,8 @@ object TestConstants {
   val pluginParams: CustomFeaturePlugin = new CustomFeaturePlugin {
     // @formatter:off
     override def messageTags: Set[Int] = Set(60003)
-    override def feature: Feature = TestFeature
+    override def feature: Feature = PluginFeature
+    override def support: FeatureSupport = FeatureSupport.Optional
     override def name: String = "plugin for testing"
     // @formatter:on
   }
@@ -101,7 +102,7 @@ object TestConstants {
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       torAddress_opt = None,
       features = Features(
-        Map(
+        Map[Feature, FeatureSupport](
           Features.DataLossProtect -> FeatureSupport.Optional,
           Features.ChannelRangeQueries -> FeatureSupport.Optional,
           Features.ChannelRangeQueriesExtended -> FeatureSupport.Optional,
@@ -117,9 +118,9 @@ object TestConstants {
           Features.Quiescence -> FeatureSupport.Optional,
           Features.SplicePrototype -> FeatureSupport.Optional,
           Features.ProvideStorage -> FeatureSupport.Optional,
-          Features.ChannelType -> FeatureSupport.Mandatory
-        ),
-        unknown = Set(UnknownFeature(TestFeature.optional))
+          Features.ChannelType -> FeatureSupport.Mandatory,
+          PluginFeature -> FeatureSupport.Optional
+        )
       ),
       pluginParams = List(pluginParams),
       overrideInitFeatures = Map.empty,

@@ -56,7 +56,7 @@ class PeersDbSpec extends AnyFunSuite {
       val peer1b = TestCase(peer1a.nodeId, peer1a.nodeInfo.copy(address_opt = NodeAddress.fromParts("127.0.0.1", 1112).toOption))
       val peer1c = TestCase(peer1a.nodeId, peer1b.nodeInfo.copy(features = Features(Features.ChannelType -> FeatureSupport.Mandatory, Features.ShutdownAnySegwit -> FeatureSupport.Optional)))
       val peer2a = TestCase(randomKey().publicKey, NodeInfo(Features.empty, None))
-      val peer2b = TestCase(peer2a.nodeId, NodeInfo(Features(Map[InitFeature, FeatureSupport](Features.DataLossProtect -> FeatureSupport.Optional), Set(UnknownFeature(61317))), Some(Tor2("z4zif3fy7fe7bpg3", 4231))))
+      val peer2b = TestCase(peer2a.nodeId, NodeInfo(Features(Map[InitFeature, FeatureSupport](Features.DataLossProtect -> FeatureSupport.Optional), Some(EncodedFeatures.fromFeatureBits(Set(61317)))), Some(Tor2("z4zif3fy7fe7bpg3", 4231))))
       val peer3 = TestCase(randomKey().publicKey, NodeInfo(Features.empty, Some(Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 4231))))
 
       assert(db.listPeers().isEmpty)

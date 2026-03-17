@@ -625,13 +625,10 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       ChannelReestablish(randomBytes32(), 242842L, 42L, randomKey(), randomKey().publicKey),
       UnknownMessage(tag = 60000, data = ByteVector32.One.bytes),
     )
-
-    msgs.foreach {
-      msg => {
-        val encoded = lightningMessageCodecWithFallback.encode(msg).require
-        val decoded = lightningMessageCodecWithFallback.decode(encoded).require
-        assert(msg == decoded.value)
-      }
+    msgs.foreach { msg =>
+      val encoded = lightningMessageCodecWithFallback.encode(msg).require
+      val decoded = lightningMessageCodecWithFallback.decode(encoded).require
+      assert(msg == decoded.value)
     }
   }
 

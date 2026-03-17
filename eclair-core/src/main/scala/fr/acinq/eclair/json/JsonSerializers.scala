@@ -37,7 +37,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, FeatureSupport, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, FeatureSupport, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond, UInt64}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -229,7 +229,10 @@ object FeatureKeySerializer extends MinimalKeySerializer({ case f: Feature => f.
 
 object FeatureSupportSerializer extends MinimalSerializer({ case s: FeatureSupport => JString(s.toString) })
 
-object UnknownFeatureSerializer extends MinimalSerializer({ case f: UnknownFeature => JInt(f.bitIndex) })
+// @formatter:off
+private case class FeaturesJson(activated: Map[Feature, FeatureSupport])
+object FeaturesSerializer extends ConvertClassSerializer[Features[Feature]](f => FeaturesJson(f.activated))
+// @formatter:on
 
 object ChannelConfigSerializer extends MinimalSerializer({
   case x: ChannelConfig => JArray(x.options.toList.map(o => JString(o.name)))
@@ -422,12 +425,7 @@ object InvoiceSerializer extends MinimalSerializer({
       .collectFirst { case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta } // NB: we look at fields directly because the value has a spec-defined default
       .map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
     val amount = p.amount_opt.map(msat => JField("amount", JLong(msat.toLong))).toSeq
-    val features = JField("features", Extraction.decompose(p.features)(
-      DefaultFormats +
-        FeatureKeySerializer +
-        FeatureSupportSerializer +
-        UnknownFeatureSerializer
-    ))
+    val features = JField("features", Extraction.decompose(p.features)(DefaultFormats + FeatureKeySerializer + FeatureSupportSerializer + FeaturesSerializer))
     val paymentMetadata = p.paymentMetadata.map(m => JField("paymentMetadata", JString(m.toHex))).toSeq
     val routingInfo = JField("routingInfo", Extraction.decompose(p.routingInfo)(
       DefaultFormats +
@@ -458,12 +456,7 @@ object InvoiceSerializer extends MinimalSerializer({
       Some(JField("nodeId", JString(p.nodeId.toString()))),
       Some(JField("paymentHash", JString(p.paymentHash.toString()))),
       p.description.map(string => JField("description", JString(string))),
-      Some(JField("features", Extraction.decompose(p.features)(
-        DefaultFormats +
-          FeatureKeySerializer +
-          FeatureSupportSerializer +
-          UnknownFeatureSerializer
-      ))),
+      Some(JField("features", Extraction.decompose(p.features)(DefaultFormats + FeatureKeySerializer + FeatureSupportSerializer + FeaturesSerializer))),
       Some(JField("blindedPaths", JArray(p.blindedPaths.map(path => {
         val introductionNode = path.route.firstNodeId.toString
         val blindedNodes = path.route.blindedHops
@@ -791,7 +784,7 @@ object JsonSerializers {
     OutPointKeySerializer +
     FeatureKeySerializer +
     FeatureSupportSerializer +
-    UnknownFeatureSerializer +
+    FeaturesSerializer +
     ChannelConfigSerializer +
     ChannelFeaturesSerializer +
     OpenChannelResponseSerializer +
