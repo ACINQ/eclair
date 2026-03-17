@@ -35,7 +35,7 @@ import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, build
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.ReplyPath
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
-import fr.acinq.eclair.wire.protocol.{GenericTlv, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, GenericTlv, NodeAnnouncement}
 import fr.acinq.eclair.{EclairImpl, EncodedNodeId, Features, MilliSatoshiLong, SendOnionMessageResponse, UInt64, randomBytes, randomKey}
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -282,6 +282,13 @@ class MessageIntegrationSpec extends IntegrationSpec {
     awaitCond({
       probe.send(nodes("A").router, Router.GetNodes)
       probe.expectMsgType[Iterable[NodeAnnouncement]].size == 6
+    }, max = 60 seconds, interval = 1 second)
+
+    // We also wait for B to know about all channels, so that when we later close
+    // B's channels, the Router won't prune nodes that still have other channels.
+    awaitCond({
+      probe.send(nodes("B").router, Router.GetChannels)
+      probe.expectMsgType[Iterable[ChannelAnnouncement]].size == 9
     }, max = 60 seconds, interval = 1 second)
   }
 
