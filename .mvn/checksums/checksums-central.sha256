@@ -345,6 +345,7 @@
 49ac627e1cfa860e114f6587317f8997a77006a9e7a49869a195fee32bb28913  org/eclipse/sisu/org.eclipse.sisu.inject/0.3.4/org.eclipse.sisu.inject-0.3.4.pom
 49cd878717ac17e6f0c6410d525fa981bc8e6c69d3276c65514aaf34b51fd675  com/googlecode/maven-download-plugin/download-maven-plugin/1.6.8/download-maven-plugin-1.6.8.jar
 4a14ec03fa5fdfef34b595d3fabb83832423a5d6e9b31571e44c8a48304014df  org/sonatype/sisu/sisu-guice/3.2.3/sisu-guice-3.2.3.pom
+4a3f8ed8a44c7ed8b31ae5101334880587c10970653f4b3b944fdb23830b2420  org/jetbrains/kotlin/kotlin-stdlib/2.3.10/kotlin-stdlib-2.3.10.pom
 4a8eea7663992e49206d9f928138f334a835ad3fbbc40929342ef007ccf5471b  org/apache/maven/shared/maven-common-artifact-filters/3.1.1/maven-common-artifact-filters-3.1.1.jar
 4accc9d2a56a6dd5198ec5e1c5c05a091da563bccd346fd6578edc083152beaa  eu/neilalexander/jnacl/1.0.0/jnacl-1.0.0.jar
 4ae70b3cb0c215d69aeac28c9212e6811f9eb978956782340608933420880d52  org/scala-lang/scala-library/2.13.8/scala-library-2.13.8.pom
@@ -1066,6 +1067,7 @@ f54a0a28ce3d62af0e1cfe41dde616f645c28e452e77f77b78bc36e74d5e1a69  org/sonatype/a
 f55a922027a78fdd8b3ea15a0d8bfe3fec6a5ceac30c86aa8afa4a5b9b0df603  org/checkerframework/checker-qual/3.33.0/checker-qual-3.33.0.pom
 f5ecc6eaa4a32ee0c115d31525f588f491b2cc75fdeb4ed3c0c662c12ac0c32f  org/apache/maven/maven-plugin-api/3.0/maven-plugin-api-3.0.jar
 f5f9ceeac3b73ff9b82dcb22ea50ee47ee2d3e50c9c9e084496f6ab10344e5d7  fr/acinq/secp256k1/secp256k1-kmp-jni-jvm-mingw/0.21.0/secp256k1-kmp-jni-jvm-mingw-0.21.0.jar
+f61662c6d3a2f8ef5bd34362a02d877772c39f393cd394feb259dfaf7f4d8437  org/jetbrains/kotlin/kotlin-stdlib/2.3.10/kotlin-stdlib-2.3.10.jar
 f62aeef7eb34196c9f4a7642cd610e4f175a88c040246918b19e4c3fbc0b8098  org/apache/maven/surefire/surefire-api/3.1.2/surefire-api-3.1.2.jar
 f62bf50c120cd8b17a25caaa6df87ed23ee6f0f8fb3a9bd6fdc694f7a9c66ce1  fr/acinq/bitcoin-lib_2.13/0.46/bitcoin-lib_2.13-0.46.pom
 f66c2b6e2a1999b574bc8d37544d018c3fcab67877f4c9b311f9d23443f0096e  pl/project13/maven/git-commit-id-plugin/4.9.10/git-commit-id-plugin-4.9.10.jar
