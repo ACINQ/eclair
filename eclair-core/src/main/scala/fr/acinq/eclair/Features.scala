@@ -85,9 +85,9 @@ object FeatureCompatibilityResult {
 }
 // @formatter:on
 
-/** NB: features are encoded with the most significant bits first (and padded to byte boundaries). */
-case class EncodedFeatures(bits: BitVector) {
-  val isEmpty: Boolean = bits.isEmpty
+/** NB: features are encoded with the most significant bits first. */
+case class EncodedFeatures(bin: ByteVector) {
+  val isEmpty: Boolean = bin.isEmpty
 
   def hasFeature(feature: Feature, support: Option[FeatureSupport] = None): Boolean = {
     support match {
@@ -97,8 +97,9 @@ case class EncodedFeatures(bits: BitVector) {
   }
 
   def hasFeatureBit(bitIndex: Long): Boolean = {
-    if (bitIndex < bits.size) {
-      bits.get(bits.size - 1 - bitIndex)
+    if (bitIndex < bin.size * 8) {
+      val offset = bitIndex % 8
+      (bin.get(bin.size - 1 - (bitIndex / 8)) & (0x01 << offset.toInt)) != 0
     } else {
       false
     }
@@ -108,7 +109,7 @@ case class EncodedFeatures(bits: BitVector) {
 object EncodedFeatures {
   def fromFeatureBits(featureBits: Set[Int]): EncodedFeatures = {
     if (featureBits.isEmpty) {
-      EncodedFeatures(BitVector.empty)
+      EncodedFeatures(ByteVector.empty)
     } else {
       // Note that we pad to bytes before setting feature bits (we use a byte encoding on the wire).
       val byteSize = if ((featureBits.max + 1) % 8 == 0) {
@@ -119,7 +120,7 @@ object EncodedFeatures {
       var buf = BitVector.fill(byteSize)(high = false)
       // We encode feature bits with the most significant bits first.
       featureBits.foreach { i => buf = buf.set(byteSize - 1 - i) }
-      EncodedFeatures(buf)
+      EncodedFeatures(buf.bytes)
     }
   }
 }
@@ -151,7 +152,7 @@ case class Features[T <: Feature](activated: Map[T, FeatureSupport], encoded_opt
       case Some(encoded) =>
         val activatedMandatoryFeatureBits = activated.keySet.map(_.mandatory.toLong)
         // We only need to check even feature bits (it's ok to be odd), so we step by 2.
-        (0L until encoded.bits.size by 2).find(i => {
+        (0L until (encoded.bin.size * 8) by 2).find(i => {
           if (encoded.hasFeatureBit(i)) {
             // They have set a mandatory feature bit: we must support it as well. Note that if this is a plugin feature,
             // it may be in the encoded features but not the activated ones if the current object is for remote features.
@@ -188,8 +189,8 @@ case class Features[T <: Feature](activated: Map[T, FeatureSupport], encoded_opt
   def remove(feature: T): Features[T] = copy(activated = activated - feature)
 
   def toByteVector: ByteVector = {
-    val activatedFeatureBytes = EncodedFeatures.fromFeatureBits(activated.map { case (feature, support) => feature.supportBit(support) }.toSet).bits.bytes
-    encoded_opt.map(_.bits.bytes) match {
+    val activatedFeatureBytes = EncodedFeatures.fromFeatureBits(activated.map { case (feature, support) => feature.supportBit(support) }.toSet).bin
+    encoded_opt.map(_.bin) match {
       case Some(encoded) =>
         // We combine both sources of feature bits, and we minimally-encode by removing leading zeroes.
         val maxSize = activatedFeatureBytes.size.max(encoded.size)
@@ -218,19 +219,26 @@ object Features {
 
   def apply[T <: Feature](features: (T, FeatureSupport)*): Features[T] = Features[T](Map.from(features))
 
-  def apply(bytes: ByteVector): Features[Feature] = apply(bytes.bits)
-
   def apply(bits: BitVector): Features[Feature] = {
     if (bits.isEmpty) {
       Features.empty
     } else {
-      // We extract all official features we support.
-      // We ensure that feature bits are already padded to bytes boundaries.
-      val encoded = if ((bits.size % 8) == 0) {
-        EncodedFeatures(bits)
+      // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to bytes *before* setting feature bits.
+      val padded = if (bits.size % 8 == 0) {
+        bits
       } else {
-        EncodedFeatures(bits.padLeft(bits.size + 8 - (bits.size % 8)))
+        bits.padLeft(bits.size + (8 - (bits.size % 8)))
       }
+      Features(padded.bytes)
+    }
+  }
+
+  def apply(bytes: ByteVector): Features[Feature] = {
+    if (bytes.isEmpty) {
+      Features.empty
+    } else {
+      // We extract all official features we support.
+      val encoded = EncodedFeatures(bytes)
       val activated = knownFeatures.flatMap {
         case f if encoded.hasFeatureBit(f.optional) => Some(f -> FeatureSupport.Optional)
         case f if encoded.hasFeatureBit(f.mandatory) => Some(f -> FeatureSupport.Mandatory)
