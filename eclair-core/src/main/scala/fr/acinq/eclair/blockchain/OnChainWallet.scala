@@ -111,6 +111,12 @@ trait OnChainChannelFunder {
    */
   def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 
+  /**
+   * @param address bitcoin address to check
+   * @return true if address belongs to our wallet
+   */
+  def isMine(address: String)(implicit ec: ExecutionContext): Future[Boolean]
+
 }
 
 /** This trait lets users generate on-chain addresses and public keys. */

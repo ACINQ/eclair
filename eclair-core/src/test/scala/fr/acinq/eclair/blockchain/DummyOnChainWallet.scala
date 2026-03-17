@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.psbt.{KeyPathWithMaster, Psbt, TaprootBip32DerivationPat
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Crypto.TaprootTweak.KeyPathTweak
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector64, KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, ScriptElt, ScriptWitness, Transaction, TxId, TxIn, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector64, KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, ScriptElt, ScriptWitness, Transaction, TxId, TxIn, TxOut, addressFromPublicKeyScript}
 import fr.acinq.eclair.TestUtils.randomTxId
 import fr.acinq.eclair.blockchain.OnChainWallet.{FundTransactionResponse, MakeFundingTxResponse, OnChainBalance, ProcessPsbtResponse}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.AddressType
@@ -92,6 +92,12 @@ class DummyOnChainWallet extends OnChainWallet with OnChainAddressCache {
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(false)
 
   override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = Script.pay2tr(dummyReceivePubkey.xOnly, KeyPathTweak)
+
+  override def isMine(address: String)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful {
+    if (Right(address) == addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, Script.pay2wpkh(dummyReceivePubkey))) true
+    else if (Right(address) == addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, Script.pay2tr(dummyReceivePubkey.xOnly, KeyPathTweak))) true
+    else false
+  }
 }
 
 class SingleKeyOnChainWallet extends OnChainWallet with OnChainAddressCache {
@@ -227,6 +233,12 @@ class SingleKeyOnChainWallet extends OnChainWallet with OnChainAddressCache {
   override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(doubleSpent.contains(tx.txid))
 
   override def getReceivePublicKeyScript(renew: Boolean): Seq[ScriptElt] = p2trScript
+
+  override def isMine(address: String)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful {
+    if (Right(address) == addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, p2wpkhScript)) true
+    else if (Right(address) == addressFromPublicKeyScript(Block.RegtestGenesisBlock.hash, p2trScript)) true
+    else false
+  }
 }
 
 /** A wallet that blocks when called to fund transactions (useful to test events happening while funding). */
