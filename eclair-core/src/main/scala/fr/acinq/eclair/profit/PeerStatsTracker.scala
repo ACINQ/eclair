@@ -65,6 +65,7 @@ object PeerStatsTracker {
     val capacity: Satoshi = channels.map(_.capacity).sum
     val canSend: MilliSatoshi = channels.map(_.canSend).sum
     val canReceive: MilliSatoshi = channels.map(_.canReceive).sum
+    val dailyVolumeOut: MilliSatoshi = stats.take(Bucket.bucketsPerDay).map(_.totalAmountOut).sum
   }
 
   /** We compute peer statistics per buckets spanning a few hours. */
