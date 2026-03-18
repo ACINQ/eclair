@@ -123,6 +123,25 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     assert(addressToPublicKeyScript(Block.RegtestGenesisBlock.hash, address2).map(Script.isPay2tr).contains(true))
   }
 
+  test("check whether an address belongs to our wallet") {
+    val sender = TestProbe()
+    val bitcoinClient = makeBitcoinCoreClient()
+
+    bitcoinClient.getReceiveAddress(None).pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+    bitcoinClient.isMine(address).pipeTo(sender.ref)
+    sender.expectMsg(true)
+
+    bitcoinClient.getChangeAddress(None).pipeTo(sender.ref)
+    val changeAddress = sender.expectMsgType[String]
+    bitcoinClient.isMine(changeAddress).pipeTo(sender.ref)
+    sender.expectMsg(true)
+
+    val randomAddress = computeBIP84Address(randomKey().publicKey, Block.RegtestGenesisBlock.hash)
+    bitcoinClient.isMine(randomAddress).pipeTo(sender.ref)
+    sender.expectMsg(false)
+  }
+
   test("fund transactions") {
     val sender = TestProbe()
     val bitcoinClient = makeBitcoinCoreClient()
@@ -2123,5 +2142,24 @@ class BitcoinCoreClientWithEclairSignerSpec extends BitcoinCoreClientSpec {
     val signedTx: Transaction = signedPsbt.extract().getRight
     wallet.publishTransaction(signedTx).pipeTo(sender.ref)
     sender.expectMsg(signedTx.txid)
+  }
+
+  test("check whether an address belongs to our wallet (private keys managed by eclair)") {
+    val sender = TestProbe()
+    val bitcoinClient = makeBitcoinCoreClient()
+
+    bitcoinClient.getReceiveAddress(None).pipeTo(sender.ref)
+    val address = sender.expectMsgType[String]
+    bitcoinClient.isMine(address).pipeTo(sender.ref)
+    sender.expectMsg(true)
+
+    bitcoinClient.getChangeAddress(None).pipeTo(sender.ref)
+    val changeAddress = sender.expectMsgType[String]
+    bitcoinClient.isMine(changeAddress).pipeTo(sender.ref)
+    sender.expectMsg(true)
+
+    val randomAddress = computeBIP84Address(randomKey().publicKey, Block.RegtestGenesisBlock.hash)
+    bitcoinClient.isMine(randomAddress).pipeTo(sender.ref)
+    sender.expectMsg(false)
   }
 }
