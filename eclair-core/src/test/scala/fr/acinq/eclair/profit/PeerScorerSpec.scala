@@ -598,6 +598,61 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
     }
   }
 
+  test("lower fees from idle channels and then close") {
+    val config = defaultConfig.copy(relayFees = defaultConfig.relayFees.copy(minRelayFees = RelayFees(feeBase = 1 msat, feeProportionalMillionths = 600)))
+    withFixture(config = config) { f =>
+      import f._
+
+      val c1a = channelInfo(canSend = 1 btc, canReceive = 1 btc)
+      val c1b = channelInfo(canSend = 0.5 btc, canReceive = 0.5 btc)
+      val c2a = channelInfo(canSend = 1 btc, canReceive = 1 btc)
+      val c2b = channelInfo(canSend = 0.5 btc, canReceive = 0.5 btc)
+      val c3a = channelInfo(canSend = 0.2 btc, canReceive = 0.8 btc)
+      val c3b = channelInfo(canSend = 0.2 btc, canReceive = 0.8 btc)
+
+      // Our first peer's channels have very low volume and the last channel update already used our minimum fees: we should close it.
+      val peerInfo1 = PeerInfo(
+        remoteNodeId = remoteNodeId1,
+        stats = Seq.fill(weeklyBuckets)(peerStats(totalAmountOut = 1_000 sat, totalAmountIn = 1_000 sat, relayFeeEarned = 10 sat)),
+        channels = Seq(c1a, c1b),
+        latestUpdate_opt = Some(channelUpdate(c1a.capacity, RelayFees(1 msat, 600), TimestampSecond.now() - 6.days)),
+        hasPendingChannel = false
+      )
+      // Our second peer's channels have very low volume, but we're not yet using our minimum fees: we should decrease them.
+      val peerInfo2 = PeerInfo(
+        remoteNodeId = remoteNodeId2,
+        stats = Seq.fill(weeklyBuckets)(peerStats(totalAmountOut = 1_000 sat, totalAmountIn = 1_000 sat, relayFeeEarned = 10 sat)),
+        channels = Seq(c2a, c2b),
+        latestUpdate_opt = Some(channelUpdate(c2a.capacity, RelayFees(1 msat, 750), TimestampSecond.now() - 4.days)),
+        hasPendingChannel = false
+      )
+      // Our last peer's channels have very low volume, but we have less than 25% of the funds: we shouldn't do anything yet.
+      val peerInfo3 = PeerInfo(
+        remoteNodeId = remoteNodeId3,
+        stats = Seq.fill(weeklyBuckets)(peerStats(totalAmountOut = 1_000 sat, totalAmountIn = 1_000 sat, relayFeeEarned = 10 sat)),
+        channels = Seq(c3a, c3b),
+        latestUpdate_opt = Some(channelUpdate(c3a.capacity, RelayFees(1 msat, 750), TimestampSecond.now() - 4.days)),
+        hasPendingChannel = false
+      )
+
+      scorer ! ScorePeers(None)
+      inside(tracker.expectMessageType[GetLatestStats]) { msg =>
+        msg.replyTo ! LatestStats(Seq(peerInfo1, peerInfo2, peerInfo3))
+      }
+      // We start by closing one of our channels with our first peer.
+      assert(register.expectMessageType[Register.Forward[CMD_CLOSE]].channelId == c1b.channelId)
+      // Then we lower our relay fees with our second peer.
+      val feeUpdates = Seq(
+        register.expectMessageType[Register.Forward[CMD_UPDATE_RELAY_FEE]],
+        register.expectMessageType[Register.Forward[CMD_UPDATE_RELAY_FEE]],
+      )
+      assert(feeUpdates.map(_.channelId).toSet == Set(c2a.channelId, c2b.channelId))
+      feeUpdates.foreach(cmd => assert(cmd.message.feeProportionalMillionths == 600))
+      // And we're done!
+      register.expectNoMessage(100 millis)
+    }
+  }
+
   test("don't fund the same peer within cooldown period") {
     withFixture(onChainBalance = 10 btc) { f =>
       import f._
