@@ -119,6 +119,9 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     } else if (channelType_opt.isEmpty) {
       request.replyTo ! OpenChannelResponse.Rejected("channel_type must be provided and compatible with our peer's features")
       waitForRequest()
+    } else if (announceChannel && channelType_opt.exists(_.isInstanceOf[ChannelTypes.SimpleTaprootChannel])) {
+      request.replyTo ! OpenChannelResponse.Rejected("public taproot channels aren't supported yet: announce_channel must be set to false")
+      waitForRequest()
     } else {
       val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
       val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)
@@ -132,6 +135,10 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
 
   private def sanityCheckNonInitiator(request: OpenChannelNonInitiator): Behavior[Command] = {
     ChannelTypes.areCompatible(request.temporaryChannelId, request.localFeatures, request.channelType_opt) match {
+      case Right(_: ChannelTypes.SimpleTaprootChannel) if request.channelFlags.announceChannel =>
+        context.log.warn("ignoring remote channel open: public taproot channels aren't supported yet")
+        sendFailure("public taproot channels aren't supported yet: announce_channel must be set to false", request)
+        waitForRequest()
       case Right(channelType) =>
         val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
         val upfrontShutdownScript = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.UpfrontShutdownScript)

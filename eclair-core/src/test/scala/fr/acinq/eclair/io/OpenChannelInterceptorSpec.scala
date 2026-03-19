@@ -165,6 +165,33 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     assert(peer.expectMessageType[SpawnChannelNonInitiator].addFunding_opt.isEmpty)
   }
 
+  test("reject open channel request for public taproot channels") { f =>
+    import f._
+
+    // We reject remote public taproot channels.
+    val open = createOpenChannelMessage(ChannelTypes.SimpleTaprootChannel()).copy(channelFlags = ChannelFlags(announceChannel = true))
+    val taprootFeatures = defaultFeatures.add(Features.SimpleTaprootChannels, FeatureSupport.Optional)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(open), taprootFeatures, taprootFeatures, peerConnection.ref, remoteAddress)
+    openChannelInterceptor ! openChannelNonInitiator
+    assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("public taproot channels aren't supported yet"))
+    eventListener.expectMessageType[ChannelAborted]
+
+    // We make sure that we don't try to open public taproot channels.
+    val probe = TestProbe[Any]()
+    val openChannelInitiator = Peer.OpenChannel(remoteNodeId, 500_000 sat, Some(ChannelTypes.SimpleTaprootChannel()), None, None, None, None, Some(ChannelFlags(announceChannel = true)), None)
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, openChannelInitiator, taprootFeatures, taprootFeatures)
+    assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason.contains("public taproot channels aren't supported yet"))
+
+    // If we want to announce the channel, we fallback to anchor outputs.
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, openChannelInitiator.copy(channelType_opt = None), taprootFeatures, taprootFeatures)
+    assert(peer.expectMessageType[Peer.SpawnChannelInitiator].channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+
+    // If we don't want to announce the channel, we can use taproot.
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, openChannelInitiator.copy(channelFlags_opt = Some(ChannelFlags(announceChannel = false))), taprootFeatures, taprootFeatures)
+    assert(peer.expectMessageType[Peer.SpawnChannelInitiator].channelType == ChannelTypes.SimpleTaprootChannel())
+    probe.expectNoMessage(100 millis)
+  }
+
   test("reject open channel request if rejected by the plugin") { f =>
     import f._
 
