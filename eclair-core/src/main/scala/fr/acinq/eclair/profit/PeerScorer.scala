@@ -192,6 +192,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
             autoUpdate = cfg.autoUpdateFeesOverride_opt.getOrElse(config.relayFees.autoUpdate)
           )
         )
+        log.info("updated configuration={}", config)
         replyTo ! true
         Behaviors.same
     }
