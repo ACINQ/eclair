@@ -151,7 +151,8 @@ object ChannelTypes {
   /** Returns our preferred channel type for public channels, if supported by our peer. */
   def preferredForPublicChannels(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean): Option[SupportedChannelType] = {
     val useScidAlias = !announceChannel && Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias)
-    if (Features.canUseFeature(localFeatures, remoteFeatures, Features.SimpleTaprootChannels)) {
+    if (!announceChannel && Features.canUseFeature(localFeatures, remoteFeatures, Features.SimpleTaprootChannels)) {
+      // We currently only support unannounced taproot channels.
       Some(SimpleTaprootChannel(scidAlias = useScidAlias))
     } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputsZeroFeeHtlcTx)) {
       Some(AnchorOutputsZeroFeeHtlcTx(scidAlias = useScidAlias))
