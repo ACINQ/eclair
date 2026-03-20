@@ -46,6 +46,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, OutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.{ClearRecipient, OfferPayment, PaymentIdentifier}
+import fr.acinq.eclair.profit.PeerScorer
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
@@ -214,6 +215,9 @@ trait Eclair {
   def spendFromChannelAddressPrep(outPoint: OutPoint, fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, address: String, feerate: FeeratePerKw): Future[SpendFromChannelPrep]
 
   def spendFromChannelAddress(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, localNonce_opt: Option[IndividualNonce], remoteSig: ChannelSpendSignature, unsignedTx: Transaction): Future[SpendFromChannelResult]
+
+  def configurePeerScorer(cfg: PeerScorer.ConfigOverrides)(implicit timeout: Timeout): Future[Boolean]
+
 }
 
 class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChannelAddress {
@@ -848,6 +852,13 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
         Future.successful(EnableFromFutureHtlcResponse(appKit.nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed, None))
       case _ =>
         Future.successful(EnableFromFutureHtlcResponse(enabled = false, Some("could not enable from_future_htlc: you must add it to eclair.liquidity-ads.payment-types in your eclair.conf file first")))
+    }
+  }
+
+  override def configurePeerScorer(cfg: PeerScorer.ConfigOverrides)(implicit timeout: Timeout): Future[Boolean] = {
+    appKit.peerScorer_opt match {
+      case Some(scorer) => scorer.ask((ref: typed.ActorRef[Boolean]) => PeerScorer.UpdateConfig(ref, cfg))
+      case None => Future.successful(false)
     }
   }
 

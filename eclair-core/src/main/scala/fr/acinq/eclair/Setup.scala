@@ -44,6 +44,7 @@ import fr.acinq.eclair.payment.offer.{DefaultOfferHandler, OfferManager}
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{AsyncPaymentTriggerer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
+import fr.acinq.eclair.profit.{PeerScorer, PeerStatsTracker}
 import fr.acinq.eclair.reputation.ReputationRecorder
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
@@ -400,8 +401,11 @@ class Setup(val datadir: File,
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
 
       balanceActor = system.spawn(BalanceActor(bitcoinClient, nodeParams.channelConf.minDepth, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
-
       postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard, router.toTyped, register, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
+      peerScorer_opt = if (nodeParams.peerScoringConfig.enabled) {
+        val statsTracker = system.spawn(Behaviors.supervise(PeerStatsTracker(nodeParams.db.audit, channels)).onFailure(typed.SupervisorStrategy.restart), name = "peer-stats-tracker")
+        Some(system.spawn(Behaviors.supervise(PeerScorer(nodeParams, bitcoinClient, statsTracker, register)).onFailure(typed.SupervisorStrategy.restart), name = "peer-scorer"))
+      } else None
 
       kit = Kit(
         nodeParams = nodeParams,
@@ -419,6 +423,7 @@ class Setup(val datadir: File,
         postman = postman,
         offerManager = offerManager,
         defaultOfferHandler = defaultOfferHandler,
+        peerScorer_opt = peerScorer_opt,
         wallet = bitcoinClient)
 
       zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
@@ -489,6 +494,7 @@ case class Kit(nodeParams: NodeParams,
                postman: typed.ActorRef[Postman.Command],
                offerManager: typed.ActorRef[OfferManager.Command],
                defaultOfferHandler: typed.ActorRef[OfferManager.HandlerCommand],
+               peerScorer_opt: Option[typed.ActorRef[PeerScorer.Command]],
                wallet: OnChainWallet with OnChainAddressCache)
 
 object Kit {

@@ -20,13 +20,17 @@ import akka.http.scaladsl.server.Route
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OutPoint, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
 import fr.acinq.eclair.channel.ChannelSpendSignature
 import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
+import fr.acinq.eclair.profit.PeerScorer
+
+import java.util.concurrent.TimeUnit
+import scala.concurrent.duration.FiniteDuration
 
 trait Control {
   this: Service with EclairDirectives =>
@@ -78,6 +82,29 @@ trait Control {
     }
   }
 
-  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex ~ manualWatchFundingSpent ~ spendFromChannelAddressPrep ~ spendFromChannelAddress ~ spendFromTaprootChannelAddress
+  val configurePeerScorer: Route = postRequest("configurepeerscorer") { implicit t =>
+    formFields("autoFund".as[Boolean] ?, "autoClose".as[Boolean] ?, "autoUpdateFees".as[Boolean] ?, "addWhitelistedPeers".as[List[PublicKey]](pubkeyListUnmarshaller).?, "removeWhitelistedPeers".as[List[PublicKey]](pubkeyListUnmarshaller).?, "minFundingAmount".as[Satoshi] ?, "maxFundingAmount".as[Satoshi] ?, "maxPerPeerCapacity".as[Satoshi] ?, "maxFundingTxPerDay".as[Int] ?, "localBalanceClosingThreshold".as[Satoshi] ?, "remoteBalanceClosingThreshold".as[Satoshi] ?, "minOnChainBalance".as[Satoshi] ?, "maxFeerate".as[FeeratePerByte] ?, "fundingCooldown".as[Int] ?) {
+      (autoFund_opt, autoClose_opt, autoUpdateFees_opt, addWhitelistedPeers_opt, removeWhitelistedPeers_opt, minFundingAmount_opt, maxFundingAmount_opt, maxPerPeerCapacity_opt, maxFundingTxPerDay_opt, localBalanceClosingThreshold_opt, remoteBalanceClosingThreshold_opt, minOnChainBalance_opt, maxFeerate_opt, fundingCooldown_opt) =>
+        val cfg = PeerScorer.ConfigOverrides(
+          autoFundOverride_opt = autoFund_opt,
+          autoCloseOverride_opt = autoClose_opt,
+          autoUpdateFeesOverride_opt = autoUpdateFees_opt,
+          addWhiteListedPeers = addWhitelistedPeers_opt.map(_.toSet).getOrElse(Set.empty),
+          removeWhiteListedPeers = removeWhitelistedPeers_opt.map(_.toSet).getOrElse(Set.empty),
+          minFundingAmountOverride_opt = minFundingAmount_opt,
+          maxFundingAmountOverride_opt = maxFundingAmount_opt,
+          maxPerPeerCapacityOverride_opt = maxPerPeerCapacity_opt,
+          maxFundingTxPerDayOverride_opt = maxFundingTxPerDay_opt,
+          localBalanceClosingThresholdOverride_opt = localBalanceClosingThreshold_opt,
+          remoteBalanceClosingThresholdOverride_opt = remoteBalanceClosingThreshold_opt,
+          minOnChainBalanceOverride_opt = minOnChainBalance_opt,
+          maxFeerateOverride_opt = maxFeerate_opt.map(_.perKw),
+          fundingCooldownOverride_opt = fundingCooldown_opt.map(hours => FiniteDuration(hours, TimeUnit.HOURS)),
+        )
+        complete(eclairApi.configurePeerScorer(cfg))
+    }
+  }
+
+  val controlRoutes: Route = enableFromFutureHtlc ~ resetBalance ~ forceCloseResetFundingIndex ~ manualWatchFundingSpent ~ spendFromChannelAddressPrep ~ spendFromChannelAddress ~ spendFromTaprootChannelAddress ~ configurePeerScorer
 
 }
