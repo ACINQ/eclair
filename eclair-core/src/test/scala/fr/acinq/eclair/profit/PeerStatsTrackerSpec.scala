@@ -10,16 +10,17 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.PaymentEvent.{IncomingPayment, OutgoingPayment}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.payment.{ChannelPaymentRelayed, TrampolinePaymentRelayed}
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, PaymentReceived, PaymentSent, TrampolinePaymentRelayed}
 import fr.acinq.eclair.profit.PeerStatsTracker._
 import fr.acinq.eclair.transactions.Transactions.{ClosingTx, InputInfo}
 import fr.acinq.eclair.wire.protocol.ChannelUpdate.{ChannelFlags, MessageFlags}
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, LiquidityAds}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, TestDatabases, TimestampMilli, TimestampSecond, ToMilliSatoshiConversion, randomBytes32, randomKey}
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
 
+import java.util.UUID
 import scala.concurrent.duration.DurationInt
 
 class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
@@ -119,6 +120,11 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
       incoming = Seq(IncomingPayment(c2b.channelId, remoteNodeId2, 15_000_000 msat, now - 5.minutes)),
       outgoing = Seq(OutgoingPayment(c1b.channelId, remoteNodeId1, 10_000_000 msat, now))
     ))
+    // We need to wait for past events to be loaded from the DB.
+    probe.awaitAssert({
+      tracker.ref ! GetLatestStats(probe.ref)
+      assert(probe.expectMessageType[LatestStats].peers.nonEmpty)
+    })
     tracker.ref ! GetLatestStats(probe.ref)
     inside(probe.expectMessageType[LatestStats]) { s =>
       // We only have active channels with our first peer.
@@ -283,6 +289,12 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
       nextTrampolineAmount = 50_000_000 msat,
     ))
 
+    // We need to wait for past events to be loaded from the DB.
+    probe.awaitAssert({
+      tracker.ref ! GetLatestStats(probe.ref)
+      assert(probe.expectMessageType[LatestStats].peers.nonEmpty)
+    })
+
     // We keep track of aggregated statistics per bucket.
     tracker.ref ! GetLatestStats(probe.ref)
     inside(probe.expectMessageType[LatestStats]) { s =>
@@ -333,6 +345,150 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
       assert(peer3.stats(2).totalAmountOut == 9_000_000.msat)
       assert(peer3.stats(2).relayFeeEarned == 1_000_000.msat)
       assert(peer3.stats.map(_.outgoingFlow).sum == 24_000_000.msat)
+    }
+  }
+
+  test("initialize peer stats with past events") {
+    val now = TimestampMilli.now()
+    val probe = TestProbe[LatestStats]()
+    val db = TestDatabases.inMemoryDb().audit
+    val channelId1 = randomBytes32()
+    val channelId2 = randomBytes32()
+    val dummyTx = Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(dummyPubKey))), 0)
+
+    // PaymentSent through remoteNodeId1, 1 day ago.
+    val sentAmount = 100_000_000 msat
+    val sentFees = 1_000 msat
+    val sentAt = now - 1.day
+    db.add(PaymentSent(
+      UUID.randomUUID(), randomBytes32(), sentAmount - sentFees, randomKey().publicKey,
+      PaymentSent.PaymentPart(UUID.randomUUID(), OutgoingPayment(channelId1, remoteNodeId1, sentAmount, sentAt), sentFees, None, sentAt - 10.seconds) :: Nil,
+      None, sentAt - 10.seconds
+    ))
+
+    // PaymentReceived through remoteNodeId2, 2 days ago.
+    val receivedAmount = 50_000_000 msat
+    val receivedAt = now - 2.days
+    db.add(PaymentReceived(randomBytes32(), IncomingPayment(channelId2, remoteNodeId2, receivedAmount, receivedAt) :: Nil))
+
+    // ChannelPaymentRelayed from remoteNodeId2 -> remoteNodeId1, 12 hours ago.
+    val relayedInAmount = 25_000_000 msat
+    val relayedOutAmount = 24_500_000 msat
+    val relayedAt = now - 12.hours
+    db.add(ChannelPaymentRelayed(
+      randomBytes32(),
+      Seq(IncomingPayment(channelId2, remoteNodeId2, relayedInAmount, relayedAt - 1.minute)),
+      Seq(OutgoingPayment(channelId1, remoteNodeId1, relayedOutAmount, relayedAt))
+    ))
+
+    // TransactionPublished + TransactionConfirmed for remoteNodeId1 as buyer, 3 days ago.
+    val buyerPurchase = LiquidityAds.PurchaseBasicInfo(isBuyer = true, 100_000 sat, LiquidityAds.Fees(50 sat, 200 sat))
+    val txPublished1 = TransactionPublished(channelId1, remoteNodeId1, dummyTx, 300 sat, 0 sat, "funding", Some(buyerPurchase), now - 3.days)
+    db.add(txPublished1)
+    db.add(TransactionConfirmed(channelId1, remoteNodeId1, txPublished1.tx, now - 3.days + 10.minutes))
+
+    // TransactionPublished + TransactionConfirmed for remoteNodeId2 as seller, 5 days ago.
+    val sellerPurchase = LiquidityAds.PurchaseBasicInfo(isBuyer = false, 200_000 sat, LiquidityAds.Fees(100 sat, 500 sat))
+    val dummyTx2 = Transaction(2, Nil, Seq(TxOut(200_000 sat, Script.pay2wpkh(dummyPubKey))), 0)
+    val txPublished2 = TransactionPublished(channelId2, remoteNodeId2, dummyTx2, 150 sat, 0 sat, "splice", Some(sellerPurchase), now - 5.days)
+    db.add(txPublished2)
+    db.add(TransactionConfirmed(channelId2, remoteNodeId2, txPublished2.tx, now - 5.days + 20.minutes))
+
+    // TransactionPublished + TransactionConfirmed for remoteNodeId1, plain (no liquidity purchase), 1 day ago.
+    val dummyTx3 = Transaction(2, Nil, Seq(TxOut(30_000 sat, Script.pay2wpkh(dummyPubKey))), 0)
+    val txPublished3 = TransactionPublished(channelId1, remoteNodeId1, dummyTx3, 200 sat, 0 sat, "mutual", None, now - 1.day)
+    db.add(txPublished3)
+    db.add(TransactionConfirmed(channelId1, remoteNodeId1, txPublished3.tx, now - 1.day + 5.minutes))
+
+    // Event outside 7-day window (10 days ago) — should NOT appear in stats.
+    val oldAt = now - 10.days
+    db.add(PaymentSent(
+      UUID.randomUUID(), randomBytes32(), 500_000_000 msat, randomKey().publicKey,
+      PaymentSent.PaymentPart(UUID.randomUUID(), OutgoingPayment(channelId1, remoteNodeId1, 500_000_000 msat, oldAt), 0 msat, None, oldAt) :: Nil,
+      None, oldAt
+    ))
+
+    // Spawn tracker with channels for both peers.
+    val c1 = channel(remoteNodeId1, toLocal = 0.3 btc, toRemote = 0.2 btc)
+    val c2 = channel(remoteNodeId2, toLocal = 0.1 btc, toRemote = 0.4 btc)
+    val tracker = testKit.spawn(PeerStatsTracker(db, Seq(c1, c2)))
+
+    probe.awaitAssert({
+      tracker.ref ! GetLatestStats(probe.ref)
+      inside(probe.expectMessageType[LatestStats]) { s =>
+        assert(s.peers.map(_.remoteNodeId).toSet == Set(remoteNodeId1, remoteNodeId2))
+
+        val peer1 = s.peers.find(_.remoteNodeId == remoteNodeId1).get
+        // remoteNodeId1: sent 100_000_000 msat out + relayed 24_500_000 msat out (the older event is ignored).
+        assert(peer1.stats.map(_.totalAmountOut).sum == sentAmount + relayedOutAmount)
+        assert(peer1.stats.map(_.totalAmountIn).sum == 0.msat)
+        // on-chain fees: 300 sat (buyer tx) + 200 sat (plain tx)
+        assert(peer1.stats.map(_.onChainFeePaid).sum == 500.sat)
+        // liquidity fee paid as buyer: 50 + 200 = 250 sat
+        assert(peer1.stats.map(_.liquidityFeePaid).sum == 250.sat)
+        assert(peer1.stats.map(_.liquidityFeeEarned).sum == 0.sat)
+
+        val peer2 = s.peers.find(_.remoteNodeId == remoteNodeId2).get
+        // remoteNodeId2: received 50_000_000 msat + relayed 25_000_000 msat in
+        assert(peer2.stats.map(_.totalAmountIn).sum == receivedAmount + relayedInAmount)
+        assert(peer2.stats.map(_.totalAmountOut).sum == 0.msat)
+        // on-chain fees: 150 sat (seller tx)
+        assert(peer2.stats.map(_.onChainFeePaid).sum == 150.sat)
+        // liquidity fee earned as seller: 100 + 500 = 600 sat
+        assert(peer2.stats.map(_.liquidityFeeEarned).sum == 600.sat)
+        assert(peer2.stats.map(_.liquidityFeePaid).sum == 0.sat)
+      }
+    })
+  }
+
+  test("read confirmed transactions when statistics are requested") {
+    val probe = TestProbe[LatestStats]()
+    val db = TestDatabases.inMemoryDb().audit
+    val channelId1 = randomBytes32()
+    val dummyTx = Transaction(2, Nil, Seq(TxOut(50_000 sat, Script.pay2wpkh(dummyPubKey))), 0)
+
+    // Spawn tracker with a channel for remoteNodeId1 and empty DB.
+    val c1 = channel(remoteNodeId1, toLocal = 0.3 btc, toRemote = 0.2 btc)
+    val tracker = testKit.spawn(PeerStatsTracker(db, Seq(c1)))
+
+    // Wait for initial loading to complete (should be almost instantaneous on an empty DB).
+    probe.awaitAssert({
+      tracker.ref ! GetLatestStats(probe.ref)
+      assert(probe.expectMessageType[LatestStats].peers.nonEmpty)
+    })
+
+    // Add a confirmed transaction after starting.
+    val now = TimestampMilli.now()
+    val txPublished1 = TransactionPublished(channelId1, remoteNodeId1, dummyTx, 300 sat, 0 sat, "funding", None, now + 5.millis)
+    db.add(txPublished1)
+    db.add(TransactionConfirmed(channelId1, remoteNodeId1, txPublished1.tx, now + 10.millis))
+
+    probe.awaitAssert({
+      tracker.ref ! GetLatestStats(probe.ref)
+      inside(probe.expectMessageType[LatestStats]) { s =>
+        val peer1 = s.peers.find(_.remoteNodeId == remoteNodeId1).get
+        assert(peer1.stats.map(_.onChainFeePaid).sum == 300.sat)
+      }
+    })
+
+    // Verify that we don't count transactions multiple times.
+    tracker.ref ! GetLatestStats(probe.ref)
+    inside(probe.expectMessageType[LatestStats]) { s =>
+      val peer1 = s.peers.find(_.remoteNodeId == remoteNodeId1).get
+      assert(peer1.stats.map(_.onChainFeePaid).sum == 300.sat)
+    }
+
+    // Add another confirmed transaction, verify the cumulative total.
+    val now2 = TimestampMilli.now()
+    val dummyTx2 = Transaction(2, Nil, Seq(TxOut(30_000 sat, Script.pay2wpkh(dummyPubKey))), 0)
+    val txPublished2 = TransactionPublished(channelId1, remoteNodeId1, dummyTx2, 150 sat, 0 sat, "splice", None, now2)
+    db.add(txPublished2)
+    db.add(TransactionConfirmed(channelId1, remoteNodeId1, txPublished2.tx, now2))
+
+    tracker.ref ! GetLatestStats(probe.ref)
+    inside(probe.expectMessageType[LatestStats]) { s =>
+      val peer1 = s.peers.find(_.remoteNodeId == remoteNodeId1).get
+      assert(peer1.stats.map(_.onChainFeePaid).sum == 450.sat)
     }
   }
 
