@@ -4,6 +4,11 @@
 
 ## Major changes
 
+### Update minimal version of Bitcoin Core
+
+With this release, eclair requires using Bitcoin Core 30.x.
+Newer versions of Bitcoin Core may be used, but have not been extensively tested.
+
 ### Remove support for non-anchor channels
 
 We remove the code used to support legacy channels that don't use anchor outputs or taproot.
