@@ -3468,7 +3468,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         } else {
           None
         }
-        val announcementSigs_opt = if (notAnnouncedYet || channelReestablish.retransmitAnnSigs) {
+        val announcementSigs_opt = if (notAnnouncedYet || (channelReestablish.retransmitAnnSigs && channelReestablish.myCurrentFundingLocked_opt.contains(c.fundingTxId))) {
           // The funding transaction is confirmed, so we've already sent our announcement_signatures.
           // We haven't announced the channel yet, which means we haven't received our peer's announcement_signatures.
           // We retransmit our announcement_signatures to let our peer know that we're ready to announce the channel.
@@ -3560,7 +3560,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       case None => None
       // This retransmit mechanism is only available for splice transactions.
       case Some(c) if c.fundingTxIndex == 0 => None
-      case Some(c) if channelReestablish.retransmitAnnSigs && commitments.announceChannel =>
+      case Some(c) if channelReestablish.retransmitAnnSigs && commitments.announceChannel && channelReestablish.myCurrentFundingLocked_opt.contains(c.fundingTxId) =>
         val localAnnSigs = c.signAnnouncement(nodeParams, commitments.channelParams, channelKeys.fundingKey(c.fundingTxIndex))
         localAnnSigs.foreach(annSigs => {
           log.debug("re-sending announcement_signatures for fundingTxId={}", c.fundingTxId)

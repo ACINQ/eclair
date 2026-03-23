@@ -275,6 +275,14 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.forall(c => c.fundingTxIndex > fundingTxIndex || c.fundingTxId == spliceTx.txid), interval = 100 millis)
   }
 
+  private def getFundingScid(f: FixtureParam, fundingTx: Transaction): Option[RealShortChannelId] = {
+    import f._
+
+    val aliceScid_opt = alice.commitments.all.find(_.fundingTxId == fundingTx.txid).flatMap(_.shortChannelId_opt)
+    val bobScid_opt = bob.commitments.all.find(_.fundingTxId == fundingTx.txid).flatMap(_.shortChannelId_opt)
+    aliceScid_opt.orElse(bobScid_opt)
+  }
+
   case class TestHtlcs(aliceToBob: Seq[(ByteVector32, UpdateAddHtlc)], bobToAlice: Seq[(ByteVector32, UpdateAddHtlc)])
 
   private def setupHtlcs(f: FixtureParam): TestHtlcs = {
@@ -1507,9 +1515,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectMsg(UnwatchFundingSpent(fundingInput.txid, fundingInput.index.toInt))
     assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx1.txid)
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    inside(alice2bob.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, spliceTx1).contains(ann.shortChannelId)) }
     alice2bob.forward(bob)
     val bobAnnSigs1 = bob2alice.expectMsgType[AnnouncementSignatures] // Alice doesn't receive Bob's signatures.
+    assert(getFundingScid(f, spliceTx1).contains(bobAnnSigs1.shortChannelId))
     awaitAssert(assert(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.exists(_ != ann)))
     val spliceAnn1 = bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
     assert(spliceAnn1.shortChannelId != ann.shortChannelId)
@@ -1540,9 +1549,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectMsg(UnwatchFundingSpent(fundingInput1.txid, fundingInput1.index.toInt))
     assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx2.txid)
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    inside(alice2bob.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, spliceTx2).contains(ann.shortChannelId)) }
     alice2bob.forward(bob)
     val bobAnnSigs2 = bob2alice.expectMsgType[AnnouncementSignatures] // Alice doesn't receive Bob's signatures.
+    assert(getFundingScid(f, spliceTx2).contains(bobAnnSigs2.shortChannelId))
     awaitAssert(assert(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.exists(_ != spliceAnn1)))
     val spliceAnn2 = bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
     assert(spliceAnn2.shortChannelId != spliceAnn1.shortChannelId)
@@ -1580,7 +1590,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // Alice and Bob want to announce the initial funding transaction, but the messages are dropped.
     val shortChannelId = alice2bob.expectMsgType[AnnouncementSignatures].shortChannelId
     alice2bob.expectMsgType[ChannelUpdate]
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    inside(bob2alice.expectMsgType[AnnouncementSignatures]) { ann => assert(ann.shortChannelId == shortChannelId) }
     bob2alice.expectMsgType[ChannelUpdate]
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.isEmpty)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.isEmpty)
@@ -1602,9 +1612,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectMsg(UnwatchFundingSpent(fundingInput.txid, fundingInput.index.toInt))
     assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid)
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    inside(alice2bob.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, spliceTx).contains(ann.shortChannelId)) }
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[AnnouncementSignatures] // Alice doesn't receive Bob's signatures.
+    // Alice doesn't receive Bob's signatures.
+    inside(bob2alice.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, spliceTx).contains(ann.shortChannelId)) }
     awaitAssert(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.nonEmpty)
     val spliceAnn = bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
     assert(spliceAnn.shortChannelId != shortChannelId)
@@ -3398,17 +3409,17 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
 
     // Alice sends announcement_signatures to Bob.
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    inside(alice2bob.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, fundingTx).contains(ann.shortChannelId)) }
     alice2bob.forward(bob)
 
     // Alice disconnects before Bob can send announcement_signatures.
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    inside(bob2alice.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, fundingTx).contains(ann.shortChannelId)) }
 
     disconnect(f)
     val (channelReestablishA, channelReestablishB) = reconnect(f)
     assert(channelReestablishA.retransmitAnnSigs)
     assert(!channelReestablishB.retransmitAnnSigs)
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    inside(bob2alice.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, fundingTx).contains(ann.shortChannelId)) }
     bob2alice.forward(alice)
     bob2alice.expectNoMessage(100 millis)
     alice2bob.expectNoMessage(100 millis)
@@ -3418,6 +3429,49 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectNoMessage(100 millis)
 
     // the splice is locked on both sides
+    alicePeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+    bobPeer.fishForMessage() {
+      case e: ChannelReadyForPayments => e.fundingTxIndex == 1
+      case _ => false
+    }
+  }
+
+  test("disconnect before receiving announcement_signatures from one peer (splice locked on one side only)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
+    import f._
+
+    val fundingTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
+    checkWatchConfirmed(f, fundingTx)
+
+    // The splice confirms on Alice's side.
+    alice ! WatchFundingConfirmedTriggered(BlockHeight(420000), 42, fundingTx)
+    alice2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
+    alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+
+    // The splice confirms on Bob's side while offline.
+    disconnect(f)
+    bob ! WatchFundingConfirmedTriggered(BlockHeight(420000), 42, fundingTx)
+    bob2blockchain.expectMsgTypeHaving[WatchFundingSpent](_.txId == fundingTx.txid)
+
+    // On reconnection, both nodes want to exchange announcement_signatures for the splice.
+    val (channelReestablishA, channelReestablishB) = reconnect(f)
+    assert(channelReestablishA.retransmitAnnSigs)
+    assert(channelReestablishA.myCurrentFundingLocked_opt.contains(fundingTx.txid))
+    assert(channelReestablishB.retransmitAnnSigs)
+    assert(channelReestablishB.myCurrentFundingLocked_opt.contains(fundingTx.txid))
+
+    inside(alice2bob.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, fundingTx).contains(ann.shortChannelId)) }
+    alice2bob.forward(bob)
+    inside(bob2alice.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, fundingTx).contains(ann.shortChannelId)) }
+    bob2alice.forward(alice)
+    bob2alice.expectNoMessage(100 millis)
+    alice2bob.expectNoMessage(100 millis)
+
+    // The splice is locked on both sides.
     alicePeer.fishForMessage() {
       case e: ChannelReadyForPayments => e.fundingTxIndex == 1
       case _ => false
@@ -3448,18 +3502,18 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
 
     // Alice sends announcement_signatures to Bob.
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    inside(alice2bob.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, fundingTx).contains(ann.shortChannelId)) }
     // Bob sends announcement_signatures to Alice.
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    inside(bob2alice.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, fundingTx).contains(ann.shortChannelId)) }
 
     disconnect(f)
     reconnect(f)
 
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    inside(alice2bob.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, fundingTx).contains(ann.shortChannelId)) }
     alice2bob.forward(bob)
     alice2bob.expectNoMessage(100 millis)
 
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    inside(bob2alice.expectMsgType[AnnouncementSignatures]) { ann => assert(getFundingScid(f, fundingTx).contains(ann.shortChannelId)) }
     bob2alice.forward(alice)
     bob2alice.expectNoMessage(100 millis)
 
