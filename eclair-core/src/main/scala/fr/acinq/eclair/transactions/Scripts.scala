@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
+import fr.acinq.secp256k1.Secp256k1
 import scodec.bits.ByteVector
 
 import scala.util.{Success, Try}
@@ -40,7 +41,7 @@ object Scripts {
    * @param sig         raw ECDSA signature (r,s)
    * @param sighashType sighash flags
    */
-  def der(sig: ByteVector64, sighashType: Int = SIGHASH_ALL): ByteVector = Crypto.compact2der(sig) :+ sighashType.toByte
+  def der(sig: ByteVector64, sighashType: Int = SIGHASH_ALL): ByteVector = ByteVector.view(Secp256k1.get().compact2der(sig.toArray)) :+ sighashType.toByte
 
   private def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
     case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
