@@ -95,7 +95,7 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
   /** We keep track of pending pings to defend against ping flooding. */
   private var pendingPings = 0
 
-  private def decodeAndSendToListener(listener: ActorRef, plaintextMessages: Seq[ByteVector]): Map[LightningMessage, Int] = {
+  private def decodeAndSendToListener(listener: ActorRef, plaintextMessages: Seq[ByteVector]): Either[ByteVector, Map[LightningMessage, Int]] = {
     log.debug("decoding {} plaintext messages", plaintextMessages.size)
     var m = Map.empty[LightningMessage, Int]
     plaintextMessages.foreach(plaintext => codec.decode(plaintext.bits) match {
@@ -106,16 +106,17 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
           pendingPings += 1
           if (pendingPings > 1) {
             // We will kill the connection anyway, no need to process remaining messages
-            return m
+            return Right(m)
           }
         }
         listener ! message
         m += (message -> (m.getOrElse(message, 0) + 1))
       case Attempt.Failure(err) =>
         log.warning("cannot deserialize {}: {}", plaintext.toHex, err.message)
+        return Left(plaintext)
     })
     log.debug("decoded {} messages", m.values.sum)
-    m
+    Right(m)
   }
 
   private def encodeAndSendToPeer(encryptor: Encryptor, t: LightningMessage): Encryptor = {
@@ -182,16 +183,20 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
       case Event(Listener(listener), d@WaitingForListenerData(_, dec)) =>
         context.watch(listener)
         val (dec1, plaintextMessages) = dec.decrypt()
-        val unackedReceived1 = decodeAndSendToListener(listener, plaintextMessages)
-        if (pendingPings > 1) {
-          log.warning("ping flood detected (pendingPings={}): closing connection", pendingPings)
-          stop(FSM.Normal)
-        } else {
-          if (unackedReceived1.isEmpty) {
-            log.debug("no decoded messages, resuming reading")
-            connection ! Tcp.ResumeReading
-          }
-          goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[LightningMessage], Queue.empty[LightningMessage]), unackedReceived = unackedReceived1, unackedSent = None)
+        decodeAndSendToListener(listener, plaintextMessages) match {
+          case Left(msg) =>
+            log.warning("malformed message detected: closing connection")
+            encodeAndSendToPeer(d.encryptor, Warning(s"could not decode message: ${msg.toHex}"))
+            stop(FSM.Normal)
+          case _ if pendingPings > 1 =>
+            log.warning("ping flood detected (pendingPings={}): closing connection", pendingPings)
+            stop(FSM.Normal)
+          case Right(unackedReceived1) =>
+            if (unackedReceived1.isEmpty) {
+              log.debug("no decoded messages, resuming reading")
+              connection ! Tcp.ResumeReading
+            }
+            goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty[LightningMessage], Queue.empty[LightningMessage]), unackedReceived = unackedReceived1, unackedSent = None)
         }
     }
   }
@@ -201,16 +206,20 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
       case Event(Tcp.Received(data), d: NormalData) =>
         log.debug("received chunk of size={}", data.size)
         val (dec1, plaintextMessages) = d.decryptor.copy(buffer = d.decryptor.buffer ++ data).decrypt()
-        val unackedReceived1 = decodeAndSendToListener(d.listener, plaintextMessages)
-        if (pendingPings > 1) {
-          log.warning("ping flood detected (pendingPings={}): closing connection", pendingPings)
-          stop(FSM.Normal)
-        } else {
-          if (unackedReceived1.isEmpty) {
-            log.debug("no decoded messages, resuming reading")
-            connection ! Tcp.ResumeReading
-          }
-          stay() using d.copy(decryptor = dec1, unackedReceived = unackedReceived1)
+        decodeAndSendToListener(d.listener, plaintextMessages) match {
+          case Left(msg) =>
+            log.warning("malformed message detected: closing connection")
+            encodeAndSendToPeer(d.encryptor, Warning(s"could not decode message: ${msg.toHex}"))
+            stop(FSM.Normal)
+          case _ if pendingPings > 1 =>
+            log.warning("ping flood detected (pendingPings={}): closing connection", pendingPings)
+            stop(FSM.Normal)
+          case Right(unackedReceived1) =>
+            if (unackedReceived1.isEmpty) {
+              log.debug("no decoded messages, resuming reading")
+              connection ! Tcp.ResumeReading
+            }
+            stay() using d.copy(decryptor = dec1, unackedReceived = unackedReceived1)
         }
 
       case Event(ReadAck(msg: LightningMessage), d: NormalData) =>

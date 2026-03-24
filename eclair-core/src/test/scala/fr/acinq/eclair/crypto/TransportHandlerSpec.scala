@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Stash, SupervisorStrategy, Terminated}
 import akka.io.Tcp
 import akka.testkit.{TestActorRef, TestFSMRef, TestProbe}
-import fr.acinq.eclair.{TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.crypto.Noise.{Chacha20Poly1305CipherFunctions, CipherState}
 import fr.acinq.eclair.crypto.TransportHandler.{Encryptor, ExtendedCipherState, Listener}
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{lightningMessageCodec, pingCodec, warningCodec}
@@ -75,12 +75,12 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
     probe1.expectTerminated(pipe)
   }
 
-  test("handle unknown messages") {
+  test("close connection on malformed messages") {
     val incompleteCodec: Codec[LightningMessage] = discriminated[LightningMessage].by(uint16)
       .typecase(1, warningCodec)
       .typecase(18, pingCodec)
 
-    val pipe = system.actorOf(Props[MyPipePull]())
+    val pipe = system.actorOf(Props[MyPipe]())
     val probe1 = TestProbe()
     val probe2 = TestProbe()
     val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, incompleteCodec))
@@ -96,23 +96,22 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
     awaitCond(initiator.stateName == TransportHandler.Normal)
     awaitCond(responder.stateName == TransportHandler.Normal)
 
+    // We receive a ping message that we know how to decode.
     val msg1 = Ping(130, hex"deadbeef")
     responder ! msg1
     probe1.expectMsg(msg1)
     probe1.reply(TransportHandler.ReadAck(msg1))
 
+    // We receive a pong message which we don't know how to decode.
     responder ! Pong(hex"deadbeef")
-    probe1.expectNoMessage(2 seconds) // unknown message
+    // We send a warning and close the connection.
+    probe2.expectMsgType[Warning]
 
-    val msg2 = Warning(randomBytes32(), hex"beefdead")
-    responder ! msg2
-    probe1.expectMsg(msg2)
-    probe1.reply(TransportHandler.ReadAck(msg2))
-
+    probe1.watch(initiator)
+    probe1.expectTerminated(initiator)
+    probe1.watch(responder)
+    probe1.expectTerminated(responder)
     probe1.watch(pipe)
-    initiator.stop()
-    responder.stop()
-    system.stop(pipe)
     probe1.expectTerminated(pipe)
   }
 
