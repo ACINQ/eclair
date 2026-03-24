@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel.states.a
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.Bob
+import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
@@ -89,6 +90,31 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     assert(!accept.requireConfirmedInputs)
 
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
+  }
+
+  test("recv OpenDualFundedChannel (zero-fee commitments)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    import f._
+
+    val open = alice2bob.expectMsgType[OpenDualFundedChannel]
+    assert(open.channelType_opt.contains(ChannelTypes.ZeroFeeCommitments()))
+    assert(open.fundingFeerate == TestConstants.feeratePerKw)
+    assert(open.commitmentFeerate == FeeratePerKw(0 sat))
+    alice2bob.forward(bob)
+    val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
+    assert(accept.channelType_opt.contains(ChannelTypes.ZeroFeeCommitments()))
+    awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
+  }
+
+  test("recv OpenDualFundedChannel (zero-fee commitments, non-zero feerate)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    import f._
+
+    val open = alice2bob.expectMsgType[OpenDualFundedChannel]
+    assert(open.channelType_opt.contains(ChannelTypes.ZeroFeeCommitments()))
+    alice2bob.forward(bob, open.copy(commitmentFeerate = FeeratePerByte(1 sat).perKw))
+    val error = bob2alice.expectMsgType[Error]
+    assert(error == Error(open.temporaryChannelId, FeerateTooDifferent(open.temporaryChannelId, FeeratePerKw(0 sat), FeeratePerByte(1 sat).perKw).getMessage))
+    bobListener.expectMsgType[ChannelAborted]
+    awaitCond(bob.stateName == CLOSED)
   }
 
   test("recv OpenDualFundedChannel (with liquidity ads)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.LiquidityAds)) { f =>
@@ -172,10 +198,19 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
   test("recv OpenDualFundedChannel (invalid max accepted htlcs)", Tag(ChannelStateTestsTags.DualFunding)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenDualFundedChannel]
-    val invalidMaxAcceptedHtlcs = Channel.MAX_ACCEPTED_HTLCS + 1
-    bob ! open.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)
+    bob ! open.copy(maxAcceptedHtlcs = 484)
     val error = bob2alice.expectMsgType[Error]
-    assert(error == Error(open.temporaryChannelId, InvalidMaxAcceptedHtlcs(open.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage))
+    assert(error == Error(open.temporaryChannelId, InvalidMaxAcceptedHtlcs(open.temporaryChannelId, maxAcceptedHtlcs = 484, max = 483).getMessage))
+    bobListener.expectMsgType[ChannelAborted]
+    awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv OpenDualFundedChannel (invalid max accepted htlcs, zero-fee commitments)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenDualFundedChannel]
+    bob ! open.copy(maxAcceptedHtlcs = 115)
+    val error = bob2alice.expectMsgType[Error]
+    assert(error == Error(open.temporaryChannelId, InvalidMaxAcceptedHtlcs(open.temporaryChannelId, maxAcceptedHtlcs = 115, max = 114).getMessage))
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
   }

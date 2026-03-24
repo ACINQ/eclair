@@ -774,7 +774,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     aliceListener.expectMsgType[TransactionPublished]
     alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(claimMain.tx, Seq(bobCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
     alice2blockchain.expectWatchOutputSpent(claimMain.input)
@@ -810,7 +810,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
     assert(aliceListener.expectMsgType[TransactionPublished].tx.txid == bobCommitTx1.txid)
     alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(claimMain.tx, Seq(bobCommitTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx1.txid)
     alice2blockchain.expectWatchOutputSpent(claimMain.input)
@@ -833,7 +833,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(alice2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
     alice2 ! WatchFundingSpentTriggered(bobCommitTx)
     alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMainAlice = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMainAlice = alice2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(claimMainAlice.tx, Seq(bobCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
     alice2blockchain.expectWatchOutputSpent(claimMainAlice.input)
@@ -844,7 +844,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     assert(bob2blockchain.expectMsgType[WatchFundingSpent].txId == fundingTx.txid)
     bob2 ! WatchFundingSpentTriggered(aliceCommitTx)
     bob2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMainBob = bob2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMainBob = bob2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(claimMainBob.tx, Seq(aliceCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     bob2blockchain.expectWatchTxConfirmed(aliceCommitTx.txid)
     bob2blockchain.expectWatchOutputSpent(claimMainBob.input)
@@ -872,7 +872,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     alice2blockchain.expectMsg(UnwatchTxConfirmed(fundingTx2.txId))
     alice2 ! WatchFundingSpentTriggered(bobCommitTx1)
     alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMainAlice = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMainAlice = alice2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(claimMainAlice.tx, Seq(bobCommitTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx1.txid)
     alice2blockchain.expectWatchOutputSpent(claimMainAlice.input)
@@ -885,7 +885,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob2blockchain.expectMsg(UnwatchTxConfirmed(fundingTx2.txId))
     bob2 ! WatchFundingSpentTriggered(aliceCommitTx1)
     bob2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMainBob = bob2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMainBob = bob2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(claimMainBob.tx, Seq(aliceCommitTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     bob2blockchain.expectWatchTxConfirmed(aliceCommitTx1.txid)
     bob2blockchain.expectWatchOutputSpent(claimMainBob.input)
@@ -1331,7 +1331,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     val bobCommitTx = bob.signCommitTx()
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     val anchorTxRemote = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMainRemote = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMainRemote = alice2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(claimMainRemote.tx, Seq(bobCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx.txid)
     alice2blockchain.expectWatchOutputSpent(claimMainRemote.input)
@@ -1379,7 +1379,7 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     // Bob publishes his commit tx, Alice reacts by spending her remote main output.
     alice ! WatchFundingSpentTriggered(bobCommitTx1)
     val anchorRemote = alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMainRemote = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMainRemote = alice2blockchain.expectFinalTxPublished("remote-main")
     Transaction.correctlySpends(claimMainRemote.tx, Seq(bobCommitTx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     alice2blockchain.expectWatchTxConfirmed(bobCommitTx1.txid)
     alice2blockchain.expectWatchOutputsSpent(Seq(anchorRemote.input.outPoint, claimMainRemote.input))
