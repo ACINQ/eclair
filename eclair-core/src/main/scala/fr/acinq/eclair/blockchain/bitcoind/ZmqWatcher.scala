@@ -103,6 +103,8 @@ object ZmqWatcher {
     def txId: TxId
     /** Index of the outpoint to watch. */
     def outputIndex: Int
+    /** outpoint to watch */
+    def outPoint: OutPoint = OutPoint(txId, outputIndex)
     /**
      * TxIds of potential spending transactions; most of the time we know the txs, and it allows for optimizations.
      * This argument can safely be ignored by watcher implementations.
@@ -435,14 +437,14 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
           // This is an external channels: funds are not at risk, so we don't need to scan the blockchain to find the
           // spending transaction, it is costly and unnecessary. We simply check whether the output has already been
           // spent by a confirmed transaction.
-          client.isTransactionOutputSpent(w.txId, w.outputIndex).collect {
+          client.isTransactionOutputSpent(w.outPoint).collect {
             case true =>
               // The output has been spent, so we trigger the watch without including the spending transaction.
               context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId, None))
           }
         case _ =>
           // The parent tx was published, we need to make sure this particular output has not been spent.
-          client.isTransactionOutputSpendable(w.txId, w.outputIndex, includeMempool = true).collect {
+          client.isTransactionOutputSpendable(w.outPoint, includeMempool = true).collect {
             case false =>
               // The output has been spent, let's find the spending tx.
               // If we know some potential spending txs, we try to fetch them directly.
@@ -456,7 +458,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
                     case None =>
                       // The hints didn't help us, let's search for the spending transaction in the mempool.
                       log.info("{}:{} has already been spent, looking for the spending tx in the mempool", w.txId, w.outputIndex)
-                      client.lookForMempoolSpendingTx(w.txId, w.outputIndex).map(Some(_)).recover { case _ => None }.map {
+                      client.lookForMempoolSpendingTx(w.outPoint).map(Some(_)).recover { case _ => None }.map {
                         case Some(spendingTx) =>
                           log.info("found tx spending {}:{} in the mempool: txid={}", w.txId, w.outputIndex, spendingTx.txid)
                           context.self ! ProcessNewTransaction(spendingTx)
@@ -465,7 +467,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
                           // before we set the watch. We have to scan the blockchain to find it, which is expensive
                           // since bitcoind doesn't provide indexes for this scenario.
                           log.warn("{}:{} has already been spent, spending tx not in the mempool, looking in the blockchain...", w.txId, w.outputIndex)
-                          client.lookForSpendingTx(None, w.txId, w.outputIndex, nodeParams.channelConf.maxChannelSpentRescanBlocks).map { spendingTx =>
+                          client.lookForSpendingTx(None, w.outPoint, nodeParams.channelConf.maxChannelSpentRescanBlocks).map { spendingTx =>
                             log.warn("found the spending tx of {}:{} in the blockchain: txid={}", w.txId, w.outputIndex, spendingTx.txid)
                             context.self ! ProcessNewTransaction(spendingTx)
                           }.recover {
