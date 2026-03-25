@@ -758,7 +758,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
             // unconfirmed inputs, because if they are valid but not in our mempool we would incorrectly consider
             // them unspendable (unknown). We want to reject unspendable inputs to immediately fail the funding
             // attempt, instead of waiting to detect the double-spend later.
-            wallet.isTransactionOutputSpendable(outpoint.txid, outpoint.index.toInt, includeMempool = true)
+            wallet.isTransactionOutputSpendable(outpoint, includeMempool = true)
           case _ => Future.successful(false)
         }
         case Success(false) => Future.successful(false)
