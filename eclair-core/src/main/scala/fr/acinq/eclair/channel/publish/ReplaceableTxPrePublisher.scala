@@ -100,7 +100,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
     context.pipeToSelf(bitcoinClient.getTxConfirmations(fundingOutpoint.txid).flatMap {
       case Some(_) =>
         // The funding transaction was found, let's see if we can still spend it.
-        bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = true).flatMap {
+        bitcoinClient.isTransactionOutputSpendable(fundingOutpoint, includeMempool = true).flatMap {
           case true =>
             // The funding output is unspent: let's publish our anchor transaction to get our local commit confirmed.
             Future.successful(ParentTxOk(confirmed = false))
@@ -163,7 +163,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
       case Some(_) =>
         // The funding transaction was found, let's see if we can still spend it. Note that in this case, we only look
         // at *confirmed* spending transactions (unlike the local commit case).
-        bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
+        bitcoinClient.isTransactionOutputSpendable(fundingOutpoint, includeMempool = false).flatMap {
           case true =>
             // The funding output is unspent, or spent by an *unconfirmed* transaction: let's publish our anchor
             // transaction, we may be able to replace our local commit with this (more interesting) remote commit.
@@ -222,7 +222,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
       case Some(confirmations) =>
         // If the output is already spent by a confirmed transaction, there is no need for RBF: either this is one
         // of our transactions (which thus has a high enough feerate), or it was a race with our peer and we lost.
-        bitcoinClient.isTransactionOutputSpent(txInfo.input.outPoint.txid, txInfo.input.outPoint.index.toInt).map {
+        bitcoinClient.isTransactionOutputSpent(txInfo.input.outPoint).map {
           case true => OutputAlreadySpent
           case false => ParentTxOk(confirmed = confirmations > 0)
         }
