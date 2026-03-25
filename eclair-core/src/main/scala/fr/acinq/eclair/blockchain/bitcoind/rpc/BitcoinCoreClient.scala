@@ -172,13 +172,30 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
 
   /** Search for mempool transaction spending a given output. */
   def lookForMempoolSpendingTx(outPoint: OutPoint)(implicit ec: ExecutionContext): Future[Transaction] = {
-    rpcClient.invoke("gettxspendingprevout", Seq(OutpointArg(outPoint.txid, outPoint.index))).collect {
+    val options = JObject(List("return_spending_tx" -> JBool(true), "mempool_only" -> JBool(true)))
+    rpcClient.invoke("gettxspendingprevout", Seq(OutpointArg(outPoint.txid, outPoint.index)), options).collect {
       case JArray(results) => results.flatMap(result => (result \ "spendingtxid").extractOpt[String].map(TxId.fromValidHex))
     }.flatMap { spendingTxIds =>
       spendingTxIds.headOption match {
         case Some(spendingTxId) => getTransaction(spendingTxId)
         case None => Future.failed(new RuntimeException(s"mempool doesn't contain any transaction spending $outPoint"))
       }
+    }
+  }
+
+  /**
+   * Find the transaction spending a given output. Requires `txospenderindex` on the bitcoin code node we're connecting to.
+   *
+   * @param outPoint transaction output
+   * @return the transaction that spent this output along with the id of the block it was published in if any, or None if no spending transaction was found
+   */
+  def findSpendingTx(outPoint: OutPoint)(implicit ec: ExecutionContext): Future[Option[(Transaction, Option[BlockId])]] = {
+    val options = JObject(List("return_spending_tx" -> JBool(true)))
+    rpcClient.invoke("gettxspendingprevout", Seq(OutpointArg(outPoint.txid, outPoint.index)), options).collect {
+      case JArray(results) => results.flatMap(result => {
+        val tx_opt = (result \ "spendingtx").extractOpt[String].map(Transaction.read)
+        tx_opt.map(tx => tx -> (result \ "blockhash").extractOpt[String].map(s => BlockId(ByteVector32.fromValidHex(s))))
+      }).headOption
     }
   }
 
@@ -794,6 +811,15 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
     })
   }
 
+  //------------------------- MISC  -------------------------//
+
+  /**
+   *
+   * @return information about enabled bitcoin core indexes, in a map where the key is the index name
+   */
+  def getIndexInfo()(implicit ec: ExecutionContext): Future[Map[String, IndexInfo]] = rpcClient.invoke("getindexinfo").collect {
+    case JObject(results) => results.map { case (name, o) => name -> BitcoinCoreClient.IndexInfo((o \ "synced").extract[Boolean], (o \ "best_block_height").extract[Int]) }.toMap
+  }
 }
 
 object BitcoinCoreClient {
@@ -871,4 +897,11 @@ object BitcoinCoreClient {
     // @formatter:on
   }
 
+  /**
+   * Information about a bitcoin core inedx
+   *
+   * @param synced          true if the index is synced
+   * @param bestBlockHeight height of the last indexed block
+   */
+  case class IndexInfo(synced: Boolean, bestBlockHeight: Int)
 }
