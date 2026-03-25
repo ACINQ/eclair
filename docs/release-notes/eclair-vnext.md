@@ -6,6 +6,17 @@
 
 <insert changes>
 
+### Update minimal version of Bitcoin Core
+
+With this release, eclair requires using Bitcoin Core 31.x.
+Newer versions of Bitcoin Core may be used, but have not been extensively tested.
+:warning: the new Bitcoin Core `txospenderindex` must be enabled, see instructions below.
+
+### Faster scanning for spending transactions with Bitcoin Core's txospenderindex
+
+Eclair now uses Bitcoin Core's `txospenderindex` (available in Bitcoin Core 31.0 and newer) to find channel spending transactions, which is much faster and less expensive than scanning blocks. This index must be enabled on your Bitcoin Core
+node: start Bitcoin Core with `-txospenderindex` or add `txospenderindex=1` to your `bitcoin.conf`.
+
 ### Configuration changes
 
 <insert changes>
