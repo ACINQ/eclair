@@ -1762,6 +1762,71 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     sender.expectMsg(tx1)
   }
 
+  test("get index information") {
+    val sender = TestProbe()
+    val bitcoinClient = makeBitcoinCoreClient()
+    bitcoinClient.getIndexInfo().pipeTo(sender.ref)
+    val indexInfos = sender.expectMsgType[Map[String, BitcoinCoreClient.IndexInfo]]
+    assert(indexInfos("txindex").synced)
+    assert(indexInfos("txospenderindex").synced)
+  }
+
+  test("find spending transaction of a given output using txospenderindex") {
+    val sender = TestProbe()
+    val bitcoinClient = makeBitcoinCoreClient()
+
+    bitcoinClient.getBlockHeight().pipeTo(sender.ref)
+    val blockHeight = sender.expectMsgType[BlockHeight]
+
+    bitcoinClient.getIndexInfo().pipeTo(sender.ref)
+    val indexInfos = sender.expectMsgType[Map[String, BitcoinCoreClient.IndexInfo]]
+    assert(indexInfos("txindex").synced)
+
+    val address = getNewAddress(sender)
+    val tx1 = sendToAddress(address, 5 btc)
+
+    // Transaction is still in the mempool at that point
+    bitcoinClient.getTxConfirmations(tx1.txid).pipeTo(sender.ref)
+    sender.expectMsg(Some(0))
+    // If we omit the mempool, tx1's input is still considered unspent.
+    bitcoinClient.isTransactionOutputSpendable(tx1.txIn.head.outPoint, includeMempool = false).pipeTo(sender.ref)
+    sender.expectMsg(true)
+    // If we include the mempool, we see that tx1's input is now spent.
+    bitcoinClient.isTransactionOutputSpendable(tx1.txIn.head.outPoint, includeMempool = true).pipeTo(sender.ref)
+    sender.expectMsg(false)
+    // If we omit the mempool, tx1's output is not considered spendable because we can't even find that output.
+    bitcoinClient.isTransactionOutputSpendable(OutPoint(tx1.txid, 0), includeMempool = false).pipeTo(sender.ref)
+    sender.expectMsg(false)
+    // If we include the mempool, we see that tx1 produces an output that is still unspent.
+    bitcoinClient.isTransactionOutputSpendable(OutPoint(tx1.txid, 0), includeMempool = true).pipeTo(sender.ref)
+    sender.expectMsg(true)
+    // We're able to find the spending transaction in the mempool.
+    bitcoinClient.findSpendingTx(tx1.txIn.head.outPoint).pipeTo(sender.ref)
+    sender.expectMsg(Some(tx1, None))
+
+    // Let's confirm our transaction.
+    generateBlocks(1)
+    bitcoinClient.getBlockHeight().pipeTo(sender.ref)
+    val blockHeight1 = sender.expectMsgType[BlockHeight]
+    assert(blockHeight1 == blockHeight + 1)
+    bitcoinClient.getBlockId(blockHeight1.toInt).pipeTo(sender.ref)
+    val tip = sender.expectMsgType[BlockId]
+    bitcoinClient.findSpendingTx(tx1.txIn.head.outPoint).pipeTo(sender.ref)
+    sender.expectMsg(Some(tx1, Some(tip)))
+
+    bitcoinClient.getTxConfirmations(tx1.txid).pipeTo(sender.ref)
+    sender.expectMsg(Some(1))
+    bitcoinClient.isTransactionOutputSpendable(OutPoint(tx1.txid, 0), includeMempool = false).pipeTo(sender.ref)
+    sender.expectMsg(true)
+    bitcoinClient.isTransactionOutputSpendable(OutPoint(tx1.txid, 0), includeMempool = true).pipeTo(sender.ref)
+    sender.expectMsg(true)
+
+    // we still fid the spending tx evn if it has been confirmed many times
+    generateBlocks(10)
+    bitcoinClient.findSpendingTx(tx1.txIn.head.outPoint).pipeTo(sender.ref)
+    sender.expectMsg(Some(tx1, Some(tip)))
+  }
+
   test("get pubkey for p2wpkh receive address") {
     val sender = TestProbe()
     val bitcoinClient = makeBitcoinCoreClient()
