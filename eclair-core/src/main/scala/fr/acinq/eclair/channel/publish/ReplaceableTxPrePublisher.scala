@@ -122,7 +122,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
                   // If the funding transaction is unconfirmed (e.g. when using 0-conf), its outputs can only be spent by
                   // unconfirmed transactions (and they're not in the UTXO set, so we cannot use the check below).
                   case None if fundingTxConfirmations == 0 => Future.successful(FundingOutputSpentByUnconfirmedTx)
-                  case None => bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).map {
+                  case None => bitcoinClient.isTransactionOutputSpendable(fundingOutpoint, includeMempool = false).map {
                     case true => FundingOutputSpentByUnconfirmedTx
                     case false => ConcurrentCommitAvailable
                   }
