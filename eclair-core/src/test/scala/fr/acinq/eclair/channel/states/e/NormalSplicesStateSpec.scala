@@ -1326,7 +1326,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // Bob sees the first splice confirm, but Alice doesn't.
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
-    bob2blockchain.expectWatchFundingSpent(fundingTx1.txid, Some(Set(commitAlice1.txid, commitBob1.txid)))
+    bob2blockchain.expectWatchFundingSpent(fundingTx1.txid)
     bob2blockchain.expectMsg(UnwatchFundingSpent(fundingInput.txid, fundingInput.index.toInt))
     bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx1.txid)
     bob2alice.forward(alice)
@@ -1345,7 +1345,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx1)
     alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx1.txid)
     alice2bob.forward(bob)
-    alice2blockchain.expectWatchFundingSpent(fundingTx1.txid, Some(Set(fundingTx2.txid, commitAlice1.txid, commitBob1.txid)))
+    alice2blockchain.expectWatchFundingSpent(fundingTx1.txid)
     alice2blockchain.expectMsg(UnwatchFundingSpent(fundingInput.txid, fundingInput.index.toInt))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.map(_.fundingTxIndex) == Seq(2, 1))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.map(_.fundingTxIndex) == Seq.empty)
@@ -1357,9 +1357,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
     bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     bob2alice.forward(alice)
-    alice2blockchain.expectWatchFundingSpent(fundingTx2.txid, Some(Set(commitAlice2.txid, commitBob2.txid)))
+    alice2blockchain.expectWatchFundingSpent(fundingTx2.txid)
     alice2blockchain.expectMsg(UnwatchFundingSpent(fundingInput1.txid, fundingInput1.index.toInt))
-    bob2blockchain.expectWatchFundingSpent(fundingTx2.txid, Some(Set(commitAlice2.txid, commitBob2.txid)))
+    bob2blockchain.expectWatchFundingSpent(fundingTx2.txid)
     bob2blockchain.expectMsg(UnwatchFundingSpent(fundingInput1.txid, fundingInput1.index.toInt))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.map(_.fundingTxIndex) == Seq(2))
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.inactive.map(_.fundingTxIndex) == Seq.empty)
@@ -1433,7 +1433,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
     alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     alice2bob.forward(bob)
-    alice2blockchain.expectWatchFundingSpent(fundingTx2.txid, Some(Set(commitAlice2.txid, commitBob2.txid)))
+    alice2blockchain.expectWatchFundingSpent(fundingTx2.txid)
     alice2blockchain.expectMsg(UnwatchFundingSpent(fundingInput1.txid, fundingInput1.index.toInt))
     bob2alice.expectNoMessage(100 millis)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.map(_.fundingTxIndex) == Seq(2, 1))
@@ -1442,7 +1442,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, fundingTx2)
     bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx2.txid)
     bob2alice.forward(alice)
-    bob2blockchain.expectWatchFundingSpent(fundingTx2.txid, Some(Set(commitAlice2.txid, commitBob2.txid)))
+    bob2blockchain.expectWatchFundingSpent(fundingTx2.txid)
     bob2blockchain.expectMsg(UnwatchFundingSpent(fundingInput1.txid, fundingInput1.index.toInt))
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.map(_.fundingTxIndex) == Seq(2))
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.active.map(_.fundingTxIndex) == Seq(2))
@@ -1467,7 +1467,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // Bob sees the splice confirm, but Alice doesn't.
     bob ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, spliceTx)
-    bob2blockchain.expectWatchFundingSpent(spliceTx.txid, Some(Set(commitAlice1.txid, commitBob1.txid)))
+    bob2blockchain.expectWatchFundingSpent(spliceTx.txid)
     bob2blockchain.expectMsg(UnwatchFundingSpent(fundingInput.txid, fundingInput.index.toInt))
     bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == spliceTx.txid)
     bob2alice.forward(alice)
@@ -1481,7 +1481,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // While reconnecting, Alice sees the splice confirm after sending her channel_reestablish, but before receiving
     // Bob's channel_reestablish: she must send splice_locked since her channel_reestablish used the previous funding.
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, spliceTx)
-    alice2blockchain.expectWatchFundingSpent(spliceTx.txid, Some(Set(commitAlice1.txid, commitBob1.txid)))
+    alice2blockchain.expectWatchFundingSpent(spliceTx.txid)
     alice2blockchain.expectMsg(UnwatchFundingSpent(fundingInput.txid, fundingInput.index.toInt))
     val spliceLockedAlice = alice2bob.expectMsgType[SpliceLocked]
     assert(spliceLockedAlice.fundingTxId == spliceTx.txid)

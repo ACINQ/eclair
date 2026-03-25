@@ -99,7 +99,6 @@ object Channel {
                          maxBlockProcessingDelay: FiniteDuration,
                          maxTxPublishRetryDelay: FiniteDuration,
                          scanPreviousBlocksDepth: Int,
-                         maxChannelSpentRescanBlocks: Int,
                          unhandledExceptionStrategy: UnhandledExceptionStrategy,
                          revocationTimeout: FiniteDuration,
                          requireConfirmedInputsForDualFunding: Boolean,
@@ -378,18 +377,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
                 // No need to watch the funding tx, it has already been spent and the spending tx has already reached mindepth.
                 case closing: DATA_CLOSING if Closing.isClosingTypeAlreadyKnown(closing).isDefined => ()
                 // In all other cases we need to be ready for any type of closing.
-                case closing: DATA_CLOSING =>
-                  watchFundingSpent(commitment, closing.spendingTxs.map(_.txid).toSet, herdDelay_opt)
-                case negotiating: DATA_NEGOTIATING =>
-                  val closingTxs = negotiating.closingTxProposed.flatten.map(_.unsignedTx.tx.txid).toSet
-                  watchFundingSpent(commitment, additionalKnownSpendingTxs = closingTxs, herdDelay_opt)
-                case negotiating: DATA_NEGOTIATING_SIMPLE =>
-                  val closingTxs = negotiating.proposedClosingTxs.flatMap(_.all).map(_.tx.txid).toSet ++ negotiating.publishedClosingTxs.map(_.tx.txid).toSet
-                  watchFundingSpent(commitment, additionalKnownSpendingTxs = closingTxs, herdDelay_opt)
                 case _ =>
-                  // Children splice transactions may already spend that confirmed funding transaction.
-                  val spliceSpendingTxs = data.commitments.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
-                  watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet, herdDelay_opt)
+                  watchFundingSpent(commitment, herdDelay_opt)
               }
           }
         }
