@@ -36,12 +36,12 @@ import scala.util.{Success, Try}
 object Scripts {
 
   /**
-   * Convert a raw ECDSA signature (r,s) to a der-encoded signature that can be used in bitcoin scripts.
+   * Convert an ECDSA signature to a der-encoded signature that can be used in bitcoin scripts.
    *
-   * @param sig         raw ECDSA signature (r,s)
+   * @param sig ECDSA signature in compact (64 bytes) format
    * @param sighashType sighash flags
    */
-  def der(sig: ByteVector64, sighashType: Int = SIGHASH_ALL): ByteVector = ByteVector.view(Secp256k1.get().compact2der(sig.toArray)) :+ sighashType.toByte
+  def der(sig: ByteVector64, sighashType: Int = SIGHASH_ALL): ByteVector = Transaction.encodeWitnessEcdsaSig(sig, sighashType)
 
   private def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
     case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
