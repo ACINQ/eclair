@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, TaprootTweak, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.KotlinUtils._
 import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce}
+import fr.acinq.bitcoin.scalacompat.Transaction.encodeWitnessEcdsaSig
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -1585,5 +1586,5 @@ object Transactions {
    * It is 72 bytes because our signatures are normalized (low-s) and will take up 72 bytes at most in DER format
    */
   val PlaceHolderSig: ByteVector64 = ByteVector64.fromValidHex("ef75b6a03c9b4b57ac1d94d09d8bd8798a9967d8d06ef1129a8436cdb1993c4b7872409ec42abb1174c5e29e32690ae8b6ede29fb1b07f1dbb1bbf92b63f26d2")
-  assert(der(PlaceHolderSig).size == 72)
+  assert(encodeWitnessEcdsaSig(PlaceHolderSig, SIGHASH_ALL).size == 72)
 }
