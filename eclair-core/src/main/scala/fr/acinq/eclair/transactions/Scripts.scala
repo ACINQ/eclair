@@ -21,10 +21,12 @@ import fr.acinq.bitcoin.SigHash._
 import fr.acinq.bitcoin.TxIn.{SEQUENCE_LOCKTIME_DISABLE_FLAG, SEQUENCE_LOCKTIME_MASK, SEQUENCE_LOCKTIME_TYPE_FLAG}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.Script._
+import fr.acinq.bitcoin.scalacompat.Transaction.encodeWitnessEcdsaSig
 import fr.acinq.bitcoin.scalacompat._
 import fr.acinq.eclair.crypto.keymanager.{CommitmentPublicKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta}
+import fr.acinq.secp256k1.Secp256k1
 import scodec.bits.ByteVector
 
 import scala.util.{Success, Try}
@@ -33,15 +35,6 @@ import scala.util.{Success, Try}
  * Created by PM on 02/12/2016.
  */
 object Scripts {
-
-  /**
-   * Convert a raw ECDSA signature (r,s) to a der-encoded signature that can be used in bitcoin scripts.
-   *
-   * @param sig         raw ECDSA signature (r,s)
-   * @param sighashType sighash flags
-   */
-  def der(sig: ByteVector64, sighashType: Int = SIGHASH_ALL): ByteVector = Crypto.compact2der(sig) :+ sighashType.toByte
-
   private def htlcRemoteSighash(commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
     case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => SIGHASH_SINGLE | SIGHASH_ANYONECANPAY
   }
@@ -56,9 +49,9 @@ object Scripts {
    */
   def witness2of2(sig1: ByteVector64, sig2: ByteVector64, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness =
     if (LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value)) {
-      ScriptWitness(Seq(ByteVector.empty, der(sig1), der(sig2), write(multiSig2of2(pubkey1, pubkey2))))
+      ScriptWitness(Seq(ByteVector.empty, encodeWitnessEcdsaSig(sig1, SIGHASH_ALL), encodeWitnessEcdsaSig(sig2, SIGHASH_ALL), write(multiSig2of2(pubkey1, pubkey2))))
     } else {
-      ScriptWitness(Seq(ByteVector.empty, der(sig2), der(sig1), write(multiSig2of2(pubkey1, pubkey2))))
+      ScriptWitness(Seq(ByteVector.empty, encodeWitnessEcdsaSig(sig2, SIGHASH_ALL), encodeWitnessEcdsaSig(sig1, SIGHASH_ALL), write(multiSig2of2(pubkey1, pubkey2))))
     }
 
   /**
@@ -160,14 +153,14 @@ object Scripts {
    * This witness script spends a [[toLocalDelayed]] output using a local sig after a delay
    */
   def witnessToLocalDelayedAfterDelay(localSig: ByteVector64, toLocalDelayedScript: ByteVector): ScriptWitness =
-    ScriptWitness(der(localSig) :: ByteVector.empty :: toLocalDelayedScript :: Nil)
+    ScriptWitness(encodeWitnessEcdsaSig(localSig, SIGHASH_ALL) :: ByteVector.empty :: toLocalDelayedScript :: Nil)
 
   /**
    * This witness script spends (steals) a [[toLocalDelayed]] output using a revocation key as a punishment
    * for having published a revoked transaction
    */
   def witnessToLocalDelayedWithRevocationSig(revocationSig: ByteVector64, toLocalScript: ByteVector): ScriptWitness =
-    ScriptWitness(der(revocationSig) :: ByteVector(1) :: toLocalScript :: Nil)
+    ScriptWitness(encodeWitnessEcdsaSig(revocationSig, SIGHASH_ALL) :: ByteVector(1) :: toLocalScript :: Nil)
 
   /**
    * With the anchor outputs format, the to_remote output is delayed with a CSV 1 to allow CPFP carve-out on anchors.
@@ -181,7 +174,7 @@ object Scripts {
    * uses this script to claim its funds (consumes to_remote script from commit tx).
    */
   def witnessClaimToRemoteDelayedFromCommitTx(localSig: ByteVector64, toRemoteDelayedScript: ByteVector): ScriptWitness =
-    ScriptWitness(der(localSig) :: toRemoteDelayedScript :: Nil)
+    ScriptWitness(encodeWitnessEcdsaSig(localSig, SIGHASH_ALL) :: toRemoteDelayedScript :: Nil)
 
   /**
    * Each participant has its own anchor output that locks to their funding key. This allows using CPFP carve-out (see
@@ -199,7 +192,7 @@ object Scripts {
   /**
    * This witness script spends a local [[anchor]] output using a local sig.
    */
-  def witnessAnchor(localSig: ByteVector64, anchorScript: ByteVector): ScriptWitness = ScriptWitness(der(localSig) :: anchorScript :: Nil)
+  def witnessAnchor(localSig: ByteVector64, anchorScript: ByteVector): ScriptWitness = ScriptWitness(encodeWitnessEcdsaSig(localSig, SIGHASH_ALL) :: anchorScript :: Nil)
 
   def htlcOffered(keys: CommitmentPublicKeys, paymentHash: ByteVector32, commitmentFormat: CommitmentFormat): Seq[ScriptElt] = {
     val addCsvDelay = commitmentFormat match {
@@ -232,7 +225,7 @@ object Scripts {
    * This is the witness script of the 2nd-stage HTLC Success transaction (consumes htlcOffered script from commit tx)
    */
   def witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, paymentPreimage: ByteVector32, htlcOfferedScript: ByteVector, commitmentFormat: CommitmentFormat): ScriptWitness =
-    ScriptWitness(ByteVector.empty :: der(remoteSig, htlcRemoteSighash(commitmentFormat)) :: der(localSig) :: paymentPreimage.bytes :: htlcOfferedScript :: Nil)
+    ScriptWitness(ByteVector.empty :: encodeWitnessEcdsaSig(remoteSig, htlcRemoteSighash(commitmentFormat)) :: encodeWitnessEcdsaSig(localSig, SIGHASH_ALL) :: paymentPreimage.bytes :: htlcOfferedScript :: Nil)
 
   /** Extract the payment preimage from a 2nd-stage HTLC Success transaction's witness script */
   def extractPreimageFromHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
@@ -248,7 +241,7 @@ object Scripts {
    * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
    */
   def witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, paymentPreimage: ByteVector32, htlcOffered: ByteVector): ScriptWitness =
-    ScriptWitness(der(localSig) :: paymentPreimage.bytes :: htlcOffered :: Nil)
+    ScriptWitness(encodeWitnessEcdsaSig(localSig, SIGHASH_ALL) :: paymentPreimage.bytes :: htlcOffered :: Nil)
 
   /** Extract the payment preimage from from a fulfilled offered htlc. */
   def extractPreimageFromClaimHtlcSuccess: PartialFunction[ScriptWitness, ByteVector32] = {
@@ -292,21 +285,21 @@ object Scripts {
    * This is the witness script of the 2nd-stage HTLC Timeout transaction (consumes htlcOffered script from commit tx)
    */
   def witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcOfferedScript: ByteVector, commitmentFormat: CommitmentFormat): ScriptWitness =
-    ScriptWitness(ByteVector.empty :: der(remoteSig, htlcRemoteSighash(commitmentFormat)) :: der(localSig) :: ByteVector.empty :: htlcOfferedScript :: Nil)
+    ScriptWitness(ByteVector.empty :: encodeWitnessEcdsaSig(remoteSig, htlcRemoteSighash(commitmentFormat)) :: encodeWitnessEcdsaSig(localSig, SIGHASH_ALL) :: ByteVector.empty :: htlcOfferedScript :: Nil)
 
   /**
    * If remote publishes its commit tx where there was a local->remote htlc, then local uses this script to
    * claim its funds after timeout (consumes htlcReceived script from commit tx)
    */
   def witnessClaimHtlcTimeoutFromCommitTx(localSig: ByteVector64, htlcReceivedScript: ByteVector): ScriptWitness =
-    ScriptWitness(der(localSig) :: ByteVector.empty :: htlcReceivedScript :: Nil)
+    ScriptWitness(encodeWitnessEcdsaSig(localSig, SIGHASH_ALL) :: ByteVector.empty :: htlcReceivedScript :: Nil)
 
   /**
    * This witness script spends (steals) a [[htlcOffered]] or [[htlcReceived]] output using a revocation key as a punishment
    * for having published a revoked transaction
    */
   def witnessHtlcWithRevocationSig(keys: RemoteCommitmentKeys, revocationSig: ByteVector64, htlcScript: ByteVector): ScriptWitness =
-    ScriptWitness(der(revocationSig) :: keys.revocationPublicKey.value :: htlcScript :: Nil)
+    ScriptWitness(encodeWitnessEcdsaSig(revocationSig, SIGHASH_ALL) :: keys.revocationPublicKey.value :: htlcScript :: Nil)
 
   /**
    * Specific scripts for taproot channels

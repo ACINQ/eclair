@@ -17,7 +17,9 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.ScriptFlags
+import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Transaction.encodeWitnessEcdsaSig
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
@@ -230,9 +232,9 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         localIsChannelOpener = true,
         outputs = outputs)
       val local_sig = tx.sign(Local.funding_privkey, Remote.funding_pubkey)
-      logger.info(s"# local_signature = ${Scripts.der(local_sig.sig).dropRight(1).toHex}")
+      logger.info(s"# local_signature = ${encodeWitnessEcdsaSig(local_sig.sig, SIGHASH_ALL).dropRight(1).toHex}")
       val remote_sig = tx.sign(Remote.funding_privkey, Local.funding_pubkey)
-      logger.info(s"remote_signature: ${Scripts.der(remote_sig.sig).dropRight(1).toHex}")
+      logger.info(s"remote_signature: ${encodeWitnessEcdsaSig(remote_sig.sig, SIGHASH_ALL).dropRight(1).toHex}")
       tx.aggregateSigs(Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
@@ -273,8 +275,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         val tx1 = tx.addRemoteSig(localCommitmentKeys, remoteSig, preimage).sign()
         Transaction.correctlySpends(tx1, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-success for htlc #$htlcIndex)")
-        logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")
-        logger.info(s"# local_htlc_signature = ${Scripts.der(tx.addRemoteSig(localCommitmentKeys, remoteSig, preimage).localSig(WalletInputs(Nil, None))).dropRight(1).toHex}")
+        logger.info(s"remote_htlc_signature = ${encodeWitnessEcdsaSig(remoteSig, SIGHASH_ALL).dropRight(1).toHex}")
+        logger.info(s"# local_htlc_signature = ${encodeWitnessEcdsaSig(tx.addRemoteSig(localCommitmentKeys, remoteSig, preimage).localSig(WalletInputs(Nil, None)), SIGHASH_ALL).dropRight(1).toHex}")
         logger.info(s"htlc_success_tx (htlc #$htlcIndex): $tx1")
         tx1
       case tx: UnsignedHtlcTimeoutTx =>
@@ -286,8 +288,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         val tx1 = tx.addRemoteSig(localCommitmentKeys, remoteSig).sign()
         Transaction.correctlySpends(tx1, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-timeout for htlc #$htlcIndex)")
-        logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")
-        logger.info(s"# local_htlc_signature = ${Scripts.der(tx.addRemoteSig(localCommitmentKeys, remoteSig).localSig(WalletInputs(Nil, None))).dropRight(1).toHex}")
+        logger.info(s"remote_htlc_signature = ${encodeWitnessEcdsaSig(remoteSig, SIGHASH_ALL).dropRight(1).toHex}")
+        logger.info(s"# local_htlc_signature = ${encodeWitnessEcdsaSig(tx.addRemoteSig(localCommitmentKeys, remoteSig).localSig(WalletInputs(Nil, None)), SIGHASH_ALL).dropRight(1).toHex}")
         logger.info(s"htlc_timeout_tx (htlc #$htlcIndex): $tx1")
         tx1
     }
