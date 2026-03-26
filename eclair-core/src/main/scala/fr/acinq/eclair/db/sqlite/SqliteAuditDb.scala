@@ -370,8 +370,8 @@ class SqliteAuditDb(val sqlite: Connection) extends AuditDb with Logging {
 
   override def addChannelUpdate(u: ChannelUpdateParametersChanged): Unit = withMetrics("audit/add-channel-update", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT INTO channel_updates VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, u.channelId.toArray)
-      statement.setBytes(2, u.remoteNodeId.value.toArray)
+      statement.setString(1, u.channelId.toHex)
+      statement.setString(2, u.remoteNodeId.value.toHex)
       statement.setLong(3, u.channelUpdate.feeBaseMsat.toLong)
       statement.setLong(4, u.channelUpdate.feeProportionalMillionths)
       statement.setLong(5, u.channelUpdate.cltvExpiryDelta.toInt)
