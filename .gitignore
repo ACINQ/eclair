@@ -30,3 +30,7 @@ jdbcUrlFile_*.tmp
 .DS_Store
 
 .claude*
+
+# fuzzing
+crash-*
+.cifuzz-*

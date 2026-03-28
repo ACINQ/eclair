@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>fr.acinq.eclair</groupId>
+        <artifactId>eclair_2.13</artifactId>
+        <version>0.14.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>eclair-fuzz_2.13</artifactId>
+    <packaging>jar</packaging>
+
+    <name>${project.artifactId}</name>
+    <description>Fuzz tests for eclair</description>
+
+    <build>
+        <plugins>
+            <!-- Disable ScalaTest - this module uses Surefire/JUnit 5 for Jazzer -->
+            <plugin>
+                <groupId>org.scalatest</groupId>
+                <artifactId>scalatest-maven-plugin</artifactId>
+                <configuration>
+                    <skipTests>true</skipTests>
+                </configuration>
+            </plugin>
+            <!-- Enable Surefire for Jazzer -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <skipTests>false</skipTests>
+                    <includes>
+                        <include>**/*FuzzTest.class</include>
+                    </includes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <dependencies>
+        <dependency>
+            <groupId>fr.acinq.eclair</groupId>
+            <artifactId>eclair-core_${scala.version.short}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Jazzer fuzz testing -->
+        <dependency>
+            <groupId>com.code-intelligence</groupId>
+            <artifactId>jazzer-junit</artifactId>
+            <version>0.30.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.code-intelligence</groupId>
+            <artifactId>jazzer-api</artifactId>
+            <version>0.30.0</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
