@@ -38,3 +38,66 @@ jobs:
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
+
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: 21
+        distribution: 'adopt'
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+
+    # On PRs: read-only restore to seed the fuzzer with the latest corpus from master.
+    # The key is unique per SHA so it always misses, falling back to the latest master cache.
+    - name: Restore fuzz corpus (PR)
+      if: github.ref != 'refs/heads/master'
+      uses: actions/cache/restore@v4
+      with:
+        path: eclair-fuzz/.cifuzz-corpus
+        key: fuzz-corpus-${{ github.ref }}-${{ github.sha }}
+        restore-keys: |
+          fuzz-corpus-refs/heads/master-
+
+    # On master: restore the latest corpus, then save a new one after fuzzing.
+    # Caches are immutable so we use the SHA to create a unique key each time.
+    - name: Restore/Save fuzz corpus (master)
+      if: github.ref == 'refs/heads/master'
+      uses: actions/cache@v4
+      with:
+        path: eclair-fuzz/.cifuzz-corpus
+        key: fuzz-corpus-refs/heads/master-${{ github.sha }}
+        restore-keys: |
+          fuzz-corpus-refs/heads/master-
+
+    - name: Build eclair-core
+      run: ./mvnw clean install -pl eclair-core -am -Dmaven.test.skip=true
+
+    - name: Run Fuzz tests
+      run: JAZZER_MAX_DURATION=2m ./eclair-fuzz/ci-fuzz.sh
+
+    - name: Download JaCoCo
+      run: |
+        curl -sL https://github.com/jacoco/jacoco/releases/download/v0.8.14/jacoco-0.8.14.zip -o /tmp/jacoco.zip
+        unzip -q /tmp/jacoco.zip -d /tmp/jacoco
+
+    - name: Generate fuzz coverage report
+      run: ./eclair-fuzz/generate-coverage-report.sh /tmp/jacoco/lib
+
+    - name: Upload fuzz coverage report
+      uses: actions/upload-artifact@v4
+      with:
+        name: fuzz-coverage-report
+        path: eclair-fuzz/target/coverage-report
+
