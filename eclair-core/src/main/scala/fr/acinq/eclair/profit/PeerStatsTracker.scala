@@ -38,6 +38,7 @@ object PeerStatsTracker {
   // @formatter:off
   sealed trait Command
   case class GetLatestStats(replyTo: ActorRef[LatestStats]) extends Command
+  private[profit] case class LoadPastEvents(before: TimestampMilli) extends Command
   private[profit] case object RemoveOldBuckets extends Command
   private[profit] case class WrappedPaymentSent(e: PaymentSent) extends Command
   private[profit] case class WrappedPaymentRelayed(e: PaymentRelayed) extends Command
@@ -183,6 +184,17 @@ object PeerStatsTracker {
       }
     }
 
+    def addConfirmedTransaction(e: AuditDb.ConfirmedTransaction): BucketedPeerStats = {
+      val bucket = Bucket.from(e.timestamp)
+      val peerStats = this.getPeerStatsForBucket(e.remoteNodeId, bucket)
+      val peerStats1 = peerStats.copy(
+        onChainFeePaid = peerStats.onChainFeePaid + e.onChainFeePaid,
+        liquidityFeeEarned = peerStats.liquidityFeeEarned + e.liquidityPurchase_opt.map(p => if (p.isSeller) p.fees.total else 0.sat).getOrElse(0 sat),
+        liquidityFeePaid = peerStats.liquidityFeePaid + e.liquidityPurchase_opt.map(p => if (p.isBuyer) p.fees.total else 0.sat).getOrElse(0 sat),
+      )
+      this.addOrUpdate(e.remoteNodeId, bucket, peerStats1)
+    }
+
     /** Remove old buckets that exceed our retention window. This should be called frequently to avoid memory leaks. */
     def removeOldBuckets(now: TimestampMilli): BucketedPeerStats = {
       val oldestBucket = Bucket.from(now - Bucket.duration * BucketedPeerStats.bucketsCount)
@@ -195,7 +207,7 @@ object PeerStatsTracker {
     def removePeer(remoteNodeId: PublicKey): BucketedPeerStats = copy(stats = stats - remoteNodeId)
   }
 
-  object BucketedPeerStats {
+  private object BucketedPeerStats {
     // We keep 7 days of past history.
     val bucketsCount: Int = 7 * Bucket.bucketsPerDay
 
@@ -316,8 +328,10 @@ private class PeerStatsTracker(db: AuditDb, timers: TimerScheduler[PeerStatsTrac
   import PeerStatsTracker._
 
   private val log = context.log
+  private var pastEventsLoaded = false
 
   private def start(channels: Seq[PersistentChannelData]): Behavior[Command] = {
+    val startedAt = TimestampMilli.now()
     // We subscribe to channel events to update channel balances.
     context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelIdAssigned](e => ChannelCreationInProgress(e.remoteNodeId, e.channelId)))
     context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelAborted](e => ChannelCreationAborted(e.remoteNodeId, e.channelId)))
@@ -330,28 +344,29 @@ private class PeerStatsTracker(db: AuditDb, timers: TimerScheduler[PeerStatsTrac
     context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedPaymentSent))
     context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedPaymentRelayed))
     context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedPaymentReceived))
-    // TODO: read events that happened before startedAt from the DB to initialize statistics from past data.
+    // We start reading past events from the DB.
+    context.self ! LoadPastEvents(before = startedAt)
     val stats = BucketedPeerStats.empty(peerChannels.peers)
     timers.startTimerWithFixedDelay(RemoveOldBuckets, Bucket.duration)
-    listening(stats, peerChannels)
+    listening(stats, peerChannels, startedAt)
   }
 
-  private def listening(stats: BucketedPeerStats, channels: PeerChannels): Behavior[Command] = {
+  private def listening(stats: BucketedPeerStats, channels: PeerChannels, lastTransactionReadAt: TimestampMilli): Behavior[Command] = {
     Behaviors.receiveMessage {
       case WrappedPaymentSent(e) =>
-        listening(stats.addPaymentSent(e), channels)
+        listening(stats.addPaymentSent(e), channels, lastTransactionReadAt)
       case WrappedPaymentReceived(e) =>
-        listening(stats.addPaymentReceived(e), channels)
+        listening(stats.addPaymentReceived(e), channels, lastTransactionReadAt)
       case WrappedPaymentRelayed(e) =>
-        listening(stats.addPaymentRelayed(e), channels)
+        listening(stats.addPaymentRelayed(e), channels, lastTransactionReadAt)
       case e: ChannelCreationInProgress =>
-        listening(stats, channels.addPendingChannel(e))
+        listening(stats, channels.addPendingChannel(e), lastTransactionReadAt)
       case e: ChannelCreationAborted =>
-        listening(stats, channels.removeChannel(e))
+        listening(stats, channels.removeChannel(e), lastTransactionReadAt)
       case WrappedLocalChannelUpdate(e) =>
-        listening(stats.initializePeerIfNeeded(e.remoteNodeId), channels.updateChannel(e))
+        listening(stats.initializePeerIfNeeded(e.remoteNodeId), channels.updateChannel(e), lastTransactionReadAt)
       case WrappedAvailableBalanceChanged(e) =>
-        listening(stats, channels.updateChannel(e))
+        listening(stats, channels.updateChannel(e), lastTransactionReadAt)
       case WrappedLocalChannelDown(e) =>
         val channels1 = channels.removeChannel(e)
         val stats1 = if (channels1.getChannels(e.remoteNodeId).isEmpty && !channels1.hasPendingChannel(e.remoteNodeId)) {
@@ -359,22 +374,46 @@ private class PeerStatsTracker(db: AuditDb, timers: TimerScheduler[PeerStatsTrac
         } else {
           stats
         }
-        listening(stats1, channels1)
+        listening(stats1, channels1, lastTransactionReadAt)
+      case LoadPastEvents(before) =>
+        if (before <= (TimestampMilli.now() - Bucket.duration * BucketedPeerStats.bucketsCount)) {
+          log.info("finished loading past events from the DB")
+          pastEventsLoaded = true
+          listening(stats, channels, lastTransactionReadAt)
+        } else {
+          log.info("loading past events before {}", before)
+          val stats1 = db.listSent(before - Bucket.duration, before).foldLeft(stats) { case (current, e) => current.addPaymentSent(e) }
+          val stats2 = db.listReceived(before - Bucket.duration, before).foldLeft(stats1) { case (current, e) => current.addPaymentReceived(e) }
+          val stats3 = db.listRelayed(before - Bucket.duration, before).foldLeft(stats2) { case (current, e) => current.addPaymentRelayed(e) }
+          val stats4 = db.listConfirmed(before - Bucket.duration, before).foldLeft(stats3) { case (current, e) => current.addConfirmedTransaction(e) }
+          // We continue reading events from past buckets.
+          context.self ! LoadPastEvents(before - Bucket.duration)
+          listening(stats4, channels, lastTransactionReadAt)
+        }
       case RemoveOldBuckets =>
-        listening(stats.removeOldBuckets(TimestampMilli.now()), channels)
+        listening(stats.removeOldBuckets(TimestampMilli.now()), channels, lastTransactionReadAt)
+      case GetLatestStats(replyTo) if !pastEventsLoaded =>
+        // This generally shouldn't happen since the peer scorer doesn't run too often, and doesn't run immediately
+        // after restarting the node.
+        log.warn("cannot return peer statistics: we're still loading past events from the DB")
+        replyTo ! LatestStats(Nil)
+        listening(stats, channels, lastTransactionReadAt)
       case GetLatestStats(replyTo) =>
-        // TODO: do a db.listConfirmed() to update on-chain stats (we cannot rely on events only because data comes from
-        //  the TransactionPublished event, but should only be applied after TransactionConfirmed so we need permanent
-        //  storage). We'll need the listConfirmed() function added in https://github.com/ACINQ/eclair/pull/3245.
         log.debug("statistics available for {} peers", stats.peers.size)
         val now = TimestampMilli.now()
-        val latest = stats.peers
+        // We start by reading recently confirmed transactions. We cannot simply rely on events for that because data
+        // comes from the TransactionPublished event, but should only be applied after TransactionConfirmed (which may
+        // happen a long time after publication, and the node may have restarted between those two events).
+        val stats1 = db.listConfirmed(lastTransactionReadAt, now).foldLeft(stats) {
+          case (current, e) => current.addConfirmedTransaction(e)
+        }
+        val latest = stats1.peers
           // We only return statistics for peers with whom we have channels available for payments.
           .filter(nodeId => channels.hasChannels(nodeId))
-          .map(nodeId => PeerInfo(nodeId, stats.getPeerStats(nodeId, now), channels.getChannels(nodeId), channels.getUpdate(nodeId), channels.hasPendingChannel(nodeId)))
+          .map(nodeId => PeerInfo(nodeId, stats1.getPeerStats(nodeId, now), channels.getChannels(nodeId), channels.getUpdate(nodeId), channels.hasPendingChannel(nodeId)))
           .toSeq
         replyTo ! LatestStats(latest)
-        listening(stats, channels)
+        listening(stats1, channels, lastTransactionReadAt = now)
     }
   }
 
