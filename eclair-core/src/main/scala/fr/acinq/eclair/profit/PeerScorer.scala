@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel.{CMD_CLOSE, CMD_UPDATE_RELAY_FEE, ChannelFlags, R
 import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.profit.PeerStatsTracker._
-import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli, TimestampSecond}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -291,8 +291,10 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
     val hasPastData = bestPeersByVolume.exists(_.stats.drop(Bucket.bucketsPerDay).exists(_ != PeerStats.empty))
     if (hasPastData && replyTo_opt.isEmpty) {
       closeUnbalancedChannelsIfNeeded(peers)
-      val history1 = updateRelayFeesIfNeeded(bestPeersByVolume, history)
-      fundChannelsIfNeeded(bestPeersThatNeedLiquidity, goodSmallPeers, peersToRevive, history1)
+      closeIdleChannelsIfNeeded(peers)
+      val (updatedPeers, history1) = updateRelayFeesIfNeeded(bestPeersByVolume, history)
+      val history2 = decreaseIdleChannelsRelayFeesIfNeeded(peers.filterNot(p => updatedPeers.contains(p.remoteNodeId)), history1)
+      fundChannelsIfNeeded(bestPeersThatNeedLiquidity, goodSmallPeers, peersToRevive, history2)
     } else {
       replyTo_opt.foreach(_ ! bestPeersThatNeedLiquidity.map(_.peer))
       run(history)
@@ -334,6 +336,26 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       })
   }
 
+  /** We close channels where liquidity has been idle for too long with minimal relay fees. */
+  private def closeIdleChannelsIfNeeded(peers: Seq[PeerInfo]): Unit = {
+    peers
+      // We only close channels when we have more than one.
+      .filter(_.channels.size > 1)
+      // We only close channels for which liquidity is idle.
+      .filter(p => p.stats.map(_.totalAmountOut).sum <= p.capacity * 0.05 && p.stats.map(_.totalAmountIn).sum <= p.capacity * 0.05)
+      // And relay fees have been minimal for long enough to give a chance for routing to catch up.
+      .filter(p => p.latestUpdate_opt.exists(u => u.relayFees.feeProportionalMillionths <= config.relayFees.minRelayFees.feeProportionalMillionths && u.timestamp <= TimestampSecond.now() - 5.days))
+      .foreach(p => {
+        // We keep the best channel and close the others.
+        val toClose = sortChannelsToClose(p.channels).tail
+          // We only close channels where we have a high enough balance.
+          .filter(c => c.canSend >= config.liquidity.localBalanceClosingThreshold)
+          // We don't close channels that have been opened in the last 3 days.
+          .filter(c => c.shortChannelId_opt.forall(scid => scid.blockHeight <= nodeParams.currentBlockHeight - 6 * 24 * 3))
+        closeChannels(p.remoteNodeId, toClose)
+      })
+  }
+
   private def sortChannelsToClose(channels: Seq[ChannelInfo]): Seq[ChannelInfo] = {
     channels.sortWith {
       // We want to keep a public channel over a private channel.
@@ -359,7 +381,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
   }
 
   /** We update the relay fees of our top peers to shape volume based on our available liquidity. */
-  private def updateRelayFeesIfNeeded(peers: Seq[PeerInfo], history: DecisionHistory): DecisionHistory = {
+  private def updateRelayFeesIfNeeded(peers: Seq[PeerInfo], history: DecisionHistory): (Set[PublicKey], DecisionHistory) = {
     // We configure *daily* absolute and proportional payment volume targets. We look at events from the current period
     // and the previous period, so we need to get the right ratio to convert those daily amounts.
     val now = TimestampMilli.now()
@@ -455,7 +477,35 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
     updateRelayFeesIfEnabled(peers, feeIncreases ++ feeDecreases ++ feeReverts)
     // Note that in order to avoid oscillating between reverts (reverting a revert), we remove the previous records when
     // reverting a change: this way, the normal algorithm resumes during the next run.
-    history.addFeeChanges(feeIncreases ++ feeDecreases).revertFeeChanges(feeReverts.keySet)
+    val history1 = history.addFeeChanges(feeIncreases ++ feeDecreases).revertFeeChanges(feeReverts.keySet)
+    val updatedPeers = feeIncreases.keySet ++ feeDecreases.keySet ++ feeReverts.keySet
+    (updatedPeers, history1)
+  }
+
+  /**
+   * When channels have been idle for too long, we decrease their relay fees to boost payment volume.
+   * If that doesn't work, we will close these channels with [[closeIdleChannelsIfNeeded]].
+   */
+  private def decreaseIdleChannelsRelayFeesIfNeeded(peers: Seq[PeerInfo], history: DecisionHistory): DecisionHistory = {
+    val feeDecreases = peers
+      // We're only interested in channels for which liquidity is idle.
+      // We ignore peers for which more than 75% of the funds are on their side: they have a higher incentive than us to
+      // close those channels if they aren't useful, so we'll wait for them to do so.
+      .filter(p => p.stats.map(_.totalAmountOut).sum <= p.capacity * 0.05 && p.stats.map(_.totalAmountIn).sum <= p.capacity * 0.05 && p.canSend >= p.capacity * 0.25)
+      // And relay fees aren't already minimal.
+      .filter(p => p.latestUpdate_opt.exists(u => u.relayFees.feeProportionalMillionths > config.relayFees.minRelayFees.feeProportionalMillionths))
+      // And relay fees haven't been updated recently.
+      .filter(p => p.latestUpdate_opt.exists(u => u.timestamp <= TimestampSecond.now() - 1.day))
+      .flatMap(p => {
+        p.latestUpdate_opt match {
+          case Some(u) =>
+            val next = u.relayFees.copy(feeProportionalMillionths = (u.feeProportionalMillionths - 500).max(config.relayFees.minRelayFees.feeProportionalMillionths))
+            Some(p.remoteNodeId -> FeeChangeDecision(FeeDecrease, u.relayFees, next, p.dailyVolumeOut))
+          case None => None
+        }
+      }).toMap
+    updateRelayFeesIfEnabled(peers, feeDecreases)
+    history.addFeeChanges(feeDecreases)
   }
 
   private def updateRelayFeesIfEnabled(peers: Seq[PeerInfo], decisions: Map[PublicKey, FeeChangeDecision]): Unit = {
