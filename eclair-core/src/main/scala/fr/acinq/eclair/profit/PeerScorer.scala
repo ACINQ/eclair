@@ -287,7 +287,9 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
 
     // Some actions such as opening or closing channels or updating relay fees should only run periodically, not when
     // explicitly requested by a caller (replyTo_opt).
-    if (replyTo_opt.isEmpty) {
+    // TODO: remove hasPastData after successfully deploying the AuditDb changes.
+    val hasPastData = bestPeersByVolume.exists(_.stats.drop(Bucket.bucketsPerDay).exists(_ != PeerStats.empty))
+    if (hasPastData && replyTo_opt.isEmpty) {
       closeUnbalancedChannelsIfNeeded(peers)
       closeIdleChannelsIfNeeded(peers)
       val (updatedPeers, history1) = updateRelayFeesIfNeeded(bestPeersByVolume, history)
