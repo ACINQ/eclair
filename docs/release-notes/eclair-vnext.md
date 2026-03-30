@@ -54,6 +54,104 @@ It should be acceptable, since liquidity decisions should be taken based on rela
 We expose a now `relaystats` API that ranks peers based on the routing fees they're generating.
 See #3245 for more details.
 
+### Experimental peer scoring
+
+We're introducing a `PeerScorer` actor that gathers payment statistics about every peer we have a channel with.
+It tracks fees earned, on-chain fees paid and liquidity fees (earned or paid) and how payment volume evolves over time.
+It then ranks peers based on those statistics and identifies peers that may need additional liquidity to optimize revenue.
+It will print tables of actions that should be taken, which can be extracted from `eclair.log` with:
+
+```sh
+grep PeerScorer eclair.log
+```
+
+It will provide recommendations for:
+
+- channels to fund based on payment activity
+- relay fees based on payment activity and fees earned
+- channels to close to reclaim inefficient liquidity allocation
+
+It is disabled by default: it can be enabled by adding the following line to `eclair.conf`:
+
+```conf
+eclair.peer-scoring.enabled = true
+```
+
+It contains a lot of parameters that need to be set to match your node's strategy. Here are the default values:
+
+```conf
+eclair.peer-scoring {
+  // Set this to true if you want to start collecting data to score peers.
+  enabled = false
+  // Frequency at which we run our peer scoring algorithm.
+  frequency = 1 hour
+  // Maximum number of peers to select as candidates for liquidity and relay fee updates.
+  top-peers-count = 10
+  // A list of node_ids with whom we will try to maintain liquidity.
+  top-peers-whitelist = []
+  // On restart, we read all past events from the previous week from the DB, which is expensive.
+  // We do this in 56 3-hour chunks to avoid performance issues, with a delay between each chunk.
+  // We only read the first chunk after an initial delay, since this isn't critical and there are already a lot of DB
+  // reads when restarting an eclair node that have higher priority.
+  past-events {
+    init-delay = 10 minutes
+    chunk-delay = 10 seconds
+  }
+  // We can automatically allocate liquidity to our top peers when necessary.
+  liquidity {
+    // If true, we will automatically fund channels.
+    auto-fund = false
+    // If true, we will automatically close unused channels to reclaim liquidity.
+    auto-close = false
+    // We only fund channels if at least this amount is necessary.
+    min-funding-amount-satoshis = 1000000 // 0.01 btc
+    // We never fund channels with more than this amount.
+    max-funding-amount-satoshis = 50000000 // 0.5 btc
+    // Maximum total capacity (across all channels) per peer.
+    max-per-peer-capacity-satoshis = 1000000000 // 10 btc
+    // We won't close channels if our local balance is below this amount.
+    local-balance-closing-threshold-satoshis = 10000000 // 0.1 btc
+    // We won't close channels where the remote balance exceeds this amount.
+    remote-balance-closing-threshold-satoshis = 5000000 // 0.05 btc
+    // We stop funding channels if our on-chain balance is below this amount.
+    min-on-chain-balance-satoshis = 50000000 // 0.5 btc
+    // We stop funding channels if the on-chain feerate is above this value.
+    max-feerate-sat-per-byte = 5
+    // Rate-limit the number of funding transactions we make per day (on average).
+    max-funding-tx-per-day = 6
+    // Minimum time between funding the same peer, to evaluate whether the previous funding was effective.
+    funding-cooldown = 72 hours
+  }
+  // We can automatically update our relay fees to our top peers when necessary.
+  relay-fees {
+    // If true, we will automatically update our relay fees based on variations in outgoing payment volume.
+    auto-update = false
+    // We will not lower our fees below these values.
+    min-fee-base-msat = 1
+    min-fee-proportional-millionths = 500
+    // We will not increase our fees above these values.
+    max-fee-base-msat = 10000
+    max-fee-proportional-millionths = 5000
+    // We only increase fees if the daily outgoing payment volume exceeds this threshold or daily-payment-volume-threshold-percent.
+    daily-payment-volume-threshold-satoshis = 10000000 // 0.1 btc
+    // We only increase fees if the daily outgoing payment volume exceeds this percentage of our peer capacity or daily-payment-volume-threshold.
+    daily-payment-volume-threshold-percent = 0.05
+  }
+}
+```
+
+Node operators should adjust these values until the recommendations made by the peer scorer start making sense.
+At that point, node operators may consider letting the peer scorer automatically perform actions by setting:
+
+```conf
+eclair.peer-scoring.liquidity.auto-fund = true
+eclair.peer-scoring.liquidity.auto-close = true
+eclair.peer-scoring.relay-fees.auto-update = true
+```
+
+This is highly experimental, and it is extremely hard to ensure that heuristics perform well for all types of nodes.
+Use this at your own risk!
+
 ### Plugin validation of interactive transactions
 
 We add a new `ValidateInteractiveTxPlugin` trait that can be extended by plugins that want to perform custom validation of remote inputs and outputs added to interactive transactions.

@@ -211,6 +211,10 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
     log.info("scoring {} peers", peers.size)
     val dailyProfit = peers.map(_.stats.take(Bucket.bucketsPerDay).map(_.profit).sum).sum.truncateToSatoshi.toMilliBtc
     val weeklyProfit = peers.map(_.stats.map(_.profit).sum).sum.truncateToSatoshi.toMilliBtc
+    Monitoring.Metrics.DailyProfit.withoutTags().update(dailyProfit.toDouble)
+    Monitoring.Metrics.WeeklyProfit.withoutTags().update(weeklyProfit.toDouble)
+    Monitoring.Metrics.DailyVolume.withoutTags().update(peers.map(_.dailyVolumeOut).sum.truncateToSatoshi.toMilliBtc.toDouble)
+    Monitoring.Metrics.WeeklyVolume.withoutTags().update(peers.map(_.stats.map(_.totalAmountOut).sum).sum.truncateToSatoshi.toMilliBtc.toDouble)
     log.info("rolling daily profit = {} and weekly profit = {}", dailyProfit, weeklyProfit)
 
     // We select peers that have the largest outgoing payment volume of the past day.
@@ -287,9 +291,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
 
     // Some actions such as opening or closing channels or updating relay fees should only run periodically, not when
     // explicitly requested by a caller (replyTo_opt).
-    // TODO: remove hasPastData after successfully deploying the AuditDb changes.
-    val hasPastData = bestPeersByVolume.exists(_.stats.drop(Bucket.bucketsPerDay).exists(_ != PeerStats.empty))
-    if (hasPastData && replyTo_opt.isEmpty) {
+    if (replyTo_opt.isEmpty) {
       closeUnbalancedChannelsIfNeeded(peers)
       closeIdleChannelsIfNeeded(peers)
       val (updatedPeers, history1) = updateRelayFeesIfNeeded(bestPeersByVolume, history)
