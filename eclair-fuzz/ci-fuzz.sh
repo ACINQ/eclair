@@ -16,17 +16,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SRC_DIR="$SCRIPT_DIR/src/test/scala"
 
+# Default max duration to prevent indefinite fuzzing when run locally.
+: "${JAZZER_MAX_DURATION:=5m}"
+export JAZZER_MAX_DURATION
+
 # Discover all @FuzzTest methods: extracts "ClassName#methodName" pairs.
-# Looks for lines like:  def fuzzSomething(data: FuzzedDataProvider)
-# preceded by @FuzzTest annotation.
 TARGETS=()
 while IFS= read -r src_file; do
     class_name="$(basename "$src_file" .scala)"
 
-    # Extract method names annotated with @FuzzTest
-    methods=$(awk '/@FuzzTest/{found=1; next} found && /def [a-zA-Z]/{
-        sub(/.*def /, ""); sub(/\(.*/, ""); print; found=0
-    }' "$src_file")
+    # Extract method names annotated with @FuzzTest.
+    methods=$(grep -A1 '@FuzzTest' "$src_file" | grep -oP '(?<=def )\w+')
 
     for method in $methods; do
         TARGETS+=("${class_name}#${method}")
@@ -38,7 +38,7 @@ if [ ${#TARGETS[@]} -eq 0 ]; then
     exit 1
 fi
 
-echo "==> Discovered ${#TARGETS[@]} fuzz target(s):"
+echo "==> Discovered ${#TARGETS[@]} fuzz target(s) (max duration: $JAZZER_MAX_DURATION):"
 for target in "${TARGETS[@]}"; do
     echo "    $target"
 done
@@ -49,7 +49,7 @@ echo ""
 FAILED=()
 for target in "${TARGETS[@]}"; do
     echo "==> Fuzzing: $target"
-    if JAZZER_FUZZ=1 "$PROJECT_ROOT/mvnw" test -f "$SCRIPT_DIR/pom.xml" -Dtest="$target"; then
+    if JAZZER_FUZZ=1 "$PROJECT_ROOT/mvnw" test -f "$SCRIPT_DIR/pom.xml" -Dtest="$target" -DfailIfNoTests=true; then
         echo "==> PASSED: $target"
     else
         echo "==> FAILED: $target"

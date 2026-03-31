@@ -52,16 +52,22 @@ if [ ! -d "$CLASSFILES" ]; then
 fi
 
 echo "==> Running fuzz tests in regression mode with JaCoCo agent..."
-cd "$PROJECT_ROOT"
 # JAZZER_COVERAGE=1 replays both crash inputs and the generated corpus (.cifuzz-corpus/).
 # -DargLine sets JVM options on the forked test JVM launched by Maven Surefire.
 # See: https://maven.apache.org/surefire/maven-surefire-plugin/test-mojo.html#argLine
 # The JaCoCo agent is attached via -javaagent to collect execution data:
 #   destfile  - where to write the coverage .exec file
+#   append    - overwrite (not append to) any existing exec file from a previous run
 #   includes  - restrict instrumentation to eclair packages for faster runs
 # See: https://www.jacoco.org/jacoco/trunk/doc/agent.html
-JAZZER_COVERAGE=1 ./mvnw test -f eclair-fuzz/pom.xml \
-    -DargLine="-javaagent:${JACOCO_AGENT}=destfile=${EXEC_FILE},includes=fr.acinq.eclair.*"
+JAZZER_COVERAGE=1 "$PROJECT_ROOT/mvnw" test -f "$SCRIPT_DIR/pom.xml" \
+    -DargLine="-javaagent:${JACOCO_AGENT}=destfile=${EXEC_FILE},append=false,includes=fr.acinq.eclair.*"
+
+if [ ! -f "$EXEC_FILE" ]; then
+    echo "Error: JaCoCo execution data not found at $EXEC_FILE"
+    echo "The test run may not have produced any coverage data."
+    exit 1
+fi
 
 echo "==> Generating HTML coverage report..."
 # Use the JaCoCo CLI to convert the .exec data into a human-readable HTML report.
