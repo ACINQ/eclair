@@ -285,9 +285,9 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       // We'd like to increase their capacity by 10% (those peers have a large capacity, so 10% is already a non-negligible amount).
       .map(p => FundingProposal(p, p.capacity * 0.1))
 
-    // Since we're not yet reading past events from the DB, we need to wait until we have collected enough data before
-    // taking some actions such as opening or closing channels or updating relay fees.
-    // TODO: remove this once we start reading past data from the AuditDb on restart.
+    // Some actions such as opening or closing channels or updating relay fees should only run periodically, not when
+    // explicitly requested by a caller (replyTo_opt).
+    // TODO: remove hasPastData after successfully deploying the AuditDb changes.
     val hasPastData = bestPeersByVolume.exists(_.stats.drop(Bucket.bucketsPerDay).exists(_ != PeerStats.empty))
     if (hasPastData && replyTo_opt.isEmpty) {
       closeUnbalancedChannelsIfNeeded(peers)
