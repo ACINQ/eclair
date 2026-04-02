@@ -243,7 +243,8 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       case Event(ping@Ping(pongLength, _, _), d: ConnectedData) =>
         d.transport ! TransportHandler.ReadAck(ping)
         if (pongLength <= 65532) {
-          // see BOLT 1: we reply only if requested pong length is acceptable
+          // See BOLT 1: we reply only if requested pong length is acceptable.
+          // Senders may use unacceptable pong length when they don't want a response (to generate cover traffic).
           d.transport ! Pong(ByteVector.fill(pongLength)(0.toByte))
         }
         stay()
