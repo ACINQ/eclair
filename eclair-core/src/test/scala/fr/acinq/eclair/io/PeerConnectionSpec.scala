@@ -250,11 +250,11 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("ignore malicious ping") { f =>
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
-    // huge requested pong length
+    // Huge requested pong length.
     val ping = Ping(Int.MaxValue, randomBytes(127))
     transport.send(peerConnection, ping)
     transport.expectMsg(TransportHandler.ReadAck(ping))
-    assert(transport.expectMsgType[Warning].channelId == Peer.CHANNELID_ZERO)
+    // We simply ignore the message without sending pong back.
     transport.expectNoMessage()
   }
 
