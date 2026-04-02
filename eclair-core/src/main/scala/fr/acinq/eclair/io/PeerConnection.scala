@@ -245,9 +245,6 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         if (pongLength <= 65532) {
           // see BOLT 1: we reply only if requested pong length is acceptable
           d.transport ! Pong(ByteVector.fill(pongLength)(0.toByte))
-        } else {
-          log.warning(s"ignoring invalid ping with pongLength=${ping.pongLength}")
-          d.transport ! Warning(s"invalid pong length (${ping.pongLength})")
         }
         stay()
 
