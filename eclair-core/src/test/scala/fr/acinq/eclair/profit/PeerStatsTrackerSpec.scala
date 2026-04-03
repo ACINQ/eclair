@@ -479,7 +479,9 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
     }
 
     // Add another confirmed transaction, verify the cumulative total.
-    val now2 = TimestampMilli.now()
+    // Note that we subtract 1 millisecond, otherwise the test may be flaky if it runs too fast and processes the
+    // message at exactly the same millisecond (because we read from the DB events < now).
+    val now2 = TimestampMilli.now() - 1.millis
     val dummyTx2 = Transaction(2, Nil, Seq(TxOut(30_000 sat, Script.pay2wpkh(dummyPubKey))), 0)
     val txPublished2 = TransactionPublished(channelId1, remoteNodeId1, dummyTx2, 150 sat, 0 sat, "splice", None, now2)
     db.add(txPublished2)
