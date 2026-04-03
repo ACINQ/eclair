@@ -168,7 +168,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 07 bbbbbbbbbbbbbb" -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream[ChannelReestablishTlv](Set.empty[ChannelReestablishTlv], Set(GenericTlv(tlvTag, hex"bbbbbbbbbbbbbb")))),
 
       hex"0084" ++ channelId ++ signature ++ hex"0000" -> CommitSig(channelId, IndividualSignature(signature), Nil),
-      hex"0084" ++ channelId ++ ByteVector64.Zeroes ++ hex"0000" ++ hex"02 62" ++ partialSig ++ nonce.data -> CommitSig(channelId, PartialSignatureWithNonce(partialSig, nonce), Nil, batchSize = 1),
+      hex"0084" ++ channelId ++ ByteVector64.Zeroes ++ hex"0000" ++ hex"01 20" ++ txId.value.reverse ++ hex"02 62" ++ partialSig ++ nonce.data -> CommitSig(channelId, txId, PartialSignatureWithNonce(partialSig, nonce), Nil, batchSize = 1),
       hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 00" -> CommitSig(channelId, IndividualSignature(signature), Nil, TlvStream[CommitSigTlv](Set.empty[CommitSigTlv], Set(GenericTlv(tlvTag, ByteVector.empty)))),
       hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 07 cccccccccccccc" -> CommitSig(channelId, IndividualSignature(signature), Nil, TlvStream[CommitSigTlv](Set.empty[CommitSigTlv], Set(GenericTlv(tlvTag, hex"cccccccccccccc")))),
 
@@ -441,6 +441,23 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     }
   }
 
+  test("encode/decode start_batch message") {
+    val channelId = ByteVector32(hex"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    val testCases = Seq(
+      StartBatch(channelId, 1) -> hex"007f aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0001",
+      StartBatch(channelId, 7) -> hex"007f aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0007",
+      StartBatch.commitSigBatch(channelId, 7) -> hex"007f aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0007 01020084",
+      StartBatch(channelId, 7, TlvStream(StartBatchTlv.MessageType(57331))) -> hex"007f aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0007 0102dff3",
+      StartBatch(channelId, 32000) -> hex"007f aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 7d00",
+    )
+    testCases.foreach { case (msg, bin) =>
+      val decoded = lightningMessageCodec.decode(bin.bits).require.value
+      assert(decoded == msg)
+      val encoded = lightningMessageCodec.encode(msg).require.bytes
+      assert(encoded == bin)
+    }
+  }
+
   test("encode/decode closing_signed") {
     val defaultSig = ByteVector64(hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101")
     val testCases = Seq(
@@ -696,9 +713,9 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   test("encode/decode commit_sig batch") {
     val channelId = randomBytes32()
     val batch = CommitSigBatch(Seq(
-      CommitSig(channelId, ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
-      CommitSig(channelId, ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
-      CommitSig(channelId, ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
+      CommitSig(channelId, randomTxId(), ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
+      CommitSig(channelId, randomTxId(), ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
+      CommitSig(channelId, randomTxId(), ChannelSpendSignature.IndividualSignature(randomBytes64()), Nil, batchSize = 3),
     ))
     val encoded = lightningMessageCodec.encode(batch).require
     val decoded = lightningMessageCodec.decode(encoded).require.value
