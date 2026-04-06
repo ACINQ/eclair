@@ -330,14 +330,14 @@ private sealed trait HopJson
 private case class ChannelHopJson(nodeId: PublicKey, nextNodeId: PublicKey, source: HopRelayParams) extends HopJson
 private case class BlindedHopJson(nodeId: PublicKey, nextNodeId: PublicKey, paymentInfo: OfferTypes.PaymentInfo) extends HopJson
 private case class NodeHopJson(nodeId: PublicKey, nextNodeId: PublicKey, fee: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta) extends HopJson
-private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[HopJson])
+private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[HopJson], fee: MilliSatoshi)
 object RouteFullSerializer extends ConvertClassSerializer[Route](route => {
   val channelHops = route.hops.map(h => ChannelHopJson(h.nodeId, h.nextNodeId, h.params))
   val finalHop_opt = route.finalHop_opt.map {
     case h: NodeHop => NodeHopJson(h.nodeId, h.nextNodeId, h.fee, h.cltvExpiryDelta)
     case h: BlindedHop => BlindedHopJson(h.nodeId, h.nextNodeId, h.paymentInfo)
   }
-  RouteFullJson(route.amount, channelHops ++ finalHop_opt.toSeq)
+  RouteFullJson(route.amount, channelHops ++ finalHop_opt.toSeq, route.channelFee(false))
 })
 
 private case class RouteNodeIdsJson(amount: MilliSatoshi, nodeIds: Seq[PublicKey])
