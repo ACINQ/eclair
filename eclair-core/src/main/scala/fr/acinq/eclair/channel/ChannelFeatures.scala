@@ -113,6 +113,15 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
     override def toString: String = s"simple_taproot_channel_staging${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
+  case class TaprootZeroFeeCommitments(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.TaprootZeroFeeCommitmentsStaging)
+    ).flatten
+    override def commitmentFormat: CommitmentFormat = TaprootZeroFeeCommitmentFormat
+    override def toString: String = s"taproot_zero_fee_commitments${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+  }
 
   case class UnsupportedChannelType(featureBits: Features[InitFeature]) extends ChannelType {
     override def features: Set[InitFeature] = featureBits.activated.keySet
@@ -144,6 +153,10 @@ object ChannelTypes {
     ZeroFeeCommitments(zeroConf = true),
     ZeroFeeCommitments(scidAlias = true),
     ZeroFeeCommitments(scidAlias = true, zeroConf = true),
+    TaprootZeroFeeCommitments(),
+    TaprootZeroFeeCommitments(zeroConf = true),
+    TaprootZeroFeeCommitments(scidAlias = true),
+    TaprootZeroFeeCommitments(scidAlias = true, zeroConf = true),
     SimpleTaprootChannelsPhoenix,
   ).map {
     channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType
@@ -163,7 +176,9 @@ object ChannelTypes {
 
   /** Returns our preferred channel type for public channels, if supported by our peer. */
   def preferredForPublicChannels(localFeatures: Features[InitFeature], remoteFeatures: Features[InitFeature], announceChannel: Boolean): Option[SupportedChannelType] = {
-    if (Features.canUseFeature(localFeatures, remoteFeatures, Features.ZeroFeeCommitments)) {
+    if (Features.canUseFeature(localFeatures, remoteFeatures, Features.TaprootZeroFeeCommitmentsStaging)) {
+      Some(TaprootZeroFeeCommitments(scidAlias = !announceChannel && Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias)))
+    } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.ZeroFeeCommitments)) {
       Some(ZeroFeeCommitments(scidAlias = !announceChannel && Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias)))
     } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputsZeroFeeHtlcTx)) {
       Some(AnchorOutputsZeroFeeHtlcTx(scidAlias = !announceChannel && Features.canUseFeature(localFeatures, remoteFeatures, Features.ScidAlias)))

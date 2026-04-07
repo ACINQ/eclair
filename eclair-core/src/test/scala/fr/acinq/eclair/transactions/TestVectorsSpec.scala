@@ -19,9 +19,11 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.ScriptFlags
 import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce, SecretNonce}
 import fr.acinq.bitcoin.scalacompat.Transaction.encodeWitnessEcdsaSig
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxId, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto, KotlinUtils, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeys, LocalCommitmentKeys, RemoteCommitmentKeys}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
@@ -482,7 +484,6 @@ class ZeroFeeCommitmentsTestVectorSpec extends AnyFunSuite {
                          revocation_basepoint: String,
                          payment_hash_to_preimage: Map[String, String],
                          tests: Seq[TestVector]) {
-    val commitmentFormat: CommitmentFormat = ZeroFeeCommitmentFormat
     val localFundingPriv: PrivateKey = PrivateKey(ByteVector.fromValidHex(local_funding_priv))
     val remoteFundingPriv: PrivateKey = PrivateKey(ByteVector.fromValidHex(remote_funding_priv))
     val fundingOutput: OutPoint = OutPoint(TxId.fromValidHex(funding_txid), funding_index)
@@ -521,6 +522,10 @@ class ZeroFeeCommitmentsTestVectorSpec extends AnyFunSuite {
                         to_remote_msat: Long,
                         incoming_htlcs: Seq[TestHtlc],
                         outgoing_htlcs: Seq[TestHtlc],
+                        local_secret_nonce: Option[String],
+                        local_public_nonce: Option[String],
+                        remote_secret_nonce: Option[String],
+                        remote_public_nonce: Option[String],
                         signed_commit_tx: String,
                         signed_htlc_success_txs: Seq[String],
                         signed_htlc_timeout_txs: Seq[String]) {
@@ -533,24 +538,79 @@ class ZeroFeeCommitmentsTestVectorSpec extends AnyFunSuite {
     )
   }
 
+  /** Secret nonces in test vectors use a custom encoding. */
+  private def deserializeSecretNonce(hex: String): SecretNonce = {
+    val serialized = ByteVector.fromValidHex(hex)
+    // In test vectors, secret nonces are serialized as: <scalar_1> <scalar_2> <compressed_public_key>
+    // We expect secret nonces serialized as: <magic> <scalar_1> <scalar_2> <public_key_x> <public_key_y>
+    // Where we use a different endianness for the public key coordinates than the test vectors.
+    val uncompressedPublicKey = PublicKey(serialized.takeRight(33)).toUncompressedBin
+    val publicKeyX = uncompressedPublicKey.drop(1).take(32).reverse
+    val publicKeyY = uncompressedPublicKey.takeRight(32).reverse
+    val sec = new fr.acinq.bitcoin.crypto.musig2.SecretNonce(KotlinUtils.scala2kmp(hex"220EDCF1" ++ serialized.take(64) ++ publicKeyX ++ publicKeyY))
+    SecretNonce(sec)
+  }
+
+  // TODO: remove once test vectors have been verified by other implementations
+  private def serializeSecretNonce(nonce: SecretNonce): String = {
+    val data = KotlinUtils.kmp2scala(nonce.inner.getData$bitcoin_kmp)
+    val scalars = data.drop(4).take(64)
+    val publicKeyX = data.drop(68).take(32).reverse
+    val publicKeyY = data.drop(100).take(32).reverse
+    val compressed = PublicKey(hex"04" ++ publicKeyX ++ publicKeyY)
+    scalars.toHex ++ compressed.toHex
+  }
+
   test("zero-fee-commitments (Bolt3 reference test vector)") {
     val src = Source.fromFile(new File(getClass.getResource("/bolt3-tx-test-vectors-zero-fee-commitment-format.json").getFile))
     val f = JsonMethods.parse(src.mkString).extract[TestFixture]
     src.close()
     import f._
 
-    val fundingInfo = makeFundingScript(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitmentFormat)
-    val commitInput = makeFundingInputInfo(fundingOutput.txid, fundingOutput.index.toInt, fundingAmount, localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitmentFormat)
+    val fundingInfo = makeFundingScript(localFundingPriv.publicKey, remoteFundingPriv.publicKey, ZeroFeeCommitmentFormat)
+    val commitInput = makeFundingInputInfo(fundingOutput.txid, fundingOutput.index.toInt, fundingAmount, localFundingPriv.publicKey, remoteFundingPriv.publicKey, ZeroFeeCommitmentFormat)
 
     tests.foreach(t => {
-      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitInput, localKeys.publicKeys, payCommitTxFees = true, t.dustLimit, toSelfDelay, t.spec, commitmentFormat)
-      val txInfo = makeCommitTx(commitInput, commitTxNumber, localKeys.ourPaymentBasePoint, remoteKeys.ourPaymentBasePoint, localIsChannelOpener = true, commitmentFormat, outputs)
+      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitInput, localKeys.publicKeys, payCommitTxFees = true, t.dustLimit, toSelfDelay, t.spec, ZeroFeeCommitmentFormat)
+      val txInfo = makeCommitTx(commitInput, commitTxNumber, localKeys.ourPaymentBasePoint, remoteKeys.ourPaymentBasePoint, localIsChannelOpener = true, ZeroFeeCommitmentFormat, outputs)
       val localSig = txInfo.sign(localFundingPriv, remoteFundingPriv.publicKey)
       val remoteSig = txInfo.sign(remoteFundingPriv, localFundingPriv.publicKey)
       val commitTx = txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
       Transaction.correctlySpends(commitTx, Map(fundingOutput -> TxOut(fundingAmount, fundingInfo.pubkeyScript)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       assert(commitTx.toString() == t.signed_commit_tx)
-      val htlcTxs = makeHtlcTxs(commitTx, outputs, commitmentFormat).map(htlcTx => {
+      val htlcTxs = makeHtlcTxs(commitTx, outputs, ZeroFeeCommitmentFormat).map(htlcTx => {
+        val remoteSig = htlcTx.localSig(remoteKeys)
+        htlcTx match {
+          case htlcTx: UnsignedHtlcSuccessTx => htlcTx.addRemoteSig(localKeys, remoteSig, preimages(htlcTx.paymentHash)).sign()
+          case htlcTx: UnsignedHtlcTimeoutTx => htlcTx.addRemoteSig(localKeys, remoteSig).sign()
+        }
+      })
+      htlcTxs.foreach(tx => Transaction.correctlySpends(tx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+      assert(htlcTxs.map(_.toString()).toSet == t.signed_htlc_success_txs.toSet ++ t.signed_htlc_timeout_txs.toSet)
+    })
+  }
+
+  test("taproot-zero-fee-commitments (Bolt 3 reference test vector)") {
+    val src = Source.fromFile(new File(getClass.getResource("/bolt3-tx-test-vectors-taproot-zero-fee-commitment-format.json").getFile))
+    val f = JsonMethods.parse(src.mkString).extract[TestFixture]
+    src.close()
+    import f._
+
+    val fundingInfo = makeFundingScript(localFundingPriv.publicKey, remoteFundingPriv.publicKey, TaprootZeroFeeCommitmentFormat)
+    val commitInput = makeFundingInputInfo(fundingOutput.txid, fundingOutput.index.toInt, fundingAmount, localFundingPriv.publicKey, remoteFundingPriv.publicKey, TaprootZeroFeeCommitmentFormat)
+
+    tests.foreach(t => {
+      val outputs = makeCommitTxOutputs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, commitInput, localKeys.publicKeys, payCommitTxFees = true, t.dustLimit, toSelfDelay, t.spec, TaprootZeroFeeCommitmentFormat)
+      val txInfo = makeCommitTx(commitInput, commitTxNumber, localKeys.ourPaymentBasePoint, remoteKeys.ourPaymentBasePoint, localIsChannelOpener = true, TaprootZeroFeeCommitmentFormat, outputs)
+      val localNonce = LocalNonce(deserializeSecretNonce(t.local_secret_nonce.get), IndividualNonce(ByteVector.fromValidHex(t.local_public_nonce.get)))
+      assert(localNonce == NonceGenerator.verificationNonce(fundingOutput.txid, localFundingPriv, remoteFundingPriv.publicKey, commitTxNumber))
+      val remoteNonce = LocalNonce(deserializeSecretNonce(t.remote_secret_nonce.get), IndividualNonce(ByteVector.fromValidHex(t.remote_public_nonce.get)))
+      val localSig = txInfo.partialSign(localFundingPriv, remoteFundingPriv.publicKey, localNonce, Seq(localNonce.publicNonce, remoteNonce.publicNonce)).toOption.get
+      val remoteSig = txInfo.partialSign(remoteFundingPriv, localFundingPriv.publicKey, remoteNonce, Seq(localNonce.publicNonce, remoteNonce.publicNonce)).toOption.get
+      val commitTx = txInfo.aggregateSigs(localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig).toOption.get
+      Transaction.correctlySpends(commitTx, Map(fundingOutput -> TxOut(fundingAmount, fundingInfo.pubkeyScript)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      assert(commitTx.toString() == t.signed_commit_tx)
+      val htlcTxs = makeHtlcTxs(commitTx, outputs, TaprootZeroFeeCommitmentFormat).map(htlcTx => {
         val remoteSig = htlcTx.localSig(remoteKeys)
         htlcTx match {
           case htlcTx: UnsignedHtlcSuccessTx => htlcTx.addRemoteSig(localKeys, remoteSig, preimages(htlcTx.paymentHash)).sign()

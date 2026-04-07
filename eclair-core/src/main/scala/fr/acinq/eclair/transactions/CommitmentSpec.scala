@@ -95,7 +95,7 @@ final case class CommitmentSpec(htlcs: Set[DirectedHtlc], commitTxFeerate: Feera
 
   def htlcTxFeerate(commitmentFormat: CommitmentFormat): FeeratePerKw = commitmentFormat match {
     case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat | ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat => FeeratePerKw(0 sat)
-    case ZeroFeeCommitmentFormat => FeeratePerKw(0 sat)
+    case ZeroFeeCommitmentFormat | TaprootZeroFeeCommitmentFormat => FeeratePerKw(0 sat)
     case UnsafeLegacyAnchorOutputsCommitmentFormat | PhoenixSimpleTaprootChannelCommitmentFormat => commitTxFeerate
   }
 

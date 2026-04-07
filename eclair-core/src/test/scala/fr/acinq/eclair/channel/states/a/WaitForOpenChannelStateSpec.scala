@@ -23,7 +23,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
-import fr.acinq.eclair.transactions.Transactions.{ZeroFeeCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, OpenChannel, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -97,26 +97,42 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     awaitCond(bob.stateName == CLOSED)
   }
 
-  test("recv OpenChannel (zero-fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+  private def testOpenZeroFeeCommitment(f: FixtureParam, channelType: SupportedChannelType): Unit = {
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    assert(open.channelType_opt.contains(ChannelTypes.ZeroFeeCommitments()))
+    assert(open.channelType_opt.contains(channelType))
     assert(open.feeratePerKw == FeeratePerKw(0 sat))
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
-    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].commitmentFormat == ZeroFeeCommitmentFormat)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].commitmentFormat == channelType.commitmentFormat)
   }
 
-  test("recv OpenChannel (zero-fee commitments, non-zero feerate)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+  test("recv OpenChannel (zero-fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    testOpenZeroFeeCommitment(f, ChannelTypes.ZeroFeeCommitments())
+  }
+
+  test("recv OpenChannel (taproot zero-fee commitments)", Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
+    testOpenZeroFeeCommitment(f, ChannelTypes.TaprootZeroFeeCommitments())
+  }
+
+  private def testOpenZeroFeeCommitmentNonZeroFeerate(f: FixtureParam, channelType: SupportedChannelType): Unit = {
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    assert(open.channelType_opt.contains(ChannelTypes.ZeroFeeCommitments()))
+    assert(open.channelType_opt.contains(channelType))
     assert(open.feeratePerKw == FeeratePerKw(0 sat))
     alice2bob.forward(bob, open.copy(feeratePerKw = FeeratePerByte(1 sat).perKw))
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(open.temporaryChannelId, FeerateTooDifferent(open.temporaryChannelId, FeeratePerKw(0 sat), FeeratePerByte(1 sat).perKw).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv OpenChannel (zero-fee commitments, non-zero feerate)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    testOpenZeroFeeCommitmentNonZeroFeerate(f, ChannelTypes.ZeroFeeCommitments())
+  }
+
+  test("recv OpenChannel (taproot zero-fee commitments, non-zero feerate)", Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
+    testOpenZeroFeeCommitmentNonZeroFeerate(f, ChannelTypes.TaprootZeroFeeCommitments())
   }
 
   test("recv OpenChannel (invalid chain)") { f =>
@@ -176,7 +192,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     awaitCond(bob.stateName == CLOSED)
   }
 
-  test("recv OpenChannel (invalid max accepted htlcs, zero-fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+  private def testInvalidMaxHtlcsZeroFeeCommitment(f: FixtureParam): Unit = {
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob, open.copy(maxAcceptedHtlcs = 115))
@@ -184,6 +200,14 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     assert(error == Error(open.temporaryChannelId, InvalidMaxAcceptedHtlcs(open.temporaryChannelId, maxAcceptedHtlcs = 115, max = 114).getMessage))
     listener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv OpenChannel (invalid max accepted htlcs, zero-fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    testInvalidMaxHtlcsZeroFeeCommitment(f)
+  }
+
+  test("recv OpenChannel (invalid max accepted htlcs, taproot zero-fee commitments)", Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
+    testInvalidMaxHtlcsZeroFeeCommitment(f)
   }
 
   test("recv OpenChannel (invalid push_msat)") { f =>

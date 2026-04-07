@@ -146,7 +146,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
-  test("recv AcceptChannel (invalid max accepted htlcs, zero-fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+  private def testInvalidMaxAcceptedHtlcsZeroFeeCommitment(f: FixtureParam): Unit = {
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     alice ! accept.copy(maxAcceptedHtlcs = 115)
@@ -155,6 +155,14 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
+  }
+
+  test("recv AcceptChannel (invalid max accepted htlcs, zero-fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    testInvalidMaxAcceptedHtlcsZeroFeeCommitment(f)
+  }
+
+  test("recv AcceptChannel (invalid max accepted htlcs, taproot zero-fee commitments)", Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
+    testInvalidMaxAcceptedHtlcsZeroFeeCommitment(f)
   }
 
   test("recv AcceptChannel (dust limit too low)") { f =>

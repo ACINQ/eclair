@@ -133,7 +133,7 @@ object Helpers {
     }
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
     channelType.commitmentFormat match {
-      case _: SimpleTaprootChannelCommitmentFormat => if (open.commitNonce_opt.isEmpty) return Left(MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), commitmentNumber = 0))
+      case _: TaprootCommitmentFormat => if (open.commitNonce_opt.isEmpty) return Left(MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), commitmentNumber = 0))
       case _: SegwitV0CommitmentFormat => ()
     }
 
@@ -243,7 +243,7 @@ object Helpers {
 
     val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures, open.channelFlags.announceChannel)
     channelType.commitmentFormat match {
-      case _: SimpleTaprootChannelCommitmentFormat => if (accept.commitNonce_opt.isEmpty) return Left(MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), commitmentNumber = 0))
+      case _: TaprootCommitmentFormat => if (accept.commitNonce_opt.isEmpty) return Left(MissingCommitNonce(open.temporaryChannelId, TxId(ByteVector32.Zeroes), commitmentNumber = 0))
       case _: SegwitV0CommitmentFormat => ()
     }
     extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
@@ -295,7 +295,7 @@ object Helpers {
     channelType match {
       case _: ChannelTypes.AnchorOutputs | _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx => remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
       case _: ChannelTypes.SimpleTaprootChannelsStaging | ChannelTypes.SimpleTaprootChannelsPhoenix => remoteFeeratePerKw < FeeratePerKw.MinimumFeeratePerKw
-      case _: ChannelTypes.ZeroFeeCommitments => false
+      case _: ChannelTypes.ZeroFeeCommitments | _: ChannelTypes.TaprootZeroFeeCommitments => false
     }
   }
 
@@ -558,7 +558,7 @@ object Helpers {
         val localNextPerCommitmentPoint = channelKeys.commitmentPoint(commitments.localCommitIndex + 1)
         val localCommitNonces = commitments.active.flatMap(c => c.commitmentFormat match {
           case _: SegwitV0CommitmentFormat => None
-          case _: SimpleTaprootChannelCommitmentFormat =>
+          case _: TaprootCommitmentFormat =>
             val fundingKey = channelKeys.fundingKey(c.fundingTxIndex)
             val n = NonceGenerator.verificationNonce(c.fundingTxId, fundingKey, c.remoteFundingPubKey, commitments.localCommitIndex + 1).publicNonce
             Some(c.fundingTxId -> n)
@@ -787,7 +787,7 @@ object Helpers {
                   val dummySig = IndividualSignature(Transactions.PlaceHolderSig)
                   val dummySignedTx = dummyTx.aggregateSigs(dummyPubkey, dummyPubkey, dummySig, dummySig)
                   SimpleClosingTxFee.PaidByUs(Transactions.weight2fee(feerate, dummySignedTx.weight()))
-                case _: SimpleTaprootChannelCommitmentFormat =>
+                case _: TaprootCommitmentFormat =>
                   val dummySignedTx = dummyTx.tx.updateWitness(dummyTx.inputIndex, Script.witnessKeyPathPay2tr(Transactions.PlaceHolderSig))
                   SimpleClosingTxFee.PaidByUs(Transactions.weight2fee(feerate, dummySignedTx.weight()))
               }
@@ -803,7 +803,7 @@ object Helpers {
         val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
         val localNonces = CloserNonces.generate(localFundingKey.publicKey, commitment.remoteFundingPubKey, commitment.fundingTxId)
         val tlvs: TlvStream[ClosingCompleteTlv] = commitment.commitmentFormat match {
-          case _: SimpleTaprootChannelCommitmentFormat =>
+          case _: TaprootCommitmentFormat =>
             remoteNonce_opt match {
               case None => return Left(MissingClosingNonce(commitment.channelId))
               case Some(remoteNonce) =>
@@ -842,7 +842,7 @@ object Helpers {
         // If our output isn't dust, they must provide a signature for a transaction that includes it.
         // Note that we're the closee, so we look for signatures including the closee output.
         commitment.commitmentFormat match {
-          case _: SimpleTaprootChannelCommitmentFormat => localNonce_opt match {
+          case _: TaprootCommitmentFormat => localNonce_opt match {
             case None => Left(MissingClosingNonce(commitment.channelId))
             case Some(localNonce) =>
               (closingTxs.localAndRemote_opt, closingTxs.localOnly_opt) match {
@@ -1207,7 +1207,7 @@ object Helpers {
         // In that case, we don't need to create a dedicated anchor transaction which avoids using wallet inputs.
         val useMainTxForAnchor = commitment.commitmentFormat match {
           case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => false
-          case ZeroFeeCommitmentFormat =>
+          case ZeroFeeCommitmentFormat | TaprootZeroFeeCommitmentFormat =>
             val commitFee = Transactions.weight2fee(feerates.fastest, commitTx.weight())
             mainTx_opt.exists(_.tx.txOut.map(_.amount).sum > commitFee)
         }
@@ -1237,10 +1237,8 @@ object Helpers {
 
       /** Claim our main output from the remote commitment transaction, if available. */
       def claimMainOutput(commitKeys: RemoteCommitmentKeys, commitTx: Transaction, dustLimit: Satoshi, commitmentFormat: CommitmentFormat, feerate: FeeratePerKw, finalScriptPubKey: ByteVector)(implicit log: LoggingAdapter): Option[ClaimRemoteMainOutputTx] = {
-        commitmentFormat match {
-          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat | ZeroFeeCommitmentFormat => withTxGenerationLog("remote-main") {
-            ClaimRemoteMainOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerate, commitmentFormat)
-          }
+        withTxGenerationLog("remote-main") {
+          ClaimRemoteMainOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerate, commitmentFormat)
         }
       }
 
@@ -1405,10 +1403,8 @@ object Helpers {
         val feeratePenalty = feerates.fast
 
         // First we will claim our main output right away.
-        val mainTx_opt = commitmentFormat match {
-          case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat | ZeroFeeCommitmentFormat => withTxGenerationLog("remote-main") {
-            ClaimRemoteMainOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerateMain, commitmentFormat)
-          }
+        val mainTx_opt = withTxGenerationLog("remote-main") {
+          ClaimRemoteMainOutputTx.createUnsignedTx(commitKeys, commitTx, dustLimit, finalScriptPubKey, feerateMain, commitmentFormat)
         }
 
         // Then we punish them by stealing their main output.

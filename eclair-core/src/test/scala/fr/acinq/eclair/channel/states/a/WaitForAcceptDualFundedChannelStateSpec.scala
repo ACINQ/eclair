@@ -189,7 +189,7 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
   }
 
-  test("recv AcceptDualFundedChannel (invalid max accepted htlcs, zero-fee commitments)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+  private def testInvalidMaxAcceptedHtlcsZeroFeeCommitment(f: FixtureParam): Unit = {
     import f._
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
     alice ! accept.copy(maxAcceptedHtlcs = 115)
@@ -198,6 +198,14 @@ class WaitForAcceptDualFundedChannelStateSpec extends TestKitBaseClass with Fixt
     listener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSED)
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
+  }
+
+  test("recv AcceptDualFundedChannel (invalid max accepted htlcs, zero-fee commitments)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    testInvalidMaxAcceptedHtlcsZeroFeeCommitment(f)
+  }
+
+  test("recv AcceptDualFundedChannel (invalid max accepted htlcs, taproot zero-fee commitments)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
+    testInvalidMaxAcceptedHtlcsZeroFeeCommitment(f)
   }
 
   test("recv AcceptDualFundedChannel (dust limit too low)", Tag(ChannelStateTestsTags.DualFunding)) { f =>

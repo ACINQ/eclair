@@ -1106,6 +1106,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     testRecvCommitSigMultipleHtlcZeroFees(f)
   }
 
+  test("recv CommitSig (multiple htlcs in both directions, taproot zero fee commitments)", Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
+    testRecvCommitSigMultipleHtlcZeroFees(f)
+  }
+
   test("recv CommitSig (multiple htlcs in both directions) (without fundingTxId tlv)") { f =>
     import f._
 
@@ -1650,6 +1654,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     testRevokeAndAckHtlc(f, ZeroFeeCommitmentFormat)
   }
 
+  test("recv RevokeAndAck (one htlc sent, taproot_zero_fee_commitments)", Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
+    testRevokeAndAckHtlc(f, TaprootZeroFeeCommitmentFormat)
+  }
+
   test("recv RevocationTimeout") { f =>
     import f._
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1695,6 +1703,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CMD_FULFILL_HTLC (zero_fee_commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
     testReceiveCmdFulfillHtlc(f, ZeroFeeCommitmentFormat)
+  }
+
+  test("recv CMD_FULFILL_HTLC (taproot_zero_fee_commitments)", Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
+    testReceiveCmdFulfillHtlc(f, TaprootZeroFeeCommitmentFormat)
   }
 
   test("recv CMD_FULFILL_HTLC (unknown htlc id)") { f =>
@@ -1871,6 +1883,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CMD_FAIL_HTLC (zero_fee_commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
     testCmdFailHtlc(f, ZeroFeeCommitmentFormat)
+  }
+
+  test("recv CMD_FAIL_HTLC (taproot_zero_fee_commitments)", Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
+    testCmdFailHtlc(f, TaprootZeroFeeCommitmentFormat)
   }
 
   test("recv CMD_FAIL_HTLC (with delay)") { f =>
@@ -2175,6 +2191,15 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("recv UpdateFee (zero-fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    import f._
+    val tx = bob.signCommitTx()
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    bob ! UpdateFee(ByteVector32.Zeroes, TestConstants.anchorOutputsFeeratePerKw)
+    bob2alice.expectMsgType[Error]
+    awaitCond(bob.stateName == CLOSING)
+  }
+
+  test("recv UpdateFee (taproot zero-fee commitments)", Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
     import f._
     val tx = bob.signCommitTx()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
@@ -2766,6 +2791,15 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   }
 
   test("recv CurrentFeerate (when funder, doesn't trigger and UpdateFee with zero-fee commitments)", Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    import f._
+    assert(alice.commitments.latest.localCommit.spec.commitTxFeerate == FeeratePerKw(0 sat))
+    val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(5000 sat)).copy(minimum = FeeratePerKw(250 sat)))
+    alice.setBitcoinCoreFeerates(event.feeratesPerKw)
+    alice ! event
+    alice2bob.expectNoMessage(100 millis)
+  }
+
+  test("recv CurrentFeerate (when funder, doesn't trigger and UpdateFee with taproot zero-fee commitments)", Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
     import f._
     assert(alice.commitments.latest.localCommit.spec.commitTxFeerate == FeeratePerKw(0 sat))
     val event = CurrentFeerates.BitcoinCore(FeeratesPerKw.single(FeeratePerKw(5000 sat)).copy(minimum = FeeratePerKw(250 sat)))

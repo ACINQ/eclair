@@ -160,6 +160,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     val testTags = channelType match {
       case _: ChannelTypes.AnchorOutputs => Set(ChannelStateTestsTags.AnchorOutputsPhoenix)
       case _: ChannelTypes.ZeroFeeCommitments => Set(ChannelStateTestsTags.ZeroFeeCommitments, ChannelStateTestsTags.NoMaxHtlcValueInFlight)
+      case _: ChannelTypes.TaprootZeroFeeCommitments => Set(ChannelStateTestsTags.TaprootZeroFeeCommitments, ChannelStateTestsTags.NoMaxHtlcValueInFlight)
       case _ => Set.empty[String]
     }
     reachNormal(setup, testTags)
@@ -228,31 +229,37 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  private def testCommitFeerateHighEnoughZeroFeeCommitment(f: Fixture): Unit = {
+    import f._
+
+    // We create many dust HTLCs, which will contribute to the commit feerate.
+    (1 to 10).foreach(_ => addHtlc(250_000 msat, alice, bob, alice2bob, bob2alice))
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // The current network feerate is lower than what the commit tx already pays.
+    setFeerate(FeeratePerByte(1 sat).perKw)
+    val commitTx = alice.signCommitTx()
+    assert(commitTx.txOut.exists(o => o.publicKeyScript == Script.write(Script.pay2anchor) && o.amount == ZeroFeeCommitmentFormat.maxAnchorAmount))
+    assert(Transactions.fee2rate(alice.commitments.latest.capacity - commitTx.txOut.map(_.amount).sum, commitTx.weight()) >= FeeratePerByte(1 sat).perKw)
+
+    probe.send(alice, CMD_FORCECLOSE(probe.ref))
+    probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
+    val anchorTx = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 20))
+    assert(anchorTx.commitTx == commitTx)
+    assert(anchorTx.txInfo.isInstanceOf[ClaimLocalAnchorTx])
+    publisher ! Publish(probe.ref, anchorTx)
+
+    val result = probe.expectMsgType[TxRejected]
+    assert(result.cmd == anchorTx)
+    assert(result.reason == TxSkipped(retryNextBlock = true))
+  }
+
   test("commit tx feerate high enough, not spending anchor output (local commit, zero-fee commitments)") {
-    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f =>
-      import f._
+    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f => testCommitFeerateHighEnoughZeroFeeCommitment(f) }
+  }
 
-      // We create many dust HTLCs, which will contribute to the commit feerate.
-      (1 to 10).foreach(_ => addHtlc(250_000 msat, alice, bob, alice2bob, bob2alice))
-      crossSign(alice, bob, alice2bob, bob2alice)
-
-      // The current network feerate is lower than what the commit tx already pays.
-      setFeerate(FeeratePerByte(1 sat).perKw)
-      val commitTx = alice.signCommitTx()
-      assert(commitTx.txOut.exists(o => o.publicKeyScript == Script.write(Script.pay2anchor) && o.amount == ZeroFeeCommitmentFormat.maxAnchorAmount))
-      assert(Transactions.fee2rate(alice.commitments.latest.capacity - commitTx.txOut.map(_.amount).sum, commitTx.weight()) >= FeeratePerByte(1 sat).perKw)
-
-      probe.send(alice, CMD_FORCECLOSE(probe.ref))
-      probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
-      val anchorTx = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 20))
-      assert(anchorTx.commitTx == commitTx)
-      assert(anchorTx.txInfo.isInstanceOf[ClaimLocalAnchorTx])
-      publisher ! Publish(probe.ref, anchorTx)
-
-      val result = probe.expectMsgType[TxRejected]
-      assert(result.cmd == anchorTx)
-      assert(result.reason == TxSkipped(retryNextBlock = true))
-    }
+  test("commit tx feerate high enough, not spending anchor output (local commit, taproot zero-fee commitments)") {
+    withFixture(Seq(500 millibtc), ChannelTypes.TaprootZeroFeeCommitments()) { f => testCommitFeerateHighEnoughZeroFeeCommitment(f) }
   }
 
   test("commit tx feerate high enough, not spending anchor output (remote commit)") {
@@ -270,36 +277,42 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  private def testCommitFeerateHighEnoughZeroFeeCommitmentRemoteMainOutput(f: Fixture): Unit = {
+    import f._
+
+    // We create many dust HTLCs, which will contribute to the commit feerate.
+    (1 to 10).foreach(_ => addHtlc(250_000 msat, alice, bob, alice2bob, bob2alice))
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // The current network feerate is lower than what the commit tx already pays.
+    setFeerate(FeeratePerByte(1 sat).perKw)
+    val commitTx = bob.signCommitTx()
+    assert(commitTx.txOut.exists(o => o.publicKeyScript == Script.write(Script.pay2anchor) && o.amount == ZeroFeeCommitmentFormat.maxAnchorAmount))
+    assert(Transactions.fee2rate(bob.commitments.latest.capacity - commitTx.txOut.map(_.amount).sum, commitTx.weight()) >= FeeratePerByte(1 sat).perKw)
+
+    probe.send(alice, WatchFundingSpentTriggered(commitTx))
+    val publishMain = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(publishMain.commitTx == commitTx)
+    assert(publishMain.txInfo.input.outPoint.txid == commitTx.txid)
+    assert(publishMain.txInfo.isInstanceOf[ClaimRemoteMainOutputTx])
+
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+
+    publisher ! Publish(probe.ref, publishMain)
+    val mainTx = listener.expectMsgType[TransactionPublished].tx
+    assert(mainTx.version == 3)
+    assert(mainTx.txIn.map(_.outPoint.txid).toSet == Set(commitTx.txid))
+    val mempoolTxs = getMempoolTxs(2)
+    assert(mempoolTxs.map(_.txid).toSet == Set(commitTx.txid, mainTx.txid))
+  }
+
   test("commit tx feerate high enough, main output does not spend anchor output (remote commit, zero-fee commitments)") {
-    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f =>
-      import f._
+    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f => testCommitFeerateHighEnoughZeroFeeCommitmentRemoteMainOutput(f) }
+  }
 
-      // We create many dust HTLCs, which will contribute to the commit feerate.
-      (1 to 10).foreach(_ => addHtlc(250_000 msat, alice, bob, alice2bob, bob2alice))
-      crossSign(alice, bob, alice2bob, bob2alice)
-
-      // The current network feerate is lower than what the commit tx already pays.
-      setFeerate(FeeratePerByte(1 sat).perKw)
-      val commitTx = bob.signCommitTx()
-      assert(commitTx.txOut.exists(o => o.publicKeyScript == Script.write(Script.pay2anchor) && o.amount == ZeroFeeCommitmentFormat.maxAnchorAmount))
-      assert(Transactions.fee2rate(bob.commitments.latest.capacity - commitTx.txOut.map(_.amount).sum, commitTx.weight()) >= FeeratePerByte(1 sat).perKw)
-
-      probe.send(alice, WatchFundingSpentTriggered(commitTx))
-      val publishMain = alice2blockchain.expectMsgType[PublishReplaceableTx]
-      assert(publishMain.commitTx == commitTx)
-      assert(publishMain.txInfo.input.outPoint.txid == commitTx.txid)
-      assert(publishMain.txInfo.isInstanceOf[ClaimRemoteMainOutputTx])
-
-      val listener = TestProbe()
-      system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
-
-      publisher ! Publish(probe.ref, publishMain)
-      val mainTx = listener.expectMsgType[TransactionPublished].tx
-      assert(mainTx.version == 3)
-      assert(mainTx.txIn.map(_.outPoint.txid).toSet == Set(commitTx.txid))
-      val mempoolTxs = getMempoolTxs(2)
-      assert(mempoolTxs.map(_.txid).toSet == Set(commitTx.txid, mainTx.txid))
-    }
+  test("commit tx feerate high enough, main output does not spend anchor output (remote commit, taproot zero-fee commitments)") {
+    withFixture(Seq(500 millibtc), ChannelTypes.TaprootZeroFeeCommitments()) { f => testCommitFeerateHighEnoughZeroFeeCommitmentRemoteMainOutput(f) }
   }
 
   test("commit tx recently confirmed, not spending anchor output") {
@@ -517,45 +530,51 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  private def testCommitFeerateAnchorSpendZeroFeeCommitment(f: Fixture): Unit = {
+    import f._
+
+    val commitTx = alice.signCommitTx()
+    probe.send(alice, CMD_FORCECLOSE(probe.ref))
+    probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
+
+    // Forward the anchor tx to the publisher.
+    val anchorTx = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 30))
+    assert(anchorTx.commitTx == commitTx)
+    assert(anchorTx.txInfo.isInstanceOf[ClaimLocalAnchorTx])
+
+    val targetFeerate = FeeratePerKw(3000 sat)
+    // NB: we try to get transactions confirmed *before* their confirmation target, so we aim for a more aggressive block target what's provided.
+    setFeerate(targetFeerate, blockTarget = 12)
+    publisher ! Publish(probe.ref, anchorTx)
+
+    // wait for the commit tx and anchor tx to be published
+    val mempoolTxs = getMempoolTxs(2)
+    assert(mempoolTxs.map(_.txid).contains(commitTx.txid))
+
+    // we check that the anchor tx contains additional wallet inputs
+    // there are 2 transactions in the mempool, the one that is not the commit tx has to be the anchor tx
+    wallet.getTransaction(mempoolTxs.filterNot(_.txid == commitTx.txid).head.txid).pipeTo(probe.ref)
+    val publishedAnchorTx = probe.expectMsgType[Transaction]
+    assert(publishedAnchorTx.txIn.size > 1)
+
+    val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
+    val actualFee = mempoolTxs.map(_.fees).sum
+    assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+
+    generateBlocks(6)
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+    val result = probe.expectMsgType[TxConfirmed]
+    assert(result.cmd == anchorTx)
+    assert(result.tx.txIn.map(_.outPoint.txid).contains(commitTx.txid))
+    assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
+  }
+
   test("commit tx feerate too low, spending anchor output (local commit, zero-fee-commitments)") {
-    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f =>
-      import f._
+    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f => testCommitFeerateAnchorSpendZeroFeeCommitment(f) }
+  }
 
-      val commitTx = alice.signCommitTx()
-      probe.send(alice, CMD_FORCECLOSE(probe.ref))
-      probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
-
-      // Forward the anchor tx to the publisher.
-      val anchorTx = alice2blockchain.expectMsgType[PublishReplaceableTx].copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 30))
-      assert(anchorTx.commitTx == commitTx)
-      assert(anchorTx.txInfo.isInstanceOf[ClaimLocalAnchorTx])
-
-      val targetFeerate = FeeratePerKw(3000 sat)
-      // NB: we try to get transactions confirmed *before* their confirmation target, so we aim for a more aggressive block target what's provided.
-      setFeerate(targetFeerate, blockTarget = 12)
-      publisher ! Publish(probe.ref, anchorTx)
-
-      // wait for the commit tx and anchor tx to be published
-      val mempoolTxs = getMempoolTxs(2)
-      assert(mempoolTxs.map(_.txid).contains(commitTx.txid))
-
-      // we check that the anchor tx contains additional wallet inputs
-      // there are 2 transactions in the mempool, the one that is not the commit tx has to be the anchor tx
-      wallet.getTransaction(mempoolTxs.filterNot(_.txid == commitTx.txid).head.txid).pipeTo(probe.ref)
-      val publishedAnchorTx = probe.expectMsgType[Transaction]
-      assert(publishedAnchorTx.txIn.size > 1)
-
-      val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
-      val actualFee = mempoolTxs.map(_.fees).sum
-      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
-
-      generateBlocks(6)
-      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
-      val result = probe.expectMsgType[TxConfirmed]
-      assert(result.cmd == anchorTx)
-      assert(result.tx.txIn.map(_.outPoint.txid).contains(commitTx.txid))
-      assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
-    }
+  test("commit tx feerate too low, spending anchor output (local commit, taproot zero-fee-commitments)") {
+    withFixture(Seq(500 millibtc), ChannelTypes.TaprootZeroFeeCommitments()) { f => testCommitFeerateAnchorSpendZeroFeeCommitment(f) }
   }
 
   private def testSpendRemoteCommitAnchor(f: Fixture, nextCommit: Boolean): Unit = {
@@ -731,75 +750,87 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  private def testRemoteCommitNotPublishedZeroFeeCommitment(f: Fixture): Unit = {
+    import f._
+
+    // Alice puts all of her balance in an HTLC to Bob: she won't have enough funds in her main output to pay the commit fee.
+    addHtlc(alice.commitments.availableBalanceForSend, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val commitTx = bob.signCommitTx()
+    probe.send(alice, WatchFundingSpentTriggered(commitTx))
+    val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(publishAnchor.commitTx == commitTx)
+    assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.txid)
+    assert(publishAnchor.txInfo.isInstanceOf[ClaimRemoteAnchorTx])
+
+    val targetFeerate = FeeratePerKw(3000 sat)
+    setFeerate(targetFeerate)
+    val anchorTx = publishAnchor.copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 4))
+    publisher ! Publish(probe.ref, anchorTx)
+    // wait for the commit tx and anchor tx to be published
+    val mempoolTxs = getMempoolTxs(2)
+    assert(mempoolTxs.map(_.txid).contains(commitTx.txid))
+
+    val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
+    val actualFee = mempoolTxs.map(_.fees).sum
+    assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+
+    generateBlocks(6)
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+    val result = probe.expectMsgType[TxConfirmed]
+    assert(result.cmd == anchorTx)
+    assert(result.tx.version == 3)
+    assert(result.tx.txIn.count(_.outPoint.txid == commitTx.txid) == 1)
+    assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
+  }
+
   test("remote commit tx not published, publishing it and spending anchor output (zero-fee-commitments)") {
-    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f =>
-      import f._
+    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f => testRemoteCommitNotPublishedZeroFeeCommitment(f) }
+  }
 
-      // Alice puts all of her balance in an HTLC to Bob: she won't have enough funds in her main output to pay the commit fee.
-      addHtlc(alice.commitments.availableBalanceForSend, alice, bob, alice2bob, bob2alice)
-      crossSign(alice, bob, alice2bob, bob2alice)
-      val commitTx = bob.signCommitTx()
-      probe.send(alice, WatchFundingSpentTriggered(commitTx))
-      val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
-      assert(publishAnchor.commitTx == commitTx)
-      assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.txid)
-      assert(publishAnchor.txInfo.isInstanceOf[ClaimRemoteAnchorTx])
+  test("remote commit tx not published, publishing it and spending anchor output (taproot zero-fee-commitments)") {
+    withFixture(Seq(500 millibtc), ChannelTypes.TaprootZeroFeeCommitments()) { f => testRemoteCommitNotPublishedZeroFeeCommitment(f) }
+  }
 
-      val targetFeerate = FeeratePerKw(3000 sat)
-      setFeerate(targetFeerate)
-      val anchorTx = publishAnchor.copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 4))
-      publisher ! Publish(probe.ref, anchorTx)
-      // wait for the commit tx and anchor tx to be published
-      val mempoolTxs = getMempoolTxs(2)
-      assert(mempoolTxs.map(_.txid).contains(commitTx.txid))
+  private def testRemoteCommitNotPublishedZeroFeeCommitmentMainCpfp(f: Fixture): Unit = {
+    import f._
 
-      val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
-      val actualFee = mempoolTxs.map(_.fees).sum
-      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+    val commitTx = bob.signCommitTx()
+    // When using zero-fee commitments, we use our main output to spend the anchor output.
+    probe.send(alice, WatchFundingSpentTriggered(commitTx))
+    val publishMain = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(publishMain.commitTx == commitTx)
+    assert(publishMain.txInfo.input.outPoint.txid == commitTx.txid)
+    assert(publishMain.txInfo.isInstanceOf[ClaimRemoteMainOutputTx])
 
-      generateBlocks(6)
-      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
-      val result = probe.expectMsgType[TxConfirmed]
-      assert(result.cmd == anchorTx)
-      assert(result.tx.version == 3)
-      assert(result.tx.txIn.count(_.outPoint.txid == commitTx.txid) == 1)
-      assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
-    }
+    val targetFeerate = FeeratePerKw(3000 sat)
+    setFeerate(targetFeerate)
+    val mainTx = publishMain.copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 6))
+    publisher ! Publish(probe.ref, mainTx)
+    // wait for the commit tx and main tx to be published
+    val mempoolTxs = getMempoolTxs(2)
+    assert(mempoolTxs.map(_.txid).contains(commitTx.txid))
+
+    val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
+    val actualFee = mempoolTxs.map(_.fees).sum
+    assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+
+    generateBlocks(6)
+    system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
+    val result = probe.expectMsgType[TxConfirmed]
+    assert(result.cmd == mainTx)
+    assert(result.tx.version == 3)
+    assert(result.tx.txIn.size == 2) // main output and anchor output
+    assert(result.tx.txIn.map(_.outPoint.txid).toSet == Set(commitTx.txid))
+    assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
   }
 
   test("remote commit tx not published, publishing it and spending anchor output with main output (zero-fee-commitments)") {
-    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f =>
-      import f._
+    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f => testRemoteCommitNotPublishedZeroFeeCommitmentMainCpfp(f) }
+  }
 
-      val commitTx = bob.signCommitTx()
-      // When using zero-fee commitments, we use our main output to spend the anchor output.
-      probe.send(alice, WatchFundingSpentTriggered(commitTx))
-      val publishMain = alice2blockchain.expectMsgType[PublishReplaceableTx]
-      assert(publishMain.commitTx == commitTx)
-      assert(publishMain.txInfo.input.outPoint.txid == commitTx.txid)
-      assert(publishMain.txInfo.isInstanceOf[ClaimRemoteMainOutputTx])
-
-      val targetFeerate = FeeratePerKw(3000 sat)
-      setFeerate(targetFeerate)
-      val mainTx = publishMain.copy(confirmationTarget = ConfirmationTarget.Absolute(aliceBlockHeight() + 6))
-      publisher ! Publish(probe.ref, mainTx)
-      // wait for the commit tx and main tx to be published
-      val mempoolTxs = getMempoolTxs(2)
-      assert(mempoolTxs.map(_.txid).contains(commitTx.txid))
-
-      val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
-      val actualFee = mempoolTxs.map(_.fees).sum
-      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
-
-      generateBlocks(6)
-      system.eventStream.publish(CurrentBlockHeight(currentBlockHeight(probe)))
-      val result = probe.expectMsgType[TxConfirmed]
-      assert(result.cmd == mainTx)
-      assert(result.tx.version == 3)
-      assert(result.tx.txIn.size == 2) // main output and anchor output
-      assert(result.tx.txIn.map(_.outPoint.txid).toSet == Set(commitTx.txid))
-      assert(mempoolTxs.map(_.txid).contains(result.tx.txid))
-    }
+  test("remote commit tx not published, publishing it and spending anchor output with main output (taproot zero-fee-commitments)") {
+    withFixture(Seq(500 millibtc), ChannelTypes.TaprootZeroFeeCommitments()) { f => testRemoteCommitNotPublishedZeroFeeCommitmentMainCpfp(f) }
   }
 
   test("commit tx feerate too low, spending anchor outputs with multiple wallet inputs") {
@@ -899,98 +930,110 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
+  private def testCommitNotConfirmingZeroFeeCommitment(f: Fixture): Unit = {
+    import f._
+
+    // Alice puts all of her balance in an HTLC to Bob: she won't have enough funds in her main output to pay the commit fee.
+    addHtlc(alice.commitments.availableBalanceForSend, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val commitTx = bob.signCommitTx()
+    probe.send(alice, WatchFundingSpentTriggered(commitTx))
+    val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(publishAnchor.commitTx == commitTx)
+    assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.txid)
+    assert(publishAnchor.txInfo.isInstanceOf[ClaimRemoteAnchorTx])
+    assert(publishAnchor.confirmationTarget == ConfirmationTarget.Absolute(aliceBlockHeight() + 144)) // one outgoing HTLC that times out in 144 blocks
+
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+
+    val oldFeerate = FeeratePerKw(3000 sat)
+    setFeerate(oldFeerate)
+    publisher ! Publish(probe.ref, publishAnchor)
+    // wait for the commit tx and anchor tx to be published
+    val anchorTx1 = listener.expectMsgType[TransactionPublished].tx
+    assert(anchorTx1.version == 3)
+    val mempoolTxs1 = getMempoolTxs(2)
+    assert(mempoolTxs1.map(_.txid).contains(commitTx.txid))
+    val mempoolAnchorTx1 = mempoolTxs1.filter(_.txid != commitTx.txid).head
+    assert(mempoolAnchorTx1.txid == anchorTx1.txid)
+
+    // A new block is found, and the feerate has increased for our block target, so we bump the fees.
+    val newFeerate = FeeratePerKw(5000 sat)
+    setFeerate(newFeerate, blockTarget = 12)
+    system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight() + 132))
+    val anchorTx2 = listener.expectMsgType[TransactionPublished].tx
+    assert(anchorTx2.version == 3)
+    assert(!isInMempool(mempoolAnchorTx1.txid))
+    val mempoolTxs2 = getMempoolTxs(2)
+    val mempoolAnchorTx2 = mempoolTxs2.filter(_.txid != commitTx.txid).head
+    assert(mempoolAnchorTx2.txid == anchorTx2.txid)
+    assert(mempoolAnchorTx1.fees < mempoolAnchorTx2.fees)
+
+    val targetFee = Transactions.weight2fee(newFeerate, mempoolTxs2.map(_.weight).sum.toInt)
+    val actualFee = mempoolTxs2.map(_.fees).sum
+    assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+  }
+
   test("commit tx not confirming, lowering anchor output amount (zero-fee-commitments)") {
-    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f =>
-      import f._
+    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f => testCommitNotConfirmingZeroFeeCommitment(f) }
+  }
 
-      // Alice puts all of her balance in an HTLC to Bob: she won't have enough funds in her main output to pay the commit fee.
-      addHtlc(alice.commitments.availableBalanceForSend, alice, bob, alice2bob, bob2alice)
-      crossSign(alice, bob, alice2bob, bob2alice)
-      val commitTx = bob.signCommitTx()
-      probe.send(alice, WatchFundingSpentTriggered(commitTx))
-      val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
-      assert(publishAnchor.commitTx == commitTx)
-      assert(publishAnchor.txInfo.input.outPoint.txid == commitTx.txid)
-      assert(publishAnchor.txInfo.isInstanceOf[ClaimRemoteAnchorTx])
-      assert(publishAnchor.confirmationTarget == ConfirmationTarget.Absolute(aliceBlockHeight() + 144)) // one outgoing HTLC that times out in 144 blocks
+  test("commit tx not confirming, lowering anchor output amount (taproot zero-fee-commitments)") {
+    withFixture(Seq(500 millibtc), ChannelTypes.TaprootZeroFeeCommitments()) { f => testCommitNotConfirmingZeroFeeCommitment(f) }
+  }
 
-      val listener = TestProbe()
-      system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+  private def testCommitNotConfirmingZeroFeeCommitmentMainCpfp(f: Fixture): Unit = {
+    import f._
 
-      val oldFeerate = FeeratePerKw(3000 sat)
-      setFeerate(oldFeerate)
-      publisher ! Publish(probe.ref, publishAnchor)
-      // wait for the commit tx and anchor tx to be published
-      val anchorTx1 = listener.expectMsgType[TransactionPublished].tx
-      assert(anchorTx1.version == 3)
-      val mempoolTxs1 = getMempoolTxs(2)
-      assert(mempoolTxs1.map(_.txid).contains(commitTx.txid))
-      val mempoolAnchorTx1 = mempoolTxs1.filter(_.txid != commitTx.txid).head
-      assert(mempoolAnchorTx1.txid == anchorTx1.txid)
+    val commitTx = bob.signCommitTx()
+    // When using zero-fee commitments, we use our main output to spend the anchor output.
+    probe.send(alice, WatchFundingSpentTriggered(commitTx))
+    val publishMainTx1 = alice2blockchain.expectMsgType[PublishReplaceableTx]
+    assert(publishMainTx1.commitTx == commitTx)
+    assert(publishMainTx1.txInfo.input.outPoint.txid == commitTx.txid)
+    assert(publishMainTx1.txInfo.isInstanceOf[ClaimRemoteMainOutputTx])
 
-      // A new block is found, and the feerate has increased for our block target, so we bump the fees.
-      val newFeerate = FeeratePerKw(5000 sat)
-      setFeerate(newFeerate, blockTarget = 12)
-      system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight() + 132))
-      val anchorTx2 = listener.expectMsgType[TransactionPublished].tx
-      assert(anchorTx2.version == 3)
-      assert(!isInMempool(mempoolAnchorTx1.txid))
-      val mempoolTxs2 = getMempoolTxs(2)
-      val mempoolAnchorTx2 = mempoolTxs2.filter(_.txid != commitTx.txid).head
-      assert(mempoolAnchorTx2.txid == anchorTx2.txid)
-      assert(mempoolAnchorTx1.fees < mempoolAnchorTx2.fees)
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
 
-      val targetFee = Transactions.weight2fee(newFeerate, mempoolTxs2.map(_.weight).sum.toInt)
-      val actualFee = mempoolTxs2.map(_.fees).sum
-      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
-    }
+    val oldFeerate = FeeratePerKw(3000 sat)
+    setFeerate(oldFeerate)
+    publisher ! Publish(probe.ref, publishMainTx1)
+    // wait for the commit tx and main tx to be published
+    val mainTx1 = listener.expectMsgType[TransactionPublished].tx
+    assert(mainTx1.version == 3)
+    assert(mainTx1.txIn.size == 2) // main output and anchor output
+    assert(mainTx1.txIn.map(_.outPoint.txid).toSet == Set(commitTx.txid))
+    val mempoolTxs1 = getMempoolTxs(2)
+    assert(mempoolTxs1.map(_.txid).contains(commitTx.txid))
+    val mempoolMainTx1 = mempoolTxs1.filter(_.txid != commitTx.txid).head
+    assert(mempoolMainTx1.txid == mainTx1.txid)
+
+    // A new block is found, and the feerate has increased for our block target, so we bump the fees.
+    val newFeerate = FeeratePerKw(5000 sat)
+    setFeerate(newFeerate, blockTarget = 12)
+    system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight() + 5))
+    val mainTx2 = listener.expectMsgType[TransactionPublished].tx
+    assert(mainTx2.version == 3)
+    assert(mainTx2.txIn.map(_.outPoint) == mainTx1.txIn.map(_.outPoint))
+    assert(!isInMempool(mainTx1.txid))
+    val mempoolTxs2 = getMempoolTxs(2)
+    val mempoolMainTx2 = mempoolTxs2.filter(_.txid != commitTx.txid).head
+    assert(mempoolMainTx2.txid == mainTx2.txid)
+    assert(mempoolMainTx1.fees < mempoolMainTx2.fees)
+
+    val targetFee = Transactions.weight2fee(newFeerate, mempoolTxs2.map(_.weight).sum.toInt)
+    val actualFee = mempoolTxs2.map(_.fees).sum
+    assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
   }
 
   test("commit tx not confirming, lowering main output amount (zero-fee-commitments)") {
-    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f =>
-      import f._
+    withFixture(Seq(500 millibtc), ChannelTypes.ZeroFeeCommitments()) { f => testCommitNotConfirmingZeroFeeCommitmentMainCpfp(f) }
+  }
 
-      val commitTx = bob.signCommitTx()
-      // When using zero-fee commitments, we use our main output to spend the anchor output.
-      probe.send(alice, WatchFundingSpentTriggered(commitTx))
-      val publishMainTx1 = alice2blockchain.expectMsgType[PublishReplaceableTx]
-      assert(publishMainTx1.commitTx == commitTx)
-      assert(publishMainTx1.txInfo.input.outPoint.txid == commitTx.txid)
-      assert(publishMainTx1.txInfo.isInstanceOf[ClaimRemoteMainOutputTx])
-
-      val listener = TestProbe()
-      system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
-
-      val oldFeerate = FeeratePerKw(3000 sat)
-      setFeerate(oldFeerate)
-      publisher ! Publish(probe.ref, publishMainTx1)
-      // wait for the commit tx and main tx to be published
-      val mainTx1 = listener.expectMsgType[TransactionPublished].tx
-      assert(mainTx1.version == 3)
-      assert(mainTx1.txIn.size == 2) // main output and anchor output
-      assert(mainTx1.txIn.map(_.outPoint.txid).toSet == Set(commitTx.txid))
-      val mempoolTxs1 = getMempoolTxs(2)
-      assert(mempoolTxs1.map(_.txid).contains(commitTx.txid))
-      val mempoolMainTx1 = mempoolTxs1.filter(_.txid != commitTx.txid).head
-      assert(mempoolMainTx1.txid == mainTx1.txid)
-
-      // A new block is found, and the feerate has increased for our block target, so we bump the fees.
-      val newFeerate = FeeratePerKw(5000 sat)
-      setFeerate(newFeerate, blockTarget = 12)
-      system.eventStream.publish(CurrentBlockHeight(aliceBlockHeight() + 5))
-      val mainTx2 = listener.expectMsgType[TransactionPublished].tx
-      assert(mainTx2.version == 3)
-      assert(mainTx2.txIn.map(_.outPoint) == mainTx1.txIn.map(_.outPoint))
-      assert(!isInMempool(mainTx1.txid))
-      val mempoolTxs2 = getMempoolTxs(2)
-      val mempoolMainTx2 = mempoolTxs2.filter(_.txid != commitTx.txid).head
-      assert(mempoolMainTx2.txid == mainTx2.txid)
-      assert(mempoolMainTx1.fees < mempoolMainTx2.fees)
-
-      val targetFee = Transactions.weight2fee(newFeerate, mempoolTxs2.map(_.weight).sum.toInt)
-      val actualFee = mempoolTxs2.map(_.fees).sum
-      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
-    }
+  test("commit tx not confirming, lowering main output amount (taproot zero-fee-commitments)") {
+    withFixture(Seq(500 millibtc), ChannelTypes.TaprootZeroFeeCommitments()) { f => testCommitNotConfirmingZeroFeeCommitmentMainCpfp(f) }
   }
 
   test("commit tx not confirming, adding other wallet inputs") {

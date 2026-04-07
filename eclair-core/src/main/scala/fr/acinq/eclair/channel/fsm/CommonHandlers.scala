@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.transactions.Transactions.{SegwitV0CommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{SegwitV0CommitmentFormat, TaprootCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{ClosingComplete, HtlcSettlementMessage, LightningMessage, Shutdown, UpdateMessage}
 import scodec.bits.ByteVector
 
@@ -136,7 +136,7 @@ trait CommonHandlers {
 
   def createShutdown(commitments: Commitments, finalScriptPubKey: ByteVector): Shutdown = {
     commitments.latest.commitmentFormat match {
-      case _: SimpleTaprootChannelCommitmentFormat =>
+      case _: TaprootCommitmentFormat =>
         // We create a fresh local closee nonce every time we send shutdown.
         val localFundingPubKey = channelKeys.fundingKey(commitments.latest.fundingTxIndex).publicKey
         val localCloseeNonce = NonceGenerator.signingNonce(localFundingPubKey, commitments.latest.remoteFundingPubKey, commitments.latest.fundingTxId)

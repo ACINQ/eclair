@@ -157,7 +157,7 @@ object Channel {
     case _: ChannelTypes.AnchorOutputs | _: ChannelTypes.AnchorOutputsZeroFeeHtlcTx => 483
     case _: ChannelTypes.SimpleTaprootChannelsStaging | ChannelTypes.SimpleTaprootChannelsPhoenix => 483
     // When using v3 transactions, the maximum package size is more restrictive than v2 transactions.
-    case _: ChannelTypes.ZeroFeeCommitments => 114
+    case _: ChannelTypes.ZeroFeeCommitments | _: ChannelTypes.TaprootZeroFeeCommitments => 114
   }
 
   // We may need to rely on our peer's commit tx in certain cases (backup/restore) so we must ensure their transactions
@@ -2422,7 +2422,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       val nextFundingTlv: Set[ChannelReestablishTlv] = Set(ChannelReestablishTlv.NextFundingTlv(d.signingSession.fundingTxId))
       val nonceTlvs = d.signingSession.fundingParams.commitmentFormat match {
         case _: SegwitV0CommitmentFormat => Set.empty
-        case _: SimpleTaprootChannelCommitmentFormat =>
+        case _: TaprootCommitmentFormat =>
           val localFundingKey = channelKeys.fundingKey(0)
           val remoteFundingPubKey = d.signingSession.fundingParams.remoteFundingPubKey
           val currentCommitNonce_opt = d.signingSession.localCommit match {
@@ -2490,7 +2490,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       val nextCommitNonces: Map[TxId, IndividualNonce] = d.commitments.active.flatMap(c => {
         c.commitmentFormat match {
           case _: SegwitV0CommitmentFormat => None
-          case _: SimpleTaprootChannelCommitmentFormat =>
+          case _: TaprootCommitmentFormat =>
             val localFundingKey = channelKeys.fundingKey(c.fundingTxIndex)
             Some(c.fundingTxId -> NonceGenerator.verificationNonce(c.fundingTxId, localFundingKey, c.remoteFundingPubKey, d.commitments.localCommitIndex + 1).publicNonce)
         }

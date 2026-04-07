@@ -242,7 +242,7 @@ trait ErrorHandlers extends CommonHandlers {
       case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat =>
         val (localFee, _) = Closing.commitTxFee(commitment.commitInput(channelKeys), lcp.commitTx, commitment.localChannelParams.paysCommitTxFees)
         Some(PublishFinalTx(lcp.commitTx, commitment.fundingInput, "commit-tx", localFee, None))
-      case ZeroFeeCommitmentFormat => None // we will publish the commit-tx alongside the anchor tx
+      case ZeroFeeCommitmentFormat | TaprootZeroFeeCommitmentFormat => None // we will publish the commit-tx alongside the anchor tx
     }
     val publishAnchorTx_opt = txs.anchorTx_opt match {
       case Some(anchorTx) if !lcp.isConfirmed =>
@@ -333,7 +333,7 @@ trait ErrorHandlers extends CommonHandlers {
       case _ => None
     }
     val publishMainTx_opt = txs.mainTx_opt.map(tx => commitment.commitmentFormat match {
-      case ZeroFeeCommitmentFormat => publishAnchorTx_opt match {
+      case ZeroFeeCommitmentFormat | TaprootZeroFeeCommitmentFormat => publishAnchorTx_opt match {
         // Instead of creating a dedicated anchor transaction, we use our main output to pay commit fees whenever possible.
         case None if !rcp.isConfirmed => PublishReplaceableTx(tx, rcp.commitTx, commitment, confirmationTarget)
         case _ => PublishFinalTx(tx, None)

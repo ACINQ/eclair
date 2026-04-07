@@ -2122,7 +2122,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex)
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat => ()
-      case _: SimpleTaprootChannelCommitmentFormat =>
+      case _: TaprootCommitmentFormat =>
         assert(channelReestablishAlice.currentCommitNonce_opt.isEmpty)
         assert(channelReestablishBob.currentCommitNonce_opt.nonEmpty)
         Seq(channelReestablishAlice, channelReestablishBob).foreach { channelReestablish =>
@@ -2192,7 +2192,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(channelReestablishBob.nextLocalCommitmentNumber == bobCommitIndex + 1)
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat => ()
-      case _: SimpleTaprootChannelCommitmentFormat =>
+      case _: TaprootCommitmentFormat =>
         assert(channelReestablishAlice.currentCommitNonce_opt.nonEmpty)
         assert(channelReestablishBob.currentCommitNonce_opt.isEmpty)
         Seq(channelReestablishAlice, channelReestablishBob).foreach { channelReestablish =>
@@ -2261,7 +2261,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(channelReestablishBob.currentCommitNonce_opt.isEmpty)
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat => ()
-      case _: SimpleTaprootChannelCommitmentFormat => Seq(channelReestablishAlice, channelReestablishBob).foreach { channelReestablish =>
+      case _: TaprootCommitmentFormat => Seq(channelReestablishAlice, channelReestablishBob).foreach { channelReestablish =>
         assert(channelReestablish.nextCommitNonces.size == 2)
         assert(channelReestablish.nextCommitNonces.contains(fundingTxId))
         assert(channelReestablish.nextCommitNonces.contains(spliceTxId))
@@ -2342,7 +2342,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     assert(channelReestablishBob.currentCommitNonce_opt.isEmpty)
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat => ()
-      case _: SimpleTaprootChannelCommitmentFormat => Seq(channelReestablishAlice, channelReestablishBob).foreach { channelReestablish =>
+      case _: TaprootCommitmentFormat => Seq(channelReestablishAlice, channelReestablishBob).foreach { channelReestablish =>
         assert(channelReestablish.nextCommitNonces.size == 2)
         assert(channelReestablish.nextCommitNonces.contains(fundingTxId))
         assert(channelReestablish.nextCommitNonces.contains(spliceTxId))

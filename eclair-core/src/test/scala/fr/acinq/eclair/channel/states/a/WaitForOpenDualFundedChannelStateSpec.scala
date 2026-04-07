@@ -92,29 +92,45 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
   }
 
-  test("recv OpenDualFundedChannel (zero-fee commitments)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+  private def testOpenZeroFeeCommitment(f: FixtureParam, channelType: SupportedChannelType): Unit = {
     import f._
 
     val open = alice2bob.expectMsgType[OpenDualFundedChannel]
-    assert(open.channelType_opt.contains(ChannelTypes.ZeroFeeCommitments()))
+    assert(open.channelType_opt.contains(channelType))
     assert(open.fundingFeerate == TestConstants.feeratePerKw)
     assert(open.commitmentFeerate == FeeratePerKw(0 sat))
     alice2bob.forward(bob)
     val accept = bob2alice.expectMsgType[AcceptDualFundedChannel]
-    assert(accept.channelType_opt.contains(ChannelTypes.ZeroFeeCommitments()))
+    assert(accept.channelType_opt.contains(channelType))
     awaitCond(bob.stateName == WAIT_FOR_DUAL_FUNDING_CREATED)
   }
 
-  test("recv OpenDualFundedChannel (zero-fee commitments, non-zero feerate)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+  test("recv OpenDualFundedChannel (zero-fee commitments)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    testOpenZeroFeeCommitment(f, ChannelTypes.ZeroFeeCommitments())
+  }
+
+  test("recv OpenDualFundedChannel (taproot zero-fee commitments)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
+    testOpenZeroFeeCommitment(f, ChannelTypes.TaprootZeroFeeCommitments())
+  }
+
+  private def testOpenZeroFeeCommitmentNonZeroFeerate(f: FixtureParam, channelType: SupportedChannelType): Unit = {
     import f._
 
     val open = alice2bob.expectMsgType[OpenDualFundedChannel]
-    assert(open.channelType_opt.contains(ChannelTypes.ZeroFeeCommitments()))
+    assert(open.channelType_opt.contains(channelType))
     alice2bob.forward(bob, open.copy(commitmentFeerate = FeeratePerByte(1 sat).perKw))
     val error = bob2alice.expectMsgType[Error]
     assert(error == Error(open.temporaryChannelId, FeerateTooDifferent(open.temporaryChannelId, FeeratePerKw(0 sat), FeeratePerByte(1 sat).perKw).getMessage))
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv OpenDualFundedChannel (zero-fee commitments, non-zero feerate)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    testOpenZeroFeeCommitmentNonZeroFeerate(f, ChannelTypes.ZeroFeeCommitments())
+  }
+
+  test("recv OpenDualFundedChannel (taproot zero-fee commitments, non-zero feerate)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
+    testOpenZeroFeeCommitmentNonZeroFeerate(f, ChannelTypes.TaprootZeroFeeCommitments())
   }
 
   test("recv OpenDualFundedChannel (with liquidity ads)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.LiquidityAds)) { f =>
@@ -205,7 +221,7 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     awaitCond(bob.stateName == CLOSED)
   }
 
-  test("recv OpenDualFundedChannel (invalid max accepted htlcs, zero-fee commitments)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+  private def testInvalidMaxHtlcsZeroFeeCommitment(f: FixtureParam): Unit = {
     import f._
     val open = alice2bob.expectMsgType[OpenDualFundedChannel]
     bob ! open.copy(maxAcceptedHtlcs = 115)
@@ -213,6 +229,14 @@ class WaitForOpenDualFundedChannelStateSpec extends TestKitBaseClass with Fixtur
     assert(error == Error(open.temporaryChannelId, InvalidMaxAcceptedHtlcs(open.temporaryChannelId, maxAcceptedHtlcs = 115, max = 114).getMessage))
     bobListener.expectMsgType[ChannelAborted]
     awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv OpenDualFundedChannel (invalid max accepted htlcs, zero-fee commitments)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.ZeroFeeCommitments)) { f =>
+    testInvalidMaxHtlcsZeroFeeCommitment(f)
+  }
+
+  test("recv OpenDualFundedChannel (invalid max accepted htlcs, taproot zero-fee commitments)", Tag(ChannelStateTestsTags.DualFunding), Tag(ChannelStateTestsTags.TaprootZeroFeeCommitments)) { f =>
+    testInvalidMaxHtlcsZeroFeeCommitment(f)
   }
 
   test("recv OpenDualFundedChannel (to_self_delay too high)", Tag(ChannelStateTestsTags.DualFunding)) { f =>

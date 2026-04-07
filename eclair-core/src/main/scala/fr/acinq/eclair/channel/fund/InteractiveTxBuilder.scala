@@ -112,7 +112,7 @@ object InteractiveTxBuilder {
       val spliceTx = Transactions.SpliceTx(info, tx)
       commitmentFormat match {
         case _: SegwitV0CommitmentFormat => Right(spliceTx.sign(localFundingKey, remoteFundingPubkey, spentUtxos))
-        case _: SimpleTaprootChannelCommitmentFormat => (localNonce_opt, remoteNonce_opt) match {
+        case _: TaprootCommitmentFormat => (localNonce_opt, remoteNonce_opt) match {
           case (Some(localNonce), Some(remoteNonce)) => spliceTx.partialSign(localFundingKey, remoteFundingPubkey, spentUtxos, localNonce, Seq(localNonce.publicNonce, remoteNonce)) match {
             case Left(_) => Left(InvalidFundingNonce(channelId, tx.txid))
             case Right(sig) => Right(sig)
@@ -482,7 +482,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
   // Nonce we will use to sign the shared input, if we are splicing a taproot channel.
   private val localFundingNonce_opt: Option[LocalNonce] = fundingParams.sharedInput_opt.flatMap(sharedInput => sharedInput.commitmentFormat match {
     case _: SegwitV0CommitmentFormat => None
-    case _: SimpleTaprootChannelCommitmentFormat =>
+    case _: TaprootCommitmentFormat =>
       val previousFundingKey = channelKeys.fundingKey(sharedInput.fundingTxIndex).publicKey
       Some(NonceGenerator.signingNonce(previousFundingKey, sharedInput.remoteFundingPubkey, sharedInput.info.outPoint.txid))
   })
@@ -550,7 +550,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       case Nil =>
         val txComplete = fundingParams.commitmentFormat match {
           case _: SegwitV0CommitmentFormat => TxComplete(fundingParams.channelId)
-          case _: SimpleTaprootChannelCommitmentFormat =>
+          case _: TaprootCommitmentFormat =>
             // We don't have more inputs or outputs to contribute to the shared transaction.
             // If our peer doesn't have anything more to contribute either, we will proceed to exchange commitment
             // signatures spending this shared transaction, so we need to provide nonces to create those signatures.
@@ -813,7 +813,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       }
       sharedInput.commitmentFormat match {
         case _: SegwitV0CommitmentFormat => ()
-        case _: SimpleTaprootChannelCommitmentFormat =>
+        case _: TaprootCommitmentFormat =>
           // If we're spending a taproot channel, our peer must provide a nonce for the shared input.
           val remoteFundingNonce_opt = session.txCompleteReceived.flatMap(_.fundingNonce_opt)
           if (remoteFundingNonce_opt.isEmpty) return Left(MissingFundingNonce(fundingParams.channelId, sharedInput.info.outPoint.txid))
@@ -836,7 +836,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     // If we're using taproot, our peer must provide commit nonces for the funding transaction.
     fundingParams.commitmentFormat match {
       case _: SegwitV0CommitmentFormat => ()
-      case _: SimpleTaprootChannelCommitmentFormat =>
+      case _: TaprootCommitmentFormat =>
         val remoteCommitNonces_opt = session.txCompleteReceived.flatMap(_.commitNonces_opt)
         if (remoteCommitNonces_opt.isEmpty) return Left(MissingCommitNonce(fundingParams.channelId, tx.txid, purpose.remoteCommitIndex))
     }
@@ -931,7 +931,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
         require(fundingTx.txOut(fundingOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, "pubkey script mismatch!")
         val localSigOfRemoteTx = fundingParams.commitmentFormat match {
           case _: SegwitV0CommitmentFormat => Right(remoteCommitTx.sign(localFundingKey, fundingParams.remoteFundingPubKey))
-          case _: SimpleTaprootChannelCommitmentFormat =>
+          case _: TaprootCommitmentFormat =>
             remoteCommitNonces_opt match {
               case Some(remoteNonces) =>
                 val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey, fundingParams.remoteFundingPubKey, fundingTx.txid)
@@ -1154,7 +1154,7 @@ object InteractiveTxSigningSession {
             case (Some(localSig), Some(remoteSig)) => Right(spliceTx.aggregateSigs(localFundingPubkey, sharedInput.remoteFundingPubkey, IndividualSignature(localSig), IndividualSignature(remoteSig)))
             case _ => Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))
           }
-        case _: SimpleTaprootChannelCommitmentFormat =>
+        case _: TaprootCommitmentFormat =>
           (partiallySignedTx.localSigs.previousFundingTxPartialSig_opt, remoteSigs.previousFundingTxPartialSig_opt) match {
             case (Some(localSig), Some(remoteSig)) => spliceTx.aggregateSigs(localFundingPubkey, sharedInput.remoteFundingPubkey, localSig, remoteSig, partiallySignedTx.tx.inputDetails)
             case _ => Left(InvalidFundingSignature(fundingParams.channelId, Some(partiallySignedTx.txId)))

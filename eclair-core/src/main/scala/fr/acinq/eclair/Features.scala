@@ -445,6 +445,11 @@ object Features {
     val mandatory = 180
   }
 
+  case object TaprootZeroFeeCommitmentsStaging extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "taproot_zero_fee_commitments_staging"
+    val mandatory = 182
+  }
+
   /**
    * Activate this feature to provide on-the-fly funding to remote nodes, as specified in bLIP 36: https://github.com/lightning/blips/blob/master/blip-0036.md.
    * TODO: add NodeFeature once bLIP is merged.
@@ -491,6 +496,7 @@ object Features {
     SimpleClose,
     SimpleTaprootChannelsPhoenix,
     SimpleTaprootChannelsStaging,
+    TaprootZeroFeeCommitmentsStaging,
     WakeUpNotificationClient,
     TrampolinePaymentPrototype,
     AsyncPaymentPrototype,

@@ -173,7 +173,7 @@ object LocalCommit {
     log.info(s"built local commit number=$localCommitIndex toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.commitTxFeerate} txid=${localCommitTx.tx.txid} fundingTxId=$fundingTxId", spec.htlcs.collect(DirectedHtlc.incoming).map(_.id).mkString(","), spec.htlcs.collect(DirectedHtlc.outgoing).map(_.id).mkString(","))
     val remoteCommitSigOk = commitmentFormat match {
       case _: SegwitV0CommitmentFormat => localCommitTx.checkRemoteSig(fundingKey.publicKey, remoteFundingPubKey, commit.signature)
-      case _: SimpleTaprootChannelCommitmentFormat => commit.sigOrPartialSig match {
+      case _: TaprootCommitmentFormat => commit.sigOrPartialSig match {
         case _: IndividualSignature => false
         case remoteSig: PartialSignatureWithNonce =>
           val localNonce = NonceGenerator.verificationNonce(fundingTxId, fundingKey, remoteFundingPubKey, localCommitIndex)
@@ -211,7 +211,7 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txId: TxId, remotePer
       case _: SegwitV0CommitmentFormat =>
         val sig = remoteCommitTx.sign(fundingKey, remoteFundingPubKey)
         Right(CommitSig(channelParams.channelId, sig, htlcSigs.toList, batchSize))
-      case _: SimpleTaprootChannelCommitmentFormat =>
+      case _: TaprootCommitmentFormat =>
         remoteNonce_opt match {
           case Some(remoteNonce) =>
             val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, remoteFundingPubKey, commitInput.outPoint.txid)
@@ -639,7 +639,7 @@ case class Commitment(fundingTxIndex: Long,
     Metrics.recordHtlcsInFlight(spec, remoteCommit.spec)
     val sig = commitmentFormat match {
       case _: SegwitV0CommitmentFormat => remoteCommitTx.sign(fundingKey, remoteFundingPubKey)
-      case _: SimpleTaprootChannelCommitmentFormat =>
+      case _: TaprootCommitmentFormat =>
         nextRemoteNonce_opt match {
           case Some(remoteNonce) =>
             val localNonce = NonceGenerator.signingNonce(fundingKey.publicKey, remoteFundingPubKey, fundingTxId)
@@ -1102,7 +1102,7 @@ case class Commitments(channelParams: ChannelParams,
     val localNextPerCommitmentPoint = channelKeys.commitmentPoint(localCommitIndex + 2)
     val localCommitNonces = active.flatMap(c => c.commitmentFormat match {
       case _: SegwitV0CommitmentFormat => None
-      case _: SimpleTaprootChannelCommitmentFormat =>
+      case _: TaprootCommitmentFormat =>
         val localNonce = NonceGenerator.verificationNonce(c.fundingTxId, c.localFundingKey(channelKeys), c.remoteFundingPubKey, localCommitIndex + 2)
         Some(c.fundingTxId -> localNonce.publicNonce)
     })

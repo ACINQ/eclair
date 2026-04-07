@@ -228,13 +228,13 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     if (Transactions.fee2rate(commitFee, cmd.commitTx.weight()) >= targetFeerate) {
       // The commitment transaction already pays enough fees, so we don't take its weight into account.
       val targetFee = Transactions.weight2fee(targetFeerate, txInfo.expectedWeight + cmd.commitment.commitmentFormat.anchorInputWeight)
-      val signedTx = txInfo.addSharedAnchorAndSign(targetFee, cmd.commitTx)
+      val signedTx = txInfo.addSharedAnchorAndSign(targetFee, cmd.commitTx, cmd.commitment.commitmentFormat)
       (signedTx, targetFee)
     } else {
       val packageWeight = cmd.commitTx.weight() + txInfo.expectedWeight + cmd.commitment.commitmentFormat.anchorInputWeight
       val targetFee = Transactions.weight2fee(targetFeerate, packageWeight)
       val missingFee = (targetFee - commitFee).max(0 sat)
-      val signedTx = txInfo.addSharedAnchorAndSign(missingFee, cmd.commitTx)
+      val signedTx = txInfo.addSharedAnchorAndSign(missingFee, cmd.commitTx, cmd.commitment.commitmentFormat)
       (signedTx, missingFee)
     }
   }

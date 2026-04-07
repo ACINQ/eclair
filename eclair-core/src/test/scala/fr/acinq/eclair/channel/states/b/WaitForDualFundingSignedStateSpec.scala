@@ -747,7 +747,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
     // When using taproot, we must provide nonces for the partial signatures.
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat => ()
-      case _: SimpleTaprootChannelCommitmentFormat =>
+      case _: TaprootCommitmentFormat =>
         Seq((channelReestablishAlice, aliceExpectsCommitSig), (channelReestablishBob, bobExpectsCommitSig)).foreach {
           case (channelReestablish, expectCommitSig) =>
             assert(channelReestablish.nextCommitNonces.size == 1)
@@ -765,7 +765,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
       val commitSigBob = bob2alice.expectMsgType[CommitSig]
       commitmentFormat match {
         case _: SegwitV0CommitmentFormat => assert(commitSigBob.partialSignature_opt.isEmpty)
-        case _: SimpleTaprootChannelCommitmentFormat => assert(commitSigBob.partialSignature_opt.nonEmpty)
+        case _: TaprootCommitmentFormat => assert(commitSigBob.partialSignature_opt.nonEmpty)
       }
       bob2alice.forward(alice, commitSigBob)
     }
@@ -773,7 +773,7 @@ class WaitForDualFundingSignedStateSpec extends TestKitBaseClass with FixtureAny
       val commitSigAlice = alice2bob.expectMsgType[CommitSig]
       commitmentFormat match {
         case _: SegwitV0CommitmentFormat => assert(commitSigAlice.partialSignature_opt.isEmpty)
-        case _: SimpleTaprootChannelCommitmentFormat => assert(commitSigAlice.partialSignature_opt.nonEmpty)
+        case _: TaprootCommitmentFormat => assert(commitSigAlice.partialSignature_opt.nonEmpty)
       }
       alice2bob.forward(bob, commitSigAlice)
     }
