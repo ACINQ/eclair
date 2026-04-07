@@ -217,13 +217,17 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
     awaitCond(initiator.stateName == TransportHandler.Normal)
     awaitCond(responder.stateName == TransportHandler.Normal)
 
-    initiator.tell(Ping(1105, ByteVector("hello 1".getBytes)), probe1.ref)
-    probe2.expectMsg(Ping(1105, ByteVector("hello 1".getBytes)))
+    initiator.tell(Ping(1105, ByteVector("this is a real ping".getBytes)), probe1.ref)
+    probe2.expectMsg(Ping(1105, ByteVector("this is a real ping".getBytes)))
 
-    initiator.tell(Ping(1105, ByteVector("hello 2".getBytes)), probe1.ref)
-    probe2.expectNoMessage()
+    initiator.tell(Ping(65533, ByteVector("this is a reply-less ping for cover traffic".getBytes)), probe1.ref)
+    probe2.expectMsg(Ping(65533, ByteVector("this is a reply-less ping for cover traffic".getBytes)))
 
     probe1.watch(initiator)
+    probe1.expectNoMessage()
+
+    initiator.tell(Ping(1105, ByteVector("this is a ping flood".getBytes)), probe1.ref)
+    probe2.expectNoMessage()
     probe1.expectTerminated(initiator)
 
     probe1.watch(responder)
