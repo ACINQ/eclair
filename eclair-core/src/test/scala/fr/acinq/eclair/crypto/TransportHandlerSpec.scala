@@ -220,8 +220,8 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
     initiator.tell(Ping(1105, ByteVector("this is a real ping".getBytes)), probe1.ref)
     probe2.expectMsg(Ping(1105, ByteVector("this is a real ping".getBytes)))
 
-    initiator.tell(Ping(65533, ByteVector("this is a reply-less ping for cover traffic".getBytes)), probe1.ref)
-    probe2.expectMsg(Ping(65533, ByteVector("this is a reply-less ping for cover traffic".getBytes)))
+    initiator.tell(Ping(65532, ByteVector("this is a reply-less ping for cover traffic".getBytes)), probe1.ref)
+    probe2.expectMsg(Ping(65532, ByteVector("this is a reply-less ping for cover traffic".getBytes)))
 
     probe1.watch(initiator)
     probe1.expectNoMessage()

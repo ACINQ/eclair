@@ -103,8 +103,8 @@ class TransportHandler(keyPair: KeyPair, rs: Option[ByteVector], connection: Act
         logMessage(message, "IN")
         Monitoring.Metrics.MessageSize.withTag(Monitoring.Tags.MessageDirection, Monitoring.Tags.MessageDirections.IN).record(plaintext.size)
         message match {
-          // Note that "reply-less pings" are allowed, when the pong length exceeds 65532.
-          case ping: Ping if ping.pongLength <= 65532 =>
+          // Note that "reply-less pings" are allowed, when the pong length exceeds 65531.
+          case ping: Ping if ping.pongLength < 65532 =>
             pendingPings += 1
             if (pendingPings > 1) {
               // We will kill the connection anyway, no need to process remaining messages
