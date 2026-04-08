@@ -103,6 +103,7 @@ eclair.relay.reserved-for-accountable = 0.0
 ### API changes
 
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now include a `maxCltvExpiryDelta` parameter (#3234)
+- `findroute`, `findroutetonode` and `findroutebetweennodes` now include a `fee` field for each route in their full format response (#3283)
 - `channel-opened` was removed from the websocket in favor of `channel-funding-created`, `channel-confirmed` and `channel-ready` (#3237 and #3256)
 - `networkfees` and `channelstats` are removed in favor in `relaystats` (#3245)
 
