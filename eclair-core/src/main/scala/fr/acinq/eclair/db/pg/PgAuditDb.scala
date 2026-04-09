@@ -442,7 +442,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listPublished(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): Seq[PublishedTransaction] = withMetrics("audit/list-published-by-node-id", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM audit.transactions_published WHERE node_id = ? AND timestamp BETWEEN ? AND ?")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM audit.transactions_published WHERE node_id = ? AND timestamp >= ? AND timestamp < ?")) { statement =>
         statement.setString(1, remoteNodeId.toHex)
         statement.setTimestamp(2, from.toSqlTimestamp)
         statement.setTimestamp(3, to.toSqlTimestamp)
@@ -481,7 +481,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listConfirmed(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[ConfirmedTransaction] = withMetrics("audit/list-confirmed-by-node-id", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM audit.transactions_confirmed INNER JOIN audit.transactions_published ON audit.transactions_published.tx_id = audit.transactions_confirmed.tx_id WHERE audit.transactions_confirmed.node_id = ? AND audit.transactions_confirmed.timestamp BETWEEN ? and ? ORDER BY audit.transactions_confirmed.timestamp")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM audit.transactions_confirmed INNER JOIN audit.transactions_published ON audit.transactions_published.tx_id = audit.transactions_confirmed.tx_id WHERE audit.transactions_confirmed.node_id = ? AND audit.transactions_confirmed.timestamp >= ? AND audit.transactions_confirmed.timestamp < ? ORDER BY audit.transactions_confirmed.timestamp")) { statement =>
         statement.setString(1, remoteNodeId.toHex)
         statement.setTimestamp(2, from.toSqlTimestamp)
         statement.setTimestamp(3, to.toSqlTimestamp)
@@ -501,7 +501,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listConfirmed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated]): Seq[ConfirmedTransaction] = withMetrics("audit/list-confirmed", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM audit.transactions_confirmed INNER JOIN audit.transactions_published ON audit.transactions_published.tx_id = audit.transactions_confirmed.tx_id WHERE audit.transactions_confirmed.timestamp BETWEEN ? and ? ORDER BY audit.transactions_confirmed.timestamp")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM audit.transactions_confirmed INNER JOIN audit.transactions_published ON audit.transactions_published.tx_id = audit.transactions_confirmed.tx_id WHERE audit.transactions_confirmed.timestamp >= ? AND audit.transactions_confirmed.timestamp < ? ORDER BY audit.transactions_confirmed.timestamp")) { statement =>
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
         Paginated.paginate(statement.executeQuery().map { rs =>
@@ -520,7 +520,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listChannelEvents(channelId: ByteVector32, from: TimestampMilli, to: TimestampMilli): Seq[ChannelEvent] = withMetrics("audit/list-channel-events-by-channel-id", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM audit.channel_events WHERE channel_id = ? AND timestamp BETWEEN ? AND ?")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM audit.channel_events WHERE channel_id = ? AND timestamp >= ? AND timestamp < ?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setTimestamp(2, from.toSqlTimestamp)
         statement.setTimestamp(3, to.toSqlTimestamp)
@@ -543,7 +543,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listChannelEvents(remoteNodeId: PublicKey, from: TimestampMilli, to: TimestampMilli): Seq[ChannelEvent] = withMetrics("audit/list-channel-events-by-node-id", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM audit.channel_events WHERE node_id = ? AND timestamp BETWEEN ? AND ?")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM audit.channel_events WHERE node_id = ? AND timestamp >= ? AND timestamp < ?")) { statement =>
         statement.setString(1, remoteNodeId.toHex)
         statement.setTimestamp(2, from.toSqlTimestamp)
         statement.setTimestamp(3, to.toSqlTimestamp)
@@ -566,7 +566,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listSent(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentSent] =
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM audit.sent WHERE settled_at BETWEEN ? AND ?")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM audit.sent WHERE settled_at >= ? AND settled_at < ?")) { statement =>
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
         Paginated.paginate(statement.executeQuery()
@@ -601,7 +601,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listReceived(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentReceived] =
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM audit.received WHERE received_at BETWEEN ? AND ?")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM audit.received WHERE received_at >= ? AND received_at < ?")) { statement =>
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
         Paginated.paginate(statement.executeQuery()
@@ -623,7 +623,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listRelayed(from: TimestampMilli, to: TimestampMilli, paginated_opt: Option[Paginated] = None): Seq[PaymentRelayed] =
     inTransaction { pg =>
-      val relayedByHash = using(pg.prepareStatement("SELECT * FROM audit.relayed WHERE timestamp BETWEEN ? and ?")) { statement =>
+      val relayedByHash = using(pg.prepareStatement("SELECT * FROM audit.relayed WHERE timestamp >= ? AND timestamp < ?")) { statement =>
         statement.setTimestamp(1, from.toSqlTimestamp)
         statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery().foldLeft(Map.empty[ByteVector32, Seq[RelayedPart]]) { (relayedByHash, rs) =>
