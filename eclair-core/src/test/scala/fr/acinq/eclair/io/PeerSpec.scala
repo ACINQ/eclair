@@ -50,6 +50,10 @@ class PeerSpec extends FixtureSpec {
   import PeerSpec._
   import akka.actor.typed.scaladsl.adapter._
 
+  private val autoReconnect = "auto_reconnect"
+  private val fastReconnectDelay = "fast_reconnect_delay"
+  private val withNodeAnn = "with_node_announcements"
+
   override implicit val patienceConfig: PatienceConfig = PatienceConfig(timeout = 30 seconds, interval = 1 second)
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, system: ActorSystem, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe, switchboard: TestProbe, register: TestProbe, mockLimiter: ActorRef) {
@@ -75,9 +79,11 @@ class PeerSpec extends FixtureSpec {
       .modify(_.channelConf.maxHtlcValueInFlightMsat).setToIf(testData.tags.contains("max-htlc-value-in-flight-percent"))(100_000_000 msat)
       .modify(_.channelConf.maxHtlcValueInFlightPercent).setToIf(testData.tags.contains("max-htlc-value-in-flight-percent"))(25)
       .modify(_.channelConf.channelFundingTimeout).setToIf(testData.tags.contains("channel_funding_timeout"))(100 millis)
-      .modify(_.autoReconnect).setToIf(testData.tags.contains("auto_reconnect"))(true)
+      .modify(_.autoReconnect).setToIf(testData.tags.contains(autoReconnect))(true)
+      .modify(_.maxReconnectInterval).setToIf(testData.tags.contains(fastReconnectDelay))(10 millis)
+      .modify(_.initialRandomReconnectDelay).setToIf(testData.tags.contains(fastReconnectDelay))(1 millis)
 
-    if (testData.tags.contains("with_node_announcement")) {
+    if (testData.tags.contains(withNodeAnn)) {
       val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
       aliceParams.db.network.addNode(bobAnnouncement)
     }
@@ -196,7 +202,7 @@ class PeerSpec extends FixtureSpec {
     probe.expectMsgType[PeerConnection.ConnectionResult.ConnectionFailed]
   }
 
-  test("successfully reconnect to peer at startup when there are existing channels", Tag("auto_reconnect")) { f =>
+  test("successfully reconnect to peer at startup when there are existing channels", Tag(autoReconnect)) { f =>
     import f._
 
     spawnClientSpawner(f)
@@ -217,6 +223,23 @@ class PeerSpec extends FixtureSpec {
       assert(mockServer.accept() != null)
     }
     mockServer.close()
+  }
+
+  test("don't reconnect to mobile wallets", Tag(autoReconnect), Tag(fastReconnectDelay)) { f =>
+    import f._
+
+    val monitor = TestProbe()
+    val reconnectionTask = peer.underlyingActor.context.child("reconnection-task").get
+    monitor.send(reconnectionTask, FSM.SubscribeTransitionCallBack(monitor.ref))
+    monitor.expectMsg(FSM.CurrentState(reconnectionTask, ReconnectionTask.IDLE))
+
+    val probe = TestProbe()
+    val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
+    val remoteInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures().add(Features.WakeUpNotificationClient, FeatureSupport.Optional))
+    val mobileWalletChannel = ChannelCodecsSpec.normal.copy(commitments = ChannelCodecsSpec.normal.commitments.updateInitFeatures(localInit, remoteInit))
+    probe.send(peer, Peer.Init(Set(mobileWalletChannel), Map.empty))
+    // the reconnection task will stay in the idle state
+    monitor.expectNoMessage(100 millis)
   }
 
   test("reject connection attempts in state CONNECTED") { f =>
@@ -306,7 +329,7 @@ class PeerSpec extends FixtureSpec {
     }
   }
 
-  test("send state transitions to child reconnection actor", Tag("auto_reconnect"), Tag("with_node_announcement")) { f =>
+  test("send state transitions to child reconnection actor", Tag(autoReconnect), Tag(withNodeAnn)) { f =>
     import f._
 
     // monitor state changes of child reconnection task
