@@ -80,7 +80,11 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
   when(IDLE) {
     case Event(Peer.Transition(previousPeerData, nextPeerData: Peer.DisconnectedData), d: IdleData) =>
-      if (nodeParams.autoReconnect && nextPeerData.channels.nonEmpty) { // we only reconnect if nodeParams explicitly instructs us to or there are existing channels
+      // We only reconnect automatically if:
+      //  - auto-reconnection is enabled in our node params (which is the default behavior)
+      //  - and there are existing channels
+      //  - and our peer is not a mobile wallet (which is likely to be offline and will initiate the connection themselves)
+      if (nodeParams.autoReconnect && nextPeerData.autoReconnect && nextPeerData.channels.nonEmpty) {
         val (initialDelay, firstNextReconnectionDelay) = (previousPeerData, d.previousData) match {
           case (Peer.Nothing, _) =>
             // When restarting, we add some randomization before the first reconnection attempt to avoid herd effect
