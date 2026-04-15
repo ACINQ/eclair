@@ -156,9 +156,9 @@ trait CommonHandlers {
         log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
         val d = DATA_NEGOTIATING_SIMPLE(commitments, closingFeerate, localScript, remoteScript, Nil, Nil)
         (d, None)
-      case Right((closingTxs, closingComplete, closerNonces)) =>
+      case Right((closingTxs, closingComplete)) =>
         log.debug("signing local mutual close transactions: {}", closingTxs)
-        localCloserNonces_opt = Some(closerNonces)
+        localClosingComplete_opt = Some(closingComplete)
         val d = DATA_NEGOTIATING_SIMPLE(commitments, closingFeerate, localScript, remoteScript, closingTxs :: Nil, Nil)
         (d, Some(closingComplete))
     }
