@@ -1,5 +1,6 @@
 package fr.acinq.eclair.router
 
+import akka.Done
 import akka.actor.ActorSystem
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.{SatoshiLong, Script, Transaction, TxOut}
@@ -15,6 +16,8 @@ import org.scalatest.OptionValues.convertOptionToValuable
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
+import scala.collection.immutable.SortedMap
+import scala.concurrent.Promise
 import scala.concurrent.duration.DurationInt
 
 /**
@@ -22,23 +25,26 @@ import scala.concurrent.duration.DurationInt
  */
 class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(router: TestFSMRef[Router.State, Router.Data, Router], channels: SetupFixture, testTags: Set[String]) {
-    //@formatter:off
+  case class FixtureParam(router: TestFSMRef[Router.State, Router.RouterData, Router], channels: SetupFixture, testTags: Set[String]) {
+    // @formatter:off
     /** there is only one channel here */
     def privateChannel: PrivateChannel = router.stateData.privateChannels.values.head
     def publicChannel: PublicChannel = router.stateData.channels.values.head
-    //@formatter:on
+    // @formatter:on
   }
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   override def withFixture(test: OneArgTest): Outcome = {
     val channels = init(tags = test.tags)
-    val router: TestFSMRef[Router.State, Router.Data, Router] = {
+    val router: TestFSMRef[Router.State, Router.RouterData, Router] = {
       // we use alice's actor system so we share the same event stream
       implicit val system: ActorSystem = channels.alice.underlying.system
-      TestFSMRef(new Router(channels.alice.underlyingActor.nodeParams, channels.alice.underlyingActor.blockchain, initialized = None))
+      TestFSMRef(new Router(channels.alice.underlyingActor.nodeParams, channels.alice.underlyingActor.blockchain))
     }
+    val routerInitialized = Promise[Done]()
+    router ! Router.Init(SortedMap.empty, Nil, Some(routerInitialized))
+    awaitAssert(assert(routerInitialized.isCompleted))
     withFixture(test.toNoArgTest(FixtureParam(router, channels, test.tags)))
   }
 
@@ -84,11 +90,11 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     awaitCond(privateChannel.update_1_opt.contains(aliceInitialChannelUpdate) && privateChannel.update_2_opt.contains(bobChannelUpdate1))
 
     // There is nothing for the router to rebroadcast, because the channel is not announced yet.
-    assert(router.stateData.rebroadcast == Rebroadcast(Map.empty, Map.empty, Map.empty))
+    assert(router.stateData.asInstanceOf[Router.Data].rebroadcast == Rebroadcast(Map.empty, Map.empty, Map.empty))
 
     // The router graph contains a single channel between Alice and Bob.
-    assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
-    assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceInitialChannelUpdate, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
+    assert(router.stateData.asInstanceOf[Router.Data].graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
+    assert(router.stateData.asInstanceOf[Router.Data].graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceInitialChannelUpdate, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
 
     // The channel now confirms, if it hadn't confirmed already.
     if (testTags.contains(ChannelStateTestsTags.ZeroConf)) {
@@ -107,9 +113,9 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
       // The router learns about the announcement and the channel graduates from private to public.
       awaitAssert {
-        assert(router.stateData.privateChannels.isEmpty)
-        assert(router.stateData.scid2PrivateChannels.isEmpty)
-        assert(router.stateData.channels.size == 1)
+        assert(router.stateData.asInstanceOf[Router.Data].privateChannels.isEmpty)
+        assert(router.stateData.asInstanceOf[Router.Data].scid2PrivateChannels.isEmpty)
+        assert(router.stateData.asInstanceOf[Router.Data].channels.size == 1)
       }
 
       // Alice and Bob won't send their channel_update directly to each other because the channel has been announced
@@ -133,7 +139,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       assert(publicChannel.update_1_opt.contains(aliceChannelUpdate2) && publicChannel.update_2_opt.contains(bobChannelUpdate1))
 
       // The router will rebroadcast the channel announcement, the local update which uses the real scid, and the first node announcement.
-      assert(router.stateData.rebroadcast == Rebroadcast(
+      assert(router.stateData.asInstanceOf[Router.Data].rebroadcast == Rebroadcast(
         channels = Map(aliceAnn -> Set[GossipOrigin](LocalGossip)),
         updates = Map(aliceChannelUpdate2 -> Set[GossipOrigin](LocalGossip)),
         nodes = Map(router.stateData.nodes.values.head -> Set[GossipOrigin](LocalGossip)))
@@ -146,7 +152,7 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       awaitCond(publicChannel.update_1_opt.contains(aliceChannelUpdate2) && publicChannel.update_2_opt.contains(bobChannelUpdate2))
 
       // The router is now ready to rebroadcast both channel updates.
-      assert(router.stateData.rebroadcast == Rebroadcast(
+      assert(router.stateData.asInstanceOf[Router.Data].rebroadcast == Rebroadcast(
         channels = Map(aliceAnn -> Set[GossipOrigin](LocalGossip)),
         updates = Map(
           aliceChannelUpdate2 -> Set[GossipOrigin](LocalGossip),
@@ -156,9 +162,9 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       )
 
       // The router graph still contains a single channel, with public updates.
-      assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
-      assert(router.stateData.graphWithBalances.graph.edgeSet().size == 2)
-      assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceChannelUpdate2, publicChannel), GraphEdge(bobChannelUpdate2, publicChannel)))
+      assert(router.stateData.asInstanceOf[Router.Data].graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
+      assert(router.stateData.asInstanceOf[Router.Data].graphWithBalances.graph.edgeSet().size == 2)
+      assert(router.stateData.asInstanceOf[Router.Data].graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceChannelUpdate2, publicChannel), GraphEdge(bobChannelUpdate2, publicChannel)))
     } else {
       // This is a private channel: alice and bob won't send a new channel_update to each other, even though the channel
       // is confirmed, because they will keep using the scid aliases.
@@ -168,8 +174,8 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
       assert(privateChannel.update_2_opt.get.dontForward)
 
       // The router graph still contains a single private channel.
-      assert(router.stateData.graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
-      assert(router.stateData.graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceInitialChannelUpdate, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
+      assert(router.stateData.asInstanceOf[Router.Data].graphWithBalances.graph.vertexSet() == Set(aliceNodeId, bobNodeId))
+      assert(router.stateData.asInstanceOf[Router.Data].graphWithBalances.graph.edgeSet().toSet == Set(GraphEdge(aliceInitialChannelUpdate, privateChannel), GraphEdge(bobChannelUpdate1, privateChannel)))
     }
 
     // The channel closes.
@@ -189,11 +195,11 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
     }
     // The router can now clean up the closed channel.
     awaitAssert {
-      assert(router.stateData.nodes == Map.empty)
-      assert(router.stateData.channels == Map.empty)
-      assert(router.stateData.privateChannels == Map.empty)
-      assert(router.stateData.scid2PrivateChannels == Map.empty)
-      assert(router.stateData.graphWithBalances.graph.edgeSet().isEmpty)
+      assert(router.stateData.asInstanceOf[Router.Data].nodes == Map.empty)
+      assert(router.stateData.asInstanceOf[Router.Data].channels == Map.empty)
+      assert(router.stateData.asInstanceOf[Router.Data].privateChannels == Map.empty)
+      assert(router.stateData.asInstanceOf[Router.Data].scid2PrivateChannels == Map.empty)
+      assert(router.stateData.asInstanceOf[Router.Data].graphWithBalances.graph.edgeSet().isEmpty)
       // TODO: we're not currently pruning nodes without channels from the graph, but we should!
       // assert(router.stateData.graphWithBalances.graph.vertexSet().isEmpty)
     }

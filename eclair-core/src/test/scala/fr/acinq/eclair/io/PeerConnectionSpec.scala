@@ -187,7 +187,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[protocol.Init]
     // remote activated MPP but forgot payment secret
-    transport.send(peerConnection, Init(Features(BasicMultiPartPayment -> Optional, VariableLengthOnion -> Optional)))
+    transport.send(peerConnection, protocol.Init(Features(BasicMultiPartPayment -> Optional, VariableLengthOnion -> Optional)))
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("basic_mpp is set but is missing a dependency (payment_secret)"))

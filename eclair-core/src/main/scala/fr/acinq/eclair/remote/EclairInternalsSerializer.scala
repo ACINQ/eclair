@@ -24,9 +24,10 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.{HeuristicsConstants, PaymentPathWeight, WeightRatios}
+import fr.acinq.eclair.router.Graph.HeuristicsConstants
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
+import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.QueryChannelRangeTlv.queryFlagsCodec
@@ -91,8 +92,8 @@ object EclairInternalsSerializer {
   val messageRouteParamsCodec: Codec[MessageRouteParams] = (
     ("maxRouteLength" | int32) ::
       (("baseFactor" | double) ::
-      ("ageFactor" | double) ::
-      ("capacityFactor" | double)).as[Graph.MessageWeightRatios]).as[MessageRouteParams]
+        ("ageFactor" | double) ::
+        ("capacityFactor" | double)).as[Graph.MessageWeightRatios]).as[MessageRouteParams]
 
   val syncConfCodec: Codec[Router.SyncConf] = (
     ("requestNodeAnnouncements" | bool(8)) ::
@@ -136,7 +137,7 @@ object EclairInternalsSerializer {
 
   val peerConnectionKillCodec: Codec[PeerConnection.Kill] = peerConnectionKillReasonCodec.as[PeerConnection.Kill]
 
-  val lengthPrefixedInitCodec: Codec[Init] = variableSizeBytes(uint16, initCodec)
+  val lengthPrefixedInitCodec: Codec[protocol.Init] = variableSizeBytes(uint16, initCodec)
   val lengthPrefixedNodeAnnouncementCodec: Codec[NodeAnnouncement] = variableSizeBytes(uint16, nodeAnnouncementCodec)
   val lengthPrefixedChannelAnnouncementCodec: Codec[ChannelAnnouncement] = variableSizeBytes(uint16, channelAnnouncementCodec)
   val lengthPrefixedChannelUpdateCodec: Codec[ChannelUpdate] = variableSizeBytes(uint16, channelUpdateCodec)
