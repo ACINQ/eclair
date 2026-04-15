@@ -290,7 +290,7 @@ object TestConstants {
           dailyPaymentVolumeThresholdPercent = 0.1,
         )
       ),
-      peerStatsTrackerConfig = PeerStatsTracker.Config(initPastEventsDelay = 1 millis, chunkPastEventsDelay = 1 millis),
+      peerStatsTrackerConfig = PeerStatsTracker.Config(pastEventsInitDelay = 1 millis, pastEventsChunkDelay = 1 millis),
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
@@ -510,7 +510,7 @@ object TestConstants {
           dailyPaymentVolumeThresholdPercent = 0.1,
         )
       ),
-      peerStatsTrackerConfig = PeerStatsTracker.Config(initPastEventsDelay = 1 millis, chunkPastEventsDelay = 1 millis),
+      peerStatsTrackerConfig = PeerStatsTracker.Config(pastEventsInitDelay = 1 millis, pastEventsChunkDelay = 1 millis),
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 

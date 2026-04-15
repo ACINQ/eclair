@@ -51,7 +51,7 @@ object PeerStatsTracker {
   private[profit] case class WrappedAvailableBalanceChanged(e: AvailableBalanceChanged) extends Command
   // @formatter:on
 
-  case class Config(initPastEventsDelay: FiniteDuration, chunkPastEventsDelay: FiniteDuration)
+  case class Config(pastEventsInitDelay: FiniteDuration, pastEventsChunkDelay: FiniteDuration)
 
   def apply(config: Config, db: AuditDb, channels: Seq[PersistentChannelData]): Behavior[Command] = {
     Behaviors.setup { context =>
@@ -348,7 +348,7 @@ private class PeerStatsTracker(config: PeerStatsTracker.Config, db: AuditDb, tim
     context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedPaymentRelayed))
     context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedPaymentReceived))
     // We start reading past events from the DB.
-    timers.startSingleTimer(LoadPastEvents(before = startedAt), config.initPastEventsDelay)
+    timers.startSingleTimer(LoadPastEvents(before = startedAt), config.pastEventsInitDelay)
     val stats = BucketedPeerStats.empty(peerChannels.peers)
     timers.startTimerWithFixedDelay(RemoveOldBuckets, Bucket.duration)
     listening(stats, peerChannels, startedAt)
@@ -390,7 +390,7 @@ private class PeerStatsTracker(config: PeerStatsTracker.Config, db: AuditDb, tim
           val stats3 = db.listRelayed(before - Bucket.duration, before).foldLeft(stats2) { case (current, e) => current.addPaymentRelayed(e) }
           val stats4 = db.listConfirmed(before - Bucket.duration, before).foldLeft(stats3) { case (current, e) => current.addConfirmedTransaction(e) }
           // We continue reading events from past buckets.
-          timers.startSingleTimer(LoadPastEvents(before - Bucket.duration), config.chunkPastEventsDelay)
+          timers.startSingleTimer(LoadPastEvents(before - Bucket.duration), config.pastEventsChunkDelay)
           listening(stats4, channels, lastTransactionReadAt)
         }
       case RemoveOldBuckets =>

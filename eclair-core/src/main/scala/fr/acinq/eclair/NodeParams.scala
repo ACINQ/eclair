@@ -752,8 +752,8 @@ object NodeParams extends Logging {
         )
       ),
       peerStatsTrackerConfig = PeerStatsTracker.Config(
-        initPastEventsDelay = FiniteDuration(config.getDuration("peer-scoring.past-events.init-past-events-delay").getSeconds, TimeUnit.SECONDS),
-        chunkPastEventsDelay = FiniteDuration(config.getDuration("peer-scoring.past-events.chunk-past-events-delay").getSeconds, TimeUnit.SECONDS),
+        pastEventsInitDelay = FiniteDuration(config.getDuration("peer-scoring.past-events.init-delay").getSeconds, TimeUnit.SECONDS),
+        pastEventsChunkDelay = FiniteDuration(config.getDuration("peer-scoring.past-events.chunk-delay").getSeconds, TimeUnit.SECONDS),
       ),
       offersConfig = OffersConfig(
         messagePathMinLength = config.getInt("offers.message-path-min-length"),

@@ -34,7 +34,7 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
   private val remoteNodeId2 = PublicKey(hex"02271ffb6969f6dc4769438637d7d24dc3358098cdef7a772f9ccfd31251470e28")
   private val remoteNodeId3 = PublicKey(hex"028f5be42aa013f9fd2e5a28a152563ac21acc095ef65cab2e835a789d2a4add96")
 
-  private val config = Config(initPastEventsDelay = 1 millis, chunkPastEventsDelay = 1 millis)
+  private val config = Config(pastEventsInitDelay = 1 millis, pastEventsChunkDelay = 1 millis)
 
   private def commitments(remoteNodeId: PublicKey, toLocal: BtcAmount, toRemote: BtcAmount, announceChannel: Boolean = true): Commitments = {
     CommitmentsSpec.makeCommitments(toLocal.toMilliSatoshi, toRemote.toMilliSatoshi, localNodeId, remoteNodeId, if (announceChannel) Some(dummyChannelAnn) else None)
