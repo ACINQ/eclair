@@ -17,8 +17,11 @@
 package fr.acinq.eclair
 
 import fr.acinq.eclair.channel.{ChannelDataWithCommitments, PersistentChannelData}
+import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.wire.protocol.NodeAnnouncement
 import grizzled.slf4j.Logging
 
+import scala.collection.immutable.SortedMap
 import scala.util.{Failure, Success, Try}
 
 object DBChecker extends Logging {
@@ -47,9 +50,9 @@ object DBChecker extends Logging {
   /**
    * Tests if the network database is readable.
    */
-  def checkNetworkDB(nodeParams: NodeParams): Unit =
+  def checkNetworkDB(nodeParams: NodeParams): (SortedMap[RealShortChannelId, Router.PublicChannel], Seq[NodeAnnouncement]) =
     Try(nodeParams.db.network.listChannels(), nodeParams.db.network.listNodes()) match {
-      case Success(_) => ()
+      case Success((channels, nodes)) => (channels, nodes)
       case Failure(_) => throw IncompatibleNetworkDBException
     }
 }

@@ -233,7 +233,7 @@ class Setup(val datadir: File,
       channelsListenerReady = Promise[Done]()
 
       channels = DBChecker.checkChannelsDB(nodeParams)
-      _ = DBChecker.checkNetworkDB(nodeParams)
+      (networkChannels, networkNodes) = DBChecker.checkNetworkDB(nodeParams)
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
@@ -341,9 +341,9 @@ class Setup(val datadir: File,
         system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams, blockHeight, watcherBitcoinClient)).onFailure(typed.SupervisorStrategy.resume), "zmq-watcher")
       }
 
-      router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))
-      routerTimeout = after(FiniteDuration(config.getDuration("router.init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
-      _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
+      router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
+      _ = router ! Router.Init(networkChannels, networkNodes, Some(routerInitialized))
+      _ <- routerInitialized.future
 
       _ = bitcoinClient.getReceiveAddress().map(address => logger.info(s"initial address=$address for bitcoin wallet=${bitcoinClient.rpcClient.wallet.getOrElse("(default)")}"))
       channelsListener = system.spawn(ChannelsListener(channelsListenerReady), name = "channels-listener")
