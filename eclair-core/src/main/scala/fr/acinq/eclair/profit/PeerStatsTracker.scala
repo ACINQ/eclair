@@ -384,7 +384,7 @@ private class PeerStatsTracker(config: PeerStatsTracker.Config, db: AuditDb, tim
           pastEventsLoaded = true
           listening(stats, channels, lastTransactionReadAt)
         } else {
-          log.info("loading past events before {}", before)
+          log.info("loading past events before {}", Instant.ofEpochMilli(before.toLong))
           val stats1 = db.listSent(before - Bucket.duration, before).foldLeft(stats) { case (current, e) => current.addPaymentSent(e) }
           val stats2 = db.listReceived(before - Bucket.duration, before).foldLeft(stats1) { case (current, e) => current.addPaymentReceived(e) }
           val stats3 = db.listRelayed(before - Bucket.duration, before).foldLeft(stats2) { case (current, e) => current.addPaymentRelayed(e) }
