@@ -88,7 +88,8 @@ class Peer(val nodeParams: NodeParams,
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
-      val autoReconnect = init.storedChannels.isEmpty || init.storedChannels.exists(c => !c.channelParams.remoteParams.initFeatures.hasFeature(Features.WakeUpNotificationClient))
+      // We only connect to nodes with whom we have a channel, which aren't mobile wallets.
+      val autoReconnect = init.storedChannels.exists(c => !c.channelParams.remoteParams.initFeatures.hasFeature(Features.WakeUpNotificationClient))
       context.system.eventStream.publish(PeerCreated(self, remoteNodeId))
       // When we restart, we will attempt to reconnect right away, but then we'll wait.
       // We don't fetch our peer's features from the DB: if the connection succeeds, we will get them from their init message, which saves a DB call.
@@ -554,7 +555,8 @@ class Peer(val nodeParams: NodeParams,
         } else {
           d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
           val lastRemoteFeatures = LastRemoteFeatures(d.remoteFeatures, d.remoteFeaturesWritten)
-          val autoReconnect = !lastRemoteFeatures.features.hasFeature(Features.WakeUpNotificationClient)
+          // We only reconnect if our peer is not a mobile wallet, and we now have a channel with them.
+          val autoReconnect = d.channels.nonEmpty && !d.remoteFeatures.hasFeature(Features.WakeUpNotificationClient)
           goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, d.activeChannels, d.peerStorage, Some(lastRemoteFeatures), autoReconnect)
         }
 
