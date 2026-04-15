@@ -41,7 +41,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   private val recommendedFeerates = RecommendedFeerates(Block.RegtestGenesisBlock.hash, TestConstants.feeratePerKw, TestConstants.anchorOutputsFeeratePerKw)
 
   private val PeerNothingData = Peer.Nothing
-  private val PeerDisconnectedData = Peer.DisconnectedData(channels, activeChannels = Set.empty, PeerStorage.Empty, remoteFeatures_opt = None, isMobileWallet = false)
+  private val PeerDisconnectedData = Peer.DisconnectedData(channels, activeChannels = Set.empty, PeerStorage.Empty, remoteFeatures_opt = None, autoReconnect = true)
   private val PeerConnectedData = Peer.ConnectedData(fakeIPAddress, system.deadLetters, null, null, channels.map { case (k: ChannelId, v) => (k, v) }, activeChannels = Set.empty, recommendedFeerates, None, PeerStorage.Empty, remoteFeaturesWritten = true)
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask], monitor: TestProbe)
@@ -73,7 +73,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, reconnectionTask, monitor)))
   }
 
-  test("stay idle at startup if auto-reconnect is disabled", Tag(withNodeAnn)) { f =>
+  test("stay idle at startup if auto-reconnect is disabled for all peers", Tag(withNodeAnn)) { f =>
     import f._
 
     val peer = TestProbe()
@@ -81,11 +81,11 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     monitor.expectNoMessage(100 millis)
   }
 
-  test("stay idle at startup for mobile wallets", Tag(autoReconnect), Tag(withNodeAnn)) { f =>
+  test("stay idle at startup if auto-reconnect is disabled for this peer", Tag(autoReconnect), Tag(withNodeAnn)) { f =>
     import f._
 
     val peer = TestProbe()
-    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, Peer.DisconnectedData(Map.empty, activeChannels = Set.empty, PeerStorage.Empty, None, isMobileWallet = true)))
+    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, Peer.DisconnectedData(Map.empty, activeChannels = Set.empty, PeerStorage.Empty, None, autoReconnect = false)))
     monitor.expectNoMessage(100 millis)
   }
 
@@ -93,7 +93,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     val peer = TestProbe()
-    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, Peer.DisconnectedData(Map.empty, activeChannels = Set.empty, PeerStorage.Empty, None, isMobileWallet = false)))
+    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, Peer.DisconnectedData(Map.empty, activeChannels = Set.empty, PeerStorage.Empty, None, autoReconnect = true)))
     monitor.expectNoMessage(100 millis)
   }
 

@@ -88,11 +88,11 @@ class Peer(val nodeParams: NodeParams,
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
-      val isMobileWallet = init.storedChannels.exists(_.channelParams.remoteParams.initFeatures.hasFeature(Features.WakeUpNotificationClient))
+      val autoReconnect = init.storedChannels.isEmpty || init.storedChannels.exists(c => !c.channelParams.remoteParams.initFeatures.hasFeature(Features.WakeUpNotificationClient))
       context.system.eventStream.publish(PeerCreated(self, remoteNodeId))
       // When we restart, we will attempt to reconnect right away, but then we'll wait.
       // We don't fetch our peer's features from the DB: if the connection succeeds, we will get them from their init message, which saves a DB call.
-      goto(DISCONNECTED) using DisconnectedData(channels, activeChannels = Set.empty, peerStorage = PeerStorage.Uninitialized, remoteFeatures_opt = None, isMobileWallet = isMobileWallet)
+      goto(DISCONNECTED) using DisconnectedData(channels, activeChannels = Set.empty, peerStorage = PeerStorage.Uninitialized, remoteFeatures_opt = None, autoReconnect = autoReconnect)
   }
 
   when(DISCONNECTED) {
@@ -554,8 +554,8 @@ class Peer(val nodeParams: NodeParams,
         } else {
           d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
           val lastRemoteFeatures = LastRemoteFeatures(d.remoteFeatures, d.remoteFeaturesWritten)
-          val isMobileWallet = lastRemoteFeatures.features.hasFeature(Features.WakeUpNotificationClient)
-          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, d.activeChannels, d.peerStorage, Some(lastRemoteFeatures), isMobileWallet)
+          val autoReconnect = !lastRemoteFeatures.features.hasFeature(Features.WakeUpNotificationClient)
+          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, d.activeChannels, d.peerStorage, Some(lastRemoteFeatures), autoReconnect)
         }
 
       case Event(ChannelTerminated(actor), d: ConnectedData) =>
@@ -1105,7 +1105,7 @@ object Peer {
     override def activeChannels: Set[ByteVector32] = Set.empty
     override def peerStorage: PeerStorage = PeerStorage.Uninitialized
   }
-  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef], activeChannels: Set[ByteVector32], peerStorage: PeerStorage, remoteFeatures_opt: Option[LastRemoteFeatures], isMobileWallet: Boolean) extends Data
+  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef], activeChannels: Set[ByteVector32], peerStorage: PeerStorage, remoteFeatures_opt: Option[LastRemoteFeatures], autoReconnect: Boolean) extends Data
   case class ConnectedData(address: NodeAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef], activeChannels: Set[ByteVector32], currentFeerates: RecommendedFeerates, previousFeerates_opt: Option[RecommendedFeerates], peerStorage: PeerStorage, remoteFeaturesWritten: Boolean) extends Data {
     val connectionInfo: ConnectionInfo = ConnectionInfo(address, peerConnection, localInit, remoteInit)
     def localFeatures: Features[InitFeature] = localInit.features
