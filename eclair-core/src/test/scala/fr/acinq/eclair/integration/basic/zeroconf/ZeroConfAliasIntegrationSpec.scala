@@ -267,9 +267,12 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       assert(getRouterData(bob).privateChannels.values.exists(_.nodeId2 == carol.nodeParams.nodeId))
     }
 
-    val Some(carolHint) = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
-    val bobAlias = getRouterData(bob).privateChannels.values.find(_.nodeId2 == carol.nodeParams.nodeId).value.aliases.localAlias
-    assert(carolHint.shortChannelId == bobAlias)
+    val (carolHint, bobAlias) = eventually {
+      val Some(carolHint) = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
+      val bobAlias = getRouterData(bob).privateChannels.values.find(_.nodeId2 == carol.nodeParams.nodeId).value.aliases.localAlias
+      assert(carolHint.shortChannelId == bobAlias)
+      (carolHint, bobAlias)
+    }
 
     // We make sure Bob won't have enough liquidity to relay another payment.
     sendSuccessfulPayment(bob, carol, 35_000_000 msat)
