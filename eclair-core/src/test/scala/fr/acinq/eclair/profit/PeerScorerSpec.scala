@@ -30,7 +30,7 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
   private val remoteNodeId3 = PublicKey(hex"028f5be42aa013f9fd2e5a28a152563ac21acc095ef65cab2e835a789d2a4add96")
 
   private val weeklyBuckets = Bucket.bucketsPerDay * 7
-  private val defaultConfig = Config(
+  private val defaultConfig = PeerScorer.Config(
     enabled = true,
     // We set this to 1 day to more easily match daily rate-limits.
     scoringFrequency = 1 day,
@@ -60,7 +60,7 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
 
   private case class Fixture(nodeParams: NodeParams, tracker: TestProbe[GetLatestStats], register: TestProbe[Any], wallet: DummyBalanceChecker, scorer: ActorRef[PeerScorer.Command])
 
-  private def withFixture(config: Config = defaultConfig, onChainBalance: BtcAmount = 0 sat)(testFun: Fixture => Any): Unit = {
+  private def withFixture(config: PeerScorer.Config = defaultConfig, onChainBalance: BtcAmount = 0 sat)(testFun: Fixture => Any): Unit = {
     val tracker = TestProbe[GetLatestStats]()
     val register = TestProbe[Any]()
     val wallet = new DummyBalanceChecker(confirmedBalance = onChainBalance.toMilliSatoshi.truncateToSatoshi)

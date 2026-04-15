@@ -33,7 +33,7 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
-import fr.acinq.eclair.profit.PeerScorer
+import fr.acinq.eclair.profit.{PeerScorer, PeerStatsTracker}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.HeuristicsConstants
@@ -97,6 +97,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       onTheFlyFundingConfig: OnTheFlyFunding.Config,
                       peerStorageConfig: PeerStorageConfig,
                       peerScoringConfig: PeerScorer.Config,
+                      peerStatsTrackerConfig: PeerStatsTracker.Config,
                       offersConfig: OffersConfig) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
@@ -749,6 +750,10 @@ object NodeParams extends Logging {
           dailyPaymentVolumeThreshold = config.getLong("peer-scoring.relay-fees.daily-payment-volume-threshold-satoshis").sat,
           dailyPaymentVolumeThresholdPercent = config.getDouble("peer-scoring.relay-fees.daily-payment-volume-threshold-percent"),
         )
+      ),
+      peerStatsTrackerConfig = PeerStatsTracker.Config(
+        pastEventsInitDelay = FiniteDuration(config.getDuration("peer-scoring.past-events.init-delay").getSeconds, TimeUnit.SECONDS),
+        pastEventsChunkDelay = FiniteDuration(config.getDuration("peer-scoring.past-events.chunk-delay").getSeconds, TimeUnit.SECONDS),
       ),
       offersConfig = OffersConfig(
         messagePathMinLength = config.getInt("offers.message-path-min-length"),
