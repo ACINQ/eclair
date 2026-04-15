@@ -35,6 +35,7 @@ import scala.concurrent.duration.{DurationInt, FiniteDuration}
  */
 
 object PeerStatsTracker {
+
   // @formatter:off
   sealed trait Command
   case class GetLatestStats(replyTo: ActorRef[LatestStats]) extends Command
@@ -50,10 +51,12 @@ object PeerStatsTracker {
   private[profit] case class WrappedAvailableBalanceChanged(e: AvailableBalanceChanged) extends Command
   // @formatter:on
 
-  def apply(db: AuditDb, channels: Seq[PersistentChannelData]): Behavior[Command] = {
+  case class Config(initPastEventsDelay: FiniteDuration, chunkPastEventsDelay: FiniteDuration)
+
+  def apply(config: Config, db: AuditDb, channels: Seq[PersistentChannelData]): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
-        new PeerStatsTracker(db, timers, context).start(channels)
+        new PeerStatsTracker(config, db, timers, context).start(channels)
       }
     }
   }
@@ -323,7 +326,7 @@ object PeerStatsTracker {
 
 }
 
-private class PeerStatsTracker(db: AuditDb, timers: TimerScheduler[PeerStatsTracker.Command], context: ActorContext[PeerStatsTracker.Command]) {
+private class PeerStatsTracker(config: PeerStatsTracker.Config, db: AuditDb, timers: TimerScheduler[PeerStatsTracker.Command], context: ActorContext[PeerStatsTracker.Command]) {
 
   import PeerStatsTracker._
 
@@ -345,7 +348,7 @@ private class PeerStatsTracker(db: AuditDb, timers: TimerScheduler[PeerStatsTrac
     context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedPaymentRelayed))
     context.system.eventStream ! EventStream.Subscribe(context.messageAdapter(WrappedPaymentReceived))
     // We start reading past events from the DB.
-    context.self ! LoadPastEvents(before = startedAt)
+    timers.startSingleTimer(LoadPastEvents(before = startedAt), config.initPastEventsDelay)
     val stats = BucketedPeerStats.empty(peerChannels.peers)
     timers.startTimerWithFixedDelay(RemoveOldBuckets, Bucket.duration)
     listening(stats, peerChannels, startedAt)
@@ -387,7 +390,7 @@ private class PeerStatsTracker(db: AuditDb, timers: TimerScheduler[PeerStatsTrac
           val stats3 = db.listRelayed(before - Bucket.duration, before).foldLeft(stats2) { case (current, e) => current.addPaymentRelayed(e) }
           val stats4 = db.listConfirmed(before - Bucket.duration, before).foldLeft(stats3) { case (current, e) => current.addConfirmedTransaction(e) }
           // We continue reading events from past buckets.
-          context.self ! LoadPastEvents(before - Bucket.duration)
+          timers.startSingleTimer(LoadPastEvents(before - Bucket.duration), config.chunkPastEventsDelay)
           listening(stats4, channels, lastTransactionReadAt)
         }
       case RemoveOldBuckets =>

@@ -34,6 +34,8 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
   private val remoteNodeId2 = PublicKey(hex"02271ffb6969f6dc4769438637d7d24dc3358098cdef7a772f9ccfd31251470e28")
   private val remoteNodeId3 = PublicKey(hex"028f5be42aa013f9fd2e5a28a152563ac21acc095ef65cab2e835a789d2a4add96")
 
+  private val config = Config(initPastEventsDelay = 1 millis, chunkPastEventsDelay = 1 millis)
+
   private def commitments(remoteNodeId: PublicKey, toLocal: BtcAmount, toRemote: BtcAmount, announceChannel: Boolean = true): Commitments = {
     CommitmentsSpec.makeCommitments(toLocal.toMilliSatoshi, toRemote.toMilliSatoshi, localNodeId, remoteNodeId, if (announceChannel) Some(dummyChannelAnn) else None)
   }
@@ -107,7 +109,7 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
     val c3b = DATA_CLOSING(commitments(remoteNodeId3, toLocal = 0.2 btc, toRemote = 0.2 btc), BlockHeight(750_000), ByteVector.empty, Nil, ClosingTx(InputInfo(OutPoint(randomTxId(), 2), TxOut(500_000 sat, Script.pay2wpkh(dummyPubKey))), Transaction(2, Nil, TxOut(500_000 sat, Script.pay2wpkh(dummyPubKey)) :: Nil, 0), None) :: Nil)
 
     // We initialize our actor with these existing channels.
-    val tracker = testKit.spawn(PeerStatsTracker(TestDatabases.inMemoryDb().audit, Seq(c1a, c1b, c1c, c1d, c2a, c2b, c3a, c3b)))
+    val tracker = testKit.spawn(PeerStatsTracker(config, TestDatabases.inMemoryDb().audit, Seq(c1a, c1b, c1c, c1d, c2a, c2b, c3a, c3b)))
     // We have relayed payments through channels that have been closed since then.
     tracker.ref ! WrappedPaymentRelayed(ChannelPaymentRelayed(
       paymentHash = randomBytes32(),
@@ -238,7 +240,7 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
   test("keep track of peer statistics") {
     val now = TimestampMilli.now()
     val probe = TestProbe[LatestStats]()
-    val tracker = testKit.spawn(PeerStatsTracker(TestDatabases.inMemoryDb().audit, Nil))
+    val tracker = testKit.spawn(PeerStatsTracker(config, TestDatabases.inMemoryDb().audit, Nil))
 
     // We have channels with 3 peers:
     val c1a = commitments(remoteNodeId1, toLocal = 0.5 btc, toRemote = 0.3 btc)
@@ -411,7 +413,7 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
     // Spawn tracker with channels for both peers.
     val c1 = channel(remoteNodeId1, toLocal = 0.3 btc, toRemote = 0.2 btc)
     val c2 = channel(remoteNodeId2, toLocal = 0.1 btc, toRemote = 0.4 btc)
-    val tracker = testKit.spawn(PeerStatsTracker(db, Seq(c1, c2)))
+    val tracker = testKit.spawn(PeerStatsTracker(config, db, Seq(c1, c2)))
 
     probe.awaitAssert({
       tracker.ref ! GetLatestStats(probe.ref)
@@ -449,7 +451,7 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
 
     // Spawn tracker with a channel for remoteNodeId1 and empty DB.
     val c1 = channel(remoteNodeId1, toLocal = 0.3 btc, toRemote = 0.2 btc)
-    val tracker = testKit.spawn(PeerStatsTracker(db, Seq(c1)))
+    val tracker = testKit.spawn(PeerStatsTracker(config, db, Seq(c1)))
 
     // Wait for initial loading to complete (should be almost instantaneous on an empty DB).
     probe.awaitAssert({

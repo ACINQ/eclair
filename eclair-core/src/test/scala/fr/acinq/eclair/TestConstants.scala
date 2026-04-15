@@ -29,7 +29,7 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
-import fr.acinq.eclair.profit.PeerScorer
+import fr.acinq.eclair.profit.{PeerScorer, PeerStatsTracker}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessageWeightRatios}
 import fr.acinq.eclair.router.Router._
@@ -290,6 +290,7 @@ object TestConstants {
           dailyPaymentVolumeThresholdPercent = 0.1,
         )
       ),
+      peerStatsTrackerConfig = PeerStatsTracker.Config(initPastEventsDelay = 1 millis, chunkPastEventsDelay = 1 millis),
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
@@ -509,6 +510,7 @@ object TestConstants {
           dailyPaymentVolumeThresholdPercent = 0.1,
         )
       ),
+      peerStatsTrackerConfig = PeerStatsTracker.Config(initPastEventsDelay = 1 millis, chunkPastEventsDelay = 1 millis),
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
