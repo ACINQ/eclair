@@ -426,9 +426,9 @@ class Setup(val datadir: File,
         peerScorer_opt = peerScorer_opt,
         wallet = bitcoinClient)
 
-      zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
-      zmqTxTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
-      tcpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("server.port"))))
+      zmqBlockTimeout = after(30 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
+      zmqTxTimeout = after(30 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
+      tcpTimeout = after(30 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("server.port"))))
 
       _ <- Future.firstCompletedOf(zmqBlockConnected.future :: zmqBlockTimeout :: Nil)
       _ <- Future.firstCompletedOf(zmqTxConnected.future :: zmqTxTimeout :: Nil)
