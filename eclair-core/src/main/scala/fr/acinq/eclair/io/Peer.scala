@@ -270,7 +270,7 @@ class Peer(val nodeParams: NodeParams,
       case Event(SpawnChannelNonInitiator(open, channelConfig, channelType, addFunding_opt, localParams, peerConnection), d: ConnectedData) =>
         val temporaryChannelId = open.fold(_.temporaryChannelId, _.temporaryChannelId)
         if (peerConnection == d.peerConnection) {
-          OnTheFlyFunding.validateOpen(nodeParams.onTheFlyFundingConfig, open, pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
+          OnTheFlyFunding.validateOpen(nodeParams.onTheFlyFundingConfig, remoteNodeId, open, pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
             case reject: OnTheFlyFunding.ValidationResult.Reject =>
               log.warning("rejecting on-the-fly channel: {}", reject.cancel.toAscii)
               self ! Peer.OutgoingMessage(reject.cancel, d.peerConnection)
@@ -469,7 +469,7 @@ class Peer(val nodeParams: NodeParams,
             self ! Peer.OutgoingMessage(TxAbort(msg.channelId, FundingFeerateTooLow(msg.channelId, msg.feerate, d.currentFeerates.fundingFeerate).getMessage), d.peerConnection)
           case Some(channel) =>
             // We don't have access to the remote htlc_minimum here, so we hard-code the value Phoenix uses (1000 msat).
-            OnTheFlyFunding.validateSplice(nodeParams.onTheFlyFundingConfig, msg, nodeParams.channelConf.htlcMinimum.max(1000 msat), pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
+            OnTheFlyFunding.validateSplice(nodeParams.onTheFlyFundingConfig, remoteNodeId, msg, nodeParams.channelConf.htlcMinimum.max(1000 msat), pendingOnTheFlyFunding, feeCredit.getOrElse(0 msat)) match {
               case reject: OnTheFlyFunding.ValidationResult.Reject =>
                 log.warning("rejecting on-the-fly splice: {}", reject.cancel.toAscii)
                 self ! Peer.OutgoingMessage(reject.cancel, d.peerConnection)

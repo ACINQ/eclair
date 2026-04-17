@@ -1066,15 +1066,15 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     peer ! ChannelReadyForPayments(channel.ref, remoteNodeId, purchase.channelId, purchase.txId, fundingTxIndex = 0)
     channel.expectMsgType[CMD_GET_CHANNEL_INFO]
 
-    // Our peer rejects the HTLC, so we automatically disable from_future_htlc.
-    assert(nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed)
+    // Our peer rejects the HTLC, so we automatically disable from_future_htlc for their future payments.
+    assert(nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
     val failure = HtlcResult.RemoteFail(UpdateFailHtlc(purchase.channelId, 2, ByteVector.empty))
     peer ! OnTheFlyFunding.PaymentRelayer.RelayFailed(paymentHash, OnTheFlyFunding.PaymentRelayer.RemoteFailure(failure))
-    awaitCond(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed)
+    awaitCond(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
 
     // When we retry relaying the HTLC, our peer fulfills it: we re-enable from_future_htlc.
     peer ! OnTheFlyFunding.PaymentRelayer.RelaySuccess(purchase.channelId, paymentHash, preimage, fees.total.toMilliSatoshi)
-    awaitCond(nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed)
+    awaitCond(nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
   }
 
   test("don't relay payments if added to fee credit while signing", Tag(withFeeCredit)) { f =>
@@ -1221,31 +1221,48 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   }
 
   test("disable from_future_htlc when detecting abuse") { () =>
-    val cfg = OnTheFlyFunding.Config(90 seconds)
-    assert(cfg.isFromFutureHtlcAllowed)
-    val remoteNodeId = randomKey().publicKey
+    val cfg = OnTheFlyFunding.Config(90 seconds, maxSuspiciousPeers = 2)
+    val remoteNodeId1 = randomKey().publicKey
+    val remoteNodeId2 = randomKey().publicKey
+    val remoteNodeId3 = randomKey().publicKey
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId1))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId2))
 
     // We detect two payments that seem malicious.
     val paymentHash1 = randomBytes32()
     val paymentHash2 = randomBytes32()
-    cfg.fromFutureHtlcFailed(paymentHash1, remoteNodeId)
-    assert(!cfg.isFromFutureHtlcAllowed)
-    cfg.fromFutureHtlcFailed(paymentHash1, remoteNodeId) // noop
-    cfg.fromFutureHtlcFailed(paymentHash2, remoteNodeId)
-    assert(!cfg.isFromFutureHtlcAllowed)
+    cfg.fromFutureHtlcFailed(paymentHash1, remoteNodeId1)
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId1))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId2))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId3))
+    cfg.fromFutureHtlcFailed(paymentHash1, remoteNodeId1) // noop
+    cfg.fromFutureHtlcFailed(paymentHash2, remoteNodeId2)
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId1))
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId2))
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId3))
     // The first one wasn't malicious after all.
     cfg.fromFutureHtlcFulfilled(paymentHash1)
-    assert(!cfg.isFromFutureHtlcAllowed)
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId1))
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId2))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId3))
     // The second one wasn't malicious either: we reactivate from_future_htlc.
     cfg.fromFutureHtlcFulfilled(paymentHash2)
-    assert(cfg.isFromFutureHtlcAllowed)
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId1))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId2))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId3))
 
     // We detect a bunch of potentially malicious payments but manually reactivate from_future_htlc.
-    cfg.fromFutureHtlcFailed(randomBytes32(), remoteNodeId)
-    cfg.fromFutureHtlcFailed(randomBytes32(), remoteNodeId)
-    assert(!cfg.isFromFutureHtlcAllowed)
-    cfg.enableFromFutureHtlc()
-    assert(cfg.isFromFutureHtlcAllowed)
+    cfg.fromFutureHtlcFailed(randomBytes32(), remoteNodeId1)
+    cfg.fromFutureHtlcFailed(randomBytes32(), remoteNodeId2)
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId3))
+    cfg.enableFromFutureHtlc(Set(remoteNodeId1))
+    assert(!cfg.isFromFutureHtlcAllowed(remoteNodeId1))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId2))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId3))
+    cfg.enableFromFutureHtlc(Set.empty)
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId1))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId2))
+    assert(cfg.isFromFutureHtlcAllowed(remoteNodeId3))
   }
 
 }

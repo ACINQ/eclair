@@ -38,7 +38,9 @@ trait Control {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val enableFromFutureHtlc: Route = postRequest("enablefromfuturehtlc") { implicit t =>
-    complete(eclairApi.enableFromFutureHtlc())
+    formFields("suspiciousNodeIds".as[List[PublicKey]](pubkeyListUnmarshaller) ?) { suspiciousNodes =>
+      complete(eclairApi.enableFromFutureHtlc(suspiciousNodes.map(_.toSet).getOrElse(Set.empty)))
+    }
   }
 
   val resetBalance: Route = postRequest("resetbalance") { implicit t =>
