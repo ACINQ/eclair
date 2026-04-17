@@ -206,7 +206,7 @@ trait Eclair {
 
   def getDescriptors(account: Long): Descriptors
 
-  def enableFromFutureHtlc(): Future[EnableFromFutureHtlcResponse]
+  def enableFromFutureHtlc(suspiciousNodes: Set[PublicKey]): Future[EnableFromFutureHtlcResponse]
 
   def stop(): Future[Unit]
 
@@ -845,11 +845,11 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     case _ => throw new RuntimeException("on-chain seed is not configured")
   }
 
-  override def enableFromFutureHtlc(): Future[EnableFromFutureHtlcResponse] = {
+  override def enableFromFutureHtlc(suspiciousNodes: Set[PublicKey]): Future[EnableFromFutureHtlcResponse] = {
     appKit.nodeParams.liquidityAdsConfig.rates_opt match {
       case Some(willFundRates) if willFundRates.paymentTypes.contains(LiquidityAds.PaymentType.FromFutureHtlc) =>
-        appKit.nodeParams.onTheFlyFundingConfig.enableFromFutureHtlc()
-        Future.successful(EnableFromFutureHtlcResponse(appKit.nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed, None))
+        appKit.nodeParams.onTheFlyFundingConfig.enableFromFutureHtlc(suspiciousNodes)
+        Future.successful(EnableFromFutureHtlcResponse(enabled = true, None))
       case _ =>
         Future.successful(EnableFromFutureHtlcResponse(enabled = false, Some("could not enable from_future_htlc: you must add it to eclair.liquidity-ads.payment-types in your eclair.conf file first")))
     }

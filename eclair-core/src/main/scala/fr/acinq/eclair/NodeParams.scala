@@ -713,6 +713,7 @@ object NodeParams extends Logging {
       ),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(
         proposalTimeout = FiniteDuration(config.getDuration("on-the-fly-funding.proposal-timeout").getSeconds, TimeUnit.SECONDS),
+        maxSuspiciousPeers = config.getInt("on-the-fly-funding.max-suspicious-peers"),
       ),
       peerStorageConfig = PeerStorageConfig(
         writeDelay = FiniteDuration(config.getDuration("peer-storage.write-delay").getSeconds, TimeUnit.SECONDS),

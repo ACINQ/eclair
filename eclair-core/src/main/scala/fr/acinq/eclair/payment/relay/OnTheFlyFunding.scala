@@ -40,16 +40,21 @@ import scala.concurrent.duration.FiniteDuration
 
 object OnTheFlyFunding {
 
-  case class Config(proposalTimeout: FiniteDuration) {
+  case class Config(proposalTimeout: FiniteDuration, maxSuspiciousPeers: Int) {
     // When funding a transaction using from_future_htlc, we are taking the risk that the remote node doesn't fulfill
-    // the corresponding HTLCs. If we detect that our peer fails such HTLCs, we automatically disable from_future_htlc
+    // the corresponding HTLCs. If we detect that our peers fail such HTLCs, we automatically disable from_future_htlc
     // to limit our exposure.
     // Note that this state is flushed when restarting: node operators should explicitly remove the from_future_htlc
     // payment type from their liquidity ads configuration if they want to keep it disabled.
     private val suspectFromFutureHtlcRelays = scala.collection.concurrent.TrieMap.empty[ByteVector32, PublicKey]
 
-    /** We allow using from_future_htlc if we don't have any pending payment that is abusing it. */
-    def isFromFutureHtlcAllowed: Boolean = suspectFromFutureHtlcRelays.isEmpty
+    /** We allow using from_future_htlc if we don't have too many pending payments that are abusing it. */
+    def isFromFutureHtlcAllowed(remoteNodeId: PublicKey): Boolean = {
+      val suspiciousPeers = suspectFromFutureHtlcRelays.values.toSet
+      val alreadySuspicious = suspiciousPeers.contains(remoteNodeId)
+      val maxSuspiciousReached = suspiciousPeers.size >= maxSuspiciousPeers
+      !alreadySuspicious && !maxSuspiciousReached
+    }
 
     /** An on-the-fly payment using from_future_htlc was failed by the remote node: they may be malicious. */
     def fromFutureHtlcFailed(paymentHash: ByteVector32, remoteNodeId: PublicKey): Unit = {
@@ -65,11 +70,11 @@ object OnTheFlyFunding {
       }
     }
 
-    /** Remove all suspect payments and re-enable from_future_htlc. */
-    def enableFromFutureHtlc(): Unit = {
-      val pending = suspectFromFutureHtlcRelays.toList.map(_._1)
+    /** Remove suspect payments (except those from the provided list) which potentially re-enables from_future_htlc. */
+    def enableFromFutureHtlc(suspiciousNodes: Set[PublicKey]): Unit = {
+      val pending = suspectFromFutureHtlcRelays.collect { case (paymentHash, remoteNodeId) if !suspiciousNodes.contains(remoteNodeId) => paymentHash }
       pending.foreach(paymentHash => suspectFromFutureHtlcRelays.remove(paymentHash))
-      Metrics.SuspiciousFromFutureHtlcRelays.withoutTags().update(0)
+      Metrics.SuspiciousFromFutureHtlcRelays.withoutTags().update(suspectFromFutureHtlcRelays.size)
     }
   }
 
@@ -164,26 +169,27 @@ object OnTheFlyFunding {
   // @formatter:on
 
   /** Validate an incoming channel that may use on-the-fly funding. */
-  def validateOpen(cfg: Config, open: Either[OpenChannel, OpenDualFundedChannel], pendingOnTheFlyFunding: Map[ByteVector32, Pending], feeCredit: MilliSatoshi): ValidationResult = {
+  def validateOpen(cfg: Config, remoteNodeId: PublicKey, open: Either[OpenChannel, OpenDualFundedChannel], pendingOnTheFlyFunding: Map[ByteVector32, Pending], feeCredit: MilliSatoshi): ValidationResult = {
     open match {
       case Left(_) => ValidationResult.Accept(Set.empty, None)
       case Right(open) => open.requestFunding_opt match {
-        case Some(requestFunding) => validate(cfg, open.temporaryChannelId, requestFunding, isChannelCreation = true, open.fundingFeerate, open.htlcMinimum, pendingOnTheFlyFunding, feeCredit)
+        case Some(requestFunding) => validate(cfg, open.temporaryChannelId, remoteNodeId, requestFunding, isChannelCreation = true, open.fundingFeerate, open.htlcMinimum, pendingOnTheFlyFunding, feeCredit)
         case None => ValidationResult.Accept(Set.empty, None)
       }
     }
   }
 
   /** Validate an incoming splice that may use on-the-fly funding. */
-  def validateSplice(cfg: Config, splice: SpliceInit, htlcMinimum: MilliSatoshi, pendingOnTheFlyFunding: Map[ByteVector32, Pending], feeCredit: MilliSatoshi): ValidationResult = {
+  def validateSplice(cfg: Config, remoteNodeId: PublicKey, splice: SpliceInit, htlcMinimum: MilliSatoshi, pendingOnTheFlyFunding: Map[ByteVector32, Pending], feeCredit: MilliSatoshi): ValidationResult = {
     splice.requestFunding_opt match {
-      case Some(requestFunding) => validate(cfg, splice.channelId, requestFunding, isChannelCreation = false, splice.feerate, htlcMinimum, pendingOnTheFlyFunding, feeCredit)
+      case Some(requestFunding) => validate(cfg, splice.channelId, remoteNodeId, requestFunding, isChannelCreation = false, splice.feerate, htlcMinimum, pendingOnTheFlyFunding, feeCredit)
       case None => ValidationResult.Accept(Set.empty, None)
     }
   }
 
   private def validate(cfg: Config,
                        channelId: ByteVector32,
+                       remoteNodeId: PublicKey,
                        requestFunding: LiquidityAds.RequestFunding,
                        isChannelCreation: Boolean,
                        feerate: FeeratePerKw,
@@ -215,7 +221,7 @@ object OnTheFlyFunding {
       case PaymentDetails.FromChannelBalance => ValidationResult.Accept(Set.empty, None)
       case _ if requestFunding.requestedAmount.toMilliSatoshi < totalPaymentAmount => ValidationResult.Reject(cancelAmountTooLow, paymentHashes.toSet)
       case _: PaymentDetails.FromChannelBalanceForFutureHtlc => ValidationResult.Accept(Set.empty, useFeeCredit_opt)
-      case _: PaymentDetails.FromFutureHtlc if !cfg.isFromFutureHtlcAllowed => ValidationResult.Reject(cancelDisabled, paymentHashes.toSet)
+      case _: PaymentDetails.FromFutureHtlc if !cfg.isFromFutureHtlcAllowed(remoteNodeId) => ValidationResult.Reject(cancelDisabled, paymentHashes.toSet)
       case _: PaymentDetails.FromFutureHtlc if availableAmountForFees < feesOwed => ValidationResult.Reject(cancelFeesTooLow, paymentHashes.toSet)
       case _: PaymentDetails.FromFutureHtlc => ValidationResult.Accept(Set.empty, useFeeCredit_opt)
       case _: PaymentDetails.FromFutureHtlcWithPreimage if availableAmountForFees < feesOwed => ValidationResult.Reject(cancelFeesTooLow, paymentHashes.toSet)

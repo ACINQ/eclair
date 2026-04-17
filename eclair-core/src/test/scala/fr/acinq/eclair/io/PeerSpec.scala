@@ -749,8 +749,9 @@ class PeerSpec extends FixtureSpec {
     import f._
 
     // We make sure that from_future_htlc is disabled.
-    nodeParams.onTheFlyFundingConfig.fromFutureHtlcFailed(randomBytes32(), randomKey().publicKey)
-    assert(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed)
+    nodeParams.onTheFlyFundingConfig.fromFutureHtlcFailed(randomBytes32(), remoteNodeId)
+    assert(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
+    assert(!nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(randomKey().publicKey))
 
     // We reject requests using from_future_htlc.
     val paymentHash = randomBytes32()
@@ -762,7 +763,8 @@ class PeerSpec extends FixtureSpec {
     channel.expectNoMessage(100 millis)
 
     // Once enabled, we accept requests using from_future_htlc.
-    nodeParams.onTheFlyFundingConfig.enableFromFutureHtlc()
+    nodeParams.onTheFlyFundingConfig.enableFromFutureHtlc(Set.empty)
+    assert(nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed(remoteNodeId))
     peerConnection.send(peer, open)
     channel.expectMsgType[INPUT_INIT_CHANNEL_NON_INITIATOR]
     channel.expectMsg(open)
