@@ -165,22 +165,22 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     assert(peer.expectMessageType[SpawnChannelNonInitiator].addFunding_opt.isEmpty)
   }
 
-  test("reject open channel request for public taproot channels") { f =>
+  test("reject open channel request for public taproot channels without option_gossip_v2") { f =>
     import f._
 
-    // We reject remote public taproot channels.
+    // We reject remote public taproot channels when option_gossip_v2 isn't supported.
     val open = createOpenChannelMessage(ChannelTypes.SimpleTaprootChannel()).copy(channelFlags = ChannelFlags(announceChannel = true))
     val taprootFeatures = defaultFeatures.add(Features.SimpleTaprootChannels, FeatureSupport.Optional)
     val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(open), taprootFeatures, taprootFeatures, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
-    assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("public taproot channels aren't supported yet"))
+    assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("public taproot channels aren't supported without option_gossip_v2"))
     eventListener.expectMessageType[ChannelAborted]
 
     // We make sure that we don't try to open public taproot channels.
     val probe = TestProbe[Any]()
     val openChannelInitiator = Peer.OpenChannel(remoteNodeId, 500_000 sat, Some(ChannelTypes.SimpleTaprootChannel()), None, None, None, None, Some(ChannelFlags(announceChannel = true)), None)
     openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, openChannelInitiator, taprootFeatures, taprootFeatures)
-    assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason.contains("public taproot channels aren't supported yet"))
+    assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason.contains("public taproot channels aren't supported without option_gossip_v2"))
 
     // If we want to announce the channel, we fallback to anchor outputs.
     openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, openChannelInitiator.copy(channelType_opt = None), taprootFeatures, taprootFeatures)
@@ -189,6 +189,20 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     // If we don't want to announce the channel, we can use taproot.
     openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, openChannelInitiator.copy(channelFlags_opt = Some(ChannelFlags(announceChannel = false))), taprootFeatures, taprootFeatures)
     assert(peer.expectMessageType[Peer.SpawnChannelInitiator].channelType == ChannelTypes.SimpleTaprootChannel())
+
+    // If we both support option_gossip_v2, we can announce taproot channels.
+    val taprootFeaturesWithGossip = taprootFeatures.add(Features.TaprootGossip, FeatureSupport.Optional)
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, openChannelInitiator, taprootFeaturesWithGossip, taprootFeatures)
+    assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason.contains("public taproot channels aren't supported without option_gossip_v2"))
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, openChannelInitiator, taprootFeaturesWithGossip, taprootFeaturesWithGossip)
+    assert(peer.expectMessageType[Peer.SpawnChannelInitiator].channelType == ChannelTypes.SimpleTaprootChannel())
+
+    // We accept public taproot channels when option_gossip_v2 is set.
+    openChannelInterceptor ! openChannelNonInitiator.copy(localFeatures = taprootFeaturesWithGossip, remoteFeatures = taprootFeaturesWithGossip)
+    pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
+    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), None)
+    assert(peer.expectMessageType[SpawnChannelNonInitiator].channelType == ChannelTypes.SimpleTaprootChannel())
+
     probe.expectNoMessage(100 millis)
   }
 

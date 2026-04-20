@@ -109,6 +109,7 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
 
   private def sanityCheckInitiator(request: OpenChannelInitiator): Behavior[Command] = {
     val announceChannel = request.open.channelFlags_opt.getOrElse(nodeParams.channelConf.channelFlags).announceChannel
+    val canUseTaprootGossip = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.TaprootGossip)
     val channelType_opt = request.open.channelType_opt.orElse(ChannelTypes.preferredForPublicChannels(request.localFeatures, request.remoteFeatures, announceChannel = announceChannel))
     if (request.open.fundingAmount >= Channel.MAX_FUNDING_WITHOUT_WUMBO && !request.localFeatures.hasFeature(Wumbo)) {
       request.replyTo ! OpenChannelResponse.Rejected(s"fundingAmount=${request.open.fundingAmount} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING_WITHOUT_WUMBO} (see eclair.conf)")
@@ -119,8 +120,8 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
     } else if (channelType_opt.isEmpty) {
       request.replyTo ! OpenChannelResponse.Rejected("channel_type must be provided and compatible with our peer's features")
       waitForRequest()
-    } else if (announceChannel && channelType_opt.exists(_.isInstanceOf[ChannelTypes.SimpleTaprootChannel])) {
-      request.replyTo ! OpenChannelResponse.Rejected("public taproot channels aren't supported yet: announce_channel must be set to false")
+    } else if (announceChannel && !canUseTaprootGossip && channelType_opt.exists(_.isInstanceOf[ChannelTypes.SimpleTaprootChannel])) {
+      request.replyTo ! OpenChannelResponse.Rejected("public taproot channels aren't supported without option_gossip_v2: announce_channel must be set to false")
       waitForRequest()
     } else {
       val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)
@@ -134,10 +135,11 @@ private class OpenChannelInterceptor(peer: ActorRef[Any],
   }
 
   private def sanityCheckNonInitiator(request: OpenChannelNonInitiator): Behavior[Command] = {
+    val canUseTaprootGossip = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.TaprootGossip)
     ChannelTypes.areCompatible(request.temporaryChannelId, request.localFeatures, request.channelType_opt) match {
-      case Right(_: ChannelTypes.SimpleTaprootChannel) if request.channelFlags.announceChannel =>
-        context.log.warn("ignoring remote channel open: public taproot channels aren't supported yet")
-        sendFailure("public taproot channels aren't supported yet: announce_channel must be set to false", request)
+      case Right(_: ChannelTypes.SimpleTaprootChannel) if request.channelFlags.announceChannel && !canUseTaprootGossip =>
+        context.log.warn("ignoring remote channel open: public taproot channels aren't supported without option_gossip_v2")
+        sendFailure("public taproot channels aren't supported without option_gossip_v2: announce_channel must be set to false", request)
         waitForRequest()
       case Right(channelType) =>
         val dualFunded = Features.canUseFeature(request.localFeatures, request.remoteFeatures, Features.DualFunding)

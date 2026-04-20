@@ -395,6 +395,11 @@ object Features {
     val mandatory = 60
   }
 
+  case object TaprootGossip extends Feature with InitFeature with NodeFeature {
+    val rfcName = "option_gossip_v2"
+    val mandatory = 70
+  }
+
   case object SimpleTaprootChannels extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
     val rfcName = "option_simple_taproot"
     val mandatory = 80
@@ -482,6 +487,7 @@ object Features {
     ZeroConf,
     KeySend,
     SimpleClose,
+    TaprootGossip,
     SimpleTaprootChannels,
     SimpleTaprootChannelsPhoenix,
     WakeUpNotificationClient,
