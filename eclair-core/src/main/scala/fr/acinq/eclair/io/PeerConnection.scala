@@ -736,6 +736,7 @@ object PeerConnection {
     val matchesFilter = (msg, gossipTimestampFilter_opt) match {
       case (_, None) => false // BOLT 7: A node which wants any gossip messages would have to send this, otherwise [...] no gossip messages would be received.
       case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange, _))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= TimestampSecond(firstTimestamp.toLong + timestampRange)
+      // TODO: filter based on block height for channel_update_2, channel_announcement_2 and node_announcement_2
       case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
     }
     isOurGossip || matchesFilter

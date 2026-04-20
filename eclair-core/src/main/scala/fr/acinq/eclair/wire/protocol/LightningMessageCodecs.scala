@@ -401,7 +401,7 @@ object LightningMessageCodecs {
     ("chainHash" | blockHash) ::
       ("firstTimestamp" | timestampSecond) ::
       ("timestampRange" | uint32) ::
-      ("tlvStream" | GossipTimestampFilterTlv.gossipTimestampFilterTlvCodec)).as[GossipTimestampFilter]
+      ("tlvStream" | GossipTimestampFilterTlv.codec)).as[GossipTimestampFilter]
 
   val onionMessageCodec: Codec[OnionMessage] = (
     ("pathKey" | publicKey) ::

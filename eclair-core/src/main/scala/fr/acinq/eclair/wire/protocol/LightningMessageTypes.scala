@@ -777,7 +777,10 @@ object ReplyChannelRange {
   }
 }
 
-case class GossipTimestampFilter(chainHash: BlockHash, firstTimestamp: TimestampSecond, timestampRange: Long, tlvStream: TlvStream[GossipTimestampFilterTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash
+case class GossipTimestampFilter(chainHash: BlockHash, firstTimestamp: TimestampSecond, timestampRange: Long, tlvStream: TlvStream[GossipTimestampFilterTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash {
+  val firstBlock_opt: Option[BlockHeight] = tlvStream.get[GossipTimestampFilterTlv.BlockRange].map(_.firstBlock)
+  val numBlocks: Long = tlvStream.get[GossipTimestampFilterTlv.BlockRange].map(_.numBlocks).getOrElse(0)
+}
 
 case class OnionMessage(pathKey: PublicKey, onionRoutingPacket: OnionRoutingPacket, tlvStream: TlvStream[OnionMessageTlv] = TlvStream.empty) extends LightningMessage
 

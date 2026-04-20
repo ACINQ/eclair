@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{timestampSecond, varint, varintoverflow}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{blockHeight, timestampSecond, varint, varintoverflow}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
-import fr.acinq.eclair.{TimestampSecond, UInt64}
+import fr.acinq.eclair.{BlockHeight, TimestampSecond, UInt64}
 import scodec.Codec
 import scodec.codecs._
 
@@ -59,7 +59,19 @@ object ChannelUpdateTlv {
 sealed trait GossipTimestampFilterTlv extends Tlv
 
 object GossipTimestampFilterTlv {
-  val gossipTimestampFilterTlvCodec: Codec[TlvStream[GossipTimestampFilterTlv]] = tlvStream(discriminated[GossipTimestampFilterTlv].by(varint))
+
+  /**
+   * When using [[ChannelAnnouncement2]], [[ChannelUpdate2]] and [[NodeAnnouncement2]], we use block heights instead of
+   * timestamps. This TLV is used to filter gossip that is included in the provided block range.
+   */
+  case class BlockRange(firstBlock: BlockHeight, numBlocks: Long) extends GossipTimestampFilterTlv
+
+  private val blockRangeCodec: Codec[BlockRange] = tlvField((("first_block" | blockHeight) :: ("num_blocks" | uint32)).as[BlockRange])
+
+  val codec: Codec[TlvStream[GossipTimestampFilterTlv]] = tlvStream(discriminated.by(varint)
+    .typecase(UInt64(2), blockRangeCodec)
+  )
+
 }
 
 sealed trait QueryChannelRangeTlv extends Tlv
@@ -73,7 +85,6 @@ object QueryChannelRangeTlv {
    */
   case class QueryFlags(flag: Long) extends QueryChannelRangeTlv {
     val wantTimestamps = QueryFlags.wantTimestamps(flag)
-
     val wantChecksums = QueryFlags.wantChecksums(flag)
   }
 
@@ -89,7 +100,7 @@ object QueryChannelRangeTlv {
 
   val queryFlagsCodec: Codec[QueryFlags] = Codec("flag" | varintoverflow).as[QueryFlags]
 
-  val codec: Codec[TlvStream[QueryChannelRangeTlv]] = TlvCodecs.tlvStream(discriminated.by(varint)
+  val codec: Codec[TlvStream[QueryChannelRangeTlv]] = tlvStream(discriminated.by(varint)
     .typecase(UInt64(1), tlvField(queryFlagsCodec))
   )
 
@@ -149,7 +160,7 @@ object ReplyChannelRangeTlv {
     .typecase(UInt64(1), encodedTimestampsCodec)
     .typecase(UInt64(3), encodedChecksumsCodec)
 
-  val codec: Codec[TlvStream[ReplyChannelRangeTlv]] = TlvCodecs.tlvStream(innerCodec)
+  val codec: Codec[TlvStream[ReplyChannelRangeTlv]] = tlvStream(innerCodec)
 }
 
 sealed trait QueryShortChannelIdsTlv extends Tlv
@@ -189,7 +200,7 @@ object QueryShortChannelIdsTlv {
     discriminated[EncodedQueryFlags].by(byte)
       .\(0) { case a@EncodedQueryFlags(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(varintoverflow)).as[EncodedQueryFlags])
 
-  val codec: Codec[TlvStream[QueryShortChannelIdsTlv]] = TlvCodecs.tlvStream(discriminated.by(varint)
+  val codec: Codec[TlvStream[QueryShortChannelIdsTlv]] = tlvStream(discriminated.by(varint)
     .typecase(UInt64(1), tlvField[EncodedQueryFlags, EncodedQueryFlags](encodedQueryFlagsCodec))
   )
 }
