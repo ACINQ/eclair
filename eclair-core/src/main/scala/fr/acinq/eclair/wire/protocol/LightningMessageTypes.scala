@@ -20,7 +20,7 @@ import com.google.common.base.Charsets
 import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
-import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, OutPoint, Satoshi, SatoshiLong, ScriptWitness, Transaction, TxId, TxOut}
+import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, OutPoint, Satoshi, SatoshiLong, ScriptWitness, Transaction, TxId, TxOut}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelSpendSignature, ChannelType}
@@ -50,6 +50,7 @@ sealed trait AnnouncementMessage extends RoutingMessage // <- not in the spec
 sealed trait OnTheFlyFundingMessage extends LightningMessage { def paymentHash: ByteVector32 }
 sealed trait OnTheFlyFundingFailureMessage extends OnTheFlyFundingMessage { def id: ByteVector32 }
 sealed trait HasTimestamp extends LightningMessage { def timestamp: TimestampSecond }
+sealed trait HasBlockHeight extends LightningMessage { def blockHeight: BlockHeight }
 sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChannelId: ByteVector32 } // <- not in the spec
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
 sealed trait HasChainHash extends LightningMessage { def chainHash: BlockHash } // <- not in the spec
@@ -214,6 +215,8 @@ case class ChannelReestablish(channelId: ByteVector32,
   val nextFundingTxId_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].map(_.txId)
   val myCurrentFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.MyCurrentFundingLockedTlv].map(_.txId)
   val yourLastFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.YourLastFundingLockedTlv].map(_.txId)
+  val nodeAnnouncementNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelReestablishTlv.AnnouncementNoncesTlv].map(_.nodeNonce)
+  val fundingAnnouncementNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelReestablishTlv.AnnouncementNoncesTlv].map(_.fundingNonce)
   val nextCommitNonces: Map[TxId, IndividualNonce] = tlvStream.get[ChannelReestablishTlv.NextLocalNoncesTlv].map(_.nonces.toMap).getOrElse(Map.empty)
   val currentCommitNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelReestablishTlv.CurrentCommitNonceTlv].map(_.nonce)
 }
@@ -362,6 +365,8 @@ case class ChannelReady(channelId: ByteVector32,
                         nextPerCommitmentPoint: PublicKey,
                         tlvStream: TlvStream[ChannelReadyTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val alias_opt: Option[Alias] = tlvStream.get[ShortChannelIdTlv].map(_.alias)
+  val nodeAnnouncementNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelReadyTlv.AnnouncementNodeNonce].map(_.nonce)
+  val fundingAnnouncementNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelReadyTlv.AnnouncementBitcoinNonce].map(_.nonce)
   val nextCommitNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelTlv.NextLocalNonceTlv].map(_.nonce)
 }
 
@@ -371,12 +376,14 @@ object ChannelReady {
     ChannelReady(channelId, nextPerCommitmentPoint, tlvs)
   }
 
-  def apply(channelId: ByteVector32, nextPerCommitmentPoint: PublicKey, alias: Alias, nextCommitNonce: IndividualNonce): ChannelReady = {
-    val tlvs = TlvStream[ChannelReadyTlv](
-      ChannelReadyTlv.ShortChannelIdTlv(alias),
-      ChannelTlv.NextLocalNonceTlv(nextCommitNonce),
-    )
-    ChannelReady(channelId, nextPerCommitmentPoint, tlvs)
+  def apply(channelId: ByteVector32, nextPerCommitmentPoint: PublicKey, alias: Alias, nextCommitNonce: IndividualNonce, nodeAnnNonce_opt: Option[IndividualNonce], fundingAnnNonce_opt: Option[IndividualNonce]): ChannelReady = {
+    val tlvs = Set(
+      Some(ChannelReadyTlv.ShortChannelIdTlv(alias)),
+      Some(ChannelTlv.NextLocalNonceTlv(nextCommitNonce)),
+      nodeAnnNonce_opt.map(n => ChannelReadyTlv.AnnouncementNodeNonce(n)),
+      fundingAnnNonce_opt.map(n => ChannelReadyTlv.AnnouncementBitcoinNonce(n)),
+    ).flatten[ChannelReadyTlv]
+    ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(tlvs))
   }
 }
 
@@ -440,6 +447,18 @@ object SpliceAck {
 case class SpliceLocked(channelId: ByteVector32,
                         fundingTxId: TxId,
                         tlvStream: TlvStream[SpliceLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val nodeAnnouncementNonce_opt: Option[IndividualNonce] = tlvStream.get[SpliceLockedTlv.AnnouncementNodeNonce].map(_.nonce)
+  val fundingAnnouncementNonce_opt: Option[IndividualNonce] = tlvStream.get[SpliceLockedTlv.AnnouncementBitcoinNonce].map(_.nonce)
+}
+
+object SpliceLocked {
+  def apply(channelId: ByteVector32, fundingTxId: TxId, nodeAnnNonce_opt: Option[IndividualNonce], fundingAnnNonce_opt: Option[IndividualNonce]): SpliceLocked = {
+    val tlvs = Set(
+      nodeAnnNonce_opt.map(n => SpliceLockedTlv.AnnouncementNodeNonce(n)),
+      fundingAnnNonce_opt.map(n => SpliceLockedTlv.AnnouncementBitcoinNonce(n)),
+    ).flatten[SpliceLockedTlv]
+    SpliceLocked(channelId, fundingTxId, TlvStream(tlvs))
+  }
 }
 
 case class Shutdown(channelId: ByteVector32,
@@ -608,6 +627,25 @@ case class AnnouncementSignatures(channelId: ByteVector32,
                                   bitcoinSignature: ByteVector64,
                                   tlvStream: TlvStream[AnnouncementSignaturesTlv] = TlvStream.empty) extends RoutingMessage with HasChannelId
 
+case class AnnouncementSignatures2(tlvStream: TlvStream[AnnouncementSignatures2Tlv]) extends RoutingMessage with HasChannelId {
+  val channelId: ByteVector32 = tlvStream.get[AnnouncementSignatures2Tlv.ChannelId].map(_.id).get
+  val shortChannelId: RealShortChannelId = tlvStream.get[AnnouncementSignatures2Tlv.ChannelShortChannelId].map(_.scid).get
+  val fundingTxId: TxId = tlvStream.get[AnnouncementSignatures2Tlv.FundingTxId].map(_.txId).get
+  val partialSig: ByteVector32 = tlvStream.get[AnnouncementSignatures2Tlv.PartialSignature].map(_.partialSig).get
+}
+
+object AnnouncementSignatures2 {
+  def apply(channelId: ByteVector32, scid: RealShortChannelId, txId: TxId, partialSig: ByteVector32): AnnouncementSignatures2 = {
+    val tlvs = Set[AnnouncementSignatures2Tlv](
+      AnnouncementSignatures2Tlv.ChannelId(channelId),
+      AnnouncementSignatures2Tlv.ChannelShortChannelId(scid),
+      AnnouncementSignatures2Tlv.FundingTxId(txId),
+      AnnouncementSignatures2Tlv.PartialSignature(partialSig)
+    )
+    AnnouncementSignatures2(TlvStream(tlvs))
+  }
+}
+
 case class ChannelAnnouncement(nodeSignature1: ByteVector64,
                                nodeSignature2: ByteVector64,
                                bitcoinSignature1: ByteVector64,
@@ -620,6 +658,50 @@ case class ChannelAnnouncement(nodeSignature1: ByteVector64,
                                bitcoinKey1: PublicKey,
                                bitcoinKey2: PublicKey,
                                tlvStream: TlvStream[ChannelAnnouncementTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasChainHash
+
+case class ChannelAnnouncement2(tlvStream: TlvStream[ChannelAnnouncement2Tlv]) extends RoutingMessage with AnnouncementMessage with HasBlockHeight with HasChainHash {
+  val chainHash: BlockHash = tlvStream.get[ChannelAnnouncement2Tlv.ChainHash].map(_.chain).getOrElse(Block.LivenetGenesisBlock.hash)
+  val shortChannelId: RealShortChannelId = tlvStream.get[ChannelAnnouncement2Tlv.ChannelShortChannelId].map(_.scid).get
+  val blockHeight: BlockHeight = shortChannelId.blockHeight
+  val nodeId1: PublicKey = tlvStream.get[ChannelAnnouncement2Tlv.NodeId1].map(_.publicKey).get
+  val nodeId2: PublicKey = tlvStream.get[ChannelAnnouncement2Tlv.NodeId2].map(_.publicKey).get
+  val bitcoinKey1_opt: Option[PublicKey] = tlvStream.get[ChannelAnnouncement2Tlv.BitcoinKey1].map(_.publicKey)
+  val bitcoinKey2_opt: Option[PublicKey] = tlvStream.get[ChannelAnnouncement2Tlv.BitcoinKey2].map(_.publicKey)
+  val features: Features[Feature] = tlvStream.get[ChannelAnnouncement2Tlv.AnnouncementFeatures].map(_.features).getOrElse(Features.empty)
+  val fundingAmount: Satoshi = tlvStream.get[ChannelAnnouncement2Tlv.ChannelCapacity].map(_.amount).get
+  val outpoint: OutPoint = tlvStream.get[ChannelAnnouncement2Tlv.ChannelOutpoint].map(o => OutPoint(o.txId, o.index)).get
+  val rootHash_opt: Option[ByteVector32] = tlvStream.get[ChannelAnnouncement2Tlv.MerkleRootHash].map(_.hash)
+  val signature: ByteVector64 = tlvStream.get[ChannelAnnouncement2Tlv.Signature].map(_.sig).get
+}
+
+object ChannelAnnouncement2 {
+  def apply(chainHash: BlockHash,
+            shortChannelId: RealShortChannelId,
+            fundingAmount: Satoshi,
+            fundingOutpoint: OutPoint,
+            nodeId1: PublicKey,
+            nodeId2: PublicKey,
+            bitcoinKey1: PublicKey,
+            bitcoinKey2: PublicKey,
+            merkleRoot: ByteVector32,
+            features: Features[Feature],
+            signature: ByteVector64): ChannelAnnouncement2 = {
+    val tlvs = Set(
+      if (chainHash != Block.LivenetGenesisBlock.hash) Some(ChannelAnnouncement2Tlv.ChainHash(chainHash)) else None,
+      Some(ChannelAnnouncement2Tlv.ChannelShortChannelId(shortChannelId)),
+      Some(ChannelAnnouncement2Tlv.ChannelCapacity(fundingAmount)),
+      Some(ChannelAnnouncement2Tlv.ChannelOutpoint(fundingOutpoint.txid, fundingOutpoint.index.toInt)),
+      Some(ChannelAnnouncement2Tlv.NodeId1(nodeId1)),
+      Some(ChannelAnnouncement2Tlv.NodeId2(nodeId2)),
+      Some(ChannelAnnouncement2Tlv.BitcoinKey1(bitcoinKey1)),
+      Some(ChannelAnnouncement2Tlv.BitcoinKey2(bitcoinKey2)),
+      Some(ChannelAnnouncement2Tlv.MerkleRootHash(merkleRoot)),
+      Some(ChannelAnnouncement2Tlv.AnnouncementFeatures(features)),
+      Some(ChannelAnnouncement2Tlv.Signature(signature)),
+    ).flatten[ChannelAnnouncement2Tlv]
+    ChannelAnnouncement2(TlvStream(tlvs))
+  }
+}
 
 case class Color(r: Byte, g: Byte, b: Byte) {
   override def toString: String = f"#$r%02x$g%02x$b%02x" // to hexa s"#  ${r}%02x ${r & 0xFF}${g & 0xFF}${b & 0xFF}"
@@ -705,6 +787,50 @@ case class NodeAnnouncement(signature: ByteVector64,
   }
 }
 
+case class NodeAnnouncement2(tlvStream: TlvStream[NodeAnnouncement2Tlv]) extends RoutingMessage with AnnouncementMessage with HasBlockHeight {
+  val nodeId: PublicKey = tlvStream.get[NodeAnnouncement2Tlv.NodeId].map(_.publicKey).get
+  val color_opt: Option[Color] = tlvStream.get[NodeAnnouncement2Tlv.Color].map(c => Color(c.r, c.g, c.b))
+  val alias_opt: Option[String] = tlvStream.get[NodeAnnouncement2Tlv.Alias].map(_.alias)
+  val blockHeight: BlockHeight = tlvStream.get[NodeAnnouncement2Tlv.LastBlockHeight].map(_.blockHeight).get
+  val validAddresses: List[NodeAddress] = {
+    val ipv4 = tlvStream.get[NodeAnnouncement2Tlv.IPv4Addresses].map(_.addresses).getOrElse(Nil).filter(_.port != 0)
+    val ipv6 = tlvStream.get[NodeAnnouncement2Tlv.IPv6Addresses].map(_.addresses).getOrElse(Nil).filter(_.port != 0)
+    val dns = tlvStream.get[NodeAnnouncement2Tlv.DnsAddresses].map(_.addresses).getOrElse(Nil).filter(_.port != 0)
+    val tor = tlvStream.get[NodeAnnouncement2Tlv.TorAddresses].map(_.addresses).getOrElse(Nil)
+    ipv4 ++ ipv6 ++ dns ++ tor
+  }
+  val features: Features[Feature] = tlvStream.get[NodeAnnouncement2Tlv.AnnouncementFeatures].map(_.features).getOrElse(Features.empty)
+  val signature: ByteVector64 = tlvStream.get[NodeAnnouncement2Tlv.Signature].map(_.sig).get
+}
+
+object NodeAnnouncement2 {
+  def apply(nodeId: PublicKey,
+            lastBlockHeight: BlockHeight,
+            addresses: List[NodeAddress],
+            features: Features[Feature],
+            signature: ByteVector64,
+            alias_opt: Option[String] = None,
+            color_opt: Option[Color] = None): NodeAnnouncement2 = {
+    val ipv4 = addresses.collect { case a: IPv4 if a.port != 0 => a }
+    val ipv6 = addresses.collect { case a: IPv6 if a.port != 0 => a }
+    val dns = addresses.collect { case a: DnsHostname if a.port != 0 => a }
+    val tor = addresses.collect { case a: Tor3 => a }
+    val tlvs = Set(
+      Some(NodeAnnouncement2Tlv.NodeId(nodeId)),
+      Some(NodeAnnouncement2Tlv.LastBlockHeight(lastBlockHeight)),
+      alias_opt.map(alias => NodeAnnouncement2Tlv.Alias(alias)),
+      color_opt.map(color => NodeAnnouncement2Tlv.Color(color.r, color.g, color.b)),
+      Some(NodeAnnouncement2Tlv.AnnouncementFeatures(features)),
+      if (ipv4.nonEmpty) Some(NodeAnnouncement2Tlv.IPv4Addresses(ipv4)) else None,
+      if (ipv6.nonEmpty) Some(NodeAnnouncement2Tlv.IPv6Addresses(ipv6)) else None,
+      if (dns.nonEmpty) Some(NodeAnnouncement2Tlv.DnsAddresses(dns)) else None,
+      if (tor.nonEmpty) Some(NodeAnnouncement2Tlv.TorAddresses(tor)) else None,
+      Some(NodeAnnouncement2Tlv.Signature(signature)),
+    ).flatten[NodeAnnouncement2Tlv]
+    NodeAnnouncement2(TlvStream(tlvs))
+  }
+}
+
 case class ChannelUpdate(signature: ByteVector64,
                          chainHash: BlockHash,
                          shortChannelId: ShortChannelId,
@@ -732,6 +858,50 @@ object ChannelUpdate {
   object ChannelFlags {
     /** for tests */
     val DUMMY: ChannelFlags = ChannelFlags(isEnabled = true, isNode1 = true)
+  }
+}
+
+case class ChannelUpdate2(tlvStream: TlvStream[ChannelUpdate2Tlv]) extends RoutingMessage with AnnouncementMessage with HasBlockHeight with HasChainHash {
+  val chainHash: BlockHash = tlvStream.get[ChannelUpdate2Tlv.ChainHash].map(_.chain).getOrElse(Block.LivenetGenesisBlock.hash)
+  val shortChannelId: ShortChannelId = tlvStream.get[ChannelUpdate2Tlv.ChannelShortChannelId].map(_.scid).get
+  val blockHeight: BlockHeight = tlvStream.get[ChannelUpdate2Tlv.LastBlockHeight].map(_.blockHeight).get
+  val isNode1: Boolean = tlvStream.get[ChannelUpdate2Tlv.IsSecondPeer].isEmpty
+  val cltvExpiryDelta: CltvExpiryDelta = tlvStream.get[ChannelUpdate2Tlv.ExpiryDelta].map(_.cltv).getOrElse(CltvExpiryDelta(80))
+  val feeBaseMsat: MilliSatoshi = tlvStream.get[ChannelUpdate2Tlv.BaseFee].map(_.amount).getOrElse(1000 msat)
+  val feeProportionalMillionths: Long = tlvStream.get[ChannelUpdate2Tlv.ProportionalFee].map(_.feeProportionalMillionths).getOrElse(1)
+  val relayFees: Relayer.RelayFees = Relayer.RelayFees(feeBaseMsat, feeProportionalMillionths)
+  val htlcMinimumMsat: MilliSatoshi = tlvStream.get[ChannelUpdate2Tlv.HtlcMinimum].map(_.amount).getOrElse(1 msat)
+  val htlcMaximumMsat: MilliSatoshi = tlvStream.get[ChannelUpdate2Tlv.HtlcMaximum].map(_.amount).get
+  val incomingDisabled: Boolean = tlvStream.get[ChannelUpdate2Tlv.DisableFlags].exists(_.incoming)
+  val outgoingDisabled: Boolean = tlvStream.get[ChannelUpdate2Tlv.DisableFlags].exists(_.outgoing)
+  val permanentlyDisabled: Boolean = tlvStream.get[ChannelUpdate2Tlv.DisableFlags].exists(_.permanent)
+  val signature: ByteVector64 = tlvStream.get[ChannelUpdate2Tlv.Signature].map(_.sig).get
+}
+
+object ChannelUpdate2 {
+  def apply(chainHash: BlockHash,
+            shortChannelId: ShortChannelId,
+            blockHeight: BlockHeight,
+            isNode1: Boolean,
+            cltvExpiryDelta: CltvExpiryDelta,
+            feeBaseMsat: MilliSatoshi,
+            feeProportionalMillionths: Long,
+            htlcMinimumMsat: MilliSatoshi,
+            htlcMaximumMsat: MilliSatoshi,
+            signature: ByteVector64): ChannelUpdate2 = {
+    val tlvs = Set(
+      if (chainHash != Block.LivenetGenesisBlock.hash) Some(ChannelUpdate2Tlv.ChainHash(chainHash)) else None,
+      Some(ChannelUpdate2Tlv.ChannelShortChannelId(shortChannelId)),
+      Some(ChannelUpdate2Tlv.LastBlockHeight(blockHeight)),
+      if (!isNode1) Some(ChannelUpdate2Tlv.IsSecondPeer()) else None,
+      Some(ChannelUpdate2Tlv.ExpiryDelta(cltvExpiryDelta)),
+      Some(ChannelUpdate2Tlv.BaseFee(feeBaseMsat)),
+      Some(ChannelUpdate2Tlv.ProportionalFee(feeProportionalMillionths)),
+      if (htlcMinimumMsat != 1.msat) Some(ChannelUpdate2Tlv.HtlcMinimum(htlcMinimumMsat)) else None,
+      Some(ChannelUpdate2Tlv.HtlcMaximum(htlcMaximumMsat)),
+      Some(ChannelUpdate2Tlv.Signature(signature)),
+    ).flatten[ChannelUpdate2Tlv]
+    ChannelUpdate2(TlvStream(tlvs))
   }
 }
 

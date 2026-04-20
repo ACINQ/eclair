@@ -305,6 +305,8 @@ object LightningMessageCodecs {
       ("bitcoinSignature" | bytes64) ::
       ("tlvStream" | AnnouncementSignaturesTlv.announcementSignaturesTlvCodec)).as[AnnouncementSignatures]
 
+  val announcementSignatures2Codec: Codec[AnnouncementSignatures2] = AnnouncementSignatures2Tlv.codec.as[AnnouncementSignatures2]
+
   val channelAnnouncementWitnessCodec =
     ("features" | lengthPrefixedFeaturesCodec) ::
       ("chainHash" | blockHash) ::
@@ -322,6 +324,8 @@ object LightningMessageCodecs {
       ("bitcoinSignature2" | bytes64) ::
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
+  val channelAnnouncement2Codec: Codec[ChannelAnnouncement2] = ChannelAnnouncement2Tlv.codec.as[ChannelAnnouncement2]
+
   val nodeAnnouncementWitnessCodec =
     ("features" | lengthPrefixedFeaturesCodec) ::
       ("timestamp" | timestampSecond) ::
@@ -334,6 +338,8 @@ object LightningMessageCodecs {
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
     ("signature" | bytes64) ::
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
+
+  val nodeAnnouncement2Codec: Codec[NodeAnnouncement2] = NodeAnnouncement2Tlv.codec.as[NodeAnnouncement2]
 
   val messageFlagsCodec = ("messageFlags" | (ignore(6) :: bool :: constant(bin"1"))).as[ChannelUpdate.MessageFlags]
 
@@ -369,6 +375,8 @@ object LightningMessageCodecs {
   val channelUpdateCodec: Codec[ChannelUpdate] = (
     ("signature" | bytes64) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
+
+  val channelUpdate2Codec: Codec[ChannelUpdate2] = ChannelUpdate2Tlv.codec.as[ChannelUpdate2]
 
   val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] = discriminated[EncodedShortChannelIds].by(byte)
     .typecase(0, (provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(realshortchannelid)).as[EncodedShortChannelIds])
@@ -543,11 +551,15 @@ object LightningMessageCodecs {
     .typecase(257, nodeAnnouncementCodec)
     .typecase(258, channelUpdateCodec)
     .typecase(259, announcementSignaturesCodec)
+    .typecase(260, announcementSignatures2Codec)
     .typecase(261, queryShortChannelIdsCodec)
     .typecase(262, replyShortChannelIdsEndCodec)
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
+    .typecase(267, channelAnnouncement2Codec)
+    .typecase(269, nodeAnnouncement2Codec)
+    .typecase(271, channelUpdate2Codec)
     .typecase(513, onionMessageCodec)
     // NB: blank lines to minimize merge conflicts
 

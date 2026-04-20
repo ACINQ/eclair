@@ -135,7 +135,8 @@ trait CommonFundingHandlers extends CommonHandlers {
       case _: SimpleTaprootChannelCommitmentFormat =>
         val localFundingKey = channelKeys.fundingKey(fundingTxIndex = 0)
         val nextLocalNonce = NonceGenerator.verificationNonce(commitments.latest.fundingTxId, localFundingKey, commitments.latest.remoteFundingPubKey, 1)
-        ChannelReady(params.channelId, nextPerCommitmentPoint, aliases.localAlias, nextLocalNonce.publicNonce)
+        // TODO: create announcement nonces if supported and store the private nonce
+        ChannelReady(params.channelId, nextPerCommitmentPoint, aliases.localAlias, nextLocalNonce.publicNonce, None, None)
       case _: AnchorOutputsCommitmentFormat =>
         ChannelReady(params.channelId, nextPerCommitmentPoint, aliases.localAlias)
     }

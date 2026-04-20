@@ -609,7 +609,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       FundingSigned(randomBytes32(), randomBytes64()),
       ChannelReady(randomBytes32(), point(2)),
       ChannelReady(randomBytes32(), point(2), Alias(123456)),
-      ChannelReady(randomBytes32(), point(2), Alias(123456), IndividualNonce(randomBytes(66))),
+      ChannelReady(randomBytes32(), point(2), Alias(123456), IndividualNonce(randomBytes(66)), None, None),
       UpdateFee(randomBytes32(), FeeratePerKw(2 sat)),
       Shutdown(randomBytes32(), bin(47, 0)),
       ClosingSigned(randomBytes32(), 2 sat, randomBytes64()),

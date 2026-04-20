@@ -202,7 +202,17 @@ object SpliceAckTlv {
 }
 
 object SpliceLockedTlv {
-  val spliceLockedTlvCodec: Codec[TlvStream[SpliceLockedTlv]] = tlvStream(discriminated[SpliceLockedTlv].by(varint))
+
+  /** Nonce used for the partial signature using the node_id for [[ChannelAnnouncement2]]. */
+  case class AnnouncementNodeNonce(nonce: IndividualNonce) extends SpliceLockedTlv
+
+  /** Nonce used for the partial signature using the funding key for [[ChannelAnnouncement2]]. */
+  case class AnnouncementBitcoinNonce(nonce: IndividualNonce) extends SpliceLockedTlv
+
+  val spliceLockedTlvCodec: Codec[TlvStream[SpliceLockedTlv]] = tlvStream(discriminated[SpliceLockedTlv].by(varint)
+    .typecase(UInt64(0), tlvField(publicNonce.as[AnnouncementNodeNonce]))
+    .typecase(UInt64(2), tlvField(publicNonce.as[AnnouncementBitcoinNonce]))
+  )
 }
 
 object AcceptDualFundedChannelTlv {
@@ -241,12 +251,20 @@ sealed trait ChannelReadyTlv extends Tlv
 
 object ChannelReadyTlv {
 
+  /** Nonce used for the partial signature using the node_id for [[ChannelAnnouncement2]]. */
+  case class AnnouncementNodeNonce(nonce: IndividualNonce) extends ChannelReadyTlv
+
+  /** Nonce used for the partial signature using the funding key for [[ChannelAnnouncement2]]. */
+  case class AnnouncementBitcoinNonce(nonce: IndividualNonce) extends ChannelReadyTlv
+
   case class ShortChannelIdTlv(alias: Alias) extends ChannelReadyTlv
 
   private val channelAliasTlvCodec: Codec[ShortChannelIdTlv] = tlvField("alias" | alias)
 
   val channelReadyTlvCodec: Codec[TlvStream[ChannelReadyTlv]] = tlvStream(discriminated[ChannelReadyTlv].by(varint)
+    .typecase(UInt64(0), tlvField(publicNonce.as[AnnouncementNodeNonce]))
     .typecase(UInt64(1), channelAliasTlvCodec)
+    .typecase(UInt64(2), tlvField(publicNonce.as[AnnouncementBitcoinNonce]))
     .typecase(UInt64(4), ChannelTlv.nextLocalNonceCodec)
   )
 }
@@ -266,6 +284,9 @@ object ChannelReestablishTlv {
 
   /** The txid of our latest outgoing [[ChannelReady]] or [[SpliceLocked]] for this channel. */
   case class MyCurrentFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
+
+  /** We always include nonces to create [[AnnouncementSignatures2]] for the transaction in [[MyCurrentFundingLockedTlv]]. */
+  case class AnnouncementNoncesTlv(txId: TxId, nodeNonce: IndividualNonce, fundingNonce: IndividualNonce) extends ChannelReestablishTlv
 
   /**
    * When disconnected during an interactive tx session, we'll include a verification nonce for our *current* commitment
@@ -292,6 +313,10 @@ object ChannelReestablishTlv {
     val codec: Codec[MyCurrentFundingLockedTlv] = tlvField("my_current_funding_locked_txid" | txIdAsHash)
   }
 
+  object AnnouncementNoncesTlv {
+    val codec: Codec[AnnouncementNoncesTlv] = tlvField(("funding_txid" | txIdAsHash) :: ("node_nonce" | publicNonce) :: ("funding_nonce" | publicNonce))
+  }
+
   object CurrentCommitNonceTlv {
     val codec: Codec[CurrentCommitNonceTlv] = tlvField("current_commit_nonce" | publicNonce)
   }
@@ -304,6 +329,7 @@ object ChannelReestablishTlv {
     .typecase(UInt64(0), NextFundingTlv.codec)
     .typecase(UInt64(1), YourLastFundingLockedTlv.codec)
     .typecase(UInt64(3), MyCurrentFundingLockedTlv.codec)
+    .typecase(UInt64(7), AnnouncementNoncesTlv.codec)
     .typecase(UInt64(22), NextLocalNoncesTlv.codec)
     .typecase(UInt64(24), CurrentCommitNonceTlv.codec)
   )

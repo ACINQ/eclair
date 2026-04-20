@@ -16,9 +16,11 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{blockHeight, timestampSecond, varint, varintoverflow}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Satoshi, TxId}
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream}
-import fr.acinq.eclair.{BlockHeight, TimestampSecond, UInt64}
+import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Feature, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampSecond, UInt64}
 import scodec.Codec
 import scodec.codecs._
 
@@ -30,6 +32,29 @@ sealed trait AnnouncementSignaturesTlv extends Tlv
 
 object AnnouncementSignaturesTlv {
   val announcementSignaturesTlvCodec: Codec[TlvStream[AnnouncementSignaturesTlv]] = tlvStream(discriminated[AnnouncementSignaturesTlv].by(varint))
+}
+
+sealed trait AnnouncementSignatures2Tlv extends Tlv
+
+object AnnouncementSignatures2Tlv {
+  /** The channel_id that applies to the channel's lifetime. */
+  case class ChannelId(id: ByteVector32) extends AnnouncementSignatures2Tlv
+
+  /** A real short_channel_id pointing to the on-chain output for the announced funding must be provided. */
+  case class ChannelShortChannelId(scid: RealShortChannelId) extends AnnouncementSignatures2Tlv
+
+  /** Musig2 partial signature for the [[ChannelAnnouncement2]] message. */
+  case class PartialSignature(partialSig: ByteVector32) extends AnnouncementSignatures2Tlv
+
+  /** TxId of the on-chain channel funding transaction. */
+  case class FundingTxId(txId: TxId) extends AnnouncementSignatures2Tlv
+
+  val codec: Codec[TlvStream[AnnouncementSignatures2Tlv]] = tlvStream(discriminated[AnnouncementSignatures2Tlv].by(varint)
+    .typecase(UInt64(0), tlvField(bytes32.as[ChannelId]))
+    .typecase(UInt64(2), tlvField(realshortchannelid.as[ChannelShortChannelId]))
+    .typecase(UInt64(4), tlvField(bytes32.as[PartialSignature]))
+    .typecase(UInt64(6), tlvField(txIdAsHash.as[FundingTxId]))
+  )
 }
 
 sealed trait NodeAnnouncementTlv extends Tlv
@@ -44,16 +69,164 @@ object NodeAnnouncementTlv {
   )
 }
 
+sealed trait NodeAnnouncement2Tlv extends Tlv
+
+object NodeAnnouncement2Tlv {
+  /** Node features, that apply until the next node announcement. */
+  case class AnnouncementFeatures(features: Features[Feature]) extends NodeAnnouncement2Tlv
+
+  /** (Optional) recommended color used for this node. */
+  case class Color(r: Byte, g: Byte, b: Byte) extends NodeAnnouncement2Tlv
+
+  /** Block height after which this announcement becomes active (used for rate-limiting). */
+  case class LastBlockHeight(blockHeight: BlockHeight) extends NodeAnnouncement2Tlv
+
+  /** (Optional) node alias (friendly name). */
+  case class Alias(alias: String) extends NodeAnnouncement2Tlv
+
+  /** Id of this node. */
+  case class NodeId(publicKey: PublicKey) extends NodeAnnouncement2Tlv
+
+  /** IPv4 addresses that can be used to reach the node. */
+  case class IPv4Addresses(addresses: List[IPv4]) extends NodeAnnouncement2Tlv
+
+  /** IPv6 addresses that can be used to reach the node. */
+  case class IPv6Addresses(addresses: List[IPv6]) extends NodeAnnouncement2Tlv
+
+  /** Tor v3 addresses that can be used to reach the node. */
+  case class TorAddresses(addresses: List[Tor3]) extends NodeAnnouncement2Tlv
+
+  /** DNS hostnames that can be used to reach the node. */
+  case class DnsAddresses(addresses: List[DnsHostname]) extends NodeAnnouncement2Tlv
+
+  /** Signature of the [[NodeAnnouncement2]] message, as detailed in the BOLTs. */
+  case class Signature(sig: ByteVector64) extends NodeAnnouncement2Tlv
+
+  val codec: Codec[TlvStream[NodeAnnouncement2Tlv]] = tlvStream(discriminated[NodeAnnouncement2Tlv].by(varint)
+    .typecase(UInt64(0), tlvField(featuresCodec.as[AnnouncementFeatures]))
+    .typecase(UInt64(1), tlvField[Color, Color]((byte :: byte :: byte).as[Color]))
+    .typecase(UInt64(2), tlvField(blockHeight.as[LastBlockHeight]))
+    .typecase(UInt64(3), tlvField(utf8.as[Alias]))
+    .typecase(UInt64(4), tlvField(publicKey.as[NodeId]))
+    .typecase(UInt64(5), tlvField(list((ipv4address :: uint16).as[IPv4]).as[IPv4Addresses]))
+    .typecase(UInt64(7), tlvField(list((ipv6address :: uint16).as[IPv6]).as[IPv6Addresses]))
+    .typecase(UInt64(9), tlvField(list((base32(35) :: uint16).as[Tor3]).as[TorAddresses]))
+    .typecase(UInt64(11), tlvField(list((variableSizeBytes(uint16, ascii) :: uint16).as[DnsHostname]).as[DnsAddresses]))
+    .typecase(UInt64(160), tlvField(bytes64.as[Signature]))
+  )
+}
+
 sealed trait ChannelAnnouncementTlv extends Tlv
 
 object ChannelAnnouncementTlv {
   val channelAnnouncementTlvCodec: Codec[TlvStream[ChannelAnnouncementTlv]] = tlvStream(discriminated[ChannelAnnouncementTlv].by(varint))
 }
 
+sealed trait ChannelAnnouncement2Tlv extends Tlv
+
+object ChannelAnnouncement2Tlv {
+  /** The chain_hash must be provided if different from the mainnet bitcoin blockchain. */
+  case class ChainHash(chain: BlockHash) extends ChannelAnnouncement2Tlv
+
+  /** Channel features, that apply until the channel output is spent. */
+  case class AnnouncementFeatures(features: Features[Feature]) extends ChannelAnnouncement2Tlv
+
+  /** A real short_channel_id pointing to the on-chain output for the announced funding must be provided. */
+  case class ChannelShortChannelId(scid: RealShortChannelId) extends ChannelAnnouncement2Tlv
+
+  /** Channel funding amount. */
+  case class ChannelCapacity(amount: Satoshi) extends ChannelAnnouncement2Tlv
+
+  /** NodeId of the first node, using lexicographic ordering. */
+  case class NodeId1(publicKey: PublicKey) extends ChannelAnnouncement2Tlv
+
+  /** NodeId of the second node, using lexicographic ordering. */
+  case class NodeId2(publicKey: PublicKey) extends ChannelAnnouncement2Tlv
+
+  /** (Optional) If set, the musig2 announcement signature will include this key in the aggregated signature. */
+  case class BitcoinKey1(publicKey: PublicKey) extends ChannelAnnouncement2Tlv
+
+  /** (Optional) If set, the musig2 announcement signature will include this key in the aggregated signature. */
+  case class BitcoinKey2(publicKey: PublicKey) extends ChannelAnnouncement2Tlv
+
+  /** (Optional) If set, the channel output is a taproot output with this root hash. */
+  case class MerkleRootHash(hash: ByteVector32) extends ChannelAnnouncement2Tlv
+
+  /** The on-chain outpoint must be provided and must match the [[ShortChannelId]]. */
+  case class ChannelOutpoint(txId: TxId, index: Int) extends ChannelAnnouncement2Tlv
+
+  /** Signature of the [[ChannelAnnouncement2]] message, as detailed in the BOLTs. */
+  case class Signature(sig: ByteVector64) extends ChannelAnnouncement2Tlv
+
+  val codec: Codec[TlvStream[ChannelAnnouncement2Tlv]] = tlvStream(discriminated[ChannelAnnouncement2Tlv].by(varint)
+    .typecase(UInt64(0), tlvField(blockHash.as[ChainHash]))
+    .typecase(UInt64(2), tlvField(featuresCodec.as[AnnouncementFeatures]))
+    .typecase(UInt64(4), tlvField(realshortchannelid.as[ChannelShortChannelId]))
+    .typecase(UInt64(6), tlvField(satoshi.as[ChannelCapacity]))
+    .typecase(UInt64(8), tlvField(publicKey.as[NodeId1]))
+    .typecase(UInt64(10), tlvField(publicKey.as[NodeId2]))
+    .typecase(UInt64(12), tlvField(publicKey.as[BitcoinKey1]))
+    .typecase(UInt64(14), tlvField(publicKey.as[BitcoinKey2]))
+    .typecase(UInt64(16), tlvField(bytes32.as[MerkleRootHash]))
+    .typecase(UInt64(18), tlvField[ChannelOutpoint, ChannelOutpoint]((txIdAsHash :: uint16).as[ChannelOutpoint]))
+    .typecase(UInt64(160), tlvField(bytes64.as[Signature]))
+  )
+}
+
 sealed trait ChannelUpdateTlv extends Tlv
 
 object ChannelUpdateTlv {
   val channelUpdateTlvCodec: Codec[TlvStream[ChannelUpdateTlv]] = tlvStream(discriminated[ChannelUpdateTlv].by(varint))
+}
+
+sealed trait ChannelUpdate2Tlv extends Tlv
+
+object ChannelUpdate2Tlv {
+  /** The chain_hash must be provided if different from the mainnet bitcoin blockchain. */
+  case class ChainHash(chain: BlockHash) extends ChannelUpdate2Tlv
+
+  /** A real short_channel_id pointing to the on-chain output for the channel must be provided. */
+  case class ChannelShortChannelId(scid: ShortChannelId) extends ChannelUpdate2Tlv
+
+  /** Block height after which this update becomes active (used for rate-limiting). */
+  case class LastBlockHeight(blockHeight: BlockHeight) extends ChannelUpdate2Tlv
+
+  /** Bitfields detailing why a channel is disabled and in which direction. */
+  case class DisableFlags(outgoing: Boolean, incoming: Boolean, permanent: Boolean) extends ChannelUpdate2Tlv
+
+  case class IsSecondPeer() extends ChannelUpdate2Tlv
+
+  /** [[CltvExpiryDelta]] used when relaying through the channel. */
+  case class ExpiryDelta(cltv: CltvExpiryDelta) extends ChannelUpdate2Tlv
+
+  /** Minimum amount that can be relayed through the channel. */
+  case class HtlcMinimum(amount: MilliSatoshi) extends ChannelUpdate2Tlv
+
+  /** Maximum amount that can be relayed through the channel. */
+  case class HtlcMaximum(amount: MilliSatoshi) extends ChannelUpdate2Tlv
+
+  /** Flat fee collected when relaying payments. */
+  case class BaseFee(amount: MilliSatoshi) extends ChannelUpdate2Tlv
+
+  /** Proportional fee collected when relaying payments. */
+  case class ProportionalFee(feeProportionalMillionths: Long) extends ChannelUpdate2Tlv
+
+  /** Signature of the [[ChannelUpdate2]] message, as detailed in the BOLTs. */
+  case class Signature(sig: ByteVector64) extends ChannelUpdate2Tlv
+
+  val codec: Codec[TlvStream[ChannelUpdate2Tlv]] = tlvStream(discriminated[ChannelUpdate2Tlv].by(varint)
+    .typecase(UInt64(0), tlvField(blockHash.as[ChainHash]))
+    .typecase(UInt64(2), tlvField(shortchannelid.as[ChannelShortChannelId]))
+    .typecase(UInt64(4), tlvField(blockHeight.as[LastBlockHeight]))
+    .typecase(UInt64(6), tlvField[DisableFlags, DisableFlags]((ignore(5) :: bool :: bool :: bool).as[DisableFlags]))
+    .typecase(UInt64(8), tlvField(provide(IsSecondPeer())))
+    .typecase(UInt64(10), tlvField(cltvExpiryDelta.as[ExpiryDelta]))
+    .typecase(UInt64(12), tlvField(millisatoshi.as[HtlcMinimum]))
+    .typecase(UInt64(14), tlvField(millisatoshi.as[HtlcMaximum]))
+    .typecase(UInt64(16), tlvField(millisatoshi32.as[BaseFee]))
+    .typecase(UInt64(18), tlvField(uint32.as[ProportionalFee]))
+    .typecase(UInt64(160), tlvField(bytes64.as[Signature]))
+  )
 }
 
 sealed trait GossipTimestampFilterTlv extends Tlv
