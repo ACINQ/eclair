@@ -227,8 +227,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   // Closee nonces are first exchanged in shutdown messages, and replaced by a new nonce after each closing_sig.
   var localCloseeNonce_opt: Option[LocalNonce] = None
   var remoteCloseeNonce_opt: Option[IndividualNonce] = None
-  // Closer nonces are randomly generated when sending our closing_complete.
-  var localCloserNonces_opt: Option[CloserNonces] = None
+  // our closing_complete message, that includes partial musig2 signatures generated with random nonces.
+  var localClosingComplete_opt: Option[ClosingComplete] = None
 
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: akka.event.DiagnosticLoggingAdapter = diagLog
@@ -1923,9 +1923,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       } else {
         MutualClose.makeSimpleClosingTx(nodeParams.currentBlockHeight, channelKeys, d.commitments.latest, localScript, d.remoteScriptPubKey, closingFeerate, remoteCloseeNonce_opt) match {
           case Left(f) => handleCommandError(f, c)
-          case Right((closingTxs, closingComplete, closerNonces)) =>
+          case Right((closingTxs, closingComplete)) =>
             log.debug("signing local mutual close transactions: {}", closingTxs)
-            localCloserNonces_opt = Some(closerNonces)
+            localClosingComplete_opt = Some(closingComplete)
             handleCommandSuccess(c, d.copy(lastClosingFeerate = closingFeerate, localScriptPubKey = localScript, proposedClosingTxs = d.proposedClosingTxs :+ closingTxs)) storing() sending closingComplete
         }
       }
@@ -1954,7 +1954,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       // Note that if we sent two closing_complete in a row, without waiting for their closing_sig for the first one,
       // this will fail because we only care about our latest closing_complete. This is fine, we should receive their
       // closing_sig for the last closing_complete afterwards.
-      MutualClose.receiveSimpleClosingSig(channelKeys, d.commitments.latest, d.proposedClosingTxs.last, closingSig, localCloserNonces_opt, remoteCloseeNonce_opt) match {
+      MutualClose.receiveSimpleClosingSig(channelKeys, d.commitments.latest, d.proposedClosingTxs.last, closingSig, localClosingComplete_opt, remoteCloseeNonce_opt) match {
         case Left(f) =>
           log.warning("invalid closing_sig: {}", f.getMessage)
           remoteCloseeNonce_opt = closingSig.nextCloseeNonce_opt
@@ -3208,7 +3208,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       remoteNextCommitNonces = Map.empty
       localCloseeNonce_opt = None
       remoteCloseeNonce_opt = None
-      localCloserNonces_opt = None
+      localClosingComplete_opt = None
   }
 
   /*
