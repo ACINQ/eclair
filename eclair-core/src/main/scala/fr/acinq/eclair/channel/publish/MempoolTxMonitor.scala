@@ -200,8 +200,8 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
   private def checkInputStatus(input: OutPoint): Unit = {
     val checkInputTask = for {
       parentConfirmations <- bitcoinClient.getTxConfirmations(input.txid)
-      spendableMempoolExcluded <- bitcoinClient.isTransactionOutputSpendable(input.txid, input.index.toInt, includeMempool = false)
-      spendableMempoolIncluded <- bitcoinClient.isTransactionOutputSpendable(input.txid, input.index.toInt, includeMempool = true)
+      spendableMempoolExcluded <- bitcoinClient.isTransactionOutputSpendable(input, includeMempool = false)
+      spendableMempoolIncluded <- bitcoinClient.isTransactionOutputSpendable(input, includeMempool = true)
     } yield computeInputStatus(parentConfirmations, spendableMempoolExcluded, spendableMempoolIncluded)
     context.pipeToSelf(checkInputTask) {
       case Success(status) => status

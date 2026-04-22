@@ -84,7 +84,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
   /** Wait for the given outpoint to be spent (either by a mempool or confirmed transaction). */
   def waitForOutputSpent(outpoint: OutPoint, bitcoinClient: BitcoinCoreClient, sender: TestProbe): Unit = {
     awaitCond({
-      bitcoinClient.isTransactionOutputSpendable(outpoint.txid, outpoint.index.toInt, includeMempool = true).pipeTo(sender.ref)
+      bitcoinClient.isTransactionOutputSpendable(outpoint, includeMempool = true).pipeTo(sender.ref)
       val isSpendable = sender.expectMsgType[Boolean]
       !isSpendable
     }, max = 30 seconds, interval = 1 second)

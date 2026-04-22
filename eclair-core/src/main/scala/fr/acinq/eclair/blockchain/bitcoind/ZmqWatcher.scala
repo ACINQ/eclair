@@ -103,6 +103,8 @@ object ZmqWatcher {
     def txId: TxId
     /** Index of the outpoint to watch. */
     def outputIndex: Int
+    /** outpoint to watch */
+    def outPoint: OutPoint = OutPoint(txId, outputIndex)
     /**
      * TxIds of potential spending transactions; most of the time we know the txs, and it allows for optimizations.
      * This argument can safely be ignored by watcher implementations.
@@ -427,6 +429,8 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
     }
   }
 
+  private def canUseTxoSpenderIndex: Future[Boolean] = client.getIndexInfo().map(_.get("txospenderindex").exists(_.synced))
+
   private def checkSpent(w: WatchSpent[_ <: WatchSpentTriggered]): Future[Unit] = {
     // First let's see if the parent tx was published or not before checking whether it has been spent.
     client.getTxConfirmations(w.txId).collect {
@@ -435,45 +439,60 @@ private class ZmqWatcher(nodeParams: NodeParams, blockHeight: AtomicLong, client
           // This is an external channels: funds are not at risk, so we don't need to scan the blockchain to find the
           // spending transaction, it is costly and unnecessary. We simply check whether the output has already been
           // spent by a confirmed transaction.
-          client.isTransactionOutputSpent(w.txId, w.outputIndex).collect {
+          client.isTransactionOutputSpent(w.outPoint).collect {
             case true =>
               // The output has been spent, so we trigger the watch without including the spending transaction.
               context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId, None))
           }
         case _ =>
           // The parent tx was published, we need to make sure this particular output has not been spent.
-          client.isTransactionOutputSpendable(w.txId, w.outputIndex, includeMempool = true).collect {
-            case false =>
-              // The output has been spent, let's find the spending tx.
-              // If we know some potential spending txs, we try to fetch them directly.
-              Future.sequence(w.hints.map(txid => client.getTransaction(txid).map(Some(_)).recover { case _ => None }))
-                .map(_.flatten) // filter out errors and hint transactions that can't be found
-                .map(hintTxs => {
-                  hintTxs.find(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
-                    case Some(spendingTx) =>
-                      log.info("{}:{} has already been spent by a tx provided in hints: txid={}", w.txId, w.outputIndex, spendingTx.txid)
-                      context.self ! ProcessNewTransaction(spendingTx)
-                    case None =>
-                      // The hints didn't help us, let's search for the spending transaction in the mempool.
-                      log.info("{}:{} has already been spent, looking for the spending tx in the mempool", w.txId, w.outputIndex)
-                      client.lookForMempoolSpendingTx(w.txId, w.outputIndex).map(Some(_)).recover { case _ => None }.map {
-                        case Some(spendingTx) =>
-                          log.info("found tx spending {}:{} in the mempool: txid={}", w.txId, w.outputIndex, spendingTx.txid)
-                          context.self ! ProcessNewTransaction(spendingTx)
-                        case None =>
-                          // The spending transaction isn't in the mempool, so it must be a transaction that confirmed
-                          // before we set the watch. We have to scan the blockchain to find it, which is expensive
-                          // since bitcoind doesn't provide indexes for this scenario.
-                          log.warn("{}:{} has already been spent, spending tx not in the mempool, looking in the blockchain...", w.txId, w.outputIndex)
-                          client.lookForSpendingTx(None, w.txId, w.outputIndex, nodeParams.channelConf.maxChannelSpentRescanBlocks).map { spendingTx =>
-                            log.warn("found the spending tx of {}:{} in the blockchain: txid={}", w.txId, w.outputIndex, spendingTx.txid)
+          client.isTransactionOutputSpendable(w.outPoint, includeMempool = true).collect {
+            case false => canUseTxoSpenderIndex.foreach {
+              case true =>
+                // The output has been spent, let's find the spending tx in the txospenderindex.
+                log.info("{} has already been spent, looking for the spending tx", w.outPoint)
+                client.findSpendingTx(w.outPoint) map {
+                  case Some((spendingTx, _)) =>
+                    log.info("found tx spending {} txid={}", w.outPoint, spendingTx.txid)
+                    context.self ! ProcessNewTransaction(spendingTx)
+                  case None =>
+                    log.warn("could not find the spending tx of {}, funds are at risk", w.outPoint)
+                } recover {
+                  case error =>
+                    log.warn("error finding the spending tx of {}, funds are at risk", w.outPoint, error)
+                }
+              case false =>
+                // txospenderindex is not available, scan the mempool and the blockchain
+                // If we know some potential spending txs, we try to fetch them directly.
+                Future.sequence(w.hints.map(txid => client.getTransaction(txid).map(Some(_)).recover { case _ => None }))
+                  .map(_.flatten) // filter out errors and hint transactions that can't be found
+                  .map(hintTxs => {
+                    hintTxs.find(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
+                      case Some(spendingTx) =>
+                        log.info("{}:{} has already been spent by a tx provided in hints: txid={}", w.txId, w.outputIndex, spendingTx.txid)
+                        context.self ! ProcessNewTransaction(spendingTx)
+                      case None =>
+                        // The hints didn't help us, let's search for the spending transaction in the mempool.
+                        log.info("{}:{} has already been spent, looking for the spending tx in the mempool", w.txId, w.outputIndex)
+                        client.lookForMempoolSpendingTx(w.outPoint).map(Some(_)).recover { case _ => None }.map {
+                          case Some(spendingTx) =>
+                            log.info("found tx spending {}:{} in the mempool: txid={}", w.txId, w.outputIndex, spendingTx.txid)
                             context.self ! ProcessNewTransaction(spendingTx)
-                          }.recover {
-                            case _ => log.warn("could not find the spending tx of {}:{} in the blockchain, funds are at risk", w.txId, w.outputIndex)
-                          }
-                      }
-                  }
-                })
+                          case None =>
+                            // The spending transaction isn't in the mempool, so it must be a transaction that confirmed
+                            // before we set the watch. We have to scan the blockchain to find it, which is expensive
+                            // since bitcoind doesn't provide indexes for this scenario.
+                            log.warn("{}:{} has already been spent, spending tx not in the mempool, looking in the blockchain...", w.txId, w.outputIndex)
+                            client.lookForSpendingTx(None, w.outPoint, nodeParams.channelConf.maxChannelSpentRescanBlocks).map { spendingTx =>
+                              log.warn("found the spending tx of {}:{} in the blockchain: txid={}", w.txId, w.outputIndex, spendingTx.txid)
+                              context.self ! ProcessNewTransaction(spendingTx)
+                            }.recover {
+                              case _ => log.warn("could not find the spending tx of {}:{} in the blockchain, funds are at risk", w.txId, w.outputIndex)
+                            }
+                        }
+                    }
+                  })
+            }
           }
       }
     }
