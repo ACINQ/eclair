@@ -530,6 +530,9 @@ object LightningMessageCodecs {
     .typecase(72, txInitRbfCodec)
     .typecase(73, txAckRbfCodec)
     .typecase(74, txAbortCodec)
+    .typecase(77, spliceLockedCodec)
+    .typecase(80, spliceInitCodec)
+    .typecase(81, spliceAckCodec)
     .typecase(127, startBatchCodec)
     .typecase(128, updateAddHtlcCodec)
     .typecase(130, updateFulfillHtlcCodec)
@@ -562,9 +565,6 @@ object LightningMessageCodecs {
     .typecase(41045, addFeeCreditCodec)
     .typecase(41046, currentFeeCreditCodec)
     //
-    .typecase(37000, spliceInitCodec)
-    .typecase(37002, spliceAckCodec)
-    .typecase(37004, spliceLockedCodec)
     //
 
     //

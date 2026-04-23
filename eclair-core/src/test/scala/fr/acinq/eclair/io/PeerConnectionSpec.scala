@@ -155,7 +155,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"0000 00050100000000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
-    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,var_onion_optin)"))
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,option_static_remotekey)"))
     peer.expectMsg(ConnectionDown(peerConnection))
   }
 
@@ -172,7 +172,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"00050100000000 0000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
-    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,var_onion_optin)"))
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,option_static_remotekey)"))
     peer.expectMsg(ConnectionDown(peerConnection))
   }
 
@@ -350,85 +350,6 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsg(StartBatch(channelId, batchSize = 3, TlvStream(StartBatchTlv.MessageType(132))))
     commitSigs.foreach(commitSig => transport.expectMsg(commitSig))
     transport.expectNoMessage(100 millis)
-  }
-
-  test("receive legacy batch of commit_sig messages") { f =>
-    import f._
-    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
-
-    // We receive a batch of commit_sig messages from a first channel.
-    val channelId1 = randomBytes32()
-    val commitSigs1 = Seq(
-      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
-      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
-    )
-    transport.send(peerConnection, commitSigs1.head)
-    transport.expectMsg(TransportHandler.ReadAck(commitSigs1.head))
-    peer.expectNoMessage(100 millis)
-    transport.send(peerConnection, commitSigs1.last)
-    transport.expectMsg(TransportHandler.ReadAck(commitSigs1.last))
-    peer.expectMsg(CommitSigBatch(commitSigs1))
-
-    // We receive a batch of commit_sig messages from a second channel.
-    val channelId2 = randomBytes32()
-    val commitSigs2 = Seq(
-      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(3))),
-      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(3))),
-      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(3))),
-    )
-    commitSigs2.dropRight(1).foreach(commitSig => {
-      transport.send(peerConnection, commitSig)
-      transport.expectMsg(TransportHandler.ReadAck(commitSig))
-    })
-    peer.expectNoMessage(100 millis)
-    transport.send(peerConnection, commitSigs2.last)
-    transport.expectMsg(TransportHandler.ReadAck(commitSigs2.last))
-    peer.expectMsg(CommitSigBatch(commitSigs2))
-
-    // We receive another batch of commit_sig messages from the first channel, with unrelated messages in the batch.
-    val commitSigs3 = Seq(
-      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
-      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
-    )
-    transport.send(peerConnection, commitSigs3.head)
-    transport.expectMsg(TransportHandler.ReadAck(commitSigs3.head))
-    val spliceLocked1 = SpliceLocked(channelId1, randomTxId())
-    transport.send(peerConnection, spliceLocked1)
-    transport.expectMsg(TransportHandler.ReadAck(spliceLocked1))
-    peer.expectMsg(spliceLocked1)
-    val spliceLocked2 = SpliceLocked(channelId2, randomTxId())
-    transport.send(peerConnection, spliceLocked2)
-    transport.expectMsg(TransportHandler.ReadAck(spliceLocked2))
-    peer.expectMsg(spliceLocked2)
-    peer.expectNoMessage(100 millis)
-    transport.send(peerConnection, commitSigs3.last)
-    transport.expectMsg(TransportHandler.ReadAck(commitSigs3.last))
-    peer.expectMsg(CommitSigBatch(commitSigs3))
-
-    // We start receiving a batch of commit_sig messages from the first channel, interleaved with a batch from the second
-    // channel, which is not supported.
-    val commitSigs4 = Seq(
-      CommitSig(channelId1, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
-      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
-      CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(2))),
-    )
-    transport.send(peerConnection, commitSigs4.head)
-    transport.expectMsg(TransportHandler.ReadAck(commitSigs4.head))
-    peer.expectNoMessage(100 millis)
-    transport.send(peerConnection, commitSigs4(1))
-    transport.expectMsg(TransportHandler.ReadAck(commitSigs4(1)))
-    peer.expectMsg(CommitSigBatch(commitSigs4.take(1)))
-    transport.send(peerConnection, commitSigs4.last)
-    transport.expectMsg(TransportHandler.ReadAck(commitSigs4.last))
-    peer.expectMsg(CommitSigBatch(commitSigs4.tail))
-
-    // We receive a batch that exceeds our threshold: we process them individually.
-    val invalidCommitSigs = (0 until 30).map(_ => CommitSig(channelId2, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.ExperimentalBatchTlv(30))))
-    invalidCommitSigs.foreach(commitSig => {
-      transport.send(peerConnection, commitSig)
-      transport.expectMsg(TransportHandler.ReadAck(commitSig))
-      peer.expectMsg(commitSig)
-    })
   }
 
   test("receive batch of commit_sig messages") { f =>

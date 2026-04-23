@@ -212,8 +212,9 @@ case class ChannelReestablish(channelId: ByteVector32,
                               myCurrentPerCommitmentPoint: PublicKey,
                               tlvStream: TlvStream[ChannelReestablishTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
   val nextFundingTxId_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].map(_.txId)
+  val retransmitInteractiveTxCommitSig: Boolean = tlvStream.get[ChannelReestablishTlv.NextFundingTlv].exists(_.retransmitCommitSig)
   val myCurrentFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.MyCurrentFundingLockedTlv].map(_.txId)
-  val yourLastFundingLocked_opt: Option[TxId] = tlvStream.get[ChannelReestablishTlv.YourLastFundingLockedTlv].map(_.txId)
+  val retransmitAnnSigs: Boolean = tlvStream.get[ChannelReestablishTlv.MyCurrentFundingLockedTlv].exists(_.retransmitAnnSigs)
   val nextCommitNonces: Map[TxId, IndividualNonce] = tlvStream.get[ChannelReestablishTlv.NextLocalNoncesTlv].map(_.nonces.toMap).getOrElse(Map.empty)
   val currentCommitNonce_opt: Option[IndividualNonce] = tlvStream.get[ChannelReestablishTlv.CurrentCommitNonceTlv].map(_.nonce)
 }
