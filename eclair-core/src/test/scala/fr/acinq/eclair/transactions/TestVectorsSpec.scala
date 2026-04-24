@@ -582,7 +582,7 @@ class SimpleTaprootCommitmentsTestVectorSpec extends AnyFunSuite {
     val uncompressedPublicKey = PublicKey(serialized.takeRight(33)).toUncompressedBin
     val publicKeyX = uncompressedPublicKey.drop(1).take(32).reverse
     val publicKeyY = uncompressedPublicKey.takeRight(32).reverse
-    val sec = new fr.acinq.bitcoin.crypto.musig2.SecretNonce(KotlinUtils.scala2kmp(hex"220EDCF1" ++ serialized.take(64) ++ publicKeyX ++ publicKeyY))
+    val sec = new fr.acinq.bitcoin.crypto.musig2.SecretNonce(KotlinUtils.scala2kmp(hex"220EDCF1" ++ serialized.take(64) ++ publicKeyX ++ publicKeyY).toByteArray)
     SecretNonce(sec)
   }
 
