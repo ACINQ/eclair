@@ -85,8 +85,8 @@ trait Control {
   }
 
   val configurePeerScorer: Route = postRequest("configurepeerscorer") { implicit t =>
-    formFields("autoFund".as[Boolean] ?, "autoClose".as[Boolean] ?, "autoUpdateFees".as[Boolean] ?, "addWhitelistedPeers".as[List[PublicKey]](pubkeyListUnmarshaller).?, "removeWhitelistedPeers".as[List[PublicKey]](pubkeyListUnmarshaller).?, "minFundingAmount".as[Satoshi] ?, "maxFundingAmount".as[Satoshi] ?, "maxPerPeerCapacity".as[Satoshi] ?, "maxFundingTxPerDay".as[Int] ?, "localBalanceClosingThreshold".as[Satoshi] ?, "remoteBalanceClosingThreshold".as[Satoshi] ?, "minOnChainBalance".as[Satoshi] ?, "maxFeerate".as[FeeratePerByte] ?, "fundingCooldown".as[Int] ?) {
-      (autoFund_opt, autoClose_opt, autoUpdateFees_opt, addWhitelistedPeers_opt, removeWhitelistedPeers_opt, minFundingAmount_opt, maxFundingAmount_opt, maxPerPeerCapacity_opt, maxFundingTxPerDay_opt, localBalanceClosingThreshold_opt, remoteBalanceClosingThreshold_opt, minOnChainBalance_opt, maxFeerate_opt, fundingCooldown_opt) =>
+    formFields("autoFund".as[Boolean] ?, "autoClose".as[Boolean] ?, "autoUpdateFees".as[Boolean] ?, "addWhitelistedPeers".as[List[PublicKey]](pubkeyListUnmarshaller).?, "removeWhitelistedPeers".as[List[PublicKey]](pubkeyListUnmarshaller).?, "minFundingAmount".as[Satoshi] ?, "maxFundingAmount".as[Satoshi] ?, "maxPerPeerCapacity".as[Satoshi] ?, "maxFundingTxPerDay".as[Int] ?, "localBalanceClosingThreshold".as[Satoshi] ?, "remoteBalanceClosingThreshold".as[Satoshi] ?, "minOnChainBalance".as[Satoshi] ?, "maxFeerate".as[FeeratePerByte] ?, "reviveOldPeers".as[Boolean] ?, "fundingCooldown".as[Int] ?) {
+      (autoFund_opt, autoClose_opt, autoUpdateFees_opt, addWhitelistedPeers_opt, removeWhitelistedPeers_opt, minFundingAmount_opt, maxFundingAmount_opt, maxPerPeerCapacity_opt, maxFundingTxPerDay_opt, localBalanceClosingThreshold_opt, remoteBalanceClosingThreshold_opt, minOnChainBalance_opt, maxFeerate_opt, reviveOldPeers_opt, fundingCooldown_opt) =>
         val cfg = PeerScorer.ConfigOverrides(
           autoFundOverride_opt = autoFund_opt,
           autoCloseOverride_opt = autoClose_opt,
@@ -101,6 +101,7 @@ trait Control {
           remoteBalanceClosingThresholdOverride_opt = remoteBalanceClosingThreshold_opt,
           minOnChainBalanceOverride_opt = minOnChainBalance_opt,
           maxFeerateOverride_opt = maxFeerate_opt.map(_.perKw),
+          reviveOldPeersOverride_opt = reviveOldPeers_opt,
           fundingCooldownOverride_opt = fundingCooldown_opt.map(hours => FiniteDuration(hours, TimeUnit.HOURS)),
         )
         complete(eclairApi.configurePeerScorer(cfg))

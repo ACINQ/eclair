@@ -736,6 +736,7 @@ object NodeParams extends Logging {
           maxFundingTxPerDay = config.getInt("peer-scoring.liquidity.max-funding-tx-per-day"),
           minOnChainBalance = config.getLong("peer-scoring.liquidity.min-on-chain-balance-satoshis").sat,
           maxFeerate = FeeratePerByte(config.getLong("peer-scoring.liquidity.max-feerate-sat-per-byte").sat).perKw,
+          reviveOldPeers = config.getBoolean("peer-scoring.liquidity.revive-old-peers"),
           fundingCooldown = FiniteDuration(config.getDuration("peer-scoring.liquidity.funding-cooldown").getSeconds, TimeUnit.SECONDS),
         ),
         relayFees = PeerScorer.RelayFeesConfig(

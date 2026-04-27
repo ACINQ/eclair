@@ -47,6 +47,7 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
       remoteBalanceClosingThreshold = 20_000_000 sat, // 0.2 BTC
       maxFeerate = FeeratePerByte(100 sat).perKw,
       maxFundingTxPerDay = 100,
+      reviveOldPeers = true,
       fundingCooldown = 72 hours,
     ),
     relayFees = PeerScorer.RelayFeesConfig(
@@ -607,15 +608,15 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
       val c1b = channelInfo(canSend = 0.5 btc, canReceive = 0.5 btc)
       val c2a = channelInfo(canSend = 1 btc, canReceive = 1 btc)
       val c2b = channelInfo(canSend = 0.5 btc, canReceive = 0.5 btc)
-      val c3a = channelInfo(canSend = 0.2 btc, canReceive = 0.8 btc)
-      val c3b = channelInfo(canSend = 0.2 btc, canReceive = 0.8 btc)
+      val c3a = channelInfo(canSend = 0.2 btc, canReceive = 0.9 btc)
+      val c3b = channelInfo(canSend = 0.2 btc, canReceive = 0.9 btc)
 
       // Our first peer's channels have very low volume and the last channel update already used our minimum fees: we should close it.
       val peerInfo1 = PeerInfo(
         remoteNodeId = remoteNodeId1,
         stats = Seq.fill(weeklyBuckets)(peerStats(totalAmountOut = 1_000 sat, totalAmountIn = 1_000 sat, relayFeeEarned = 10 sat)),
         channels = Seq(c1a, c1b),
-        latestUpdate_opt = Some(channelUpdate(c1a.capacity, RelayFees(1 msat, 600), TimestampSecond.now() - 6.days)),
+        latestUpdate_opt = Some(channelUpdate(c1a.capacity, RelayFees(1 msat, 600), TimestampSecond.now() - 2.days)),
         hasPendingChannel = false
       )
       // Our second peer's channels have very low volume, but we're not yet using our minimum fees: we should decrease them.
@@ -623,15 +624,15 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
         remoteNodeId = remoteNodeId2,
         stats = Seq.fill(weeklyBuckets)(peerStats(totalAmountOut = 1_000 sat, totalAmountIn = 1_000 sat, relayFeeEarned = 10 sat)),
         channels = Seq(c2a, c2b),
-        latestUpdate_opt = Some(channelUpdate(c2a.capacity, RelayFees(1 msat, 750), TimestampSecond.now() - 4.days)),
+        latestUpdate_opt = Some(channelUpdate(c2a.capacity, RelayFees(1 msat, 750), TimestampSecond.now() - 1.day)),
         hasPendingChannel = false
       )
-      // Our last peer's channels have very low volume, but we have less than 25% of the funds: we shouldn't do anything yet.
+      // Our last peer's channels have very low volume, but we have less than 20% of the funds: we shouldn't do anything yet.
       val peerInfo3 = PeerInfo(
         remoteNodeId = remoteNodeId3,
         stats = Seq.fill(weeklyBuckets)(peerStats(totalAmountOut = 1_000 sat, totalAmountIn = 1_000 sat, relayFeeEarned = 10 sat)),
         channels = Seq(c3a, c3b),
-        latestUpdate_opt = Some(channelUpdate(c3a.capacity, RelayFees(1 msat, 750), TimestampSecond.now() - 4.days)),
+        latestUpdate_opt = Some(channelUpdate(c3a.capacity, RelayFees(1 msat, 750), TimestampSecond.now() - 1.day)),
         hasPendingChannel = false
       )
 
