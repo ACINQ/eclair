@@ -298,14 +298,14 @@ object LightningMessageCodecs {
       ("feeratePerKw" | feeratePerKw) ::
       ("tlvStream" | UpdateFeeTlv.updateFeeTlvCodec)).as[UpdateFee]
 
-  val announcementSignaturesCodec: Codec[AnnouncementSignatures] = (
+  val legacyAnnouncementSignaturesCodec: Codec[LegacyAnnouncementSignatures] = (
     ("channelId" | bytes32) ::
       ("shortChannelId" | realshortchannelid) ::
       ("nodeSignature" | bytes64) ::
       ("bitcoinSignature" | bytes64) ::
-      ("tlvStream" | AnnouncementSignaturesTlv.announcementSignaturesTlvCodec)).as[AnnouncementSignatures]
+      ("tlvStream" | LegacyAnnouncementSignaturesTlv.codec)).as[LegacyAnnouncementSignatures]
 
-  val announcementSignatures2Codec: Codec[AnnouncementSignatures2] = AnnouncementSignatures2Tlv.codec.as[AnnouncementSignatures2]
+  val modernAnnouncementSignaturesCodec: Codec[ModernAnnouncementSignatures] = ModernAnnouncementSignaturesTlv.codec.as[ModernAnnouncementSignatures]
 
   val channelAnnouncementWitnessCodec =
     ("features" | lengthPrefixedFeaturesCodec) ::
@@ -315,16 +315,16 @@ object LightningMessageCodecs {
       ("nodeId2" | publicKey) ::
       ("bitcoinKey1" | publicKey) ::
       ("bitcoinKey2" | publicKey) ::
-      ("tlvStream" | ChannelAnnouncementTlv.channelAnnouncementTlvCodec)
+      ("tlvStream" | LegacyChannelAnnouncementTlv.codec)
 
-  val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
+  val legacyChannelAnnouncementCodec: Codec[LegacyChannelAnnouncement] = (
     ("nodeSignature1" | bytes64) ::
       ("nodeSignature2" | bytes64) ::
       ("bitcoinSignature1" | bytes64) ::
       ("bitcoinSignature2" | bytes64) ::
-      channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
+      channelAnnouncementWitnessCodec).as[LegacyChannelAnnouncement]
 
-  val channelAnnouncement2Codec: Codec[ChannelAnnouncement2] = ChannelAnnouncement2Tlv.codec.as[ChannelAnnouncement2]
+  val modernChannelAnnouncementCodec: Codec[ModernChannelAnnouncement] = ModernChannelAnnouncementTlv.codec.as[ModernChannelAnnouncement]
 
   val nodeAnnouncementWitnessCodec =
     ("features" | lengthPrefixedFeaturesCodec) ::
@@ -333,20 +333,20 @@ object LightningMessageCodecs {
       ("rgbColor" | rgb) ::
       ("alias" | zeropaddedstring(32)) ::
       ("addresses" | listofnodeaddresses) ::
-      ("tlvStream" | NodeAnnouncementTlv.nodeAnnouncementTlvCodec)
+      ("tlvStream" | LegacyNodeAnnouncementTlv.codec)
 
-  val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
+  val legacyNodeAnnouncementCodec: Codec[LegacyNodeAnnouncement] = (
     ("signature" | bytes64) ::
-      nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
+      nodeAnnouncementWitnessCodec).as[LegacyNodeAnnouncement]
 
-  val nodeAnnouncement2Codec: Codec[NodeAnnouncement2] = NodeAnnouncement2Tlv.codec.as[NodeAnnouncement2]
+  val modernNodeAnnouncementCodec: Codec[ModernNodeAnnouncement] = ModernNodeAnnouncementTlv.codec.as[ModernNodeAnnouncement]
 
-  val messageFlagsCodec = ("messageFlags" | (ignore(6) :: bool :: constant(bin"1"))).as[ChannelUpdate.MessageFlags]
+  val messageFlagsCodec = ("messageFlags" | (ignore(6) :: bool :: constant(bin"1"))).as[LegacyChannelUpdate.MessageFlags]
 
   val reverseBool: Codec[Boolean] = bool.xmap[Boolean](b => !b, b => !b)
 
   /** BOLT 7 defines a 'disable' bit and a 'direction' bit, but it's easier to understand if we take the reverse. */
-  val channelFlagsCodec = ("channelFlags" | (ignore(6) :: reverseBool :: reverseBool)).as[ChannelUpdate.ChannelFlags]
+  val channelFlagsCodec = ("channelFlags" | (ignore(6) :: reverseBool :: reverseBool)).as[LegacyChannelUpdate.ChannelFlags]
 
   val channelUpdateChecksumCodec =
     ("chainHash" | blockHash) ::
@@ -370,13 +370,13 @@ object LightningMessageCodecs {
       ("feeBaseMsat" | millisatoshi32) ::
       ("feeProportionalMillionths" | uint32) ::
       ("htlcMaximumMsat" | millisatoshi) ::
-      ("tlvStream" | ChannelUpdateTlv.channelUpdateTlvCodec)
+      ("tlvStream" | LegacyChannelUpdateTlv.codec)
 
-  val channelUpdateCodec: Codec[ChannelUpdate] = (
+  val legacyChannelUpdateCodec: Codec[LegacyChannelUpdate] = (
     ("signature" | bytes64) ::
-      channelUpdateWitnessCodec).as[ChannelUpdate]
+      channelUpdateWitnessCodec).as[LegacyChannelUpdate]
 
-  val channelUpdate2Codec: Codec[ChannelUpdate2] = ChannelUpdate2Tlv.codec.as[ChannelUpdate2]
+  val modernChannelUpdateCodec: Codec[ModernChannelUpdate] = ModernChannelUpdateTlv.codec.as[ModernChannelUpdate]
 
   val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] = discriminated[EncodedShortChannelIds].by(byte)
     .typecase(0, (provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(realshortchannelid)).as[EncodedShortChannelIds])
@@ -547,19 +547,19 @@ object LightningMessageCodecs {
     .typecase(134, updateFeeCodec)
     .typecase(135, updateFailMalformedHtlcCodec)
     .typecase(136, channelReestablishCodec)
-    .typecase(256, channelAnnouncementCodec)
-    .typecase(257, nodeAnnouncementCodec)
-    .typecase(258, channelUpdateCodec)
-    .typecase(259, announcementSignaturesCodec)
-    .typecase(260, announcementSignatures2Codec)
+    .typecase(256, legacyChannelAnnouncementCodec)
+    .typecase(257, legacyNodeAnnouncementCodec)
+    .typecase(258, legacyChannelUpdateCodec)
+    .typecase(259, legacyAnnouncementSignaturesCodec)
+    .typecase(260, modernAnnouncementSignaturesCodec)
     .typecase(261, queryShortChannelIdsCodec)
     .typecase(262, replyShortChannelIdsEndCodec)
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
-    .typecase(267, channelAnnouncement2Codec)
-    .typecase(269, nodeAnnouncement2Codec)
-    .typecase(271, channelUpdate2Codec)
+    .typecase(267, modernChannelAnnouncementCodec)
+    .typecase(269, modernNodeAnnouncementCodec)
+    .typecase(271, modernChannelUpdateCodec)
     .typecase(513, onionMessageCodec)
     // NB: blank lines to minimize merge conflicts
 

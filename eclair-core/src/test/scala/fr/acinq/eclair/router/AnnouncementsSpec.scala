@@ -22,8 +22,8 @@ import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.RealShortChannelId
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
-import fr.acinq.eclair.wire.protocol.ChannelUpdate.ChannelFlags
-import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.nodeAnnouncementCodec
+import fr.acinq.eclair.wire.protocol.LegacyChannelUpdate.ChannelFlags
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.legacyNodeAnnouncementCodec
 import fr.acinq.eclair.wire.protocol.{NodeAddress, TlvStream}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -164,9 +164,9 @@ class AnnouncementsSpec extends AnyFunSuite {
   test("announce irrelevant features") {
     // This announcement has option_payment_metadata which is not a node feature
     val encoded = hex"25d8bf19e2c6562a85b3109122118a50728d42c9054537b5a26c1e982407f0923a6f162cf0939bfaf58d7e7a7a7c86d7dfd02dda9b0d2036e8fd35a7afc78daa00070100000000000061fcfc1d039093816bb908c043341f3ee47ea86179627d26aa00704593503e684a0b9a38cb01020374657374206e6f646500000000000000000000000000000000000000000000000007018c5279042607"
-    val ann = nodeAnnouncementCodec.decode(encoded.bits).require.value
+    val ann = legacyNodeAnnouncementCodec.decode(encoded.bits).require.value
     assert(ann.features.hasFeature(Features.PaymentMetadata))
     assert(checkSig(ann))
-    assert(nodeAnnouncementCodec.encode(ann).require.bytes == encoded)
+    assert(legacyNodeAnnouncementCodec.encode(ann).require.bytes == encoded)
   }
 }

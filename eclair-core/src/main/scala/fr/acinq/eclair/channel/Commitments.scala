@@ -2,8 +2,8 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
-import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, SatoshiLong, Transaction, TxId}
+import fr.acinq.bitcoin.scalacompat.Musig2.{IndividualNonce, LocalNonce}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, Crypto, KotlinUtils, Musig2, OutPoint, Satoshi, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, PartialSignatureWithNonce}
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -380,7 +380,7 @@ case class Commitment(fundingTxIndex: Long,
   }
 
   /** Sign the announcement for this commitment, if the funding transaction is confirmed. */
-  def signAnnouncement(nodeParams: NodeParams, params: ChannelParams, fundingKey: PrivateKey): Option[AnnouncementSignatures] = {
+  def signLegacyAnnouncement(nodeParams: NodeParams, params: ChannelParams, fundingKey: PrivateKey): Option[LegacyAnnouncementSignatures] = {
     localFundingStatus match {
       case funding: LocalFundingStatus.ConfirmedFundingTx if params.announceChannel =>
         val features = Features.empty[Feature] // empty features for now
@@ -395,7 +395,27 @@ case class Commitment(fundingTxIndex: Long,
         )
         val localBitcoinSig = Announcements.signChannelAnnouncement(witness, fundingKey)
         val localNodeSig = nodeParams.nodeKeyManager.signChannelAnnouncement(witness)
-        Some(AnnouncementSignatures(params.channelId, funding.shortChannelId, localNodeSig, localBitcoinSig))
+        Some(LegacyAnnouncementSignatures(params.channelId, funding.shortChannelId, localNodeSig, localBitcoinSig))
+      case _ => None
+    }
+  }
+
+  /** Sign the announcement for this commitment, if the funding transaction is confirmed. */
+  def signModernAnnouncement(nodeParams: NodeParams, params: ChannelParams, fundingKey: PrivateKey, localNodeNonce: LocalNonce, localFundingNonce: LocalNonce, remoteNodeNonce: IndividualNonce, remoteFundingNonce: IndividualNonce): Option[ModernAnnouncementSignatures] = {
+    localFundingStatus match {
+      case funding: LocalFundingStatus.ConfirmedFundingTx if params.announceChannel =>
+        val features = Features.empty[Feature] // empty features for now
+        val (nodeId1, nodeId2) = if (Announcements.isNode1(params.localNodeId, params.remoteNodeId)) (params.localNodeId, params.remoteNodeId) else (params.remoteNodeId, params.localNodeId)
+        val (bitcoinKey1, bitcoinKey2) = if (Announcements.isNode1(params.localNodeId, params.remoteNodeId)) (fundingKey.publicKey, remoteFundingPubKey) else (remoteFundingPubKey, fundingKey.publicKey)
+        val merkleRoot = KotlinUtils.kmp2scala(Musig2.aggregateKeys(Scripts.sort(Seq(fundingKey.publicKey, remoteFundingPubKey))).pub.value)
+        val announcement = ModernChannelAnnouncement(nodeParams.chainHash, funding.shortChannelId, fundingAmount, fundingInput, nodeId1, nodeId2, bitcoinKey1, bitcoinKey2, merkleRoot, features, ByteVector64.Zeroes)
+        val publicKeys = Seq(nodeId1, nodeId2, bitcoinKey1, bitcoinKey2)
+        val nonces = Seq(localNodeNonce.publicNonce, localFundingNonce.publicNonce, remoteNodeNonce, remoteFundingNonce)
+        val localBitcoinSig_opt = Announcements.signChannelAnnouncement(announcement, fundingKey, localFundingNonce, publicKeys, nonces)
+        val localNodeSig_opt = Announcements.signChannelAnnouncement(announcement, nodeParams.privateKey, localFundingNonce, publicKeys, nonces)
+        // TODO: @t-bast proposed using standard musig2 with both partial signatures instead the currently semi-aggregated version
+        //  -> if accepted, include localBitcoinSig_opt
+        localNodeSig_opt.map(sig => ModernAnnouncementSignatures(params.channelId, funding.shortChannelId, fundingTxId, sig))
       case _ => None
     }
   }

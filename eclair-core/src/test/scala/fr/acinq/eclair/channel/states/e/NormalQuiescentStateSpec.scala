@@ -51,8 +51,8 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     val setup = init(tags = tags)
     import setup._
     reachNormal(setup, tags)
-    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
-    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+    alice2bob.ignoreMsg { case _: LegacyChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: LegacyChannelUpdate => true }
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
     withFixture(test.toNoArgTest(setup))

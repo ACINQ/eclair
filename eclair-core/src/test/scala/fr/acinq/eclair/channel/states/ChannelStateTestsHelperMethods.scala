@@ -452,12 +452,12 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
 
     if (!tags.contains(ChannelStateTestsTags.DoNotInterceptGossip)) {
       if (tags.contains(ChannelStateTestsTags.ChannelsPublic) && !channelParams.channelType.features.contains(Features.ZeroConf)) {
-        alice2bob.expectMsgType[AnnouncementSignatures]
-        bob2alice.expectMsgType[AnnouncementSignatures]
+        alice2bob.expectMsgType[LegacyAnnouncementSignatures]
+        bob2alice.expectMsgType[LegacyAnnouncementSignatures]
       }
       // we don't forward the channel updates, in reality they would be processed by the router
-      alice2bob.expectMsgType[ChannelUpdate]
-      bob2alice.expectMsgType[ChannelUpdate]
+      alice2bob.expectMsgType[LegacyChannelUpdate]
+      bob2alice.expectMsgType[LegacyChannelUpdate]
     }
     eventually(assert(alice.stateName == NORMAL))
     eventually(assert(bob.stateName == NORMAL))

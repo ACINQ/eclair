@@ -9,8 +9,8 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.protocol.{ChannelReestablish, ChannelUpdate, Init}
-import fr.acinq.eclair.{TestKitBaseClass, _}
+import fr.acinq.eclair.wire.protocol.{ChannelReestablish, LegacyChannelUpdate, Init}
+import fr.acinq.eclair._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -136,10 +136,10 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       bob2alice.expectMsgType[ChannelReestablish]
       alice2bob.forward(bob)
       bob2alice.forward(newAlice)
-      val u1 = alice2bob.expectMsgType[ChannelUpdate]
+      val u1 = alice2bob.expectMsgType[LegacyChannelUpdate]
       assert(cup.channelUpdate.feeBaseMsat == u1.feeBaseMsat)
       assert(cup.channelUpdate.feeProportionalMillionths == u1.feeProportionalMillionths)
-      bob2alice.expectMsgType[ChannelUpdate]
+      bob2alice.expectMsgType[LegacyChannelUpdate]
       alice2bob.expectNoMessage()
       bob2alice.expectNoMessage()
 

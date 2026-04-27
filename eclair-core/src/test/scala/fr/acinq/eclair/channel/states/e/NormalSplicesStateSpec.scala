@@ -64,8 +64,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val setup = init(tags = tags)
     import setup._
     reachNormal(setup, tags)
-    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
-    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+    alice2bob.ignoreMsg { case _: LegacyChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: LegacyChannelUpdate => true }
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
     withFixture(test.toNoArgTest(setup))
@@ -196,12 +196,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     val txSigsR = r2s.fishForMessage() {
       case _: TxSignatures => true
-      case _: ChannelUpdate => false
+      case _: LegacyChannelUpdate => false
     }
     r2s.forward(s, txSigsR)
     val txSigsS = s2r.fishForMessage() {
       case _: TxSignatures => true
-      case _: ChannelUpdate => false
+      case _: LegacyChannelUpdate => false
     }
     s2r.forward(r, txSigsS)
 
@@ -393,8 +393,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     import f._
 
     reachNormal(f, tags = Set.empty) // we open a non dual-funded channel
-    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
-    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+    alice2bob.ignoreMsg { case _: LegacyChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: LegacyChannelUpdate => true }
     awaitCond(alice.stateName == NORMAL && bob.stateName == NORMAL)
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     assert(!initialState.commitments.channelParams.channelFeatures.hasFeature(Features.DualFunding))
@@ -1478,12 +1478,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ShortChannelIdAssigned])
 
     // Alice and Bob announce the initial funding transaction.
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.forward(bob)
-    alice2bob.expectMsgType[ChannelUpdate]
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyChannelUpdate]
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures]
     bob2alice.forward(alice)
-    bob2alice.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[LegacyChannelUpdate]
     awaitAssert(assert(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.nonEmpty))
     val ann = alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
     assert(aliceListener.expectMsgType[ShortChannelIdAssigned].announcement_opt.contains(ann))
@@ -1507,9 +1507,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectMsg(UnwatchFundingSpent(fundingInput.txid, fundingInput.index.toInt))
     assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx1.txid)
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.forward(bob)
-    val bobAnnSigs1 = bob2alice.expectMsgType[AnnouncementSignatures] // Alice doesn't receive Bob's signatures.
+    val bobAnnSigs1 = bob2alice.expectMsgType[LegacyAnnouncementSignatures] // Alice doesn't receive Bob's signatures.
     awaitAssert(assert(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.exists(_ != ann)))
     val spliceAnn1 = bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
     assert(spliceAnn1.shortChannelId != ann.shortChannelId)
@@ -1540,9 +1540,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectMsg(UnwatchFundingSpent(fundingInput1.txid, fundingInput1.index.toInt))
     assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx2.txid)
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.forward(bob)
-    val bobAnnSigs2 = bob2alice.expectMsgType[AnnouncementSignatures] // Alice doesn't receive Bob's signatures.
+    val bobAnnSigs2 = bob2alice.expectMsgType[LegacyAnnouncementSignatures] // Alice doesn't receive Bob's signatures.
     awaitAssert(assert(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.exists(_ != spliceAnn1)))
     val spliceAnn2 = bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
     assert(spliceAnn2.shortChannelId != spliceAnn1.shortChannelId)
@@ -1578,10 +1578,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob.underlyingActor.context.system.eventStream.subscribe(bobListener.ref, classOf[ShortChannelIdAssigned])
 
     // Alice and Bob want to announce the initial funding transaction, but the messages are dropped.
-    val shortChannelId = alice2bob.expectMsgType[AnnouncementSignatures].shortChannelId
-    alice2bob.expectMsgType[ChannelUpdate]
-    bob2alice.expectMsgType[AnnouncementSignatures]
-    bob2alice.expectMsgType[ChannelUpdate]
+    val shortChannelId = alice2bob.expectMsgType[LegacyAnnouncementSignatures].shortChannelId
+    alice2bob.expectMsgType[LegacyChannelUpdate]
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures]
+    bob2alice.expectMsgType[LegacyChannelUpdate]
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.isEmpty)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.isEmpty)
 
@@ -1602,9 +1602,9 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2blockchain.expectMsg(UnwatchFundingSpent(fundingInput.txid, fundingInput.index.toInt))
     assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid)
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[AnnouncementSignatures] // Alice doesn't receive Bob's signatures.
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures] // Alice doesn't receive Bob's signatures.
     awaitAssert(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.nonEmpty)
     val spliceAnn = bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.get
     assert(spliceAnn.shortChannelId != shortChannelId)
@@ -1630,7 +1630,7 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectNoMessage(100 millis)
     assert(bob2alice.expectMsgType[SpliceLocked].fundingTxId == spliceTx.txid) // Bob resends `splice_locked` in response to Alice's `splice_locked` after channel_reestablish.
     bob2alice.forward(alice)
-    assert(bob2alice.expectMsgType[AnnouncementSignatures].shortChannelId == spliceAnn.shortChannelId)
+    assert(bob2alice.expectMsgType[LegacyAnnouncementSignatures].shortChannelId == spliceAnn.shortChannelId)
     bob2alice.forward(alice)
     bob2alice.expectNoMessage(100 millis)
     assert(aliceListener.expectMsgType[ShortChannelIdAssigned].announcement_opt.contains(spliceAnn))
@@ -2742,8 +2742,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // From Alice's point of view, we now have two unconfirmed splices.
 
-    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
-    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+    alice2bob.ignoreMsg { case _: LegacyChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: LegacyChannelUpdate => true }
 
     disconnect(f)
     reconnect(f)
@@ -2911,8 +2911,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     alice2bob.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
     alice2bob.forward(bob)
 
-    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
-    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+    alice2bob.ignoreMsg { case _: LegacyChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: LegacyChannelUpdate => true }
 
     disconnect(f)
 
@@ -2976,8 +2976,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     val spliceTx = initiateSplice(f, spliceIn_opt = Some(SpliceIn(500_000 sat, pushAmount = 0 msat)))
     checkWatchPublished(f, spliceTx)
 
-    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
-    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+    alice2bob.ignoreMsg { case _: LegacyChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: LegacyChannelUpdate => true }
 
     // The splice confirms on Alice's side.
     alice ! WatchFundingConfirmedTriggered(BlockHeight(400000), 42, spliceTx)
@@ -3232,11 +3232,11 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
 
     // Alice sends announcement_signatures to Bob.
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.forward(bob)
 
     // Alice disconnects before Bob can send announcement_signatures.
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures]
 
     disconnect(f)
     reconnect(f)
@@ -3252,12 +3252,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     // Bob receives Alice's `splice_locked` after `channel_reestablish` and must retransmit both `splice_locked` and `announcement_signatures`.
     val bobSpliceLocked = bob2alice.expectMsgType[SpliceLocked]
     bob2alice.forward(alice)
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures]
     bob2alice.forward(alice)
     bob2alice.expectNoMessage(100 millis)
 
     // Alice retransmits `announcement_signatures` to Bob after receiving `splice_locked` from Bob.
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.forward(bob)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
@@ -3295,8 +3295,8 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.expectMsgTypeHaving[SpliceLocked](_.fundingTxId == fundingTx.txid)
     bob2alice.forward(alice)
 
-    alice2bob.ignoreMsg { case _: ChannelUpdate => true }
-    bob2alice.ignoreMsg { case _: ChannelUpdate => true }
+    alice2bob.ignoreMsg { case _: LegacyChannelUpdate => true }
+    bob2alice.ignoreMsg { case _: LegacyChannelUpdate => true }
 
     disconnect(f)
     val (aliceReestablish, bobReestablish) = reconnect(f, sendReestablish = false)
@@ -3344,10 +3344,10 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
     bob2alice.forward(alice)
 
     // Alice sends announcement_signatures to Bob.
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
 
     // Bob sends announcement_signatures to Alice.
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures]
 
     disconnect(f)
     reconnect(f)
@@ -3363,12 +3363,12 @@ class NormalSplicesStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     // Alice receives Bob's `splice_locked` after already resending their `splice_locked` and retransmits `announcement_signatures`.
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.forward(bob)
     alice2bob.expectNoMessage(100 millis)
 
     // Bob retransmits `announcement_signatures` to Alice after receiving `announcement_signatures` from Alice.
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures]
     bob2alice.forward(alice)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)

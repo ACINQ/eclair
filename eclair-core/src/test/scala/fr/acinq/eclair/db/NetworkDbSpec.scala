@@ -28,7 +28,7 @@ import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
-import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{legacyChannelAnnouncementCodec, channelUpdateCodec, legacyNodeAnnouncementCodec}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, TestDatabases, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
@@ -388,22 +388,22 @@ class NetworkDbSpec extends AnyFunSuite {
 object NetworkDbSpec {
 
   case class NodeTestCase(nodeId: PublicKey,
-                          node: NodeAnnouncement,
+                          node: LegacyNodeAnnouncement,
                           data: Array[Byte])
 
   case class ChannelTestCase(shortChannelId: ShortChannelId,
                              txid: TxId,
-                             channel: ChannelAnnouncement,
+                             channel: LegacyChannelAnnouncement,
                              channel_data: Array[Byte],
                              capacity: Satoshi,
-                             update_1_opt: Option[ChannelUpdate],
-                             update_2_opt: Option[ChannelUpdate],
+                             update_1_opt: Option[LegacyChannelUpdate],
+                             update_2_opt: Option[LegacyChannelUpdate],
                              update_1_data_opt: Option[Array[Byte]],
                              update_2_data_opt: Option[Array[Byte]])
 
   val nodeTestCases: Seq[NodeTestCase] = for (_ <- 0 until 10) yield {
     val node = Announcements.makeNodeAnnouncement(randomKey(), "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
-    val data = nodeAnnouncementCodec.encode(node).require.toByteArray
+    val data = legacyNodeAnnouncementCodec.encode(node).require.toByteArray
     NodeTestCase(
       nodeId = node.nodeId,
       node = node,
@@ -421,7 +421,7 @@ object NetworkDbSpec {
     val channel_update_2_opt = if (Random.nextBoolean()) {
       Some(Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, a.publicKey, channel.shortChannelId, CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, Random.nextBoolean()))
     } else None
-    val channel_data = channelAnnouncementCodec.encode(channel).require.toByteArray
+    val channel_data = legacyChannelAnnouncementCodec.encode(channel).require.toByteArray
     val channel_update_1_data = channel_update_1_opt.map(channelUpdateCodec.encode(_).require.toByteArray)
     val channel_update_2_data = channel_update_2_opt.map(channelUpdateCodec.encode(_).require.toByteArray)
     ChannelTestCase(

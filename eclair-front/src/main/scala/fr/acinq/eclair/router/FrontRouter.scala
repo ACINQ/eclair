@@ -102,27 +102,27 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
               d.copy(accepted = d.accepted + (ann -> origins1))
             case None =>
               ann match {
-                case n: NodeAnnouncement if d.nodes.contains(n.nodeId) =>
+                case n: LegacyNodeAnnouncement if d.nodes.contains(n.nodeId) =>
                   origin.peerConnection ! TransportHandler.ReadAck(ann)
                   Metrics.gossipDropped(ann).increment()
                   d
-                case c: ChannelAnnouncement if d.channels.contains(c.shortChannelId) =>
+                case c: LegacyChannelAnnouncement if d.channels.contains(c.shortChannelId) =>
                   origin.peerConnection ! TransportHandler.ReadAck(ann)
                   Metrics.gossipDropped(ann).increment()
                   d
-                case u: ChannelUpdate if d.channels.get(RealShortChannelId(u.shortChannelId.toLong)).exists(_.getChannelUpdateSameSideAs(u).contains(u)) =>
+                case u: LegacyChannelUpdate if d.channels.get(RealShortChannelId(u.shortChannelId.toLong)).exists(_.getChannelUpdateSameSideAs(u).contains(u)) =>
                   origin.peerConnection ! TransportHandler.ReadAck(ann)
                   Metrics.gossipDropped(ann).increment()
                   d
-                case n: NodeAnnouncement if d.rebroadcast.nodes.contains(n) =>
+                case n: LegacyNodeAnnouncement if d.rebroadcast.nodes.contains(n) =>
                   origin.peerConnection ! TransportHandler.ReadAck(ann)
                   Metrics.gossipStashedRebroadcast(ann).increment()
                   d.copy(rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> (d.rebroadcast.nodes(n) + origin))))
-                case c: ChannelAnnouncement if d.rebroadcast.channels.contains(c) =>
+                case c: LegacyChannelAnnouncement if d.rebroadcast.channels.contains(c) =>
                   origin.peerConnection ! TransportHandler.ReadAck(ann)
                   Metrics.gossipStashedRebroadcast(ann).increment()
                   d.copy(rebroadcast = d.rebroadcast.copy(channels = d.rebroadcast.channels + (c -> (d.rebroadcast.channels(c) + origin))))
-                case u: ChannelUpdate if d.rebroadcast.updates.contains(u) =>
+                case u: LegacyChannelUpdate if d.rebroadcast.updates.contains(u) =>
                   origin.peerConnection ! TransportHandler.ReadAck(ann)
                   Metrics.gossipStashedRebroadcast(ann).increment()
                   d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> (d.rebroadcast.updates(u) + origin))))
@@ -212,7 +212,7 @@ object FrontRouter {
   case object NORMAL extends State
   // @formatter:on
 
-  case class Data(nodes: Map[PublicKey, NodeAnnouncement],
+  case class Data(nodes: Map[PublicKey, LegacyNodeAnnouncement],
                   channels: SortedMap[RealShortChannelId, PublicChannel],
                   processing: Map[AnnouncementMessage, Set[RemoteGossip]],
                   accepted: Map[AnnouncementMessage, Set[RemoteGossip]],
@@ -306,9 +306,9 @@ object FrontRouter {
     // that came from our peers are in the [[d.accepted]] map.
     val origins = d.accepted.getOrElse(ann, Set.empty[RemoteGossip]).map(o => o: GossipOrigin)
     val rebroadcast1 = ann match {
-      case n: NodeAnnouncement => d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins))
-      case c: ChannelAnnouncement => d.rebroadcast.copy(channels = d.rebroadcast.channels + (c -> origins))
-      case u: ChannelUpdate =>
+      case n: LegacyNodeAnnouncement => d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins))
+      case c: LegacyChannelAnnouncement => d.rebroadcast.copy(channels = d.rebroadcast.channels + (c -> origins))
+      case u: LegacyChannelUpdate =>
         if (d.channels.contains(RealShortChannelId(u.shortChannelId.toLong))) {
           d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins))
         } else {

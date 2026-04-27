@@ -23,7 +23,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.io.Peer.{ChannelId, PeerStorage}
 import fr.acinq.eclair.io.ReconnectionTask.WaitingData
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, NodeAnnouncement, RecommendedFeerates}
+import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, LegacyNodeAnnouncement, RecommendedFeerates}
 import org.mockito.IdiomaticMockito.StubbingOps
 import org.mockito.MockitoSugar.mock
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -56,7 +56,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       .modify(_.autoReconnect).setToIf(test.tags.contains(autoReconnect))(true)
 
     if (test.tags.contains(withNodeAnn)) {
-      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+      val bobAnnouncement = LegacyNodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
@@ -224,7 +224,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // we create a dummy tcp server and update bob's announcement to point to it
     val (mockServer, serverAddress) = PeerSpec.createMockServer()
     val mockAddress = NodeAddress.fromParts(serverAddress.getHostName, serverAddress.getPort).get
-    val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
+    val bobAnnouncement = LegacyNodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     nodeParams.db.network.addNode(bobAnnouncement)
 
     val peer = TestProbe()

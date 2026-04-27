@@ -13,8 +13,8 @@ import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.profit.PeerScorer._
 import fr.acinq.eclair.profit.PeerStatsTracker._
-import fr.acinq.eclair.wire.protocol.ChannelUpdate
-import fr.acinq.eclair.wire.protocol.ChannelUpdate.{ChannelFlags, MessageFlags}
+import fr.acinq.eclair.wire.protocol.LegacyChannelUpdate
+import fr.acinq.eclair.wire.protocol.LegacyChannelUpdate.{ChannelFlags, MessageFlags}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, NodeParams, RealShortChannelId, TestConstants, TimestampMilli, TimestampSecond, ToMilliSatoshiConversion, randomBytes32, randomKey}
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -69,10 +69,10 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
     testFun(Fixture(nodeParams, tracker, register, wallet, scorer))
   }
 
-  private def channelUpdate(capacity: BtcAmount, fees: RelayFees = RelayFees(250 msat, 1000), timestamp: TimestampSecond = TimestampSecond.now(), announceChannel: Boolean = true): ChannelUpdate = {
+  private def channelUpdate(capacity: BtcAmount, fees: RelayFees = RelayFees(250 msat, 1000), timestamp: TimestampSecond = TimestampSecond.now(), announceChannel: Boolean = true): LegacyChannelUpdate = {
     val messageFlags = MessageFlags(dontForward = !announceChannel)
     val channelFlags = ChannelFlags(isEnabled = true, isNode1 = true)
-    ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, RealShortChannelId(42), timestamp, messageFlags, channelFlags, CltvExpiryDelta(36), 1 msat, fees.feeBase, fees.feeProportionalMillionths, capacity.toMilliSatoshi)
+    LegacyChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, RealShortChannelId(42), timestamp, messageFlags, channelFlags, CltvExpiryDelta(36), 1 msat, fees.feeBase, fees.feeProportionalMillionths, capacity.toMilliSatoshi)
   }
 
   private def peerStats(totalAmountIn: BtcAmount = 0 sat,

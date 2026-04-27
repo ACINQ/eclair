@@ -42,7 +42,7 @@ import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{PredefinedNodeRoute, PrivateChannel, PublicChannel, RouteRequest}
 import fr.acinq.eclair.router.{Announcements, GraphWithBalanceEstimates, Router}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{LegacyChannelUpdate, Color, LegacyNodeAnnouncement}
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.TryValues.convertTryToSuccessOrFailure
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -162,7 +162,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val eclair = new EclairImpl(kit)
 
-    val ann = NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(42L), randomKey().publicKey, Color(42, 42, 42), "ACINQ", Nil)
+    val ann = LegacyNodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(42L), randomKey().publicKey, Color(42, 42, 42), "ACINQ", Nil)
     val remoteNode = Router.PublicNode(ann, 7, 561_000 sat)
     eclair.node(ann.nodeId).pipeTo(sender.ref)
     val msg1 = router.expectMsgType[Router.GetNode]
@@ -182,32 +182,32 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     import f._
 
     val eclair = new EclairImpl(kit)
-    val remoteNodeAnn1 = NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(42L), randomKey().publicKey, Color(42, 42, 42), "LN-rocks", Nil)
-    val remoteNodeAnn2 = NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(43L), randomKey().publicKey, Color(43, 43, 43), "LN-papers", Nil)
+    val remoteNodeAnn1 = LegacyNodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(42L), randomKey().publicKey, Color(42, 42, 42), "LN-rocks", Nil)
+    val remoteNodeAnn2 = LegacyNodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(43L), randomKey().publicKey, Color(43, 43, 43), "LN-papers", Nil)
     val allNodes = Seq(
-      NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(561L), randomKey().publicKey, Color(0, 0, 0), "some-node", Nil),
+      LegacyNodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(561L), randomKey().publicKey, Color(0, 0, 0), "some-node", Nil),
       remoteNodeAnn1,
       remoteNodeAnn2,
-      NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(1105L), randomKey().publicKey, Color(0, 0, 0), "some-other-node", Nil),
+      LegacyNodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(1105L), randomKey().publicKey, Color(0, 0, 0), "some-other-node", Nil),
     )
 
     {
       eclair.nodes().pipeTo(sender.ref)
       router.expectMsg(Router.GetNodes)
       router.reply(allNodes)
-      assert(sender.expectMsgType[Iterable[NodeAnnouncement]].toSet == allNodes.toSet)
+      assert(sender.expectMsgType[Iterable[LegacyNodeAnnouncement]].toSet == allNodes.toSet)
     }
     {
       eclair.nodes(Some(Set(remoteNodeAnn1.nodeId, remoteNodeAnn2.nodeId))).pipeTo(sender.ref)
       router.expectMsg(Router.GetNodes)
       router.reply(allNodes)
-      assert(sender.expectMsgType[Iterable[NodeAnnouncement]].toSet == Set(remoteNodeAnn1, remoteNodeAnn2))
+      assert(sender.expectMsgType[Iterable[LegacyNodeAnnouncement]].toSet == Set(remoteNodeAnn1, remoteNodeAnn2))
     }
     {
       eclair.nodes(Some(Set(randomKey().publicKey))).pipeTo(sender.ref)
       router.expectMsg(Router.GetNodes)
       router.reply(allNodes)
-      assert(sender.expectMsgType[Iterable[NodeAnnouncement]].isEmpty)
+      assert(sender.expectMsgType[Iterable[LegacyNodeAnnouncement]].isEmpty)
     }
   }
 
@@ -239,14 +239,14 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       (ann_cd, makeUpdateShort(ShortChannelId(3L), c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = 100000 msat, cltvDelta = CltvExpiryDelta(500))),
       (ann_ec, makeUpdateShort(ShortChannelId(7L), e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = 100000 msat, cltvDelta = CltvExpiryDelta(12)))
     ).map { case (ann, update) =>
-      update.shortChannelId -> PublicChannel(ann, TxId(ByteVector32.Zeroes), 100 sat, Some(update.copy(channelFlags = ChannelUpdate.ChannelFlags.DUMMY)), None, None)
+      update.shortChannelId -> PublicChannel(ann, TxId(ByteVector32.Zeroes), 100 sat, Some(update.copy(channelFlags = LegacyChannelUpdate.ChannelFlags.DUMMY)), None, None)
     }: _*)
 
     val eclair = new EclairImpl(kit)
     eclair.allUpdates(Some(b)).pipeTo(sender.ref) // ask updates filtered by 'b'
     router.expectMsg(Router.GetChannelsMap)
     router.reply(channels)
-    assert(sender.expectMsgType[Iterable[ChannelUpdate]].map(_.shortChannelId).toSet == Set(ShortChannelId(2)))
+    assert(sender.expectMsgType[Iterable[LegacyChannelUpdate]].map(_.shortChannelId).toSet == Set(ShortChannelId(2)))
   }
 
   test("open with bad arguments") { f =>

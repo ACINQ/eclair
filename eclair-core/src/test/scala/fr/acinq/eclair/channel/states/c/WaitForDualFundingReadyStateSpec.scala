@@ -162,8 +162,8 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(bobCommitments.localChannelReserve == aliceCommitments.remoteChannelReserve)
     assert(bobCommitments.localChannelReserve == bobCommitments.remoteChannelReserve)
 
-    assert(alice2bob.expectMsgType[ChannelUpdate].shortChannelId == bobChannelReady.alias_opt.value)
-    assert(bob2alice.expectMsgType[ChannelUpdate].shortChannelId == aliceChannelReady.alias_opt.value)
+    assert(alice2bob.expectMsgType[LegacyChannelUpdate].shortChannelId == bobChannelReady.alias_opt.value)
+    assert(bob2alice.expectMsgType[LegacyChannelUpdate].shortChannelId == aliceChannelReady.alias_opt.value)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
   }
@@ -198,8 +198,8 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(bobCommitments.localChannelReserve == aliceCommitments.remoteChannelReserve)
     assert(bobCommitments.localChannelReserve == bobCommitments.remoteChannelReserve)
 
-    assert(alice2bob.expectMsgType[ChannelUpdate].shortChannelId == bobChannelReady.alias_opt.value)
-    assert(bob2alice.expectMsgType[ChannelUpdate].shortChannelId == aliceChannelReady.alias_opt.value)
+    assert(alice2bob.expectMsgType[LegacyChannelUpdate].shortChannelId == bobChannelReady.alias_opt.value)
+    assert(bob2alice.expectMsgType[LegacyChannelUpdate].shortChannelId == aliceChannelReady.alias_opt.value)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
   }
@@ -217,13 +217,13 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
 
     // Alice sends announcement_signatures to Bob.
-    val aliceAnnSigs = alice2bob.expectMsgType[AnnouncementSignatures]
+    val aliceAnnSigs = alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.forward(bob, aliceAnnSigs)
-    val aliceChannelUpdate = alice2bob.expectMsgType[ChannelUpdate]
+    val aliceChannelUpdate = alice2bob.expectMsgType[LegacyChannelUpdate]
     assert(aliceChannelUpdate.shortChannelId == bobChannelReady.alias_opt.value)
     // Bob also sends announcement_signatures, but Alice doesn't receive it.
-    bob2alice.expectMsgType[AnnouncementSignatures]
-    val bobChannelUpdate = bob2alice.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures]
+    val bobChannelUpdate = bob2alice.expectMsgType[LegacyChannelUpdate]
     assert(bobChannelUpdate.shortChannelId == aliceChannelReady.alias_opt.value)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.nonEmpty)
 
@@ -248,9 +248,9 @@ class WaitForDualFundingReadyStateSpec extends TestKitBaseClass with FixtureAnyF
     // She retransmits channel_ready and Bob will retransmit its announcement_signatures in response.
     alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob)
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures]
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].lastAnnouncement_opt.nonEmpty)
   }

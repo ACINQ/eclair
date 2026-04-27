@@ -62,8 +62,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     within(30 seconds) {
       reachNormal(setup, tags = test.tags)
       if (test.tags.contains(IgnoreChannelUpdates)) {
-        setup.alice2bob.ignoreMsg({ case _: ChannelUpdate => true })
-        setup.bob2alice.ignoreMsg({ case _: ChannelUpdate => true })
+        setup.alice2bob.ignoreMsg({ case _: LegacyChannelUpdate => true })
+        setup.bob2alice.ignoreMsg({ case _: LegacyChannelUpdate => true })
       }
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
@@ -704,11 +704,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
 
     // Alice receives Bob's announcement_signatures, but Bob doesn't receive Alice's.
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures]
     bob2alice.forward(alice)
-    bob2alice.expectMsgType[ChannelUpdate]
-    alice2bob.expectMsgType[AnnouncementSignatures]
-    alice2bob.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[LegacyChannelUpdate]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyChannelUpdate]
 
     // We simulate a disconnection / reconnection.
     disconnect(alice, bob)
@@ -725,10 +725,10 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
 
-    val annSigsBob = bob2alice.expectMsgType[AnnouncementSignatures]
+    val annSigsBob = bob2alice.expectMsgType[LegacyAnnouncementSignatures]
     bob2alice.forward(alice, annSigsBob)
     // Alice retransmits her announcement_signatures when receiving Bob's.
-    val annSigsAlice = alice2bob.expectMsgType[AnnouncementSignatures]
+    val annSigsAlice = alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.forward(bob, annSigsAlice)
     // Alice and Bob ignore redundant announcement_signatures.
     alice2bob.forward(bob, annSigsAlice)
@@ -751,8 +751,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.forward(bob)
 
     // alice and bob resend their channel update at reconnection (unannounced channel)
-    alice2bob.expectMsgType[ChannelUpdate]
-    bob2alice.expectMsgType[ChannelUpdate]
+    alice2bob.expectMsgType[LegacyChannelUpdate]
+    bob2alice.expectMsgType[LegacyChannelUpdate]
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
@@ -771,8 +771,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.forward(bob)
 
     // alice and bob resend their channel update at reconnection (unannounced channel)
-    alice2bob.expectMsgType[ChannelUpdate]
-    bob2alice.expectMsgType[ChannelUpdate]
+    alice2bob.expectMsgType[LegacyChannelUpdate]
+    bob2alice.expectMsgType[LegacyChannelUpdate]
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectNoMessage(100 millis)
 
@@ -787,8 +787,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.forward(bob)
 
     // this time peers re-send their channel_update
-    alice2bob.expectMsgType[ChannelUpdate]
-    bob2alice.expectMsgType[ChannelUpdate]
+    alice2bob.expectMsgType[LegacyChannelUpdate]
+    bob2alice.expectMsgType[LegacyChannelUpdate]
     // and the channel is enabled
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
   }
@@ -869,10 +869,10 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Alice will resend her channel_ready and announcement_signatures at reconnection because she has not received
     // announcement_signatures from bob (pre-splice behavior).
     alice2bob.expectMsgType[ChannelReady]
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectMsgType[ChannelReady]
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures]
     bob2alice.expectNoMessage(100 millis)
 
     // we update the channel
@@ -891,12 +891,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // she still has not received announcement_signatures from bob (pre-splice behavior).
     alice2bob.expectMsgType[ChannelReady]
     alice2bob.forward(bob)
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.forward(bob)
     alice2bob.expectNoMessage(100 millis)
     bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures]
     bob2alice.forward(alice)
     bob2alice.expectNoMessage(100 millis)
 

@@ -30,14 +30,14 @@ import scodec.bits._
 class FailureMessageCodecsSpec extends AnyFunSuite {
 
   test("encode/decode all failure messages") {
-    val channelUpdate = ChannelUpdate(
+    val channelUpdate = LegacyChannelUpdate(
       signature = ByteVector64(hex"3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e620"),
       chainHash = Block.RegtestGenesisBlock.hash,
       shortChannelId = ShortChannelId(12345),
       timestamp = TimestampSecond(1234567L),
       cltvExpiryDelta = CltvExpiryDelta(100),
-      messageFlags = ChannelUpdate.MessageFlags(dontForward = false),
-      channelFlags = ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false),
+      messageFlags = LegacyChannelUpdate.MessageFlags(dontForward = false),
+      channelFlags = LegacyChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false),
       htlcMinimumMsat = 1000 msat,
       feeBaseMsat = 12 msat,
       feeProportionalMillionths = 76,
@@ -59,7 +59,7 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
       UnknownNextPeer() -> hex"400a",
       AmountBelowMinimum(123456 msat, Some(channelUpdate)) -> hex"100b 000000000001e240 008a 0102 3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e62006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00000000000030390012d6870101006400000000000003e80000000c0000004c0000000008f0d180",
       FeeInsufficient(546463 msat, Some(channelUpdate)) -> hex"100c 000000000008569f 008a 0102 3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e62006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00000000000030390012d6870101006400000000000003e80000000c0000004c0000000008f0d180",
-      ChannelDisabled(ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), Some(channelUpdate)) -> hex"1014 01 01 008a 0102 3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e62006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00000000000030390012d6870101006400000000000003e80000000c0000004c0000000008f0d180",
+      ChannelDisabled(LegacyChannelUpdate.MessageFlags(dontForward = false), LegacyChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false), Some(channelUpdate)) -> hex"1014 01 01 008a 0102 3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e62006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00000000000030390012d6870101006400000000000003e80000000c0000004c0000000008f0d180",
       IncorrectCltvExpiry(CltvExpiry(1211), Some(channelUpdate)) -> hex"100d 000004bb 008a 0102 3eedbba335d4fb4c772c95bf6a0de91b86950fabbb3a9f203beef44f30547f89eaf5dbf434520b4dcab5a0641589aa5483cdfd24902295310383f9ab8835e62006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f00000000000030390012d6870101006400000000000003e80000000c0000004c0000000008f0d180",
       IncorrectOrUnknownPaymentDetails(123456 msat, BlockHeight(1105)) -> hex"400f 000000000001e240 00000451",
       IncorrectOrUnknownPaymentDetails(100 msat, BlockHeight(800_000), TlvStream(Set.empty[FailureMessageTlv], Set(GenericTlv(UInt64(34001), ByteVector.fill(300)(128))))) -> hex"400f 0000000000000064 000c3500 fd84d1 fd012c 808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080808080",
@@ -180,7 +180,7 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
   test("support encoding of channel_update with/without type in failure messages") {
     val tmpChannelFailureWithoutType = hex"10070088cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f45782196fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008260500041300005b91b52f0103000e00000000000003e800000001000000010000000008f0d180"
     val tmpChannelFailureWithType = hex"1007008a0102cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f45782196fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008260500041300005b91b52f0103000e00000000000003e800000001000000010000000008f0d180"
-    val ref = TemporaryChannelFailure(Some(ChannelUpdate(ByteVector64(hex"cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f4578219"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), 1536275759 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(14), 1000 msat, 1 msat, 1, 150_000_000 msat)))
+    val ref = TemporaryChannelFailure(Some(LegacyChannelUpdate(ByteVector64(hex"cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f4578219"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), 1536275759 unixsec, LegacyChannelUpdate.MessageFlags(dontForward = false), LegacyChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(14), 1000 msat, 1 msat, 1, 150_000_000 msat)))
 
     val u1 = failureMessageCodec.decode(tmpChannelFailureWithoutType.toBitVector).require.value
     assert(u1 == ref)

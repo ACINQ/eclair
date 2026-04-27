@@ -936,7 +936,7 @@ class RouterSpec extends BaseRouterSpec {
     watcher.send(router, ValidateResult(ann, Right((fundingTx_ac, UtxoStatus.Unspent))))
     peerConnection.expectMsg(GossipDecision.Accepted(ann))
     probe.send(router, GetChannels)
-    assert(probe.expectMsgType[Iterable[ChannelAnnouncement]].exists(_.shortChannelId == scid))
+    assert(probe.expectMsgType[Iterable[LegacyChannelAnnouncement]].exists(_.shortChannelId == scid))
 
     // We never received the channel updates, so we prune the channel.
     probe.send(router, TickPruneStaleChannels)
@@ -1148,9 +1148,9 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, GetRoutingStateStreaming)
 
     // initial sync
-    var nodes = Set.empty[NodeAnnouncement]
-    var channels = Set.empty[ChannelAnnouncement]
-    var updates = Set.empty[ChannelUpdate]
+    var nodes = Set.empty[LegacyNodeAnnouncement]
+    var channels = Set.empty[LegacyChannelAnnouncement]
+    var updates = Set.empty[LegacyChannelUpdate]
     sender.fishForMessage() {
       case nd: NodesDiscovered =>
         nodes = nodes ++ nd.ann
@@ -1179,7 +1179,7 @@ class RouterSpec extends BaseRouterSpec {
     }
   }
 
-  def processSpliceChannelAnnouncement(fixture: FixtureParam, parentScid: RealShortChannelId, channelAnnouncement: ChannelAnnouncement, spliceTx: Transaction, newCapacity: Satoshi): Unit = {
+  def processSpliceChannelAnnouncement(fixture: FixtureParam, parentScid: RealShortChannelId, channelAnnouncement: LegacyChannelAnnouncement, spliceTx: Transaction, newCapacity: Satoshi): Unit = {
     import fixture._
     // A splice of the channel is announced and validated.
     val peerConnection = TestProbe()

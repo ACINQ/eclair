@@ -117,7 +117,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
     // we have a real scid, but the channel is not announced so alice uses bob's alias
-    val channelUpdateSentToPeer = alice2bob.expectMsgType[ChannelUpdate]
+    val channelUpdateSentToPeer = alice2bob.expectMsgType[LegacyChannelUpdate]
     assert(channelUpdateSentToPeer.shortChannelId == bobIds.localAlias)
     assert(Announcements.areSameRelayParams(initialChannelUpdate, channelUpdateSentToPeer))
     assert(Announcements.checkSig(channelUpdateSentToPeer, alice.underlyingActor.nodeParams.nodeId))
@@ -140,7 +140,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
     // the channel is not announced but bob didn't send an alias so we use the real scid
-    val channelUpdateSentToPeer = alice2bob.expectMsgType[ChannelUpdate]
+    val channelUpdateSentToPeer = alice2bob.expectMsgType[LegacyChannelUpdate]
     assert(channelUpdateSentToPeer.shortChannelId == realScid)
     assert(Announcements.areSameRelayParams(initialChannelUpdate, channelUpdateSentToPeer))
     assert(Announcements.checkSig(channelUpdateSentToPeer, alice.underlyingActor.nodeParams.nodeId))
@@ -164,7 +164,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
-    val channelUpdateSentToPeer = alice2bob.expectMsgType[ChannelUpdate]
+    val channelUpdateSentToPeer = alice2bob.expectMsgType[LegacyChannelUpdate]
     // the channel is not announced so alice uses bob's alias (we have a no real scid anyway)
     assert(channelUpdateSentToPeer.shortChannelId == bobIds.localAlias)
     assert(Announcements.areSameRelayParams(initialChannelUpdate, channelUpdateSentToPeer))
@@ -185,7 +185,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
-    val channelUpdateSentToPeer = alice2bob.expectMsgType[ChannelUpdate]
+    val channelUpdateSentToPeer = alice2bob.expectMsgType[LegacyChannelUpdate]
     // the channel is 0-conf but bob didn't provide an alias: it's a spec violation, so we use our local alias and if
     // they can't understand it, too bad for them
     assert(channelUpdateSentToPeer.shortChannelId == aliceIds.localAlias)
@@ -204,13 +204,13 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     assert(channelReady.alias_opt.contains(bobIds.localAlias))
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
-    val channelUpdateSentToPeer = alice2bob.expectMsgType[ChannelUpdate]
+    val channelUpdateSentToPeer = alice2bob.expectMsgType[LegacyChannelUpdate]
     // we have a real scid, but it is not the final one (less than 6 confirmations) so alice uses bob's alias
     assert(channelUpdateSentToPeer.shortChannelId == bobIds.localAlias)
     assert(Announcements.areSameRelayParams(initialChannelUpdate, channelUpdateSentToPeer))
@@ -232,7 +232,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
     assert(initialChannelUpdate.feeProportionalMillionths == relayFees.feeProportionalMillionths)
-    val channelUpdateSentToPeer = alice2bob.expectMsgType[ChannelUpdate]
+    val channelUpdateSentToPeer = alice2bob.expectMsgType[LegacyChannelUpdate]
     // the channel is not announced, so alice uses bob's alias (we have a no real scid anyway)
     assert(channelUpdateSentToPeer.shortChannelId == bobIds.localAlias)
     assert(Announcements.areSameRelayParams(initialChannelUpdate, channelUpdateSentToPeer))

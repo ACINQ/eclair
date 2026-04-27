@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelReestablish, ChannelUpdate, ClosingComplete, ClosingSig, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{LegacyAnnouncementSignatures, ChannelReestablish, LegacyChannelUpdate, ClosingComplete, ClosingSig, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FailureReason, Init, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -116,12 +116,12 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       val bobListener = TestProbe()
       systemB.eventStream.subscribe(bobListener.ref, classOf[LocalChannelUpdate])
 
-      alice2bob.expectMsgType[AnnouncementSignatures]
+      alice2bob.expectMsgType[LegacyAnnouncementSignatures]
       alice2bob.forward(bob)
-      alice2bob.expectMsgType[ChannelUpdate]
-      bob2alice.expectMsgType[AnnouncementSignatures]
+      alice2bob.expectMsgType[LegacyChannelUpdate]
+      bob2alice.expectMsgType[LegacyAnnouncementSignatures]
       bob2alice.forward(alice)
-      bob2alice.expectMsgType[ChannelUpdate]
+      bob2alice.expectMsgType[LegacyChannelUpdate]
       assert(aliceListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
       assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
 

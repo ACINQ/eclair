@@ -31,7 +31,7 @@ import fr.acinq.eclair.testutils.PimpTestProbe._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.ClosingSignedTlv.FeeRange
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingComplete, ClosingCompleteTlv, ClosingSig, ClosingSigTlv, ClosingSigned, ClosingTlv, Error, Shutdown, TlvStream, Warning}
+import fr.acinq.eclair.wire.protocol.{LegacyAnnouncementSignatures, LegacyChannelUpdate, ClosingComplete, ClosingCompleteTlv, ClosingSig, ClosingSigTlv, ClosingSigned, ClosingTlv, Error, Shutdown, TlvStream, Warning}
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -113,12 +113,12 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val bobListener = TestProbe()
     systemB.eventStream.subscribe(bobListener.ref, classOf[LocalChannelUpdate])
 
-    alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyAnnouncementSignatures]
     alice2bob.forward(bob)
-    alice2bob.expectMsgType[ChannelUpdate]
-    bob2alice.expectMsgType[AnnouncementSignatures]
+    alice2bob.expectMsgType[LegacyChannelUpdate]
+    bob2alice.expectMsgType[LegacyAnnouncementSignatures]
     bob2alice.forward(alice)
-    bob2alice.expectMsgType[ChannelUpdate]
+    bob2alice.expectMsgType[LegacyChannelUpdate]
     assert(aliceListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
     assert(bobListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
 

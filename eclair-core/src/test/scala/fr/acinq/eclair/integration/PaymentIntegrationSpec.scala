@@ -47,7 +47,7 @@ import fr.acinq.eclair.router.Graph.HeuristicsConstants
 import fr.acinq.eclair.router.Router.{ChannelHop, GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
 import fr.acinq.eclair.wire.protocol.OfferTypes.{Offer, OfferPaths}
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails}
+import fr.acinq.eclair.wire.protocol.{LegacyChannelAnnouncement, LegacyChannelUpdate, IncorrectOrUnknownPaymentDetails}
 import fr.acinq.eclair.{CltvExpiryDelta, EclairImpl, EncodedNodeId, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32, randomKey}
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -184,7 +184,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // to simulate this, we will update B's relay params
     // first we find out the short channel id for channel B-C
     sender.send(nodes("B").router, Router.GetChannels)
-    val shortIdBC = sender.expectMsgType[Iterable[ChannelAnnouncement]].find(c => Set(c.nodeId1, c.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)).get.shortChannelId
+    val shortIdBC = sender.expectMsgType[Iterable[LegacyChannelAnnouncement]].find(c => Set(c.nodeId1, c.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)).get.shortChannelId
     // we also need the full commitment
     nodes("B").register ! Register.ForwardShortId(sender.ref.toTyped[Any], shortIdBC, CMD_GET_CHANNEL_INFO(sender.ref.toTyped[Any]))
     val normalBC = sender.expectMsgType[RES_GET_CHANNEL_INFO].data.asInstanceOf[DATA_NORMAL]
@@ -205,7 +205,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(ps.id == paymentId)
     assert(Crypto.sha256(ps.paymentPreimage) == invoice.paymentHash)
 
-    def updateFor(n: PublicKey, pc: PublicChannel): Option[ChannelUpdate] = if (n == pc.ann.nodeId1) pc.update_1_opt else if (n == pc.ann.nodeId2) pc.update_2_opt else throw new IllegalArgumentException("this node is unrelated to this channel")
+    def updateFor(n: PublicKey, pc: PublicChannel): Option[LegacyChannelUpdate] = if (n == pc.ann.nodeId1) pc.update_1_opt else if (n == pc.ann.nodeId2) pc.update_2_opt else throw new IllegalArgumentException("this node is unrelated to this channel")
 
     awaitCond({
       // in the meantime, the router will have updated its state
@@ -835,7 +835,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val pathId = randomBytes32()
     val scidDirEB = {
       probe.send(nodes("B").router, Router.GetChannels)
-      val Some(channelBE) = probe.expectMsgType[Iterable[ChannelAnnouncement]].find(ann => Set(ann.nodeId1, ann.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("E").nodeParams.nodeId))
+      val Some(channelBE) = probe.expectMsgType[Iterable[LegacyChannelAnnouncement]].find(ann => Set(ann.nodeId1, ann.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("E").nodeParams.nodeId))
       ShortChannelIdDir(channelBE.nodeId1 == nodes("B").nodeParams.nodeId, channelBE.shortChannelId)
     }
     val offerBlindedRoute = buildRoute(randomKey(), Seq(IntermediateNode(nodes("B").nodeParams.nodeId), IntermediateNode(nodes("C").nodeParams.nodeId)), Recipient(nodes("C").nodeParams.nodeId, Some(pathId))).route
@@ -854,7 +854,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val handleInvoiceRequest = offerHandler.expectMessageType[HandleInvoiceRequest]
     val scidDirCB = {
       probe.send(nodes("B").router, Router.GetChannels)
-      val Some(channelBC) = probe.expectMsgType[Iterable[ChannelAnnouncement]].find(ann => Set(ann.nodeId1, ann.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
+      val Some(channelBC) = probe.expectMsgType[Iterable[LegacyChannelAnnouncement]].find(ann => Set(ann.nodeId1, ann.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId))
       ShortChannelIdDir(channelBC.nodeId1 == nodes("B").nodeParams.nodeId, channelBC.shortChannelId)
     }
     val receivingRoutes = Seq(
@@ -905,7 +905,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }
     awaitCond({
       sender.send(nodes("D").router, Router.GetChannels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels.size + 8 // 8 original channels (A -> B is private)
+      sender.expectMsgType[Iterable[LegacyChannelAnnouncement]].size == channels.size + 8 // 8 original channels (A -> B is private)
     }, max = 120 seconds, interval = 1 second)
   }
 

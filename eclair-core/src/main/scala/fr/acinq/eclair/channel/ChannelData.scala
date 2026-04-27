@@ -27,7 +27,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureReason, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ClosingSigned, CommitSig, FailureReason, FundingCreated, FundingSigned, Init, LegacyChannelUpdate, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, TimestampMilli, UInt64}
 import scodec.bits.ByteVector
 
@@ -300,7 +300,7 @@ final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) exten
  * - either [[RES_ADD_FAILED]]
  * - or [[RES_SUCCESS[CMD_ADD_HTLC]]] followed by [[RES_ADD_SETTLED]] (possibly a while later)
  */
-final case class RES_ADD_FAILED[+T <: ChannelException](c: CMD_ADD_HTLC, t: T, channelUpdate: Option[ChannelUpdate]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with origin=${c.origin} reason=${t.getMessage}" }
+final case class RES_ADD_FAILED[+T <: ChannelException](c: CMD_ADD_HTLC, t: T, channelUpdate: Option[LegacyChannelUpdate]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with origin=${c.origin} reason=${t.getMessage}" }
 sealed trait HtlcResult
 object HtlcResult {
   sealed trait Fulfill extends HtlcResult { def paymentPreimage: ByteVector32 }
@@ -311,7 +311,7 @@ object HtlcResult {
   case class RemoteFailMalformed(fail: UpdateFailMalformedHtlc) extends Fail
   case class OnChainFail(cause: Throwable) extends Fail
   case object ChannelFailureBeforeSigned extends Fail
-  case class DisconnectedBeforeSigned(channelUpdate: ChannelUpdate) extends Fail { require(!channelUpdate.channelFlags.isEnabled, "channel update must have disabled flag set") }
+  case class DisconnectedBeforeSigned(channelUpdate: LegacyChannelUpdate) extends Fail { require(!channelUpdate.channelFlags.isEnabled, "channel update must have disabled flag set") }
 }
 final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, remoteNodeId: PublicKey, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
@@ -655,7 +655,7 @@ final case class DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments: Commitments, alia
 final case class DATA_NORMAL(commitments: Commitments,
                              aliases: ShortIdAliases,
                              lastAnnouncement_opt: Option[ChannelAnnouncement],
-                             channelUpdate: ChannelUpdate,
+                             channelUpdate: LegacyChannelUpdate,
                              spliceStatus: SpliceStatus,
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown],

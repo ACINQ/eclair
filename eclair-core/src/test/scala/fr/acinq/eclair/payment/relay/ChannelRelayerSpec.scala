@@ -548,7 +548,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val u = createLocalUpdate(channelId1)
     val u_disabled = createLocalUpdate(channelId1, enabled = false)
 
-    case class TestCase(exc: ChannelException, update: ChannelUpdate, failure: FailureMessage)
+    case class TestCase(exc: ChannelException, update: LegacyChannelUpdate, failure: FailureMessage)
 
     val testCases = Seq(
       TestCase(ExpiryTooSmall(channelId1, CltvExpiry(100), CltvExpiry(0), BlockHeight(0)), u.channelUpdate, ExpiryTooSoon(Some(u.channelUpdate))),
@@ -853,7 +853,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val channels3 = getOutgoingChannels(true)
     assert(channels3.size == 1 && channels3.head.commitments.availableBalanceForSend == 100000.msat)
 
-    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, aliases_ab, a, None, channelUpdate_ab.copy(channelFlags = ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = true)), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
+    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, aliases_ab, a, None, channelUpdate_ab.copy(channelFlags = LegacyChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = true)), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
     val channels4 = getOutgoingChannels(true)
     assert(channels4.isEmpty)
     val channels5 = getOutgoingChannels(false)
@@ -892,7 +892,7 @@ object ChannelRelayerSpec {
     localAlias2 -> channelId2,
   )
 
-  def createBlindedPayload(outgoing: Either[PublicKey, ShortChannelId], update: ChannelUpdate, isIntroduction: Boolean): ChannelRelay.Blinded = {
+  def createBlindedPayload(outgoing: Either[PublicKey, ShortChannelId], update: LegacyChannelUpdate, isIntroduction: Boolean): ChannelRelay.Blinded = {
     val tlvs = TlvStream[OnionPaymentPayloadTlv](Set(
       Some(OnionPaymentPayloadTlv.EncryptedRecipientData(hex"2a")),
       if (isIntroduction) Some(OnionPaymentPayloadTlv.PathKey(randomKey().publicKey)) else None,
@@ -927,7 +927,7 @@ object ChannelRelayerSpec {
     val aliases = createAliases(channelId)
     val realScid = channelIds.collectFirst { case (realScid: RealShortChannelId, cid) if cid == channelId => realScid }.get
     val channelUpdateScid = channelUpdateScid_opt.getOrElse(realScid)
-    val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, channelUpdateScid, timestamp, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = enabled), CltvExpiryDelta(100), htlcMinimum, feeBaseMsat, feeProportionalMillionths, capacity.toMilliSatoshi)
+    val update = LegacyChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, channelUpdateScid, timestamp, LegacyChannelUpdate.MessageFlags(dontForward = false), LegacyChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = enabled), CltvExpiryDelta(100), htlcMinimum, feeBaseMsat, feeProportionalMillionths, capacity.toMilliSatoshi)
     val features: Set[PermanentChannelFeature] = Set(
       if (optionScidAlias) Some(ScidAlias) else None,
     ).flatten

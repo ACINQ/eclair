@@ -429,14 +429,14 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   test("calculate route and return metadata") {
     val DUMMY_SIG = Transactions.PlaceHolderSig
 
-    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 42 msat, 2500 msat, 140, DEFAULT_CAPACITY.toMilliSatoshi)
-    val uba = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 1 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 43 msat, 2501 msat, 141, DEFAULT_CAPACITY.toMilliSatoshi)
-    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 44 msat, 2502 msat, 142, DEFAULT_CAPACITY.toMilliSatoshi)
-    val ucb = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 45 msat, 2503 msat, 143, DEFAULT_CAPACITY.toMilliSatoshi)
-    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 46 msat, 2504 msat, 144, 500_000_000 msat)
-    val udc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 47 msat, 2505 msat, 145, DEFAULT_CAPACITY.toMilliSatoshi)
-    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 48 msat, 2506 msat, 146, DEFAULT_CAPACITY.toMilliSatoshi)
-    val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 49 msat, 2507 msat, 147, DEFAULT_CAPACITY.toMilliSatoshi)
+    val uab = LegacyChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 0 unixsec, LegacyChannelUpdate.MessageFlags(dontForward = false), LegacyChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 42 msat, 2500 msat, 140, DEFAULT_CAPACITY.toMilliSatoshi)
+    val uba = LegacyChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 1 unixsec, LegacyChannelUpdate.MessageFlags(dontForward = false), LegacyChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 43 msat, 2501 msat, 141, DEFAULT_CAPACITY.toMilliSatoshi)
+    val ubc = LegacyChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1 unixsec, LegacyChannelUpdate.MessageFlags(dontForward = false), LegacyChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 44 msat, 2502 msat, 142, DEFAULT_CAPACITY.toMilliSatoshi)
+    val ucb = LegacyChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1 unixsec, LegacyChannelUpdate.MessageFlags(dontForward = false), LegacyChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 45 msat, 2503 msat, 143, DEFAULT_CAPACITY.toMilliSatoshi)
+    val ucd = LegacyChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1 unixsec, LegacyChannelUpdate.MessageFlags(dontForward = false), LegacyChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 46 msat, 2504 msat, 144, 500_000_000 msat)
+    val udc = LegacyChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1 unixsec, LegacyChannelUpdate.MessageFlags(dontForward = false), LegacyChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 47 msat, 2505 msat, 145, DEFAULT_CAPACITY.toMilliSatoshi)
+    val ude = LegacyChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1 unixsec, LegacyChannelUpdate.MessageFlags(dontForward = false), LegacyChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(1), 48 msat, 2506 msat, 146, DEFAULT_CAPACITY.toMilliSatoshi)
+    val ued = LegacyChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1 unixsec, LegacyChannelUpdate.MessageFlags(dontForward = false), LegacyChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), CltvExpiryDelta(1), 49 msat, 2507 msat, 147, DEFAULT_CAPACITY.toMilliSatoshi)
 
     val edges = Seq(
       GraphEdge(ChannelDesc(ShortChannelId(1L), a, b), HopRelayParams.FromAnnouncement(uab), DEFAULT_CAPACITY, None),
@@ -1962,9 +1962,9 @@ object RouteCalculationSpec {
 
   val DUMMY_SIG = Transactions.PlaceHolderSig
 
-  def makeChannel(shortChannelId: Long, nodeIdA: PublicKey, nodeIdB: PublicKey): ChannelAnnouncement = {
+  def makeChannel(shortChannelId: Long, nodeIdA: PublicKey, nodeIdB: PublicKey): LegacyChannelAnnouncement = {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(nodeIdA, nodeIdB)) (nodeIdA, nodeIdB) else (nodeIdB, nodeIdA)
-    ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, Features.empty, Block.RegtestGenesisBlock.hash, RealShortChannelId(shortChannelId), nodeId1, nodeId2, randomKey().publicKey, randomKey().publicKey)
+    LegacyChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, Features.empty, Block.RegtestGenesisBlock.hash, RealShortChannelId(shortChannelId), nodeId1, nodeId2, randomKey().publicKey, randomKey().publicKey)
   }
 
   def makeEdge(shortChannelId: Long,
@@ -1981,14 +1981,14 @@ object RouteCalculationSpec {
     GraphEdge(ChannelDesc(RealShortChannelId(shortChannelId), nodeId1, nodeId2), HopRelayParams.FromAnnouncement(update), capacity, balance_opt)
   }
 
-  def makeUpdateShort(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: MilliSatoshi = 500_000_000 msat, cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0), timestamp: TimestampSecond = 0 unixsec): ChannelUpdate =
-    ChannelUpdate(
+  def makeUpdateShort(shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionth: Int, minHtlc: MilliSatoshi = DEFAULT_AMOUNT_MSAT, maxHtlc: MilliSatoshi = 500_000_000 msat, cltvDelta: CltvExpiryDelta = CltvExpiryDelta(0), timestamp: TimestampSecond = 0 unixsec): LegacyChannelUpdate =
+    LegacyChannelUpdate(
       signature = DUMMY_SIG,
       chainHash = Block.RegtestGenesisBlock.hash,
       shortChannelId = shortChannelId,
       timestamp = timestamp,
-      messageFlags = ChannelUpdate.MessageFlags(dontForward = false),
-      channelFlags = ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = Announcements.isNode1(nodeId1, nodeId2)),
+      messageFlags = LegacyChannelUpdate.MessageFlags(dontForward = false),
+      channelFlags = LegacyChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = Announcements.isNode1(nodeId1, nodeId2)),
       cltvExpiryDelta = cltvDelta,
       htlcMinimumMsat = minHtlc,
       feeBaseMsat = feeBase,

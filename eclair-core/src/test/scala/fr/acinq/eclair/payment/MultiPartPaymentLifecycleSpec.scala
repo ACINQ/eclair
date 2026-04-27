@@ -400,7 +400,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
       ExtraEdge(a, c, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144), 1 msat, None)
     ))
 
-    def makeChannelUpdate(shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportional: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelUpdate = {
+    def makeChannelUpdate(shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportional: Long, cltvExpiryDelta: CltvExpiryDelta): LegacyChannelUpdate = {
       defaultChannelUpdate.copy(shortChannelId = shortChannelId, feeBaseMsat = feeBase, feeProportionalMillionths = feeProportional, cltvExpiryDelta = cltvExpiryDelta)
     }
 
@@ -722,15 +722,15 @@ object MultiPartPaymentLifecycleSpec {
   val channelId_ce = ShortChannelId(13)
   val channelId_ad = ShortChannelId(21)
   val channelId_de = ShortChannelId(22)
-  val defaultChannelUpdate = ChannelUpdate(randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 100 msat, 0, 2_000_000 msat)
-  val channelUpdate_ab_1: ChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_ab_1)
-  val channelUpdate_ab_2: ChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_ab_2)
-  val channelUpdate_be: ChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_be)
-  val channelUpdate_ac_1: ChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_ac_1)
-  val channelUpdate_ac_2: ChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_ac_2)
-  val channelUpdate_ce: ChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_ce)
-  val channelUpdate_ad: ChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_ad)
-  val channelUpdate_de: ChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_de)
+  val defaultChannelUpdate = LegacyChannelUpdate(randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unixsec, LegacyChannelUpdate.MessageFlags(dontForward = false), LegacyChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 100 msat, 0, 2_000_000 msat)
+  val channelUpdate_ab_1: LegacyChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_ab_1)
+  val channelUpdate_ab_2: LegacyChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_ab_2)
+  val channelUpdate_be: LegacyChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_be)
+  val channelUpdate_ac_1: LegacyChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_ac_1)
+  val channelUpdate_ac_2: LegacyChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_ac_2)
+  val channelUpdate_ce: LegacyChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_ce)
+  val channelUpdate_ad: LegacyChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_ad)
+  val channelUpdate_de: LegacyChannelUpdate = defaultChannelUpdate.copy(shortChannelId = channelId_de)
 
   val hop_ab_1: ChannelHop = channelHopFromUpdate(a, b, channelUpdate_ab_1)
   val hop_ab_2: ChannelHop = channelHopFromUpdate(a, b, channelUpdate_ab_2)

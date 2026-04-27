@@ -138,9 +138,9 @@ object EclairInternalsSerializer {
   val peerConnectionKillCodec: Codec[PeerConnection.Kill] = peerConnectionKillReasonCodec.as[PeerConnection.Kill]
 
   val lengthPrefixedInitCodec: Codec[protocol.Init] = variableSizeBytes(uint16, initCodec)
-  val lengthPrefixedNodeAnnouncementCodec: Codec[NodeAnnouncement] = variableSizeBytes(uint16, nodeAnnouncementCodec)
-  val lengthPrefixedChannelAnnouncementCodec: Codec[ChannelAnnouncement] = variableSizeBytes(uint16, channelAnnouncementCodec)
-  val lengthPrefixedChannelUpdateCodec: Codec[ChannelUpdate] = variableSizeBytes(uint16, channelUpdateCodec)
+  val lengthPrefixedLegacyNodeAnnouncementCodec: Codec[LegacyNodeAnnouncement] = variableSizeBytes(uint16, legacyNodeAnnouncementCodec)
+  val lengthPrefixedLegacyChannelAnnouncementCodec: Codec[LegacyChannelAnnouncement] = variableSizeBytes(uint16, legacyChannelAnnouncementCodec)
+  val lengthPrefixedChannelUpdateCodec: Codec[LegacyChannelUpdate] = variableSizeBytes(uint16, channelUpdateCodec)
   val lengthPrefixedAnnouncementCodec: Codec[AnnouncementMessage] = variableSizeBytes(uint16, lightningMessageCodec.downcast[AnnouncementMessage])
   val lengthPrefixedLightningMessageCodec: Codec[LightningMessage] = variableSizeBytes(uint16, lightningMessageCodec)
 
@@ -183,7 +183,7 @@ object EclairInternalsSerializer {
       ("remoteNodeId" | publicKey) ::
       ("msg" | lengthPrefixedLightningMessageCodec.downcast[RoutingMessage])).as[PeerRoutingMessage]
 
-  val singleChannelDiscoveredCodec: Codec[SingleChannelDiscovered] = (lengthPrefixedChannelAnnouncementCodec :: satoshi :: optional(bool(8), lengthPrefixedChannelUpdateCodec) :: optional(bool(8), lengthPrefixedChannelUpdateCodec)).as[SingleChannelDiscovered]
+  val singleChannelDiscoveredCodec: Codec[SingleChannelDiscovered] = (lengthPrefixedLegacyChannelAnnouncementCodec :: satoshi :: optional(bool(8), lengthPrefixedChannelUpdateCodec) :: optional(bool(8), lengthPrefixedChannelUpdateCodec)).as[SingleChannelDiscovered]
 
   val readAckCodec: Codec[TransportHandler.ReadAck] = lightningMessageCodec.upcast[Any].as[TransportHandler.ReadAck]
 
@@ -206,8 +206,8 @@ object EclairInternalsSerializer {
     .typecase(21, provide(Router.RoutingStateStreamingUpToDate))
     .typecase(22, sendChannelQueryCodec(system))
     .typecase(23, peerRoutingMessageCodec(system))
-    .typecase(30, iterable(lengthPrefixedNodeAnnouncementCodec).as[NodesDiscovered])
-    .typecase(31, lengthPrefixedNodeAnnouncementCodec.as[NodeUpdated])
+    .typecase(30, iterable(lengthPrefixedLegacyNodeAnnouncementCodec).as[NodesDiscovered])
+    .typecase(31, lengthPrefixedLegacyNodeAnnouncementCodec.as[NodeUpdated])
     .typecase(32, publicKey.as[NodeLost])
     .typecase(33, iterable(singleChannelDiscoveredCodec).as[ChannelsDiscovered])
     .typecase(34, realshortchannelid.as[ChannelLost])
@@ -216,15 +216,15 @@ object EclairInternalsSerializer {
     .typecase(40, lengthPrefixedAnnouncementCodec.as[GossipDecision.Accepted])
     .typecase(41, lengthPrefixedAnnouncementCodec.as[GossipDecision.Duplicate])
     .typecase(42, lengthPrefixedAnnouncementCodec.as[GossipDecision.InvalidSignature])
-    .typecase(43, lengthPrefixedNodeAnnouncementCodec.as[GossipDecision.NoKnownChannel])
-    .typecase(44, lengthPrefixedChannelAnnouncementCodec.as[GossipDecision.ValidationFailure])
-    .typecase(45, lengthPrefixedChannelAnnouncementCodec.as[GossipDecision.InvalidAnnouncement])
-    .typecase(46, lengthPrefixedChannelAnnouncementCodec.as[GossipDecision.ChannelPruned])
-    .typecase(47, lengthPrefixedChannelAnnouncementCodec.as[GossipDecision.ChannelClosing])
+    .typecase(43, lengthPrefixedLegacyNodeAnnouncementCodec.as[GossipDecision.NoKnownChannel])
+    .typecase(44, lengthPrefixedLegacyChannelAnnouncementCodec.as[GossipDecision.ValidationFailure])
+    .typecase(45, lengthPrefixedLegacyChannelAnnouncementCodec.as[GossipDecision.InvalidAnnouncement])
+    .typecase(46, lengthPrefixedLegacyChannelAnnouncementCodec.as[GossipDecision.ChannelPruned])
+    .typecase(47, lengthPrefixedLegacyChannelAnnouncementCodec.as[GossipDecision.ChannelClosing])
     .typecase(48, lengthPrefixedChannelUpdateCodec.as[GossipDecision.Stale])
     .typecase(49, lengthPrefixedChannelUpdateCodec.as[GossipDecision.NoRelatedChannel])
     .typecase(50, lengthPrefixedChannelUpdateCodec.as[GossipDecision.RelatedChannelPruned])
-    .typecase(51, lengthPrefixedChannelAnnouncementCodec.as[GossipDecision.ChannelClosed])
+    .typecase(51, lengthPrefixedLegacyChannelAnnouncementCodec.as[GossipDecision.ChannelClosed])
     .typecase(52, peerConnectionKillCodec)
     .typecase(53, peerConnectionDoSyncCodec)
 

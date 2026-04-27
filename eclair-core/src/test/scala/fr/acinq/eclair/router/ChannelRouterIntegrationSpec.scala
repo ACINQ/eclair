@@ -10,7 +10,7 @@ import fr.acinq.eclair.channel.{CMD_CLOSE, DATA_NORMAL}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, Shutdown}
+import fr.acinq.eclair.wire.protocol.{LegacyAnnouncementSignatures, LegacyChannelUpdate, Shutdown}
 import fr.acinq.eclair.{BlockHeight, TestKitBaseClass, randomKey}
 import org.scalatest.OptionValues.convertOptionToValuable
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -69,16 +69,16 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     // If the channel is public and confirmed, announcement signatures are sent.
     val (annSigsA_opt, annSigsB_opt) = if (testTags.contains(ChannelStateTestsTags.ChannelsPublic) && !testTags.contains(ChannelStateTestsTags.ZeroConf)) {
-      val annSigsA = channels.alice2bob.expectMsgType[AnnouncementSignatures]
-      val annSigsB = channels.bob2alice.expectMsgType[AnnouncementSignatures]
+      val annSigsA = channels.alice2bob.expectMsgType[LegacyAnnouncementSignatures]
+      val annSigsB = channels.bob2alice.expectMsgType[LegacyAnnouncementSignatures]
       (Some(annSigsA), Some(annSigsB))
     } else {
       (None, None)
     }
 
     // In all cases, Alice and bob send their channel_updates using the remote alias when they go to NORMAL state.
-    val aliceChannelUpdate1 = channels.alice2bob.expectMsgType[ChannelUpdate]
-    val bobChannelUpdate1 = channels.bob2alice.expectMsgType[ChannelUpdate]
+    val aliceChannelUpdate1 = channels.alice2bob.expectMsgType[LegacyChannelUpdate]
+    val bobChannelUpdate1 = channels.bob2alice.expectMsgType[LegacyChannelUpdate]
     // Alice's channel_update uses bob's alias, and vice versa.
     assert(aliceChannelUpdate1.shortChannelId == channels.bob.stateData.asInstanceOf[DATA_NORMAL].aliases.localAlias)
     assert(bobChannelUpdate1.shortChannelId == channels.alice.stateData.asInstanceOf[DATA_NORMAL].aliases.localAlias)
@@ -106,8 +106,8 @@ class ChannelRouterIntegrationSpec extends TestKitBaseClass with FixtureAnyFunSu
 
     if (testTags.contains(ChannelStateTestsTags.ChannelsPublic)) {
       // The channel is public, so Alice and Bob exchange announcement signatures.
-      val annSigsA = annSigsA_opt.getOrElse(channels.alice2bob.expectMsgType[AnnouncementSignatures])
-      val annSigsB = annSigsB_opt.getOrElse(channels.bob2alice.expectMsgType[AnnouncementSignatures])
+      val annSigsA = annSigsA_opt.getOrElse(channels.alice2bob.expectMsgType[LegacyAnnouncementSignatures])
+      val annSigsB = annSigsB_opt.getOrElse(channels.bob2alice.expectMsgType[LegacyAnnouncementSignatures])
       channels.alice2bob.forward(channels.bob, annSigsA)
       channels.bob2alice.forward(channels.alice, annSigsB)
 

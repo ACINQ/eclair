@@ -57,7 +57,7 @@ sealed trait Perm extends FailureMessage
 sealed trait Node extends FailureMessage
 // Historically, this trait guaranteed that a channel update was provided.
 // This was changed in https://github.com/lightning/bolts/pull/1163.
-sealed trait Update extends FailureMessage { def update_opt: Option[ChannelUpdate] }
+sealed trait Update extends FailureMessage { def update_opt: Option[LegacyChannelUpdate] }
 
 case class InvalidRealm(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Perm { def message = "realm was not understood by the processing node" }
 case class TemporaryNodeFailure(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Node { def message = "general temporary failure of the processing node" }
@@ -67,17 +67,17 @@ case class InvalidOnionVersion(onionHash: ByteVector32, tlvs: TlvStream[FailureM
 case class InvalidOnionHmac(onionHash: ByteVector32, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends BadOnion with Perm { def message = "onion HMAC was incorrect when it reached the processing node" }
 case class InvalidOnionKey(onionHash: ByteVector32, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends BadOnion with Perm { def message = "ephemeral key was unparsable by the processing node" }
 case class InvalidOnionBlinding(onionHash: ByteVector32, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends BadOnion with Perm { def message = "the blinded onion didn't match the processing node's requirements" }
-case class TemporaryChannelFailure(update_opt: Option[ChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = s"channel is currently unavailable (scid=${update_opt.map(_.shortChannelId)})" }
+case class TemporaryChannelFailure(update_opt: Option[LegacyChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = s"channel is currently unavailable (scid=${update_opt.map(_.shortChannelId)})" }
 case class PermanentChannelFailure(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Perm { def message = "channel is permanently unavailable" }
 case class RequiredChannelFeatureMissing(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Perm { def message = "channel requires features not present in the onion" }
 case class UnknownNextPeer(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Perm { def message = "processing node does not know the next peer in the route" }
-case class AmountBelowMinimum(amount: MilliSatoshi, update_opt: Option[ChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "payment amount was below the minimum required by the channel" }
-case class FeeInsufficient(amount: MilliSatoshi, update_opt: Option[ChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "payment fee was below the minimum required by the channel" }
+case class AmountBelowMinimum(amount: MilliSatoshi, update_opt: Option[LegacyChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "payment amount was below the minimum required by the channel" }
+case class FeeInsufficient(amount: MilliSatoshi, update_opt: Option[LegacyChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "payment fee was below the minimum required by the channel" }
 case class TrampolineFeeInsufficient(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Node { def message = "payment fee was below the minimum required by the trampoline node" }
-case class ChannelDisabled(messageFlags: ChannelUpdate.MessageFlags, channelFlags: ChannelUpdate.ChannelFlags, update_opt: Option[ChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "channel is currently disabled" }
-case class IncorrectCltvExpiry(expiry: CltvExpiry, update_opt: Option[ChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "payment expiry doesn't match the value in the onion" }
+case class ChannelDisabled(messageFlags: LegacyChannelUpdate.MessageFlags, channelFlags: LegacyChannelUpdate.ChannelFlags, update_opt: Option[LegacyChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "channel is currently disabled" }
+case class IncorrectCltvExpiry(expiry: CltvExpiry, update_opt: Option[LegacyChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "payment expiry doesn't match the value in the onion" }
 case class IncorrectOrUnknownPaymentDetails(amount: MilliSatoshi, height: BlockHeight, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Perm { def message = "incorrect payment details or unknown payment hash" }
-case class ExpiryTooSoon(update_opt: Option[ChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "payment expiry is too close to the current block height for safe handling by the relaying node" }
+case class ExpiryTooSoon(update_opt: Option[LegacyChannelUpdate], tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Update { def message = "payment expiry is too close to the current block height for safe handling by the relaying node" }
 case class TrampolineExpiryTooSoon(tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends Node { def message = "payment expiry is too close to the current block height for safe handling by the relaying node" }
 case class FinalIncorrectCltvExpiry(expiry: CltvExpiry, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends FailureMessage { def message = "payment expiry doesn't match the value in the onion" }
 case class FinalIncorrectHtlcAmount(amount: MilliSatoshi, tlvs: TlvStream[FailureMessageTlv] = TlvStream.empty) extends FailureMessage { def message = "payment amount is incorrect in the final htlc" }
@@ -107,15 +107,15 @@ object FailureMessageCodecs {
   val NODE = 0x2000
   val UPDATE = 0x1000
 
-  val channelUpdateCodecWithType = meteredLightningMessageCodec.narrow[ChannelUpdate]({
-    case f: ChannelUpdate => Attempt.successful(f)
+  val channelUpdateCodecWithType = meteredLightningMessageCodec.narrow[LegacyChannelUpdate]({
+    case f: LegacyChannelUpdate => Attempt.successful(f)
     case _ => Attempt.failure(Err("not a ChanelUpdate message"))
   }, g => g)
 
   // NB: for historical reasons some implementations were including/omitting the message type (258 for ChannelUpdate).
   // This codec supports both versions for decoding, and will encode with the message type.
   // If the length provided is 0, the message doesn't include a channel update.
-  val channelUpdateWithLengthCodec: Codec[Option[ChannelUpdate]] = variableSizeBytes(uint16, optional(bitsRemaining, choice(channelUpdateCodecWithType, channelUpdateCodec)))
+  val channelUpdateWithLengthCodec: Codec[Option[LegacyChannelUpdate]] = variableSizeBytes(uint16, optional(bitsRemaining, choice(channelUpdateCodecWithType, channelUpdateCodec)))
 
   val failureTlvsCodec: Codec[TlvStream[FailureMessageTlv]] = TlvCodecs.tlvStream(discriminated[FailureMessageTlv].by(varint))
 

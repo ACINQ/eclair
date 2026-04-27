@@ -13,8 +13,8 @@ import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, PaymentReceived, PaymentSent, TrampolinePaymentRelayed}
 import fr.acinq.eclair.profit.PeerStatsTracker._
 import fr.acinq.eclair.transactions.Transactions.{ClosingTx, InputInfo}
-import fr.acinq.eclair.wire.protocol.ChannelUpdate.{ChannelFlags, MessageFlags}
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, LiquidityAds}
+import fr.acinq.eclair.wire.protocol.LegacyChannelUpdate.{ChannelFlags, MessageFlags}
+import fr.acinq.eclair.wire.protocol.{LegacyChannelAnnouncement, LegacyChannelUpdate, LiquidityAds}
 import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, TestDatabases, TimestampMilli, TimestampSecond, ToMilliSatoshiConversion, randomBytes32, randomKey}
 import org.scalatest.Inside.inside
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -27,7 +27,7 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
 
   private val dummyPubKey = PrivateKey(ByteVector32.One).publicKey
   private val dummyAliases = ShortIdAliases(Alias(42), None)
-  private val dummyChannelAnn = ChannelAnnouncement(ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, Features.empty, Block.RegtestGenesisBlock.hash, RealShortChannelId(42), dummyPubKey, dummyPubKey, dummyPubKey, dummyPubKey)
+  private val dummyChannelAnn = LegacyChannelAnnouncement(ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, Features.empty, Block.RegtestGenesisBlock.hash, RealShortChannelId(42), dummyPubKey, dummyPubKey, dummyPubKey, dummyPubKey)
 
   private val localNodeId = PublicKey(hex"03bd04635f1465d9347f3d69edc51f17cdf9548847533e084cd9d153a4abb065cd")
   private val remoteNodeId1 = PublicKey(hex"024c9c77624899672c78d84b551ef1187cbb17618b2d96ef189d0ea36f307be76e")
@@ -45,10 +45,10 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
     c1.copy(channelParams = c1.channelParams.copy(channelId = c.channelId))
   }
 
-  private def channelUpdate(capacity: BtcAmount, fees: RelayFees = RelayFees(250 msat, 1000), timestamp: TimestampSecond = TimestampSecond.now(), announceChannel: Boolean = true): ChannelUpdate = {
+  private def channelUpdate(capacity: BtcAmount, fees: RelayFees = RelayFees(250 msat, 1000), timestamp: TimestampSecond = TimestampSecond.now(), announceChannel: Boolean = true): LegacyChannelUpdate = {
     val messageFlags = MessageFlags(dontForward = !announceChannel)
     val channelFlags = ChannelFlags(isEnabled = true, isNode1 = true)
-    ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, RealShortChannelId(42), timestamp, messageFlags, channelFlags, CltvExpiryDelta(36), 1 msat, fees.feeBase, fees.feeProportionalMillionths, capacity.toMilliSatoshi)
+    LegacyChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, RealShortChannelId(42), timestamp, messageFlags, channelFlags, CltvExpiryDelta(36), 1 msat, fees.feeBase, fees.feeProportionalMillionths, capacity.toMilliSatoshi)
   }
 
   private def channel(remoteNodeId: PublicKey, toLocal: BtcAmount, toRemote: BtcAmount, fees: RelayFees = RelayFees(250 msat, 1000), announceChannel: Boolean = true): DATA_NORMAL = {

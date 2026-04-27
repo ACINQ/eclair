@@ -221,11 +221,11 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       peerConnection.expectNoMessage()
       awaitCond({
         sender.send(router, GetNodes)
-        val nodes = sender.expectMsgType[Iterable[NodeAnnouncement]]
+        val nodes = sender.expectMsgType[Iterable[LegacyNodeAnnouncement]]
         sender.send(router, GetChannels)
-        val channels = sender.expectMsgType[Iterable[ChannelAnnouncement]]
+        val channels = sender.expectMsgType[Iterable[LegacyChannelAnnouncement]]
         sender.send(router, GetChannelUpdates)
-        val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
+        val updates = sender.expectMsgType[Iterable[LegacyChannelUpdate]]
         nodes.size == 8 && channels.size == 5 && updates.size == 12
       }, max = 10 seconds, interval = 1 second)
 
@@ -233,7 +233,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
     }
   }
 
-  def addChannel(router: ActorRef, watcher: TestProbe, scid: RealShortChannelId, priv1: PrivateKey, priv2: PrivateKey, priv_funding1: PrivateKey, priv_funding2: PrivateKey): (ChannelAnnouncement, ChannelUpdate, ChannelUpdate) = {
+  def addChannel(router: ActorRef, watcher: TestProbe, scid: RealShortChannelId, priv1: PrivateKey, priv2: PrivateKey, priv_funding1: PrivateKey, priv_funding2: PrivateKey): (LegacyChannelAnnouncement, LegacyChannelUpdate, LegacyChannelUpdate) = {
     val ann = channelAnnouncement(scid, priv1, priv2, priv_funding1, priv_funding2)
     val pub1 = priv1.publicKey
     val pub2 = priv2.publicKey
@@ -259,11 +259,11 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
     peerConnection.expectNoMessage(100 millis)
     awaitCond({
       sender1.send(router, GetNodes)
-      val nodes = sender1.expectMsgType[Iterable[NodeAnnouncement]]
+      val nodes = sender1.expectMsgType[Iterable[LegacyNodeAnnouncement]]
       sender1.send(router, GetChannels)
-      val channels = sender1.expectMsgType[Iterable[ChannelAnnouncement]].toSeq
+      val channels = sender1.expectMsgType[Iterable[LegacyChannelAnnouncement]].toSeq
       sender1.send(router, GetChannelUpdates)
-      val updates = sender1.expectMsgType[Iterable[ChannelUpdate]].toSeq
+      val updates = sender1.expectMsgType[Iterable[LegacyChannelUpdate]].toSeq
       nodes.exists(_.nodeId == pub1) && nodes.exists(_.nodeId == pub2) &&
       channels.contains(ann) &&
       updates.contains(update1) && updates.contains(update2)
@@ -284,7 +284,7 @@ object BaseRouterSpec {
     makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
   }
 
-  def channelHopFromUpdate(nodeId: PublicKey, nextNodeId: PublicKey, channelUpdate: ChannelUpdate): ChannelHop = {
+  def channelHopFromUpdate(nodeId: PublicKey, nextNodeId: PublicKey, channelUpdate: LegacyChannelUpdate): ChannelHop = {
     ChannelHop(channelUpdate.shortChannelId, nodeId, nextNodeId, HopRelayParams.FromAnnouncement(channelUpdate))
   }
 

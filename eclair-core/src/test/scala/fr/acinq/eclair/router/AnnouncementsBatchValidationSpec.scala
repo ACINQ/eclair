@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPass
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
+import fr.acinq.eclair.wire.protocol.{LegacyChannelAnnouncement, LegacyChannelUpdate}
 import fr.acinq.eclair.{BlockHeight, CltvExpiryDelta, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, randomKey}
 import org.json4s.JsonAST.JString
 import org.scalatest.funsuite.AnyFunSuite
@@ -99,7 +99,7 @@ object AnnouncementsBatchValidationSpec {
     SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, res.fundingTx, res.fundingTxOutputIndex)
   }
 
-  def makeChannelAnnouncement(c: SimulatedChannel, bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): ChannelAnnouncement = {
+  def makeChannelAnnouncement(c: SimulatedChannel, bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): LegacyChannelAnnouncement = {
     val (blockHeight, txIndex) = Await.result(bitcoinClient.getTransactionShortId(c.fundingTx.txid), 10 seconds)
     val shortChannelId = RealShortChannelId(blockHeight, txIndex, c.fundingOutputIndex)
     val witness = Announcements.generateChannelAnnouncementWitness(Block.RegtestGenesisBlock.hash, shortChannelId, c.node1Key.publicKey, c.node2Key.publicKey, c.node1FundingKey.publicKey, c.node2FundingKey.publicKey, Features.empty)
@@ -111,7 +111,7 @@ object AnnouncementsBatchValidationSpec {
     channelAnnouncement
   }
 
-  def makeChannelUpdate(c: SimulatedChannel, shortChannelId: ShortChannelId): ChannelUpdate =
+  def makeChannelUpdate(c: SimulatedChannel, shortChannelId: ShortChannelId): LegacyChannelUpdate =
     Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, c.node1Key, c.node2Key.publicKey, shortChannelId, CltvExpiryDelta(10), 1000 msat, 10 msat, 100, 500000000 msat)
 
 }

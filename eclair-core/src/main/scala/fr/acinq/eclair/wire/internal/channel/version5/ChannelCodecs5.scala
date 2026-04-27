@@ -476,7 +476,8 @@ private[channel] object ChannelCodecs5 {
     val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | versionedCommitmentsCodec) ::
         ("aliases" | aliases) ::
-        ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
+        // TODO: change that to a discriminated which handles both legacy and modern channel announcements?
+        ("channelAnnouncement" | optional(bool8, lengthDelimited(legacyChannelAnnouncementCodec))) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("spliceStatus" | spliceStatusCodec) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::

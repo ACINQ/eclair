@@ -980,13 +980,13 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val serializedInvoice = "lnbc12580n1pw2ywztsp554k9atjswl6zwhacuvl9vx2md3kjxpgplde4ma4qr9j35s566zuqpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqk53t67"
     val invoice = Invoice.fromString(serializedInvoice).get
 
-    val mockChannelUpdate1 = ChannelUpdate(
+    val mockChannelUpdate1 = LegacyChannelUpdate(
       signature = ByteVector64.fromValidHex("92cf3f12e161391986eb2cd7106ddab41a23c734f8f1ed120fb64f4b91f98f690ecf930388e62965f8aefbf1adafcd25a572669a125396dcfb83615208754679"),
       chainHash = BlockHash(ByteVector32.fromValidHex("024b7b3626554c44dcc2454ee3812458bfa68d9fced466edfab470844cb7ffe2")),
       shortChannelId = RealShortChannelId(BlockHeight(1), 2, 3),
       timestamp = 0 unixsec,
-      messageFlags = ChannelUpdate.MessageFlags(dontForward = false),
-      channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
+      messageFlags = LegacyChannelUpdate.MessageFlags(dontForward = false),
+      channelFlags = LegacyChannelUpdate.ChannelFlags.DUMMY,
       cltvExpiryDelta = CltvExpiryDelta(0),
       htlcMinimumMsat = 1 msat,
       feeBaseMsat = 1 msat,

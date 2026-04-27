@@ -103,12 +103,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       within(30 seconds) {
         reachNormal(setup, test.tags)
         if (test.tags.contains(ChannelStateTestsTags.ChannelsPublic) && test.tags.contains(ChannelStateTestsTags.DoNotInterceptGossip)) {
-          alice2bob.expectMsgType[AnnouncementSignatures]
+          alice2bob.expectMsgType[LegacyAnnouncementSignatures]
           alice2bob.forward(bob)
-          alice2bob.expectMsgType[ChannelUpdate]
-          bob2alice.expectMsgType[AnnouncementSignatures]
+          alice2bob.expectMsgType[LegacyChannelUpdate]
+          bob2alice.expectMsgType[LegacyAnnouncementSignatures]
           bob2alice.forward(alice)
-          bob2alice.expectMsgType[ChannelUpdate]
+          bob2alice.expectMsgType[LegacyChannelUpdate]
         }
         systemA.eventStream.subscribe(txListener.ref, classOf[TransactionPublished])
         systemA.eventStream.subscribe(txListener.ref, classOf[TransactionConfirmed])

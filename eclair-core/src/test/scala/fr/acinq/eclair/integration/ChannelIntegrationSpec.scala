@@ -56,11 +56,11 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val sender = TestProbe()
     awaitCond({
       sender.send(nodes("A").router, Router.GetChannels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
+      sender.expectMsgType[Iterable[LegacyChannelAnnouncement]].size == channels
     }, max = 60 seconds, interval = 1 second)
     awaitCond({
       sender.send(nodes("A").router, Router.GetChannelUpdates)
-      sender.expectMsgType[Iterable[ChannelUpdate]].size == 2 * channels
+      sender.expectMsgType[Iterable[LegacyChannelUpdate]].size == 2 * channels
     }, max = 60 seconds, interval = 1 second)
   }
 

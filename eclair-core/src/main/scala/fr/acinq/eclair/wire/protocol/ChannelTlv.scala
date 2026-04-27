@@ -203,10 +203,10 @@ object SpliceAckTlv {
 
 object SpliceLockedTlv {
 
-  /** Nonce used for the partial signature using the node_id for [[ChannelAnnouncement2]]. */
+  /** Nonce used for the partial signature using the node_id for [[ModernChannelAnnouncement]]. */
   case class AnnouncementNodeNonce(nonce: IndividualNonce) extends SpliceLockedTlv
 
-  /** Nonce used for the partial signature using the funding key for [[ChannelAnnouncement2]]. */
+  /** Nonce used for the partial signature using the funding key for [[ModernChannelAnnouncement]]. */
   case class AnnouncementBitcoinNonce(nonce: IndividualNonce) extends SpliceLockedTlv
 
   val spliceLockedTlvCodec: Codec[TlvStream[SpliceLockedTlv]] = tlvStream(discriminated[SpliceLockedTlv].by(varint)
@@ -251,10 +251,10 @@ sealed trait ChannelReadyTlv extends Tlv
 
 object ChannelReadyTlv {
 
-  /** Nonce used for the partial signature using the node_id for [[ChannelAnnouncement2]]. */
+  /** Nonce used for the partial signature using the node_id for [[ModernChannelAnnouncement]]. */
   case class AnnouncementNodeNonce(nonce: IndividualNonce) extends ChannelReadyTlv
 
-  /** Nonce used for the partial signature using the funding key for [[ChannelAnnouncement2]]. */
+  /** Nonce used for the partial signature using the funding key for [[ModernChannelAnnouncement]]. */
   case class AnnouncementBitcoinNonce(nonce: IndividualNonce) extends ChannelReadyTlv
 
   case class ShortChannelIdTlv(alias: Alias) extends ChannelReadyTlv
@@ -285,7 +285,7 @@ object ChannelReestablishTlv {
   /** The txid of our latest outgoing [[ChannelReady]] or [[SpliceLocked]] for this channel. */
   case class MyCurrentFundingLockedTlv(txId: TxId) extends ChannelReestablishTlv
 
-  /** We always include nonces to create [[AnnouncementSignatures2]] for the transaction in [[MyCurrentFundingLockedTlv]]. */
+  /** We always include nonces to create [[ModernAnnouncementSignatures]] for the transaction in [[MyCurrentFundingLockedTlv]]. */
   case class AnnouncementNoncesTlv(txId: TxId, nodeNonce: IndividualNonce, fundingNonce: IndividualNonce) extends ChannelReestablishTlv
 
   /**

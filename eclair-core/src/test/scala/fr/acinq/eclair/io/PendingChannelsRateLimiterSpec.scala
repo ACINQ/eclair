@@ -112,7 +112,7 @@ class PendingChannelsRateLimiterSpec extends ScalaTestWithActorTestKit(ConfigFac
     withFixture(test.toNoArgTest(FixtureParam(router, nodeParams, probe, allChannels, requests)))
   }
 
-  def announcement(nodeId: PublicKey): NodeAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", NodeAddress.fromParts("1.2.3.4", 42000).get :: Nil)
+  def announcement(nodeId: PublicKey): LegacyNodeAnnouncement = LegacyNodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", NodeAddress.fromParts("1.2.3.4", 42000).get :: Nil)
 
   def commitments(remoteNodeId: PublicKey, channelId: ByteVector32, isOpener: Boolean = false): Commitments = {
     val ann = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, RealShortChannelId(42), TestConstants.Alice.nodeParams.nodeId, remoteNodeId, randomKey().publicKey, randomKey().publicKey, randomBytes64(), randomBytes64(), randomBytes64(), randomBytes64())

@@ -84,7 +84,7 @@ class PeerSpec extends FixtureSpec {
       .modify(_.initialRandomReconnectDelay).setToIf(testData.tags.contains(fastReconnectDelay))(1 millis)
 
     if (testData.tags.contains(withNodeAnn)) {
-      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+      val bobAnnouncement = LegacyNodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
@@ -212,7 +212,7 @@ class PeerSpec extends FixtureSpec {
     val mockAddress = NodeAddress.fromParts(serverAddress.getHostName, serverAddress.getPort).get
 
     // we put the server address in the node db
-    val ann = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
+    val ann = LegacyNodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     nodeParams.db.network.addNode(ann)
 
     val probe = TestProbe()

@@ -46,10 +46,10 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
 
   // this map will store private keys so that we can sign new announcements at will
   val pub2priv: mutable.Map[PublicKey, PrivateKey] = mutable.HashMap.empty
-  val fakeRoutingInfo: TreeMap[RealShortChannelId, (PublicChannel, NodeAnnouncement, NodeAnnouncement)] = RoutingSyncSpec
+  val fakeRoutingInfo: TreeMap[RealShortChannelId, (PublicChannel, LegacyNodeAnnouncement, LegacyNodeAnnouncement)] = RoutingSyncSpec
     .shortChannelIds
     .take(60)
-    .foldLeft(TreeMap.empty[RealShortChannelId, (PublicChannel, NodeAnnouncement, NodeAnnouncement)]) {
+    .foldLeft(TreeMap.empty[RealShortChannelId, (PublicChannel, LegacyNodeAnnouncement, LegacyNodeAnnouncement)]) {
       case (m, shortChannelId) => m + (shortChannelId -> makeFakeRoutingInfo(pub2priv)(shortChannelId))
     }
 
@@ -69,7 +69,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
 
   case class BasicSyncResult(ranges: Int, queries: Int, channels: Int, updates: Int, nodes: Int)
 
-  case class SyncResult(ranges: Seq[ReplyChannelRange], queries: Seq[QueryShortChannelIds], channels: Seq[ChannelAnnouncement], updates: Seq[ChannelUpdate], nodes: Seq[NodeAnnouncement]) {
+  case class SyncResult(ranges: Seq[ReplyChannelRange], queries: Seq[QueryShortChannelIds], channels: Seq[LegacyChannelAnnouncement], updates: Seq[LegacyChannelUpdate], nodes: Seq[LegacyNodeAnnouncement]) {
     def counts: BasicSyncResult = BasicSyncResult(ranges.size, queries.size, channels.size, updates.size, nodes.size)
   }
 
@@ -100,22 +100,22 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     rcrs.foreach(rcr => pipe.send(src, PeerRoutingMessage(pipe.ref, tgtId, rcr)))
     // then src will now query announcements
     var queries = Vector.empty[QueryShortChannelIds]
-    var channels = Vector.empty[ChannelAnnouncement]
-    var updates = Vector.empty[ChannelUpdate]
-    var nodes = Vector.empty[NodeAnnouncement]
+    var channels = Vector.empty[LegacyChannelAnnouncement]
+    var updates = Vector.empty[LegacyChannelUpdate]
+    var nodes = Vector.empty[LegacyNodeAnnouncement]
     while (src.stateData.asInstanceOf[Data].sync.nonEmpty) {
       // for each chunk, src sends a query_short_channel_id
       val query = pipe.expectMsgType[QueryShortChannelIds]
       pipe.send(tgt, PeerRoutingMessage(pipe.ref, srcId, query))
       queries = queries :+ query
       val announcements = pipe.receiveWhile() {
-        case c: ChannelAnnouncement =>
+        case c: LegacyChannelAnnouncement =>
           channels = channels :+ c
           c
-        case u: ChannelUpdate =>
+        case u: LegacyChannelUpdate =>
           updates = updates :+ u
           u
-        case n: NodeAnnouncement =>
+        case n: LegacyNodeAnnouncement =>
           nodes = nodes :+ n
           n
       }
@@ -346,7 +346,7 @@ object RoutingSyncSpec {
 
   val unused: PrivateKey = randomKey()
 
-  def makeFakeRoutingInfo(pub2priv: mutable.Map[PublicKey, PrivateKey])(shortChannelId: RealShortChannelId): (PublicChannel, NodeAnnouncement, NodeAnnouncement) = {
+  def makeFakeRoutingInfo(pub2priv: mutable.Map[PublicKey, PrivateKey])(shortChannelId: RealShortChannelId): (PublicChannel, LegacyNodeAnnouncement, LegacyNodeAnnouncement) = {
     val timestamp = TimestampSecond.now()
     val (priv1, priv2) = {
       val (priv_a, priv_b) = (randomKey(), randomKey())
@@ -365,7 +365,7 @@ object RoutingSyncSpec {
     (publicChannel, nodeAnnouncement_1, nodeAnnouncement_2)
   }
 
-  def makeNewerChannelUpdate(pub2priv: mutable.Map[PublicKey, PrivateKey])(channelAnnouncement: ChannelAnnouncement, channelUpdate: ChannelUpdate): ChannelUpdate = {
+  def makeNewerChannelUpdate(pub2priv: mutable.Map[PublicKey, PrivateKey])(channelAnnouncement: LegacyChannelAnnouncement, channelUpdate: LegacyChannelUpdate): LegacyChannelUpdate = {
     val (local, remote) = if (channelUpdate.channelFlags.isNode1) (channelAnnouncement.nodeId1, channelAnnouncement.nodeId2) else (channelAnnouncement.nodeId2, channelAnnouncement.nodeId1)
     val priv = pub2priv(local)
     makeChannelUpdate(channelUpdate.chainHash, priv, remote, channelUpdate.shortChannelId,
@@ -374,7 +374,7 @@ object RoutingSyncSpec {
       channelUpdate.htlcMinimumMsat, channelUpdate.messageFlags.dontForward, channelUpdate.channelFlags.isEnabled, channelUpdate.timestamp + 5000)
   }
 
-  def makeFakeNodeAnnouncement(pub2priv: mutable.Map[PublicKey, PrivateKey])(nodeId: PublicKey): NodeAnnouncement = {
+  def makeFakeNodeAnnouncement(pub2priv: mutable.Map[PublicKey, PrivateKey])(nodeId: PublicKey): LegacyNodeAnnouncement = {
     val priv = pub2priv(nodeId)
     makeNodeAnnouncement(priv, "", Color(0, 0, 0), List(), Features.empty)
   }
