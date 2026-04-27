@@ -346,7 +346,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       // We only close channels for which liquidity is idle.
       .filter(p => p.stats.map(_.totalAmountOut).sum <= p.capacity * 0.05 && p.stats.map(_.totalAmountIn).sum <= p.capacity * 0.05)
       // And relay fees have been minimal for long enough to give a chance for routing to catch up.
-      .filter(p => p.latestUpdate_opt.exists(u => u.relayFees.feeProportionalMillionths <= config.relayFees.minRelayFees.feeProportionalMillionths && u.timestamp <= TimestampSecond.now() - 5.days))
+      .filter(p => p.latestUpdate_opt.exists(u => u.relayFees.feeProportionalMillionths <= config.relayFees.minRelayFees.feeProportionalMillionths && u.timestamp <= TimestampSecond.now() - 1.day))
       .foreach(p => {
         // We keep the best channel and close the others.
         val toClose = sortChannelsToClose(p.channels).tail
@@ -491,13 +491,13 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
   private def decreaseIdleChannelsRelayFeesIfNeeded(peers: Seq[PeerInfo], history: DecisionHistory): DecisionHistory = {
     val feeDecreases = peers
       // We're only interested in channels for which liquidity is idle.
-      // We ignore peers for which more than 75% of the funds are on their side: they have a higher incentive than us to
+      // We ignore peers for which more than 80% of the funds are on their side: they have a higher incentive than us to
       // close those channels if they aren't useful, so we'll wait for them to do so.
-      .filter(p => p.stats.map(_.totalAmountOut).sum <= p.capacity * 0.05 && p.stats.map(_.totalAmountIn).sum <= p.capacity * 0.05 && p.canSend >= p.capacity * 0.25)
+      .filter(p => p.stats.map(_.totalAmountOut).sum <= p.capacity * 0.05 && p.stats.map(_.totalAmountIn).sum <= p.capacity * 0.05 && p.canSend >= p.capacity * 0.2)
       // And relay fees aren't already minimal.
       .filter(p => p.latestUpdate_opt.exists(u => u.relayFees.feeProportionalMillionths > config.relayFees.minRelayFees.feeProportionalMillionths))
       // And relay fees haven't been updated recently.
-      .filter(p => p.latestUpdate_opt.exists(u => u.timestamp <= TimestampSecond.now() - 1.day))
+      .filter(p => p.latestUpdate_opt.exists(u => u.timestamp <= TimestampSecond.now() - 12.hours))
       .flatMap(p => {
         p.latestUpdate_opt match {
           case Some(u) =>
