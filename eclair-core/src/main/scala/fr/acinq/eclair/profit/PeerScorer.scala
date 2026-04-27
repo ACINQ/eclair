@@ -73,6 +73,7 @@ object PeerScorer {
    * @param remoteBalanceClosingThreshold we won't close channels where the remote balance exceeds this amount.
    * @param minOnChainBalance             we stop funding channels if our on-chain balance is below this amount.
    * @param maxFeerate                    we stop funding channels if the on-chain feerate is above this value.
+   * @param reviveOldPeers                if true, we will occasionally try to fund idle large capacity peers that have most funds on their side.
    * @param fundingCooldown               minimum time between funding the same peer, to evaluate effectiveness.
    */
   case class LiquidityConfig(autoFund: Boolean,
@@ -85,6 +86,7 @@ object PeerScorer {
                              remoteBalanceClosingThreshold: Satoshi,
                              minOnChainBalance: Satoshi,
                              maxFeerate: FeeratePerKw,
+                             reviveOldPeers: Boolean,
                              fundingCooldown: FiniteDuration)
 
   /**
@@ -113,6 +115,7 @@ object PeerScorer {
                              remoteBalanceClosingThresholdOverride_opt: Option[Satoshi],
                              minOnChainBalanceOverride_opt: Option[Satoshi],
                              maxFeerateOverride_opt: Option[FeeratePerKw],
+                             reviveOldPeersOverride_opt: Option[Boolean],
                              fundingCooldownOverride_opt: Option[FiniteDuration])
 
   private case class FundingProposal(peer: PeerInfo, fundingAmount: Satoshi) {
@@ -186,6 +189,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
             remoteBalanceClosingThreshold = cfg.remoteBalanceClosingThresholdOverride_opt.getOrElse(config.liquidity.remoteBalanceClosingThreshold),
             minOnChainBalance = cfg.minOnChainBalanceOverride_opt.getOrElse(config.liquidity.minOnChainBalance),
             maxFeerate = cfg.maxFeerateOverride_opt.getOrElse(config.liquidity.maxFeerate),
+            reviveOldPeers = cfg.reviveOldPeersOverride_opt.getOrElse(config.liquidity.reviveOldPeers),
             fundingCooldown = cfg.fundingCooldownOverride_opt.getOrElse(config.liquidity.fundingCooldown),
           ),
           relayFees = config.relayFees.copy(
@@ -547,7 +551,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       }
       val toReviveNotAlreadySelected = toRevive.filterNot(p => bestPeers.exists(_.remoteNodeId == p.remoteNodeId) || smallPeerToFund_opt.exists(_.remoteNodeId == p.remoteNodeId) || p.peer.capacity >= config.liquidity.maxPerPeerCapacity)
       val toRevive_opt = toReviveNotAlreadySelected.headOption match {
-        case Some(_) if Random.nextDouble() <= (1.0 / (scoringPerDay * 5)) => Random.shuffle(toReviveNotAlreadySelected.take(3)).headOption
+        case Some(_) if config.liquidity.reviveOldPeers && Random.nextDouble() <= (1.0 / (scoringPerDay * 5)) => Random.shuffle(toReviveNotAlreadySelected.take(3)).headOption
         case _ => None
       }
       (bestPeersToFund ++ toRevive_opt ++ smallPeerToFund_opt).distinctBy(_.remoteNodeId)

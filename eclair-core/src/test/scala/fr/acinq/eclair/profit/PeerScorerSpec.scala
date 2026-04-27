@@ -47,6 +47,7 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
       remoteBalanceClosingThreshold = 20_000_000 sat, // 0.2 BTC
       maxFeerate = FeeratePerByte(100 sat).perKw,
       maxFundingTxPerDay = 100,
+      reviveOldPeers = true,
       fundingCooldown = 72 hours,
     ),
     relayFees = PeerScorer.RelayFeesConfig(

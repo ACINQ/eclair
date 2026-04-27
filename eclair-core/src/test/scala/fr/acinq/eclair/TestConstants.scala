@@ -280,6 +280,7 @@ object TestConstants {
           remoteBalanceClosingThreshold = 1_000_000 sat, // 0.01 BTC
           maxFeerate = FeeratePerByte(100 sat).perKw,
           maxFundingTxPerDay = 100,
+          reviveOldPeers = false,
           fundingCooldown = 72 hours,
         ),
         relayFees = PeerScorer.RelayFeesConfig(
@@ -500,6 +501,7 @@ object TestConstants {
           remoteBalanceClosingThreshold = 1_000_000 sat, // 0.01 BTC
           maxFeerate = FeeratePerByte(100 sat).perKw,
           maxFundingTxPerDay = 100,
+          reviveOldPeers = false,
           fundingCooldown = 72 hours,
         ),
         relayFees = PeerScorer.RelayFeesConfig(
