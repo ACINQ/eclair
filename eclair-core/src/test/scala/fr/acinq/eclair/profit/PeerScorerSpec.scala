@@ -45,6 +45,7 @@ class PeerScorerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appli
       maxPerPeerCapacity = 1_000_000_000 sat, // 10 BTC
       localBalanceClosingThreshold = 10_000_000 sat, // 0.1 BTC
       remoteBalanceClosingThreshold = 20_000_000 sat, // 0.2 BTC
+      idleChannelClosingThresholdPct = 0.05, // 5%
       maxFeerate = FeeratePerByte(100 sat).perKw,
       maxFundingTxPerDay = 100,
       reviveOldPeers = true,

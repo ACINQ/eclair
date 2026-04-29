@@ -278,6 +278,7 @@ object TestConstants {
           minOnChainBalance = 5_000_000 sat, // 0.05 BTC
           localBalanceClosingThreshold = 1_000_000 sat, // 0.01 BTC
           remoteBalanceClosingThreshold = 1_000_000 sat, // 0.01 BTC
+          idleChannelClosingThresholdPct = 0.1, // 10%
           maxFeerate = FeeratePerByte(100 sat).perKw,
           maxFundingTxPerDay = 100,
           reviveOldPeers = false,
@@ -499,6 +500,7 @@ object TestConstants {
           minOnChainBalance = 5_000_000 sat, // 0.05 BTC
           localBalanceClosingThreshold = 1_000_000 sat, // 0.01 BTC
           remoteBalanceClosingThreshold = 1_000_000 sat, // 0.01 BTC
+          idleChannelClosingThresholdPct = 0.1, // 10%
           maxFeerate = FeeratePerByte(100 sat).perKw,
           maxFundingTxPerDay = 100,
           reviveOldPeers = false,
