@@ -149,12 +149,22 @@ case class TxSignatures(channelId: ByteVector32,
 }
 
 object TxSignatures {
-  def apply(channelId: ByteVector32, tx: Transaction, witnesses: Seq[ScriptWitness], previousFundingSig_opt: Option[ChannelSpendSignature]): TxSignatures = {
-    val tlvs: Set[TxSignaturesTlv] = previousFundingSig_opt match {
-      case Some(IndividualSignature(sig)) => Set(TxSignaturesTlv.PreviousFundingTxSig(sig), TxSignaturesTlv.ExperimentalPreviousFundingTxSig(sig))
-      case Some(partialSig: PartialSignatureWithNonce) => Set(TxSignaturesTlv.PreviousFundingTxPartialSig(partialSig))
-      case None => Set.empty
-    }
+  def apply(channelId: ByteVector32,
+            tx: Transaction,
+            witnesses: Seq[ScriptWitness],
+            previousFundingSig_opt: Option[ChannelSpendSignature]): TxSignatures = {
+    val tlvs: Set[TxSignaturesTlv] = Set(
+      previousFundingSig_opt match {
+        case Some(IndividualSignature(sig)) => Some(TxSignaturesTlv.PreviousFundingTxSig(sig))
+        case Some(partialSig: PartialSignatureWithNonce) => Some(TxSignaturesTlv.PreviousFundingTxPartialSig(partialSig))
+        case None => None
+      },
+      // We keep supporting the experimental splicing protocol.
+      previousFundingSig_opt match {
+        case Some(IndividualSignature(sig)) => Some(TxSignaturesTlv.ExperimentalPreviousFundingTxSig(sig))
+        case _ => None
+      }
+    ).flatten
     TxSignatures(channelId, tx.txid, witnesses, TlvStream(tlvs))
   }
 }
