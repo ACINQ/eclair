@@ -113,12 +113,16 @@ eclair.peer-scoring {
     local-balance-closing-threshold-satoshis = 10000000 // 0.1 btc
     // We won't close channels where the remote balance exceeds this amount.
     remote-balance-closing-threshold-satoshis = 5000000 // 0.05 btc
+    // We won't close channels if this percentage of the channel capacity has been used during the past week.
+    idle-channel-closing-threshold-percent = 0.075 // 7.5%
     // We stop funding channels if our on-chain balance is below this amount.
     min-on-chain-balance-satoshis = 50000000 // 0.5 btc
     // We stop funding channels if the on-chain feerate is above this value.
     max-feerate-sat-per-byte = 5
     // Rate-limit the number of funding transactions we make per day (on average).
     max-funding-tx-per-day = 6
+    // If true, we will occasionally try to fund idle large capacity peers that have most funds on their side.
+    revive-old-peers = false
     // Minimum time between funding the same peer, to evaluate whether the previous funding was effective.
     funding-cooldown = 72 hours
   }

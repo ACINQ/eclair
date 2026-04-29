@@ -216,7 +216,7 @@ trait Eclair {
 
   def spendFromChannelAddress(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, localNonce_opt: Option[IndividualNonce], remoteSig: ChannelSpendSignature, unsignedTx: Transaction): Future[SpendFromChannelResult]
 
-  def configurePeerScorer(cfg: PeerScorer.ConfigOverrides)(implicit timeout: Timeout): Future[Boolean]
+  def configurePeerScorer(cfg: PeerScorer.ConfigOverrides)(implicit timeout: Timeout): Future[String]
 
 }
 
@@ -855,10 +855,10 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     }
   }
 
-  override def configurePeerScorer(cfg: PeerScorer.ConfigOverrides)(implicit timeout: Timeout): Future[Boolean] = {
+  override def configurePeerScorer(cfg: PeerScorer.ConfigOverrides)(implicit timeout: Timeout): Future[String] = {
     appKit.peerScorer_opt match {
-      case Some(scorer) => scorer.ask((ref: typed.ActorRef[Boolean]) => PeerScorer.UpdateConfig(ref, cfg))
-      case None => Future.successful(false)
+      case Some(scorer) => scorer.ask((ref: typed.ActorRef[Boolean]) => PeerScorer.UpdateConfig(ref, cfg)).map(res => if (res) "ok" else "could not update config: please retry")
+      case None => Future.successful("peer scorer is disabled: you should enable it first")
     }
   }
 

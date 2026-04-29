@@ -733,9 +733,11 @@ object NodeParams extends Logging {
           maxPerPeerCapacity = config.getLong("peer-scoring.liquidity.max-per-peer-capacity-satoshis").sat,
           localBalanceClosingThreshold = config.getLong("peer-scoring.liquidity.local-balance-closing-threshold-satoshis").sat,
           remoteBalanceClosingThreshold = config.getLong("peer-scoring.liquidity.remote-balance-closing-threshold-satoshis").sat,
+          idleChannelClosingThresholdPct = config.getDouble("peer-scoring.liquidity.idle-channel-closing-threshold-percent"),
           maxFundingTxPerDay = config.getInt("peer-scoring.liquidity.max-funding-tx-per-day"),
           minOnChainBalance = config.getLong("peer-scoring.liquidity.min-on-chain-balance-satoshis").sat,
           maxFeerate = FeeratePerByte(config.getLong("peer-scoring.liquidity.max-feerate-sat-per-byte").sat).perKw,
+          reviveOldPeers = config.getBoolean("peer-scoring.liquidity.revive-old-peers"),
           fundingCooldown = FiniteDuration(config.getDuration("peer-scoring.liquidity.funding-cooldown").getSeconds, TimeUnit.SECONDS),
         ),
         relayFees = PeerScorer.RelayFeesConfig(

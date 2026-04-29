@@ -63,17 +63,19 @@ object PeerScorer {
                     relayFees: RelayFeesConfig)
 
   /**
-   * @param autoFund                      if true, we will automatically fund channels.
-   * @param autoClose                     if true, we will automatically close unused channels to reclaim liquidity.
-   * @param minFundingAmount              we always fund channels with at least this amount.
-   * @param maxFundingAmount              we never fund channels with more than this amount.
-   * @param maxPerPeerCapacity            maximum total capacity (across all channels) per peer.
-   * @param maxFundingTxPerDay            we rate-limit the number of transactions we make per day (on average).
-   * @param localBalanceClosingThreshold  we won't close channels if our local balance is below this amount.
-   * @param remoteBalanceClosingThreshold we won't close channels where the remote balance exceeds this amount.
-   * @param minOnChainBalance             we stop funding channels if our on-chain balance is below this amount.
-   * @param maxFeerate                    we stop funding channels if the on-chain feerate is above this value.
-   * @param fundingCooldown               minimum time between funding the same peer, to evaluate effectiveness.
+   * @param autoFund                       if true, we will automatically fund channels.
+   * @param autoClose                      if true, we will automatically close unused channels to reclaim liquidity.
+   * @param minFundingAmount               we always fund channels with at least this amount.
+   * @param maxFundingAmount               we never fund channels with more than this amount.
+   * @param maxPerPeerCapacity             maximum total capacity (across all channels) per peer.
+   * @param maxFundingTxPerDay             we rate-limit the number of transactions we make per day (on average).
+   * @param localBalanceClosingThreshold   we won't close channels if our local balance is below this amount.
+   * @param remoteBalanceClosingThreshold  we won't close channels where the remote balance exceeds this amount.
+   * @param idleChannelClosingThresholdPct we won't close channels if this percentage of the channel capacity has been used during the past week.
+   * @param minOnChainBalance              we stop funding channels if our on-chain balance is below this amount.
+   * @param maxFeerate                     we stop funding channels if the on-chain feerate is above this value.
+   * @param reviveOldPeers                 if true, we will occasionally try to fund idle large capacity peers that have most funds on their side.
+   * @param fundingCooldown                minimum time between funding the same peer, to evaluate effectiveness.
    */
   case class LiquidityConfig(autoFund: Boolean,
                              autoClose: Boolean,
@@ -83,9 +85,13 @@ object PeerScorer {
                              maxFundingTxPerDay: Int,
                              localBalanceClosingThreshold: Satoshi,
                              remoteBalanceClosingThreshold: Satoshi,
+                             idleChannelClosingThresholdPct: Double,
                              minOnChainBalance: Satoshi,
                              maxFeerate: FeeratePerKw,
-                             fundingCooldown: FiniteDuration)
+                             reviveOldPeers: Boolean,
+                             fundingCooldown: FiniteDuration) {
+    require(0.0 <= idleChannelClosingThresholdPct && idleChannelClosingThresholdPct <= 0.5, "idle-channel-closing-threshold-pct cannot be greater than 50% of the channel capacity")
+  }
 
   /**
    * @param autoUpdate                         if true, we will automatically update our relay fees.
@@ -111,8 +117,10 @@ object PeerScorer {
                              maxFundingTxPerDayOverride_opt: Option[Int],
                              localBalanceClosingThresholdOverride_opt: Option[Satoshi],
                              remoteBalanceClosingThresholdOverride_opt: Option[Satoshi],
+                             idleChannelClosingThresholdPctOverride_opt: Option[Double],
                              minOnChainBalanceOverride_opt: Option[Satoshi],
                              maxFeerateOverride_opt: Option[FeeratePerKw],
+                             reviveOldPeersOverride_opt: Option[Boolean],
                              fundingCooldownOverride_opt: Option[FiniteDuration])
 
   private case class FundingProposal(peer: PeerInfo, fundingAmount: Satoshi) {
@@ -184,8 +192,10 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
             maxFundingTxPerDay = cfg.maxFundingTxPerDayOverride_opt.getOrElse(config.liquidity.maxFundingTxPerDay),
             localBalanceClosingThreshold = cfg.localBalanceClosingThresholdOverride_opt.getOrElse(config.liquidity.localBalanceClosingThreshold),
             remoteBalanceClosingThreshold = cfg.remoteBalanceClosingThresholdOverride_opt.getOrElse(config.liquidity.remoteBalanceClosingThreshold),
+            idleChannelClosingThresholdPct = cfg.idleChannelClosingThresholdPctOverride_opt.getOrElse(config.liquidity.idleChannelClosingThresholdPct),
             minOnChainBalance = cfg.minOnChainBalanceOverride_opt.getOrElse(config.liquidity.minOnChainBalance),
             maxFeerate = cfg.maxFeerateOverride_opt.getOrElse(config.liquidity.maxFeerate),
+            reviveOldPeers = cfg.reviveOldPeersOverride_opt.getOrElse(config.liquidity.reviveOldPeers),
             fundingCooldown = cfg.fundingCooldownOverride_opt.getOrElse(config.liquidity.fundingCooldown),
           ),
           relayFees = config.relayFees.copy(
@@ -323,7 +333,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       // We only close channels when we have more than one.
       .filter(_.channels.size > 1)
       // We only close channels for which most of the liquidity is idle on our side.
-      .filter(p => p.canSend >= p.capacity * 0.8 && p.stats.map(_.totalAmountOut).sum <= p.capacity * 0.05)
+      .filter(p => p.canSend >= p.capacity * 0.8 && p.stats.map(_.totalAmountOut).sum <= p.capacity * config.liquidity.idleChannelClosingThresholdPct)
       .foreach(p => {
         val channels = sortChannelsToClose(p.channels)
         // We keep the best channel and close the others, unless their balance doesn't match our thresholds.
@@ -344,9 +354,9 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       // We only close channels when we have more than one.
       .filter(_.channels.size > 1)
       // We only close channels for which liquidity is idle.
-      .filter(p => p.stats.map(_.totalAmountOut).sum <= p.capacity * 0.05 && p.stats.map(_.totalAmountIn).sum <= p.capacity * 0.05)
+      .filter(p => p.stats.map(_.totalAmountOut).sum <= p.capacity * config.liquidity.idleChannelClosingThresholdPct && p.stats.map(_.totalAmountIn).sum <= p.capacity * config.liquidity.idleChannelClosingThresholdPct)
       // And relay fees have been minimal for long enough to give a chance for routing to catch up.
-      .filter(p => p.latestUpdate_opt.exists(u => u.relayFees.feeProportionalMillionths <= config.relayFees.minRelayFees.feeProportionalMillionths && u.timestamp <= TimestampSecond.now() - 5.days))
+      .filter(p => p.latestUpdate_opt.exists(u => u.relayFees.feeProportionalMillionths <= config.relayFees.minRelayFees.feeProportionalMillionths && u.timestamp <= TimestampSecond.now() - 1.day))
       .foreach(p => {
         // We keep the best channel and close the others.
         val toClose = sortChannelsToClose(p.channels).tail
@@ -491,13 +501,13 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
   private def decreaseIdleChannelsRelayFeesIfNeeded(peers: Seq[PeerInfo], history: DecisionHistory): DecisionHistory = {
     val feeDecreases = peers
       // We're only interested in channels for which liquidity is idle.
-      // We ignore peers for which more than 75% of the funds are on their side: they have a higher incentive than us to
+      // We ignore peers for which more than 80% of the funds are on their side: they have a higher incentive than us to
       // close those channels if they aren't useful, so we'll wait for them to do so.
-      .filter(p => p.stats.map(_.totalAmountOut).sum <= p.capacity * 0.05 && p.stats.map(_.totalAmountIn).sum <= p.capacity * 0.05 && p.canSend >= p.capacity * 0.25)
+      .filter(p => p.canSend >= p.capacity * 0.2 && p.stats.map(_.totalAmountOut).sum <= p.capacity * config.liquidity.idleChannelClosingThresholdPct && p.stats.map(_.totalAmountIn).sum <= p.capacity * config.liquidity.idleChannelClosingThresholdPct)
       // And relay fees aren't already minimal.
       .filter(p => p.latestUpdate_opt.exists(u => u.relayFees.feeProportionalMillionths > config.relayFees.minRelayFees.feeProportionalMillionths))
       // And relay fees haven't been updated recently.
-      .filter(p => p.latestUpdate_opt.exists(u => u.timestamp <= TimestampSecond.now() - 1.day))
+      .filter(p => p.latestUpdate_opt.exists(u => u.timestamp <= TimestampSecond.now() - 12.hours))
       .flatMap(p => {
         p.latestUpdate_opt match {
           case Some(u) =>
@@ -547,7 +557,7 @@ private class PeerScorer(nodeParams: NodeParams, wallet: OnChainBalanceChecker, 
       }
       val toReviveNotAlreadySelected = toRevive.filterNot(p => bestPeers.exists(_.remoteNodeId == p.remoteNodeId) || smallPeerToFund_opt.exists(_.remoteNodeId == p.remoteNodeId) || p.peer.capacity >= config.liquidity.maxPerPeerCapacity)
       val toRevive_opt = toReviveNotAlreadySelected.headOption match {
-        case Some(_) if Random.nextDouble() <= (1.0 / (scoringPerDay * 5)) => Random.shuffle(toReviveNotAlreadySelected.take(3)).headOption
+        case Some(_) if config.liquidity.reviveOldPeers && Random.nextDouble() <= (1.0 / (scoringPerDay * 5)) => Random.shuffle(toReviveNotAlreadySelected.take(3)).headOption
         case _ => None
       }
       (bestPeersToFund ++ toRevive_opt ++ smallPeerToFund_opt).distinctBy(_.remoteNodeId)
