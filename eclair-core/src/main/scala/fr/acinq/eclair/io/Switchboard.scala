@@ -50,20 +50,22 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
   context.system.toTyped.receptionist ! Receptionist.Register(SwitchboardServiceKey, context.self.toTyped[GetPeerInfo])
 
   def receive: Receive = {
+    case init: InitWithoutKeys =>
+      self.forward(Init(init.channels.map(_.withChannelKeys(nodeParams))))
     case init: Init =>
       // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
       // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
       // Closed channels will be removed, other channels will be restored.
-      val (channels, closedChannels) = init.channels.partition(c => Closing.isClosed(c, None).isEmpty)
+      val (channels, closedChannels) = init.channels.partition(c => Closing.isClosed(c.channelData, None).isEmpty)
       closedChannels.foreach(c => {
-        log.info("channel {} was closed before restarting, updating the DB", c.channelId)
-        val closingData_opt = (c, Closing.isClosed(c, None)) match {
+        log.info("channel {} was closed before restarting, updating the DB", c.channelData.channelId)
+        val closingData_opt = (c.channelData, Closing.isClosed(c.channelData, None)) match {
           case (c: DATA_CLOSING, Some(closingType)) => Some(DATA_CLOSED(c, closingType))
           case _ => None
         }
-        nodeParams.db.channels.removeChannel(c.channelId, closingData_opt)
+        nodeParams.db.channels.removeChannel(c.channelData.channelId, closingData_opt)
       })
-      val peersWithChannels = channels.groupBy(_.remoteNodeId)
+      val peersWithChannels = channels.groupBy(_.channelData.remoteNodeId)
       val peersWithOnTheFlyFunding = nodeParams.db.liquidity.listPendingOnTheFlyFunding()
       peersWithChannels.foreach { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet, peersWithOnTheFlyFunding.getOrElse(remoteNodeId, Map.empty)) }
       // We must re-create peers that have a funded on-the-fly payment, even if they don't have a channel yet.
@@ -71,7 +73,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       (peersWithOnTheFlyFunding -- peersWithChannels.keySet).foreach {
         case (remoteNodeId, pending) => createOrGetPeer(remoteNodeId, Set.empty, pending)
       }
-      val peerCapacities = channels.map {
+      val peerCapacities = channels.map(_.channelData).map {
         case channelData: ChannelDataWithoutCommitments => (channelData.remoteNodeId, 0L)
         case channelData: ChannelDataWithCommitments => (channelData.remoteNodeId, channelData.commitments.capacity.toLong)
       }.groupMapReduce[PublicKey, Long](_._1)(_._2)(_ + _)
@@ -154,7 +156,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 
   def createPeer(remoteNodeId: PublicKey): ActorRef = peerFactory.spawn(context, remoteNodeId)
 
-  def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[PersistentChannelData], pendingOnTheFlyFunding: Map[ByteVector32, OnTheFlyFunding.Pending]): ActorRef = {
+  def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[PersistentChannelDataAndChannelKeys], pendingOnTheFlyFunding: Map[ByteVector32, OnTheFlyFunding.Pending]): ActorRef = {
     getPeer(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
@@ -190,7 +192,9 @@ object Switchboard {
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   // @formatter:off
-  case class Init(channels: Seq[PersistentChannelData])
+  case class Init(channels: Seq[PersistentChannelDataAndChannelKeys])
+  // should be used in tests only as computing channels keys is expensive
+  case class InitWithoutKeys(channels: Seq[PersistentChannelData])
 
   case object GetPeers
   case class GetPeerInfo(replyTo: typed.ActorRef[PeerInfoResponse], remoteNodeId: PublicKey)

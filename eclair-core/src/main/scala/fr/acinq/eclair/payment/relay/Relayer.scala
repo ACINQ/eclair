@@ -64,6 +64,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
   def receive: Receive = {
     case init: PostRestartHtlcCleaner.Init => postRestartCleaner forward init
+    case init: PostRestartHtlcCleaner.InitWithoutKeys => postRestartCleaner forward init
     case RelayForward(add, originNode, incomingChannelOccupancy) =>
       log.debug(s"received forwarding request for htlc #${add.id} from channelId=${add.channelId}")
       IncomingPaymentPacket.decrypt(add, nodeParams.privateKey, nodeParams.features) match {

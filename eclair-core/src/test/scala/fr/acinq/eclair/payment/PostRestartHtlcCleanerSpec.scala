@@ -116,7 +116,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val channel = TestProbe()
     val (relayer, _) = f.createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(channels)
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(channels)
     register.expectNoMessage(100 millis) // nothing should happen while channels are still offline.
 
     // channel 1 goes to NORMAL state:
@@ -182,7 +182,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val channel = TestProbe()
     val (relayer, _) = f.createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(channels)
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(channels)
     // Upstream channels go back to the NORMAL state, but HTLCs are kept because the on-the-fly proposal was funded.
     system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(0).commitments)))
     channel.expectNoMessage(100 millis)
@@ -219,7 +219,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val channel = TestProbe()
     val (relayer, _) = f.createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(channels)
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(channels)
     register.expectNoMessage(100 millis) // nothing should happen while channels are still offline.
 
     // channel 1 goes to NORMAL state:
@@ -267,7 +267,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupLocalPayments(nodeParams)
     val (relayer, _) = createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(List(testCase.channel))
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(List(testCase.channel))
     register.expectNoMessage(100 millis)
 
     sender.send(relayer, testCase.fails(1))
@@ -297,7 +297,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupLocalPayments(nodeParams)
     val (relayer, _) = f.createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(List(testCase.channel))
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(List(testCase.channel))
     register.expectNoMessage(100 millis)
 
     sender.send(relayer, testCase.fulfills(1))
@@ -335,7 +335,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val testCase = setupTrampolinePayments()
     val initialized = Promise[Done]()
     val postRestart = system.actorOf(PostRestartHtlcCleaner.props(nodeParams, register.ref, Some(initialized)))
-    postRestart ! PostRestartHtlcCleaner.Init(testCase.channels)
+    postRestart ! PostRestartHtlcCleaner.InitWithoutKeys(testCase.channels)
     awaitCond(initialized.isCompleted)
     register.expectNoMessage(100 millis)
 
@@ -438,7 +438,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val channels = stored(data_upstream_1, data_upstream_2, data_upstream_3, data_downstream)
 
     val (relayer, _) = f.createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(channels)
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(channels)
     register.expectNoMessage(100 millis) // nothing should happen while channels are still offline.
 
     val (channel_upstream_1, channel_upstream_2, channel_upstream_3) = (TestProbe(), TestProbe(), TestProbe())
@@ -478,7 +478,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     nodeParams.db.pendingCommands.addSettlementCommand(channelId_ab_1, CMD_FAIL_HTLC(4, FailureReason.LocalFailure(PermanentChannelFailure()), None))
 
     val (_, postRestart) = f.createRelayer(nodeParams)
-    postRestart ! PostRestartHtlcCleaner.Init(List(channelData))
+    postRestart ! PostRestartHtlcCleaner.InitWithoutKeys(List(channelData))
     sender.send(postRestart, PostRestartHtlcCleaner.GetBrokenHtlcs)
     val brokenHtlcs = sender.expectMsgType[PostRestartHtlcCleaner.BrokenHtlcs]
     assert(brokenHtlcs.relayedOut.isEmpty)
@@ -520,7 +520,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     assert(Closing.isClosed(downstreamChannel, None).isEmpty)
 
     val (_, postRestart) = f.createRelayer(nodeParams)
-    postRestart ! PostRestartHtlcCleaner.Init(channels)
+    postRestart ! PostRestartHtlcCleaner.InitWithoutKeys(channels)
     sender.send(postRestart, PostRestartHtlcCleaner.GetBrokenHtlcs)
     val brokenHtlcs = sender.expectMsgType[PostRestartHtlcCleaner.BrokenHtlcs]
     assert(brokenHtlcs.relayedOut.isEmpty)
@@ -532,7 +532,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupChannelRelayedPayments()
     val (relayer, _) = f.createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(testCase.channels)
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(testCase.channels)
     register.expectNoMessage(100 millis)
 
     sender.send(relayer, buildForwardFail(testCase.downstream, testCase.upstream))
@@ -554,7 +554,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val channels = List(data_ab, data_bc)
 
     val (relayer, _) = f.createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(channels)
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(channels)
     register.expectNoMessage(100 millis)
 
     sender.send(relayer, buildForwardFail(htlc_bc.add, upstream))
@@ -567,7 +567,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupChannelRelayedPayments()
     val (relayer, _) = f.createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(testCase.channels)
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(testCase.channels)
     register.expectNoMessage(100 millis)
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream, testCase.upstream, preimage1))
@@ -584,7 +584,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupTrampolinePayments()
     val (relayer, _) = f.createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(testCase.channels)
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(testCase.channels)
     register.expectNoMessage(100 millis)
 
     // This downstream HTLC has two upstream HTLCs.
@@ -615,7 +615,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupTrampolinePayments()
     val (relayer, _) = f.createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(testCase.channels)
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(testCase.channels)
     register.expectNoMessage(100 millis)
 
     // This downstream HTLC has two upstream HTLCs.
@@ -645,7 +645,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupTrampolinePayments()
     val (relayer, _) = f.createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(testCase.channels)
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(testCase.channels)
     register.expectNoMessage(100 millis)
 
     sender.send(relayer, buildForwardFail(testCase.downstream_2_1, testCase.upstream_2))
@@ -683,7 +683,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val data_bc = ChannelCodecsSpec.makeChannelDataNormal(htlc_bc, Map(1L -> Origin.Cold(upstreamChannel), 2L -> Origin.Cold(upstreamTrampoline)))
 
     val (relayer, _) = f.createRelayer(nodeParams)
-    relayer ! PostRestartHtlcCleaner.Init(Seq(data_ab, data_bc))
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(Seq(data_ab, data_bc))
 
     // HTLC failures are not relayed upstream, as we will retry until we reach the HTLC timeout.
     sender.send(relayer, buildForwardFail(htlc_bc(0).add, Upstream.Cold.Channel(htlc_ab(0).add, a)))
@@ -729,7 +729,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val channel = TestProbe()
     val (relayer, _) = f.createRelayer(nodeParams1)
-    relayer ! PostRestartHtlcCleaner.Init(List(c))
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(List(c))
     register.expectNoMessage(100 millis) // nothing should happen while channels are still offline.
 
     // Standard channel goes to NORMAL state:
@@ -758,7 +758,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     nodeParams1.db.pendingCommands.addSettlementCommand(channelId_ab_1, cmd1)
     nodeParams1.db.pendingCommands.addSettlementCommand(channelId_ab_1, cmd2)
     val (relayer, _) = f.createRelayer(nodeParams1)
-    relayer ! PostRestartHtlcCleaner.Init(Nil)
+    relayer ! PostRestartHtlcCleaner.InitWithoutKeys(Nil)
     register.expectNoMessage(100 millis)
     awaitCond(Seq(cmd1) == nodeParams1.db.pendingCommands.listSettlementCommands(channelId_ab_1))
   }

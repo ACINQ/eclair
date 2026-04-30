@@ -193,7 +193,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val rateLimiter = TestProbe()
     val probe = TestProbe()
     val peer = TestFSMRef(new Peer(nodeParams, remoteNodeId, new DummyOnChainWallet(), FakeChannelFactory(remoteNodeId, channel), TestProbe().ref, register.ref, TestProbe().ref, rateLimiter.ref))
-    peer ! Peer.Init(Set.empty, Map.empty)
+    peer ! Peer.InitWithoutKeys(Set.empty, Map.empty)
     withFixture(test.toNoArgTest(FixtureParam(nodeParams, remoteNodeId, peer, peerConnection, channel, register, rateLimiter, probe)))
   }
 
@@ -495,7 +495,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // When restarting, we watch for pending proposals.
     val peerAfterRestart = TestFSMRef(new Peer(nodeParams, remoteNodeId, new DummyOnChainWallet(), FakeChannelFactory(remoteNodeId, channel), TestProbe().ref, register.ref, TestProbe().ref, TestProbe().ref))
-    peerAfterRestart ! Peer.Init(Set.empty, nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId))
+    peerAfterRestart ! Peer.InitWithoutKeys(Set.empty, nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId))
     probe.watch(peerAfterRestart.ref)
 
     // The last funding proposal reaches its CLTV expiry.
@@ -984,7 +984,7 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // On restart, we don't attempt the payment again: it's already pending.
     val peerAfterRestart = TestFSMRef(new Peer(nodeParams, remoteNodeId, new DummyOnChainWallet(), FakeChannelFactory(remoteNodeId, channel), TestProbe().ref, register.ref, TestProbe().ref, TestProbe().ref))
-    peerAfterRestart ! Peer.Init(Set.empty, nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId))
+    peerAfterRestart ! Peer.InitWithoutKeys(Set.empty, nodeParams.db.liquidity.listPendingOnTheFlyFunding(remoteNodeId))
     connect(peerAfterRestart)
     peerAfterRestart ! ChannelReadyForPayments(channel.ref, remoteNodeId, channelId, purchase.txId, fundingTxIndex = 1)
     val channelData2 = makeChannelData(localChanges = LocalChanges(Nil, htlc :: Nil, Nil))
