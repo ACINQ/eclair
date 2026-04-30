@@ -9,7 +9,7 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.protocol.{ChannelReestablish, ChannelUpdate, Init}
+import fr.acinq.eclair.wire.protocol.{ChannelReady, ChannelReestablish, ChannelUpdate, Init}
 import fr.acinq.eclair.{TestKitBaseClass, _}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -129,6 +129,9 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       assert(cup.channelUpdate.feeBaseMsat == newConfig.relayParams.privateChannelFees.feeBase)
       assert(cup.channelUpdate.feeProportionalMillionths == newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
       assert(cup.channelUpdate.cltvExpiryDelta == newConfig.channelConf.expiryDelta)
+
+      alice2bob.ignoreMsg { case _: ChannelReady => true }
+      bob2alice.ignoreMsg { case _: ChannelReady => true }
 
       newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
       bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)

@@ -960,8 +960,10 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
 
     val (channelReestablishAlice, channelReestablishBob) = reconnectRbf(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(rbfTxId))
-    assert(channelReestablishAlice.nextLocalCommitmentNumber == 0)
+    assert(channelReestablishAlice.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
     assert(channelReestablishBob.nextFundingTxId_opt.isEmpty)
+    assert(!channelReestablishBob.retransmitInteractiveTxCommitSig)
     assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat => ()
@@ -1008,9 +1010,11 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
 
     val (channelReestablishAlice, channelReestablishBob) = reconnectRbf(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(rbfTxId))
+    assert(!channelReestablishAlice.retransmitInteractiveTxCommitSig)
     assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
     assert(channelReestablishBob.nextFundingTxId_opt.contains(rbfTxId))
-    assert(channelReestablishBob.nextLocalCommitmentNumber == 0)
+    assert(channelReestablishBob.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat => ()
       case _: TaprootCommitmentFormat =>
@@ -1069,8 +1073,10 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
 
     val (channelReestablishAlice, channelReestablishBob) = reconnectRbf(f)
     assert(channelReestablishAlice.nextFundingTxId_opt.contains(rbfTxId))
-    assert(channelReestablishAlice.nextLocalCommitmentNumber == 0)
+    assert(channelReestablishAlice.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
     assert(channelReestablishBob.nextFundingTxId_opt.contains(rbfTxId))
+    assert(!channelReestablishBob.retransmitInteractiveTxCommitSig)
     assert(channelReestablishBob.nextLocalCommitmentNumber == 1)
     commitmentFormat match {
       case _: SegwitV0CommitmentFormat => ()
@@ -1137,7 +1143,8 @@ class WaitForDualFundingConfirmedStateSpec extends TestKitBaseClass with Fixture
     bob ! INPUT_RECONNECTED(alice, bobInit, aliceInit)
     val channelReestablishAlice = alice2bob.expectMsgType[ChannelReestablish]
     assert(channelReestablishAlice.nextFundingTxId_opt.nonEmpty)
-    assert(channelReestablishAlice.nextLocalCommitmentNumber == 0)
+    assert(channelReestablishAlice.retransmitInteractiveTxCommitSig)
+    assert(channelReestablishAlice.nextLocalCommitmentNumber == 1)
     assert(channelReestablishAlice.currentCommitNonce_opt.nonEmpty)
     bob2alice.expectMsgType[ChannelReestablish]
     alice2bob.forward(bob, channelReestablishAlice.copy(tlvStream = TlvStream(channelReestablishAlice.tlvStream.records.filterNot(_.isInstanceOf[ChannelReestablishTlv.CurrentCommitNonceTlv]))))

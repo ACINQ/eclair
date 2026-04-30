@@ -1206,10 +1206,14 @@ object InteractiveTxSigningSession {
                             liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo]) extends InteractiveTxSigningSession {
     val fundingTxId: TxId = fundingTx.txId
     val localCommitIndex: Long = localCommit.fold(_.index, _.index)
-    // This value tells our peer whether we need them to retransmit their commit_sig on reconnection or not.
-    val nextLocalCommitmentNumber: Long = localCommit match {
-      case Left(unsignedCommit) => unsignedCommit.index
-      case Right(commit) => commit.index + 1
+    // If we haven't received the remote commit_sig, we will request a retransmission on reconnection.
+    val retransmitRemoteCommitSig: Boolean = localCommit.isLeft
+
+    // For the legacy splice protocol, we use the next_commitment_number to let our peer know whether they needed to
+    // retransmit commit_sig or not. We're now using an explicit bit instead, but need to maintain backwards-compatibility.
+    def nextLocalCommitmentNumber(useLegacySpliceProtocol: Boolean): Long = localCommit match {
+      case Left(unsignedCommit) if useLegacySpliceProtocol => unsignedCommit.index
+      case _ => localCommitIndex + 1
     }
 
     def localFundingKey(channelKeys: ChannelKeys): PrivateKey = channelKeys.fundingKey(fundingTxIndex)

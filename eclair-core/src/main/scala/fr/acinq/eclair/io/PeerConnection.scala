@@ -207,12 +207,20 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         stay()
 
       case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.transport => // if the message doesn't originate from the transport, it is an outgoing message
+        val useExperimentalSplice = d.remoteInit.features.hasFeature(Features.SplicePrototype)
         msg match {
+          // If our peer is using the experimental splice version, we convert splice messages.
+          case msg: SpliceInit if useExperimentalSplice => d.transport forward ExperimentalSpliceInit.from(msg)
+          case msg: SpliceAck if useExperimentalSplice => d.transport forward ExperimentalSpliceAck.from(msg)
+          case msg: SpliceLocked if useExperimentalSplice => d.transport forward ExperimentalSpliceLocked.from(msg)
+          case msg: TxAddInput if useExperimentalSplice => d.transport forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records.filterNot(_.isInstanceOf[TxAddInputTlv.SharedInputTxId])))
+          case msg: TxSignatures if useExperimentalSplice => d.transport forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records.filterNot(_.isInstanceOf[TxSignaturesTlv.PreviousFundingTxSig])))
+          case batch: CommitSigBatch if useExperimentalSplice => batch.messages.foreach(msg => d.transport forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.FundingTx]))))
           case batch: CommitSigBatch =>
             // We insert a start_batch message to let our peer know how many commit_sig they will receive.
             d.transport forward StartBatch.commitSigBatch(batch.channelId, batch.batchSize)
-            batch.messages.foreach(msg => d.transport forward msg)
-          case msg => d.transport forward msg
+            batch.messages.foreach(msg => d.transport forward msg.copy(tlvStream = TlvStream(msg.tlvStream.records.filterNot(_.isInstanceOf[CommitSigTlv.ExperimentalBatchTlv]))))
+          case _ => d.transport forward msg
         }
         msg match {
           // If we send any channel management message to this peer, the connection should be persistent.
@@ -426,6 +434,16 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
                 d.peer ! msg
                 stay()
             }
+          // If our peer is using the experimental splice version, we convert splice messages.
+          case msg: ExperimentalSpliceInit =>
+            d.peer ! msg.toSpliceInit
+            stay()
+          case msg: ExperimentalSpliceAck =>
+            d.peer ! msg.toSpliceAck
+            stay()
+          case msg: ExperimentalSpliceLocked =>
+            d.peer ! msg.toSpliceLocked
+            stay()
           case _ =>
             d.peer ! msg
             stay()

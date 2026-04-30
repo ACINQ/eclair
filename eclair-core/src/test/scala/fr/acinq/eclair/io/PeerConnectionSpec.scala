@@ -19,11 +19,12 @@ package fr.acinq.eclair.io
 import akka.actor.PoisonPill
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
+import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, OutPoint, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.TestUtils.randomTxId
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature.IndividualSignature
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.ConnectionDown
@@ -155,7 +156,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"0000 00050100000000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
-    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,var_onion_optin)"))
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,option_static_remotekey)"))
     peer.expectMsg(ConnectionDown(peerConnection))
   }
 
@@ -172,7 +173,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"00050100000000 0000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
-    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,var_onion_optin)"))
+    origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features (unknown_32,option_static_remotekey)"))
     peer.expectMsg(ConnectionDown(peerConnection))
   }
 
@@ -721,6 +722,54 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       val isPublicIP = NodeAddress.isPublicIPAddress(address)
       assert(isPublicIP == expected)
     }
+  }
+
+  test("convert experimental splice messages") { f =>
+    import f._
+    val remoteInit = protocol.Init(Bob.nodeParams.features.initFeatures().add(Features.SplicePrototype, FeatureSupport.Optional))
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit)
+
+    val spliceInit = SpliceInit(randomBytes32(), 100_000 sat, FeeratePerKw(5000 sat), 0, randomKey().publicKey)
+    val spliceAck = SpliceAck(randomBytes32(), 50_000 sat, randomKey().publicKey)
+    val spliceLocked = SpliceLocked(randomBytes32(), TxId(randomBytes32()))
+
+    // Outgoing messages use the experimental version of splicing.
+    peer.send(peerConnection, spliceInit)
+    transport.expectMsg(ExperimentalSpliceInit.from(spliceInit))
+    peer.send(peerConnection, spliceAck)
+    transport.expectMsg(ExperimentalSpliceAck.from(spliceAck))
+    peer.send(peerConnection, spliceLocked)
+    transport.expectMsg(ExperimentalSpliceLocked.from(spliceLocked))
+
+    // Incoming messages are converted from their experimental version.
+    transport.send(peerConnection, ExperimentalSpliceInit.from(spliceInit))
+    peer.expectMsg(spliceInit)
+    transport.expectMsgType[TransportHandler.ReadAck]
+    transport.send(peerConnection, ExperimentalSpliceAck.from(spliceAck))
+    peer.expectMsg(spliceAck)
+    transport.expectMsgType[TransportHandler.ReadAck]
+    transport.send(peerConnection, ExperimentalSpliceLocked.from(spliceLocked))
+    peer.expectMsg(spliceLocked)
+    transport.expectMsgType[TransportHandler.ReadAck]
+
+    // Incompatible TLVs are dropped when sending messages to peers using the experimental version.
+    val txAddInput = TxAddInput(randomBytes32(), UInt64(0), OutPoint(TxId(randomBytes32()), 3), 0)
+    assert(txAddInput.tlvStream.get[TxAddInputTlv.SharedInputTxId].nonEmpty)
+    peer.send(peerConnection, txAddInput)
+    assert(transport.expectMsgType[TxAddInput].tlvStream.get[TxAddInputTlv.SharedInputTxId].isEmpty)
+    val txSignatures = TxSignatures(randomBytes32(), Transaction(2, Nil, Nil, 0), Nil, Some(IndividualSignature(randomBytes64())))
+    assert(txSignatures.tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].nonEmpty)
+    peer.send(peerConnection, txSignatures)
+    assert(transport.expectMsgType[TxSignatures].tlvStream.get[TxSignaturesTlv.PreviousFundingTxSig].isEmpty)
+    val channelId = randomBytes32()
+    val commitSigBatch = CommitSigBatch(Seq(
+      CommitSig(channelId, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.FundingTx(TxId(randomBytes32())), CommitSigTlv.ExperimentalBatchTlv(2))),
+      CommitSig(channelId, IndividualSignature(randomBytes64()), Nil, TlvStream(CommitSigTlv.FundingTx(TxId(randomBytes32())), CommitSigTlv.ExperimentalBatchTlv(2))),
+    ))
+    peer.send(peerConnection, commitSigBatch)
+    assert(transport.expectMsgType[CommitSig].tlvStream.get[CommitSigTlv.FundingTx].isEmpty)
+    assert(transport.expectMsgType[CommitSig].tlvStream.get[CommitSigTlv.FundingTx].isEmpty)
+    transport.expectNoMessage(100 millis)
   }
 
 }
