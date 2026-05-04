@@ -51,7 +51,9 @@ object OfferTypes {
 
   sealed trait Bolt12Tlv extends Tlv
 
-  sealed trait InvoiceTlv extends Bolt12Tlv
+  sealed trait PayerProofTlv extends Bolt12Tlv
+
+  sealed trait InvoiceTlv extends PayerProofTlv
 
   sealed trait InvoiceRequestTlv extends InvoiceTlv
 
@@ -220,7 +222,22 @@ object OfferTypes {
    * Signature from the sender when used in an invoice request.
    * Signature from the recipient when used in an invoice.
    */
-  case class Signature(signature: ByteVector64) extends InvoiceRequestTlv with InvoiceTlv
+  case class Signature(signature: ByteVector64) extends InvoiceRequestTlv with InvoiceTlv with PayerProofTlv
+
+  /** Preimage matching the invoice's [[InvoicePaymentHash]]. */
+  case class InvoicePreimage(preimage: ByteVector32) extends PayerProofTlv
+
+  /** The payer may omit some invoice TLVs for privacy reasons. */
+  case class OmittedTlvs(missing: List[UInt64]) extends PayerProofTlv
+
+  /** The payer must include the missing parts of the invoice TLV merkle tree. */
+  case class MissingHashes(missing: List[ByteVector32]) extends PayerProofTlv
+
+  /** The payer must include a nonce hash for each invoice TLV included in the payer proof. */
+  case class LeafHashes(hashes: List[ByteVector32]) extends PayerProofTlv
+
+  /** The payer signs the payer proof, with an optional challenge (note). */
+  case class PayerSignature(signature: ByteVector64, note_opt: Option[String]) extends PayerProofTlv
 
   private def isOfferTlv(tlv: GenericTlv): Boolean =
     // Offer TLVs are in the range [1, 79] or [1000000000, 1999999999].
@@ -499,7 +516,7 @@ object OfferTypes {
     merkleTree(0, genericTlvs.length)
   }
 
-  private def hash(tag: ByteVector, msg: ByteVector): ByteVector32 = {
+  def hash(tag: ByteVector, msg: ByteVector): ByteVector32 = {
     val tagHash = Crypto.sha256(tag)
     Crypto.sha256(tagHash ++ tagHash ++ msg)
   }
