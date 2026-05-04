@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.eclair.channel.{ChannelDataWithCommitments, ChannelDataWithoutCommitments, PersistentChannelData, PersistentChannelDataAndChannelKeys}
+import fr.acinq.eclair.channel.{ChannelDataWithCommitments, PersistentChannelData}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.NodeAnnouncement
 import grizzled.slf4j.Logging
@@ -31,16 +31,16 @@ object DBChecker extends Logging {
    * - it is compatible with the current version of eclair
    * - channel keys can be re-generated from the channel seed
    */
-  def checkChannelsDB(nodeParams: NodeParams): Seq[PersistentChannelDataAndChannelKeys] = {
+  def checkChannelsDB(nodeParams: NodeParams): Seq[PersistentChannelData] = {
     Try(nodeParams.db.channels.listLocalChannels()) match {
       case Success(channels) =>
-        channels.map(channel => {
-          val channelWithKeys = channel.withChannelKeys(nodeParams)
-          if (!channelWithKeys.validateSeed()) {
-            throw InvalidChannelSeedException(channel.channelId)
-          }
-          channelWithKeys
-        })
+        channels.collect {
+          case data: ChannelDataWithCommitments =>
+            val channelKeys = nodeParams.channelKeyManager.channelKeys(data.channelParams.channelConfig, data.channelParams.localParams.fundingKeyPath)
+            data.setChannelKeys(channelKeys)
+            data
+          case data => data
+        }
       case Failure(t) => throw IncompatibleDBException(t)
     }
   }
