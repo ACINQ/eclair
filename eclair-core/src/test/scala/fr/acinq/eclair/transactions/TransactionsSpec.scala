@@ -26,7 +26,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelSpendSignature
 import fr.acinq.eclair.crypto.keymanager.{LocalCommitmentKeys, RemoteCommitmentKeys}
-import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions.AnchorOutputsCommitmentFormat.anchorAmount
 import fr.acinq.eclair.transactions.Transactions._
@@ -148,13 +147,13 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     assert(dummyTx.weight() - dummyTx.copy(txOut = dummyTx.txOut.take(1)).weight() == p2trOutputWeight)
   }
 
-  private def checkExpectedWeight(actual: Int, expected: Int, commitmentFormat: CommitmentFormat): Unit = {
+  private def checkExpectedWeight(actual: Int, expected: Int, commitmentFormat: CommitmentFormat, sigsCount: Int = 1): Unit = {
     commitmentFormat match {
       case _: SimpleTaprootChannelCommitmentFormat => assert(actual == expected)
       case _: AnchorOutputsCommitmentFormat =>
         // ECDSA signatures are der-encoded, which creates some variability in signature size compared to the baseline.
-        assert(actual <= expected + 4)
-        assert(actual >= expected - 4)
+        assert(actual <= expected + 4 * sigsCount)
+        assert(actual >= expected - 4 * sigsCount)
     }
   }
 
@@ -278,7 +277,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       commitTx.correctlySpends(Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       // We check the expected weight of the commit input:
       val commitInputWeight = commitTx.copy(txIn = Seq(commitTx.txIn.head, commitTx.txIn.head)).weight() - commitTx.weight()
-      checkExpectedWeight(commitInputWeight, commitmentFormat.fundingInputWeight, commitmentFormat)
+      checkExpectedWeight(commitInputWeight, commitmentFormat.fundingInputWeight, commitmentFormat, sigsCount = 2)
       val htlcTxs = makeHtlcTxs(commitTx, outputs, commitmentFormat)
       val expiries = htlcTxs.map(tx => tx.htlcId -> tx.htlcExpiry.toLong).toMap
       val htlcSuccessTxs = htlcTxs.collect { case tx: UnsignedHtlcSuccessTx => tx }
