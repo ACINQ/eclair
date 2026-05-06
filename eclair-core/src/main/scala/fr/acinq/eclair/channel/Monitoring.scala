@@ -17,8 +17,10 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
+import fr.acinq.eclair.channel.fund.InteractiveTxBuilder
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{InteractiveTxParams, SharedTransaction}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc}
+import fr.acinq.eclair.wire.protocol.LiquidityAds
 import kamon.Kamon
 
 object Monitoring {
@@ -33,10 +35,15 @@ object Monitoring {
     val HtlcValueInFlightGlobal = Kamon.gauge("channels.htlc-value-in-flight-global", "Global HTLC value in flight across all channels")
     val LocalFeeratePerByte = Kamon.histogram("channels.local-feerate-per-byte")
     val RemoteFeeratePerByte = Kamon.histogram("channels.remote-feerate-per-byte")
+    val InteractiveTxFundingTargetAmount = Kamon.histogram("channels.interactive-tx.target-funding-amount", "Interactive tx funding target amount")
+    val InteractiveTxFundingChangeAmount = Kamon.histogram("channels.interactive-tx.change-amount", "Interactive tx funding change")
+    val InteractiveTxLocalMiningFee = Kamon.histogram("channels.interactive-tx.local-mining-fee", "Interactive tx mining fee paid by us")
     val InteractiveTxInputs = Kamon.histogram("channels.interactive-tx.inputs", "Interactive tx inputs")
     val InteractiveTxOutputs = Kamon.histogram("channels.interactive-tx.outputs", "Interactive tx outputs")
     val InteractiveTxInputsPerSession = Kamon.histogram("channels.interactive-tx.inputs-per-session", "Interactive tx inputs per session")
     val InteractiveTxOutputsPerSession = Kamon.histogram("channels.interactive-tx.outputs-per-session", "Interactive tx outputs per session")
+    val LiquidityPurchaseAmount = Kamon.histogram("channels.interactive-tx.liquidity-purchase-amount", "Amount of liquidity purchased (if positive) or sold (if negative)")
+    val LiquidityPurchaseMiningFeeDiff = Kamon.histogram("channels.interactive-tx.liquidity-purchase-mining-fee-diff", "When selling liquidity, difference between the refunded mining fee and the actual mining fee paid")
     val Splices = Kamon.histogram("channels.splices", "Splices")
     val ProcessMessage = Kamon.timer("channels.messages-processed")
     val HtlcDropped = Kamon.counter("channels.htlc-dropped")
@@ -54,6 +61,47 @@ object Monitoring {
         HtlcValueInFlight.withTag(Tags.Direction, direction).record(value)
         HtlcValueInFlightGlobal.withTag(Tags.Direction, direction).increment((value - previousValue).toDouble)
       }
+    }
+
+    def recordInteractiveTx(fundingParams: InteractiveTxParams, sharedTx: SharedTransaction, liquidityPurchase_opt: Option[LiquidityAds.Purchase]): Unit = {
+      // Global, not "per session". The goal is to measure the total number of inputs/outputs and distribution of amounts across all interactive-tx sessions.
+      sharedTx.sharedInput_opt.foreach(i => InteractiveTxInputs.withTag(Tags.InputType, "shared").record(i.txOut.amount.toLong))
+      sharedTx.localInputs.foreach(i => InteractiveTxInputs.withTag(Tags.InputType, "local").record(i.txOut.amount.toLong))
+      sharedTx.remoteInputs.foreach(i => InteractiveTxInputs.withTag(Tags.InputType, "remote").record(i.txOut.amount.toLong))
+      InteractiveTxOutputs.withTag(Tags.OutputType, "shared").record(sharedTx.sharedOutput.amount.toLong)
+      sharedTx.localOutputs.foreach(o => InteractiveTxOutputs.withTag(Tags.OutputType, "local").record(o.amount.toLong))
+      sharedTx.remoteOutputs.foreach(o => InteractiveTxOutputs.withTag(Tags.OutputType, "remote").record(o.amount.toLong))
+
+      // We measure the number of each non-shared input/output type per session.
+      if (sharedTx.localInputs.nonEmpty) InteractiveTxInputsPerSession.withTag(Tags.InputType, "local").record(sharedTx.localInputs.size)
+      if (sharedTx.remoteInputs.nonEmpty) InteractiveTxInputsPerSession.withTag(Tags.InputType, "remote").record(sharedTx.remoteInputs.size)
+      if (sharedTx.localOutputs.nonEmpty) InteractiveTxOutputsPerSession.withTag(Tags.OutputType, "local").record(sharedTx.localOutputs.size)
+      if (sharedTx.remoteOutputs.nonEmpty) InteractiveTxOutputsPerSession.withTag(Tags.OutputType, "remote").record(sharedTx.remoteOutputs.size)
+
+      // We measure the difference between the amount we want to fund and the resulting change.
+      if (fundingParams.localContribution >= 0.sat) {
+        InteractiveTxFundingTargetAmount.withTag(Tags.DiffSign, Tags.DiffSigns.plus).record(fundingParams.localContribution.toLong)
+        // Note that we explicitly want to record a 0 value when we don't have any change output: it lets us see how many sessions don't need change, which is the best outcome.
+        InteractiveTxFundingChangeAmount.withoutTags().record(sharedTx.localOutputs.collect { case o: InteractiveTxBuilder.Output.Local.Change => o.amount.toLong }.sum)
+      } else {
+        InteractiveTxFundingTargetAmount.withTag(Tags.DiffSign, Tags.DiffSigns.minus).record(-fundingParams.localContribution.toLong)
+      }
+      InteractiveTxLocalMiningFee.withoutTags().record(sharedTx.localFees.truncateToSatoshi.toLong)
+
+      // We record liquidity purchase details.
+      liquidityPurchase_opt.foreach(p => {
+        // If we initiate the interactive-tx session, we're the buyer: otherwise, we're the seller.
+        LiquidityPurchaseAmount.withTag(Tags.DiffSign, if (fundingParams.isInitiator) Tags.DiffSigns.plus else Tags.DiffSigns.minus).record(p.amount.toLong)
+        // If the actual mining fee we paid is greater than what the user refunds, we lose money.
+        if (!fundingParams.isInitiator) {
+          val miningFeeDiff = p.fees.miningFee - sharedTx.localFees.truncateToSatoshi
+          if (miningFeeDiff >= 0.sat) {
+            LiquidityPurchaseMiningFeeDiff.withTag(Tags.DiffSign, Tags.DiffSigns.plus).record(miningFeeDiff.toLong)
+          } else {
+            LiquidityPurchaseMiningFeeDiff.withTag(Tags.DiffSign, Tags.DiffSigns.minus).record(-miningFeeDiff.toLong)
+          }
+        }
+      })
     }
 
     /**
@@ -121,6 +169,12 @@ object Monitoring {
       val SpliceIn = "splice-in"
       val SpliceOut = "splice-out"
       val SpliceCpfp = "splice-cpfp"
+    }
+
+    /** we can't chart negative amounts in Kamon */
+    object DiffSigns {
+      val plus = "plus"
+      val minus = "minus"
     }
   }
 
