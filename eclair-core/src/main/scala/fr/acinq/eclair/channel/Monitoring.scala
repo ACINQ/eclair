@@ -33,6 +33,10 @@ object Monitoring {
     val HtlcValueInFlightGlobal = Kamon.gauge("channels.htlc-value-in-flight-global", "Global HTLC value in flight across all channels")
     val LocalFeeratePerByte = Kamon.histogram("channels.local-feerate-per-byte")
     val RemoteFeeratePerByte = Kamon.histogram("channels.remote-feerate-per-byte")
+    val InteractiveTxInputs = Kamon.histogram("channels.interactive-tx.inputs", "Interactive tx inputs")
+    val InteractiveTxOutputs = Kamon.histogram("channels.interactive-tx.outputs", "Interactive tx output")
+    val InteractiveTxInputsPerSession = Kamon.histogram("channels.interactive-tx.inputs-per-session", "Interactive tx inputs per session")
+    val InteractiveTxOutputsPerSession = Kamon.histogram("channels.interactive-tx.outputs-per-session", "Interactive tx output per session")
     val Splices = Kamon.histogram("channels.splices", "Splices")
     val ProcessMessage = Kamon.timer("channels.messages-processed")
     val HtlcDropped = Kamon.counter("channels.htlc-dropped")
@@ -91,7 +95,10 @@ object Monitoring {
     val State = "state"
     val CommitmentFormat = "commitment-format"
     val SpliceType = "splice-type"
+    val InputType = "input-type"
+    val OutputType = "output-type"
     val Reason = "reason"
+    val DiffSign = "sign"
 
     object Events {
       val Created = "created"
