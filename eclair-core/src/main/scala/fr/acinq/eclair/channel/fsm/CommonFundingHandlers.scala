@@ -103,7 +103,7 @@ trait CommonFundingHandlers extends CommonHandlers {
             val spliceSpendingTxs = commitments1.all.collect { case c if c.fundingTxIndex == commitment.fundingTxIndex + 1 => c.fundingTxId }
             watchFundingSpent(commitment, additionalKnownSpendingTxs = spliceSpendingTxs.toSet, None)
             // We notify listeners that this funding transaction is now confirmed.
-            context.system.eventStream.publish(ChannelFundingConfirmed(self, d.channelId, remoteNodeId, w.tx.txid, c.fundingTxIndex, w.blockHeight, commitments1))
+            context.system.eventStream.publish(ChannelFundingConfirmed(self, d.channelId, remoteNodeId, w.tx.txid, c.fundingTxIndex, w.blockHeight, commitments1, d.commitments))
             // We can unwatch the previous funding transaction(s), which have been spent by this splice transaction.
             d.commitments.all.collect { case c if c.fundingTxIndex < commitment.fundingTxIndex => blockchain ! UnwatchFundingSpent(c.fundingTxId, c.fundingInput.index.toInt) }
             // In the dual-funding/splicing case we can forget all other transactions (RBF attempts), they have been

@@ -58,7 +58,7 @@ case class ChannelFundingCreated(channel: ActorRef, channelId: ByteVector32, rem
 }
 
 /** This event is sent once a funding transaction (channel creation or splice) has been confirmed. */
-case class ChannelFundingConfirmed(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, fundingTxId: TxId, fundingTxIndex: Long, blockHeight: BlockHeight, commitments: Commitments) extends ChannelEvent
+case class ChannelFundingConfirmed(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, fundingTxId: TxId, fundingTxIndex: Long, blockHeight: BlockHeight, commitments: Commitments, previousCommitments: Commitments) extends ChannelEvent
 
 /** This event is sent once channel_ready or splice_locked have been exchanged: the channel is ready to process payments. */
 case class ChannelReadyForPayments(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, fundingTxId: TxId, fundingTxIndex: Long) extends ChannelEvent
