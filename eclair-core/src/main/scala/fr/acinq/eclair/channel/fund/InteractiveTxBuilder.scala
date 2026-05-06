@@ -783,22 +783,6 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
     val localOutputs = session.localOutputs.collect { case o: Output.Local => o }
     val remoteOutputs = session.remoteOutputs.collect { case o: Output.Remote => o }
 
-    // Global, not "per session". The goal is to measure the total number of inputs/outputs and distribution of amounts across all interactive-tx sessions.
-    sharedInputs.foreach(i => Monitoring.Metrics.InteractiveTxInputs.withTag(Monitoring.Tags.InputType, "shared").record(i.txOut.amount.toLong))
-    localInputs.foreach(i => Monitoring.Metrics.InteractiveTxInputs.withTag(Monitoring.Tags.InputType, "local").record(i.txOut.amount.toLong))
-    remoteInputs.foreach(i => Monitoring.Metrics.InteractiveTxInputs.withTag(Monitoring.Tags.InputType, "remote").record(i.txOut.amount.toLong))
-    sharedOutputs.foreach(o => Monitoring.Metrics.InteractiveTxOutputs.withTag(Monitoring.Tags.OutputType, "shared").record(o.amount.toLong))
-    localOutputs.foreach(o => Monitoring.Metrics.InteractiveTxOutputs.withTag(Monitoring.Tags.OutputType, "local").record(o.amount.toLong))
-    remoteOutputs.foreach(o => Monitoring.Metrics.InteractiveTxOutputs.withTag(Monitoring.Tags.OutputType, "remote").record(o.amount.toLong))
-
-    // We measure the number of each input/output type per session.
-    if (sharedInputs.nonEmpty) Monitoring.Metrics.InteractiveTxInputsPerSession.withTag(Monitoring.Tags.InputType, "shared").record(sharedInputs.size)
-    if (localInputs.nonEmpty) Monitoring.Metrics.InteractiveTxInputsPerSession.withTag(Monitoring.Tags.InputType, "local").record(localInputs.size)
-    if (remoteInputs.nonEmpty) Monitoring.Metrics.InteractiveTxInputsPerSession.withTag(Monitoring.Tags.InputType, "remote").record(remoteInputs.size)
-    if (sharedOutputs.nonEmpty) Monitoring.Metrics.InteractiveTxOutputsPerSession.withTag(Monitoring.Tags.OutputType, "shared").record(sharedOutputs.size)
-    if (localOutputs.nonEmpty) Monitoring.Metrics.InteractiveTxOutputsPerSession.withTag(Monitoring.Tags.OutputType, "local").record(localOutputs.size)
-    if (remoteOutputs.nonEmpty) Monitoring.Metrics.InteractiveTxOutputsPerSession.withTag(Monitoring.Tags.OutputType, "remote").record(remoteOutputs.size)
-
     if (sharedOutputs.length > 1) {
       log.warn("invalid interactive tx: funding script included multiple times")
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "funding script included multiple times"))
@@ -919,6 +903,7 @@ private class InteractiveTxBuilder(replyTo: ActorRef[InteractiveTxBuilder.Respon
       return Left(InvalidCompleteInteractiveTx(fundingParams.channelId, "RBF attempts must double-spend all previous transactions"))
     }
 
+    Monitoring.Metrics.recordInteractiveTx(fundingParams, sharedTx, liquidityPurchase_opt)
     Right(sharedTx)
   }
 
