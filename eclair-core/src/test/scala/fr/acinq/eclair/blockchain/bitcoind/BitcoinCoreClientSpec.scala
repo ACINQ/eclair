@@ -1745,6 +1745,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     generateBlocks(1)
     bitcoinClient.getBlockHeight().pipeTo(sender.ref)
     val blockHeight1 = sender.expectMsgType[BlockHeight]
+    bitcoinClient.getBlockId(blockHeight1.toInt).pipeTo(sender.ref)
+    val blockId = sender.expectMsgType[BlockId]
     assert(blockHeight1 == blockHeight + 1)
     bitcoinClient.getTxConfirmations(tx1.txid).pipeTo(sender.ref)
     sender.expectMsg(Some(1))
@@ -1756,10 +1758,8 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     generateBlocks(10)
     bitcoinClient.lookForMempoolSpendingTx(tx1.txIn.head.outPoint).pipeTo(sender.ref)
     sender.expectMsgType[Failure]
-    bitcoinClient.lookForSpendingTx(None, tx1.txIn.head.outPoint, limit = 5).pipeTo(sender.ref)
-    sender.expectMsgType[Failure]
-    bitcoinClient.lookForSpendingTx(None, tx1.txIn.head.outPoint, limit = 15).pipeTo(sender.ref)
-    sender.expectMsg(tx1)
+    bitcoinClient.findSpendingTx(tx1.txIn.head.outPoint).pipeTo(sender.ref)
+    sender.expectMsg(Some(tx1, Some(blockId)))
   }
 
   test("get index information") {
