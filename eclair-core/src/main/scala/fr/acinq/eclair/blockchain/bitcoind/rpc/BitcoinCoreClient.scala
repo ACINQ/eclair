@@ -199,32 +199,6 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
     }
   }
 
-  /**
-   * Iterate over blocks to find the transaction that has spent a given output.
-   * It isn't useful to look at the whole blockchain history: if the transaction was confirmed long ago, an attacker
-   * will have already claimed all possible outputs and there's nothing we can do about it.
-   *
-   * @param blockHash_opt hash of a block *after* the output has been spent. If not provided, we will use the blockchain tip.
-   * @param outPoint      transaction output that has been spent.
-   * @param limit         maximum number of previous blocks to scan.
-   * @return the transaction spending the given output.
-   */
-  def lookForSpendingTx(blockHash_opt: Option[BlockHash], outPoint: OutPoint, limit: Int)(implicit ec: ExecutionContext): Future[Transaction] = {
-    for {
-      blockId <- blockHash_opt match {
-        case Some(blockHash) => Future.successful(BlockId(blockHash))
-        // NB: bitcoind confusingly returns the blockId instead of the blockHash.
-        case None => rpcClient.invoke("getbestblockhash").collect { case JString(blockId) => BlockId(ByteVector32.fromValidHex(blockId)) }
-      }
-      block <- getBlock(blockId)
-      res <- block.tx.asScala.find(tx => tx.txIn.asScala.exists(i => i.outPoint == KotlinUtils.scala2kmp(outPoint))) match {
-        case Some(tx) => Future.successful(KotlinUtils.kmp2scala(tx))
-        case None if limit > 0 => lookForSpendingTx(Some(KotlinUtils.kmp2scala(block.header.hashPreviousBlock)), outPoint, limit - 1)
-        case None => Future.failed(new RuntimeException(s"couldn't find tx spending $outPoint in the blockchain"))
-      }
-    } yield res
-  }
-
   def listTransactions(count: Int, skip: Int)(implicit ec: ExecutionContext): Future[List[WalletTx]] = rpcClient.invoke("listtransactions", "*", count, skip).map {
     case JArray(txs) => txs.map(tx => {
       val JString(address) = tx \ "address"
