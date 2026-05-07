@@ -27,7 +27,7 @@ FROM eclipse-temurin:21-jre-noble
 WORKDIR /app
 
 # install jq for eclair-cli
-RUN apt-get update && apt-get install bash jq curl unzip
+RUN apt-get update && apt-get install -y bash jq curl unzip
 
 # copy and install eclair-cli executable
 COPY --from=BUILD /usr/src/eclair-core/eclair-cli .
