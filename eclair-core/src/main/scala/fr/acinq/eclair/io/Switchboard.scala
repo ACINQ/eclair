@@ -54,10 +54,10 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
       // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
       // Closed channels will be removed, other channels will be restored.
-      val (channels, closedChannels) = init.channels.partition(c => Closing.isClosed(c, None).isEmpty)
+      val (channels, closedChannels) = init.channels.partition(c => Closing.isClosed(c.channelData, None).isEmpty)
       closedChannels.foreach(c => {
         log.info("channel {} was closed before restarting, updating the DB", c.channelId)
-        val closingData_opt = (c, Closing.isClosed(c, None)) match {
+        val closingData_opt = (c.channelData, Closing.isClosed(c.channelData, None)) match {
           case (c: DATA_CLOSING, Some(closingType)) => Some(DATA_CLOSED(c, closingType))
           case _ => None
         }
@@ -71,7 +71,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       (peersWithOnTheFlyFunding -- peersWithChannels.keySet).foreach {
         case (remoteNodeId, pending) => createOrGetPeer(remoteNodeId, Set.empty, pending)
       }
-      val peerCapacities = channels.map {
+      val peerCapacities = channels.map(_.channelData).map {
         case channelData: ChannelDataWithoutCommitments => (channelData.remoteNodeId, 0L)
         case channelData: ChannelDataWithCommitments => (channelData.remoteNodeId, channelData.commitments.capacity.toLong)
       }.groupMapReduce[PublicKey, Long](_._1)(_._2)(_ + _)
@@ -152,9 +152,9 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
    */
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
-  def createPeer(remoteNodeId: PublicKey): ActorRef = peerFactory.spawn(context, remoteNodeId)
+  private def createPeer(remoteNodeId: PublicKey): ActorRef = peerFactory.spawn(context, remoteNodeId)
 
-  def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[PersistentChannelData], pendingOnTheFlyFunding: Map[ByteVector32, OnTheFlyFunding.Pending]): ActorRef = {
+  private def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[PersistentChannelDataWithKeys], pendingOnTheFlyFunding: Map[ByteVector32, OnTheFlyFunding.Pending]): ActorRef = {
     getPeer(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
@@ -190,7 +190,7 @@ object Switchboard {
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   // @formatter:off
-  case class Init(channels: Seq[PersistentChannelData])
+  case class Init(channels: Seq[PersistentChannelDataWithKeys])
 
   case object GetPeers
   case class GetPeerInfo(replyTo: typed.ActorRef[PeerInfoResponse], remoteNodeId: PublicKey)

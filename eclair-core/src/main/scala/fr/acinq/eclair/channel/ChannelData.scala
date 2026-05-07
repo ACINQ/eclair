@@ -23,12 +23,13 @@ import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
+import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureReason, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, TimestampMilli, UInt64}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, TimestampMilli, UInt64}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -549,7 +550,22 @@ case object Nothing extends TransientChannelData {
 sealed trait PersistentChannelData extends ChannelData {
   def remoteNodeId: PublicKey
   def channelParams: ChannelParams
+  def withChannelKeys(nodeParams: NodeParams): PersistentChannelDataWithKeys = {
+    val channelKeys = nodeParams.channelKeyManager.channelKeys(channelParams.channelConfig, channelParams.localParams.fundingKeyPath)
+    PersistentChannelDataWithKeys(this, channelKeys)
+  }
 }
+
+case class PersistentChannelDataWithKeys(channelData: PersistentChannelData, channelKeys: ChannelKeys) {
+  val channelId: ByteVector32 = channelData.channelId
+  val remoteNodeId: PublicKey = channelData.remoteNodeId
+
+  def validateSeed(): Boolean = channelData match {
+    case c: ChannelDataWithCommitments => c.commitments.validateSeed(channelKeys)
+    case _: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED => true
+  }
+}
+
 sealed trait ChannelDataWithoutCommitments extends PersistentChannelData {
   val channelId: ByteVector32 = channelParams.channelId
   val remoteNodeId: PublicKey = channelParams.remoteNodeId

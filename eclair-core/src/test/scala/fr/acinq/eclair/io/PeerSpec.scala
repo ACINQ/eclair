@@ -113,7 +113,7 @@ class PeerSpec extends FixtureSpec {
 
   def cleanupFixture(fixture: FixtureParam): Unit = fixture.cleanup()
 
-  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[PersistentChannelData] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()), initializePeer: Boolean = true, peerStorage: Option[ByteVector] = None)(implicit system: ActorSystem): Unit = {
+  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[PersistentChannelDataWithKeys] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures()), initializePeer: Boolean = true, peerStorage: Option[ByteVector] = None)(implicit system: ActorSystem): Unit = {
     // let's simulate a connection
     if (initializePeer) {
       switchboard.send(peer, Peer.Init(channels, Map.empty))
@@ -134,7 +134,7 @@ class PeerSpec extends FixtureSpec {
     import f._
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[PeerCreated])
-    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
     probe.expectMsg(PeerCreated(peer.ref, remoteNodeId))
     probe.send(peer, Peer.GetPeerInfo(None))
     val peerInfo = probe.expectMsgType[PeerInfo]
@@ -216,7 +216,7 @@ class PeerSpec extends FixtureSpec {
     nodeParams.db.network.addNode(ann)
 
     val probe = TestProbe()
-    probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal), Map.empty))
+    probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)), Map.empty))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
     eventually {
@@ -236,7 +236,7 @@ class PeerSpec extends FixtureSpec {
     val probe = TestProbe()
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
     val remoteInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures().add(Features.WakeUpNotificationClient, FeatureSupport.Optional))
-    val mobileWalletChannel = ChannelCodecsSpec.normal.copy(commitments = ChannelCodecsSpec.normal.commitments.updateInitFeatures(localInit, remoteInit))
+    val mobileWalletChannel = ChannelCodecsSpec.normal.copy(commitments = ChannelCodecsSpec.normal.commitments.updateInitFeatures(localInit, remoteInit)).withChannelKeys(nodeParams)
     probe.send(peer, Peer.Init(Set(mobileWalletChannel), Map.empty))
     // the reconnection task will stay in the idle state
     monitor.expectNoMessage(100 millis)
@@ -246,7 +246,7 @@ class PeerSpec extends FixtureSpec {
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
 
     probe.send(peer, Peer.Connect(remoteNodeId, None, probe.ref, isPersistent = true))
     probe.expectMsgType[PeerConnection.ConnectionResult.AlreadyConnected]
@@ -257,7 +257,7 @@ class PeerSpec extends FixtureSpec {
 
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[UnknownMessageReceived])
-    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
 
     peerConnection.send(peer, UnknownMessage(tag = TestConstants.pluginParams.messageTags.head, data = ByteVector.empty))
     listener.expectMsgType[UnknownMessageReceived]
@@ -269,7 +269,7 @@ class PeerSpec extends FixtureSpec {
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
 
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     assert(probe.expectMsgType[Peer.PeerInfo].state == Peer.CONNECTED)
@@ -300,7 +300,7 @@ class PeerSpec extends FixtureSpec {
     val peerConnection2 = TestProbe()
     val peerConnection3 = TestProbe()
 
-    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
     channel.expectMsg(INPUT_RESTORED(ChannelCodecsSpec.normal))
     val (localInit, remoteInit) = {
       val inputReconnected = channel.expectMsgType[INPUT_RECONNECTED]
@@ -339,7 +339,7 @@ class PeerSpec extends FixtureSpec {
     monitor.expectMsg(FSM.CurrentState(reconnectionTask, ReconnectionTask.IDLE))
 
     val probe = TestProbe()
-    probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal), Map.empty))
+    probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)), Map.empty))
 
     // the reconnection task will wait a little...
     monitor.expectMsg(FSM.Transition(reconnectionTask, ReconnectionTask.IDLE, ReconnectionTask.WAITING))
@@ -357,7 +357,7 @@ class PeerSpec extends FixtureSpec {
   test("send recommended feerates when feerate changes") { f =>
     import f._
 
-    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
 
     // We regularly update our internal feerates.
     val bitcoinCoreFeerates = FeeratesPerKw(FeeratePerKw(253 sat), FeeratePerKw(400 sat), FeeratePerKw(500 sat), FeeratePerKw(1000 sat), FeeratePerKw(1500 sat))
@@ -648,7 +648,7 @@ class PeerSpec extends FixtureSpec {
   test("handle final channelId assigned in state DISCONNECTED") { f =>
     import f._
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
     peer ! ConnectionDown(peerConnection.ref)
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     val peerInfo1 = probe.expectMsgType[Peer.PeerInfo]
@@ -665,7 +665,7 @@ class PeerSpec extends FixtureSpec {
     import f._
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[LastChannelClosed])
-    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
     probe.send(channel.ref, PoisonPill)
     probe.expectMsg(LastChannelClosed(peer, remoteNodeId))
   }
@@ -674,7 +674,7 @@ class PeerSpec extends FixtureSpec {
     import f._
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[LastChannelClosed])
-    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
     peer ! ConnectionDown(peerConnection.ref)
     probe.send(channel.ref, PoisonPill)
     probe.expectMsg(LastChannelClosed(peer, remoteNodeId))
@@ -682,7 +682,7 @@ class PeerSpec extends FixtureSpec {
 
   test("reply to relay request") { f =>
     import f._
-    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
     val Right(msg) = buildMessage(randomKey(), randomKey(), Nil, Recipient(remoteNodeId, None), TlvStream.empty)
     val messageId = randomBytes32()
     val probe = TestProbe()
@@ -703,7 +703,7 @@ class PeerSpec extends FixtureSpec {
     import f._
     val probe = TestProbe()
     val unknownMessage = UnknownMessage(60003, ByteVector32.One)
-    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)))
     probe.send(peer, Peer.RelayUnknownMessage(unknownMessage))
     peerConnection.expectMsgType[UnknownMessage]
   }
@@ -777,19 +777,19 @@ class PeerSpec extends FixtureSpec {
     val channel = ChannelCodecsSpec.normal
     val peerConnection1 = peerConnection
     nodeParams.db.peers.updateStorage(remoteNodeId, hex"abcdef")
-    connect(remoteNodeId, peer, peerConnection1, switchboard, channels = Set(channel), peerStorage = Some(hex"abcdef"))
+    connect(remoteNodeId, peer, peerConnection1, switchboard, channels = Set(channel.withChannelKeys(nodeParams)), peerStorage = Some(hex"abcdef"))
     peer ! ChannelReadyForPayments(ActorRef.noSender, channel.remoteNodeId, channel.channelId, channel.commitments.latest.fundingTxId, channel.commitments.latest.fundingTxIndex)
     peerConnection1.send(peer, PeerStorageStore(hex"deadbeef"))
     peerConnection1.send(peer, PeerStorageStore(hex"0123456789"))
 
     // We disconnect and reconnect, sending the last backup we received.
     val peerConnection2 = TestProbe()
-    connect(remoteNodeId, peer, peerConnection2, switchboard, channels = Set(ChannelCodecsSpec.normal), initializePeer = false, peerStorage = Some(hex"0123456789"))
+    connect(remoteNodeId, peer, peerConnection2, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)), initializePeer = false, peerStorage = Some(hex"0123456789"))
     peerConnection2.send(peer, PeerStorageStore(hex"1111"))
 
     // We reconnect again.
     val peerConnection3 = TestProbe()
-    connect(remoteNodeId, peer, peerConnection3, switchboard, channels = Set(ChannelCodecsSpec.normal), initializePeer = false, peerStorage = Some(hex"1111"))
+    connect(remoteNodeId, peer, peerConnection3, switchboard, channels = Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)), initializePeer = false, peerStorage = Some(hex"1111"))
     // Because of the delayed writes, we may not have stored the latest value immediately, but we will eventually store it.
     eventually {
       assert(nodeParams.db.peers.getStorage(remoteNodeId).contains(hex"1111"))
@@ -892,7 +892,7 @@ class PeerSpec extends FixtureSpec {
     nodeParams.db.peers.addOrUpdatePeerFeatures(remoteNodeId, nodeInfo.features)
 
     // We initialize ourselves after a restart, but our peer doesn't reconnect immediately to us.
-    switchboard.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal), Map.empty))
+    switchboard.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal.withChannelKeys(nodeParams)), Map.empty))
     // When we request information about the peer, we will fetch it from the DB.
     val probe = TestProbe()
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))

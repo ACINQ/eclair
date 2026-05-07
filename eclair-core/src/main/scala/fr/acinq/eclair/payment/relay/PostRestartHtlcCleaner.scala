@@ -71,9 +71,9 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
         val channels = listLocalChannels(init.channels)
         val onTheFlyPayments = nodeParams.db.liquidity.listPendingOnTheFlyPayments().values.flatten.toSet
         val nonStandardIncomingHtlcs: Seq[IncomingHtlc] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getIncomingHtlcs(nodeParams, log) }.flatten
-        val htlcsIn: Seq[IncomingHtlc] = getIncomingHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.features) ++ nonStandardIncomingHtlcs
+        val htlcsIn: Seq[IncomingHtlc] = getIncomingHtlcs(channels.map(_.channelData), nodeParams.db.payments, nodeParams.privateKey, nodeParams.features) ++ nonStandardIncomingHtlcs
         val nonStandardRelayedOutHtlcs: Map[Origin.Cold, Set[(ByteVector32, Long)]] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn, nodeParams, log) }.flatten.toMap
-        val relayedOut: Map[Origin.Cold, Set[(ByteVector32, Long)]] = getHtlcsRelayedOut(nodeParams, channels, htlcsIn) ++ nonStandardRelayedOutHtlcs
+        val relayedOut: Map[Origin.Cold, Set[(ByteVector32, Long)]] = getHtlcsRelayedOut(channels, htlcsIn) ++ nonStandardRelayedOutHtlcs
 
         val settledHtlcs: Set[(ByteVector32, Long)] = nodeParams.db.pendingCommands.listSettlementCommands().map { case (channelId, cmd) => (channelId, cmd.id) }.toSet
         val notRelayed = htlcsIn.filterNot(htlcIn => {
@@ -310,7 +310,7 @@ object PostRestartHtlcCleaner {
 
   def props(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None): Props = Props(new PostRestartHtlcCleaner(nodeParams, register, initialized))
 
-  case class Init(channels: Seq[PersistentChannelData])
+  case class Init(channels: Seq[PersistentChannelDataWithKeys])
 
   case object GetBrokenHtlcs
 
@@ -405,10 +405,9 @@ object PostRestartHtlcCleaner {
       .toMap
 
   /** @return pending outgoing HTLCs, grouped by their upstream origin. */
-  private def getHtlcsRelayedOut(nodeParams: NodeParams, channels: Seq[PersistentChannelData], htlcsIn: Seq[IncomingHtlc])(implicit log: LoggingAdapter): Map[Origin.Cold, Set[(ByteVector32, Long)]] = {
+  private def getHtlcsRelayedOut(channels: Seq[PersistentChannelDataWithKeys], htlcsIn: Seq[IncomingHtlc])(implicit log: LoggingAdapter): Map[Origin.Cold, Set[(ByteVector32, Long)]] = {
     val htlcsOut = channels
-      .collect { case c: ChannelDataWithCommitments => c }
-      .flatMap { c =>
+      .collect { case PersistentChannelDataWithKeys(c: ChannelDataWithCommitments, channelKeys) =>
         // Filter out HTLCs that will never reach the blockchain or have already been settled on-chain.
         val htlcsToIgnore: Set[Long] = c match {
           case d: DATA_CLOSING =>
@@ -429,7 +428,6 @@ object PostRestartHtlcCleaner {
               case Some(_: Closing.MutualClose) => Set.empty
               case None => Set.empty
             }
-            val channelKeys = nodeParams.channelKeyManager.channelKeys(d.commitments.channelParams.channelConfig, d.commitments.localChannelParams.fundingKeyPath)
             val timedOutHtlcs: Set[Long] = (closingType_opt match {
               case Some(c: Closing.LocalClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.localCommit, tx))
               case Some(c: Closing.RemoteClose) => confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(channelKeys, d.commitments.latest, c.remoteCommit, tx))
@@ -444,7 +442,7 @@ object PostRestartHtlcCleaner {
         c.commitments.originChannels.collect {
           case (outgoingHtlcId, origin: Origin.Cold) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId)
         }
-      }
+      }.flatten
     groupByOrigin(htlcsOut, htlcsIn)
   }
 
@@ -454,8 +452,8 @@ object PostRestartHtlcCleaner {
    * and before it has effectively been removed. Such closed channels will automatically be removed once the channel is
    * restored.
    */
-  private def listLocalChannels(channels: Seq[PersistentChannelData]): Seq[PersistentChannelData] =
-    channels.filterNot(c => Closing.isClosed(c, None).isDefined)
+  private def listLocalChannels(channels: Seq[PersistentChannelDataWithKeys]): Seq[PersistentChannelDataWithKeys] =
+    channels.filterNot(c => Closing.isClosed(c.channelData, None).isDefined)
 
   /**
    * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]] in a database

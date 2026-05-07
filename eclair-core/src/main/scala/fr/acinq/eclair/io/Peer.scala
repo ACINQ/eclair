@@ -83,13 +83,12 @@ class Peer(val nodeParams: NodeParams,
     case Event(init: Init, _) =>
       pendingOnTheFlyFunding = init.pendingOnTheFlyFunding
       val channels = init.storedChannels.map { state =>
-        val channelKeys = nodeParams.channelKeyManager.channelKeys(state.channelParams.channelConfig, state.channelParams.localParams.fundingKeyPath)
-        val channel = spawnChannel(channelKeys)
-        channel ! INPUT_RESTORED(state)
+        val channel = spawnChannel(state.channelKeys)
+        channel ! INPUT_RESTORED(state.channelData)
         FinalChannelId(state.channelId) -> channel
       }.toMap
       // We only connect to nodes with whom we have a channel, which aren't mobile wallets.
-      val autoReconnect = init.storedChannels.exists(c => !c.channelParams.remoteParams.initFeatures.hasFeature(Features.WakeUpNotificationClient))
+      val autoReconnect = init.storedChannels.exists(c => !c.channelData.channelParams.remoteParams.initFeatures.hasFeature(Features.WakeUpNotificationClient))
       context.system.eventStream.publish(PeerCreated(self, remoteNodeId))
       // When we restart, we will attempt to reconnect right away, but then we'll wait.
       // We don't fetch our peer's features from the DB: if the connection succeeds, we will get them from their init message, which saves a DB call.
@@ -1121,7 +1120,7 @@ object Peer {
   case object DISCONNECTED extends State
   case object CONNECTED extends State
 
-  case class Init(storedChannels: Set[PersistentChannelData], pendingOnTheFlyFunding: Map[ByteVector32, OnTheFlyFunding.Pending])
+  case class Init(storedChannels: Set[PersistentChannelDataWithKeys], pendingOnTheFlyFunding: Map[ByteVector32, OnTheFlyFunding.Pending])
   case class Connect(nodeId: PublicKey, address_opt: Option[NodeAddress], replyTo: ActorRef, isPersistent: Boolean) {
     def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
   }

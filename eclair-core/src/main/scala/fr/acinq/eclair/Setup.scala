@@ -389,7 +389,7 @@ class Setup(val datadir: File,
 
       txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, bitcoinClient)
       channelFactory = Peer.SimpleChannelFactory(nodeParams, watcher, relayer, bitcoinClient, txPublisherFactory)
-      pendingChannelsRateLimiter = system.spawn(Behaviors.supervise(PendingChannelsRateLimiter(nodeParams, router.toTyped, channels)).onFailure(typed.SupervisorStrategy.resume), name = "pending-channels-rate-limiter")
+      pendingChannelsRateLimiter = system.spawn(Behaviors.supervise(PendingChannelsRateLimiter(nodeParams, router.toTyped, channels.map(_.channelData))).onFailure(typed.SupervisorStrategy.resume), name = "pending-channels-rate-limiter")
       peerFactory = Switchboard.SimplePeerFactory(nodeParams, bitcoinClient, channelFactory, pendingChannelsRateLimiter, register, router.toTyped)
 
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, peerFactory), "switchboard", SupervisorStrategy.Resume))
@@ -403,7 +403,7 @@ class Setup(val datadir: File,
       balanceActor = system.spawn(BalanceActor(bitcoinClient, nodeParams.channelConf.minDepth, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
       postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard, router.toTyped, register, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
       peerScorer_opt = if (nodeParams.peerScoringConfig.enabled) {
-        val statsTracker = system.spawn(Behaviors.supervise(PeerStatsTracker(nodeParams.peerStatsTrackerConfig, nodeParams.db.audit, channels)).onFailure(typed.SupervisorStrategy.restart), name = "peer-stats-tracker")
+        val statsTracker = system.spawn(Behaviors.supervise(PeerStatsTracker(nodeParams.peerStatsTrackerConfig, nodeParams.db.audit, channels.map(_.channelData))).onFailure(typed.SupervisorStrategy.restart), name = "peer-stats-tracker")
         Some(system.spawn(Behaviors.supervise(PeerScorer(nodeParams, bitcoinClient, statsTracker, register)).onFailure(typed.SupervisorStrategy.restart), name = "peer-scorer"))
       } else None
 
