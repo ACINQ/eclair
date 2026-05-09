@@ -29,6 +29,7 @@ import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.OfferCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
+import fr.acinq.eclair.router.Router.AddrType
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId, TimestampSecond}
 import scodec.bits.ByteVector
 
@@ -96,6 +97,13 @@ object FormParamExtractors {
     case "medium" => ConfirmationPriority.Medium
     case "fast" => ConfirmationPriority.Fast
     case priority => throw new IllegalArgumentException(s"unknown confirmation priority '$priority'")
+  }
+
+  val addrTypeUnmarshaller: Unmarshaller[String, AddrType] = Unmarshaller.strict {
+    case "clearnet" => AddrType.Clearnet
+    case "hybrid" => AddrType.Hybrid
+    case "tor" => AddrType.Tor
+    case addrType => throw new IllegalArgumentException(s"unknown address type '$addrType', expected: clearnet, hybrid, tor")
   }
 
   private def listUnmarshaller[T](unmarshal: String => T): Unmarshaller[String, List[T]] = Unmarshaller.strict { str =>

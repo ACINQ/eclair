@@ -27,7 +27,7 @@ import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment.send.BlindedPathsResolver.{Resolve, ResolvedPath}
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTrampolinePayment}
 import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute}
-import fr.acinq.eclair.router.Router.RouteParams
+import fr.acinq.eclair.router.Router.{AddrType, RouteParams}
 import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, InvoicePayload}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.{OnionMessagePayloadTlv, TlvStream}
@@ -62,7 +62,8 @@ object OfferPayment {
                                maxAttempts: Int,
                                routeParams: RouteParams,
                                blocking: Boolean,
-                               trampolineNodeId_opt: Option[PublicKey] = None)
+                               trampolineNodeId_opt: Option[PublicKey] = None,
+                               routeAddrType_opt: Option[AddrType] = None)
 
   def apply(nodeParams: NodeParams,
             postman: typed.ActorRef[Postman.Command],
@@ -155,7 +156,7 @@ private class OfferPayment(replyTo: ActorRef,
         replyTo ! UnknownShortChannelIds(scids)
         Behaviors.stopped
       case WrappedResolvedPaths(resolved) =>
-        paymentInitiator ! SendPaymentToNode(replyTo, invoice.amount, invoice, resolved, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey), blockUntilComplete = sendPaymentConfig.blocking)
+        paymentInitiator ! SendPaymentToNode(replyTo, invoice.amount, invoice, resolved, maxAttempts = sendPaymentConfig.maxAttempts, externalId = sendPaymentConfig.externalId_opt, routeParams = sendPaymentConfig.routeParams, payerKey_opt = Some(payerKey), blockUntilComplete = sendPaymentConfig.blocking, routeAddrType_opt = sendPaymentConfig.routeAddrType_opt)
         Behaviors.stopped
     }
 }

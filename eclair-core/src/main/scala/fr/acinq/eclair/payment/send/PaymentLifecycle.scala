@@ -65,7 +65,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
     case Event(request: SendPaymentToNode, WaitingForRequest) =>
       log.debug("sending {} to {}", request.amount, request.recipient.nodeId)
-      router ! RouteRequest(self, nodeParams.nodeId, request.recipient, request.routeParams, paymentContext = Some(cfg.paymentContext))
+      router ! RouteRequest(self, nodeParams.nodeId, request.recipient, request.routeParams, paymentContext = Some(cfg.paymentContext), routeAddrType_opt = request.routeAddrType_opt)
       if (cfg.storeInDb) {
         paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, cfg.paymentType, request.amount, request.recipient.totalAmount, request.recipient.nodeId, TimestampMilli.now(), cfg.invoice, cfg.payerKey_opt, OutgoingPaymentStatus.Pending))
       }
@@ -161,7 +161,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     data.request match {
       case request: SendPaymentToNode =>
         val ignore1 = PaymentFailure.updateIgnored(failure, data.ignore)
-        router ! RouteRequest(self, nodeParams.nodeId, data.recipient, request.routeParams, ignore1, paymentContext = Some(cfg.paymentContext))
+        router ! RouteRequest(self, nodeParams.nodeId, data.recipient, request.routeParams, ignore1, paymentContext = Some(cfg.paymentContext), routeAddrType_opt = request.routeAddrType_opt)
         goto(WAITING_FOR_ROUTE) using WaitingForRoute(data.request, data.failures :+ failure, ignore1)
       case _: SendPaymentToRoute =>
         log.error("unexpected retry during SendPaymentToRoute")
@@ -269,7 +269,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               log.error("unexpected retry during SendPaymentToRoute")
               stop(FSM.Normal)
             case request: SendPaymentToNode =>
-              router ! RouteRequest(self, nodeParams.nodeId, recipient1, request.routeParams, ignore1, paymentContext = Some(cfg.paymentContext))
+              router ! RouteRequest(self, nodeParams.nodeId, recipient1, request.routeParams, ignore1, paymentContext = Some(cfg.paymentContext), routeAddrType_opt = request.routeAddrType_opt)
               goto(WAITING_FOR_ROUTE) using WaitingForRoute(request.copy(recipient = recipient1), failures :+ failure, ignore1)
           }
         } else {
@@ -280,7 +280,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               log.error("unexpected retry during SendPaymentToRoute")
               stop(FSM.Normal)
             case request: SendPaymentToNode =>
-              router ! RouteRequest(self, nodeParams.nodeId, recipient, request.routeParams, ignore + nodeId, paymentContext = Some(cfg.paymentContext))
+              router ! RouteRequest(self, nodeParams.nodeId, recipient, request.routeParams, ignore + nodeId, paymentContext = Some(cfg.paymentContext), routeAddrType_opt = request.routeAddrType_opt)
               goto(WAITING_FOR_ROUTE) using WaitingForRoute(request, failures :+ failure, ignore + nodeId)
           }
         }
@@ -294,7 +294,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             log.error("unexpected retry during SendPaymentToRoute")
             stop(FSM.Normal)
           case request: SendPaymentToNode =>
-            router ! RouteRequest(self, nodeParams.nodeId, recipient, request.routeParams, ignore1, paymentContext = Some(cfg.paymentContext))
+            router ! RouteRequest(self, nodeParams.nodeId, recipient, request.routeParams, ignore1, paymentContext = Some(cfg.paymentContext), routeAddrType_opt = request.routeAddrType_opt)
             goto(WAITING_FOR_ROUTE) using WaitingForRoute(request, failures :+ failure, ignore1)
         }
       case Right(e@Sphinx.DecryptedFailurePacket(nodeId, _, failureMessage)) =>
@@ -495,7 +495,7 @@ object PaymentLifecycle {
    * @param maxAttempts maximum number of retries.
    * @param routeParams parameters to fine-tune the routing algorithm.
    */
-  case class SendPaymentToNode(replyTo: ActorRef, recipient: Recipient, maxAttempts: Int, routeParams: RouteParams) extends SendPayment {
+  case class SendPaymentToNode(replyTo: ActorRef, recipient: Recipient, maxAttempts: Int, routeParams: RouteParams, routeAddrType_opt: Option[AddrType] = None) extends SendPayment {
     require(recipient.totalAmount > 0.msat, "amount must be > 0")
     override val amount: MilliSatoshi = recipient.totalAmount
   }

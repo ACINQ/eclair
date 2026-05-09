@@ -60,11 +60,11 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         replyTo ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(recipient.features)) :: Nil, startedAt = TimestampMilli.now(), settledAt = TimestampMilli.now())
       } else if (Features.canUseFeature(nodeParams.features.invoiceFeatures(), recipient.features, Features.BasicMultiPartPayment)) {
         val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg, publishPreimage = !r.blockUntilComplete)
-        fsm ! MultiPartPaymentLifecycle.SendMultiPartPayment(self, recipient, r.maxAttempts, r.routeParams)
+        fsm ! MultiPartPaymentLifecycle.SendMultiPartPayment(self, recipient, r.maxAttempts, r.routeParams, r.routeAddrType_opt)
         context become main(pending + (paymentId -> PendingPaymentToNode(replyTo, r)))
       } else {
         val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-        fsm ! PaymentLifecycle.SendPaymentToNode(self, recipient, r.maxAttempts, r.routeParams)
+        fsm ! PaymentLifecycle.SendPaymentToNode(self, recipient, r.maxAttempts, r.routeParams, r.routeAddrType_opt)
         context become main(pending + (paymentId -> PendingPaymentToNode(replyTo, r)))
       }
 
@@ -75,7 +75,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val finalExpiry = nodeParams.paymentFinalExpiry.computeFinalExpiry(nodeParams.currentBlockHeight, Channel.MIN_CLTV_EXPIRY_DELTA)
       val recipient = SpontaneousRecipient(r.recipientNodeId, r.recipientAmount, finalExpiry, r.paymentPreimage, r.userCustomTlvs)
       val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-      fsm ! PaymentLifecycle.SendPaymentToNode(self, recipient, r.maxAttempts, r.routeParams)
+      fsm ! PaymentLifecycle.SendPaymentToNode(self, recipient, r.maxAttempts, r.routeParams, r.routeAddrType_opt)
       context become main(pending + (paymentId -> PendingSpontaneousPayment(sender(), r)))
 
     case r: SendTrampolinePayment =>
@@ -125,7 +125,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         case PaymentIdentifier.PaymentUUID(paymentId) => pending.get(paymentId).map(pp => (paymentId, pp))
         case PaymentIdentifier.PaymentHash(paymentHash) => pending.collectFirst { case (paymentId, pp) if pp.paymentHash == paymentHash => (paymentId, pp) }
         case PaymentIdentifier.OfferId(offerId) => pending.collectFirst {
-          case (paymentId, pp@PendingPaymentToNode(_, SendPaymentToNode(_, _, invoice: Bolt12Invoice, _, _, _, _, _, _, _))) if invoice.invoiceRequest.offer.offerId == offerId =>
+          case (paymentId, pp@PendingPaymentToNode(_, SendPaymentToNode(_, _, invoice: Bolt12Invoice, _, _, _, _, _, _, _, _))) if invoice.invoiceRequest.offer.offerId == offerId =>
             (paymentId, pp)
         }
       }
@@ -250,7 +250,8 @@ object PaymentInitiator {
                                routeParams: RouteParams,
                                payerKey_opt: Option[PrivateKey] = None,
                                userCustomTlvs: Set[GenericTlv] = Set.empty,
-                               blockUntilComplete: Boolean = false) extends SendRequestedPayment
+                               blockUntilComplete: Boolean = false,
+                               routeAddrType_opt: Option[AddrType] = None) extends SendRequestedPayment
 
   /**
    * @param recipientAmount          amount that should be received by the final recipient.
@@ -269,7 +270,8 @@ object PaymentInitiator {
                                     externalId: Option[String] = None,
                                     routeParams: RouteParams,
                                     userCustomTlvs: Set[GenericTlv] = Set.empty,
-                                    recordPathFindingMetrics: Boolean = false) {
+                                    recordPathFindingMetrics: Boolean = false,
+                                    routeAddrType_opt: Option[AddrType] = None) {
     val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
   }
 
