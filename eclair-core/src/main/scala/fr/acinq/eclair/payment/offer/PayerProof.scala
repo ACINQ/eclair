@@ -41,6 +41,14 @@ case class PayerProof(records: TlvStream[PayerProofTlv]) {
     PayerProof.validate(records) match {
       case Left(_) => false
       case Right(_) =>
+        // The proof signature must be valid: it signs all non-signature TLVs using the invreq_payer_id.
+        val payerSig = records.get[ProofSignature].get.signature
+        val payerId = records.get[InvoiceRequestPayerId].get.publicKey
+        val proofRootHash = rootHash(TlvStream(records.records.filterNot(r => r.isInstanceOf[Signature] || r.isInstanceOf[ProofSignature]), records.unknown), OfferCodecs.payerProofCodec)
+        if (!verifySchnorr(PayerProof.signatureTag, proofRootHash, payerSig, payerId)) {
+          return false
+        }
+        // The proof must contain enough data to reconstruct the invoice merkle root.
         val leafNonces = records.get[LeafHashes].map(_.hashes).getOrElse(Nil)
         val markers = records.get[OmittedTlvs].map(_.missing).getOrElse(Nil)
         val missingHashes = records.get[MissingHashes].map(_.missing).getOrElse(Nil)
@@ -66,7 +74,10 @@ case class PayerProof(records: TlvStream[PayerProofTlv]) {
         val omittedLeavesOk = allLeavesExceptMetadata.zipWithIndex.forall {
           case ((_, Some(_)), _) => true
           case ((marker, None), idx) if idx == 0 => marker == UInt64(1)
-          case ((marker, None), idx) => marker == (allLeavesExceptMetadata(idx - 1)._1 + 1)
+          case ((marker, None), idx) =>
+            val previous = allLeavesExceptMetadata(idx - 1)._1
+            val expected = if (previous == UInt64(239)) UInt64(1_000_000_000) else previous + 1
+            marker == expected
         }
         if (!omittedLeavesOk) {
           return false
@@ -75,22 +86,11 @@ case class PayerProof(records: TlvStream[PayerProofTlv]) {
         val allLeaves = (Option.empty[LeafWithNonce] +: allLeavesExceptMetadata.map(_._2)).toIndexedSeq
         PayerProofTree.merkleRoot(allLeaves, missingHashes) match {
           case Left(_) => false
-          case Right(rootHash) =>
+          case Right(invoiceRootHash) =>
+            // The invoice signature must be valid against invoice_node_id over the reconstructed merkle root.
             val invoiceSig = records.get[Signature].get.signature
             val invoiceNodeId = records.get[InvoiceNodeId].get.nodeId
-            if (!verifySchnorr(Bolt12Invoice.signatureTag, rootHash, invoiceSig, invoiceNodeId)) {
-              // The invoice signature must be valid against invoice_node_id over the reconstructed merkle root.
-              false
-            } else {
-              // The payer signature must be valid against invreq_payer_id over SHA256(note || merkle_root).
-              val payerSig = records.get[PayerSignature].get.signature
-              val payerId = records.get[InvoiceRequestPayerId].get.publicKey
-              val msg = records.get[PayerSignature].flatMap(_.note_opt) match {
-                case Some(note) => Crypto.sha256(ByteVector(note.getBytes) ++ rootHash)
-                case None => Crypto.sha256(rootHash)
-              }
-              verifySchnorr(PayerProof.signatureTag, msg, payerSig, payerId)
-            }
+            verifySchnorr(Bolt12Invoice.signatureTag, invoiceRootHash, invoiceSig, invoiceNodeId)
         }
     }
   }
@@ -105,7 +105,7 @@ case class PayerProof(records: TlvStream[PayerProofTlv]) {
 object PayerProof {
 
   val hrp = "lnp"
-  val signatureTag: ByteVector = ByteVector(("lightning" + "payer_proof" + "payer_signature").getBytes)
+  val signatureTag: ByteVector = ByteVector(("lightning" + "payer_proof" + "proof_signature").getBytes)
 
   /** Specifies which optional fields from the invoice should be included in the payer proof. */
   case class IncludedFields(offerChains: Boolean = false,
@@ -134,6 +134,8 @@ object PayerProof {
                             unknown: Set[UInt64] = Set.empty)
 
   def create(invoice: Bolt12Invoice, preimage: ByteVector32, payerKey: PrivateKey, fields: IncludedFields, note_opt: Option[String]): PayerProof = {
+    // Valid Bolt12 invoices always contain the invreq_metadata field: it is used as a hashing nonce to prevent brute-forcing private fields.
+    val invreqMetadata = invoice.records.get[InvoiceRequestMetadata].get
     // We select invoice fields that we want to include in our payer proof.
     val knownLeaves: Set[(InvoiceTlv, Boolean)] = invoice.records.records
       .filterNot(_.isInstanceOf[Signature])
@@ -179,8 +181,6 @@ object PayerProof {
       .toSeq
       .sortBy(_._1.tag)
       .map { case (tlv, included) => PayerProofTree.Leaf(tlv, included) }
-    // The invreq_metadata field must be provided (required in Bolt12Invoice).
-    val invreqMetadata = invoice.records.get[InvoiceRequestMetadata].get
     // We include the leaf nonce for each invoice TLV we include in the payer proof.
     val leafNonces = leaves.collect {
       case leaf if leaf.included => PayerProofTree.leafNonce(invreqMetadata, leaf.tlv)
@@ -197,26 +197,31 @@ object PayerProof {
         // This TLV is not included in the payer proof: we add an entry with a marker.
         val markerNumber = previousTlv_opt match {
           case Some(tag) => tag + 1
-          case None => omitted.lastOption.map(tag => tag + 1).getOrElse(UInt64(1))
+          case None => omitted.lastOption match {
+            case Some(tag) if tag == UInt64(239) => UInt64(1_000_000_000)
+            case Some(tag) => tag + 1
+            case None => UInt64(1)
+          }
         }
         (omitted :+ markerNumber, None)
     }._1.toList
     val proofTree = PayerProofTree(leaves)
     val missingHashes = PayerProofTree.computeMissingHashes(proofTree, invreqMetadata)
-    val payerSig = note_opt match {
-      case Some(note) => signSchnorr(signatureTag, Crypto.sha256(ByteVector(note.getBytes) ++ proofTree.hash(invreqMetadata)), payerKey)
-      case None => signSchnorr(signatureTag, Crypto.sha256(proofTree.hash(invreqMetadata)), payerKey)
-    }
     val includedInvoiceTlvs = knownLeaves.collect { case (tlv, true) => tlv }.toSet[PayerProofTlv]
     val payerProofTlvs = Set(
       Some(InvoicePreimage(preimage)),
       Some(LeafHashes(leafNonces)),
       if (omittedTlvs.nonEmpty) Some(OmittedTlvs(omittedTlvs)) else None,
       if (missingHashes.nonEmpty) Some(MissingHashes(missingHashes)) else None,
-      Some(PayerSignature(payerSig, note_opt))
+      note_opt.map(note => ProofNote(note)),
     ).flatten[PayerProofTlv]
     val includedUnknownTlvs = unknownLeaves.collect { case (tlv, true) => tlv }
-    PayerProof(TlvStream(includedInvoiceTlvs ++ invoice.records.get[Signature].toSet ++ payerProofTlvs, includedUnknownTlvs))
+    // The invoice signature is included in the final payer proof but is excluded from the proof merkle root (signature
+    // fields are never signed). Note that the invreq_metadata isn't disclosed in the proof: we will use the first TLV
+    // as a hashing nonce instead.
+    val proofSig = signSchnorr(signatureTag, rootHash(TlvStream[PayerProofTlv](includedInvoiceTlvs ++ payerProofTlvs, includedUnknownTlvs), OfferCodecs.payerProofCodec), payerKey)
+    val finalTlvs = TlvStream[PayerProofTlv](includedInvoiceTlvs ++ invoice.records.get[Signature].toSet ++ payerProofTlvs + ProofSignature(proofSig), includedUnknownTlvs)
+    PayerProof(finalTlvs)
   }
 
   /** When validating a proof, the leaf nonce is directly provided to avoid brute-forcing omitted fields. */
@@ -354,15 +359,14 @@ object PayerProof {
     if (records.get[InvoicePaymentHash].isEmpty) return Left(MissingRequiredTlv(UInt64(168)))
     if (records.get[InvoiceNodeId].isEmpty) return Left(MissingRequiredTlv(UInt64(176)))
     if (records.get[Signature].isEmpty) return Left(MissingRequiredTlv(UInt64(240)))
-    if (records.get[InvoicePreimage].isEmpty) return Left(MissingRequiredTlv(UInt64(242)))
-    if (records.get[PayerSignature].isEmpty) return Left(MissingRequiredTlv(UInt64(250)))
+    if (records.get[ProofSignature].isEmpty) return Left(MissingRequiredTlv(UInt64(241)))
+    if (records.get[InvoicePreimage].isEmpty) return Left(MissingRequiredTlv(UInt64(1001)))
     // The preimage must match the invoice's payment_hash.
-    if (Crypto.sha256(records.get[InvoicePreimage].get.preimage) != records.get[InvoicePaymentHash].get.hash) return Left(InvalidTlvValue(UInt64(242)))
+    if (Crypto.sha256(records.get[InvoicePreimage].get.preimage) != records.get[InvoicePaymentHash].get.hash) return Left(InvalidTlvValue(UInt64(1001)))
     val omittedTlvs = records.get[OmittedTlvs].map(_.missing).getOrElse(Nil)
-    if (omittedTlvs.length != omittedTlvs.distinct.length) return Left(InvalidTlvValue(UInt64(244)))
-    if (omittedTlvs.sorted != omittedTlvs) return Left(InvalidTlvValue(UInt64(244)))
-    if (omittedTlvs.contains(UInt64(0))) return Left(InvalidTlvValue(UInt64(244)))
-    if (omittedTlvs.exists(tag => tag >= UInt64(240) && tag <= UInt64(1000))) return Left(InvalidTlvValue(UInt64(244)))
+    if (omittedTlvs.length != omittedTlvs.distinct.length) return Left(InvalidTlvValue(UInt64(1002)))
+    if (omittedTlvs.sorted != omittedTlvs) return Left(InvalidTlvValue(UInt64(1002)))
+    if (!omittedTlvs.forall(tag => (tag >= UInt64(1) && tag <= UInt64(239)) || (tag >= UInt64(1_000_000_000L) && tag <= UInt64(3_999_999_999L)))) return Left(InvalidTlvValue(UInt64(1002)))
     Right(PayerProof(records))
   }
 

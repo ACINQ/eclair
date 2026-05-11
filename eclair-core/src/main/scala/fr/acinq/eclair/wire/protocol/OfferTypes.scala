@@ -224,6 +224,9 @@ object OfferTypes {
    */
   case class Signature(signature: ByteVector64) extends InvoiceRequestTlv with InvoiceTlv with PayerProofTlv
 
+  /** The payer signs the payer proof. */
+  case class ProofSignature(signature: ByteVector64) extends PayerProofTlv
+
   /** Preimage matching the invoice's [[InvoicePaymentHash]]. */
   case class InvoicePreimage(preimage: ByteVector32) extends PayerProofTlv
 
@@ -236,8 +239,8 @@ object OfferTypes {
   /** The payer must include a nonce hash for each invoice TLV included in the payer proof. */
   case class LeafHashes(hashes: List[ByteVector32]) extends PayerProofTlv
 
-  /** The payer signs the payer proof, with an optional challenge (note). */
-  case class PayerSignature(signature: ByteVector64, note_opt: Option[String]) extends PayerProofTlv
+  /** An optional challenge may be included in the payer proof. */
+  case class ProofNote(note: String) extends PayerProofTlv
 
   private def isOfferTlv(tlv: GenericTlv): Boolean =
     // Offer TLVs are in the range [1, 79] or [1000000000, 1999999999].
@@ -484,9 +487,12 @@ object OfferTypes {
     // Encoding tlvs is always safe, unless we have a bug in our codecs, so we can call `.require` here.
     val encoded = codec.encode(tlvs).require
     // Decoding tlvs that we just encoded is safe as well.
-    // This encoding/decoding step ensures that the resulting tlvs are ordered.
+    // This encoding/decoding step ensures that the resulting tlvs are ordered and that we combine known and unknown TLVs.
     val genericTlvs = vector(genericTlv).decode(encoded).require.value
-    val firstTlv = genericTlvs.minBy(_.tag)
+    // The first TLV in the stream is used as a hashing nonce for all leaves of the tree, to ensure that
+    // their values cannot be brute-forced when omitted in payer proofs. For Bolt12 invoices and invoice
+    // requests this is invreq_metadata (tag 0); for payer proofs it's the lowest-tag disclosed TLV.
+    val firstTlv = genericTlvs.headOption.getOrElse(GenericTlv(UInt64(0), ByteVector.empty))
     val nonceKey = ByteVector("LnNonce".getBytes) ++ genericTlv.encode(firstTlv).require.bytes
 
     def previousPowerOfTwo(n: Int): Int = {
