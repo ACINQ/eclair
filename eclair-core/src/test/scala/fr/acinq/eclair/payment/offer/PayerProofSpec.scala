@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.payment.offer.PayerProof.IncludedFields
-import fr.acinq.eclair.wire.protocol.OfferTypes.{LeafHashes, MissingHashes, OmittedTlvs, PayerSignature}
+import fr.acinq.eclair.wire.protocol.OfferTypes.{LeafHashes, MissingHashes, OmittedTlvs, ProofSignature}
 import fr.acinq.eclair.wire.protocol.{OfferCodecs, OfferTypes}
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods
@@ -37,11 +37,11 @@ class PayerProofSpec extends AnyFunSuite {
 
   case class ValidTestVector(name: String, input: TestVectorInput, working: TestVectorWorking, result: TestVectorResult)
 
-  case class TestVectorInput(invoice: String, preimage: String, note: String, invoice_fields: Seq[InvoiceField])
+  case class TestVectorInput(invoice: String, preimage: String, note: Option[String], invoice_fields: Seq[InvoiceField])
 
   case class InvoiceField(tag: Long, included: Boolean)
 
-  case class TestVectorWorking(invoice_merkle_root: String, leaf_hashes: Seq[String], omitted_tlvs: Seq[Long], missing_hashes: Seq[String])
+  case class TestVectorWorking(invoice_merkle_root: String, proof_leaf_hashes: Seq[String], proof_omitted_tlvs: Seq[Long], proof_missing_hashes: Seq[String])
 
   case class TestVectorResult(payer_sig: String, bech32: String)
 
@@ -60,7 +60,6 @@ class PayerProofSpec extends AnyFunSuite {
       val invoice = Bolt12Invoice.fromString(t.input.invoice).get
       assert(OfferTypes.rootHash(OfferTypes.removeSignature(invoice.records), OfferCodecs.invoiceTlvCodec) == ByteVector32.fromValidHex(t.working.invoice_merkle_root))
       val preimage = ByteVector32.fromValidHex(t.input.preimage)
-      val note_opt = if (t.input.note.isEmpty || t.input.note.isBlank) None else Some(t.input.note)
       val includedFields = IncludedFields(
         offerChains = t.input.invoice_fields.exists(f => f.tag == 2 && f.included),
         offerMetadata = t.input.invoice_fields.exists(f => f.tag == 4 && f.included),
@@ -87,17 +86,27 @@ class PayerProofSpec extends AnyFunSuite {
         invoiceFallbacks = t.input.invoice_fields.exists(f => f.tag == 172 && f.included),
         unknown = t.input.invoice_fields.filter(f => f.tag > 250 && f.included).map(f => UInt64(f.tag)).toSet,
       )
-      val payerProof = PayerProof.create(invoice, preimage, payerKey, includedFields, note_opt)
-      assert(payerProof.records.get[LeafHashes].nonEmpty)
-      payerProof.records.get[LeafHashes].foreach(h => assert(h.hashes == t.working.leaf_hashes.map(ByteVector32.fromValidHex)))
-      payerProof.records.get[OmittedTlvs].foreach(o => assert(o.missing == t.working.omitted_tlvs.map(UInt64(_))))
-      payerProof.records.get[MissingHashes].foreach(h => assert(h.missing == t.working.missing_hashes.map(ByteVector32.fromValidHex)))
-      assert(payerProof.records.get[PayerSignature].nonEmpty)
-      assert(payerProof.records.get[PayerSignature].get.signature == ByteVector64.fromValidHex(t.result.payer_sig))
-      assert(payerProof.toString == t.result.bech32)
-      assert(PayerProof.fromString(t.result.bech32).isSuccess)
-      assert(PayerProof.fromString(t.result.bech32).get == payerProof)
-      assert(payerProof.verifySigs())
+      if (t.name == "empty_proof_omitted_tlvs_explicit") {
+        // This test vector verifies that we correctly handle an explicitly included empty proof_omitted_tlvs field.
+        val decoded = PayerProof.fromString(t.result.bech32)
+        assert(decoded.isSuccess)
+        assert(decoded.get.records.get[ProofSignature].get.signature == ByteVector64.fromValidHex(t.result.payer_sig))
+        assert(decoded.get.verifySigs())
+        // Since we omit the proof_omitted_tlvs field when it's empty, we don't generate the same proof, which is fine.
+        assert(PayerProof.create(invoice, preimage, payerKey, includedFields, t.input.note).toString != t.result.bech32)
+      } else {
+        val payerProof = PayerProof.create(invoice, preimage, payerKey, includedFields, t.input.note)
+        assert(payerProof.records.get[LeafHashes].nonEmpty)
+        payerProof.records.get[LeafHashes].foreach(h => assert(h.hashes == t.working.proof_leaf_hashes.map(ByteVector32.fromValidHex)))
+        payerProof.records.get[OmittedTlvs].foreach(o => assert(o.missing == t.working.proof_omitted_tlvs.map(UInt64(_))))
+        payerProof.records.get[MissingHashes].foreach(h => assert(h.missing == t.working.proof_missing_hashes.map(ByteVector32.fromValidHex)))
+        assert(payerProof.records.get[ProofSignature].nonEmpty)
+        assert(payerProof.records.get[ProofSignature].get.signature == ByteVector64.fromValidHex(t.result.payer_sig))
+        assert(payerProof.toString == t.result.bech32)
+        assert(PayerProof.fromString(t.result.bech32).isSuccess)
+        assert(PayerProof.fromString(t.result.bech32).get == payerProof)
+        assert(payerProof.verifySigs())
+      }
     })
     f.invalid_vectors.foreach(t => {
       assert(!PayerProof.fromString(t.bech32).map(_.verifySigs()).getOrElse(false))

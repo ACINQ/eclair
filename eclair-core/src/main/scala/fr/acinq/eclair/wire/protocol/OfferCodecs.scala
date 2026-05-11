@@ -201,11 +201,12 @@ object OfferCodecs {
     .typecase(UInt64(240), signature)
   ).complete)
 
+  private val proofSig: Codec[ProofSignature] = tlvField(bytes64)
   private val preimage: Codec[InvoicePreimage] = tlvField(bytes32)
   private val omitted: Codec[OmittedTlvs] = tlvField(list(varint))
   private val missingHashes: Codec[MissingHashes] = tlvField(list(bytes32))
   private val leafHashes: Codec[LeafHashes] = tlvField(list(bytes32))
-  private val payerSig: Codec[PayerSignature] = tlvField(bytes64 :: optional(bitsRemaining, utf8))
+  private val proofNote: Codec[ProofNote] = tlvField(utf8)
 
   val payerProofTlvCodec: DiscriminatorCodec[PayerProofTlv, UInt64] = discriminated[PayerProofTlv].by(varint)
     // Invoice part that must be copy-pasted from above
@@ -239,11 +240,12 @@ object OfferCodecs {
     .typecase(UInt64(176), invoiceNodeId)
     .typecase(UInt64(240), signature)
     // Payer proof part
-    .typecase(UInt64(242), preimage)
-    .typecase(UInt64(244), omitted)
-    .typecase(UInt64(246), missingHashes)
-    .typecase(UInt64(248), leafHashes)
-    .typecase(UInt64(250), payerSig)
+    .typecase(UInt64(241), proofSig)
+    .typecase(UInt64(1001), preimage)
+    .typecase(UInt64(1002), omitted)
+    .typecase(UInt64(1003), missingHashes)
+    .typecase(UInt64(1004), leafHashes)
+    .typecase(UInt64(1005), proofNote)
 
   val payerProofCodec: Codec[TlvStream[PayerProofTlv]] = catchAllCodec(TlvCodecs.tlvStream[PayerProofTlv](payerProofTlvCodec).complete)
 
