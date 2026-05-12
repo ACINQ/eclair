@@ -49,8 +49,8 @@ object Helpers {
   /**
    * We update local/global features at reconnection
    */
-  def updateFeatures(data: PersistentChannelData, localInit: Init, remoteInit: Init): PersistentChannelData = {
-    data match {
+  def updateFeatures[T <: PersistentChannelData](data: T, localInit: Init, remoteInit: Init): T = {
+    (data match {
       case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
       case d: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED => d.copy(channelParams = d.channelParams.updateFeatures(localInit, remoteInit))
       case d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
@@ -62,7 +62,7 @@ object Helpers {
       case d: DATA_NEGOTIATING_SIMPLE => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
       case d: DATA_CLOSING => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
       case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = d.commitments.updateInitFeatures(localInit, remoteInit))
-    }
+    }).asInstanceOf[T]
   }
 
   def updateCommitments(data: ChannelDataWithCommitments, commitments: Commitments): PersistentChannelData = {
