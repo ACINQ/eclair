@@ -268,7 +268,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     // Check that we're signing a p2wpkh input and that the keypath is provided and correct.
     require(input.getDerivationPaths.size() == 1, "bip32 derivation path is missing: bitcoin core may be malicious")
     val (pub, keypath) = input.getDerivationPaths.asScala.toSeq.head
-    val priv = fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey(master.priv, keypath.keyPath).getPrivateKey
+    val priv = master.priv.derivePrivateKey(keypath.keyPath).getPrivateKey
     require(priv.publicKey() == pub, s"derived public key doesn't match (expected=$pub actual=${priv.publicKey()}): bitcoin core may be malicious")
     val expectedScript = ByteVector(Script.write(Script.pay2wpkh(pub)))
     require(kmp2scala(input.getWitnessUtxo.publicKeyScript) == expectedScript, s"script mismatch (expected=$expectedScript, actual=${input.getWitnessUtxo.publicKeyScript}): bitcoin core may be malicious")
@@ -305,7 +305,7 @@ class LocalOnChainKeyManager(override val walletName: String, seed: ByteVector, 
     // Check that we're signing a p2tr input and that the keypath is provided and correct.
     require(input.getTaprootDerivationPaths.size() == 1, "bip32 derivation path is missing: bitcoin core may be malicious")
     val (pub, keypath) = input.getTaprootDerivationPaths.asScala.toSeq.head
-    val priv = fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey(master.priv, keypath.keyPath).getPrivateKey
+    val priv = master.priv.derivePrivateKey(keypath.keyPath).getPrivateKey
     require(priv.publicKey().xOnly() == pub, s"derived public key doesn't match (expected=$pub actual=${priv.publicKey().xOnly()}): bitcoin core may be malicious")
     val expectedScript = Script.write(Script.pay2tr(pub, KeyPathTweak))
     require(kmp2scala(input.getWitnessUtxo.publicKeyScript) == expectedScript, s"script mismatch (expected=$expectedScript, actual=${input.getWitnessUtxo.publicKeyScript}): bitcoin core may be malicious")
