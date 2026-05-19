@@ -159,8 +159,10 @@ object InteractiveTxBuilder {
                                  requireConfirmedInputs: RequireConfirmedInputs) {
     /** The amount of the new funding output, which is the sum of the shared input, if any, and both sides' contributions. */
     val fundingAmount: Satoshi = sharedInput_opt.map(_.info.txOut.amount).getOrElse(0 sat) + localContribution + remoteContribution
-    // BOLT 2: MUST set `feerate` greater than or equal to 25/24 times the `feerate` of the previously constructed transaction, rounded down.
-    val minNextFeerate: FeeratePerKw = targetFeerate * 25 / 24
+    // BOLT 2: MUST set `feerate` greater than or equal to the maximum of:
+    //    - 25/24 times the `feerate` of the previously constructed transaction, rounded down.
+    //    - 25 sat per kw greater than the `feerate` of the previously constructed transaction.
+    val minNextFeerate: FeeratePerKw = Seq(targetFeerate * 25 / 24, targetFeerate + FeeratePerKw(25 sat)).max
     // BOLT 2: the initiator's serial IDs MUST use even values and the non-initiator odd values.
     val serialIdParity: Int = if (isInitiator) 0 else 1
 
