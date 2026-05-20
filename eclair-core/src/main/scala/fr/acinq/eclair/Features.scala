@@ -359,6 +359,11 @@ object Features {
     val mandatory = 38
   }
 
+  case object ZeroFeeCommitments extends Feature with InitFeature with NodeFeature with ChannelTypeFeature {
+    val rfcName = "zero_fee_commitments"
+    val mandatory = 40
+  }
+
   case object ProvideStorage extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_provide_storage"
     val mandatory = 42
@@ -479,6 +484,7 @@ object Features {
     Quiescence,
     AttributionData,
     OnionMessages,
+    ZeroFeeCommitments,
     ProvideStorage,
     ChannelType,
     ScidAlias,

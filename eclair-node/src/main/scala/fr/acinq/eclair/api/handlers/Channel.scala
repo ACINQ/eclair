@@ -40,7 +40,11 @@ trait Channel {
     ChannelTypes.SimpleTaprootChannel(),
     ChannelTypes.SimpleTaprootChannel(zeroConf = true),
     ChannelTypes.SimpleTaprootChannel(scidAlias = true),
-    ChannelTypes.SimpleTaprootChannel(scidAlias = true, zeroConf = true)
+    ChannelTypes.SimpleTaprootChannel(scidAlias = true, zeroConf = true),
+    ChannelTypes.ZeroFeeCommitments(),
+    ChannelTypes.ZeroFeeCommitments(zeroConf = true),
+    ChannelTypes.ZeroFeeCommitments(scidAlias = true),
+    ChannelTypes.ZeroFeeCommitments(scidAlias = true, zeroConf = true),
   ).map(ct => ct.toString -> ct).toMap // we use the toString method as name in the api
 
   val open: Route = postRequest("open") { implicit t =>

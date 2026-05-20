@@ -21,7 +21,6 @@ import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.SatoshiLong
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
@@ -45,7 +44,7 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
 
   test("start eclair nodes") {
     val commonPerfTestConfig = ConfigFactory.parseMap(Map(
-      "eclair.channel.max-accepted-htlcs" -> Channel.MAX_ACCEPTED_HTLCS,
+      "eclair.channel.max-accepted-htlcs" -> 483,
       "eclair.file-backup.enabled" -> false,
     ).asJava)
 

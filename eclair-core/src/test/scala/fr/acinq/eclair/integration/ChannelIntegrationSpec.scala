@@ -34,6 +34,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, SimpleTaprootChannelCommitmentFormat, ZeroFeeCommitmentFormat}
 import fr.acinq.eclair.transactions.{OutgoingHtlc, Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, randomBytes32}
@@ -394,7 +395,10 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val commitmentKeysF = commitmentsF.latest.localKeys(channelKeysF)
     val revokedCommitTx = commitmentsF.latest.fullySignedLocalCommitTx(channelKeysF)
     // in this commitment, both parties should have a main output, there are four pending htlcs and anchor outputs if applicable
-    assert(revokedCommitTx.txOut.size == 8)
+    channelType.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat | _: SimpleTaprootChannelCommitmentFormat => assert(revokedCommitTx.txOut.size == 8)
+      case ZeroFeeCommitmentFormat => assert(revokedCommitTx.txOut.size == 7)
+    }
     val outgoingHtlcExpiry = commitmentsF.latest.localCommit.spec.htlcs.collect { case OutgoingHtlc(add) => add.cltvExpiry }.max
     val htlcTxsF = commitmentsF.latest.htlcTxs(channelKeysF)
     val htlcTimeoutTxs = htlcTxsF.collect { case (tx: Transactions.UnsignedHtlcTimeoutTx, remoteSig) => (tx, remoteSig) }
@@ -478,10 +482,15 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     assert(initialStateDataF.commitments.latest.commitmentFormat == channelType.commitmentFormat)
     val initialCommitmentIndex = initialStateDataF.commitments.localCommitIndex
 
-    val toRemoteAddress = {
-      val channelKeys = nodes("F").nodeParams.channelKeyManager.channelKeys(initialStateDataF.channelParams.channelConfig, initialStateDataF.channelParams.localParams.fundingKeyPath)
-      val toRemote = Scripts.toRemoteDelayed(initialStateDataF.commitments.latest.localKeys(channelKeys).publicKeys)
-      Script.write(Script.pay2wsh(toRemote))
+    val toRemoteAddress = channelType.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat =>
+        val channelKeys = nodes("F").nodeParams.channelKeyManager.channelKeys(initialStateDataF.channelParams.channelConfig, initialStateDataF.channelParams.localParams.fundingKeyPath)
+        val toRemote = Scripts.toRemoteDelayed(initialStateDataF.commitments.latest.localKeys(channelKeys).publicKeys)
+        Script.write(Script.pay2wsh(toRemote))
+      case ZeroFeeCommitmentFormat =>
+        val channelKeys = nodes("F").nodeParams.channelKeyManager.channelKeys(initialStateDataF.channelParams.channelConfig, initialStateDataF.channelParams.localParams.fundingKeyPath)
+        Script.write(Script.pay2wpkh(initialStateDataF.commitments.latest.localKeys(channelKeys).theirPaymentPublicKey))
+      case _: SimpleTaprootChannelCommitmentFormat => ???
     }
 
     // let's make a payment to advance the commit index
@@ -534,8 +543,11 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     generateBlocks(2)
     val mainOutputC = OutPoint(commitTx, commitTx.txOut.indexWhere(_.publicKeyScript == toRemoteAddress))
     awaitCond({
+      bitcoinClient.isTransactionOutputSpent(mainOutputC.txid, mainOutputC.index.toInt).pipeTo(sender.ref)
+      val alreadySpent = sender.expectMsgType[Boolean]
       bitcoinClient.getMempool().pipeTo(sender.ref)
-      sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint == mainOutputC)
+      val mempoolTxs = sender.expectMsgType[Seq[Transaction]]
+      alreadySpent || mempoolTxs.exists(_.txIn.head.outPoint == mainOutputC)
     }, max = 20 seconds, interval = 1 second)
 
     // get the claim-remote-output confirmed, then the channel can go to the CLOSED state
@@ -609,7 +621,7 @@ class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelInte
     testDownstreamTimeoutRemoteCommit()
   }
 
-  test("punish a node that has published a revoked commit tx (anchor outputs)") {
+  test("punish a node that has published a revoked commit tx (anchor outputs zero fee htlc txs)") {
     testPunishRevokedCommit()
   }
 
@@ -617,4 +629,40 @@ class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelInte
 
 class AnchorOutputZeroFeeHtlcTxsChannelWithEclairSignerIntegrationSpec extends AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec {
   override def useEclairSigner: Boolean = true
+}
+
+class ZeroFeeCommitmentChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
+
+  override val channelType: SupportedChannelType = ChannelTypes.ZeroFeeCommitments()
+
+  test("start eclair nodes") {
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> (if (useEclairSigner) 29843 else 29743), "eclair.api.port" -> (if (useEclairSigner) 28193 else 28093)).asJava).withFallback(withZeroFeeCommitments).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> (if (useEclairSigner) 29844 else 29744), "eclair.api.port" -> (if (useEclairSigner) 28194 else 28094)).asJava).withFallback(withZeroFeeCommitments).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.channel.expiry-delta-blocks" -> 40, "eclair.channel.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> (if (useEclairSigner) 29845 else 29745), "eclair.api.port" -> (if (useEclairSigner) 28195 else 28095)).asJava).withFallback(withZeroFeeCommitments).withFallback(commonConfig))
+  }
+
+  test("connect nodes") {
+    connectNodes()
+  }
+
+  test("open channel C <-> F, send payments and close (zero-fee commitments)") {
+    testOpenPayClose()
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, zero-fee commitments)") {
+    testDownstreamFulfillLocalCommit()
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit, zero-fee commitments)") {
+    testDownstreamFulfillRemoteCommit()
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (local commit, zero-fee commitments)") {
+    testDownstreamTimeoutLocalCommit()
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (remote commit, zero-fee commitments)") {
+    testDownstreamTimeoutRemoteCommit()
+  }
+
 }

@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{SegwitV0CommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{ClosingComplete, HtlcSettlementMessage, LightningMessage, Shutdown, UpdateMessage}
 import scodec.bits.ByteVector
 
@@ -142,7 +142,7 @@ trait CommonHandlers {
         val localCloseeNonce = NonceGenerator.signingNonce(localFundingPubKey, commitments.latest.remoteFundingPubKey, commitments.latest.fundingTxId)
         localCloseeNonce_opt = Some(localCloseeNonce)
         Shutdown(commitments.channelId, finalScriptPubKey, localCloseeNonce.publicNonce)
-      case _: AnchorOutputsCommitmentFormat =>
+      case _: SegwitV0CommitmentFormat =>
         Shutdown(commitments.channelId, finalScriptPubKey)
     }
   }

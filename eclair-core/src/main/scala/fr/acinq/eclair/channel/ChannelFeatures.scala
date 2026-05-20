@@ -104,6 +104,15 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
     override def toString: String = s"simple_taproot_channel${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
   }
+  case class ZeroFeeCommitments(scidAlias: Boolean = false, zeroConf: Boolean = false) extends SupportedChannelType {
+    override def features: Set[ChannelTypeFeature] = Set(
+      if (scidAlias) Some(Features.ScidAlias) else None,
+      if (zeroConf) Some(Features.ZeroConf) else None,
+      Some(Features.ZeroFeeCommitments)
+    ).flatten
+    override def commitmentFormat: CommitmentFormat = ZeroFeeCommitmentFormat
+    override def toString: String = s"zero_fee_commitments${if (scidAlias) "+scid_alias" else ""}${if (zeroConf) "+zeroconf" else ""}"
+  }
 
   case class UnsupportedChannelType(featureBits: Features[InitFeature]) extends ChannelType {
     override def features: Set[InitFeature] = featureBits.activated.keySet
@@ -131,6 +140,10 @@ object ChannelTypes {
     SimpleTaprootChannel(zeroConf = true),
     SimpleTaprootChannel(scidAlias = true),
     SimpleTaprootChannel(scidAlias = true, zeroConf = true),
+    ZeroFeeCommitments(),
+    ZeroFeeCommitments(zeroConf = true),
+    ZeroFeeCommitments(scidAlias = true),
+    ZeroFeeCommitments(scidAlias = true, zeroConf = true),
     SimpleTaprootChannelsPhoenix,
   ).map {
     channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType
@@ -154,6 +167,8 @@ object ChannelTypes {
     if (!announceChannel && Features.canUseFeature(localFeatures, remoteFeatures, Features.SimpleTaprootChannels)) {
       // We currently only support unannounced taproot channels.
       Some(SimpleTaprootChannel(scidAlias = useScidAlias))
+    } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.ZeroFeeCommitments)) {
+      Some(ZeroFeeCommitments(scidAlias = useScidAlias))
     } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputsZeroFeeHtlcTx)) {
       Some(AnchorOutputsZeroFeeHtlcTx(scidAlias = useScidAlias))
     } else {

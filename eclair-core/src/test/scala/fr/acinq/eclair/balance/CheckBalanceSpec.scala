@@ -128,7 +128,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     // In response to that, alice publishes her claim txs.
     alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main")
     val mainAmount = bobCommitTx.txOut(claimMain.input.index.toInt).amount
     val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo)
     assert(claimHtlcTxs.collect { case tx: ClaimHtlcSuccessTx => tx }.size == 1)
@@ -185,7 +185,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     // In response to that, alice publishes her claim txs
     alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main")
     val mainAmount = bobCommitTx.txOut(claimMain.input.index.toInt).amount
     (1 to 2).map(_ => alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx])
     alice ! WatchTxConfirmedTriggered(BlockHeight(600_000), 5, bobCommitTx)
