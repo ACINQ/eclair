@@ -64,6 +64,26 @@ To open a taproot channel with a node that supports the `option_simple_taproot` 
 $ eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_amount> --channelType=simple_taproot_channel --announceChannel=false
 ```
 
+### Zero-fee Channels (experimental)
+
+This release adds support for zero-fee commitments (using v3/TRUC transactions), as specified in [the BOLTs](https://github.com/lightning/bolts/pull/1228).
+With this new type of channels, commitment transactions don't pay any mining fee (in most cases), which gets rid of the `update_fee` mechanism and all of the related channel reserve issues.
+It also gets rid of the undesired channel force-closes that happen when the mempool feerate spikes and channel participants disagree on what feerate to use, which has been a major source of wasted on-chain space.
+It also offers better protection against pinning attacks (thanks to package relay) and reduces the on-chain footprint compared to anchor output channels.
+
+This feature is not actived by default, because we haven't tested yet that v3/TRUC transactions always propagate to miners.
+To enable it, add the following to your `eclair.conf`:
+
+```conf
+eclair.features.zero_fee_commitments = optional
+```
+
+To open a zero-fee channel with a node that supports the `zero_fee_commitments` feature, use the following command:
+
+```sh
+$ eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_amount> --channelType=zero_fee_commitments
+```
+
 ### Remove support for non-anchor channels
 
 We remove the code used to support legacy channels that don't use anchor outputs or taproot.
