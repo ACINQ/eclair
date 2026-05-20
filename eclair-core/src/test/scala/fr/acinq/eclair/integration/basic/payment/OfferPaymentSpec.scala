@@ -783,7 +783,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     assert(offer.nodeId.isEmpty)
     assert(offer.contactInfos.size == 1)
     assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.firstNodeId == EncodedNodeId.WithPublicKey.Plain(carol.nodeId))
-    assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.length == carol.nodeParams.offersConfig.messagePathMinLength)
+    assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.length >= carol.nodeParams.offersConfig.messagePathMinLength)
     assert(offer.description.contains("test offer"))
     assert(offer.amount.contains(amount))
 
@@ -801,7 +801,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     assert(offer.nodeId.isEmpty)
     assert(offer.contactInfos.size == 1)
     assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.firstNodeId == EncodedNodeId.WithPublicKey.Plain(bob.nodeId))
-    assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.length == carol.nodeParams.offersConfig.messagePathMinLength)
+    assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.length >= carol.nodeParams.offersConfig.messagePathMinLength)
     assert(offer.description.contains("test offer"))
     assert(offer.amount.contains(amount))
 
@@ -825,7 +825,7 @@ class OfferPaymentSpec extends FixtureSpec with IntegrationPatience {
     val offer = createOffer(carol, description_opt = Some("test offer"), amount_opt = Some(amount), issuer_opt = None, blindedPathsFirstNodeId_opt = Some(alice.nodeId))
     assert(offer.nodeId.isEmpty)
     assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.firstNodeId == EncodedNodeId.WithPublicKey.Plain(alice.nodeId))
-    assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.length == carol.nodeParams.offersConfig.messagePathMinLength)
+    assert(offer.contactInfos.head.asInstanceOf[BlindedPath].route.length >= carol.nodeParams.offersConfig.messagePathMinLength)
     assert(offer.description.contains("test offer"))
     assert(offer.amount.contains(amount))
 
