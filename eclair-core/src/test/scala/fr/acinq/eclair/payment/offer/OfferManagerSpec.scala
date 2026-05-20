@@ -33,7 +33,7 @@ import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.protocol.OfferTypes.{InvoiceRequest, Offer}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.RouteBlindingDecryptedData
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, amountAfterFee, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, amountAfterFee, nodeFee, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -332,6 +332,7 @@ class OfferManagerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     assert(Crypto.sha256(incomingPayment.paymentPreimage) == invoice.paymentHash)
     assert(incomingPayment.invoice.nodeId == nodeParams.nodeId)
     assert(incomingPayment.invoice.paymentHash == invoice.paymentHash)
-    assert(maxRecipientPathFees == paymentPayload.amount - amountReceived)
+    assert(maxRecipientPathFees >= paymentPayload.amount - amountReceived)
+    assert(maxRecipientPathFees == nodeFee(1000 msat, 200, amount))
   }
 }
