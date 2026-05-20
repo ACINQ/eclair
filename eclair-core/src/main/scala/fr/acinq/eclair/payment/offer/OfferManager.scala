@@ -285,7 +285,7 @@ object OfferManager {
             val minimalInvoice = MinimalBolt12Invoice(offer, nodeParams.chainHash, metadata.amount, metadata.quantity, Crypto.sha256(metadata.preimage), metadata.payerKey, metadata.createdAt, additionalTlvs, customTlvs)
             val incomingPayment = IncomingBlindedPayment(minimalInvoice, metadata.preimage, PaymentType.Blinded, TimestampMilli.now(), IncomingPaymentStatus.Pending)
             // We may be deducing some of the blinded path fees from the received amount.
-            val maxRecipientPathFees = nodeFee(metadata.recipientPathFees, amount)
+            val maxRecipientPathFees = nodeFee(metadata.recipientPathFees, Seq(amount, metadata.amount).max)
             replyTo ! MultiPartHandler.GetIncomingPaymentActor.ProcessPayment(incomingPayment, maxRecipientPathFees)
             Behaviors.stopped
           case RejectPayment(reason) =>
