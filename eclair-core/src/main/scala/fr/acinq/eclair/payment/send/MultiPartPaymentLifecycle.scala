@@ -304,7 +304,7 @@ object MultiPartPaymentLifecycle {
    * @param maxAttempts maximum number of retries.
    * @param routeParams parameters to fine-tune the routing algorithm.
    */
-  case class SendMultiPartPayment(replyTo: ActorRef, recipient: Recipient, maxAttempts: Int, routeParams: RouteParams) {
+  case class SendMultiPartPayment(replyTo: ActorRef, recipient: Recipient, maxAttempts: Int, routeParams: RouteParams, routeAddrType_opt: Option[AddrType] = None) {
     require(recipient.totalAmount > 0.msat, "total amount must be > 0")
   }
 
@@ -372,7 +372,7 @@ object MultiPartPaymentLifecycle {
   case class PaymentSucceeded(request: SendMultiPartPayment, preimage: ByteVector32, parts: Seq[PaymentPart], pending: Set[UUID], remainingAttribution_opt: Option[ByteVector]) extends Data
 
   private def createRouteRequest(replyTo: ActorRef, nodeParams: NodeParams, routeParams: RouteParams, d: PaymentProgress, cfg: SendPaymentConfig): RouteRequest = {
-    RouteRequest(replyTo.toTyped, nodeParams.nodeId, d.request.recipient, routeParams, d.ignore, allowMultiPart = true, d.pending.values.toSeq, Some(cfg.paymentContext))
+    RouteRequest(replyTo.toTyped, nodeParams.nodeId, d.request.recipient, routeParams, d.ignore, allowMultiPart = true, d.pending.values.toSeq, Some(cfg.paymentContext), d.request.routeAddrType_opt)
   }
 
   private def createChildPayment(replyTo: ActorRef, route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {

@@ -1940,6 +1940,150 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val Success(route2 :: Nil) = findRoute(h, a, e, amount, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = hc, includeLocalChannelCost = true), currentBlockHeight = BlockHeight(400000))
     assert(route2Ids(route2) == 1 :: 4 :: 5 :: Nil)
   }
+
+  test("route addr type filter") {
+    // Topology: three parallel two-hop paths a -> {b,c,e} -> f
+    //   b = clearnet-only  (edges 1,2)
+    //   c = hybrid         (edges 3,4) — cheaper than b
+    //   e = tor-only       (edges 5,6) — cheapest
+    // source (a) and target (f) have no addresses and are always allowed.
+    val privB = randomKey()
+    val privC = randomKey()
+    val privE = randomKey()
+    val privF = randomKey()
+
+    val nodeB = privB.publicKey
+    val nodeC = privC.publicKey
+    val nodeE = privE.publicKey
+    val nodeF = privF.publicKey
+
+    val clearnetAddr = NodeAddress.fromParts("140.82.121.4", 9735).get
+    val torAddr      = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get
+
+    val annB = makeNodeAnnouncement(privB, "B", Color(0, 0, 0), List(clearnetAddr),            Features.empty)
+    val annC = makeNodeAnnouncement(privC, "C", Color(0, 0, 0), List(clearnetAddr, torAddr),   Features.empty)
+    val annE = makeNodeAnnouncement(privE, "E", Color(0, 0, 0), List(torAddr),                 Features.empty)
+
+    val g = GraphWithBalanceEstimates(DirectedGraph(List(
+      makeEdge(1L, a, nodeB, 3 msat, 0),  // a -> b (clearnet path, expensive)
+      makeEdge(2L, nodeB, nodeF, 3 msat, 0),
+      makeEdge(3L, a, nodeC, 2 msat, 0),  // a -> c (hybrid path, medium)
+      makeEdge(4L, nodeC, nodeF, 2 msat, 0),
+      makeEdge(5L, a, nodeE, 1 msat, 0),  // a -> e (tor path, cheapest)
+      makeEdge(6L, nodeE, nodeF, 1 msat, 0),
+    )).addOrUpdateVertex(annB).addOrUpdateVertex(annC).addOrUpdateVertex(annE), 1 day)
+
+    // clearnet: only the clearnet-only node b is eligible
+    val Success(routeClearnet :: Nil) = findRoute(g, a, nodeF, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), routeAddrType_opt = Some(AddrType.Clearnet))
+    assert(route2Ids(routeClearnet) == 1L :: 2L :: Nil)
+
+    // hybrid: clearnet and hybrid nodes (b and c) are eligible; c is cheaper so it wins
+    val Success(routeHybrid :: Nil) = findRoute(g, a, nodeF, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), routeAddrType_opt = Some(AddrType.Hybrid))
+    assert(route2Ids(routeHybrid) == 3L :: 4L :: Nil)
+
+    // tor: only the tor-only node e is eligible
+    val Success(routeTor :: Nil) = findRoute(g, a, nodeF, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), routeAddrType_opt = Some(AddrType.Tor))
+    assert(route2Ids(routeTor) == 5L :: 6L :: Nil)
+
+    // clearnet filter blocks hybrid and tor nodes: only b available; c and e must not appear in the route
+    assert(!route2Ids(routeClearnet).contains(3L) && !route2Ids(routeClearnet).contains(4L))
+    assert(!route2Ids(routeClearnet).contains(5L) && !route2Ids(routeClearnet).contains(6L))
+
+    // tor filter blocks clearnet and hybrid nodes: b and c must not appear
+    assert(!route2Ids(routeTor).contains(1L) && !route2Ids(routeTor).contains(2L))
+    assert(!route2Ids(routeTor).contains(3L) && !route2Ids(routeTor).contains(4L))
+  }
+
+  test("route addr type filter: no eligible intermediate nodes") {
+    val privB = randomKey()
+    val privF = randomKey()
+
+    val nodeB = privB.publicKey
+    val nodeF = privF.publicKey
+
+    val torAddr = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get
+    val annB = makeNodeAnnouncement(privB, "B", Color(0, 0, 0), List(torAddr), Features.empty)
+
+    val g = GraphWithBalanceEstimates(DirectedGraph(List(
+      makeEdge(1L, a, nodeB, 1 msat, 0),
+      makeEdge(2L, nodeB, nodeF, 1 msat, 0),
+    )).addOrUpdateVertex(annB), 1 day)
+
+    // tor-only node b is not eligible under clearnet filter → no route
+    assert(findRoute(g, a, nodeF, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), routeAddrType_opt = Some(AddrType.Clearnet)) == Failure(RouteNotFound))
+    // tor-only node b is not eligible under hybrid filter → no route
+    assert(findRoute(g, a, nodeF, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), routeAddrType_opt = Some(AddrType.Hybrid)) == Failure(RouteNotFound))
+    // tor-only node b is eligible under tor filter → route found
+    val Success(_ :: Nil) = findRoute(g, a, nodeF, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), routeAddrType_opt = Some(AddrType.Tor))
+  }
+
+  test("route addr type filter: hybrid selects both clearnet-only and hybrid nodes") {
+    val privB = randomKey()
+    val privC = randomKey()
+    val privE = randomKey()
+    val privF = randomKey()
+
+    val nodeB = privB.publicKey  // clearnet-only
+    val nodeC = privC.publicKey  // hybrid
+    val nodeE = privE.publicKey  // tor-only
+    val nodeF = privF.publicKey
+
+    val clearnetAddr = NodeAddress.fromParts("140.82.121.4", 9735).get
+    val torAddr      = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get
+
+    val annB = makeNodeAnnouncement(privB, "B", Color(0, 0, 0), List(clearnetAddr),          Features.empty)
+    val annC = makeNodeAnnouncement(privC, "C", Color(0, 0, 0), List(clearnetAddr, torAddr), Features.empty)
+    val annE = makeNodeAnnouncement(privE, "E", Color(0, 0, 0), List(torAddr),               Features.empty)
+
+    val g = GraphWithBalanceEstimates(DirectedGraph(List(
+      makeEdge(1L, a, nodeB, 1 msat, 0),  // path through clearnet-only node
+      makeEdge(2L, nodeB, nodeF, 1 msat, 0),
+      makeEdge(3L, a, nodeC, 1 msat, 0),  // path through hybrid node
+      makeEdge(4L, nodeC, nodeF, 1 msat, 0),
+      makeEdge(5L, a, nodeE, 1 msat, 0),  // path through tor-only node
+      makeEdge(6L, nodeE, nodeF, 1 msat, 0),
+    )).addOrUpdateVertex(annB).addOrUpdateVertex(annC).addOrUpdateVertex(annE), 1 day)
+
+    val Success(routes) = findRoute(g, a, nodeF, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 3, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), routeAddrType_opt = Some(AddrType.Hybrid))
+    val allEdgeIds = routes.flatMap(route2Ids).toSet
+    assert(allEdgeIds.contains(1L) && allEdgeIds.contains(2L), "clearnet-only path should be included")
+    assert(allEdgeIds.contains(3L) && allEdgeIds.contains(4L), "hybrid path should be included")
+    assert(!allEdgeIds.contains(5L) && !allEdgeIds.contains(6L), "tor-only path should be excluded")
+  }
+
+  test("route addr type filter: None allows all types") {
+    val privB = randomKey()
+    val privC = randomKey()
+    val privE = randomKey()
+    val privF = randomKey()
+
+    val nodeB = privB.publicKey  // clearnet-only
+    val nodeC = privC.publicKey  // hybrid
+    val nodeE = privE.publicKey  // tor-only
+    val nodeF = privF.publicKey
+
+    val clearnetAddr = NodeAddress.fromParts("140.82.121.4", 9735).get
+    val torAddr      = NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get
+
+    val annB = makeNodeAnnouncement(privB, "B", Color(0, 0, 0), List(clearnetAddr),          Features.empty)
+    val annC = makeNodeAnnouncement(privC, "C", Color(0, 0, 0), List(clearnetAddr, torAddr), Features.empty)
+    val annE = makeNodeAnnouncement(privE, "E", Color(0, 0, 0), List(torAddr),               Features.empty)
+
+    val g = GraphWithBalanceEstimates(DirectedGraph(List(
+      makeEdge(1L, a, nodeB, 1 msat, 0),
+      makeEdge(2L, nodeB, nodeF, 1 msat, 0),
+      makeEdge(3L, a, nodeC, 1 msat, 0),
+      makeEdge(4L, nodeC, nodeF, 1 msat, 0),
+      makeEdge(5L, a, nodeE, 1 msat, 0),
+      makeEdge(6L, nodeE, nodeF, 1 msat, 0),
+    )).addOrUpdateVertex(annB).addOrUpdateVertex(annC).addOrUpdateVertex(annE), 1 day)
+
+    val Success(routes) = findRoute(g, a, nodeF, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 3, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), routeAddrType_opt = None)
+    val allEdgeIds = routes.flatMap(route2Ids).toSet
+    assert(allEdgeIds.contains(1L) && allEdgeIds.contains(2L), "clearnet-only path should be included")
+    assert(allEdgeIds.contains(3L) && allEdgeIds.contains(4L), "hybrid path should be included")
+    assert(allEdgeIds.contains(5L) && allEdgeIds.contains(6L), "tor-only path should be included")
+  }
 }
 
 object RouteCalculationSpec {

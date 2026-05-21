@@ -23,7 +23,7 @@ import fr.acinq.eclair.payment.Invoice
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.GraphStructure.GraphEdge
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.{ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{ChannelUpdate, IPAddress, NodeAnnouncement, OnionAddress}
 
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -212,10 +212,11 @@ object Graph {
                         wr: WeightRatios[PaymentPathWeight],
                         currentBlockHeight: BlockHeight,
                         boundaries: PaymentPathWeight => Boolean,
-                        includeLocalChannelCost: Boolean): Seq[WeightedPath[PaymentPathWeight]] = {
+                        includeLocalChannelCost: Boolean,
+                        routeAddrType_opt: Option[AddrType] = None): Seq[WeightedPath[PaymentPathWeight]] = {
     // find the shortest path (k = 0)
     val targetWeight = PaymentPathWeight(amount)
-    dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, Features.empty, currentBlockHeight, wr, includeLocalChannelCost) match {
+    dijkstraShortestPath(g, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, Features.empty, currentBlockHeight, wr, includeLocalChannelCost, routeAddrType_opt) match {
       case None => Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
       case Some(shortestPath) =>
 
@@ -253,7 +254,7 @@ object Graph {
               val alreadyExploredVertices = rootPathEdges.map(_.desc.b).toSet
               val rootPathWeight = pathWeight(g.balances, sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost)
               // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
-              dijkstraShortestPath(g, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, Features.empty, currentBlockHeight, wr, includeLocalChannelCost) match {
+              dijkstraShortestPath(g, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, Features.empty, currentBlockHeight, wr, includeLocalChannelCost, routeAddrType_opt) match {
                 case Some(spurPath) =>
                   val completePath = spurPath ++ rootPathEdges
                   val candidatePath = WeightedPath(completePath, pathWeight(g.balances, sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost))
@@ -305,7 +306,8 @@ object Graph {
                                                              nodeFeatures: Features[NodeFeature],
                                                              currentBlockHeight: BlockHeight,
                                                              wr: WeightRatios[RichWeight],
-                                                             includeLocalChannelCost: Boolean): Option[Seq[GraphEdge]] = {
+                                                             includeLocalChannelCost: Boolean,
+                                                             routeAddrType_opt: Option[AddrType] = None): Option[Seq[GraphEdge]] = {
     // the graph does not contain source/destination nodes
     val sourceNotInGraph = !g.graph.containsVertex(sourceNode) && !extraEdges.exists(_.desc.a == sourceNode)
     val targetNotInGraph = !g.graph.containsVertex(targetNode) && !extraEdges.exists(_.desc.b == targetNode)
@@ -344,7 +346,8 @@ object Graph {
           if (current.weight.canUseEdge(edge) &&
             !ignoredEdges.contains(edge.desc) &&
             !ignoredVertices.contains(neighbor) &&
-            (neighbor == sourceNode || g.graph.getVertexFeatures(neighbor).areSupported(nodeFeatures))) {
+            (neighbor == sourceNode || g.graph.getVertexFeatures(neighbor).areSupported(nodeFeatures)) &&
+            (neighbor == sourceNode || neighbor == targetNode || routeAddrType_opt.forall(t => g.graph.getVertexRouteAddrType(neighbor).forall(AddrType.isCompatible(t, _))))) {
             // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
             // will be relayed through that edge is the one in `currentWeight`.
             val neighborWeight = wr.addEdgeWeight(sourceNode, edge, g.balances.get(edge), current.weight, currentBlockHeight, includeLocalChannelCost)
@@ -530,7 +533,7 @@ object Graph {
       }
     }
 
-    case class Vertex(features: Features[NodeFeature], incomingEdges: Map[ChannelDesc, GraphEdge]) {
+    case class Vertex(features: Features[NodeFeature], incomingEdges: Map[ChannelDesc, GraphEdge], routeAddrType_opt: Option[AddrType] = None) {
       def update(desc: ChannelDesc, newShortChannelId: RealShortChannelId, newCapacity: Satoshi): Vertex =
         incomingEdges.get(desc) match {
           case None => this
@@ -638,6 +641,8 @@ object Graph {
 
       def getVertexFeatures(key: PublicKey): Features[NodeFeature] = vertices.get(key).map(_.features).getOrElse(Features.empty)
 
+      def getVertexRouteAddrType(key: PublicKey): Option[AddrType] = vertices.get(key).flatMap(_.routeAddrType_opt)
+
       /**
        * Removes a vertex and all its associated edges (both incoming and outgoing)
        */
@@ -651,9 +656,17 @@ object Graph {
        * Or update the node features if the vertex is already present.
        */
       def addOrUpdateVertex(ann: NodeAnnouncement): DirectedGraph = {
+        val hasClearnet = ann.addresses.exists(_.isInstanceOf[IPAddress])
+        val hasTor = ann.addresses.exists(_.isInstanceOf[OnionAddress])
+        val routeAddrType_opt = (hasClearnet, hasTor) match {
+          case (true, false) => Some(AddrType.Clearnet)
+          case (true, true) => Some(AddrType.Hybrid)
+          case (false, true) => Some(AddrType.Tor)
+          case (false, false) => None
+        }
         DirectedGraph(vertices.updatedWith(ann.nodeId) {
-          case Some(vertex) => Some(vertex.copy(features = ann.features.nodeAnnouncementFeatures()))
-          case None => Some(Vertex(ann.features.nodeAnnouncementFeatures(), Map.empty))
+          case Some(vertex) => Some(vertex.copy(features = ann.features.nodeAnnouncementFeatures(), routeAddrType_opt = routeAddrType_opt))
+          case None => Some(Vertex(ann.features.nodeAnnouncementFeatures(), Map.empty, routeAddrType_opt))
         })
       }
 

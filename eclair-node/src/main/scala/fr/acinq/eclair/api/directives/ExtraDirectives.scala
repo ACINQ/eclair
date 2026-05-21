@@ -28,6 +28,7 @@ import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.blockchain.fee.ConfirmationPriority
 import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.router.Router.AddrType
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, Paginated, ShortChannelId, TimestampSecond}
 
@@ -57,6 +58,7 @@ trait ExtraDirectives extends Directives {
   val skipFormParam: NameReceptacle[Int] = "skip".as[Int]
   val offerFormParam: NameUnmarshallerReceptacle[Offer] = "offer".as[Offer](offerUnmarshaller)
   val confirmationPriorityFormParam: NameUnmarshallerReceptacle[ConfirmationPriority] = "priority".as[ConfirmationPriority](confirmationPriorityUnmarshaller)
+  val routeAddrTypeFormParam: NameUnmarshallerReceptacle[AddrType] = "routeAddrType".as[AddrType](addrTypeUnmarshaller)
 
   // @formatter:off
   // We limit default values to avoid accidentally reading too much data from the DB.

@@ -628,6 +628,22 @@ object Router {
 
   case class MessageRouteParams(maxRouteLength: Int, ratios: MessageWeightRatios)
 
+  // @formatter:off
+  sealed trait AddrType
+  object AddrType {
+    case object Clearnet extends AddrType
+    case object Hybrid extends AddrType
+    case object Tor extends AddrType
+
+    /** Returns true if a node with the given address type is eligible when routing with the requested filter. */
+    def isCompatible(filter: AddrType, nodeAddrType: AddrType): Boolean = filter match {
+      case Clearnet => nodeAddrType == Clearnet
+      case Hybrid   => nodeAddrType == Clearnet || nodeAddrType == Hybrid
+      case Tor      => nodeAddrType == Tor
+    }
+  }
+  // @formatter:on
+
   case class Ignore(nodes: Set[PublicKey], channels: Set[ChannelDesc]) {
     // @formatter:off
     def +(ignoreNode: PublicKey): Ignore = copy(nodes = nodes + ignoreNode)
@@ -648,7 +664,8 @@ object Router {
                           ignore: Ignore = Ignore.empty,
                           allowMultiPart: Boolean = false,
                           pendingPayments: Seq[Route] = Nil,
-                          paymentContext: Option[PaymentContext] = None)
+                          paymentContext: Option[PaymentContext] = None,
+                          routeAddrType_opt: Option[AddrType] = None)
 
   case class BlindedRouteRequest(replyTo: typed.ActorRef[PaymentRouteResponse],
                                  source: PublicKey,
