@@ -39,6 +39,7 @@ class CommandCodecsSpec extends AnyFunSuite {
       CMD_FAIL_HTLC(253, FailureReason.LocalFailure(TemporaryNodeFailure()), Some(FailureAttributionData(TimestampMilli(123), None))) -> hex"0007 00000000000000fd 01 0002 2002 ff 000000000000007b 00",
       CMD_FAIL_HTLC(253, FailureReason.LocalFailure(TemporaryNodeFailure()), Some(FailureAttributionData(TimestampMilli(123), Some(TimestampMilli(125))))) -> hex"0007 00000000000000fd 01 0002 2002 ff 000000000000007b ff 000000000000007d",
       CMD_FAIL_HTLC(253, FailureReason.LocalFailure(TemporaryNodeFailure(TlvStream(Set.empty[FailureMessageTlv], Set(GenericTlv(UInt64(17), hex"deadbeef"))))), Some(FailureAttributionData(TimestampMilli(456), None))) -> hex"0007 00000000000000fd 01 0008 2002 1104deadbeef ff 00000000000001c8 00",
+      CMD_FAIL_HTLC(253, FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure()), Some(FailureAttributionData(TimestampMilli(123), None))) -> hex"0007 00000000000000fd 03 0002 2019 ff 000000000000007b 00",
       CMD_FAIL_MALFORMED_HTLC(7984, ByteVector32(hex"17cc093e177c7a7fcaa9e96ab407146c8886546a5690f945c98ac20c4ab3b4f3"), FailureMessageCodecs.BADONION) -> hex"0002 0000000000001f30 17cc093e177c7a7fcaa9e96ab407146c8886546a5690f945c98ac20c4ab3b4f38000",
     )
 

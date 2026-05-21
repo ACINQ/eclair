@@ -17,6 +17,7 @@
 package fr.acinq.eclair.api.handlers
 
 import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.Satoshi
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
@@ -49,6 +50,16 @@ trait Payment {
           case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, overrideAmount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
           case _ => complete(eclairApi.send(externalId_opt, overrideAmount, invoice, maxAttempts, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
         }
+      case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
+    }
+  }
+
+  val payInvoiceTrampoline: Route = postRequest("payinvoicetrampoline") { implicit t =>
+    formFields(invoiceFormParam, amountMsatFormParam.?, "trampolineNodeId".as[PublicKey]) {
+      case (invoice@Bolt11Invoice(_, Some(amount), _, _, _, _), None, trampolineNodeId) =>
+        complete(eclairApi.sendTrampoline(trampolineNodeId, amount, invoice))
+      case (invoice, Some(overrideAmount), trampolineNodeId) =>
+        complete(eclairApi.sendTrampoline(trampolineNodeId, overrideAmount, invoice))
       case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
     }
   }
@@ -110,6 +121,13 @@ trait Payment {
     }
   }
 
-  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo ~ listReceivedPayments ~ payOffer
+  val payOfferTrampoline: Route = postRequest("payoffertrampoline") { implicit t =>
+    formFields(offerFormParam, amountMsatFormParam, "trampolineNodeId".as[PublicKey], "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "connectDirectly".as[Boolean].?) {
+      case (offer, amountMsat, trampolineNodeId, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, connectDirectly) =>
+        complete(eclairApi.payOfferTrampoline(offer, amountMsat, 1, trampolineNodeId, None, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, None, connectDirectly.getOrElse(false)))
+    }
+  }
+
+  val paymentRoutes: Route = usableBalances ~ payInvoice ~ payInvoiceTrampoline ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo ~ listReceivedPayments ~ payOffer ~ payOfferTrampoline
 
 }

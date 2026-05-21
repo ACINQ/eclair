@@ -263,7 +263,10 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == add.channelId)
       assert(fwd.message.id == add.id)
-      assert(fwd.message.reason == FailureReason.LocalFailure(TemporaryNodeFailure()))
+      assert(fwd.message.reason.isInstanceOf[FailureReason.EncryptedDownstreamFailure])
+      // This is a trampoline payment: we unwrap the failure packet before forwarding upstream.
+      val Left(Sphinx.CannotDecryptFailurePacket(expected, _)) = Sphinx.FailurePacket.decrypt(fail4.reason, attribution_opt = None, onionSharedSecrets).failure
+      assert(fwd.message.reason.asInstanceOf[FailureReason.EncryptedDownstreamFailure].packet == expected)
     })
 
     val fail5 = WillFailHtlc(willAdd5.id, paymentHash, randomBytes(292))
@@ -272,7 +275,10 @@ class OnTheFlyFundingSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId == add.channelId)
       assert(fwd.message.id == add.id)
-      assert(fwd.message.reason == FailureReason.LocalFailure(TemporaryNodeFailure()))
+      assert(fwd.message.reason.isInstanceOf[FailureReason.EncryptedDownstreamFailure])
+      // This is a trampoline payment: we unwrap the failure packet before forwarding upstream.
+      val Left(Sphinx.CannotDecryptFailurePacket(expected, _)) = Sphinx.FailurePacket.decrypt(fail5.reason, attribution_opt = None, onionSharedSecrets).failure
+      assert(fwd.message.reason.asInstanceOf[FailureReason.EncryptedDownstreamFailure].packet == expected)
     })
   }
 
