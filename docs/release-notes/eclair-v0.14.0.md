@@ -1,6 +1,13 @@
-# Eclair vnext
+# Eclair v0.14.0
 
-<insert here a high-level description of the release>
+This release contains the final version of channel splicing, taproot channels and zero-fee commitments.
+We remove support for channels that don't use anchor outputs: see the release notes of eclair v0.13.1 for instructions on how to properly close those channels if needed.
+We introduce an experimental peer scoring algorithm to optimize routing.
+
+This release is packed with improvements to the performance of large nodes when restarting: let us know if that helps!
+And of course, we also included a few bug fixes.
+
+:warning: We also update our dependency on Bitcoin Core to v30.x to benefit from v3/TRUC transactions and ephemeral dust.
 
 ## Major changes
 
@@ -8,6 +15,11 @@
 
 With this release, eclair requires using Bitcoin Core 30.x.
 Newer versions of Bitcoin Core may be used, but have not been extensively tested.
+
+### Remove support for non-anchor channels
+
+We remove the code used to support legacy channels that don't use anchor outputs or taproot.
+If you still have such channels, eclair won't start: you will need to close those channels, and will only be able to update eclair once they have been successfully closed.
 
 ### Channel Splicing
 
@@ -83,11 +95,6 @@ To open a zero-fee channel with a node that supports the `zero_fee_commitments` 
 ```sh
 $ eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_amount> --channelType=zero_fee_commitments
 ```
-
-### Remove support for non-anchor channels
-
-We remove the code used to support legacy channels that don't use anchor outputs or taproot.
-If you still have such channels, eclair won't start: you will need to close those channels, and will only be able to update eclair once they have been successfully closed.
 
 ### Auto-refresh relay fees from configuration can be disabled
 
@@ -273,20 +280,12 @@ eclair.relay.peer-reputation.enabled = false
 eclair.relay.reserved-for-accountable = 0.0
 ```
 
-### Configuration changes
-
-<insert changes>
-
 ### API changes
 
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now include a `maxCltvExpiryDelta` parameter (#3234)
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now include a `fee` field for each route in their full format response (#3283)
 - `channel-opened` was removed from the websocket in favor of `channel-funding-created`, `channel-confirmed` and `channel-ready` (#3237 and #3256)
 - `networkfees` and `channelstats` are removed in favor in `relaystats` (#3245)
-
-### Miscellaneous improvements and bug fixes
-
-<insert changes>
 
 ## Verifying signatures
 
@@ -331,4 +330,98 @@ This release is fully compatible with previous eclair versions. You don't need t
 
 ## Changelog
 
-<fill this section when publishing the release with `git log v0.13.1... --format=oneline --reverse`>
+- [ddf75bc](https://github.com/ACINQ/eclair/commit/ddf75bc64bd67425ef49b334a13287850684af2b) Back to dev (#3197)
+- [26d0350](https://github.com/ACINQ/eclair/commit/26d035070fe4c427d44b34ff72947ae67581f2d6) Require closed channels migration before starting (#3198)
+- [9911cb7](https://github.com/ACINQ/eclair/commit/9911cb73a377d46a7d3c03a4e090f2aeff000249) Remove support for non-anchor channels (#3173)
+- [3b69013](https://github.com/ACINQ/eclair/commit/3b6901316b5d786c330e2d6af44eb87ffe93048f) Stop sending `update_fee` for mobile wallets (#3186)
+- [6dd9f76](https://github.com/ACINQ/eclair/commit/6dd9f769c307498d2f6c83750d76eada84873975) Add more tolerance in tests (#3199)
+- [7ef3c4b](https://github.com/ACINQ/eclair/commit/7ef3c4b204440aa350624fc8af7b45b34c9b641e) Nits (#3203)
+- [767bae8](https://github.com/ACINQ/eclair/commit/767bae8b63024fe9d421f8e05e4153825f25cbe3) Add more logs around `commit_sig` (#3202)
+- [a014211](https://github.com/ACINQ/eclair/commit/a014211b5a648793947042293ae04b75d4f4caae) Enable detailed monitoring for singleton actors (#3200)
+- [235e95d](https://github.com/ACINQ/eclair/commit/235e95df8f7a549f02d871cf9cafc3fc919638c9) Add `CommitSigBatch` codec (#3205)
+- [ff1ce1f](https://github.com/ACINQ/eclair/commit/ff1ce1fe1722259edd3b0011772481f43767b541) Check that relay fees are nonnegative (#3209)
+- [5e1a488](https://github.com/ACINQ/eclair/commit/5e1a48827f76711fe7cf4c2c375001a6ce12b708) Allow aborting liquidity purchases after signing (#3206)
+- [bfe34ab](https://github.com/ACINQ/eclair/commit/bfe34ab1da9c37f8aeb41ad239e2ca7b9fba8631) Use 73 bytes der-encoded signatures in weight estimation (#3210)
+- [df75ed5](https://github.com/ACINQ/eclair/commit/df75ed5a8374e22c84f5c67b244c953d28386fe1) Update `bitcoin-lib` (#3213)
+- [f6a5a3c](https://github.com/ACINQ/eclair/commit/f6a5a3cafd7dfb6088a60ee58be9ff66b483f9dc) Allow high remote `dust_limit_satoshis` (#3215)
+- [fa7e2ee](https://github.com/ACINQ/eclair/commit/fa7e2ee3ba6c70041b0f6a6ca14da3598a22d9a4) Update default configuration for revoked HTLC clean-up (#3212)
+- [a87963b](https://github.com/ACINQ/eclair/commit/a87963b191333cf82e8f119f2c347a71f1dea0e3) Monitor the internal state of `ReputationRecorder` (#3216)
+- [e1775ee](https://github.com/ACINQ/eclair/commit/e1775eeba696494e41c5afd791e8a2103032f127) Fix links to 'Reaching The Ground With Lightning' (#3219)
+- [38dc407](https://github.com/ACINQ/eclair/commit/38dc4072ee6d444f26b8eba73ce3203e02f13e3b) Add API methods to spend funds sent to taproot channel addresses (#3220)
+- [0318fb7](https://github.com/ACINQ/eclair/commit/0318fb78970b7c854b0c7d516565cc21cd348a6a) Unwatch previous funding tx after splice  (#3218)
+- [856e236](https://github.com/ACINQ/eclair/commit/856e236f67fb7c5753201bd5ff8af90694e05490) Identify failing node by its index (#3224)
+- [5aea514](https://github.com/ACINQ/eclair/commit/5aea514256a75329a260c3847238b11c2df0c535) Allow remote `dust_limit_satoshis` up to 5000 sats (#3227)
+- [36822bb](https://github.com/ACINQ/eclair/commit/36822bb67aeab04f833ad2e27c9b10a0afb718ac) Don't scan the blockchain for spent external channels (#3226)
+- [53747cc](https://github.com/ACINQ/eclair/commit/53747cc5e65d2cff03878407bf7f8412692354d4) Use bitcoin-lib 0.46 (taproot tweak refactor) (#3225)
+- [288c541](https://github.com/ACINQ/eclair/commit/288c541805a67f446c07e7bf2b31decedba9190d) fixup! Add API methods to spend funds sent to taproot channel addresses (#3220) (#3228)
+- [3b2bc57](https://github.com/ACINQ/eclair/commit/3b2bc57058ea5b0ca35578cc5068cb1d044d0ccc) Add `maxCltvExpiryDelta` parameter to `findRoute*` APIs (#3234)
+- [1bc0976](https://github.com/ACINQ/eclair/commit/1bc09764381dea842e058705599ca1391f85aa4f) Validate Bolt 11 fallback addresses (#3232)
+- [e3fd186](https://github.com/ACINQ/eclair/commit/e3fd18671c37f65c31cf62d1d9c2f2d7ecc2b5ab) Accountable HTLCs (#3217)
+- [c214b07](https://github.com/ACINQ/eclair/commit/c214b075df19e157dbfb66b0401e9e078bde6103) Don't rebroadcast announcements for spent channels (#3235)
+- [7137eac](https://github.com/ACINQ/eclair/commit/7137eac2800757329ea12278429659601b27855e) Stop storing channel errors in `AuditDb` (#3236)
+- [473b46d](https://github.com/ACINQ/eclair/commit/473b46d8ad7295a57ee3b548eb8813ec2fc97fdb) Rework channel lifecyle events (#3237)
+- [3ac122b](https://github.com/ACINQ/eclair/commit/3ac122b9e39428b0d443881740ed0c8cc6a65b13) CI: fix test with latest bitcoind (#3239)
+- [9ed0014](https://github.com/ACINQ/eclair/commit/9ed0014a2561bac2bd82091c7adb27f0bdb2a4e1) Use fallback feerates on testnets (#3233)
+- [0214a1e](https://github.com/ACINQ/eclair/commit/0214a1e790c57d7192f32f246f66d4f15d659745) More tests for accountability (#3240)
+- [632713a](https://github.com/ACINQ/eclair/commit/632713a655d2240b6fddc4bf62f0a01c343efc0a) Add test vector for Bolt12 invalid bech32 padding (#3242)
+- [9856db8](https://github.com/ACINQ/eclair/commit/9856db854b3cd717d81dbec1f1c77847fc6c22d6) Add duration information to payment events (#3241)
+- [ff7a24c](https://github.com/ACINQ/eclair/commit/ff7a24c5eb260032f99c49e814726105941ecb81) Include the `node_id` of channel peers in payment events (#3243)
+- [369f042](https://github.com/ACINQ/eclair/commit/369f042d783ffb4c2596bc425506204eb971a7a5) Add event for failed payment relay (#3244)
+- [d735e0b](https://github.com/ACINQ/eclair/commit/d735e0b55bda9e3f19800e97403c665eed60cb2f) Improve channel and payment events (#3246)
+- [aff16b2](https://github.com/ACINQ/eclair/commit/aff16b264b0b551f9240bbade07ed97fcf924529) Prioritize private channels when relaying payments (#3248)
+- [5c5b9f9](https://github.com/ACINQ/eclair/commit/5c5b9f90f9f62d55af95a3612d00cebea5472412) Add type to local/remote error metrics (#3249)
+- [ea183c3](https://github.com/ACINQ/eclair/commit/ea183c35f84be8ee0d91ba5bca882efed851b546) (Minor) Upgrade postgres libs (#3238)
+- [7c52250](https://github.com/ACINQ/eclair/commit/7c52250ef76521b166ed8809d9c47941bd7dc6fd) Fix balance fuzz tests (#3251)
+- [4461c04](https://github.com/ACINQ/eclair/commit/4461c0407eed9759e59ae7bc3d1b02033c8e4a3b) Select `channel_type` for automatic channel creation (#3250)
+- [11a8604](https://github.com/ACINQ/eclair/commit/11a86046c0403b45fa459aa8aad405115ef475b5) Add claude files to `.gitignore` (#3252)
+- [9709a91](https://github.com/ACINQ/eclair/commit/9709a916ab06c0fa3b5a0540ea47fa171ee6e0c6) Fix flaky wallet funding tests (#3253)
+- [d473b53](https://github.com/ACINQ/eclair/commit/d473b53aba42df4a43687d5d18565f7a04d4f799) Add basic CLAUDE.md (#3254)
+- [546028f](https://github.com/ACINQ/eclair/commit/546028fdfae609812aab004b4a07887bc13eed2c) Don't automatically use `scid_alias` for public channels (#3255)
+- [5f934ea](https://github.com/ACINQ/eclair/commit/5f934ea0a3bd3b1241e6c5e0a779f55cf83753b1) Lazily load peer storage at node restart (#3257)
+- [656e503](https://github.com/ACINQ/eclair/commit/656e5039017828da20063e18fcec07ad234cd296) Add `ChannelFundingCreated` event (#3256)
+- [0a9853b](https://github.com/ACINQ/eclair/commit/0a9853bf28d0cb19511df66b3cfa1335be6b8b11) Auto-refresh relay fees from conf can be disabled (#3260)
+- [28f3545](https://github.com/ACINQ/eclair/commit/28f3545af4da83bf03b16777dabc2538b30e5c9d) Plugin validation of interactive transactions (#3258)
+- [eef7c32](https://github.com/ACINQ/eclair/commit/eef7c3268de307abbe853258b7196203daac5a60) Remove support for zlib encoding for channel queries (#3263)
+- [16ebf01](https://github.com/ACINQ/eclair/commit/16ebf01a82f88502d913b00ac27028c441e55b8c) Reject offers with amount set to `0` (#3265)
+- [1543e7c](https://github.com/ACINQ/eclair/commit/1543e7ca5b60619984c432b950696db6bf315713) Fix flaky onion message test (#3266)
+- [a4f4abd](https://github.com/ACINQ/eclair/commit/a4f4abd94a5e7a7dc6b9c69cb9be69e598c53f65) Improve support for plugin-defined features (#3264)
+- [a4d66ad](https://github.com/ACINQ/eclair/commit/a4d66adce2ec180c94532d1d0014f86f6e74f607) Add bitcoin rpc call to check if an address belongs to our wallet (#3267)
+- [8c5f39f](https://github.com/ACINQ/eclair/commit/8c5f39f434bf6de32227d7ac92918ec7dd979608) Fix race condition in `Postman` causing flaky `OfferPayment` tests (#3270)
+- [c24c3a7](https://github.com/ACINQ/eclair/commit/c24c3a74354d839228762c0c295c07b6f8a90072) Add per-peer profit scoring (#3247)
+- [bda5518](https://github.com/ACINQ/eclair/commit/bda55186f01bc59299fc9ef7db48cd7f6e732969) Update Bitcoin Core to v30.2 (#3274)
+- [fde8de6](https://github.com/ACINQ/eclair/commit/fde8de65ffd984f071ea1cc9657dbf710f52994f) Close connection when receiving malformed messages (#3273)
+- [890ccb3](https://github.com/ACINQ/eclair/commit/890ccb37da47398e5757feea8af32411e88292bf) Improve data stored in `AuditDb` (#3245)
+- [5e741b1](https://github.com/ACINQ/eclair/commit/5e741b1ac4f6a342f7e81bc9b18d672a957d7e95) Use bitcoin-lib 0.47 (#3268)
+- [96f9b0d](https://github.com/ACINQ/eclair/commit/96f9b0d88401b99a4c4d7181951a58aad088d69c) Reclaim liquidity from idle channels (#3269)
+- [a05f583](https://github.com/ACINQ/eclair/commit/a05f58300bcc24c2763d3dee6bd691a02f3a1c9f) Initialize peer stats with past events (#3272)
+- [e6c3d6e](https://github.com/ACINQ/eclair/commit/e6c3d6ef7a31a10917eb5d41a7f79a458ea5521c) Add fuzzing infrastructure (#3276)
+- [6336d80](https://github.com/ACINQ/eclair/commit/6336d80cbcb61847fc01f06239ff7031647275f8) Follow BOLT1 handling for "no reply" pings: ignore, don't warn. (#3278)
+- [129df36](https://github.com/ACINQ/eclair/commit/129df369530ece6d1a48632e7f9d17ed09e93a4d) Add backwards-compatible parts of the official splicing protocol (#3261)
+- [3ae7381](https://github.com/ACINQ/eclair/commit/3ae73813452efd2fcf64952e3b3f7516d01a1977) Allow reply-less pings (#3284)
+- [9314fe9](https://github.com/ACINQ/eclair/commit/9314fe9918add60535c99ea83719521e89cfc492) Add fee field to `findroute` full format response (#3283)
+- [710e849](https://github.com/ACINQ/eclair/commit/710e849723b48af6fd6975c46045febf52f48534) Fix flaky `PeerStatsTracker` test (#3280)
+- [0778eaf](https://github.com/ACINQ/eclair/commit/0778eafae34bfafb5e4f1412a8566edc2f54b611) Add fuzz tests for onion, route blinding and lightning message codecs (#3282)
+- [8abe590](https://github.com/ACINQ/eclair/commit/8abe5900eb9cf07c4ef66f371621b6e2e4a10d18) Use noble docker images instead of alpine (#3286)
+- [1a88ebe](https://github.com/ACINQ/eclair/commit/1a88ebe199faf6382811578d7daad067270c7036) Add delays when reading past payment events for stats (#3288)
+- [689dbda](https://github.com/ACINQ/eclair/commit/689dbda1bfba893d059fe02028f38a55d1c2d845) Don't try reconnecting automatically to mobile wallets (#3287)
+- [0211d67](https://github.com/ACINQ/eclair/commit/0211d67f1375c90e314331c87a9c54f7936ba93b) Don't load network graph twice on start-up (#3290)
+- [5b43e95](https://github.com/ACINQ/eclair/commit/5b43e954e385018331a048ca90e62b08c5371f4c) Fix flaky zero-conf integration test (#3291)
+- [20dc410](https://github.com/ACINQ/eclair/commit/20dc4105437099f46605b34636121a6e7027896b) Add peer scorer documentation (#3277)
+- [119f8c2](https://github.com/ACINQ/eclair/commit/119f8c2156e13a098b520fbaf2e44a5d967bba48) Add threshold for disabling `from_future_htlc` (#3293)
+- [5c44f00](https://github.com/ACINQ/eclair/commit/5c44f005abf454b0fe314499cdb3e0822ebc8769) Increase start-up ZMQ timeout (#3294)
+- [da7cd96](https://github.com/ACINQ/eclair/commit/da7cd962a8db61411aea2a07493ccf7a71d6cf18) Store our closing_complete in the simple close session (#3289)
+- [6080ffb](https://github.com/ACINQ/eclair/commit/6080ffb0e55b52a6dedefa630bc488ccb0774eb9) More aggressive peer scorer idle channels management (#3295)
+- [68b0096](https://github.com/ACINQ/eclair/commit/68b0096a2f9450e9963c4b61fc16f57449fe943c) Add support for the official splicing protocol (#2887)
+- [872cb66](https://github.com/ACINQ/eclair/commit/872cb663f56e3319878388027e183bf7101daee3) Use official feature bit for `option_simple_taproot` (#3144)
+- [0f5d4b8](https://github.com/ACINQ/eclair/commit/0f5d4b89330f2ae383b13fc64b480d755ba6c9d4) Fix flaky DER signature weight test (#3299)
+- [113d8fb](https://github.com/ACINQ/eclair/commit/113d8fba770b64e116b23a7d1ef4cd06053a19ee) Add metrics on interactive-tx inputs and outputs (#3300)
+- [6bb7f25](https://github.com/ACINQ/eclair/commit/6bb7f258e285181183872d3336e7d4dcc8d1b319) Add liquidity ads metrics (#3301)
+- [66977cc](https://github.com/ACINQ/eclair/commit/66977cc6318dea0544aefb85c9aa1e426cb157d6) Add previous commitments to ChannelFundingConfirmed event (#3303)
+- [cb8f6c8](https://github.com/ACINQ/eclair/commit/cb8f6c8997c810b094eea9cc5c2ecf3ecc9c1667) Docker: auto-approve apt-get install command (#3302)
+- [76da19f](https://github.com/ACINQ/eclair/commit/76da19f1b97fec30097ab1016f8cb51dca2917e0) Bump org.postgresql:postgresql version (#3305)
+- [e133015](https://github.com/ACINQ/eclair/commit/e1330154a5ba23bed2b94198c90b25054c48c7b3) Compute channel keys once on on startup (#3306)
+- [befdcd5](https://github.com/ACINQ/eclair/commit/befdcd5444f49aca72b30c8281d807321d13aba8) Fix edge case in `availableBalanceForSend/Receive` (#3308)
+- [8876ef1](https://github.com/ACINQ/eclair/commit/8876ef184a2eea242ea6a07f117b9bc0ef6c791b) Update features early on reconnection (#3310)
+- [06538ad](https://github.com/ACINQ/eclair/commit/06538ada07403e06b8a9dfaa59fb1c554841a3a4) Change RBF feerate bump rule to match BIP125 (#3298)
+- [3540340](https://github.com/ACINQ/eclair/commit/35403401008228c71e9ae301bde5092101e9b38f) Add support for zero-fee commitment format (#3192)
+- [0896d03](https://github.com/ACINQ/eclair/commit/0896d03b361a3fff54b6378b0e5fe0424e7c4d95) Fix Bolt12 path fee hiding (#3311)
