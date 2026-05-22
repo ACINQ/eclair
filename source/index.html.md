@@ -47,7 +47,7 @@ eclair-cli getinfo
 
 ```json
 {
-  "version": "0.13.0-992ec8c",
+  "version": "0.14.0-ec8c63b",
   "nodeId": "028e2403fbfddb3d787843361f91adbda64c6f622921b19fb48f5766508bcadb29",
   "alias": "ACINQ",
   "color": "#49daaa",
@@ -59,7 +59,6 @@ eclair-cli getinfo
       "option_dual_fund": "optional",
       "gossip_queries_ex": "optional",
       "option_data_loss_protect": "mandatory",
-      "var_onion_optin": "mandatory",
       "option_static_remotekey": "mandatory",
       "option_scid_alias": "optional",
       "option_onion_messages": "optional",
@@ -71,18 +70,20 @@ eclair-cli getinfo
       "basic_mpp": "optional",
       "gossip_queries": "optional",
       "option_quiesce": "optional",
-      "option_payment_metadata": "optional"
-    },
-    "unknown": []
+      "option_payment_metadata": "optional",
+      "option_simple_taproot": "optional",
+      "var_onion_optin": "mandatory",
+      "option_splice": "optional"
+    }
   },
   "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
   "network": "regtest",
-  "blockHeight": 4789,
+  "blockHeight": 68394,
   "publicAddresses": [
     "34.239.230.56:9735",
     "of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion:9735"
   ],
-  "instanceId": "e8ab38f8-b609-452f-acdb-81c44f0f24cf"
+  "instanceId": "dd41b470-aae2-4c98-b609-4367b6d58ca8"
 }
 ```
 
@@ -261,7 +262,11 @@ eclair-cli rbfopen --channelId=<channel_id> --targetFeerateSatByte=<target_feera
 > The above command returns:
 
 ```shell
-"ok"
+{
+  "rbfIndex": 0,
+  "fundingTxId": "ba31c8aa6196afbad450686d32738fdd98dcb3c2f82c5f15a8a49ef09b024a29",
+  "fee": 3297
+}
 ```
 
 Increase the fees of an unconfirmed dual-funded channel to speed up confirmation.
@@ -311,6 +316,115 @@ Parameter            | Description                                              
 -------------------- | ------------------------------------------------------------ | -------- | -------------------------------------
 outpoints            | Utxos that should be spent by the child transaction          | No       | CSV list of outpoints (txid:vout)
 targetFeerateSatByte | Feerate in sat/byte to apply to the unconfirmed transactions | No       | Satoshis (Integer)
+
+# Splice
+
+## Splice-in
+
+```shell
+curl -s -u :<eclair_api_password> -X POST -F channelId=<channel> -F amountIn=<amount_satoshis> "http://localhost:8080/splicein"
+
+# with eclair-cli
+eclair-cli splicein --channelId=<channel> --amountIn=<amount_satoshis>
+```
+
+> The above command returns:
+
+```shell
+{
+  "fundingTxIndex": 1,
+  "fundingTxId": "adaf98b2897b1cd78593f185ebbf6cdfbca73644127940610fdb4c55c3861a6b",
+  "capacity": 350000,
+  "balance": 350000000
+}
+```
+
+Increase the local balance of a given channel by the provided amount, by creating an on-chain transaction.
+Note that **amountIn** will be taken from the on-chain wallet, which needs to have enough funds available.
+
+### HTTP Request
+
+`POST http://localhost:8080/splicein`
+
+### Parameters
+
+Parameter   | Description                                                     | Optional | Type
+----------- | --------------------------------------------------------------- | -------- | -------------------------------------
+channelId   | The channelId of the channel you want to update                 | No       | 32-bytes-HexString (String)
+amountIn    | Amount of satoshis that will be added to the channel            | No       | Satoshis (Integer)
+pushMsat    | Amount of millisatoshi to unilaterally push to the counterparty | Yes      | Millisatoshis (Integer)
+
+## Splice-out
+
+```shell
+curl -s -u :<eclair_api_password> -X POST -F channelId=<channel> -F amountOut=<amount_satoshis> -F address=<on_chain_address> "http://localhost:8080/spliceout"
+
+# with eclair-cli
+eclair-cli spliceout --channelId=<channel> --amountOut=<amount_satoshis> --address=<on_chain_address>
+```
+
+> The above command returns:
+
+```shell
+{
+  "fundingTxIndex": 2,
+  "fundingTxId": "5abf88cdcee34a2f45a2dd48e1c6597b3a8756cc6054e01d3cfd8ca45f32b0b9",
+  "capacity": 309098,
+  "balance": 309098000
+}
+```
+
+Decrease the local balance of a given channel by the provided amount, by creating an on-chain transaction that sends **amountOut** to the provided **address**.
+
+### HTTP Request
+
+`POST http://localhost:8080/spliceout`
+
+### Parameters
+
+Parameter    | Description                                                     | Optional | Type
+------------ | --------------------------------------------------------------- | -------- | -------------------------------------
+channelId    | The channelId of the channel you want to update                 | No       | 32-bytes-HexString (String)
+amountOut    | Amount of satoshis that will be taken from the channel          | No       | Satoshis (Integer)
+address      | On-chain address to which the funds will be sent                | Yes (*)  | String (bech32)
+scriptPubKey | Script to which the funds will be sent                          | Yes (*)  | HexString
+
+(*) Either **address** or **scriptPubKey** must be provided, to know where funds should be sent.
+
+## Splice RBF
+
+```shell
+curl -s -u :<eclair_api_password> -X POST -F channelId=<channel> -F targetFeerateSatByte=<target_feerate_satoshis_per_byte> -F fundingFeeBudgetSatoshis=<funding_fee_budget_satoshis> "http://localhost:8080/rbfsplice"
+
+# with eclair-cli
+eclair-cli rbfsplice --channelId=<channel> --targetFeerateSatByte=<target_feerate_satoshis_per_byte> --fundingFeeBudgetSatoshis=<funding_fee_budget_satoshis>
+```
+
+> The above command returns:
+
+```shell
+{
+  "rbfIndex": 1,
+  "fundingTxId": "5abf88cdcee34a2f45a2dd48e1c6597b3a8756cc6054e01d3cfd8ca45f32b0b9",
+  "fee": 3413
+}
+```
+
+Increase the feerate of a splice transaction that isn't confirming (replace-by-fee).
+This can be called even for splice transaction that were initiated by the remote peer.
+
+### HTTP Request
+
+`POST http://localhost:8080/rbfsplice`
+
+### Parameters
+
+Parameter                | Description                                                         | Optional | Type
+------------------------ | ------------------------------------------------------------------- | -------- | -------------------------------------
+channelId                | The channelId of the channel with an unconfirmed splice transaction | No       | 32-bytes-HexString (String)
+fundingFeeBudgetSatoshis | Maximum fees (in satoshis) of the splice transaction                | No       | Satoshis (Integer)
+targetFeerateSatByte     | Feerate in sat/byte to apply to the splice transaction              | No       | Satoshis (Integer)
+lockTime                 | The nLockTime to apply to the splice transaction                    | Yes      | Integer
 
 # Close
 
@@ -532,14 +646,14 @@ commitTxFeerate | sats/kw
 ```json
 [
   {
-    "nodeId": "0357b329b267777c6aff5746b78766fb7a43df7f273c0365f3280cb6f0dfc589c0",
-    "channelId": "ce6d41563a6f22a24609d57ba7151be4043288938c24606415e1fb7f0f7a815e",
+    "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+    "channelId": "da9171e06fbb7d18a50deeab567dbf35498c69da7542d0222c2f22da7fa2e300",
     "state": "NORMAL",
     "data": {
       "type": "DATA_NORMAL",
       "commitments": {
         "channelParams": {
-          "channelId": "ce6d41563a6f22a24609d57ba7151be4043288938c24606415e1fb7f0f7a815e",
+          "channelId": "da9171e06fbb7d18a50deeab567dbf35498c69da7542d0222c2f22da7fa2e300",
           "channelConfig": [
             "funding_pubkey_based_channel_keypath"
           ],
@@ -547,16 +661,16 @@ commitTxFeerate | sats/kw
             "option_dual_fund"
           ],
           "localParams": {
-            "nodeId": "03ad873be7d8e152f878af1e58f894920a220c291f19ef24d916c5702bc79018b8",
+            "nodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
             "fundingKeyPath": [
-              485985097,
-              2512474026,
-              2368020766,
-              307411143,
-              2583624096,
-              45844937,
-              3247813012,
-              3954324383,
+              2783369202,
+              2564506293,
+              2430501769,
+              3674750487,
+              3321711430,
+              82756978,
+              1950369508,
+              453888639,
               2147483649
             ],
             "isChannelOpener": true,
@@ -570,7 +684,6 @@ commitTxFeerate | sats/kw
                 "gossip_queries_ex": "optional",
                 "option_quiesce": "optional",
                 "option_data_loss_protect": "mandatory",
-                "var_onion_optin": "mandatory",
                 "option_static_remotekey": "mandatory",
                 "option_scid_alias": "optional",
                 "option_onion_messages": "optional",
@@ -580,28 +693,28 @@ commitTxFeerate | sats/kw
                 "option_shutdown_anysegwit": "optional",
                 "option_channel_type": "mandatory",
                 "basic_mpp": "optional",
-                "gossip_queries": "optional"
-              },
-              "unknown": []
+                "gossip_queries": "optional",
+                "option_simple_taproot": "optional",
+                "var_onion_optin": "mandatory",
+                "option_splice": "optional"
+              }
             }
           },
           "remoteParams": {
-            "nodeId": "0357b329b267777c6aff5746b78766fb7a43df7f273c0365f3280cb6f0dfc589c0",
-            "revocationBasepoint": "0284344002ba31d467cfce51eb28fcc1f87ebd752c9016096ad65a9b36d721e936",
-            "paymentBasepoint": "03fef2ce147f18096390463946b7475857abccf2fa142a08819bd7c6f014002220",
-            "delayedPaymentBasepoint": "034b2536d3ddf9420579f6df98688039170b5d9d92834cffdebb81db53fb19364c",
-            "htlcBasepoint": "0295958d3c50849b086e94e08bfa1c787a7cdd7b0e5313e45d12dbcf89228c5f11",
+            "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+            "revocationBasepoint": "034ba17b08490e0ef8feacca5ef1a9b9f2f7d00b31e76d80f0dcf266cb1c21de9d",
+            "paymentBasepoint": "039262ef17683a6950dc4da3bbe43ac7361243e28a0c558c34635652a8fa0ca0f3",
+            "delayedPaymentBasepoint": "03fce0346771feb9e6c0a5cb87b7daa54cf5dc6b884cf03709c8daf2e51399fbba",
+            "htlcBasepoint": "025270d5456149fc611cafa7910efe354b88efd086e544e3da483d7d783c723316",
             "initFeatures": {
               "activated": {
                 "option_simple_close": "optional",
                 "option_route_blinding": "optional",
                 "option_attribution_data": "optional",
                 "option_dual_fund": "optional",
-                "splice_prototype": "optional",
                 "gossip_queries_ex": "optional",
                 "option_quiesce": "optional",
                 "option_data_loss_protect": "mandatory",
-                "var_onion_optin": "mandatory",
                 "option_static_remotekey": "mandatory",
                 "option_scid_alias": "optional",
                 "option_onion_messages": "optional",
@@ -611,9 +724,11 @@ commitTxFeerate | sats/kw
                 "option_shutdown_anysegwit": "optional",
                 "option_channel_type": "mandatory",
                 "basic_mpp": "optional",
-                "gossip_queries": "optional"
-              },
-              "unknown": []
+                "gossip_queries": "optional",
+                "option_simple_taproot": "optional",
+                "var_onion_optin": "mandatory",
+                "option_splice": "optional"
+              }
             }
           },
           "channelFlags": {
@@ -632,24 +747,78 @@ commitTxFeerate | sats/kw
             "acked": [],
             "signed": []
           },
-          "localNextHtlcId": 0,
+          "localNextHtlcId": 1,
           "remoteNextHtlcId": 0
         },
         "active": [
           {
-            "fundingTxIndex": 0,
-            "fundingInput": "e5a7c83f5fbf2ef9905992769920b14b9f46c69d3a2bdd64059f4f409577dc13:0",
-            "fundingAmount": 300000,
+            "fundingTxIndex": 2,
+            "fundingInput": "5abf88cdcee34a2f45a2dd48e1c6597b3a8756cc6054e01d3cfd8ca45f32b0b9:1",
+            "fundingAmount": 309098,
             "localFunding": {
               "status": "confirmed",
-              "shortChannelId": "4790x1x0"
+              "shortChannelId": "68415x1x1"
             },
             "remoteFunding": {
               "status": "locked"
             },
             "commitmentFormat": "anchor_outputs",
             "localCommitParams": {
-              "dustLimit": 1000,
+              "dustLimit": 546,
+              "htlcMinimum": 1000,
+              "maxHtlcValueInFlight": 90000000,
+              "maxAcceptedHtlcs": 10,
+              "toSelfDelay": 100
+            },
+            "localCommit": {
+              "index": 2,
+              "spec": {
+                "htlcs": [],
+                "commitTxFeerate": 2500,
+                "toLocal": 269098000,
+                "toRemote": 40000000
+              },
+              "txId": "073a4d7c017c7dc8abe581a139d633e3f89da0f9bd715df6c04ef12f228271dd",
+              "remoteSig": {
+                "sig": "a4256a58aa56a292ad5d90069b68e4596e67551cb9d2c150e3489923eaa64eae5e7d3f3d7e873fc391e7abfd4711280faa57f6d4479a8a5f7fc76daa82717350"
+              },
+              "htlcRemoteSigs": []
+            },
+            "remoteCommitParams": {
+              "dustLimit": 546,
+              "htlcMinimum": 500,
+              "maxHtlcValueInFlight": 75000000,
+              "maxAcceptedHtlcs": 15,
+              "toSelfDelay": 144
+            },
+            "remoteCommit": {
+              "index": 2,
+              "spec": {
+                "htlcs": [],
+                "commitTxFeerate": 2500,
+                "toLocal": 40000000,
+                "toRemote": 269098000
+              },
+              "txId": "7daf6be99b7edc538659f4963405dd364f788cbc90f3e226324c160e70659580",
+              "remotePerCommitmentPoint": "02b21682c1eea89970f939d8d89482a1a6e0b26c91ce9578d61563689c7f0d8f73"
+            }
+          }
+        ],
+        "inactive": [
+          {
+            "fundingTxIndex": 1,
+            "fundingInput": "adaf98b2897b1cd78593f185ebbf6cdfbca73644127940610fdb4c55c3861a6b:0",
+            "fundingAmount": 350000,
+            "localFunding": {
+              "status": "confirmed",
+              "shortChannelId": "68405x1x0"
+            },
+            "remoteFunding": {
+              "status": "locked"
+            },
+            "commitmentFormat": "anchor_outputs",
+            "localCommitParams": {
+              "dustLimit": 546,
               "htlcMinimum": 1000,
               "maxHtlcValueInFlight": 90000000,
               "maxAcceptedHtlcs": 10,
@@ -660,17 +829,17 @@ commitTxFeerate | sats/kw
               "spec": {
                 "htlcs": [],
                 "commitTxFeerate": 2500,
-                "toLocal": 300000000,
+                "toLocal": 350000000,
                 "toRemote": 0
               },
-              "txId": "9ad0c40ad6b6a6cc0816c5726320c5fb50baf0c47c510a5db7a4f1122e1b5039",
+              "txId": "a00d3005cb1d21d4fc535b4bf38bc3db9d02a440da67c1d656a81ad5b6306448",
               "remoteSig": {
-                "sig": "5ac29c902a8b4ad2319d1a4029a4d4429522c2c31e3fc61033bf1fcc3575b87909127eb1d5c354b89206b10e6ed56b9b7a2ac2273a692ee99626fe53e8b0b777"
+                "sig": "55de47e2099e49e0ebeb445a274f91de1e971b4fad93b906f7846e99d0e52f785a08f0c68240f9f3c113d5301a8cfddff7220077125b1c3a1e10091ed9c14ba1"
               },
               "htlcRemoteSigs": []
             },
             "remoteCommitParams": {
-              "dustLimit": 2000,
+              "dustLimit": 546,
               "htlcMinimum": 500,
               "maxHtlcValueInFlight": 75000000,
               "maxAcceptedHtlcs": 15,
@@ -682,89 +851,88 @@ commitTxFeerate | sats/kw
                 "htlcs": [],
                 "commitTxFeerate": 2500,
                 "toLocal": 0,
-                "toRemote": 300000000
+                "toRemote": 350000000
               },
-              "txId": "b3448234468a8b476ccc1122077d3436421da970e0fbfb90d461cd21e234547a",
-              "remotePerCommitmentPoint": "02a7545b3bef210c71985075e1f77d69525bb8db6800ad68bff317c0fd11337516"
+              "txId": "54f58d643ca0b032d25e3d0e0d580bbe2473232eacf95b2584426c63f93cf18b",
+              "remotePerCommitmentPoint": "0282dd0c03f94c50333fa8c3139484c2570f156caabf12ceacbc97a86edc6bef42"
             }
           }
         ],
-        "inactive": [],
-        "remoteNextCommitInfo": "02ec08126caa28916c4a6807f4de7b6573e6382aa03ff47b2f03a5b41a3fbb5910",
+        "remoteNextCommitInfo": "02cc7070166e66990abee671336e1f6289d7dc38cb3548852acf6c01e63e59f3c3",
         "remotePerCommitmentSecrets": null,
         "originChannels": {}
       },
       "aliases": {
-        "localAlias": "0x284de5f5753b9d6",
-        "remoteAlias": "0xde0692f232970d"
+        "localAlias": "0x543ce32b242f0e",
+        "remoteAlias": "0x1bbbc9005b30bee"
       },
       "lastAnnouncement_opt": {
-        "nodeSignature1": "a3d928550224da320622629dbb90e1d0ec1cb121c4b47b1f3c38bbf0a4ae1d607aa04c6b9b078f5d4990eb0739674440ba9475e605e1dd9fe8e4ec2ff67ba96a",
-        "nodeSignature2": "4cf5177603c1f6606bcd8ca19257adfd656d83f8b58c03dd2c105e9439728f4272b3d093cf9384098aaca9be566c1d414e0c0bca64234b9c374531abbe7c5c94",
-        "bitcoinSignature1": "8586614bb1fe9e0162ac2a84cd237e17a321e13b972854ffa205836c64372aec3720ddb42ea710016dd5b1988b6fcc841afb95738a35295e48b72ed159b154ef",
-        "bitcoinSignature2": "7cd366000387806c24402bb5941964eb4d4c9212dcd1ff5047b611837e0dd7d874124aee54c2ef5c14f0e0a9310cd212ed06351ed55c6f291371565b406e3863",
+        "nodeSignature1": "44cbc4efa68ce464e7d340dbb4b8378e03398199003eb1cb42fd375b0c6b51653d31e49ac3d26ff513cf18bdc09e686838b07a2176994ead0b2b8123f02aa3f7",
+        "nodeSignature2": "341dcedf1f82ac0d67c0aa89a4203389de342d6bb3cabb673f1b0c500f82cfc87a0c926d5c8a34d1e4498c94767a8cf8b2fea3d2e794b5573f21f6c625b84649",
+        "bitcoinSignature1": "24781b9e40f68564edaa0403a2604e3a97132b4cff9f8d4126cfc69b9f73bf17598f2e48522f29072be8b855846ed037d975fc998e0da548c9f69fa5ee81f14a",
+        "bitcoinSignature2": "e666ba9cf60994ae81f42c20b873842038c396ef8c30d593bcde841d98c5150d7f3e91adabc63e3787b4cef9357e38a02b5dc571dd69bd32caf3c5329b97a610",
         "features": {
-          "activated": {},
-          "unknown": []
+          "activated": {}
         },
         "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-        "shortChannelId": "4790x1x0",
-        "nodeId1": "0357b329b267777c6aff5746b78766fb7a43df7f273c0365f3280cb6f0dfc589c0",
-        "nodeId2": "03ad873be7d8e152f878af1e58f894920a220c291f19ef24d916c5702bc79018b8",
-        "bitcoinKey1": "029ef4c8e16fe65204b47462b42294522e17e1762d03e0d551a77254fe8d8ae770",
-        "bitcoinKey2": "037a0dfbf6944aa118b4617eb773b115c6e629a918601cf000a2a49ee8700ba167",
+        "shortChannelId": "68415x1x1",
+        "nodeId1": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
+        "nodeId2": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+        "bitcoinKey1": "02bedf835005654cbb33fbb1ed8de7caa794b5b5b9ee55e5ba08f700a58975a0a2",
+        "bitcoinKey2": "037bc091661c7416ec9587275384258258dfa72e95c833d3730e1d8bf892e3cb62",
         "tlvStream": {}
       },
       "channelUpdate": {
-        "signature": "be32e12a763ada557140dd14d65baea98089d95dc6c1cbeed896895e285f1f225d6462011fcbc2e54828522759ccfdcedb3b1652e3f3a8c2387ab5e96b126cbc",
+        "signature": "6b9ecd8c963a2e77dd2996f3b64c8aeabee3aa10be75fd43716c433a0c3ac4aa496b9dbdd0c1e6350f1482ff7dbd60fe775b7cd0697737c05802278df0a7eadf",
         "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-        "shortChannelId": "4790x1x0",
+        "shortChannelId": "68415x1x1",
         "timestamp": {
-          "iso": "2025-09-10T15:02:30Z",
-          "unix": 1757516550
+          "iso": "2026-05-22T11:50:31Z",
+          "unix": 1779450631
         },
         "messageFlags": {
           "dontForward": false
         },
         "channelFlags": {
           "isEnabled": true,
-          "isNode1": false
+          "isNode1": true
         },
         "cltvExpiryDelta": 144,
         "htlcMinimumMsat": 500,
-        "feeBaseMsat": 1000,
-        "feeProportionalMillionths": 200,
+        "feeBaseMsat": 15,
+        "feeProportionalMillionths": 500,
         "htlcMaximumMsat": 75000000,
         "tlvStream": {}
       }
     }
   },
   {
-    "nodeId": "0357b329b267777c6aff5746b78766fb7a43df7f273c0365f3280cb6f0dfc589c0",
-    "channelId": "1dca5bab220ff38e31540178c05b9e6c72ca52b31cb4a17cbdbc091ccbb6eba4",
-    "state": "WAIT_FOR_DUAL_FUNDING_CONFIRMED",
+    "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+    "channelId": "bbc8ccc2dfa98426c38d3f30a2fa92d509b19d9971d5bcb519a8fb50b0c90911",
+    "state": "NORMAL",
     "data": {
-      "type": "DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED",
+      "type": "DATA_NORMAL",
       "commitments": {
         "channelParams": {
-          "channelId": "1dca5bab220ff38e31540178c05b9e6c72ca52b31cb4a17cbdbc091ccbb6eba4",
+          "channelId": "bbc8ccc2dfa98426c38d3f30a2fa92d509b19d9971d5bcb519a8fb50b0c90911",
           "channelConfig": [
             "funding_pubkey_based_channel_keypath"
           ],
           "channelFeatures": [
-            "option_dual_fund"
+            "option_dual_fund",
+            "option_scid_alias"
           ],
           "localParams": {
-            "nodeId": "03ad873be7d8e152f878af1e58f894920a220c291f19ef24d916c5702bc79018b8",
+            "nodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
             "fundingKeyPath": [
-              3340380005,
-              1335887636,
-              2111911869,
-              3977394941,
-              956438983,
-              2067976811,
-              1837273456,
-              849282389,
+              942782628,
+              4294410734,
+              273297146,
+              1031007703,
+              1399293918,
+              4112967135,
+              4046378412,
+              1768396913,
               2147483649
             ],
             "isChannelOpener": true,
@@ -778,7 +946,6 @@ commitTxFeerate | sats/kw
                 "gossip_queries_ex": "optional",
                 "option_quiesce": "optional",
                 "option_data_loss_protect": "mandatory",
-                "var_onion_optin": "mandatory",
                 "option_static_remotekey": "mandatory",
                 "option_scid_alias": "optional",
                 "option_onion_messages": "optional",
@@ -788,28 +955,28 @@ commitTxFeerate | sats/kw
                 "option_shutdown_anysegwit": "optional",
                 "option_channel_type": "mandatory",
                 "basic_mpp": "optional",
-                "gossip_queries": "optional"
-              },
-              "unknown": []
+                "gossip_queries": "optional",
+                "option_simple_taproot": "optional",
+                "var_onion_optin": "mandatory",
+                "option_splice": "optional"
+              }
             }
           },
           "remoteParams": {
-            "nodeId": "0357b329b267777c6aff5746b78766fb7a43df7f273c0365f3280cb6f0dfc589c0",
-            "revocationBasepoint": "027eb5ab22d4a72521afeae7a08f35b375e443845ccce86065876f5dc3b70299e4",
-            "paymentBasepoint": "03f5e11098f4236436392f5d64da1ad53ed47280b5f53ec7198863a8593ff43af8",
-            "delayedPaymentBasepoint": "02847fa3060a975ec63ba55e589d69fdbc4aab58a1a3935ac013b7cda2a352e160",
-            "htlcBasepoint": "02895cad2f59fe0fdd4daf8cc5360f1ebd0aff2938eb30de0b3a223a15cbeeaec3",
+            "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+            "revocationBasepoint": "035ada31eb90b2631d5a12321ab9d05aa91ef3d37a1354618123cd5bf83ce78e09",
+            "paymentBasepoint": "03c490b5b1b0bc36f74a93b0eb540cd35b922e11c89ad8c15767c7daaec6cfc6b2",
+            "delayedPaymentBasepoint": "03ba647b47e76cd0f973a3e8ed931a64198141be5a0b6a9177fc52426f26de9f80",
+            "htlcBasepoint": "02eab73e4b3a435f9c67c87e9e1a0fb6021f1b2040bbf313e082d634ea2f2a2ccb",
             "initFeatures": {
               "activated": {
                 "option_simple_close": "optional",
                 "option_route_blinding": "optional",
                 "option_attribution_data": "optional",
                 "option_dual_fund": "optional",
-                "splice_prototype": "optional",
                 "gossip_queries_ex": "optional",
                 "option_quiesce": "optional",
                 "option_data_loss_protect": "mandatory",
-                "var_onion_optin": "mandatory",
                 "option_static_remotekey": "mandatory",
                 "option_scid_alias": "optional",
                 "option_onion_messages": "optional",
@@ -819,14 +986,16 @@ commitTxFeerate | sats/kw
                 "option_shutdown_anysegwit": "optional",
                 "option_channel_type": "mandatory",
                 "basic_mpp": "optional",
-                "gossip_queries": "optional"
-              },
-              "unknown": []
+                "gossip_queries": "optional",
+                "option_simple_taproot": "optional",
+                "var_onion_optin": "mandatory",
+                "option_splice": "optional"
+              }
             }
           },
           "channelFlags": {
             "nonInitiatorPaysCommitFees": false,
-            "announceChannel": true
+            "announceChannel": false
           }
         },
         "changes": {
@@ -846,20 +1015,20 @@ commitTxFeerate | sats/kw
         "active": [
           {
             "fundingTxIndex": 0,
-            "fundingInput": "4b32992585b0464ade268316ecf6e2b5e8e3ad93a4c122510e3df77a1d327763:1",
-            "fundingAmount": 220000,
+            "fundingInput": "5586f707cbcf64e1114d0ec6bed6aa8961ed3d153e2f724d7103f29e5762c747:0",
+            "fundingAmount": 280000,
             "localFunding": {
-              "status": "unconfirmed",
-              "txid": "4b32992585b0464ade268316ecf6e2b5e8e3ad93a4c122510e3df77a1d327763"
+              "status": "confirmed",
+              "shortChannelId": "68425x1x0"
             },
             "remoteFunding": {
-              "status": "not-locked"
+              "status": "locked"
             },
-            "commitmentFormat": "anchor_outputs",
+            "commitmentFormat": "simple_taproot",
             "localCommitParams": {
-              "dustLimit": 1000,
+              "dustLimit": 546,
               "htlcMinimum": 1000,
-              "maxHtlcValueInFlight": 66000000,
+              "maxHtlcValueInFlight": 84000000,
               "maxAcceptedHtlcs": 10,
               "toSelfDelay": 100
             },
@@ -868,19 +1037,20 @@ commitTxFeerate | sats/kw
               "spec": {
                 "htlcs": [],
                 "commitTxFeerate": 2500,
-                "toLocal": 220000000,
+                "toLocal": 280000000,
                 "toRemote": 0
               },
-              "txId": "21701fbaeb11bf6dddcd9bced34f7528e0a4c37f314af3e8273abf565574de59",
+              "txId": "b1ea78fc6cc2ffa7c98a912947d8c9950b6cc13ba8a63fdd4a7f5e102d6c27fa",
               "remoteSig": {
-                "sig": "bc8899d8908830655df2c6f06e6ee81f56aa163137bd05e9c11d381f20b8e7b050300fa748aa6374bb9d8400f702f5411d8bbacf7b4d81346ffb5a43ff1d39e9"
+                "partialSig": "ff651c56e2d5507bc2c601d160a8c2a0194b1c684de4920633bc787e22e7bd3b",
+                "nonce": "0352a7d7ce88e416bd9e4933b5886da08f2d18d80bbb590ab97219ccb1434ea47e03ce028338819653ef20460e063481d49088ce50cc075fc5e364252192336ed87b"
               },
               "htlcRemoteSigs": []
             },
             "remoteCommitParams": {
-              "dustLimit": 2000,
+              "dustLimit": 546,
               "htlcMinimum": 500,
-              "maxHtlcValueInFlight": 55000000,
+              "maxHtlcValueInFlight": 70000000,
               "maxAcceptedHtlcs": 15,
               "toSelfDelay": 144
             },
@@ -890,23 +1060,44 @@ commitTxFeerate | sats/kw
                 "htlcs": [],
                 "commitTxFeerate": 2500,
                 "toLocal": 0,
-                "toRemote": 220000000
+                "toRemote": 280000000
               },
-              "txId": "ce0a4b5cc03b5c659065b0637fea6aa57f4bdf48de3542d16ef230e7f5a9bce2",
-              "remotePerCommitmentPoint": "022c2171ef9463e3e27ad61efbfe5e6d341822f47a43fd3935ed3be551314adf15"
+              "txId": "c93980bd6e582ff8a39bfdea75b5a7f4a82081a604f7145089e672c96ddcde41",
+              "remotePerCommitmentPoint": "02b26e989f1ea02612fd719dd410fba74e3e2e16c695cdc8b7b2509f909b98e860"
             }
           }
         ],
         "inactive": [],
-        "remoteNextCommitInfo": "036ea58190fd1e03bae51bdef153fe7b9f05b1f1290e45adb355fa135e04f85b9d",
+        "remoteNextCommitInfo": "03ad43b83de456453749e69fe57067f4dde98434329c0234ebe54e5bc2c4e14497",
         "remotePerCommitmentSecrets": null,
         "originChannels": {}
       },
-      "localPushAmount": 0,
-      "remotePushAmount": 0,
-      "waitingSince": 4799,
-      "lastChecked": 4799,
-      "status": {}
+      "aliases": {
+        "localAlias": "0x241b2817588036e",
+        "remoteAlias": "0x1ecfd3418a47592"
+      },
+      "channelUpdate": {
+        "signature": "9659f77ea03458907c8b1c29ee36ce1c1f0ab616d9985b7cce7a5c12288673646d89356cc8a97bba656599094ae3a7780f701015309eec6adb3afe8322b932b8",
+        "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+        "shortChannelId": "0x241b2817588036e",
+        "timestamp": {
+          "iso": "2026-05-22T11:51:57Z",
+          "unix": 1779450717
+        },
+        "messageFlags": {
+          "dontForward": true
+        },
+        "channelFlags": {
+          "isEnabled": true,
+          "isNode1": true
+        },
+        "cltvExpiryDelta": 144,
+        "htlcMinimumMsat": 500,
+        "feeBaseMsat": 15,
+        "feeProportionalMillionths": 500,
+        "htlcMaximumMsat": 70000000,
+        "tlvStream": {}
+      }
     }
   }
 ]
@@ -947,31 +1138,32 @@ commitTxFeerate | sats/kw
 
 ```json
 {
-  "nodeId": "0357b329b267777c6aff5746b78766fb7a43df7f273c0365f3280cb6f0dfc589c0",
-  "channelId": "ce6d41563a6f22a24609d57ba7151be4043288938c24606415e1fb7f0f7a815e",
+  "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+  "channelId": "bbc8ccc2dfa98426c38d3f30a2fa92d509b19d9971d5bcb519a8fb50b0c90911",
   "state": "NORMAL",
   "data": {
     "type": "DATA_NORMAL",
     "commitments": {
       "channelParams": {
-        "channelId": "ce6d41563a6f22a24609d57ba7151be4043288938c24606415e1fb7f0f7a815e",
+        "channelId": "bbc8ccc2dfa98426c38d3f30a2fa92d509b19d9971d5bcb519a8fb50b0c90911",
         "channelConfig": [
           "funding_pubkey_based_channel_keypath"
         ],
         "channelFeatures": [
-          "option_dual_fund"
+          "option_dual_fund",
+          "option_scid_alias"
         ],
         "localParams": {
-          "nodeId": "03ad873be7d8e152f878af1e58f894920a220c291f19ef24d916c5702bc79018b8",
+          "nodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
           "fundingKeyPath": [
-            485985097,
-            2512474026,
-            2368020766,
-            307411143,
-            2583624096,
-            45844937,
-            3247813012,
-            3954324383,
+            942782628,
+            4294410734,
+            273297146,
+            1031007703,
+            1399293918,
+            4112967135,
+            4046378412,
+            1768396913,
             2147483649
           ],
           "isChannelOpener": true,
@@ -985,7 +1177,6 @@ commitTxFeerate | sats/kw
               "gossip_queries_ex": "optional",
               "option_quiesce": "optional",
               "option_data_loss_protect": "mandatory",
-              "var_onion_optin": "mandatory",
               "option_static_remotekey": "mandatory",
               "option_scid_alias": "optional",
               "option_onion_messages": "optional",
@@ -995,28 +1186,28 @@ commitTxFeerate | sats/kw
               "option_shutdown_anysegwit": "optional",
               "option_channel_type": "mandatory",
               "basic_mpp": "optional",
-              "gossip_queries": "optional"
-            },
-            "unknown": []
+              "gossip_queries": "optional",
+              "option_simple_taproot": "optional",
+              "var_onion_optin": "mandatory",
+              "option_splice": "optional"
+            }
           }
         },
         "remoteParams": {
-          "nodeId": "0357b329b267777c6aff5746b78766fb7a43df7f273c0365f3280cb6f0dfc589c0",
-          "revocationBasepoint": "0284344002ba31d467cfce51eb28fcc1f87ebd752c9016096ad65a9b36d721e936",
-          "paymentBasepoint": "03fef2ce147f18096390463946b7475857abccf2fa142a08819bd7c6f014002220",
-          "delayedPaymentBasepoint": "034b2536d3ddf9420579f6df98688039170b5d9d92834cffdebb81db53fb19364c",
-          "htlcBasepoint": "0295958d3c50849b086e94e08bfa1c787a7cdd7b0e5313e45d12dbcf89228c5f11",
+          "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+          "revocationBasepoint": "035ada31eb90b2631d5a12321ab9d05aa91ef3d37a1354618123cd5bf83ce78e09",
+          "paymentBasepoint": "03c490b5b1b0bc36f74a93b0eb540cd35b922e11c89ad8c15767c7daaec6cfc6b2",
+          "delayedPaymentBasepoint": "03ba647b47e76cd0f973a3e8ed931a64198141be5a0b6a9177fc52426f26de9f80",
+          "htlcBasepoint": "02eab73e4b3a435f9c67c87e9e1a0fb6021f1b2040bbf313e082d634ea2f2a2ccb",
           "initFeatures": {
             "activated": {
               "option_simple_close": "optional",
               "option_route_blinding": "optional",
               "option_attribution_data": "optional",
               "option_dual_fund": "optional",
-              "splice_prototype": "optional",
               "gossip_queries_ex": "optional",
               "option_quiesce": "optional",
               "option_data_loss_protect": "mandatory",
-              "var_onion_optin": "mandatory",
               "option_static_remotekey": "mandatory",
               "option_scid_alias": "optional",
               "option_onion_messages": "optional",
@@ -1026,14 +1217,16 @@ commitTxFeerate | sats/kw
               "option_shutdown_anysegwit": "optional",
               "option_channel_type": "mandatory",
               "basic_mpp": "optional",
-              "gossip_queries": "optional"
-            },
-            "unknown": []
+              "gossip_queries": "optional",
+              "option_simple_taproot": "optional",
+              "var_onion_optin": "mandatory",
+              "option_splice": "optional"
+            }
           }
         },
         "channelFlags": {
           "nonInitiatorPaysCommitFees": false,
-          "announceChannel": true
+          "announceChannel": false
         }
       },
       "changes": {
@@ -1053,20 +1246,20 @@ commitTxFeerate | sats/kw
       "active": [
         {
           "fundingTxIndex": 0,
-          "fundingInput": "e5a7c83f5fbf2ef9905992769920b14b9f46c69d3a2bdd64059f4f409577dc13:0",
-          "fundingAmount": 300000,
+          "fundingInput": "5586f707cbcf64e1114d0ec6bed6aa8961ed3d153e2f724d7103f29e5762c747:0",
+          "fundingAmount": 280000,
           "localFunding": {
             "status": "confirmed",
-            "shortChannelId": "4790x1x0"
+            "shortChannelId": "68425x1x0"
           },
           "remoteFunding": {
             "status": "locked"
           },
-          "commitmentFormat": "anchor_outputs",
+          "commitmentFormat": "simple_taproot",
           "localCommitParams": {
-            "dustLimit": 1000,
+            "dustLimit": 546,
             "htlcMinimum": 1000,
-            "maxHtlcValueInFlight": 90000000,
+            "maxHtlcValueInFlight": 84000000,
             "maxAcceptedHtlcs": 10,
             "toSelfDelay": 100
           },
@@ -1075,19 +1268,20 @@ commitTxFeerate | sats/kw
             "spec": {
               "htlcs": [],
               "commitTxFeerate": 2500,
-              "toLocal": 300000000,
+              "toLocal": 280000000,
               "toRemote": 0
             },
-            "txId": "9ad0c40ad6b6a6cc0816c5726320c5fb50baf0c47c510a5db7a4f1122e1b5039",
+            "txId": "b1ea78fc6cc2ffa7c98a912947d8c9950b6cc13ba8a63fdd4a7f5e102d6c27fa",
             "remoteSig": {
-              "sig": "5ac29c902a8b4ad2319d1a4029a4d4429522c2c31e3fc61033bf1fcc3575b87909127eb1d5c354b89206b10e6ed56b9b7a2ac2273a692ee99626fe53e8b0b777"
+              "partialSig": "ff651c56e2d5507bc2c601d160a8c2a0194b1c684de4920633bc787e22e7bd3b",
+              "nonce": "0352a7d7ce88e416bd9e4933b5886da08f2d18d80bbb590ab97219ccb1434ea47e03ce028338819653ef20460e063481d49088ce50cc075fc5e364252192336ed87b"
             },
             "htlcRemoteSigs": []
           },
           "remoteCommitParams": {
-            "dustLimit": 2000,
+            "dustLimit": 546,
             "htlcMinimum": 500,
-            "maxHtlcValueInFlight": 75000000,
+            "maxHtlcValueInFlight": 70000000,
             "maxAcceptedHtlcs": 15,
             "toSelfDelay": 144
           },
@@ -1097,59 +1291,42 @@ commitTxFeerate | sats/kw
               "htlcs": [],
               "commitTxFeerate": 2500,
               "toLocal": 0,
-              "toRemote": 300000000
+              "toRemote": 280000000
             },
-            "txId": "b3448234468a8b476ccc1122077d3436421da970e0fbfb90d461cd21e234547a",
-            "remotePerCommitmentPoint": "02a7545b3bef210c71985075e1f77d69525bb8db6800ad68bff317c0fd11337516"
+            "txId": "c93980bd6e582ff8a39bfdea75b5a7f4a82081a604f7145089e672c96ddcde41",
+            "remotePerCommitmentPoint": "02b26e989f1ea02612fd719dd410fba74e3e2e16c695cdc8b7b2509f909b98e860"
           }
         }
       ],
       "inactive": [],
-      "remoteNextCommitInfo": "02ec08126caa28916c4a6807f4de7b6573e6382aa03ff47b2f03a5b41a3fbb5910",
+      "remoteNextCommitInfo": "03ad43b83de456453749e69fe57067f4dde98434329c0234ebe54e5bc2c4e14497",
       "remotePerCommitmentSecrets": null,
       "originChannels": {}
     },
     "aliases": {
-      "localAlias": "0x284de5f5753b9d6",
-      "remoteAlias": "0xde0692f232970d"
-    },
-    "lastAnnouncement_opt": {
-      "nodeSignature1": "a3d928550224da320622629dbb90e1d0ec1cb121c4b47b1f3c38bbf0a4ae1d607aa04c6b9b078f5d4990eb0739674440ba9475e605e1dd9fe8e4ec2ff67ba96a",
-      "nodeSignature2": "4cf5177603c1f6606bcd8ca19257adfd656d83f8b58c03dd2c105e9439728f4272b3d093cf9384098aaca9be566c1d414e0c0bca64234b9c374531abbe7c5c94",
-      "bitcoinSignature1": "8586614bb1fe9e0162ac2a84cd237e17a321e13b972854ffa205836c64372aec3720ddb42ea710016dd5b1988b6fcc841afb95738a35295e48b72ed159b154ef",
-      "bitcoinSignature2": "7cd366000387806c24402bb5941964eb4d4c9212dcd1ff5047b611837e0dd7d874124aee54c2ef5c14f0e0a9310cd212ed06351ed55c6f291371565b406e3863",
-      "features": {
-        "activated": {},
-        "unknown": []
-      },
-      "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-      "shortChannelId": "4790x1x0",
-      "nodeId1": "0357b329b267777c6aff5746b78766fb7a43df7f273c0365f3280cb6f0dfc589c0",
-      "nodeId2": "03ad873be7d8e152f878af1e58f894920a220c291f19ef24d916c5702bc79018b8",
-      "bitcoinKey1": "029ef4c8e16fe65204b47462b42294522e17e1762d03e0d551a77254fe8d8ae770",
-      "bitcoinKey2": "037a0dfbf6944aa118b4617eb773b115c6e629a918601cf000a2a49ee8700ba167",
-      "tlvStream": {}
+      "localAlias": "0x241b2817588036e",
+      "remoteAlias": "0x1ecfd3418a47592"
     },
     "channelUpdate": {
-      "signature": "be32e12a763ada557140dd14d65baea98089d95dc6c1cbeed896895e285f1f225d6462011fcbc2e54828522759ccfdcedb3b1652e3f3a8c2387ab5e96b126cbc",
+      "signature": "9659f77ea03458907c8b1c29ee36ce1c1f0ab616d9985b7cce7a5c12288673646d89356cc8a97bba656599094ae3a7780f701015309eec6adb3afe8322b932b8",
       "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-      "shortChannelId": "4790x1x0",
+      "shortChannelId": "0x241b2817588036e",
       "timestamp": {
-        "iso": "2025-09-10T15:02:30Z",
-        "unix": 1757516550
+        "iso": "2026-05-22T11:51:57Z",
+        "unix": 1779450717
       },
       "messageFlags": {
-        "dontForward": false
+        "dontForward": true
       },
       "channelFlags": {
         "isEnabled": true,
-        "isNode1": false
+        "isNode1": true
       },
       "cltvExpiryDelta": 144,
       "htlcMinimumMsat": 500,
-      "feeBaseMsat": 1000,
-      "feeProportionalMillionths": 200,
-      "htlcMaximumMsat": 75000000,
+      "feeBaseMsat": 15,
+      "feeProportionalMillionths": 500,
+      "htlcMaximumMsat": 70000000,
       "tlvStream": {}
     }
   }
@@ -1182,215 +1359,28 @@ eclair-cli closedchannels
 ```json
 [
   {
-    "nodeId": "0357b329b267777c6aff5746b78766fb7a43df7f273c0365f3280cb6f0dfc589c0",
-    "channelId": "1dca5bab220ff38e31540178c05b9e6c72ca52b31cb4a17cbdbc091ccbb6eba4",
-    "state": "CLOSED",
-    "data": {
-      "type": "DATA_CLOSING",
-      "commitments": {
-        "channelParams": {
-          "channelId": "1dca5bab220ff38e31540178c05b9e6c72ca52b31cb4a17cbdbc091ccbb6eba4",
-          "channelConfig": [
-            "funding_pubkey_based_channel_keypath"
-          ],
-          "channelFeatures": [
-            "option_dual_fund"
-          ],
-          "localParams": {
-            "nodeId": "03ad873be7d8e152f878af1e58f894920a220c291f19ef24d916c5702bc79018b8",
-            "fundingKeyPath": [
-              3340380005,
-              1335887636,
-              2111911869,
-              3977394941,
-              956438983,
-              2067976811,
-              1837273456,
-              849282389,
-              2147483649
-            ],
-            "isChannelOpener": true,
-            "paysCommitTxFees": true,
-            "initFeatures": {
-              "activated": {
-                "option_simple_close": "optional",
-                "option_route_blinding": "optional",
-                "option_attribution_data": "optional",
-                "option_dual_fund": "optional",
-                "gossip_queries_ex": "optional",
-                "option_quiesce": "optional",
-                "option_data_loss_protect": "mandatory",
-                "var_onion_optin": "mandatory",
-                "option_static_remotekey": "mandatory",
-                "option_scid_alias": "optional",
-                "option_onion_messages": "optional",
-                "option_support_large_channel": "optional",
-                "option_anchors_zero_fee_htlc_tx": "optional",
-                "payment_secret": "mandatory",
-                "option_shutdown_anysegwit": "optional",
-                "option_channel_type": "mandatory",
-                "basic_mpp": "optional",
-                "gossip_queries": "optional"
-              },
-              "unknown": []
-            }
-          },
-          "remoteParams": {
-            "nodeId": "0357b329b267777c6aff5746b78766fb7a43df7f273c0365f3280cb6f0dfc589c0",
-            "revocationBasepoint": "027eb5ab22d4a72521afeae7a08f35b375e443845ccce86065876f5dc3b70299e4",
-            "paymentBasepoint": "03f5e11098f4236436392f5d64da1ad53ed47280b5f53ec7198863a8593ff43af8",
-            "delayedPaymentBasepoint": "02847fa3060a975ec63ba55e589d69fdbc4aab58a1a3935ac013b7cda2a352e160",
-            "htlcBasepoint": "02895cad2f59fe0fdd4daf8cc5360f1ebd0aff2938eb30de0b3a223a15cbeeaec3",
-            "initFeatures": {
-              "activated": {
-                "option_simple_close": "optional",
-                "option_route_blinding": "optional",
-                "option_attribution_data": "optional",
-                "option_dual_fund": "optional",
-                "splice_prototype": "optional",
-                "gossip_queries_ex": "optional",
-                "option_quiesce": "optional",
-                "option_data_loss_protect": "mandatory",
-                "var_onion_optin": "mandatory",
-                "option_static_remotekey": "mandatory",
-                "option_scid_alias": "optional",
-                "option_onion_messages": "optional",
-                "option_support_large_channel": "optional",
-                "option_anchors_zero_fee_htlc_tx": "optional",
-                "payment_secret": "mandatory",
-                "option_shutdown_anysegwit": "optional",
-                "option_channel_type": "mandatory",
-                "basic_mpp": "optional",
-                "gossip_queries": "optional"
-              },
-              "unknown": []
-            }
-          },
-          "channelFlags": {
-            "nonInitiatorPaysCommitFees": false,
-            "announceChannel": true
-          }
-        },
-        "changes": {
-          "localChanges": {
-            "proposed": [],
-            "signed": [],
-            "acked": []
-          },
-          "remoteChanges": {
-            "proposed": [],
-            "acked": [],
-            "signed": []
-          },
-          "localNextHtlcId": 0,
-          "remoteNextHtlcId": 0
-        },
-        "active": [
-          {
-            "fundingTxIndex": 0,
-            "fundingInput": "4b32992585b0464ade268316ecf6e2b5e8e3ad93a4c122510e3df77a1d327763:1",
-            "fundingAmount": 220000,
-            "localFunding": {
-              "status": "confirmed",
-              "shortChannelId": "4800x1x1"
-            },
-            "remoteFunding": {
-              "status": "not-locked"
-            },
-            "commitmentFormat": "anchor_outputs",
-            "localCommitParams": {
-              "dustLimit": 1000,
-              "htlcMinimum": 1000,
-              "maxHtlcValueInFlight": 66000000,
-              "maxAcceptedHtlcs": 10,
-              "toSelfDelay": 100
-            },
-            "localCommit": {
-              "index": 0,
-              "spec": {
-                "htlcs": [],
-                "commitTxFeerate": 2500,
-                "toLocal": 220000000,
-                "toRemote": 0
-              },
-              "txId": "21701fbaeb11bf6dddcd9bced34f7528e0a4c37f314af3e8273abf565574de59",
-              "remoteSig": {
-                "sig": "bc8899d8908830655df2c6f06e6ee81f56aa163137bd05e9c11d381f20b8e7b050300fa748aa6374bb9d8400f702f5411d8bbacf7b4d81346ffb5a43ff1d39e9"
-              },
-              "htlcRemoteSigs": []
-            },
-            "remoteCommitParams": {
-              "dustLimit": 2000,
-              "htlcMinimum": 500,
-              "maxHtlcValueInFlight": 55000000,
-              "maxAcceptedHtlcs": 15,
-              "toSelfDelay": 144
-            },
-            "remoteCommit": {
-              "index": 0,
-              "spec": {
-                "htlcs": [],
-                "commitTxFeerate": 2500,
-                "toLocal": 0,
-                "toRemote": 220000000
-              },
-              "txId": "ce0a4b5cc03b5c659065b0637fea6aa57f4bdf48de3542d16ef230e7f5a9bce2",
-              "remotePerCommitmentPoint": "022c2171ef9463e3e27ad61efbfe5e6d341822f47a43fd3935ed3be551314adf15"
-            }
-          }
-        ],
-        "inactive": [],
-        "remoteNextCommitInfo": "036ea58190fd1e03bae51bdef153fe7b9f05b1f1290e45adb355fa135e04f85b9d",
-        "remotePerCommitmentSecrets": null,
-        "originChannels": {}
-      },
-      "waitingSince": 4799,
-      "finalScriptPubKey": "0014e6585e13345665137fd957bb02439913ae7744c4",
-      "mutualCloseProposed": [],
-      "mutualClosePublished": [],
-      "localCommitPublished": {
-        "commitTx": {
-          "txid": "21701fbaeb11bf6dddcd9bced34f7528e0a4c37f314af3e8273abf565574de59",
-          "tx": "020000000001016377321d7af73d0e5122c1a493ade3e8b5e2f6ec168326de4a46b0852599324b0100000000b48ded80024a010000000000002200204992ef8d6ae973cd3a8c9ee521e329c852fce36e910ab42c4cf0451472070acbd24d030000000000220020c3fb58772dc68bcd51d8caa360a2a53893e19f2d19f9a777f5ab2e62417b39d2040047304402202917e99edeaec593579150dc0139249b630096cc50bc34e62d7b46b8f23c6b6d022022b712d3890fabbcd57fcdd8df06b4269e627210ada76ee5649a3f044196f51d01483045022100bc8899d8908830655df2c6f06e6ee81f56aa163137bd05e9c11d381f20b8e7b0022050300fa748aa6374bb9d8400f702f5411d8bbacf7b4d81346ffb5a43ff1d39e9014752210275b2cf7f06f38466f7d6a493c6f159f7ec2cf7446a4d42fb117d450ede5d8cd22102c6beb34f973aa87cdec8822c35939453e9d5d0a750e04b1c9197904736bfdd2f52aed7b27f20"
-        },
-        "localOutput_opt": "21701fbaeb11bf6dddcd9bced34f7528e0a4c37f314af3e8273abf565574de59:1",
-        "anchorOutput_opt": "21701fbaeb11bf6dddcd9bced34f7528e0a4c37f314af3e8273abf565574de59:0",
-        "incomingHtlcs": {},
-        "outgoingHtlcs": {},
-        "htlcDelayedOutputs": [],
-        "irrevocablySpent": {}
-      },
-      "remoteCommitPublished": {
-        "commitTx": {
-          "txid": "ce0a4b5cc03b5c659065b0637fea6aa57f4bdf48de3542d16ef230e7f5a9bce2",
-          "tx": "020000000001016377321d7af73d0e5122c1a493ade3e8b5e2f6ec168326de4a46b0852599324b0100000000b48ded80024a010000000000002200204992ef8d6ae973cd3a8c9ee521e329c852fce36e910ab42c4cf0451472070acbd24d03000000000022002030d39d429194ffccff129a0608f86d1f94922136b9dc884fdef3f6d578d4bcaf040047304402204626db3994e4ab96b1f6bb435aebd766b8c6c67264ee589d8ec0693c1c4f390b02207cb726dd0c7862a37e3ce018413615296c0c21d7331dfc7f5ee10a04fecd83070147304402204470f3bd9c657d0f6d2566dcfb65553be49d2e1ac570bf5c3dfd82c877b2eead02201d9b1dd8b3f439365867ea45c8895b9898c7f55a451acf96b81b8c4d15e95b45014752210275b2cf7f06f38466f7d6a493c6f159f7ec2cf7446a4d42fb117d450ede5d8cd22102c6beb34f973aa87cdec8822c35939453e9d5d0a750e04b1c9197904736bfdd2f52aed7b27f20"
-        },
-        "localOutput_opt": "ce0a4b5cc03b5c659065b0637fea6aa57f4bdf48de3542d16ef230e7f5a9bce2:1",
-        "anchorOutput_opt": "ce0a4b5cc03b5c659065b0637fea6aa57f4bdf48de3542d16ef230e7f5a9bce2:0",
-        "incomingHtlcs": {},
-        "outgoingHtlcs": {},
-        "irrevocablySpent": {
-          "4b32992585b0464ade268316ecf6e2b5e8e3ad93a4c122510e3df77a1d327763:1": {
-            "txid": "ce0a4b5cc03b5c659065b0637fea6aa57f4bdf48de3542d16ef230e7f5a9bce2",
-            "tx": "020000000001016377321d7af73d0e5122c1a493ade3e8b5e2f6ec168326de4a46b0852599324b0100000000b48ded80024a010000000000002200204992ef8d6ae973cd3a8c9ee521e329c852fce36e910ab42c4cf0451472070acbd24d03000000000022002030d39d429194ffccff129a0608f86d1f94922136b9dc884fdef3f6d578d4bcaf040047304402204626db3994e4ab96b1f6bb435aebd766b8c6c67264ee589d8ec0693c1c4f390b02207cb726dd0c7862a37e3ce018413615296c0c21d7331dfc7f5ee10a04fecd83070147304402204470f3bd9c657d0f6d2566dcfb65553be49d2e1ac570bf5c3dfd82c877b2eead02201d9b1dd8b3f439365867ea45c8895b9898c7f55a451acf96b81b8c4d15e95b45014752210275b2cf7f06f38466f7d6a493c6f159f7ec2cf7446a4d42fb117d450ede5d8cd22102c6beb34f973aa87cdec8822c35939453e9d5d0a750e04b1c9197904736bfdd2f52aed7b27f20"
-          },
-          "ce0a4b5cc03b5c659065b0637fea6aa57f4bdf48de3542d16ef230e7f5a9bce2:1": {
-            "txid": "48289384ef38092c31d0032f6c1260795db1c5eaa4300a3ea5afc19ce99f5db3",
-            "tx": "02000000000101e2bca9f5e730f26ed14235de48df4b7fa56aea7f63b06590655c3bc05c4b0ace010000000001000000018149030000000000160014e6585e13345665137fd957bb02439913ae7744c4024730440220683143a54eba34368fa99dbeb965c71a1734597ba735d42db306939919ad2cdc022074e12094abb48bfc4866a701570d8238202b286b523fd91384a068965cb5804e01252103b9542b335cf1f27ebe55a3fa26436294b72f48262fea27198b7cada330e1d442ad51b200000000"
-          }
-        }
-      },
-      "revokedCommitPublished": []
-    }
+    "channelId": "da9171e06fbb7d18a50deeab567dbf35498c69da7542d0222c2f22da7fa2e300",
+    "remoteNodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+    "fundingTxId": "5abf88cdcee34a2f45a2dd48e1c6597b3a8756cc6054e01d3cfd8ca45f32b0b9",
+    "fundingOutputIndex": 1,
+    "fundingTxIndex": 2,
+    "fundingKeyPath": "m/635885554'/417022645'/283018121'/1527266839'/1174227782'/82756978/1950369508/453888639/1'",
+    "channelFeatures": "option_dual_fund",
+    "isChannelOpener": true,
+    "commitmentFormat": "anchor_outputs",
+    "announced": true,
+    "capacity": 309098,
+    "closingTxId": "f5311e98b46a217057e4a03e2ef16d86f4a5e568b3d45b8431e911e8cb0ca2fc",
+    "closingType": "mutual-close",
+    "closingScript": "00141a2d08d41a06c33e934caa6001a0950b8a050b58",
+    "localBalance": 269098000,
+    "remoteBalance": 40000000,
+    "closingAmount": 269098
   }
 ]
 ```
 
 Returns the list of recently closed local channels.
-
-<aside class="warning">
-The closedchannels API is costly if you have a large history of closed channels and don't filter by nodeId.
-</aside>
 
 ### HTTP Request
 
@@ -1422,66 +1412,75 @@ eclair-cli nodes
 ```json
 [
   {
-    "signature": "c466c08fa16c1810e2971de2a57ef1f9e5e13d36a224544cf0e3d621030b9e617652b88fb2024bfdc60066ca63b4f67504f154e8fee7f13bc39739b76cc4419f",
+    "signature": "84906bbb6c42a47dc872bb009aa25b79750d9bd5d108551e0e6d9a8dd9260d12284d82760c5084c3b1fea64a47973a4a61ec302d22a93d099926e4c4571868f7",
     "features": {
       "activated": {
-        "option_onion_messages": "optional",
+        "option_simple_close": "optional",
+        "option_route_blinding": "optional",
+        "option_attribution_data": "optional",
+        "option_dual_fund": "optional",
         "gossip_queries_ex": "optional",
-        "option_data_loss_protect": "optional",
-        "var_onion_optin": "mandatory",
-        "option_static_remotekey": "optional",
+        "option_quiesce": "optional",
+        "option_data_loss_protect": "mandatory",
+        "option_static_remotekey": "mandatory",
+        "option_scid_alias": "optional",
+        "option_onion_messages": "optional",
         "option_support_large_channel": "optional",
         "option_anchors_zero_fee_htlc_tx": "optional",
         "payment_secret": "mandatory",
         "option_shutdown_anysegwit": "optional",
-        "option_channel_type": "optional",
+        "option_channel_type": "mandatory",
         "basic_mpp": "optional",
-        "gossip_queries": "optional"
-      },
-      "unknown": []
+        "gossip_queries": "optional",
+        "option_simple_taproot": "optional",
+        "var_onion_optin": "mandatory",
+        "option_splice": "optional"
+      }
     },
     "timestamp": {
-      "iso": "2022-02-01T12:27:19Z",
-      "unix": 1643718439
+      "iso": "2026-05-22T11:44:31Z",
+      "unix": 1779450271
     },
-    "nodeId": "028e2403fbfddb3d787843361f91adbda64c6f622921b19fb48f5766508bcadb29",
+    "nodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
     "rgbColor": "#49daaa",
     "alias": "alice",
-    "addresses": [
-      "138.229.205.237:9735"
-    ],
+    "addresses": [],
     "tlvStream": {}
   },
   {
-    "signature": "f6cce33383fe1291fa60cfa7d9efa4a45c081396e445e9cadc825ab695aab30308a68733d27fc54a5c46b888bdddd467f30f2f5441e95c2920b3b6c54decc3a1",
+    "signature": "bb541000c8c12a02d7bd474ae82c1d858ce29db9952b7bf4d029b7ab2fd7304723cf3e4dbbc191c30b5869930713dc54974b2b6fc0b150a955bac75249c63038",
     "features": {
       "activated": {
-        "option_onion_messages": "optional",
+        "option_simple_close": "optional",
+        "option_route_blinding": "optional",
+        "option_attribution_data": "optional",
+        "option_dual_fund": "optional",
         "gossip_queries_ex": "optional",
-        "option_data_loss_protect": "optional",
-        "var_onion_optin": "mandatory",
-        "option_static_remotekey": "optional",
+        "option_quiesce": "optional",
+        "option_data_loss_protect": "mandatory",
+        "option_static_remotekey": "mandatory",
+        "option_scid_alias": "optional",
+        "option_onion_messages": "optional",
         "option_support_large_channel": "optional",
         "option_anchors_zero_fee_htlc_tx": "optional",
         "payment_secret": "mandatory",
         "option_shutdown_anysegwit": "optional",
-        "option_channel_type": "optional",
+        "option_channel_type": "mandatory",
         "basic_mpp": "optional",
-        "gossip_queries": "optional"
-      },
-      "unknown": []
+        "gossip_queries": "optional",
+        "option_simple_taproot": "optional",
+        "var_onion_optin": "mandatory",
+        "option_splice": "optional"
+      }
     },
     "timestamp": {
-      "iso": "2022-02-01T12:27:19Z",
-      "unix": 1643718439
+      "iso": "2026-05-22T11:44:31Z",
+      "unix": 1779450271
     },
-    "nodeId": "02fe677ac8cd61399d097535a3e8a51a0849e57cdbab9b34796c86f3e33568cbe2",
+    "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
     "rgbColor": "#49daaa",
     "alias": "bob",
-    "addresses": [
-      "95.216.16.21:9735",
-      "[2a01:4f9:2a:106a:0:0:0:2]:9736"
-    ],
+    "addresses": [],
     "tlvStream": {}
   }
 ]
@@ -1514,39 +1513,43 @@ eclair-cli node --nodeId=<some_node>
 ```json
 {
   "announcement": {
-    "signature": "8256ff47af066e47a6325f91a61a900e616c5cec58ca6c518d644a3d66aed9bd2c3dfdb13c56406aa89ac0bddb0c87ae68dd067c7a5a60eafe27facb0e7caeeb",
+    "signature": "bb541000c8c12a02d7bd474ae82c1d858ce29db9952b7bf4d029b7ab2fd7304723cf3e4dbbc191c30b5869930713dc54974b2b6fc0b150a955bac75249c63038",
     "features": {
       "activated": {
+        "option_simple_close": "optional",
         "option_route_blinding": "optional",
+        "option_attribution_data": "optional",
         "option_dual_fund": "optional",
         "gossip_queries_ex": "optional",
-        "option_data_loss_protect": "optional",
-        "var_onion_optin": "mandatory",
-        "option_static_remotekey": "optional",
+        "option_quiesce": "optional",
+        "option_data_loss_protect": "mandatory",
+        "option_static_remotekey": "mandatory",
         "option_scid_alias": "optional",
         "option_onion_messages": "optional",
         "option_support_large_channel": "optional",
         "option_anchors_zero_fee_htlc_tx": "optional",
         "payment_secret": "mandatory",
         "option_shutdown_anysegwit": "optional",
-        "option_channel_type": "optional",
+        "option_channel_type": "mandatory",
         "basic_mpp": "optional",
-        "gossip_queries": "optional"
-      },
-      "unknown": []
+        "gossip_queries": "optional",
+        "option_simple_taproot": "optional",
+        "var_onion_optin": "mandatory",
+        "option_splice": "optional"
+      }
     },
     "timestamp": {
-      "iso": "2023-06-15T14:30:13Z",
-      "unix": 1686839413
+      "iso": "2026-05-22T11:44:31Z",
+      "unix": 1779450271
     },
-    "nodeId": "02ca41676c9dfff08553528b151b1bf82031a26bb1d6f852e0f8075d33fa4ea089",
+    "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
     "rgbColor": "#49daaa",
     "alias": "bob",
     "addresses": [],
     "tlvStream": {}
   },
-  "activeChannels": 1,
-  "totalCapacity": 300000
+  "activeChannels": 2,
+  "totalCapacity": 569980
 }
 ```
 
@@ -1604,34 +1607,34 @@ eclair-cli allupdates
 ```json
 [
   {
-    "signature": "02bbe4ee3f128ba044937428680d266c71231fd02d899c446aad498ca095610133f7c2ddb68ed0d8d29961d0962651556dc08b5cb00fb56055d2b98407f4addb",
+    "signature": "15e49530f7b104ff62711d361ad226a327bba55d11cf2e832a3e626b0fcd2b6703477a12e2dae6e88779afc1e65af6006eb10755c9a3dc9f3703eeadb0528fb2",
     "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-    "shortChannelId": "2899x1x1",
+    "shortChannelId": "68415x1x1",
     "timestamp": {
-      "iso": "2022-02-01T12:27:50Z",
-      "unix": 1643718470
+      "iso": "2026-05-22T11:56:14Z",
+      "unix": 1779450974
     },
     "messageFlags": {
       "dontForward": false
     },
     "channelFlags": {
-      "isEnabled": true,
+      "isEnabled": false,
       "isNode1": true
     },
-    "cltvExpiryDelta": 48,
-    "htlcMinimumMsat": 1,
-    "feeBaseMsat": 5,
-    "feeProportionalMillionths": 150,
-    "htlcMaximumMsat": 450000000,
+    "cltvExpiryDelta": 144,
+    "htlcMinimumMsat": 500,
+    "feeBaseMsat": 15,
+    "feeProportionalMillionths": 500,
+    "htlcMaximumMsat": 75000000,
     "tlvStream": {}
   },
   {
-    "signature": "1da0e7094424c0daa64fe8427e191095d14285dd9346f37d014d07d8857b53cc6bed703d22794ddbfc1945cf5bdb7566137441964e01f8facc30c17fd0dffa06",
+    "signature": "96749c1e22a70dc8c435fc0ad176ea33d2b125529f2e2e1d6897c9ba47f686580486fab5ddc9a0c8fc1594fa9e6b4eec14004dac25218338a0818a6380ee1ee9",
     "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-    "shortChannelId": "2899x1x1",
+    "shortChannelId": "68415x1x1",
     "timestamp": {
-      "iso": "2022-02-01T12:27:19Z",
-      "unix": 1643718439
+      "iso": "2026-05-22T11:56:14Z",
+      "unix": 1779450974
     },
     "messageFlags": {
       "dontForward": false
@@ -1640,11 +1643,99 @@ eclair-cli allupdates
       "isEnabled": false,
       "isNode1": false
     },
-    "cltvExpiryDelta": 48,
-    "htlcMinimumMsat": 1,
+    "cltvExpiryDelta": 144,
+    "htlcMinimumMsat": 1000,
     "feeBaseMsat": 1000,
     "feeProportionalMillionths": 200,
-    "htlcMaximumMsat": 450000000,
+    "htlcMaximumMsat": 75000000,
+    "tlvStream": {}
+  },
+  {
+    "signature": "5f55d169d1f29c74e7db67155fc3dbfee2368829d46dffa93a1d06a56239cc781f85cab4345402185dc4c64142da613a528ccd6286725e93383f824138dca4d5",
+    "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+    "shortChannelId": "68435x2x1",
+    "timestamp": {
+      "iso": "2026-05-22T11:56:23Z",
+      "unix": 1779450983
+    },
+    "messageFlags": {
+      "dontForward": false
+    },
+    "channelFlags": {
+      "isEnabled": true,
+      "isNode1": true
+    },
+    "cltvExpiryDelta": 144,
+    "htlcMinimumMsat": 500,
+    "feeBaseMsat": 15,
+    "feeProportionalMillionths": 500,
+    "htlcMaximumMsat": 75000000,
+    "tlvStream": {}
+  },
+  {
+    "signature": "1a3343dc148b7ac2c87b3aaca333a063ce02a0eaad559fda5216ba89b5a065df7cc1df528bc2b4fe052740f20cebdf0b8b75f7b72604dc2adff7d6747442076a",
+    "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+    "shortChannelId": "68435x2x1",
+    "timestamp": {
+      "iso": "2026-05-22T11:56:23Z",
+      "unix": 1779450983
+    },
+    "messageFlags": {
+      "dontForward": false
+    },
+    "channelFlags": {
+      "isEnabled": true,
+      "isNode1": false
+    },
+    "cltvExpiryDelta": 144,
+    "htlcMinimumMsat": 1000,
+    "feeBaseMsat": 1000,
+    "feeProportionalMillionths": 200,
+    "htlcMaximumMsat": 75000000,
+    "tlvStream": {}
+  },
+  {
+    "signature": "9659f77ea03458907c8b1c29ee36ce1c1f0ab616d9985b7cce7a5c12288673646d89356cc8a97bba656599094ae3a7780f701015309eec6adb3afe8322b932b8",
+    "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+    "shortChannelId": "0x241b2817588036e",
+    "timestamp": {
+      "iso": "2026-05-22T11:51:57Z",
+      "unix": 1779450717
+    },
+    "messageFlags": {
+      "dontForward": true
+    },
+    "channelFlags": {
+      "isEnabled": true,
+      "isNode1": true
+    },
+    "cltvExpiryDelta": 144,
+    "htlcMinimumMsat": 500,
+    "feeBaseMsat": 15,
+    "feeProportionalMillionths": 500,
+    "htlcMaximumMsat": 70000000,
+    "tlvStream": {}
+  },
+  {
+    "signature": "b9c49ae715c6d9cff5a4508a8801609bb99fc1880b36ad415128e6e359ceaa9000690e8bec1dfcf67ab09936534f7a2b5ad99b080c059e9638ee13833d8b0001",
+    "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+    "shortChannelId": "147890x8484232x878",
+    "timestamp": {
+      "iso": "2026-05-22T11:51:57Z",
+      "unix": 1779450717
+    },
+    "messageFlags": {
+      "dontForward": true
+    },
+    "channelFlags": {
+      "isEnabled": true,
+      "isNode1": false
+    },
+    "cltvExpiryDelta": 144,
+    "htlcMinimumMsat": 1000,
+    "feeBaseMsat": 1000,
+    "feeProportionalMillionths": 100,
+    "htlcMaximumMsat": 70000000,
     "tlvStream": {}
   }
 ]
@@ -1694,23 +1785,23 @@ amount         | msats
 ```json
 {
   "prefix": "lnbcrt",
-  "timestamp": 1643718891,
-  "nodeId": "028e2403fbfddb3d787843361f91adbda64c6f622921b19fb48f5766508bcadb29",
-  "serialized": "lnbcrt500n1pslj28tpp55kxmmddatrnmf42a55mk4wzz4ryq8tv2vwrrarj27e0hhjgpscjqdq0ydex2cmtd3jhxucsp5qu6jq5heq4lcjpj2r8gp0sd65860yzc5yw3xrwde6c4m3mlessxsmqz9gxqrrsscqp79qtzsqqqqqysgqr2fy2yz4655hwql2nwkk3t9saxhj80340cxfzf7fwhweasncv77ym7wcv0p54e4kt7jpmfdavnj5urq84syh9t2t49qdgj4ra8jl40gp6ys45n",
-  "description": "#reckless",
-  "paymentHash": "a58dbdb5bd58e7b4d55da5376ab842a8c803ad8a63863e8e4af65f7bc9018624",
+  "timestamp": 1779451267,
+  "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+  "serialized": "lnbcrt400u1p4pq3vrpp5phu0m9jh704v0sgluh47nd57c5gjd9kr9pwajtdfzxsy6kc7ddfqdpyf35kw6r5de5kueeqd9ejqgmjv43kkmr9wdessp5yw8w32p52c7q33jf3u67x7q7tfsfuttqld8qya8vcpex84kzsq9qmqz9gxqrrsscqp7lqq9q7sqqqqqqqqqqqqqqqqqqqsqyqqqysgq38j0sxzex0d7wudrvhmg7f8dpyteh4l7yq8ezj9mpy0sgz8zkgmrtrjpaq9a2cnj4s8xwtyhvh6mjs3uut9sen4h4y7mx6sy865m69gp0p80ll",
+  "description": "Lightning is #reckless",
+  "paymentHash": "0df8fd9657f3eac7c11fe5ebe9b69ec5112696c3285dd92da911a04d5b1e6b52",
   "paymentMetadata": "2a",
   "expiry": 3600,
   "minFinalCltvExpiry": 30,
-  "amount": 50000,
+  "amount": 40000000,
   "features": {
     "activated": {
+      "option_attribution_data": "optional",
       "payment_secret": "mandatory",
       "basic_mpp": "optional",
       "option_payment_metadata": "optional",
       "var_onion_optin": "mandatory"
-    },
-    "unknown": []
+    }
   },
   "routingInfo": []
 }
@@ -1790,23 +1881,23 @@ amount         | msats
 ```json
 {
   "prefix": "lnbcrt",
-  "timestamp": 1643718891,
-  "nodeId": "028e2403fbfddb3d787843361f91adbda64c6f622921b19fb48f5766508bcadb29",
-  "serialized": "lnbcrt500n1pslj28tpp55kxmmddatrnmf42a55mk4wzz4ryq8tv2vwrrarj27e0hhjgpscjqdq0ydex2cmtd3jhxucsp5qu6jq5heq4lcjpj2r8gp0sd65860yzc5yw3xrwde6c4m3mlessxsmqz9gxqrrsscqp79qtzsqqqqqysgqr2fy2yz4655hwql2nwkk3t9saxhj80340cxfzf7fwhweasncv77ym7wcv0p54e4kt7jpmfdavnj5urq84syh9t2t49qdgj4ra8jl40gp6ys45n",
-  "description": "#reckless",
-  "paymentHash": "a58dbdb5bd58e7b4d55da5376ab842a8c803ad8a63863e8e4af65f7bc9018624",
+  "timestamp": 1779451267,
+  "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+  "serialized": "lnbcrt400u1p4pq3vrpp5phu0m9jh704v0sgluh47nd57c5gjd9kr9pwajtdfzxsy6kc7ddfqdpyf35kw6r5de5kueeqd9ejqgmjv43kkmr9wdessp5yw8w32p52c7q33jf3u67x7q7tfsfuttqld8qya8vcpex84kzsq9qmqz9gxqrrsscqp7lqq9q7sqqqqqqqqqqqqqqqqqqqsqyqqqysgq38j0sxzex0d7wudrvhmg7f8dpyteh4l7yq8ezj9mpy0sgz8zkgmrtrjpaq9a2cnj4s8xwtyhvh6mjs3uut9sen4h4y7mx6sy865m69gp0p80ll",
+  "description": "Lightning is #reckless",
+  "paymentHash": "0df8fd9657f3eac7c11fe5ebe9b69ec5112696c3285dd92da911a04d5b1e6b52",
   "paymentMetadata": "2a",
   "expiry": 3600,
   "minFinalCltvExpiry": 30,
-  "amount": 50000,
+  "amount": 40000000,
   "features": {
     "activated": {
+      "option_attribution_data": "optional",
       "payment_secret": "mandatory",
       "basic_mpp": "optional",
       "option_payment_metadata": "optional",
       "var_onion_optin": "mandatory"
-    },
-    "unknown": []
+    }
   },
   "routingInfo": []
 }
@@ -2204,114 +2295,53 @@ Possible returned `status.type` values:
 ```json
 [
   {
-    "id": "c7b83ae7-a8a2-4ac7-9d54-f13826eaaf06",
-    "parentId": "e0b98732-4ba5-4992-b1c3-5efb4084bcd3",
-    "paymentHash": "e170db22f72678848b90d4d10095e6863c79a39717ccdcfab18106248b93305c",
+    "id": "d43622ca-e38d-43f3-98d1-eb91b4a4030e",
+    "parentId": "89a91297-aa90-4d8c-b4a9-67cc7380c45f",
+    "paymentHash": "2c90ca142c635e13b7ae59322e3ba5a397946d4a2cb66ae2cf8f3a1f3ea2c71c",
     "paymentType": "Standard",
-    "amount": 2000000,
-    "recipientAmount": 5000000,
-    "recipientNodeId": "02fe677ac8cd61399d097535a3e8a51a0849e57cdbab9b34796c86f3e33568cbe2",
+    "amount": 20000000,
+    "recipientAmount": 20000000,
+    "recipientNodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
     "createdAt": {
-      "iso": "2022-02-01T12:40:19.309Z",
-      "unix": 1643719219
+      "iso": "2026-05-22T12:06:19.887Z",
+      "unix": 1779451579
     },
     "invoice": {
       "prefix": "lnbcrt",
-      "timestamp": 1643719211,
-      "nodeId": "02fe677ac8cd61399d097535a3e8a51a0849e57cdbab9b34796c86f3e33568cbe2",
-      "serialized": "lnbcrt50u1pslj23tpp5u9cdkghhyeugfzus6ngsp90xsc78nguhzlxde743syrzfzunxpwqdq809hkcmcsp5tp7xegstgfpyjyg2cqclsthwr330g9g3p0dmn0g6v9t6dn6n9s4smqz9gxqrrsscqp79qtzsqqqqqysgq20s4qnk7xq0dcwjustztkx4ez0mqlmg83s5y6gk4u7ug6qk3cwuxq9ehqn4kyp580gqwp4nxwh598j40pqnlals2m0pem7f0qz0xm8qqe25z82",
-      "description": "#reckless",
-      "paymentHash": "e170db22f72678848b90d4d10095e6863c79a39717ccdcfab18106248b93305c",
+      "timestamp": 1779451566,
+      "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+      "serialized": "lnbcrt200u1p4pq34wpp59jgv59pvvd0p8dawtyezuwa95wtegm229jmx4ck03uap704zcuwqdpyf35kw6r5de5kueeqd9ejqgmjv43kkmr9wdessp5l7e0gvhj2c0g03ppyxrlnhnh3rwufjtmr6vzkykxgq7tylmremjqmqz9gxqrrsscqp7lqq9q7sqqqqqqqqqqqqqqqqqqqsqyqqqysgqen5nzc7pf2hdnex3kpj3p8eh7yf5yalwm07qwax53zjwhf5m4q3yq9lkaplfkwg5xw2myytw0vptk3wclwdsy28ttu77tkarpl7lymqq38pqdf",
+      "description": "Lightning is #reckless",
+      "paymentHash": "2c90ca142c635e13b7ae59322e3ba5a397946d4a2cb66ae2cf8f3a1f3ea2c71c",
       "paymentMetadata": "2a",
       "expiry": 3600,
       "minFinalCltvExpiry": 30,
-      "amount": 5000000,
+      "amount": 20000000,
       "features": {
         "activated": {
+          "option_attribution_data": "optional",
           "payment_secret": "mandatory",
           "basic_mpp": "optional",
           "option_payment_metadata": "optional",
           "var_onion_optin": "mandatory"
-        },
-        "unknown": []
+        }
       },
       "routingInfo": []
     },
     "status": {
       "type": "sent",
-      "paymentPreimage": "533b360e08d0d7383d0125e3510eaf5d7e36e21b847446cf64a84973800bc48c",
-      "feesPaid": 10,
+      "paymentPreimage": "6a93c0a2b701ec0e3fc92b504d3dddf0431980beaedcda51b79007ef550340e0",
+      "feesPaid": 0,
       "route": [
         {
-          "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
-          "nextNodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
-          "shortChannelId": "538x3x0"
-        },
-        {
-          "nodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
-          "nextNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
-          "shortChannelId": "538x2x1"
+          "nodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
+          "nextNodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+          "shortChannelId": "147890x8484232x878"
         }
       ],
       "completedAt": {
-        "iso": "2022-02-01T12:40:19.438Z",
-        "unix": 1643719219
-      }
-    }
-  },
-  {
-    "id": "83fcc569-917a-4cac-b42d-6f6b186f21eb",
-    "parentId": "e0b98732-4ba5-4992-b1c3-5efb4084bcd3",
-    "paymentHash": "e170db22f72678848b90d4d10095e6863c79a39717ccdcfab18106248b93305c",
-    "paymentType": "Standard",
-    "amount": 3000000,
-    "recipientAmount": 5000000,
-    "recipientNodeId": "02fe677ac8cd61399d097535a3e8a51a0849e57cdbab9b34796c86f3e33568cbe2",
-    "createdAt": {
-      "iso": "2022-02-01T12:40:19.309Z",
-      "unix": 1643719219
-    },
-    "invoice": {
-      "prefix": "lnbcrt",
-      "timestamp": 1643719211,
-      "nodeId": "02fe677ac8cd61399d097535a3e8a51a0849e57cdbab9b34796c86f3e33568cbe2",
-      "serialized": "lnbcrt50u1pslj23tpp5u9cdkghhyeugfzus6ngsp90xsc78nguhzlxde743syrzfzunxpwqdq809hkcmcsp5tp7xegstgfpyjyg2cqclsthwr330g9g3p0dmn0g6v9t6dn6n9s4smqz9gxqrrsscqp79qtzsqqqqqysgq20s4qnk7xq0dcwjustztkx4ez0mqlmg83s5y6gk4u7ug6qk3cwuxq9ehqn4kyp580gqwp4nxwh598j40pqnlals2m0pem7f0qz0xm8qqe25z82",
-      "description": "#reckless",
-      "paymentHash": "e170db22f72678848b90d4d10095e6863c79a39717ccdcfab18106248b93305c",
-      "paymentMetadata": "2a",
-      "expiry": 3600,
-      "minFinalCltvExpiry": 30,
-      "amount": 5000000,
-      "features": {
-        "activated": {
-          "payment_secret": "mandatory",
-          "basic_mpp": "optional",
-          "option_payment_metadata": "optional",
-          "var_onion_optin": "mandatory"
-        },
-        "unknown": []
-      },
-      "routingInfo": []
-    },
-    "status": {
-      "type": "sent",
-      "paymentPreimage": "533b360e08d0d7383d0125e3510eaf5d7e36e21b847446cf64a84973800bc48c",
-      "feesPaid": 15,
-      "route": [
-        {
-          "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
-          "nextNodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
-          "shortChannelId": "538x4x1"
-        },
-        {
-          "nodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
-          "nextNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
-          "shortChannelId": "538x2x1"
-        }
-      ],
-      "completedAt": {
-        "iso": "2022-02-01T12:40:19.438Z",
-        "unix": 1643719219
+        "iso": "2026-05-22T12:06:19.949Z",
+        "unix": 1779451579
       }
     }
   }
@@ -2365,38 +2395,38 @@ Possible returned `status.type` values:
 {
   "invoice": {
     "prefix": "lnbcrt",
-    "timestamp": 1643719211,
-    "nodeId": "02fe677ac8cd61399d097535a3e8a51a0849e57cdbab9b34796c86f3e33568cbe2",
-    "serialized": "lnbcrt50u1pslj23tpp5u9cdkghhyeugfzus6ngsp90xsc78nguhzlxde743syrzfzunxpwqdq809hkcmcsp5tp7xegstgfpyjyg2cqclsthwr330g9g3p0dmn0g6v9t6dn6n9s4smqz9gxqrrsscqp79qtzsqqqqqysgq20s4qnk7xq0dcwjustztkx4ez0mqlmg83s5y6gk4u7ug6qk3cwuxq9ehqn4kyp580gqwp4nxwh598j40pqnlals2m0pem7f0qz0xm8qqe25z82",
-    "description": "#reckless",
-    "paymentHash": "e170db22f72678848b90d4d10095e6863c79a39717ccdcfab18106248b93305c",
+    "timestamp": 1779451566,
+    "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+    "serialized": "lnbcrt200u1p4pq34wpp59jgv59pvvd0p8dawtyezuwa95wtegm229jmx4ck03uap704zcuwqdpyf35kw6r5de5kueeqd9ejqgmjv43kkmr9wdessp5l7e0gvhj2c0g03ppyxrlnhnh3rwufjtmr6vzkykxgq7tylmremjqmqz9gxqrrsscqp7lqq9q7sqqqqqqqqqqqqqqqqqqqsqyqqqysgqen5nzc7pf2hdnex3kpj3p8eh7yf5yalwm07qwax53zjwhf5m4q3yq9lkaplfkwg5xw2myytw0vptk3wclwdsy28ttu77tkarpl7lymqq38pqdf",
+    "description": "Lightning is #reckless",
+    "paymentHash": "2c90ca142c635e13b7ae59322e3ba5a397946d4a2cb66ae2cf8f3a1f3ea2c71c",
     "paymentMetadata": "2a",
     "expiry": 3600,
     "minFinalCltvExpiry": 30,
-    "amount": 5000000,
+    "amount": 20000000,
     "features": {
       "activated": {
+        "option_attribution_data": "optional",
         "payment_secret": "mandatory",
         "basic_mpp": "optional",
         "option_payment_metadata": "optional",
         "var_onion_optin": "mandatory"
-      },
-      "unknown": []
+      }
     },
     "routingInfo": []
   },
-  "paymentPreimage": "533b360e08d0d7383d0125e3510eaf5d7e36e21b847446cf64a84973800bc48c",
+  "paymentPreimage": "6a93c0a2b701ec0e3fc92b504d3dddf0431980beaedcda51b79007ef550340e0",
   "paymentType": "Standard",
   "createdAt": {
-    "iso": "2022-02-01T12:40:11Z",
-    "unix": 1643719211
+    "iso": "2026-05-22T12:06:06Z",
+    "unix": 1779451566
   },
   "status": {
     "type": "received",
-    "amount": 5000000,
+    "amount": 20000000,
     "receivedAt": {
-      "iso": "2022-02-01T12:40:19.423Z",
-      "unix": 1643719219
+      "iso": "2026-05-22T12:06:19.937Z",
+      "unix": 1779451579
     }
   }
 }
@@ -2434,78 +2464,128 @@ eclair-cli listreceivedpayments
   {
     "invoice": {
       "prefix": "lnbcrt",
-      "timestamp": 1686839336,
-      "nodeId": "02ca41676c9dfff08553528b151b1bf82031a26bb1d6f852e0f8075d33fa4ea089",
-      "serialized": "lnbcrt500u1pjgkgpgpp5qw2c953gwadm9zevstlq04ffl870tzmjdvg7c03x840xtcdkavgsdq809hkcmcsp5rvgyuy7hmtuc5ljmr645yfntrrwgyumnsp43w60xdrw9gnjprauqmqz9gxqrrsscqp79q7sqqqqqqqqqqqqqqqqqqqsqqqqqysgq7pwcsn9nfrvf46nkmctqnwuj3rvt7erx4494k4sa8uawajyz39sx8jd8t8l3kq4z3w653xu9uqvsjekyu478egx7ftwwzl2m8n7nqagqm7nqs9",
-      "description": "yolo",
-      "paymentHash": "039582d228775bb28b2c82fe07d529f9fcf58b726b11ec3e263d5e65e1b6eb11",
+      "timestamp": 1779450738,
+      "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+      "serialized": "lnbcrt400u1p4pqsmjpp565f0zksd6t0wuwj7vql3sl9z5q96jg6m0528kskzaqtmsls905esdpyf35kw6r5de5kueeqd9ejqgmjv43kkmr9wdessp5jwcg7g7z9f6cf5x8zfmssnu3yclf8kqmmm9daggt26t3treah8vqmqz9gxqrrsscqp7lqq9q7sqqqqqqqqqqqqqqqqqqqsqyqqqysgqzqga2am45s3gkrva9plkqh2lstjaps7dkxn5wvapmskgm2qu8mt5aysd0pdp6t6tpcjssh6926259tjfsqnjdhd7nrsdpg7ja06eu7gqzvgr8l",
+      "description": "Lightning is #reckless",
+      "paymentHash": "d512f15a0dd2deee3a5e603f187ca2a00ba9235b7d147b42c2e817b87e057d33",
       "paymentMetadata": "2a",
       "expiry": 3600,
       "minFinalCltvExpiry": 30,
-      "amount": 50000000,
+      "amount": 40000000,
       "features": {
         "activated": {
-          "trampoline_payment_prototype": "optional",
+          "option_attribution_data": "optional",
           "payment_secret": "mandatory",
           "basic_mpp": "optional",
           "option_payment_metadata": "optional",
           "var_onion_optin": "mandatory"
-        },
-        "unknown": []
+        }
       },
       "routingInfo": []
     },
-    "paymentPreimage": "f3fcdefcd38481666f624ba68ca17ad620ca8c98bbec5f0616ba11ff11d6096e",
+    "paymentPreimage": "005b19580bc9763f502ff463a6c4297a7d87cb1e7a970df56b19bee82587aafc",
     "paymentType": "Standard",
     "createdAt": {
-      "iso": "2023-06-15T14:28:56Z",
-      "unix": 1686839336
+      "iso": "2026-05-22T11:52:18Z",
+      "unix": 1779450738
     },
     "status": {
       "type": "received",
-      "amount": 50000000,
+      "amount": 40000000,
       "receivedAt": {
-        "iso": "2023-06-15T14:30:32.564Z",
-        "unix": 1686839432
+        "iso": "2026-05-22T11:52:28.954Z",
+        "unix": 1779450748
+      }
+    }
+  },
+  {
+    "invoice": {
+      "records": {
+        "OfferChains": {
+          "chains": [
+            "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"
+          ]
+        },
+        "InvoiceRequestChain": {
+          "hash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"
+        },
+        "InvoiceNodeId": {
+          "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257"
+        },
+        "OfferNodeId": {
+          "publicKey": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257"
+        },
+        "InvoiceRequestPayerId": {
+          "publicKey": "0277be64abfd950a648a1eadca5403e14f1e2e81818cd34b1dc0037a75673f466a"
+        },
+        "InvoiceCreatedAt": {
+          "timestamp": {
+            "iso": "2026-05-22T12:03:45Z",
+            "unix": 1779451425
+          }
+        },
+        "InvoiceRequestQuantity": {
+          "quantity": 1
+        },
+        "InvoicePaymentHash": {
+          "hash": "f456821221cf9df9992b76f4ea2fcdd33377dd98be96e2e75f4080dd3b72137f"
+        },
+        "InvoiceAmount": {
+          "amount": 15000000
+        }
+      }
+    },
+    "paymentPreimage": "3f1e2ec8a23c99a090d9a7f4a1f8b297b8357bb4eb153a503b0e0fd52195f3e6",
+    "paymentType": "Blinded",
+    "createdAt": {
+      "iso": "2026-05-22T12:03:45Z",
+      "unix": 1779451425
+    },
+    "status": {
+      "type": "received",
+      "amount": 15000000,
+      "receivedAt": {
+        "iso": "2026-05-22T12:03:45.886Z",
+        "unix": 1779451425
       }
     }
   },
   {
     "invoice": {
       "prefix": "lnbcrt",
-      "timestamp": 1686839569,
-      "nodeId": "02ca41676c9dfff08553528b151b1bf82031a26bb1d6f852e0f8075d33fa4ea089",
-      "serialized": "lnbcrt100u1pjgkgg3pp529amjg068drrefp02mxz8907gdnea3jqn6fss7y4zw07uswr2w6sdq809hkcmcsp5njg0whsxvzuqtp5wpzsma0jhphch7r9z45yzjjpg500dpcdqw3csmqz9gxqrrsscqp79q7sqqqqqqqqqqqqqqqqqqqsqqqqqysgq629ldsmfufcerxkc562mh7dz5sr5x68zyhpxhg0qv6qfvhvv7w6yw0gtxqlyu4fw8kzrcd5etu24gy34dv276m3wmf8jfa069m3c4tqqx4dxns",
-      "description": "yolo",
-      "paymentHash": "517bb921fa3b463ca42f56cc2395fe43679ec6409e93087895139fee41c353b5",
+      "timestamp": 1779451566,
+      "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+      "serialized": "lnbcrt200u1p4pq34wpp59jgv59pvvd0p8dawtyezuwa95wtegm229jmx4ck03uap704zcuwqdpyf35kw6r5de5kueeqd9ejqgmjv43kkmr9wdessp5l7e0gvhj2c0g03ppyxrlnhnh3rwufjtmr6vzkykxgq7tylmremjqmqz9gxqrrsscqp7lqq9q7sqqqqqqqqqqqqqqqqqqqsqyqqqysgqen5nzc7pf2hdnex3kpj3p8eh7yf5yalwm07qwax53zjwhf5m4q3yq9lkaplfkwg5xw2myytw0vptk3wclwdsy28ttu77tkarpl7lymqq38pqdf",
+      "description": "Lightning is #reckless",
+      "paymentHash": "2c90ca142c635e13b7ae59322e3ba5a397946d4a2cb66ae2cf8f3a1f3ea2c71c",
       "paymentMetadata": "2a",
       "expiry": 3600,
       "minFinalCltvExpiry": 30,
-      "amount": 10000000,
+      "amount": 20000000,
       "features": {
         "activated": {
-          "trampoline_payment_prototype": "optional",
+          "option_attribution_data": "optional",
           "payment_secret": "mandatory",
           "basic_mpp": "optional",
           "option_payment_metadata": "optional",
           "var_onion_optin": "mandatory"
-        },
-        "unknown": []
+        }
       },
       "routingInfo": []
     },
-    "paymentPreimage": "8c13992095e5ad50ed6675b5f5e87e786fed3cd39209f8ced2e67fadf6567c7b",
+    "paymentPreimage": "6a93c0a2b701ec0e3fc92b504d3dddf0431980beaedcda51b79007ef550340e0",
     "paymentType": "Standard",
     "createdAt": {
-      "iso": "2023-06-15T14:32:49Z",
-      "unix": 1686839569
+      "iso": "2026-05-22T12:06:06Z",
+      "unix": 1779451566
     },
     "status": {
       "type": "received",
-      "amount": 10000000,
+      "amount": 20000000,
       "receivedAt": {
-        "iso": "2023-06-15T14:32:57.631Z",
-        "unix": 1686839577
+        "iso": "2026-05-22T12:06:19.937Z",
+        "unix": 1779451579
       }
     }
   }
@@ -2548,23 +2628,23 @@ amount   | msats
 ```json
 {
   "prefix": "lnbcrt",
-  "timestamp": 1643718891,
-  "nodeId": "028e2403fbfddb3d787843361f91adbda64c6f622921b19fb48f5766508bcadb29",
-  "serialized": "lnbcrt500n1pslj28tpp55kxmmddatrnmf42a55mk4wzz4ryq8tv2vwrrarj27e0hhjgpscjqdq0ydex2cmtd3jhxucsp5qu6jq5heq4lcjpj2r8gp0sd65860yzc5yw3xrwde6c4m3mlessxsmqz9gxqrrsscqp79qtzsqqqqqysgqr2fy2yz4655hwql2nwkk3t9saxhj80340cxfzf7fwhweasncv77ym7wcv0p54e4kt7jpmfdavnj5urq84syh9t2t49qdgj4ra8jl40gp6ys45n",
-  "description": "#reckless",
-  "paymentHash": "a58dbdb5bd58e7b4d55da5376ab842a8c803ad8a63863e8e4af65f7bc9018624",
+  "timestamp": 1779451267,
+  "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+  "serialized": "lnbcrt400u1p4pq3vrpp5phu0m9jh704v0sgluh47nd57c5gjd9kr9pwajtdfzxsy6kc7ddfqdpyf35kw6r5de5kueeqd9ejqgmjv43kkmr9wdessp5yw8w32p52c7q33jf3u67x7q7tfsfuttqld8qya8vcpex84kzsq9qmqz9gxqrrsscqp7lqq9q7sqqqqqqqqqqqqqqqqqqqsqyqqqysgq38j0sxzex0d7wudrvhmg7f8dpyteh4l7yq8ezj9mpy0sgz8zkgmrtrjpaq9a2cnj4s8xwtyhvh6mjs3uut9sen4h4y7mx6sy865m69gp0p80ll",
+  "description": "Lightning is #reckless",
+  "paymentHash": "0df8fd9657f3eac7c11fe5ebe9b69ec5112696c3285dd92da911a04d5b1e6b52",
   "paymentMetadata": "2a",
   "expiry": 3600,
   "minFinalCltvExpiry": 30,
-  "amount": 50000,
+  "amount": 40000000,
   "features": {
     "activated": {
+      "option_attribution_data": "optional",
       "payment_secret": "mandatory",
       "basic_mpp": "optional",
       "option_payment_metadata": "optional",
       "var_onion_optin": "mandatory"
-    },
-    "unknown": []
+    }
   },
   "routingInfo": []
 }
@@ -2604,43 +2684,103 @@ amount   | msats
 [
   {
     "prefix": "lnbcrt",
-    "timestamp": 1643719798,
-    "nodeId": "028e2403fbfddb3d787843361f91adbda64c6f622921b19fb48f5766508bcadb29",
-    "serialized": "lnbcrt1psljtrkpp5gqus3ys83p9cry4nj43ykjyvkuuhrcc5y45a6l569zwuc8pn2xxsdq0ydex2cmtd3jhxucsp543t76xycc9kpx4estwm6tjlpsht3m7d5jxe09tqnyjjux970y9lsmqz9gxqrrsscqp79qtzsqqqqqysgqxwh55ncvj3hv0cypm8vafku83gayzg7qa3zlu3lua76lk53t2m3rgt4d5qa04cfdd0f407p328c9el9xvy3r6z9um90m5pjaxrrazysqfkxfa7",
-    "description": "#reckless",
-    "paymentHash": "4039089207884b8192b395624b488cb73971e3142569dd7e9a289dcc1c33518d",
+    "timestamp": 1779450738,
+    "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+    "serialized": "lnbcrt400u1p4pqsmjpp565f0zksd6t0wuwj7vql3sl9z5q96jg6m0528kskzaqtmsls905esdpyf35kw6r5de5kueeqd9ejqgmjv43kkmr9wdessp5jwcg7g7z9f6cf5x8zfmssnu3yclf8kqmmm9daggt26t3treah8vqmqz9gxqrrsscqp7lqq9q7sqqqqqqqqqqqqqqqqqqqsqyqqqysgqzqga2am45s3gkrva9plkqh2lstjaps7dkxn5wvapmskgm2qu8mt5aysd0pdp6t6tpcjssh6926259tjfsqnjdhd7nrsdpg7ja06eu7gqzvgr8l",
+    "description": "Lightning is #reckless",
+    "paymentHash": "d512f15a0dd2deee3a5e603f187ca2a00ba9235b7d147b42c2e817b87e057d33",
     "paymentMetadata": "2a",
     "expiry": 3600,
     "minFinalCltvExpiry": 30,
+    "amount": 40000000,
     "features": {
       "activated": {
+        "option_attribution_data": "optional",
         "payment_secret": "mandatory",
         "basic_mpp": "optional",
         "option_payment_metadata": "optional",
         "var_onion_optin": "mandatory"
-      },
-      "unknown": []
+      }
     },
     "routingInfo": []
   },
   {
     "prefix": "lnbcrt",
-    "timestamp": 1643719828,
-    "nodeId": "028e2403fbfddb3d787843361f91adbda64c6f622921b19fb48f5766508bcadb29",
-    "serialized": "lnbcrt1psljty5pp5z2247c5w8cl30err7s9qx8rkejltq49mk8z6l5eqar7l43pehapsdq0ydex2cmtd3jhxucsp5hrcu5s0jftrmje4yavu580tlrq4mdmdevye8aevn6dsae4x5kejqmqz9gxqrrsscqp79qtzsqqqqqysgqwus3au5085tp02cwvpjexc5rq6qjezwxwr3yecdxr525qprv5zjxa98r69kx87cegavjw9u9299yfdhnes7mp4dztttyduchudvq64cq4pyx28",
-    "description": "#reckless",
-    "paymentHash": "12955f628e3e3f17e463f40a031c76ccbeb054bbb1c5afd320e8fdfac439bf43",
+    "timestamp": 1779451267,
+    "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+    "serialized": "lnbcrt400u1p4pq3vrpp5phu0m9jh704v0sgluh47nd57c5gjd9kr9pwajtdfzxsy6kc7ddfqdpyf35kw6r5de5kueeqd9ejqgmjv43kkmr9wdessp5yw8w32p52c7q33jf3u67x7q7tfsfuttqld8qya8vcpex84kzsq9qmqz9gxqrrsscqp7lqq9q7sqqqqqqqqqqqqqqqqqqqsqyqqqysgq38j0sxzex0d7wudrvhmg7f8dpyteh4l7yq8ezj9mpy0sgz8zkgmrtrjpaq9a2cnj4s8xwtyhvh6mjs3uut9sen4h4y7mx6sy865m69gp0p80ll",
+    "description": "Lightning is #reckless",
+    "paymentHash": "0df8fd9657f3eac7c11fe5ebe9b69ec5112696c3285dd92da911a04d5b1e6b52",
     "paymentMetadata": "2a",
     "expiry": 3600,
     "minFinalCltvExpiry": 30,
+    "amount": 40000000,
     "features": {
       "activated": {
+        "option_attribution_data": "optional",
         "payment_secret": "mandatory",
         "basic_mpp": "optional",
         "option_payment_metadata": "optional",
         "var_onion_optin": "mandatory"
+      }
+    },
+    "routingInfo": []
+  },
+  {
+    "records": {
+      "OfferChains": {
+        "chains": [
+          "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"
+        ]
       },
-      "unknown": []
+      "InvoiceRequestChain": {
+        "hash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"
+      },
+      "InvoiceNodeId": {
+        "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257"
+      },
+      "OfferNodeId": {
+        "publicKey": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257"
+      },
+      "InvoiceRequestPayerId": {
+        "publicKey": "0277be64abfd950a648a1eadca5403e14f1e2e81818cd34b1dc0037a75673f466a"
+      },
+      "InvoiceCreatedAt": {
+        "timestamp": {
+          "iso": "2026-05-22T12:03:45Z",
+          "unix": 1779451425
+        }
+      },
+      "InvoiceRequestQuantity": {
+        "quantity": 1
+      },
+      "InvoicePaymentHash": {
+        "hash": "f456821221cf9df9992b76f4ea2fcdd33377dd98be96e2e75f4080dd3b72137f"
+      },
+      "InvoiceAmount": {
+        "amount": 15000000
+      }
+    }
+  },
+  {
+    "prefix": "lnbcrt",
+    "timestamp": 1779451566,
+    "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+    "serialized": "lnbcrt200u1p4pq34wpp59jgv59pvvd0p8dawtyezuwa95wtegm229jmx4ck03uap704zcuwqdpyf35kw6r5de5kueeqd9ejqgmjv43kkmr9wdessp5l7e0gvhj2c0g03ppyxrlnhnh3rwufjtmr6vzkykxgq7tylmremjqmqz9gxqrrsscqp7lqq9q7sqqqqqqqqqqqqqqqqqqqsqyqqqysgqen5nzc7pf2hdnex3kpj3p8eh7yf5yalwm07qwax53zjwhf5m4q3yq9lkaplfkwg5xw2myytw0vptk3wclwdsy28ttu77tkarpl7lymqq38pqdf",
+    "description": "Lightning is #reckless",
+    "paymentHash": "2c90ca142c635e13b7ae59322e3ba5a397946d4a2cb66ae2cf8f3a1f3ea2c71c",
+    "paymentMetadata": "2a",
+    "expiry": 3600,
+    "minFinalCltvExpiry": 30,
+    "amount": 20000000,
+    "features": {
+      "activated": {
+        "option_attribution_data": "optional",
+        "payment_secret": "mandatory",
+        "basic_mpp": "optional",
+        "option_payment_metadata": "optional",
+        "var_onion_optin": "mandatory"
+      }
     },
     "routingInfo": []
   }
@@ -2684,43 +2824,23 @@ amount   | msats
 [
   {
     "prefix": "lnbcrt",
-    "timestamp": 1643719798,
-    "nodeId": "028e2403fbfddb3d787843361f91adbda64c6f622921b19fb48f5766508bcadb29",
-    "serialized": "lnbcrt1psljtrkpp5gqus3ys83p9cry4nj43ykjyvkuuhrcc5y45a6l569zwuc8pn2xxsdq0ydex2cmtd3jhxucsp543t76xycc9kpx4estwm6tjlpsht3m7d5jxe09tqnyjjux970y9lsmqz9gxqrrsscqp79qtzsqqqqqysgqxwh55ncvj3hv0cypm8vafku83gayzg7qa3zlu3lua76lk53t2m3rgt4d5qa04cfdd0f407p328c9el9xvy3r6z9um90m5pjaxrrazysqfkxfa7",
-    "description": "#reckless",
-    "paymentHash": "4039089207884b8192b395624b488cb73971e3142569dd7e9a289dcc1c33518d",
+    "timestamp": 1779451267,
+    "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+    "serialized": "lnbcrt400u1p4pq3vrpp5phu0m9jh704v0sgluh47nd57c5gjd9kr9pwajtdfzxsy6kc7ddfqdpyf35kw6r5de5kueeqd9ejqgmjv43kkmr9wdessp5yw8w32p52c7q33jf3u67x7q7tfsfuttqld8qya8vcpex84kzsq9qmqz9gxqrrsscqp7lqq9q7sqqqqqqqqqqqqqqqqqqqsqyqqqysgq38j0sxzex0d7wudrvhmg7f8dpyteh4l7yq8ezj9mpy0sgz8zkgmrtrjpaq9a2cnj4s8xwtyhvh6mjs3uut9sen4h4y7mx6sy865m69gp0p80ll",
+    "description": "Lightning is #reckless",
+    "paymentHash": "0df8fd9657f3eac7c11fe5ebe9b69ec5112696c3285dd92da911a04d5b1e6b52",
     "paymentMetadata": "2a",
     "expiry": 3600,
     "minFinalCltvExpiry": 30,
+    "amount": 40000000,
     "features": {
       "activated": {
+        "option_attribution_data": "optional",
         "payment_secret": "mandatory",
         "basic_mpp": "optional",
         "option_payment_metadata": "optional",
         "var_onion_optin": "mandatory"
-      },
-      "unknown": []
-    },
-    "routingInfo": []
-  },
-  {
-    "prefix": "lnbcrt",
-    "timestamp": 1643719828,
-    "nodeId": "028e2403fbfddb3d787843361f91adbda64c6f622921b19fb48f5766508bcadb29",
-    "serialized": "lnbcrt1psljty5pp5z2247c5w8cl30err7s9qx8rkejltq49mk8z6l5eqar7l43pehapsdq0ydex2cmtd3jhxucsp5hrcu5s0jftrmje4yavu580tlrq4mdmdevye8aevn6dsae4x5kejqmqz9gxqrrsscqp79qtzsqqqqqysgqwus3au5085tp02cwvpjexc5rq6qjezwxwr3yecdxr525qprv5zjxa98r69kx87cegavjw9u9299yfdhnes7mp4dztttyduchudvq64cq4pyx28",
-    "description": "#reckless",
-    "paymentHash": "12955f628e3e3f17e463f40a031c76ccbeb054bbb1c5afd320e8fdfac439bf43",
-    "paymentMetadata": "2a",
-    "expiry": 3600,
-    "minFinalCltvExpiry": 30,
-    "features": {
-      "activated": {
-        "payment_secret": "mandatory",
-        "basic_mpp": "optional",
-        "option_payment_metadata": "optional",
-        "var_onion_optin": "mandatory"
-      },
-      "unknown": []
+      }
     },
     "routingInfo": []
   }
@@ -2849,6 +2969,7 @@ ignoreNodeIds             | A list of nodes to exclude from path-finding        
 ignoreShortChannelIds     | A list of channels to exclude from path-finding            | Yes      | List of shortChannelIds
 format                    | Format that will be used for the resulting route           | Yes      | String
 maxFeeMsat                | Maximum fee allowed for this payment                       | Yes      | Millisatoshi (Integer)
+maxCltvExpiryDelta        | Maximum cltv_expiry_delta of the complete route            | Yes      | Integer
 includeLocalChannelCost   | If true, the relay fees of local channels will be counted  | Yes      | Boolean
 pathFindingExperimentName | Name of the path-finding configuration that should be used | Yes      | String
 
@@ -2895,6 +3016,7 @@ ignoreNodeIds             | A list of nodes to exclude from path-finding        
 ignoreShortChannelIds     | A list of channels to exclude from path-finding            | Yes      | List of shortChannelIds
 format                    | Format that will be used for the resulting route           | Yes      | String
 maxFeeMsat                | Maximum fee allowed for this payment                       | Yes      | Millisatoshi (Integer)
+maxCltvExpiryDelta        | Maximum cltv_expiry_delta of the complete route            | Yes      | Integer
 includeLocalChannelCost   | If true, the relay fees of local channels will be counted  | Yes      | Boolean
 pathFindingExperimentName | Name of the path-finding configuration that should be used | Yes      | String
 
@@ -2942,6 +3064,7 @@ ignoreNodeIds             | A list of nodes to exclude from path-finding        
 ignoreShortChannelIds     | A list of channels to exclude from path-finding            | Yes      | List of shortChannelIds
 format                    | Format that will be used for the resulting route           | Yes      | String
 maxFeeMsat                | Maximum fee allowed for this payment                       | Yes      | Millisatoshi (Integer)
+maxCltvExpiryDelta        | Maximum cltv_expiry_delta of the complete route            | Yes      | Integer
 includeLocalChannelCost   | If true, the relay fees of local channels will be counted  | Yes      | Boolean
 pathFindingExperimentName | Name of the path-finding configuration that should be used | Yes      | String
 
@@ -3244,74 +3367,115 @@ eclair-cli audit
   "sent": [
     {
       "type": "payment-sent",
-      "id": "562c2be9-6d46-4684-bc74-e4a99a77f4fe",
-      "paymentHash": "6130a990b87b745474ced86a68c162a57016a406419257c7d7362ab90e2925ec",
-      "paymentPreimage": "84192ee8858166740158ff321ebf5325c3097a17e7753876bd59a5a531ce276b",
-      "recipientAmount": 111000000,
-      "recipientNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+      "id": "92871365-792e-49a8-a4db-226d62ba7fc0",
+      "paymentHash": "8027352ba5e4d7ee1a34b41e25c53063388f5bf2656c02701a44573c2c44fcfc",
+      "paymentPreimage": "0f9caf8ab7af20531e4c55d6c7a90cf11a50a30c41653d660f16be028f8be9b7",
+      "recipientAmount": 25000000,
+      "recipientNodeId": "03231a64020e2f95dda014b3ca424e36f7b2f4b17d1e959da415b7c1d64c3829e9",
       "parts": [
         {
-          "id": "562c2be9-6d46-4684-bc74-e4a99a77f4fe",
-          "amount": 111000000,
-          "feesPaid": 12100,
-          "toChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
-          "timestamp": {
-            "iso": "2022-02-01T12:40:19.438Z",
-            "unix": 1643719219
+          "id": "fb80e29c-3921-4470-b4cd-fd7db912809b",
+          "channelId": "ddf85a7737004f9bcfb94573e6abac0873c25aa4fdc7e9fba279e53a49ec0de5",
+          "nextNodeId": "03231a64020e2f95dda014b3ca424e36f7b2f4b17d1e959da415b7c1d64c3829e9",
+          "amountWithFees": 25000000,
+          "fees": 0,
+          "startedAt": {
+            "iso": "2026-05-22T12:13:26.191Z",
+            "unix": 1779452006
+          },
+          "settledAt": {
+            "iso": "2026-05-22T12:13:26.316Z",
+            "unix": 1779452006
           }
         }
-      ]
+      ],
+      "fees": 0,
+      "startedAt": {
+        "iso": "2026-05-22T12:13:26.191Z",
+        "unix": 1779452006
+      },
+      "settledAt": {
+        "iso": "2026-05-22T12:13:26.316Z",
+        "unix": 1779452006
+      }
     },
     {
       "type": "payment-sent",
-      "id": "cd5666d5-7678-4458-b50b-21b363b34f5e",
-      "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
-      "paymentPreimage": "a10d43f61016e052dfe946f24b550a37f538d033cc29999d8df10438d2618943",
-      "recipientAmount": 90000000,
-      "recipientNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+      "id": "c0f55d65-f91f-4d48-b9f2-bb882bee267f",
+      "paymentHash": "aaf4f70f86562a7b11961142f9b9005ec7015922de041bf0351e6dcf21ca6082",
+      "paymentPreimage": "b582838c99e5b9b013f4ffd842febd55891fc86fe4b579d860b38f613ec989e6",
+      "recipientAmount": 10000000,
+      "recipientNodeId": "03231a64020e2f95dda014b3ca424e36f7b2f4b17d1e959da415b7c1d64c3829e9",
       "parts": [
         {
-          "id": "83fcc569-917a-4cac-b42d-6f6b186f21eb",
-          "amount": 4827118,
-          "feesPaid": 1482,
-          "toChannelId": "67a548c2677702c19533ea9644a89fa54162866a95079a768dd76a182538f53f",
-          "timestamp": {
-            "iso": "2022-02-01T12:40:19.438Z",
-            "unix": 1643719219
-          }
-        },
-        {
-          "id": "84c89f34-389f-4d0a-a48a-0eed52e8bcf5",
-          "amount": 85172882,
-          "feesPaid": 9517,
-          "toChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
-          "timestamp": {
-            "iso": "2022-02-01T12:40:19.438Z",
-            "unix": 1643719219
+          "id": "4da72405-59ab-44b2-80a4-0929ecc2f8b8",
+          "channelId": "ddf85a7737004f9bcfb94573e6abac0873c25aa4fdc7e9fba279e53a49ec0de5",
+          "nextNodeId": "03231a64020e2f95dda014b3ca424e36f7b2f4b17d1e959da415b7c1d64c3829e9",
+          "amountWithFees": 10000000,
+          "fees": 0,
+          "startedAt": {
+            "iso": "2026-05-22T12:13:56.283Z",
+            "unix": 1779452036
+          },
+          "settledAt": {
+            "iso": "2026-05-22T12:13:56.359Z",
+            "unix": 1779452036
           }
         }
-      ]
+      ],
+      "fees": 0,
+      "startedAt": {
+        "iso": "2026-05-22T12:13:56.283Z",
+        "unix": 1779452036
+      },
+      "settledAt": {
+        "iso": "2026-05-22T12:13:56.359Z",
+        "unix": 1779452036
+      }
     }
   ],
   "received": [
     {
       "type": "payment-received",
-      "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
+      "paymentHash": "d512f15a0dd2deee3a5e603f187ca2a00ba9235b7d147b42c2e817b87e057d33",
       "parts": [
         {
-          "amount": 4827118,
-          "fromChannelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
-          "timestamp": {
-            "iso": "2022-02-01T12:40:19.438Z",
-            "unix": 1643719219
+          "channelId": "da9171e06fbb7d18a50deeab567dbf35498c69da7542d0222c2f22da7fa2e300",
+          "remoteNodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
+          "amount": 40000000,
+          "receivedAt": {
+            "iso": "2026-05-22T11:52:28.954Z",
+            "unix": 1779450748
           }
-        },
+        }
+      ]
+    },
+    {
+      "type": "payment-received",
+      "paymentHash": "f456821221cf9df9992b76f4ea2fcdd33377dd98be96e2e75f4080dd3b72137f",
+      "parts": [
         {
-          "amount": 85172882,
-          "fromChannelId": "1b14940e98238a84b7a9f0429571ba8ca1a4da3ba5699a3f0082a16761f9bd6f",
-          "timestamp": {
-            "iso": "2022-02-01T12:40:19.438Z",
-            "unix": 1643719219
+          "channelId": "bbc8ccc2dfa98426c38d3f30a2fa92d509b19d9971d5bcb519a8fb50b0c90911",
+          "remoteNodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
+          "amount": 15000000,
+          "receivedAt": {
+            "iso": "2026-05-22T12:03:45.886Z",
+            "unix": 1779451425
+          }
+        }
+      ]
+    },
+    {
+      "type": "payment-received",
+      "paymentHash": "2c90ca142c635e13b7ae59322e3ba5a397946d4a2cb66ae2cf8f3a1f3ea2c71c",
+      "parts": [
+        {
+          "channelId": "bbc8ccc2dfa98426c38d3f30a2fa92d509b19d9971d5bcb519a8fb50b0c90911",
+          "remoteNodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
+          "amount": 20000000,
+          "receivedAt": {
+            "iso": "2026-05-22T12:06:19.937Z",
+            "unix": 1779451579
           }
         }
       ]
@@ -3320,27 +3484,29 @@ eclair-cli audit
   "relayed": [
     {
       "type": "payment-relayed",
-      "amountIn": 111012100,
-      "amountOut": 111000000,
-      "paymentHash": "6130a990b87b745474ced86a68c162a57016a406419257c7d7362ab90e2925ec",
-      "fromChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
-      "toChannelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
-      "timestamp": {
-        "iso": "2022-02-01T12:40:19.438Z",
-        "unix": 1643719219
-      }
-    },
-    {
-      "type": "payment-relayed",
-      "amountIn": 45005500,
-      "amountOut": 45000000,
-      "paymentHash": "c5bd76b696d75b2e548a00f14e30cd694cfb3790e095ab62303abe48f2b3a263",
-      "fromChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
-      "toChannelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
-      "timestamp": {
-        "iso": "2022-02-01T12:40:19.438Z",
-        "unix": 1643719219
-      }
+      "paymentHash": "8bcbd47bee565c051641944961915cd6498d324c5a38437091e6b8990e02f856",
+      "incoming": [
+        {
+          "channelId": "bbc8ccc2dfa98426c38d3f30a2fa92d509b19d9971d5bcb519a8fb50b0c90911",
+          "remoteNodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
+          "amount": 12003400,
+          "receivedAt": {
+            "iso": "2026-05-22T12:14:20.264Z",
+            "unix": 1779452060
+          }
+        }
+      ],
+      "outgoing": [
+        {
+          "channelId": "ddf85a7737004f9bcfb94573e6abac0873c25aa4fdc7e9fba279e53a49ec0de5",
+          "remoteNodeId": "03231a64020e2f95dda014b3ca424e36f7b2f4b17d1e959da415b7c1d64c3829e9",
+          "amount": 12000000,
+          "settledAt": {
+            "iso": "2026-05-22T12:14:20.331Z",
+            "unix": 1779452060
+          }
+        }
+      ]
     }
   ]
 }
@@ -3362,13 +3528,13 @@ to        | Filters elements no younger than this unix-timestamp  | Yes      | U
 count     | Limits the number of results returned                 | Yes      | Integer
 skip      | Skip some number of results                           | Yes      | Integer
 
-## NetworkFees
+## RelayStats
 
 ```shell
-curl -s -u :<eclair_api_password> -X POST "http://localhost:8080/networkfees"
+curl -s -u :<eclair_api_password> -X POST "http://localhost:8080/relaystats"
 
 # with eclair-cli
-eclair-cli networkfees
+eclair-cli relaystats
 ```
 
 > The above command returns:
@@ -3376,95 +3542,64 @@ eclair-cli networkfees
 ```json
 [
   {
-    "remoteNodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
-    "channelId": "57d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e",
-    "txId": "0e7d63ce98dbaccd9c3061509e93b45adbeaf10997c4708213804da0edd6d757",
-    "fee": 3382,
-    "txType": "funding",
-    "timestamp": {
-      "iso": "2022-02-01T12:27:18.932Z",
-      "unix": 1643718438
+    "remoteNodeId": "03231a64020e2f95dda014b3ca424e36f7b2f4b17d1e959da415b7c1d64c3829e9",
+    "incomingPaymentCount": 0,
+    "totalAmountIn": 0,
+    "outgoingPaymentCount": 1,
+    "totalAmountOut": 12000000,
+    "relayFeeEarned": 3400,
+    "onChainTransactionsCount": 1,
+    "onChainFeePaid": 825,
+    "liquidityFeeEarned": 0,
+    "liquidityFeePaid": 0,
+    "from": {
+      "iso": "2026-05-21T12:15:37Z",
+      "unix": 1779365737
+    },
+    "to": {
+      "iso": "2026-05-22T12:15:37Z",
+      "unix": 1779452137
+    }
+  },
+  {
+    "remoteNodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
+    "incomingPaymentCount": 1,
+    "totalAmountIn": 12003400,
+    "outgoingPaymentCount": 0,
+    "totalAmountOut": 0,
+    "relayFeeEarned": 0,
+    "onChainTransactionsCount": 6,
+    "onChainFeePaid": 842,
+    "liquidityFeeEarned": 0,
+    "liquidityFeePaid": 0,
+    "from": {
+      "iso": "2026-05-21T12:15:37Z",
+      "unix": 1779365737
+    },
+    "to": {
+      "iso": "2026-05-22T12:15:37Z",
+      "unix": 1779452137
     }
   }
 ]
 ```
 
-Retrieves information about on-chain fees paid during channel operations (currency values are in satoshis).
+Retrieves information about payment statistics for each of our peers (fees earned, fees paid, etc).
+This can be used to identify good-performing peers.
 
 ### HTTP Request
 
-`POST http://localhost:8080/networkfees`
+`POST http://localhost:8080/relaystats`
 
 ### Parameters
 
-Parameter | Description                                           | Optional | Type
---------- | ----------------------------------------------------- | -------- | -----------------------------------
-from      | Filters elements no older than this unix-timestamp    | Yes      | Unix timestamp in seconds (Integer)
-to        | Filters elements no younger than this unix-timestamp  | Yes      | Unix timestamp in seconds (Integer)
-
-## ChannelStats
-
-```shell
-curl -s -u :<eclair_api_password> -X POST "http://localhost:8080/channelstats"
-
-# with eclair-cli
-eclair-cli channelstats
-```
-
-> The above command returns:
-
-```json
-[
-  {
-    "channelId": "1b14940e98238a84b7a9f0429571ba8ca1a4da3ba5699a3f0082a16761f9bd6f",
-    "direction": "IN",
-    "avgPaymentAmount": 0,
-    "paymentCount": 0,
-    "relayFee": 0,
-    "networkFee": 26400
-  },
-  {
-    "channelId": "1b14940e98238a84b7a9f0429571ba8ca1a4da3ba5699a3f0082a16761f9bd6f",
-    "direction": "OUT",
-    "avgPaymentAmount": 85172,
-    "paymentCount": 1,
-    "relayFee": 9,
-    "networkFee": 26400
-  },
-  {
-    "channelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
-    "direction": "IN",
-    "avgPaymentAmount": 0,
-    "paymentCount": 0,
-    "relayFee": 0,
-    "networkFee": 26400
-  },
-  {
-    "channelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
-    "direction": "OUT",
-    "avgPaymentAmount": 53609,
-    "paymentCount": 3,
-    "relayFee": 19,
-    "networkFee": 26400
-  }
-]
-```
-
-Retrieves information about local channels. The information is then aggregated in order to display
-statistics about the routing activity of the channels. Values are in Satoshis.
-
-### HTTP Request
-
-`POST http://localhost:8080/channelstats`
-
-### Parameters
-
-Parameter | Description                                           | Optional | Type
---------- | ----------------------------------------------------- | -------- | -----------------------------------
-from      | Filters elements no older than this unix-timestamp    | Yes      | Unix timestamp in seconds (Integer)
-to        | Filters elements no younger than this unix-timestamp  | Yes      | Unix timestamp in seconds (Integer)
-count     | Limits the number of results returned                 | Yes      | Integer
-skip      | Skip some number of results                           | Yes      | Integer
+Parameter | Description                                                 | Optional | Type
+--------- | ----------------------------------------------------------- | -------- | -----------------------------------
+nodeId    | If provided, returns statistics only for the specific peer. | Yes      | 33-bytes-HexString (String)
+from      | Filters elements no older than this unix-timestamp          | Yes      | Unix timestamp in seconds (Integer)
+to        | Filters elements no younger than this unix-timestamp        | Yes      | Unix timestamp in seconds (Integer)
+count     | Limits the number of results returned                       | Yes      | Integer
+skip      | Skip some number of results                                 | Yes      | Integer
 
 ## UsableBalances
 
@@ -3691,15 +3826,29 @@ several types covering all the possible outcomes. All monetary values are expres
 ```json
 {
   "type": "payment-relayed",
-  "amountIn": 21,
-  "amountOut": 20,
-  "paymentHash": "6130a990b87b745474ced86a68c162a57016a406419257c7d7362ab90e2925ec",
-  "fromChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
-  "toChannelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
-  "timestamp": {
-    "iso": "2022-02-01T12:40:19.438Z",
-    "unix": 1643719219
-  }
+  "paymentHash": "8bcbd47bee565c051641944961915cd6498d324c5a38437091e6b8990e02f856",
+  "incoming": [
+    {
+      "channelId": "bbc8ccc2dfa98426c38d3f30a2fa92d509b19d9971d5bcb519a8fb50b0c90911",
+      "remoteNodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
+      "amount": 12003400,
+      "receivedAt": {
+        "iso": "2026-05-22T12:14:20.264Z",
+        "unix": 1779452060
+      }
+    }
+  ],
+  "outgoing": [
+    {
+      "channelId": "ddf85a7737004f9bcfb94573e6abac0873c25aa4fdc7e9fba279e53a49ec0de5",
+      "remoteNodeId": "03231a64020e2f95dda014b3ca424e36f7b2f4b17d1e959da415b7c1d64c3829e9",
+      "amount": 12000000,
+      "settledAt": {
+        "iso": "2026-05-22T12:14:20.331Z",
+        "unix": 1779452060
+      }
+    }
+  ]
 }
 ```
 
@@ -3708,22 +3857,15 @@ several types covering all the possible outcomes. All monetary values are expres
 ```json
 {
   "type": "payment-received",
-  "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
+  "paymentHash": "2c90ca142c635e13b7ae59322e3ba5a397946d4a2cb66ae2cf8f3a1f3ea2c71c",
   "parts": [
     {
-      "amount": 21,
-      "fromChannelId": "10eeb6d8cfd8c3f6a93d22e2cd8adf5e36bdb43c53405ddc4fc17a0f7608162a",
-      "timestamp": {
-            "iso": "2022-02-01T12:40:19.438Z",
-            "unix": 1643719219
-      }
-    },
-    {
-      "amount": 24,
-      "fromChannelId": "1b14940e98238a84b7a9f0429571ba8ca1a4da3ba5699a3f0082a16761f9bd6f",
-      "timestamp": {
-        "iso": "2022-02-01T12:40:19.438Z",
-        "unix": 1643719219
+      "channelId": "bbc8ccc2dfa98426c38d3f30a2fa92d509b19d9971d5bcb519a8fb50b0c90911",
+      "remoteNodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
+      "amount": 20000000,
+      "receivedAt": {
+        "iso": "2026-05-22T12:06:19.937Z",
+        "unix": 1779451579
       }
     }
   ]
@@ -3734,20 +3876,102 @@ several types covering all the possible outcomes. All monetary values are expres
 
 ```json
 {
-   "type": "payment-failed",
-   "id": "487da196-a4dc-4b1e-92b4-3e5e905e9f3f",
-   "paymentHash": "0000000000000000000000000000000000000000000000000000000000000000",
-   "failures": [
-     {
-       "failureType": "Local",
-       "failureMessage": "balance too low",
-       "failedRoute": []
-     }
-   ],
-   "timestamp": {
-     "iso": "2022-02-01T12:40:19.438Z",
-     "unix": 1643719219
-   }
+  "type": "payment-failed",
+  "id": "2704e79f-9f6e-4a0f-bc79-db26c7461d30",
+  "paymentHash": "cf1315043744b4da2cae631b88e754f0bc8b22067d1cc34927de4cdce53cbf8e",
+  "failures": [
+    {
+      "amount": 55000000,
+      "route": [
+        {
+          "shortChannelId": "68455x1x1",
+          "nodeId": "03231a64020e2f95dda014b3ca424e36f7b2f4b17d1e959da415b7c1d64c3829e9",
+          "nextNodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+          "params": {
+            "type": "announcement",
+            "channelUpdate": {
+              "signature": "f324b74ab16306d35c1e203fc1f6222ea0c60246849c9ec40aad5ca84da4f4905de7541106c60245919541ed0394abaecfaf8d684fcb6a2d92ed7560e9d1db99",
+              "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+              "shortChannelId": "68455x1x1",
+              "timestamp": {
+                "iso": "2026-05-22T12:12:59Z",
+                "unix": 1779451979
+              },
+              "messageFlags": {
+                "dontForward": false
+              },
+              "channelFlags": {
+                "isEnabled": true,
+                "isNode1": false
+              },
+              "cltvExpiryDelta": 144,
+              "htlcMinimumMsat": 500,
+              "feeBaseMsat": 1000,
+              "feeProportionalMillionths": 200,
+              "htlcMaximumMsat": 75000000,
+              "tlvStream": {}
+            }
+          }
+        },
+        {
+          "shortChannelId": "68435x2x1",
+          "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+          "nextNodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
+          "params": {
+            "type": "announcement",
+            "channelUpdate": {
+              "signature": "1a3343dc148b7ac2c87b3aaca333a063ce02a0eaad559fda5216ba89b5a065df7cc1df528bc2b4fe052740f20cebdf0b8b75f7b72604dc2adff7d6747442076a",
+              "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+              "shortChannelId": "68435x2x1",
+              "timestamp": {
+                "iso": "2026-05-22T11:56:23Z",
+                "unix": 1779450983
+              },
+              "messageFlags": {
+                "dontForward": false
+              },
+              "channelFlags": {
+                "isEnabled": true,
+                "isNode1": false
+              },
+              "cltvExpiryDelta": 144,
+              "htlcMinimumMsat": 1000,
+              "feeBaseMsat": 1000,
+              "feeProportionalMillionths": 200,
+              "htlcMaximumMsat": 75000000,
+              "tlvStream": {}
+            }
+          }
+        }
+      ],
+      "e": {
+        "originNode": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+        "index": 1,
+        "failureMessage": "channel is currently unavailable (scid=Some(68435x2x1))"
+      },
+      "startedAt": {
+        "iso": "2026-05-22T12:19:14.064Z",
+        "unix": 1779452354
+      },
+      "failedAt": {
+        "iso": "2026-05-22T12:19:14.144Z",
+        "unix": 1779452354
+      }
+    },
+    {
+      "amount": 55000000,
+      "route": [],
+      "t": "route not found"
+    }
+  ],
+  "startedAt": {
+    "iso": "2026-05-22T12:19:14.010Z",
+    "unix": 1779452354
+  },
+  "settledAt": {
+    "iso": "2026-05-22T12:19:14.175Z",
+    "unix": 1779452354
+  }
 }
 ```
 
@@ -3756,33 +3980,99 @@ several types covering all the possible outcomes. All monetary values are expres
 ```json
 {
   "type": "payment-sent",
-  "id": "562c2be9-6d46-4684-bc74-e4a99a77f4fe",
-  "paymentHash": "6130a990b87b745474ced86a68c162a57016a406419257c7d7362ab90e2925ec",
-  "paymentPreimage": "84192ee8858166740158ff321ebf5325c3097a17e7753876bd59a5a531ce276b",
-  "recipientAmount": 45,
-  "recipientNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+  "id": "c690a208-6ee6-4061-a5ac-c19f3487c04a",
+  "paymentHash": "8bcbd47bee565c051641944961915cd6498d324c5a38437091e6b8990e02f856",
+  "paymentPreimage": "7ab5a4d1f9f99a5fed985d82a29ad2fbafd8058ef5bde5c8d8a5e7bc19caf510",
+  "recipientAmount": 12000000,
+  "recipientNodeId": "03231a64020e2f95dda014b3ca424e36f7b2f4b17d1e959da415b7c1d64c3829e9",
   "parts": [
     {
-      "id": "b8799834-8db9-460b-b754-2942f20e3500",
-      "amount": 21,
-      "feesPaid": 1,
-      "toChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
-      "timestamp": {
-        "iso": "2022-02-01T12:40:19.438Z",
-        "unix": 1643719219
-      }
-    },
-    {
-      "id": "ab348eb7-b0ed-46ff-9274-28cfdbdaae8d",
-      "amount": 24,
-      "feesPaid": 3,
-      "toChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
-      "timestamp": {
-        "iso": "2022-02-01T12:40:19.438Z",
-        "unix": 1643719219
+      "id": "749dfeec-a858-45ec-ace0-9a9fae863b85",
+      "channelId": "bbc8ccc2dfa98426c38d3f30a2fa92d509b19d9971d5bcb519a8fb50b0c90911",
+      "nextNodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+      "amountWithFees": 12003400,
+      "fees": 3400,
+      "route": [
+        {
+          "shortChannelId": "0x241b2817588036e",
+          "nodeId": "023b19f5990b2eee1a3bfc66cb9fdfeba62f7e058f13faf236249cc8d53543f20b",
+          "nextNodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+          "params": {
+            "type": "announcement",
+            "channelUpdate": {
+              "signature": "9659f77ea03458907c8b1c29ee36ce1c1f0ab616d9985b7cce7a5c12288673646d89356cc8a97bba656599094ae3a7780f701015309eec6adb3afe8322b932b8",
+              "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+              "shortChannelId": "0x241b2817588036e",
+              "timestamp": {
+                "iso": "2026-05-22T11:51:57Z",
+                "unix": 1779450717
+              },
+              "messageFlags": {
+                "dontForward": true
+              },
+              "channelFlags": {
+                "isEnabled": true,
+                "isNode1": true
+              },
+              "cltvExpiryDelta": 144,
+              "htlcMinimumMsat": 500,
+              "feeBaseMsat": 15,
+              "feeProportionalMillionths": 500,
+              "htlcMaximumMsat": 70000000,
+              "tlvStream": {}
+            }
+          }
+        },
+        {
+          "shortChannelId": "68455x1x1",
+          "nodeId": "0251fa1fd468243289c3203a582de9c22f57ffb96397e50a7026c082cb6e4a3257",
+          "nextNodeId": "03231a64020e2f95dda014b3ca424e36f7b2f4b17d1e959da415b7c1d64c3829e9",
+          "params": {
+            "type": "announcement",
+            "channelUpdate": {
+              "signature": "9a922bd407433258ef08bd1e63077b2171636a5e1123dcbb037e8c1d317624111a0749921ebbe6599320e8d84daa3a6cf584b70bb5cfa69dd63df6e826963cbf",
+              "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
+              "shortChannelId": "68455x1x1",
+              "timestamp": {
+                "iso": "2026-05-22T12:12:59Z",
+                "unix": 1779451979
+              },
+              "messageFlags": {
+                "dontForward": false
+              },
+              "channelFlags": {
+                "isEnabled": true,
+                "isNode1": true
+              },
+              "cltvExpiryDelta": 144,
+              "htlcMinimumMsat": 1,
+              "feeBaseMsat": 1000,
+              "feeProportionalMillionths": 200,
+              "htlcMaximumMsat": 75000000,
+              "tlvStream": {}
+            }
+          }
+        }
+      ],
+      "startedAt": {
+        "iso": "2026-05-22T12:14:20.222Z",
+        "unix": 1779452060
+      },
+      "settledAt": {
+        "iso": "2026-05-22T12:14:20.336Z",
+        "unix": 1779452060
       }
     }
-  ]
+  ],
+  "fees": 3400,
+  "startedAt": {
+    "iso": "2026-05-22T12:14:20.213Z",
+    "unix": 1779452060
+  },
+  "settledAt": {
+    "iso": "2026-05-22T12:14:20.336Z",
+    "unix": 1779452060
+  }
 }
 ```
 
@@ -3814,13 +4104,40 @@ several types covering all the possible outcomes. All monetary values are expres
 }
 ```
 
-> Channel opened event
+> Channel funding transaction created event
 
 ```json
 {
-  "type": "channel-opened",
+  "type": "channel-funding-created",
   "remoteNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
-  "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"
+  "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+  "fundingTxId": "6bd3827228f1c078868ddb8b018c550241964a910cff82f566366c15042850b3",
+  "fundingTxIndex": 0
+}
+```
+
+> Channel funding transaction confirmed event
+
+```json
+{
+  "type": "channel-confirmed",
+  "remoteNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+  "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+  "fundingTxId": "6bd3827228f1c078868ddb8b018c550241964a910cff82f566366c15042850b3",
+  "fundingTxIndex": 0,
+  "blockHeight": 750000
+}
+```
+
+> Channel ready for payments event
+
+```json
+{
+  "type": "channel-ready",
+  "remoteNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+  "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+  "fundingTxId": "6bd3827228f1c078868ddb8b018c550241964a910cff82f566366c15042850b3",
+  "fundingTxIndex": 0
 }
 ```
 
@@ -3842,7 +4159,8 @@ several types covering all the possible outcomes. All monetary values are expres
 {
   "type": "channel-closed",
   "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
-  "closingType": "MutualClose"
+  "closingType": "MutualClose",
+  "closingTxId": "6bd3827228f1c078868ddb8b018c550241964a910cff82f566366c15042850b3"
 }
 ```
 
@@ -3868,7 +4186,9 @@ payment-sent             | A payment has been successfully sent
 payment-settling-onchain | A payment wasn't fulfilled and its HTLC is being redeemed on-chain
 payment-failed           | A payment failed
 channel-created          | A channel opening flow has started
-channel-opened           | A channel opening flow has completed
+channel-funding-created  | A channel funding transaction has been published
+channel-confirmed        | A channel funding transaction has been confirmed
+channel-ready            | A channel is ready to send and receive payments
 channel-state-changed    | A channel state changed (e.g. going from offline to connected)
 channel-closed           | A channel has been closed
 onion-message-received   | An onion message was received
