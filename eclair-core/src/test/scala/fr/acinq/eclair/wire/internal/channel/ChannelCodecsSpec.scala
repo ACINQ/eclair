@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.internal.channel
 
-import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, SatoshiLong, Transaction, TxId}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -26,9 +26,8 @@ import fr.acinq.eclair.channel.fsm.Channel
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, LocalChannelKeyManager, LocalNodeKeyManager, NodeKeyManager}
 import fr.acinq.eclair.json.JsonSerializers
-import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.DefaultCommitmentFormat
+import fr.acinq.eclair.transactions.Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs._
 import fr.acinq.eclair.wire.protocol.{CommonCodecs, UpdateAddHtlc}
@@ -124,7 +123,6 @@ object ChannelCodecsSpec {
     fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
     initialRequestedChannelReserve_opt = Some(10000 sat),
     upfrontShutdownScript_opt = None,
-    walletStaticPaymentBasepoint = None,
     isChannelOpener = true,
     paysCommitTxFees = true,
     initFeatures = Features.empty)
@@ -147,17 +145,17 @@ object ChannelCodecsSpec {
   )
 
   val htlcs: Seq[DirectedHtlc] = Seq[DirectedHtlc](
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 30, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 31, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)),
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None))
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket, None, accountable = false, None)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket, None, accountable = false, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 30, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket, None, accountable = false, None)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 31, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket, None, accountable = false, None)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket, None, accountable = false, None))
   )
 
   val normal: DATA_NORMAL = {
     val origins = Map(
       42L -> Origin.Cold(Upstream.Local(UUID.randomUUID)),
-      15000L -> Origin.Cold(Upstream.Cold.Channel(ByteVector32(ByteVector.fill(32)(42)), 43, 11_000_000 msat))
+      15000L -> Origin.Cold(Upstream.Cold.Channel(ByteVector32(ByteVector.fill(32)(42)), PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"), 43, 11_000_000 msat))
     )
     makeChannelDataNormal(htlcs, origins)
   }
@@ -178,7 +176,7 @@ object ChannelCodecsSpec {
     val commitments = Commitments(
       ChannelParams(channelId, ChannelConfig.standard, ChannelFeatures(), localChannelParams, remoteChannelParams, channelFlags),
       CommitmentChanges(LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), localNextHtlcId = 32, remoteNextHtlcId = 4),
-      Seq(Commitment(fundingTxIndex, 0, OutPoint(fundingTx.txid, 0), fundingAmount, remoteFundingPubKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.NotLocked, DefaultCommitmentFormat, localCommitParams, localCommit, remoteCommitParams, remoteCommit, None)),
+      Seq(Commitment(fundingTxIndex, 0, OutPoint(fundingTx.txid, 0), fundingAmount, remoteFundingPubKey, LocalFundingStatus.SingleFundedUnconfirmedFundingTx(None), RemoteFundingStatus.NotLocked, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, localCommitParams, localCommit, remoteCommitParams, remoteCommit, None)),
       remoteNextCommitInfo = Right(randomKey().publicKey),
       remotePerCommitmentSecrets = ShaChain.init,
       originChannels = origins)

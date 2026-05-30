@@ -23,7 +23,8 @@ import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.scalacompat.Crypto
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
-import fr.acinq.eclair.channel.ChannelOpened
+import fr.acinq.eclair.TestUtils.randomTxId
+import fr.acinq.eclair.channel.ChannelReadyForPayments
 import fr.acinq.eclair.io.Peer.Disconnect
 import fr.acinq.eclair.{randomBytes32, randomKey}
 import org.scalatest.Outcome
@@ -96,7 +97,7 @@ class IncomingConnectionsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFac
     }
 
     // Untrack a node when a channel with it is confirmed on-chain.
-    system.eventStream ! EventStream.Publish(ChannelOpened(system.deadLetters.toClassic, connection1, randomBytes32()))
+    system.eventStream ! EventStream.Publish(ChannelReadyForPayments(system.deadLetters.toClassic, connection1, randomBytes32(), randomTxId(), 0))
     eventually {
       tracker ! IncomingConnectionsTracker.CountIncomingConnections(probe.ref)
       probe.expectMessage(1)

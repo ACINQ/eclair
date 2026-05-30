@@ -24,9 +24,9 @@ import fr.acinq.eclair.channel.ChannelSpendSignature.PartialSignatureWithNonce
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tlvField, tlvStream, tu16}
+import scodec.Codec
 import scodec.bits.{ByteVector, HexStringSyntax}
 import scodec.codecs._
-import scodec.{Attempt, Codec, Err}
 
 /**
  * Created by t-bast on 19/07/2021.
@@ -40,9 +40,15 @@ object UpdateAddHtlcTlv {
 
   private val pathKey: Codec[PathKey] = (("length" | constant(hex"21")) :: ("pathKey" | publicKey)).as[PathKey]
 
-  case class Endorsement(level: Int) extends UpdateAddHtlcTlv
+  /**
+   * When set, this field tells the receiving node that they will be held accountable if the corresponding HTLC doesn't
+   * resolve quickly, and their reputation will be lowered. They should propagate this signal when relaying to ensure
+   * that their downstream nodes are also accountable, which protects against channel jamming.
+   * See github.com/lightning/bolts/pull/1280 for more details.
+   */
+  case class Accountable() extends UpdateAddHtlcTlv
 
-  private val endorsement: Codec[Endorsement] = tlvField(uint8.narrow[Endorsement](n => if (n >= 8) Attempt.failure(Err(s"invalid endorsement level: $n")) else Attempt.successful(Endorsement(n)), _.level))
+  private val accountable: Codec[Accountable] = tlvField(provide(Accountable()))
 
   /** When on-the-fly funding is used, the liquidity fees may be taken from HTLCs relayed after funding. */
   case class FundingFeeTlv(fee: LiquidityAds.FundingFee) extends UpdateAddHtlcTlv
@@ -51,8 +57,8 @@ object UpdateAddHtlcTlv {
 
   val addHtlcTlvCodec: Codec[TlvStream[UpdateAddHtlcTlv]] = tlvStream(discriminated[UpdateAddHtlcTlv].by(varint)
     .typecase(UInt64(0), pathKey)
+    .typecase(UInt64(1), accountable)
     .typecase(UInt64(41041), fundingFee)
-    .typecase(UInt64(106823), endorsement)
   )
 }
 
@@ -90,12 +96,23 @@ sealed trait CommitSigTlv extends Tlv
 
 object CommitSigTlv {
 
-  /** @param size the number of [[CommitSig]] messages in the batch */
-  case class BatchTlv(size: Int) extends CommitSigTlv
+  /**
+   * While a splice is ongoing and not locked, we have multiple valid commitments.
+   * We send one [[CommitSig]] message for each valid commitment: this field maps it to the corresponding funding transaction.
+   *
+   * @param txId the funding transaction spent by this commitment.
+   */
+  case class FundingTx(txId: TxId) extends CommitSigTlv
 
-  object BatchTlv {
-    val codec: Codec[BatchTlv] = tlvField(tu16)
-  }
+  private val fundingTxTlv: Codec[FundingTx] = tlvField(txIdAsHash)
+
+  /**
+   * The experimental version of splicing included the number of [[CommitSig]] messages in the batch.
+   * This TLV can be removed once Phoenix users have upgraded to the official version of splicing and use the [[StartBatch]] message.
+   */
+  case class ExperimentalBatchTlv(size: Int) extends CommitSigTlv
+
+  private val experimentalBatchTlv: Codec[ExperimentalBatchTlv] = tlvField(tu16)
 
   /** Partial signature signature for the current commitment transaction, along with the signing nonce used (when using taproot channels). */
   case class PartialSignatureWithNonceTlv(partialSigWithNonce: PartialSignatureWithNonce) extends CommitSigTlv
@@ -105,8 +122,9 @@ object CommitSigTlv {
   }
 
   val commitSigTlvCodec: Codec[TlvStream[CommitSigTlv]] = tlvStream(discriminated[CommitSigTlv].by(varint)
+    .typecase(UInt64(1), fundingTxTlv)
     .typecase(UInt64(2), PartialSignatureWithNonceTlv.codec)
-    .typecase(UInt64(0x47010005), BatchTlv.codec)
+    .typecase(UInt64(0x47010005), experimentalBatchTlv)
   )
 
 }

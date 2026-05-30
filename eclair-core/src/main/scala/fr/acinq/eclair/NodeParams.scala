@@ -33,13 +33,14 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
+import fr.acinq.eclair.profit.{PeerScorer, PeerStatsTracker}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Announcements.AddressException
 import fr.acinq.eclair.router.Graph.HeuristicsConstants
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Graph, PathFindingExperimentConf, Router}
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions.{PhoenixSimpleTaprootChannelCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -95,6 +96,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       peerWakeUpConfig: PeerReadyNotifier.WakeUpConfig,
                       onTheFlyFundingConfig: OnTheFlyFunding.Config,
                       peerStorageConfig: PeerStorageConfig,
+                      peerScoringConfig: PeerScorer.Config,
+                      peerStatsTrackerConfig: PeerStatsTracker.Config,
                       offersConfig: OffersConfig) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
@@ -129,14 +132,17 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
       max = (fundingFeerate * feerateTolerance.ratioHigh).max(minimumFeerate),
     )
     // We use the most likely commitment format, even though there is no guarantee that this is the one that will be used.
-    val commitmentFormat = ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures, announceChannel = false).commitmentFormat
+    val commitmentFormat = if (Features.canUseFeature(localFeatures, remoteFeatures, Features.SimpleTaprootChannelsPhoenix)) {
+      PhoenixSimpleTaprootChannelCommitmentFormat
+    } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.SimpleTaprootChannels)) {
+      ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat
+    } else {
+      ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
+    }
     val commitmentFeerate = onChainFeeConf.getCommitmentFeerate(currentBitcoinCoreFeerates, remoteNodeId, commitmentFormat)
     val commitmentRange = RecommendedFeeratesTlv.CommitmentFeerateRange(
-      min = (commitmentFeerate * feerateTolerance.ratioLow).max(minimumFeerate),
-      max = (commitmentFormat match {
-        case Transactions.DefaultCommitmentFormat => commitmentFeerate * feerateTolerance.ratioHigh
-        case _: Transactions.AnchorOutputsCommitmentFormat | _: Transactions.SimpleTaprootChannelCommitmentFormat => (commitmentFeerate * feerateTolerance.ratioHigh).max(feerateTolerance.anchorOutputMaxCommitFeerate)
-      }).max(minimumFeerate),
+      min = Seq(commitmentFeerate * feerateTolerance.ratioLow, minimumFeerate).max,
+      max = Seq(commitmentFeerate * feerateTolerance.ratioHigh, feerateTolerance.anchorOutputMaxCommitFeerate, minimumFeerate).max,
     )
     RecommendedFeerates(chainHash, fundingFeerate, commitmentFeerate, TlvStream(fundingRange, commitmentRange))
   }
@@ -358,7 +364,7 @@ object NodeParams extends Logging {
     require(htlcMinimum > 0.msat, "channel.htlc-minimum-msat must be strictly greater than 0")
 
     val maxAcceptedHtlcs = config.getInt("channel.max-accepted-htlcs")
-    require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"channel.max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
+    require(maxAcceptedHtlcs <= Channel.maxAcceptedHtlcs(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), s"channel.max-accepted-htlcs must be lower than ${Channel.maxAcceptedHtlcs(ChannelTypes.AnchorOutputsZeroFeeHtlcTx())}")
 
     val maxToLocalCLTV = CltvExpiryDelta(config.getInt("channel.max-to-local-delay-blocks"))
     val offeredCLTV = CltvExpiryDelta(config.getInt("channel.to-remote-delay-blocks"))
@@ -407,20 +413,21 @@ object NodeParams extends Logging {
     require(pluginMessageParams.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
     require(pluginMessageParams.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
     require(pluginMessageParams.flatMap(_.messageTags).forall(_ > 32768), "Plugin messages tags must be > 32768")
-    val pluginFeatureSet = pluginMessageParams.map(_.feature.mandatory).toSet
-    require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
-    require(pluginFeatureSet.size == pluginMessageParams.size, "Duplicate plugin feature bits found")
+    require(Features.knownFeatures.map(_.mandatory).intersect(pluginMessageParams.map(_.feature.mandatory).toSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
+    require(pluginMessageParams.map(_.feature.mandatory).toSet.size == pluginMessageParams.size, "Duplicate plugin feature bits found")
 
     val interceptOpenChannelPlugins = pluginParams.collect { case p: InterceptOpenChannelPlugin => p }
     require(interceptOpenChannelPlugins.size <= 1, s"At most one plugin is allowed to intercept channel open messages, but multiple such plugins were registered: ${interceptOpenChannelPlugins.map(_.getClass.getSimpleName).mkString(", ")}. Disable conflicting plugins and restart eclair.")
 
-    val coreAndPluginFeatures: Features[Feature] = features.copy(unknown = features.unknown ++ pluginMessageParams.map(_.pluginFeature))
+    val pluginFeatures = pluginMessageParams.map(p => p.feature -> p.support).toMap
+    val coreAndPluginFeatures: Features[Feature] = features.copy(activated = features.activated ++ pluginFeatures)
 
     val overrideInitFeatures: Map[PublicKey, Features[InitFeature]] = config.getConfigList("override-init-features").asScala.map { e =>
-      val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
-      val f = Features.fromConfiguration[InitFeature](e.getConfig("features"), Features.knownFeatures.collect { case f: InitFeature => f }, features.initFeatures())
-      validateFeatures(f.unscoped())
-      p -> (f.copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature)): Features[InitFeature])
+      val remoteNodeId = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
+      val initFeatures = Features.fromConfiguration[InitFeature](e.getConfig("features"), Features.knownFeatures.collect { case f: InitFeature => f }, features.initFeatures())
+      validateFeatures(initFeatures.unscoped())
+      val pluginInitFeatures = pluginFeatures.collect { case (f: InitFeature, s) => f -> s }
+      remoteNodeId -> initFeatures.copy(activated = initFeatures.activated ++ pluginInitFeatures)
     }.toMap
 
     val socksProxy_opt = parseSocks5ProxyParams(config)
@@ -598,7 +605,6 @@ object NodeParams extends Logging {
         quiescenceTimeout = FiniteDuration(config.getDuration("channel.quiescence-timeout").getSeconds, TimeUnit.SECONDS),
         balanceThresholds = config.getConfigList("channel.channel-update.balance-thresholds").asScala.map(conf => BalanceThreshold(Satoshi(conf.getLong("available-sat")), Satoshi(conf.getLong("max-htlc-sat")))).toSeq,
         minTimeBetweenUpdates = FiniteDuration(config.getDuration("channel.channel-update.min-time-between-updates").getSeconds, TimeUnit.SECONDS),
-        acceptIncomingStaticRemoteKeyChannels = config.getBoolean("channel.accept-incoming-static-remote-key-channels")
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
@@ -635,6 +641,7 @@ object NodeParams extends Logging {
         publicChannelFees = getRelayFees(config.getConfig("relay.fees.public-channels")),
         privateChannelFees = getRelayFees(config.getConfig("relay.fees.private-channels")),
         minTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-trampoline")),
+        resetExistingChannels = config.getBoolean("relay.fees.reset-existing-channels"),
         enforcementDelay = FiniteDuration(config.getDuration("relay.fees.enforcement-delay").getSeconds, TimeUnit.SECONDS),
         asyncPaymentsParams = AsyncPaymentsParams(asyncPaymentHoldTimeoutBlocks, asyncPaymentCancelSafetyBeforeTimeoutBlocks),
         peerReputationConfig = Reputation.Config(
@@ -642,6 +649,7 @@ object NodeParams extends Logging {
           halfLife = FiniteDuration(config.getDuration("relay.peer-reputation.half-life").getSeconds, TimeUnit.SECONDS),
           maxRelayDuration = FiniteDuration(config.getDuration("relay.peer-reputation.max-relay-duration").getSeconds, TimeUnit.SECONDS),
         ),
+        reservedBucket = config.getDouble("relay.reserved-for-accountable"),
       ),
       db = database,
       autoReconnect = config.getBoolean("auto-reconnect"),
@@ -706,11 +714,50 @@ object NodeParams extends Logging {
       ),
       onTheFlyFundingConfig = OnTheFlyFunding.Config(
         proposalTimeout = FiniteDuration(config.getDuration("on-the-fly-funding.proposal-timeout").getSeconds, TimeUnit.SECONDS),
+        maxSuspiciousPeers = config.getInt("on-the-fly-funding.max-suspicious-peers"),
       ),
       peerStorageConfig = PeerStorageConfig(
         writeDelay = FiniteDuration(config.getDuration("peer-storage.write-delay").getSeconds, TimeUnit.SECONDS),
         removalDelay = FiniteDuration(config.getDuration("peer-storage.removal-delay").getSeconds, TimeUnit.SECONDS),
         cleanUpFrequency = FiniteDuration(config.getDuration("peer-storage.cleanup-frequency").getSeconds, TimeUnit.SECONDS),
+      ),
+      peerScoringConfig = PeerScorer.Config(
+        enabled = config.getBoolean("peer-scoring.enabled"),
+        scoringFrequency = FiniteDuration(config.getDuration("peer-scoring.frequency").getSeconds, TimeUnit.SECONDS),
+        topPeersCount = config.getInt("peer-scoring.top-peers-count"),
+        topPeersWhitelist = config.getStringList("peer-scoring.top-peers-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet,
+        liquidity = PeerScorer.LiquidityConfig(
+          autoFund = config.getBoolean("peer-scoring.liquidity.auto-fund"),
+          autoClose = config.getBoolean("peer-scoring.liquidity.auto-close"),
+          minFundingAmount = config.getLong("peer-scoring.liquidity.min-funding-amount-satoshis").sat,
+          maxFundingAmount = config.getLong("peer-scoring.liquidity.max-funding-amount-satoshis").sat,
+          maxPerPeerCapacity = config.getLong("peer-scoring.liquidity.max-per-peer-capacity-satoshis").sat,
+          localBalanceClosingThreshold = config.getLong("peer-scoring.liquidity.local-balance-closing-threshold-satoshis").sat,
+          remoteBalanceClosingThreshold = config.getLong("peer-scoring.liquidity.remote-balance-closing-threshold-satoshis").sat,
+          idleChannelClosingThresholdPct = config.getDouble("peer-scoring.liquidity.idle-channel-closing-threshold-percent"),
+          maxFundingTxPerDay = config.getInt("peer-scoring.liquidity.max-funding-tx-per-day"),
+          minOnChainBalance = config.getLong("peer-scoring.liquidity.min-on-chain-balance-satoshis").sat,
+          maxFeerate = FeeratePerByte(config.getLong("peer-scoring.liquidity.max-feerate-sat-per-byte").sat).perKw,
+          reviveOldPeers = config.getBoolean("peer-scoring.liquidity.revive-old-peers"),
+          fundingCooldown = FiniteDuration(config.getDuration("peer-scoring.liquidity.funding-cooldown").getSeconds, TimeUnit.SECONDS),
+        ),
+        relayFees = PeerScorer.RelayFeesConfig(
+          autoUpdate = config.getBoolean("peer-scoring.relay-fees.auto-update"),
+          minRelayFees = RelayFees(
+            feeBase = config.getLong("peer-scoring.relay-fees.min-fee-base-msat").msat,
+            feeProportionalMillionths = config.getLong("peer-scoring.relay-fees.min-fee-proportional-millionths"),
+          ),
+          maxRelayFees = RelayFees(
+            feeBase = config.getLong("peer-scoring.relay-fees.max-fee-base-msat").msat,
+            feeProportionalMillionths = config.getLong("peer-scoring.relay-fees.max-fee-proportional-millionths"),
+          ),
+          dailyPaymentVolumeThreshold = config.getLong("peer-scoring.relay-fees.daily-payment-volume-threshold-satoshis").sat,
+          dailyPaymentVolumeThresholdPercent = config.getDouble("peer-scoring.relay-fees.daily-payment-volume-threshold-percent"),
+        )
+      ),
+      peerStatsTrackerConfig = PeerStatsTracker.Config(
+        pastEventsInitDelay = FiniteDuration(config.getDuration("peer-scoring.past-events.init-delay").getSeconds, TimeUnit.SECONDS),
+        pastEventsChunkDelay = FiniteDuration(config.getDuration("peer-scoring.past-events.chunk-delay").getSeconds, TimeUnit.SECONDS),
       ),
       offersConfig = OffersConfig(
         messagePathMinLength = config.getInt("offers.message-path-min-length"),

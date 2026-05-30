@@ -62,7 +62,7 @@ This means that instead of re-implementing them, Eclair benefits from the verifi
 
 * Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
 * You must configure your Bitcoin node to use `bech32` or `bech32m` (segwit) addresses. If your wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit`, `bech32` or `bech32m`), you must send them to a `bech32` or `bech32m` address before running Eclair.
-* Eclair requires Bitcoin Core 29 or higher. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
+* Eclair requires Bitcoin Core 30 or higher. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 
@@ -326,4 +326,4 @@ zmqpubrawtx=tcp://127.0.0.1:29001
 ## Resources
 
 * [1] [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
-* [2] [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
+* [2] [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/blob/10b10eb981a2c3f2385c3c9ae2244a1767eeca86/doc/miscellaneous/deployable-lightning.pdf) by Rusty Russell

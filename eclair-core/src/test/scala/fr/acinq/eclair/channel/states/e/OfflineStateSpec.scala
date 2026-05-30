@@ -28,12 +28,12 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockHeight, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
+import fr.acinq.eclair.channel.publish.TxPublisher.PublishFinalTx
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTimeoutTx, ClaimRemoteAnchorTx, UnsignedHtlcSuccessTx}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -71,9 +71,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
   }
 
-  private def lastFundingLockedTlvs(commitments: Commitments): Set[ChannelReestablishTlv] =
-    commitments.lastLocalLocked_opt.map(c => ChannelReestablishTlv.MyCurrentFundingLockedTlv(c.fundingTxId)).toSet ++
-      commitments.lastRemoteLocked_opt.map(c => ChannelReestablishTlv.YourLastFundingLockedTlv(c.fundingTxId)).toSet
+  private def lastFundingLockedTlvs(commitments: Commitments): Set[ChannelReestablishTlv] = {
+    commitments.lastLocalLocked_opt.map(c => {
+      val retransmitAnnSigs = commitments.announceChannel
+      ChannelReestablishTlv.MyCurrentFundingLockedTlv(c.fundingTxId, retransmitAnnSigs)
+    }).toSet
+  }
 
   test("reconnect after creating channel", Tag(IgnoreChannelUpdates)) { f =>
     import f._
@@ -110,7 +113,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     //   |--- sig --X |
     //   |            |
     val sender = TestProbe()
-    alice ! CMD_ADD_HTLC(sender.ref, 1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max, None, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(sender.ref, 1000000 msat, ByteVector32.Zeroes, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max(accountable = false), None, localOrigin(sender.ref))
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     // bob receives the htlc
     alice2bob.forward(bob)
@@ -120,10 +123,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
-    val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
-    val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+    val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.commitments))))
+    val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.commitments))))
     alice2bob.forward(bob, reestablishA)
     bob2alice.forward(alice, reestablishB)
+    alice2bob.expectMsgType[ChannelReady]
+    bob2alice.expectMsgType[ChannelReady]
 
     // alice will re-send the update and the sig
     alice2bob.expectMsg(htlc)
@@ -160,7 +165,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     //   | X-- rev ---|
     //   | X-- sig ---|
     val sender = TestProbe()
-    alice ! CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max, None, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max(accountable = false), None, localOrigin(sender.ref))
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     // bob receives the htlc and the signature
     alice2bob.forward(bob, htlc)
@@ -175,8 +180,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     disconnect(alice, bob)
     val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
-    val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
-    val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+    val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.commitments))))
+    val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.commitments))))
     alice2bob.forward(bob, reestablishA)
     bob2alice.forward(alice, reestablishB)
 
@@ -204,7 +209,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     //   |<--- rev ---|
     //   | X-- sig ---|
     val sender = TestProbe()
-    alice ! CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max, None, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(ActorRef.noSender, 1000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max(accountable = false), None, localOrigin(sender.ref))
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     // bob receives the htlc and the signature
     alice2bob.forward(bob, htlc)
@@ -223,8 +228,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     {
       val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
-      val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
-      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+      val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.commitments))))
+      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.commitments))))
       alice2bob.forward(bob, reestablishA)
       bob2alice.forward(alice, reestablishB)
     }
@@ -254,8 +259,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     {
       val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
-      val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 2, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.stateData.asInstanceOf[DATA_NORMAL].commitments))))
-      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.stateData.asInstanceOf[DATA_NORMAL].commitments))))
+      val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 2, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(alice.commitments))))
+      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint, TlvStream(lastFundingLockedTlvs(bob.commitments))))
       alice2bob.forward(bob, reestablishA)
       bob2alice.forward(alice, reestablishB)
     }
@@ -317,7 +322,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommitIndex == 4)
   }
 
-  test("reconnect with an outdated commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("reconnect with an outdated commitment", Tag(IgnoreChannelUpdates)) { f =>
     import f._
 
     val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
@@ -367,7 +372,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
-  test("reconnect with an outdated commitment (but counterparty can't tell)", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("reconnect with an outdated commitment (but counterparty can't tell)", Tag(IgnoreChannelUpdates)) { f =>
     import f._
 
     // we start by storing the current state
@@ -421,7 +426,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
-  test("counterparty lies about having a more recent commitment and publishes current commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("counterparty lies about having a more recent commitment and publishes current commitment", Tag(IgnoreChannelUpdates)) { f =>
     import f._
 
     // the current state contains a pending htlc
@@ -455,7 +460,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimHtlc.sign(), bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
-  test("counterparty lies about having a more recent commitment and publishes revoked commitment", Tag(IgnoreChannelUpdates), Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("counterparty lies about having a more recent commitment and publishes revoked commitment", Tag(IgnoreChannelUpdates)) { f =>
     import f._
 
     // we sign a new commitment to make sure the first one is revoked
@@ -537,7 +542,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     channelUpdateListener.expectNoMessage(300 millis)
 
     // we attempt to send a payment
-    alice ! CMD_ADD_HTLC(sender.ref, 4200 msat, randomBytes32(), CltvExpiry(123456), TestConstants.emptyOnionPacket, None, Reputation.Score.max, None, localOrigin(sender.ref))
+    alice ! CMD_ADD_HTLC(sender.ref, 4200 msat, randomBytes32(), CltvExpiry(123456), TestConstants.emptyOnionPacket, None, Reputation.Score.max(accountable = false), None, localOrigin(sender.ref))
     sender.expectMsgType[RES_ADD_FAILED[ChannelUnavailable]]
 
     // alice will broadcast a new disabled channel_update
@@ -630,12 +635,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
     bob2blockchain.expectFinalTxPublished(initialCommitTx.txid)
+    val anchorTx = bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     val mainDelayedTx = bob2blockchain.expectFinalTxPublished("local-main-delayed")
     bob2blockchain.expectWatchTxConfirmed(initialCommitTx.txid)
-    bob2blockchain.expectWatchOutputSpent(mainDelayedTx.input)
-    bob2blockchain.expectWatchOutputSpent(htlcSuccessTx.input.outPoint)
-    val publishHtlcTx = bob2blockchain.expectFinalTxPublished("htlc-success")
-    assert(publishHtlcTx.input == htlcSuccessTx.input.outPoint)
+    bob2blockchain.expectWatchOutputsSpent(Seq(mainDelayedTx.input, anchorTx.input.outPoint, htlcSuccessTx.input.outPoint))
+    assert(bob2blockchain.expectReplaceableTxPublished[HtlcSuccessTx].input == htlcSuccessTx.input)
     bob2blockchain.expectNoMessage(100 millis)
   }
 
@@ -654,21 +658,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectNoMessage(100 millis)
   }
 
-  test("handle feerate changes while offline (funder scenario)") { f =>
-    import f._
-
-    // we only close channels on feerate mismatch if there are HTLCs at risk in the commitment
-    addHtlc(125000000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
-
-    testHandleFeerateFunder(f, shouldClose = true)
-  }
-
   test("handle feerate changes while offline without HTLCs (funder scenario)") { f =>
-    testHandleFeerateFunder(f, shouldClose = false)
+    testHandleFeerateFunder(f)
   }
 
-  def testHandleFeerateFunder(f: FixtureParam, shouldClose: Boolean): Unit = {
+  def testHandleFeerateFunder(f: FixtureParam): Unit = {
     import f._
 
     // we simulate a disconnection
@@ -684,11 +678,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice is funder
     alice.setBitcoinCoreFeerates(networkFeerates)
     alice ! CurrentFeerates.BitcoinCore(networkFeerates)
-    if (shouldClose) {
-      assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid == aliceCommitTx.txid)
-    } else {
-      alice2blockchain.expectNoMessage(100 millis)
-    }
+    alice2blockchain.expectNoMessage(100 millis)
   }
 
   test("handle feerate changes while offline (don't close on mismatch)", Tag(DisableOfflineMismatch)) { f =>
@@ -715,90 +705,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectNoMessage(100 millis)
   }
 
-  def testUpdateFeeOnReconnect(f: FixtureParam, shouldUpdateFee: Boolean): Unit = {
-    import f._
-
-    // we simulate a disconnection
-    disconnect(alice, bob)
-
-    val localFeeratePerKw = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.commitTxFeerate
-    val networkFeeratePerKw = localFeeratePerKw * 2
-    val networkFeerates = FeeratesPerKw.single(networkFeeratePerKw)
-
-    // Alice ignores feerate changes while offline
-    alice.setBitcoinCoreFeerates(networkFeerates)
-    alice ! CurrentFeerates.BitcoinCore(networkFeerates)
-    alice2blockchain.expectNoMessage(100 millis)
-    alice2bob.expectNoMessage(100 millis)
-
-    // then we reconnect them; Alice should send the feerate changes to Bob
-    reconnect(alice, bob, alice2bob, bob2alice)
-
-    // peers exchange channel_reestablish messages
-    alice2bob.expectMsgType[ChannelReestablish]
-    bob2alice.expectMsgType[ChannelReestablish]
-    bob2alice.forward(alice)
-
-    if (shouldUpdateFee) {
-      alice2bob.expectMsg(UpdateFee(channelId(alice), networkFeeratePerKw))
-    } else {
-      alice2bob.expectMsgType[Shutdown]
-      alice2bob.expectNoMessage(100 millis)
-    }
-  }
-
-  test("handle feerate changes while offline (update at reconnection)", Tag(IgnoreChannelUpdates)) { f =>
-    testUpdateFeeOnReconnect(f, shouldUpdateFee = true)
-  }
-
-  test("handle feerate changes while offline (shutdown sent, don't update at reconnection)", Tag(IgnoreChannelUpdates)) { f =>
-    import f._
-
-    // alice initiates a shutdown
-    val sender = TestProbe()
-    alice ! CMD_CLOSE(sender.ref, None, None)
-    alice2bob.expectMsgType[Shutdown]
-
-    testUpdateFeeOnReconnect(f, shouldUpdateFee = false)
-  }
-
-  test("handle feerate changes while offline (fundee scenario)") { f =>
-    import f._
-
-    // we only close channels on feerate mismatch if there are HTLCs at risk in the commitment
-    addHtlc(125000000 msat, alice, bob, alice2bob, bob2alice)
-    crossSign(alice, bob, alice2bob, bob2alice)
-
-    testHandleFeerateFundee(f, shouldClose = true)
-  }
-
-  test("handle feerate changes while offline without HTLCs (fundee scenario)") { f =>
-    testHandleFeerateFundee(f, shouldClose = false)
-  }
-
-  def testHandleFeerateFundee(f: FixtureParam, shouldClose: Boolean): Unit = {
-    import f._
-
-    // we simulate a disconnection
-    disconnect(alice, bob)
-
-    val bobCommitTx = bob.signCommitTx()
-    val currentFeerate = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.latest.localCommit.spec.commitTxFeerate
-    // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
-    // to ensure the network's feerate is 10% above our threshold).
-    val networkFeerate = currentFeerate * (1.1 / bob.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Alice.nodeParams.nodeId).ratioLow)
-    val networkFeerates = FeeratesPerKw.single(networkFeerate)
-
-    // bob is fundee
-    bob.setBitcoinCoreFeerates(networkFeerates)
-    bob ! CurrentFeerates.BitcoinCore(networkFeerates)
-    if (shouldClose) {
-      assert(bob2blockchain.expectMsgType[PublishFinalTx].tx.txid == bobCommitTx.txid)
-    } else {
-      bob2blockchain.expectNoMessage(100 millis)
-    }
-  }
-
   test("re-send announcement_signatures on reconnection", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.DoNotInterceptGossip)) { f =>
     import f._
 
@@ -814,21 +720,23 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     reconnect(alice, bob, alice2bob, bob2alice)
 
     // Alice and Bob exchange channel_reestablish and channel_ready again.
-    alice2bob.expectMsgType[ChannelReestablish]
-    bob2alice.expectMsgType[ChannelReestablish]
+    assert(!alice2bob.expectMsgType[ChannelReestablish].retransmitAnnSigs)
+    assert(bob2alice.expectMsgType[ChannelReestablish].retransmitAnnSigs)
     bob2alice.forward(alice)
     alice2bob.forward(bob)
-    alice2bob.expectNoMessage(100 millis)
-
-    // Bob retransmits his channel_ready and announcement_signatures because he hasn't received Alice's announcement_signatures.
+    alice2bob.expectMsgType[ChannelReady]
+    alice2bob.forward(bob)
     bob2alice.expectMsgType[ChannelReady]
     bob2alice.forward(alice)
 
+    // Alice retransmits announcement_signatures because Bob requested it.
+    val annSigsAlice = alice2bob.expectMsgType[AnnouncementSignatures]
+    alice2bob.forward(bob)
+    alice2bob.expectNoMessage(100 millis)
+
+    // Bob retransmits announcement_signatures because he hasn't received Alice's announcement_signatures.
     val annSigsBob = bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice, annSigsBob)
-    // Alice retransmits her announcement_signatures when receiving Bob's.
-    val annSigsAlice = alice2bob.expectMsgType[AnnouncementSignatures]
-    alice2bob.forward(bob, annSigsAlice)
     // Alice and Bob ignore redundant announcement_signatures.
     alice2bob.forward(bob, annSigsAlice)
     bob2alice.expectNoMessage(100 millis)
@@ -848,6 +756,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
     alice2bob.forward(bob)
+    alice2bob.expectMsgType[ChannelReady]
+    bob2alice.expectMsgType[ChannelReady]
 
     // alice and bob resend their channel update at reconnection (unannounced channel)
     alice2bob.expectMsgType[ChannelUpdate]
@@ -1006,8 +916,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsgType[ChannelReestablish]
     bob2alice.forward(alice)
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[ChannelReady]
-    bob2alice.forward(alice)
 
     // Alice will NOT resend their channel_ready at reconnection because she has received bob's announcement_signatures (pre-splice behavior).
     alice2bob.expectNoMessage(100 millis)

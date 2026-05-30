@@ -23,7 +23,6 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, Satoshi, Script, Transaction, TxId, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.{RealShortChannelId, _}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -33,10 +32,11 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.Sync._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{RealShortChannelId, _}
 import org.scalatest.ParallelTestExecution
 import org.scalatest.funsuite.AnyFunSuiteLike
 
-import scala.collection.immutable.{SortedSet, TreeMap}
+import scala.collection.immutable.{SortedMap, SortedSet, TreeMap}
 import scala.collection.mutable
 import scala.concurrent.duration._
 
@@ -73,7 +73,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     def counts: BasicSyncResult = BasicSyncResult(ranges.size, queries.size, channels.size, updates.size, nodes.size)
   }
 
-  def sync(src: TestFSMRef[State, Data, Router], tgt: TestFSMRef[State, Data, Router], extendedQueryFlags_opt: Option[QueryChannelRangeTlv]): SyncResult = {
+  def sync(src: TestFSMRef[State, RouterData, Router], tgt: TestFSMRef[State, RouterData, Router], extendedQueryFlags_opt: Option[QueryChannelRangeTlv]): SyncResult = {
     val sender = TestProbe()
     val pipe = TestProbe()
     pipe.ignoreMsg {
@@ -103,7 +103,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     var channels = Vector.empty[ChannelAnnouncement]
     var updates = Vector.empty[ChannelUpdate]
     var nodes = Vector.empty[NodeAnnouncement]
-    while (src.stateData.sync.nonEmpty) {
+    while (src.stateData.asInstanceOf[Data].sync.nonEmpty) {
       // for each chunk, src sends a query_short_channel_id
       val query = pipe.expectMsgType[QueryShortChannelIds]
       pipe.send(tgt, PeerRoutingMessage(pipe.ref, srcId, query))
@@ -135,7 +135,9 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
   test("sync with standard channel queries") {
     val watcher = system.actorOf(Props(new YesWatcher()))
     val alice = TestFSMRef(new Router(Alice.nodeParams, watcher))
+    alice ! Router.Init(SortedMap.empty, Nil, None)
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
+    bob ! Router.Init(SortedMap.empty, Nil, None)
     val charlieId = randomKey().publicKey
     val sender = TestProbe()
     val extendedQueryFlags_opt = None
@@ -184,7 +186,9 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
   def syncWithExtendedQueries(requestNodeAnnouncements: Boolean): Unit = {
     val watcher = system.actorOf(Props(new YesWatcher()))
     val alice = TestFSMRef(new Router(Alice.nodeParams.modify(_.routerConf.syncConf.requestNodeAnnouncements).setTo(requestNodeAnnouncements), watcher))
+    alice ! Router.Init(SortedMap.empty, Nil, None)
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
+    bob ! Router.Init(SortedMap.empty, Nil, None)
     val charlieId = randomKey().publicKey
     val sender = TestProbe()
     val extendedQueryFlags_opt = Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))
@@ -253,23 +257,24 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
   test("reset sync state on reconnection") {
     val params = TestConstants.Alice.nodeParams
     val router = TestFSMRef(new Router(params, TestProbe().ref))
+    router ! Router.Init(SortedMap.empty, Nil, None)
     val peerConnection = TestProbe()
     peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
     val sender = TestProbe()
     sender.ignoreMsg { case _: TransportHandler.ReadAck => true }
     val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
-    assert(!router.stateData.sync.contains(remoteNodeId))
+    assert(!router.stateData.asInstanceOf[Data].sync.contains(remoteNodeId))
 
     // ask router to send a channel range query
     sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = true, None))
     val QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks, _) = sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
-    assert(router.stateData.sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
+    assert(router.stateData.asInstanceOf[Data].sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
 
     // ask router to send another channel range query
     sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = false, None))
     sender.expectNoMessage(100 millis) // it's a duplicate and should be ignored
-    assert(router.stateData.sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
+    assert(router.stateData.asInstanceOf[Data].sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
 
     val block1 = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, fakeRoutingInfo.take(params.routerConf.syncConf.channelQueryChunkSize).keys.toList), None, None)
 
@@ -279,7 +284,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     // router should ask for our first block of ids
     assert(peerConnection.expectMsgType[QueryShortChannelIds] == QueryShortChannelIds(chainHash, block1.shortChannelIds, TlvStream.empty))
     // router should think that it is missing 100 channels, in one request
-    val Some(sync) = router.stateData.sync.get(remoteNodeId)
+    val Some(sync) = router.stateData.asInstanceOf[Data].sync.get(remoteNodeId)
     assert(sync.remainingQueries.isEmpty) // the request was sent already
     assert(sync.totalQueries == 1)
 
@@ -287,18 +292,19 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = true, None))
     sender.expectMsgType[QueryChannelRange]
     sender.expectMsgType[GossipTimestampFilter]
-    assert(router.stateData.sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
+    assert(router.stateData.asInstanceOf[Data].sync.get(remoteNodeId).contains(Syncing(Nil, 0)))
   }
 
   test("reject unsolicited sync") {
     val params = TestConstants.Alice.nodeParams
     val router = TestFSMRef(new Router(params, TestProbe().ref))
+    router ! Router.Init(SortedMap.empty, Nil, None)
     val peerConnection = TestProbe()
     peerConnection.ignoreMsg { case _: TransportHandler.ReadAck => true }
     val sender = TestProbe()
     sender.ignoreMsg { case _: TransportHandler.ReadAck => true }
     val remoteNodeId = TestConstants.Bob.nodeParams.nodeId
-    assert(!router.stateData.sync.contains(remoteNodeId))
+    assert(!router.stateData.asInstanceOf[Data].sync.contains(remoteNodeId))
 
     // we didn't send a corresponding query_channel_range, but peer sends us a reply_channel_range
     val unsolicitedBlocks = ReplyChannelRange(params.chainHash, BlockHeight(10), 5, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, fakeRoutingInfo.take(5).keys.toList), None, None)
@@ -306,7 +312,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
 
     // it will be simply ignored
     peerConnection.expectNoMessage(100 millis)
-    assert(!router.stateData.sync.contains(remoteNodeId))
+    assert(!router.stateData.asInstanceOf[Data].sync.contains(remoteNodeId))
   }
 
   test("sync progress") {

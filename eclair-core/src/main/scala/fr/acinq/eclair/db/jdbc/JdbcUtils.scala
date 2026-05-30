@@ -80,13 +80,32 @@ trait JdbcUtils {
   }
 
   /**
-   * We removed legacy channels codecs after the v0.13.0 eclair release, and migrated channels in that release.
-   * It is thus not possible to directly upgrade from an eclair version earlier than v0.13.0.
-   * We warn node operators that they must first run the v0.13.0 release to migrate their channel data.
+   * We made some changes in the v0.13.0 and v0.13.1 releases to allow deprecating legacy channel data and channel types.
+   * It is thus not possible to directly upgrade from an eclair version earlier than v0.13.x without going through some
+   * data migration code.
+   *
+   * In the v0.13.0 release, we:
+   *   - introduced channel codecs v5
+   *   - migrated all channels to this codec version
+   *   - incremented the channels DB version to 7 (sqlite) and 11 (postgres)
+   *
+   * In the v0.13.1 release, we:
+   *   - refused to start if the channels DB version wasn't 7 (sqlite) or 11 (postgres), to force node operators to
+   *     run the v0.13.0 release first to migrate their channels to channel codecs v5
+   *   - removed support for older channel codecs
+   *   - moved closed channels to a dedicated DB table, that doesn't have a dependency on legacy channel types, to
+   *     allow deprecating channel types that aren't used anymore
+   *   - incremented the channels DB version to 8 (sqlite) and 12 (postgres)
+   *
+   * We warn node operators that they must first run the v0.13.x releases to migrate their channel data and prevent
+   * eclair from starting.
    */
-  def checkChannelsDbVersion(statement: Statement, db_name: String, minimum: Int): Unit = {
+  def checkChannelsDbVersion(statement: Statement, db_name: String, isSqlite: Boolean): Unit = {
+    val eclair130 = if (isSqlite) 7 else 11
+    val eclair131 = if (isSqlite) 8 else 12
     getVersion(statement, db_name) match {
-      case Some(v) if v < minimum => throw new IllegalArgumentException("You are updating from a version of eclair older than v0.13.0: please update to the v0.13.0 release first to migrate your channel data, and afterwards you'll be able to update to the latest version.")
+      case Some(v) if v < eclair130 => throw new IllegalArgumentException("You are updating from a version of eclair older than v0.13.0: please update to the v0.13.0 release first to migrate your channel data, then to the v0.13.1 release to migrate your closed channels, and afterwards you'll be able to update to the latest version.")
+      case Some(v) if v < eclair131 => throw new IllegalArgumentException("You are updating from a version of eclair older than v0.13.1: please update to the v0.13.1 release first to migrate your closed channels, and afterwards you'll be able to update to the latest version.")
       case _ => ()
     }
   }

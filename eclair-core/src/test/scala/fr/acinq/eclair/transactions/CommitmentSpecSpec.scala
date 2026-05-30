@@ -30,11 +30,11 @@ class CommitmentSpecSpec extends AnyFunSuite {
     val R = randomBytes32()
     val H = Crypto.sha256(R)
 
-    val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
+    val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None, accountable = false, None)
     val spec1 = CommitmentSpec.reduce(spec, add1 :: Nil, Nil)
     assert(spec1 == spec.copy(htlcs = Set(OutgoingHtlc(add1)), toLocal = 3000000 msat))
 
-    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
+    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None, accountable = false, None)
     val spec2 = CommitmentSpec.reduce(spec1, add2 :: Nil, Nil)
     assert(spec2 == spec1.copy(htlcs = Set(OutgoingHtlc(add1), OutgoingHtlc(add2)), toLocal = 2000000 msat))
 
@@ -52,11 +52,11 @@ class CommitmentSpecSpec extends AnyFunSuite {
     val R = randomBytes32()
     val H = Crypto.sha256(R)
 
-    val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
+    val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None, accountable = false, None)
     val spec1 = CommitmentSpec.reduce(spec, Nil, add1 :: Nil)
     assert(spec1 == spec.copy(htlcs = Set(IncomingHtlc(add1)), toRemote = 3000 * 1000 msat))
 
-    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
+    val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket, None, accountable = false, None)
     val spec2 = CommitmentSpec.reduce(spec1, Nil, add2 :: Nil)
     assert(spec2 == spec1.copy(htlcs = Set(IncomingHtlc(add1), IncomingHtlc(add2)), toRemote = (2000 * 1000) msat))
 
@@ -71,13 +71,12 @@ class CommitmentSpecSpec extends AnyFunSuite {
 
   test("compute htlc tx feerate based on commitment format") {
     val spec = CommitmentSpec(htlcs = Set(), commitTxFeerate = FeeratePerKw(2500 sat), toLocal = (5000 * 1000) msat, toRemote = (2500 * 1000) msat)
-    assert(spec.htlcTxFeerate(Transactions.DefaultCommitmentFormat) == FeeratePerKw(2500 sat))
     assert(spec.htlcTxFeerate(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) == FeeratePerKw(2500 sat))
     assert(spec.htlcTxFeerate(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) == FeeratePerKw(0 sat))
   }
 
   def createHtlc(amount: MilliSatoshi): UpdateAddHtlc = {
-    UpdateAddHtlc(ByteVector32.Zeroes, 0, amount, randomBytes32(), CltvExpiry(500), TestConstants.emptyOnionPacket, None, Reputation.maxEndorsement, None)
+    UpdateAddHtlc(ByteVector32.Zeroes, 0, amount, randomBytes32(), CltvExpiry(500), TestConstants.emptyOnionPacket, None, accountable = false, None)
   }
 
 }

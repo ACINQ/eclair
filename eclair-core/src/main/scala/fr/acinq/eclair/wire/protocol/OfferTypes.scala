@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.Bech32
-import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, SchnorrTweak, XonlyPublicKey}
+import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey, XonlyPublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol.CommonCodecs.varint
@@ -158,6 +158,12 @@ object OfferTypes {
    * Payment paths to send the payment to.
    */
   case class InvoicePaths(paths: Seq[BlindedRoute]) extends InvoiceTlv
+
+  /**
+   * By setting this field, we let the payer know that we will resolve the payment quickly once we receive it.
+   * If we don't, our reputation will be negatively impacted (channel jamming protection).
+   */
+  case class InvoiceAccountable() extends InvoiceTlv
 
   case class PaymentInfo(feeBase: MilliSatoshi,
                          feeProportionalMillionths: Long,
@@ -308,6 +314,7 @@ object OfferTypes {
 
     def validate(records: TlvStream[OfferTlv]): Either[InvalidTlvPayload, Offer] = {
       if (records.get[OfferDescription].isEmpty && records.get[OfferAmount].nonEmpty) return Left(MissingRequiredTlv(UInt64(10)))
+      if (records.get[OfferAmount].exists(_.amount == 0)) return Left(ForbiddenTlv(UInt64(10)))
       if (records.get[OfferNodeId].isEmpty && records.get[OfferPaths].isEmpty) return Left(MissingRequiredTlv(UInt64(22)))
       if (records.get[OfferCurrency].nonEmpty && records.get[OfferAmount].isEmpty) return Left(MissingRequiredTlv(UInt64(8)))
       if (records.unknown.exists(!isOfferTlv(_))) return Left(ForbiddenTlv(records.unknown.find(!isOfferTlv(_)).get.tag))
@@ -500,7 +507,7 @@ object OfferTypes {
   def signSchnorr(tag: ByteVector, msg: ByteVector32, key: PrivateKey): ByteVector64 = {
     val h = hash(tag, msg)
     // NB: we don't add auxiliary random data to keep signatures deterministic.
-    Crypto.signSchnorr(h, key, SchnorrTweak.NoTweak)
+    Crypto.signSchnorr(h, key, None)
   }
 
   def verifySchnorr(tag: ByteVector, msg: ByteVector32, signature: ByteVector64, publicKey: PublicKey): Boolean = {

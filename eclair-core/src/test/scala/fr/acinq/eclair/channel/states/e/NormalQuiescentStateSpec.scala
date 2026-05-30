@@ -32,7 +32,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.relay.Relayer.RelayForward
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
-import fr.acinq.eclair.transactions.Transactions.{UnsignedHtlcSuccessTx, UnsignedHtlcTimeoutTx}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{channel, _}
 import org.scalatest.Outcome
@@ -148,7 +148,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     // initiator should reject commands that change the commitment once it became quiescent
     val sender1, sender2, sender3 = TestProbe()
     val cmds = Seq(
-      CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max, None, localOrigin(sender1.ref)),
+      CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max(accountable = false), None, localOrigin(sender1.ref)),
       CMD_UPDATE_FEE(FeeratePerKw(100 sat), replyTo_opt = Some(sender2.ref)),
       CMD_CLOSE(sender3.ref, None, None)
     )
@@ -164,7 +164,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     // both should reject commands that change the commitment while quiescent
     val sender1, sender2, sender3 = TestProbe()
     val cmds = Seq(
-      CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max, None, localOrigin(sender1.ref)),
+      CMD_ADD_HTLC(sender1.ref, 1_000_000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, None, Reputation.Score.max(accountable = false), None, localOrigin(sender1.ref)),
       CMD_UPDATE_FEE(FeeratePerKw(100 sat), replyTo_opt = Some(sender2.ref)),
       CMD_CLOSE(sender3.ref, None, None)
     )
@@ -352,7 +352,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     import f._
     initiateQuiescence(f, sendInitialStfu = true)
     // have to build a htlc manually because eclair would refuse to accept this command as it's forbidden
-    val forbiddenMsg = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, pathKey_opt = None, endorsement = Reputation.maxEndorsement, fundingFee_opt = None)
+    val forbiddenMsg = UpdateAddHtlc(channelId = randomBytes32(), id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = randomBytes32(), onionRoutingPacket = TestConstants.emptyOnionPacket, pathKey_opt = None, accountable = false, fundingFee_opt = None)
     // both parties will respond to a forbidden msg while quiescent with a warning (and disconnect)
     bob2alice.forward(alice, forbiddenMsg)
     alice2bob.expectMsg(Warning(channelId(alice), ForbiddenDuringSplice(channelId(alice), "UpdateAddHtlc").getMessage))
@@ -455,11 +455,11 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     // the HTLC times out, alice needs to close the channel
     alice ! CurrentBlockHeight(add.cltvExpiry.blockHeight)
     alice2blockchain.expectFinalTxPublished(commitTx.txid)
+    val anchorTx = alice2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     val mainDelayedTx = alice2blockchain.expectFinalTxPublished("local-main-delayed")
-    assert(alice2blockchain.expectFinalTxPublished("htlc-timeout").input == htlcTimeoutTx.input.outPoint)
+    assert(alice2blockchain.expectReplaceableTxPublished[HtlcTimeoutTx].input == htlcTimeoutTx.input)
     alice2blockchain.expectWatchTxConfirmed(commitTx.txid)
-    alice2blockchain.expectWatchOutputSpent(mainDelayedTx.input)
-    alice2blockchain.expectWatchOutputSpent(htlcTimeoutTx.input.outPoint)
+    alice2blockchain.expectWatchOutputsSpent(Seq(mainDelayedTx.input, anchorTx.input.outPoint, htlcTimeoutTx.input.outPoint))
     alice2blockchain.expectNoMessage(100 millis)
 
     channelUpdateListener.expectMsgType[LocalChannelDown]
@@ -489,11 +489,11 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     bob ! CurrentBlockHeight(add.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
     // bob publishes a set of force-close transactions, including the HTLC-success using the received preimage
     bob2blockchain.expectFinalTxPublished(commitTx.txid)
+    val anchorTx = bob2blockchain.expectReplaceableTxPublished[ClaimLocalAnchorTx]
     val mainDelayedTx = bob2blockchain.expectFinalTxPublished("local-main-delayed")
     bob2blockchain.expectWatchTxConfirmed(commitTx.txid)
-    bob2blockchain.expectWatchOutputSpent(mainDelayedTx.input)
-    bob2blockchain.expectWatchOutputSpent(htlcSuccessTx.input.outPoint)
-    assert(bob2blockchain.expectFinalTxPublished("htlc-success").input == htlcSuccessTx.input.outPoint)
+    bob2blockchain.expectWatchOutputsSpent(Seq(mainDelayedTx.input, anchorTx.input.outPoint, htlcSuccessTx.input.outPoint))
+    assert(bob2blockchain.expectReplaceableTxPublished[HtlcSuccessTx].input == htlcSuccessTx.input)
     bob2blockchain.expectNoMessage(100 millis)
 
     channelUpdateListener.expectMsgType[LocalChannelDown]

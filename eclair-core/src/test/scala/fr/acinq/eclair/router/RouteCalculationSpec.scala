@@ -1935,7 +1935,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val Success(route1 :: Nil) = findRoute(g, a, e, amount, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = hc, includeLocalChannelCost = true), currentBlockHeight = BlockHeight(400000))
     assert(route2Ids(route1) == 1 :: 2 :: 3 :: Nil)
 
-    val h = g.routeCouldRelay(route1.stopAt(c)).channelCouldNotSend(route1.hops.last, amount)
+    val h = g.routeCouldRelay(route1.stopAt(2)).channelCouldNotSend(route1.hops.last, amount)
 
     val Success(route2 :: Nil) = findRoute(h, a, e, amount, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = hc, includeLocalChannelCost = true), currentBlockHeight = BlockHeight(400000))
     assert(route2Ids(route2) == 1 :: 4 :: 5 :: Nil)

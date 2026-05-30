@@ -23,12 +23,13 @@ import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.fund.InteractiveTxBuilder._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
+import fr.acinq.eclair.crypto.keymanager.ChannelKeys
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelReady, ChannelReestablish, ChannelUpdate, ClosingSigned, CommitSig, FailureReason, FundingCreated, FundingSigned, Init, LiquidityAds, OnionRoutingPacket, OpenChannel, OpenDualFundedChannel, Shutdown, SpliceInit, Stfu, TxInitRbf, TxSignatures, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, RealShortChannelId, TimestampMilli, UInt64}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, Features, InitFeature, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, TimestampMilli, UInt64}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -160,11 +161,12 @@ object Upstream {
       override val amountIn: MilliSatoshi = add.amountMsat
       val expiryIn: CltvExpiry = add.cltvExpiry
 
-      override def toString: String = s"Channel(amountIn=$amountIn, receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, endorsement=${add.endorsement}, incomingChannelOccupancy=$incomingChannelOccupancy)"
+      override def toString: String = s"Channel(amountIn=$amountIn, receivedAt=${receivedAt.toLong}, receivedFrom=${receivedFrom.toHex}, accountable=${add.accountable}, incomingChannelOccupancy=$incomingChannelOccupancy)"
     }
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
     case class Trampoline(received: List[Channel]) extends Hot {
       override val amountIn: MilliSatoshi = received.map(_.add.amountMsat).sum
+      val accountable: Boolean = received.exists(_.add.accountable)
       // We must use the lowest expiry of the incoming HTLC set.
       val expiryIn: CltvExpiry = received.map(_.add.cltvExpiry).min
       val receivedAt: TimestampMilli = received.map(_.receivedAt).max
@@ -180,14 +182,14 @@ object Upstream {
   object Cold {
     def apply(hot: Hot): Cold = hot match {
       case Local(id) => Local(id)
-      case Hot.Channel(add, _, _, _) => Cold.Channel(add.channelId, add.id, add.amountMsat)
-      case Hot.Trampoline(received) => Cold.Trampoline(received.map(r => Cold.Channel(r.add.channelId, r.add.id, r.add.amountMsat)))
+      case Hot.Channel(add, _, receivedFrom, _) => Cold.Channel(add.channelId, receivedFrom, add.id, add.amountMsat)
+      case Hot.Trampoline(received) => Cold.Trampoline(received.map(r => Cold.Channel(r.add.channelId, r.receivedFrom, r.add.id, r.add.amountMsat)))
     }
 
     /** Our node is forwarding a single incoming HTLC. */
-    case class Channel(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi) extends Cold
+    case class Channel(originChannelId: ByteVector32, originNodeId: PublicKey, originHtlcId: Long, amountIn: MilliSatoshi) extends Cold
     object Channel {
-      def apply(add: UpdateAddHtlc): Channel = Channel(add.channelId, add.id, add.amountMsat)
+      def apply(add: UpdateAddHtlc, remoteNodeId: PublicKey): Channel = Channel(add.channelId, remoteNodeId, add.id, add.amountMsat)
     }
 
     /** Our node is forwarding a payment based on a set of HTLCs from potentially multiple upstream channels. */
@@ -312,7 +314,7 @@ object HtlcResult {
   case object ChannelFailureBeforeSigned extends Fail
   case class DisconnectedBeforeSigned(channelUpdate: ChannelUpdate) extends Fail { require(!channelUpdate.channelFlags.isEnabled, "channel update must have disabled flag set") }
 }
-final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
+final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, remoteNodeId: PublicKey, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
 /** other specific responses */
 final case class RES_BUMP_FUNDING_FEE(rbfIndex: Int, fundingTxId: TxId, fee: Satoshi) extends CommandSuccess[CMD_BUMP_FUNDING_FEE]
@@ -548,7 +550,22 @@ case object Nothing extends TransientChannelData {
 sealed trait PersistentChannelData extends ChannelData {
   def remoteNodeId: PublicKey
   def channelParams: ChannelParams
+  def withChannelKeys(nodeParams: NodeParams): PersistentChannelDataWithKeys = {
+    val channelKeys = nodeParams.channelKeyManager.channelKeys(channelParams.channelConfig, channelParams.localParams.fundingKeyPath)
+    PersistentChannelDataWithKeys(this, channelKeys)
+  }
 }
+
+case class PersistentChannelDataWithKeys(channelData: PersistentChannelData, channelKeys: ChannelKeys) {
+  val channelId: ByteVector32 = channelData.channelId
+  val remoteNodeId: PublicKey = channelData.remoteNodeId
+
+  def validateSeed(): Boolean = channelData match {
+    case c: ChannelDataWithCommitments => c.commitments.validateSeed(channelKeys)
+    case _: DATA_WAIT_FOR_DUAL_FUNDING_SIGNED => true
+  }
+}
+
 sealed trait ChannelDataWithoutCommitments extends PersistentChannelData {
   val channelId: ByteVector32 = channelParams.channelId
   val remoteNodeId: PublicKey = channelParams.remoteNodeId
@@ -764,14 +781,7 @@ object DATA_CLOSED {
     commitmentFormat = d.commitments.latest.commitmentFormat.toString,
     announced = d.commitments.latest.channelParams.announceChannel,
     capacity = d.commitments.latest.capacity,
-    closingTxId = closingType match {
-      case Closing.MutualClose(closingTx) => closingTx.tx.txid
-      case Closing.LocalClose(_, localCommitPublished) => localCommitPublished.commitTx.txid
-      case Closing.CurrentRemoteClose(_, remoteCommitPublished) => remoteCommitPublished.commitTx.txid
-      case Closing.NextRemoteClose(_, remoteCommitPublished) => remoteCommitPublished.commitTx.txid
-      case Closing.RecoveryClose(remoteCommitPublished) => remoteCommitPublished.commitTx.txid
-      case Closing.RevokedClose(revokedCommitPublished) => revokedCommitPublished.commitTx.txid
-    },
+    closingTxId = closingType.closingTxId,
     closingType = closingType.toString,
     closingScript = d.finalScriptPubKey,
     localBalance = closingType match {
@@ -786,11 +796,11 @@ object DATA_CLOSED {
     },
     closingAmount = closingType match {
       case Closing.MutualClose(closingTx) => closingTx.toLocalOutput_opt.map(_.amount).getOrElse(0 sat)
-      case Closing.LocalClose(_, localCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, localCommitPublished)
-      case Closing.CurrentRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, remoteCommitPublished)
-      case Closing.NextRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, remoteCommitPublished)
-      case Closing.RecoveryClose(remoteCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, remoteCommitPublished)
-      case Closing.RevokedClose(revokedCommitPublished) => Closing.closingBalance(d.channelParams, d.commitments.latest.commitmentFormat, d.finalScriptPubKey, revokedCommitPublished)
+      case Closing.LocalClose(_, localCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, localCommitPublished)
+      case Closing.CurrentRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, remoteCommitPublished)
+      case Closing.NextRemoteClose(_, remoteCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, remoteCommitPublished)
+      case Closing.RecoveryClose(remoteCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, remoteCommitPublished)
+      case Closing.RevokedClose(revokedCommitPublished) => Closing.closingBalance(d.finalScriptPubKey, revokedCommitPublished)
     }
   )
 }
@@ -805,7 +815,6 @@ case class LocalChannelParams(nodeId: PublicKey,
                               isChannelOpener: Boolean,
                               paysCommitTxFees: Boolean,
                               upfrontShutdownScript_opt: Option[ByteVector],
-                              walletStaticPaymentBasepoint: Option[PublicKey],
                               // Current connection features, or last features used if the channel is disconnected. Note that
                               // these features are updated at each reconnection and may be different from the channel permanent
                               // features (see [[ChannelFeatures]]).

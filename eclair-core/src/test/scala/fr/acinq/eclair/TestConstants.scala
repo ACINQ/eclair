@@ -29,8 +29,9 @@ import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.offer.OffersConfig
 import fr.acinq.eclair.payment.relay.OnTheFlyFunding
 import fr.acinq.eclair.payment.relay.Relayer.{AsyncPaymentsParams, RelayFees, RelayParams}
-import fr.acinq.eclair.router.Graph.{MessageWeightRatios, HeuristicsConstants}
+import fr.acinq.eclair.profit.{PeerScorer, PeerStatsTracker}
 import fr.acinq.eclair.reputation.Reputation
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessageWeightRatios}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{PathFindingExperimentConf, Router}
 import fr.acinq.eclair.wire.protocol._
@@ -53,6 +54,7 @@ object TestConstants {
   val nonInitiatorPushAmount: MilliSatoshi = 100_000_000L msat
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10_000 sat)
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2_500 sat)
+  val phoenixCommitFeeratePerKw: FeeratePerKw = FeeratePerByte(1 sat).perKw
   val defaultLiquidityRates: LiquidityAds.WillFundRates = LiquidityAds.WillFundRates(
     fundingRates = LiquidityAds.FundingRate(100_000 sat, 10_000_000 sat, 500, 100, 100 sat, 1000 sat) :: Nil,
     paymentTypes = Set(LiquidityAds.PaymentType.FromChannelBalance)
@@ -60,7 +62,7 @@ object TestConstants {
   val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
   val emptyOrigin: Origin.Hot = Origin.Hot(ActorRef.noSender, Upstream.Local(UUID.randomUUID()))
 
-  case object TestFeature extends Feature with InitFeature with NodeFeature {
+  case object PluginFeature extends Feature with InitFeature with NodeFeature {
     val rfcName = "test_feature"
     val mandatory = 50000
   }
@@ -68,7 +70,8 @@ object TestConstants {
   val pluginParams: CustomFeaturePlugin = new CustomFeaturePlugin {
     // @formatter:off
     override def messageTags: Set[Int] = Set(60003)
-    override def feature: Feature = TestFeature
+    override def feature: Feature = PluginFeature
+    override def support: FeatureSupport = FeatureSupport.Optional
     override def name: String = "plugin for testing"
     // @formatter:on
   }
@@ -100,7 +103,7 @@ object TestConstants {
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       torAddress_opt = None,
       features = Features(
-        Map(
+        Map[Feature, FeatureSupport](
           Features.DataLossProtect -> FeatureSupport.Optional,
           Features.ChannelRangeQueries -> FeatureSupport.Optional,
           Features.ChannelRangeQueriesExtended -> FeatureSupport.Optional,
@@ -110,13 +113,15 @@ object TestConstants {
           Features.Wumbo -> FeatureSupport.Optional,
           Features.PaymentMetadata -> FeatureSupport.Optional,
           Features.RouteBlinding -> FeatureSupport.Optional,
+          Features.ShutdownAnySegwit -> FeatureSupport.Optional,
           Features.StaticRemoteKey -> FeatureSupport.Mandatory,
+          Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Optional,
           Features.Quiescence -> FeatureSupport.Optional,
-          Features.SplicePrototype -> FeatureSupport.Optional,
+          Features.Splicing -> FeatureSupport.Optional,
           Features.ProvideStorage -> FeatureSupport.Optional,
-          Features.ChannelType -> FeatureSupport.Mandatory
-        ),
-        unknown = Set(UnknownFeature(TestFeature.optional))
+          Features.ChannelType -> FeatureSupport.Mandatory,
+          PluginFeature -> FeatureSupport.Optional
+        )
       ),
       pluginParams = List(pluginParams),
       overrideInitFeatures = Map.empty,
@@ -155,7 +160,6 @@ object TestConstants {
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hours,
-        acceptIncomingStaticRemoteKeyChannels = false
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
@@ -178,9 +182,11 @@ object TestConstants {
         minTrampolineFees = RelayFees(
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
+        resetExistingChannels = true,
         enforcementDelay = 10 minutes,
         asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
         peerReputationConfig = Reputation.Config(enabled = true, 1 day, 10 minutes),
+        reservedBucket = 0.4,
       ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
@@ -208,7 +214,7 @@ object TestConstants {
         routerBroadcastInterval = 1 day, // "disables" rebroadcast
         syncConf = Router.SyncConf(
           requestNodeAnnouncements = true,
-          encodingType = EncodingType.COMPRESSED_ZLIB,
+          encodingType = EncodingType.UNCOMPRESSED,
           channelRangeChunkSize = 20,
           channelQueryChunkSize = 5,
           peerLimit = 10,
@@ -258,15 +264,43 @@ object TestConstants {
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
       liquidityAdsConfig = LiquidityAds.Config(Some(defaultLiquidityRates), lockUtxos = true),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
-      onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
+      onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds, maxSuspiciousPeers = 1),
       peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour),
+      peerScoringConfig = PeerScorer.Config(
+        enabled = true,
+        scoringFrequency = 1 day,
+        topPeersCount = 10,
+        topPeersWhitelist = Set.empty,
+        liquidity = PeerScorer.LiquidityConfig(
+          autoFund = true,
+          autoClose = true,
+          minFundingAmount = 1_000_000 sat, // 0.01 BTC
+          maxFundingAmount = 100_000_000 sat, // 1 BTC
+          maxPerPeerCapacity = 1_000_000_000 sat, // 10 BTC
+          minOnChainBalance = 5_000_000 sat, // 0.05 BTC
+          localBalanceClosingThreshold = 1_000_000 sat, // 0.01 BTC
+          remoteBalanceClosingThreshold = 1_000_000 sat, // 0.01 BTC
+          idleChannelClosingThresholdPct = 0.1, // 10%
+          maxFeerate = FeeratePerByte(100 sat).perKw,
+          maxFundingTxPerDay = 100,
+          reviveOldPeers = false,
+          fundingCooldown = 72 hours,
+        ),
+        relayFees = PeerScorer.RelayFeesConfig(
+          autoUpdate = true,
+          minRelayFees = RelayFees(1 msat, 500),
+          maxRelayFees = RelayFees(10_000 msat, 5000),
+          dailyPaymentVolumeThreshold = 1_000_000 sat, // 0.01 BTC
+          dailyPaymentVolumeThresholdPercent = 0.1,
+        )
+      ),
+      peerStatsTrackerConfig = PeerStatsTracker.Config(pastEventsInitDelay = 1 millis, pastEventsChunkDelay = 1 millis),
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
     def channelParams: LocalChannelParams = OpenChannelInterceptor.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
-      None,
       None,
       isChannelOpener = true,
       paysCommitTxFees = true,
@@ -306,10 +340,11 @@ object TestConstants {
         Features.Wumbo -> FeatureSupport.Optional,
         Features.PaymentMetadata -> FeatureSupport.Optional,
         Features.RouteBlinding -> FeatureSupport.Optional,
+        Features.ShutdownAnySegwit -> FeatureSupport.Optional,
         Features.StaticRemoteKey -> FeatureSupport.Mandatory,
         Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Optional,
         Features.Quiescence -> FeatureSupport.Optional,
-        Features.SplicePrototype -> FeatureSupport.Optional,
+        Features.Splicing -> FeatureSupport.Optional,
         Features.ChannelType -> FeatureSupport.Mandatory
       ),
       pluginParams = Nil,
@@ -349,7 +384,6 @@ object TestConstants {
         quiescenceTimeout = 2 minutes,
         balanceThresholds = Nil,
         minTimeBetweenUpdates = 0 hour,
-        acceptIncomingStaticRemoteKeyChannels = false
       ),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(funding = ConfirmationPriority.Medium, closing = ConfirmationPriority.Medium),
@@ -372,9 +406,11 @@ object TestConstants {
         minTrampolineFees = RelayFees(
           feeBase = 548000 msat,
           feeProportionalMillionths = 30),
+        resetExistingChannels = true,
         enforcementDelay = 10 minutes,
         asyncPaymentsParams = AsyncPaymentsParams(1008, CltvExpiryDelta(144)),
         peerReputationConfig = Reputation.Config(enabled = true, 2 day, 20 minutes),
+        reservedBucket = 0.3,
       ),
       db = TestDatabases.inMemoryDb(),
       autoReconnect = false,
@@ -452,15 +488,43 @@ object TestConstants {
       revokedHtlcInfoCleanerConfig = RevokedHtlcInfoCleaner.Config(10, 100 millis),
       liquidityAdsConfig = LiquidityAds.Config(Some(defaultLiquidityRates), lockUtxos = true),
       peerWakeUpConfig = PeerReadyNotifier.WakeUpConfig(enabled = false, timeout = 30 seconds),
-      onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds),
+      onTheFlyFundingConfig = OnTheFlyFunding.Config(proposalTimeout = 90 seconds, maxSuspiciousPeers = 1),
       peerStorageConfig = PeerStorageConfig(writeDelay = 5 seconds, removalDelay = 10 seconds, cleanUpFrequency = 1 hour),
+      peerScoringConfig = PeerScorer.Config(
+        enabled = true,
+        scoringFrequency = 1 day,
+        topPeersCount = 10,
+        topPeersWhitelist = Set.empty,
+        liquidity = PeerScorer.LiquidityConfig(
+          autoFund = true,
+          autoClose = true,
+          minFundingAmount = 1_000_000 sat, // 0.01 BTC
+          maxFundingAmount = 100_000_000 sat, // 1 BTC
+          maxPerPeerCapacity = 1_000_000_000 sat, // 10 BTC
+          minOnChainBalance = 5_000_000 sat, // 0.05 BTC
+          localBalanceClosingThreshold = 1_000_000 sat, // 0.01 BTC
+          remoteBalanceClosingThreshold = 1_000_000 sat, // 0.01 BTC
+          idleChannelClosingThresholdPct = 0.1, // 10%
+          maxFeerate = FeeratePerByte(100 sat).perKw,
+          maxFundingTxPerDay = 100,
+          reviveOldPeers = false,
+          fundingCooldown = 72 hours,
+        ),
+        relayFees = PeerScorer.RelayFeesConfig(
+          autoUpdate = true,
+          minRelayFees = RelayFees(1 msat, 500),
+          maxRelayFees = RelayFees(10_000 msat, 5000),
+          dailyPaymentVolumeThreshold = 1_000_000 sat, // 0.01 BTC
+          dailyPaymentVolumeThresholdPercent = 0.1,
+        )
+      ),
+      peerStatsTrackerConfig = PeerStatsTracker.Config(pastEventsInitDelay = 1 millis, pastEventsChunkDelay = 1 millis),
       offersConfig = OffersConfig(messagePathMinLength = 2, paymentPathCount = 2, paymentPathLength = 4, paymentPathCltvExpiryDelta = CltvExpiryDelta(500)),
     )
 
     def channelParams: LocalChannelParams = OpenChannelInterceptor.makeChannelParams(
       nodeParams,
       nodeParams.features.initFeatures(),
-      None,
       None,
       isChannelOpener = false,
       paysCommitTxFees = false,

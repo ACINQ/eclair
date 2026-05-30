@@ -47,6 +47,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
   require(tags.collect { case _: Bolt11Invoice.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case Bolt11Invoice.Description(_) | Bolt11Invoice.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
   require(tags.collect { case _: Bolt11Invoice.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag")
+  require(tags.collect { case f: Bolt11Invoice.FallbackAddress => Try(FallbackAddress(Bolt11Invoice.FallbackAddress.toAddress(f, prefix))) }.forall(_.isSuccess), "invalid fallback address")
   require(Features.validateFeatureGraph(features).isEmpty, Features.validateFeatureGraph(features).map(_.message))
 
   lazy val paymentHash: ByteVector32 = tags.collectFirst { case p: Bolt11Invoice.PaymentHash => p.hash }.get
@@ -71,6 +72,8 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
   lazy val minFinalCltvExpiryDelta: CltvExpiryDelta = tags.collectFirst { case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta }.getOrElse(DEFAULT_MIN_CLTV_EXPIRY_DELTA)
 
   override lazy val features: Features[InvoiceFeature] = tags.collectFirst { case f: InvoiceFeatures => f.features.invoiceFeatures() }.getOrElse(Features.empty)
+
+  override lazy val accountable: Boolean = tags.collectFirst { case a: Accountable => a }.nonEmpty
 
   /**
    * @return the hash of this payment invoice
@@ -147,8 +150,9 @@ object Bolt11Invoice {
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
+        Some(Accountable()),
         // We want to keep invoices as small as possible, so we explicitly remove unknown features.
-        Some(InvoiceFeatures(features.copy(unknown = Set.empty).unscoped()))
+        Some(InvoiceFeatures(features.copy(encoded_opt = None).unscoped()))
       ).flatten
       val routingInfoTags = extraHops.filter(_.nonEmpty).map(RoutingInfo)
       defaultTags ++ routingInfoTags
@@ -196,7 +200,7 @@ object Bolt11Invoice {
   case class UnknownTag28(data: BitVector) extends UnknownTaggedField
   case class UnknownTag29(data: BitVector) extends UnknownTaggedField
   case class UnknownTag30(data: BitVector) extends UnknownTaggedField
-  case class UnknownTag31(data: BitVector) extends UnknownTaggedField
+  case class InvalidTag31(data: BitVector) extends InvalidTaggedField
   // @formatter:on
 
   /**
@@ -269,19 +273,23 @@ object Bolt11Invoice {
     }
 
     def toAddress(f: FallbackAddress, prefix: String): String = {
-      import f.data
       f.version match {
-        case 17 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.PubkeyAddress, data.toArray)
-        case 18 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.ScriptAddress, data.toArray)
-        case 17 if prefix == "lntb" || prefix == "lnbcrt" || prefix == "lntbs" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, data.toArray)
-        case 18 if prefix == "lntb" || prefix == "lnbcrt" || prefix == "lntbs" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, data.toArray)
-        case version if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, data.toArray)
-        case version if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, data.toArray)
-        case version if prefix == "lnbcrt" => Bech32.encodeWitnessAddress("bcrt", version, data.toArray)
-        case version if prefix == "lntbs" => Bech32.encodeWitnessAddress("tb", version, data.toArray)
+        case 17 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.PubkeyAddress, f.data.toArray)
+        case 18 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.ScriptAddress, f.data.toArray)
+        case 17 if prefix == "lntb" || prefix == "lnbcrt" || prefix == "lntbs" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, f.data.toArray)
+        case 18 if prefix == "lntb" || prefix == "lnbcrt" || prefix == "lntbs" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, f.data.toArray)
+        case version if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, f.data.toArray)
+        case version if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, f.data.toArray)
+        case version if prefix == "lnbcrt" => Bech32.encodeWitnessAddress("bcrt", version, f.data.toArray)
+        case version if prefix == "lntbs" => Bech32.encodeWitnessAddress("tb", version, f.data.toArray)
       }
     }
   }
+
+  /**
+   * Present if the recipient is willing to be held accountable for the timely resolution of HTLCs.
+   */
+  case class Accountable() extends TaggedField
 
   /**
    * This returns a bitvector with the minimum size necessary to encode the long, left padded to have a length (in bits)
@@ -439,7 +447,10 @@ object Bolt11Invoice {
       .typecase(28, dataCodec(bits).as[UnknownTag28])
       .typecase(29, dataCodec(bits).as[UnknownTag29])
       .typecase(30, dataCodec(bits).as[UnknownTag30])
-      .typecase(31, dataCodec(bits).as[UnknownTag31])
+      .\(31) {
+        case _: Accountable => Accountable()
+        case a: InvalidTag31 => a: TaggedField
+      }(choice(dataCodec(provide(Accountable()), expectedLength = Some(0)).upcast[TaggedField], dataCodec(bits).as[InvalidTag31].upcast[TaggedField]))
 
     private def fixedSizeTrailingCodec[A](codec: Codec[A], size: Int): Codec[A] = Codec[A](
       (data: A) => codec.encode(data),
@@ -516,11 +527,11 @@ object Bolt11Invoice {
     val lowercaseInput = input.toLowerCase
     val separatorIndex = lowercaseInput.lastIndexOf('1')
     val hrp = lowercaseInput.take(separatorIndex)
-    val prefix: String = prefixes.values.toSeq.sortBy(_.length).findLast(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
+    val prefix = prefixes.values.toSeq.sortBy(_.length).findLast(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
     val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.length - 6)) // 6 == checksum size
     val bolt11Data = Codecs.bolt11DataCodec.decode(data).require.value
     val signature = ByteVector64(bolt11Data.signature.take(64))
-    val message: ByteVector = ByteVector.view(hrp.getBytes) ++ data.dropRight(520).toByteVector // we drop the sig bytes
+    val message = ByteVector.view(hrp.getBytes) ++ data.dropRight(520).toByteVector // we drop the sig bytes
     val recid = bolt11Data.signature.last
     val pub = Crypto.recoverPublicKey(signature, Crypto.sha256(message), recid)
     // README: since we use pubkey recovery to compute the node id from the message and signature, we don't check the signature.

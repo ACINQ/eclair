@@ -126,6 +126,7 @@ object Monitoring {
       val WakeUp = "WakeUp"
       val Remote = "Remote"
       val Malformed = "MalformedHtlc"
+      val Jamming = "Jamming"
 
       def apply(cmdFail: CMD_FAIL_HTLC): String = cmdFail.reason match {
         case _: FailureReason.EncryptedDownstreamFailure => Remote
@@ -134,7 +135,7 @@ object Monitoring {
 
       def apply(pf: PaymentFailure): String = pf match {
         case LocalFailure(_, _, t) => t.getClass.getSimpleName
-        case RemoteFailure(_, _, e) => e.failureMessage.getClass.getSimpleName
+        case RemoteFailure(_, _, e, _, _) => e.failureMessage.getClass.getSimpleName
         case _: UnreadableRemoteFailure => "UnreadableRemoteFailure"
       }
     }

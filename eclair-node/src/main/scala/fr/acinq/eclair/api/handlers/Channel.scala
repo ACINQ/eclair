@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.scalacompat.{Satoshi, Script}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
-import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte}
 import fr.acinq.eclair.channel.{ChannelTypes, ClosingFeerates}
 import fr.acinq.eclair.{MilliSatoshi, Paginated}
 import scodec.bits.ByteVector
@@ -32,26 +32,19 @@ trait Channel {
 
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
-  val supportedChannelTypes = Set(
-    ChannelTypes.Standard(),
-    ChannelTypes.Standard(zeroConf = true),
-    ChannelTypes.Standard(scidAlias = true),
-    ChannelTypes.Standard(scidAlias = true, zeroConf = true),
-    ChannelTypes.StaticRemoteKey(),
-    ChannelTypes.StaticRemoteKey(zeroConf = true),
-    ChannelTypes.StaticRemoteKey(scidAlias = true),
-    ChannelTypes.StaticRemoteKey(scidAlias = true, zeroConf = true),
-    ChannelTypes.AnchorOutputs(),
-    ChannelTypes.AnchorOutputs(zeroConf = true),
-    ChannelTypes.AnchorOutputs(scidAlias = true),
-    ChannelTypes.AnchorOutputs(scidAlias = true, zeroConf = true),
+  private val supportedChannelTypes = Set(
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(zeroConf = true),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true),
     ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true, zeroConf = true),
-    ChannelTypes.SimpleTaprootChannelsStaging(),
-    ChannelTypes.SimpleTaprootChannelsStaging(scidAlias = true),
-    ChannelTypes.SimpleTaprootChannelsStaging(scidAlias = true, zeroConf = true)
+    ChannelTypes.SimpleTaprootChannel(),
+    ChannelTypes.SimpleTaprootChannel(zeroConf = true),
+    ChannelTypes.SimpleTaprootChannel(scidAlias = true),
+    ChannelTypes.SimpleTaprootChannel(scidAlias = true, zeroConf = true),
+    ChannelTypes.ZeroFeeCommitments(),
+    ChannelTypes.ZeroFeeCommitments(zeroConf = true),
+    ChannelTypes.ZeroFeeCommitments(scidAlias = true),
+    ChannelTypes.ZeroFeeCommitments(scidAlias = true, zeroConf = true),
   ).map(ct => ct.toString -> ct).toMap // we use the toString method as name in the api
 
   val open: Route = postRequest("open") { implicit t =>
@@ -164,18 +157,10 @@ trait Channel {
     }
   }
 
-  val channelStats: Route = postRequest("channelstats") { implicit t =>
-    withPaginated { paginated_opt =>
-      formFields(fromFormParam(), toFormParam()) { (from, to) =>
-        complete(eclairApi.channelStats(from, to, paginated_opt.orElse(Some(Paginated(count = 10, skip = 0)))))
-      }
-    }
-  }
-
   val channelBalances: Route = postRequest("channelbalances") { implicit t =>
     complete(eclairApi.channelBalances())
   }
 
-  val channelRoutes: Route = open ~ rbfOpen ~ spliceIn ~ spliceOut ~ rbfSplice ~ close ~ forceClose ~ bumpForceClose ~ channel ~ channels ~ closedChannels ~ allChannels ~ allUpdates ~ channelStats ~ channelBalances
+  val channelRoutes: Route = open ~ rbfOpen ~ spliceIn ~ spliceOut ~ rbfSplice ~ close ~ forceClose ~ bumpForceClose ~ channel ~ channels ~ closedChannels ~ allChannels ~ allUpdates ~ channelBalances
 
 }

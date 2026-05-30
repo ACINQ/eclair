@@ -188,6 +188,9 @@ object OnionPaymentPayloadTlv {
 
   /** Blinded paths to relay the payment to */
   case class OutgoingBlindedPaths(paths: Seq[PaymentBlindedRoute]) extends OnionPaymentPayloadTlv
+
+  /** Flag to allow forwarding nodes to set `accountable` in their `update_add_htlc` */
+  case class UpgradeAccountability() extends OnionPaymentPayloadTlv
 }
 
 object PaymentOnion {
@@ -219,6 +222,14 @@ object PaymentOnion {
   /** Per-hop payload from an HTLC's payment onion (after decryption and decoding). */
   sealed trait PerHopPayload {
     def records: TlvStream[OnionPaymentPayloadTlv]
+
+    def upgradeAccountability: Boolean = records.get[UpgradeAccountability].nonEmpty
+  }
+
+  sealed trait BlindedPayload extends PerHopPayload {
+    def blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]
+
+    override def upgradeAccountability: Boolean = blindedRecords.get[RouteBlindingEncryptedDataTlv.UpgradeAccountability].nonEmpty
   }
 
   /** Per-hop payload for an intermediate node. */
@@ -246,8 +257,14 @@ object PaymentOnion {
       }
 
       object Standard {
-        def apply(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry): Standard = {
-          Standard(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amountToForward), OnionPaymentPayloadTlv.OutgoingCltv(outgoingCltv), OnionPaymentPayloadTlv.OutgoingChannelId(outgoingChannelId)))
+        def apply(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry, upgradeAccountability: Boolean): Standard = {
+          val tlvs: Set[OnionPaymentPayloadTlv] = Set(
+            Some(AmountToForward(amountToForward)),
+            Some(OutgoingCltv(outgoingCltv)),
+            Some(OutgoingChannelId(outgoingChannelId)),
+            if (upgradeAccountability) Some(UpgradeAccountability()) else None
+          ).flatten
+          Standard(TlvStream(tlvs))
         }
 
         def validate(records: TlvStream[OnionPaymentPayloadTlv]): Either[InvalidTlvPayload, Standard] = {
@@ -262,11 +279,12 @@ object PaymentOnion {
        * @param paymentRelayData decrypted relaying data from the encrypted_recipient_data tlv.
        * @param nextPathKey      path key that must be forwarded to the next hop.
        */
-      case class Blinded(records: TlvStream[OnionPaymentPayloadTlv], paymentRelayData: PaymentRelayData, nextPathKey: PublicKey) extends ChannelRelay {
+      case class Blinded(records: TlvStream[OnionPaymentPayloadTlv], paymentRelayData: PaymentRelayData, nextPathKey: PublicKey) extends ChannelRelay with BlindedPayload {
         // @formatter:off
         override val outgoing = paymentRelayData.outgoing
         override def amountToForward(incomingAmount: MilliSatoshi): MilliSatoshi = paymentRelayData.amountToForward(incomingAmount)
         override def outgoingCltv(incomingCltv: CltvExpiry): CltvExpiry = paymentRelayData.outgoingCltv(incomingCltv)
+        override val blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv] = paymentRelayData.records
         // @formatter:on
       }
 
@@ -309,8 +327,14 @@ object PaymentOnion {
       }
 
       object Standard {
-        def apply(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey): Standard = {
-          Standard(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(nextNodeId)))
+        def apply(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey, upgradeAccountability: Boolean): Standard = {
+          val tlvs: Set[OnionPaymentPayloadTlv] = Set(
+            Some(AmountToForward(amount)),
+            Some(OutgoingCltv(expiry)),
+            Some(OutgoingNodeId(nextNodeId)),
+            if (upgradeAccountability) Some(UpgradeAccountability()) else None
+          ).flatten
+          Standard(TlvStream(tlvs))
         }
 
         def validate(records: TlvStream[OnionPaymentPayloadTlv]): Either[InvalidTlvPayload, Standard] = {
@@ -323,8 +347,15 @@ object PaymentOnion {
         }
 
         /** Create a standard trampoline inner payload instructing the trampoline node to wait for a trigger before sending an async payment. */
-        def createNodeRelayForAsyncPayment(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey): Standard = {
-          Standard(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(nextNodeId), AsyncPayment()))
+        def createNodeRelayForAsyncPayment(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey, upgradeAccountability: Boolean): Standard = {
+          val tlvs: Set[OnionPaymentPayloadTlv] = Set(
+            Some(AmountToForward(amount)),
+            Some(OutgoingCltv(expiry)),
+            Some(OutgoingNodeId(nextNodeId)),
+            Some(AsyncPayment()),
+            if (upgradeAccountability) Some(UpgradeAccountability()) else None
+          ).flatten
+          Standard(TlvStream(tlvs))
         }
       }
 
@@ -357,7 +388,8 @@ object PaymentOnion {
             invoice.paymentMetadata.map(m => PaymentMetadata(m)),
             Some(OutgoingNodeId(targetNodeId)),
             Some(InvoiceFeatures(invoice.features.toByteVector)),
-            Some(InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
+            Some(InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList))),
+            if (invoice.accountable) Some(UpgradeAccountability()) else None
           ).flatten
           ToNonTrampoline(TlvStream(tlvs))
         }
@@ -394,6 +426,7 @@ object PaymentOnion {
             Some(OutgoingCltv(expiry)),
             Some(OutgoingBlindedPaths(invoice.blindedPaths)),
             Some(InvoiceFeatures(invoice.features.toByteVector)),
+            if (invoice.accountable) Some(UpgradeAccountability()) else None
           ).flatten
           ToBlindedPaths(TlvStream(tlvs))
         }
@@ -443,13 +476,14 @@ object PaymentOnion {
         Right(Standard(records))
       }
 
-      def createPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector] = None, trampolineOnion_opt: Option[OnionRoutingPacket] = None, customTlvs: Set[GenericTlv] = Set.empty): Standard = {
+      def createPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector] = None, trampolineOnion_opt: Option[OnionRoutingPacket] = None, customTlvs: Set[GenericTlv] = Set.empty, upgradeAccountability: Boolean): Standard = {
         val tlvs: Set[OnionPaymentPayloadTlv] = Set(
           Some(AmountToForward(amount)),
           Some(OutgoingCltv(expiry)),
           Some(PaymentData(paymentSecret, totalAmount)),
           paymentMetadata.map(m => PaymentMetadata(m)),
           trampolineOnion_opt.map(o => TrampolineOnion(o)),
+          if (upgradeAccountability) Some(UpgradeAccountability()) else None
         ).flatten
         Standard(TlvStream(tlvs, customTlvs))
       }
@@ -464,15 +498,22 @@ object PaymentOnion {
       }
 
       /** Create a trampoline outer payload. */
-      def createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): Standard = {
-        Standard(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount), TrampolineOnion(trampolinePacket)))
+      def createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket, upgradeAccountability: Boolean): Standard = {
+        val tlvs: Set[OnionPaymentPayloadTlv] = Set(
+          Some(AmountToForward(amount)),
+          Some(OutgoingCltv(expiry)),
+          Some(PaymentData(paymentSecret, totalAmount)),
+          Some(TrampolineOnion(trampolinePacket)),
+          if (upgradeAccountability) Some(UpgradeAccountability()) else None
+        ).flatten
+        Standard(TlvStream(tlvs))
       }
     }
 
     /**
      * @param blindedRecords decrypted tlv stream from the encrypted_recipient_data tlv.
      */
-    case class Blinded(records: TlvStream[OnionPaymentPayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]) extends FinalPayload {
+    case class Blinded(records: TlvStream[OnionPaymentPayloadTlv], blindedRecords: TlvStream[RouteBlindingEncryptedDataTlv]) extends FinalPayload with BlindedPayload {
       override val amount = records.get[AmountToForward].get.amount
       override val totalAmount = records.get[TotalAmount].map(_.totalAmount).getOrElse(amount)
       override val expiry = records.get[OutgoingCltv].get.cltv
@@ -543,8 +584,14 @@ object PaymentOnion {
   }
 
   object TrampolineWithoutMppPayload {
-    def create(amount: MilliSatoshi, expiry: CltvExpiry, trampolinePacket: OnionRoutingPacket): TrampolineWithoutMppPayload = {
-      TrampolineWithoutMppPayload(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), TrampolineOnion(trampolinePacket)))
+    def create(amount: MilliSatoshi, expiry: CltvExpiry, trampolinePacket: OnionRoutingPacket, upgradeAccountability: Boolean): TrampolineWithoutMppPayload = {
+      val tlvs: Set[OnionPaymentPayloadTlv] = Set(
+        Some(AmountToForward(amount)),
+        Some(OutgoingCltv(expiry)),
+        Some(TrampolineOnion(trampolinePacket)),
+        if (upgradeAccountability) Some(UpgradeAccountability()) else None
+      ).flatten
+      TrampolineWithoutMppPayload(TlvStream(tlvs))
     }
   }
 
@@ -586,6 +633,8 @@ object PaymentOnionCodecs {
 
   private val totalAmount: Codec[TotalAmount] = tlvField(tmillisatoshi)
 
+  private val upgradeAccountability: Codec[UpgradeAccountability] = tlvField(provide(UpgradeAccountability()))
+
   private val invoiceFeatures: Codec[InvoiceFeatures] = tlvField(bytes)
 
   private val invoiceRoutingInfo: Codec[InvoiceRoutingInfo] = tlvField(list(listOfN(uint8, Bolt11Invoice.Codecs.extraHopCodec)))
@@ -612,6 +661,7 @@ object PaymentOnionCodecs {
     .typecase(UInt64(12), pathKey)
     .typecase(UInt64(16), paymentMetadata)
     .typecase(UInt64(18), totalAmount)
+    .typecase(UInt64(19), upgradeAccountability)
     // Types below aren't specified - use cautiously when deploying (be careful with backwards-compatibility).
     .typecase(UInt64(66097), invoiceFeatures)
     .typecase(UInt64(66098), outgoingNodeId)

@@ -74,6 +74,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val postman = TestProbe()
     val offerManager = TestProbe()
     val defaultOfferHandler = TestProbe()
+    val peerScorer = TestProbe()
     val kit = Kit(
       TestConstants.Alice.nodeParams.copy(routerConf = TestConstants.Alice.nodeParams.routerConf.copy(blip18InboundFees = true)),
       system,
@@ -90,6 +91,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       postman.ref.toTyped,
       offerManager.ref.toTyped,
       defaultOfferHandler.ref.toTyped,
+      Some(peerScorer.ref.toTyped),
       new DummyOnChainWallet()
     )
     withFixture(test.toNoArgTest(FixtureParam(register, relayer, router, paymentInitiator, switchboard, paymentHandler, TestProbe(), kit)))
@@ -107,10 +109,10 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(open.fundingTxFeerate_opt.contains(FeeratePerKw(1250 sat)))
 
     // check that minimum fee rate of 253 sat/bw is used
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = Some(ChannelTypes.StaticRemoteKey()), fundingFeerate_opt = Some(FeeratePerByte(1 sat)), fundingFeeBudget_opt = None, announceChannel_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), fundingFeerate_opt = Some(FeeratePerByte(1 sat)), fundingFeeBudget_opt = None, announceChannel_opt = None, openTimeout_opt = None)
     val open1 = switchboard.expectMsgType[OpenChannel]
     assert(open1.fundingTxFeerate_opt.contains(FeeratePerKw.MinimumFeeratePerKw))
-    assert(open1.channelType_opt.contains(ChannelTypes.StaticRemoteKey()))
+    assert(open1.channelType_opt.contains(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))
   }
 
   test("call send with passing correct arguments") { f =>
@@ -343,7 +345,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kit)
     val route = PredefinedNodeRoute(1000 msat, Seq(randomKey().publicKey))
     val parentId = UUID.randomUUID()
-    val secret = randomBytes32()
     val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), Right(randomBytes32()), CltvExpiryDelta(18))
     eclair.sendToRoute(Some(1200 msat), Some("42"), Some(parentId), pr, route)
     val sendPaymentToRoute = paymentInitiator.expectMsgType[SendPaymentToRoute]
@@ -582,9 +583,10 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     import f._
 
     val eclair = new EclairImpl(kit)
+    val startedAt = TimestampMilli.now()
 
     // A first payment has been sent out and is currently pending.
-    val pendingPayment1 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, randomBytes32(), "test", 500 msat, 750 msat, randomKey().publicKey, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Pending)
+    val pendingPayment1 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, randomBytes32(), "test", 500 msat, 750 msat, randomKey().publicKey, startedAt, None, None, OutgoingPaymentStatus.Pending)
     kit.nodeParams.db.payments.addOutgoingPayment(pendingPayment1)
     eclair.sentInfo(PaymentIdentifier.PaymentUUID(pendingPayment1.parentId)).pipeTo(sender.ref)
     sender.expectMsg(Seq(pendingPayment1))
@@ -612,9 +614,9 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     // A third payment is fully settled in the DB and not being retried.
     val failedAt = TimestampMilli.now()
-    val failedPayment = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, spontaneousPayment.paymentHash, "test", 700 msat, 900 msat, randomKey().publicKey, TimestampMilli.now(), None, None, OutgoingPaymentStatus.Failed(Nil, failedAt))
+    val failedPayment = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), None, spontaneousPayment.paymentHash, "test", 700 msat, 900 msat, randomKey().publicKey, startedAt, None, None, OutgoingPaymentStatus.Failed(Nil, failedAt))
     kit.nodeParams.db.payments.addOutgoingPayment(failedPayment.copy(status = OutgoingPaymentStatus.Pending))
-    kit.nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(failedPayment.id, failedPayment.paymentHash, Nil, failedAt))
+    kit.nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(failedPayment.id, failedPayment.paymentHash, Nil, startedAt, failedAt))
     eclair.sentInfo(PaymentIdentifier.PaymentUUID(failedPayment.parentId)).pipeTo(sender.ref)
     paymentInitiator.expectMsg(GetPayment(PaymentIdentifier.PaymentUUID(failedPayment.parentId)))
     paymentInitiator.reply(NoPendingPayment(PaymentIdentifier.PaymentUUID(failedPayment.parentId)))

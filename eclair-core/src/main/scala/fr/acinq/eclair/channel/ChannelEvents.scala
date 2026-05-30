@@ -21,8 +21,9 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Satoshi, Transaction, TxId}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.ClosingType
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, HtlcFailureMessage, LiquidityAds, UpdateAddHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshi, RealShortChannelId, ShortChannelId}
+import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{BlockHeight, CltvExpiry, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli}
 
 /**
  * Created by PM on 17/08/2016.
@@ -30,6 +31,7 @@ import fr.acinq.eclair.{BlockHeight, Features, MilliSatoshi, RealShortChannelId,
 
 trait ChannelEvent
 
+/** This event is sent when a channel has been created: however, it may not be ready to process payments yet (see [[ChannelReadyForPayments]]). */
 case class ChannelCreated(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isOpener: Boolean, temporaryChannelId: ByteVector32, commitTxFeerate: FeeratePerKw, fundingTxFeerate: Option[FeeratePerKw]) extends ChannelEvent
 
 // This trait can be used by non-standard channels to inject themselves into Register actor and thus make them usable for routing
@@ -50,11 +52,16 @@ case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, an
 /** This event will be sent if a channel was aborted before completing the opening flow. */
 case class ChannelAborted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32) extends ChannelEvent
 
-/** This event will be sent once a channel has been successfully opened and is ready to process payments. */
-case class ChannelOpened(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32) extends ChannelEvent
+/** This event is sent once a funding transaction (channel creation or splice) is ready to be published. */
+case class ChannelFundingCreated(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, fundingTx: Either[TxId, Transaction], fundingTxIndex: Long, commitments: Commitments) extends ChannelEvent {
+  val fundingTxId: TxId = fundingTx.fold(txId => txId, tx => tx.txid)
+}
 
-/** This event is sent once channel_ready or splice_locked have been exchanged. */
-case class ChannelReadyForPayments(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, fundingTxIndex: Long) extends ChannelEvent
+/** This event is sent once a funding transaction (channel creation or splice) has been confirmed. */
+case class ChannelFundingConfirmed(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, fundingTxId: TxId, fundingTxIndex: Long, blockHeight: BlockHeight, commitments: Commitments, previousCommitments: Commitments) extends ChannelEvent
+
+/** This event is sent once channel_ready or splice_locked have been exchanged: the channel is ready to process payments. */
+case class ChannelReadyForPayments(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, fundingTxId: TxId, fundingTxIndex: Long) extends ChannelEvent
 
 case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, aliases: ShortIdAliases, remoteNodeId: PublicKey, announcement_opt: Option[AnnouncedCommitment], channelUpdate: ChannelUpdate, commitments: Commitments) extends ChannelEvent {
   /**
@@ -91,10 +98,19 @@ case class ChannelLiquidityPurchased(channel: ActorRef, channelId: ByteVector32,
 
 case class ChannelErrorOccurred(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, error: ChannelError, isFatal: Boolean) extends ChannelEvent
 
-// NB: the fee should be set to 0 when we're not paying it.
-case class TransactionPublished(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction, miningFee: Satoshi, desc: String) extends ChannelEvent
+/**
+ * We published a transaction related to the given [[channelId]].
+ *
+ * @param localMiningFee        mining fee paid by us in the given [[tx]].
+ * @param remoteMiningFee       mining fee paid by our channel peer in the given [[tx]].
+ * @param liquidityPurchase_opt optional liquidity purchase included in this transaction.
+ */
+case class TransactionPublished(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction, localMiningFee: Satoshi, remoteMiningFee: Satoshi, desc: String, liquidityPurchase_opt: Option[LiquidityAds.PurchaseBasicInfo], timestamp: TimestampMilli = TimestampMilli.now()) extends ChannelEvent {
+  val miningFee: Satoshi = localMiningFee + remoteMiningFee
+  val feerate: FeeratePerKw = Transactions.fee2rate(miningFee, tx.weight())
+}
 
-case class TransactionConfirmed(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction) extends ChannelEvent
+case class TransactionConfirmed(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction, timestamp: TimestampMilli = TimestampMilli.now()) extends ChannelEvent
 
 // NB: this event is only sent when the channel is available.
 case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, aliases: ShortIdAliases, commitments: Commitments, lastAnnouncement_opt: Option[ChannelAnnouncement]) extends ChannelEvent
@@ -103,11 +119,16 @@ case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelI
 
 case class LocalCommitConfirmed(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, refundAtBlock: BlockHeight) extends ChannelEvent
 
-case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, commitments: Commitments) extends ChannelEvent
+case class ChannelClosed(channel: ActorRef, channelId: ByteVector32, closingType: ClosingType, closingTxId: TxId, commitments: Commitments) extends ChannelEvent
 
-case class OutgoingHtlcAdded(add: UpdateAddHtlc, remoteNodeId: PublicKey, upstream: Upstream.Hot, fee: MilliSatoshi)
+/** An outgoing HTLC was sent to our channel peer: we're waiting for it to be settled. */
+case class OutgoingHtlcAdded(add: UpdateAddHtlc, remoteNodeId: PublicKey, fee: MilliSatoshi) extends ChannelEvent
 
-sealed trait OutgoingHtlcSettled
+/** An outgoing HTLC could not be sent through the given channel. */
+case class OutgoingHtlcNotAdded(channelId: ByteVector32, remoteNodeId: PublicKey, paymentHash: ByteVector32, amount: MilliSatoshi, expiry: CltvExpiry, reason: ChannelException) extends ChannelEvent
+
+/** An outgoing HTLC was settled by our channel peer. */
+sealed trait OutgoingHtlcSettled extends ChannelEvent
 
 case class OutgoingHtlcFailed(fail: HtlcFailureMessage) extends OutgoingHtlcSettled
 

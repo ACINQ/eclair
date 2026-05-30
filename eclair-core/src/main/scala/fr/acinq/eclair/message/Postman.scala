@@ -218,6 +218,9 @@ private class SendingMessage(nodeParams: NodeParams,
         replyTo ! Postman.MessageFailed(failure.toString)
         Behaviors.stopped
       case Right(message) =>
+        if (expectsReply) {
+          postman ! Postman.Subscribe(messageId, replyTo)
+        }
         val nextNodeId = EncodedNodeId.WithPublicKey.Plain(intermediateNodes.headOption.getOrElse(plainNodeId))
         val relay = context.spawn(Behaviors.supervise(MessageRelay(nodeParams, switchboard, register, router)).onFailure(typed.SupervisorStrategy.stop), s"relay-message-$messageId")
         relay ! MessageRelay.RelayMessage(messageId, nodeParams.nodeId, Right(nextNodeId), message, MessageRelay.RelayAll, Some(context.messageAdapter[MessageRelay.Status](SendingStatus)))
@@ -228,9 +231,7 @@ private class SendingMessage(nodeParams: NodeParams,
   private def waitForSent(): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case SendingStatus(MessageRelay.Sent(messageId)) =>
-        if (expectsReply) {
-          postman ! Postman.Subscribe(messageId, replyTo)
-        } else {
+        if (!expectsReply) {
           replyTo ! Postman.MessageSent
         }
         Behaviors.stopped

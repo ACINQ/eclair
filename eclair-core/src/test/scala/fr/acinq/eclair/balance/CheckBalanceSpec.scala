@@ -108,7 +108,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_CLOSING]), recentlySpentInputs = Set(closingTxInput)).closing == expected)
   }
 
-  test("channel closed with remote commit tx", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("channel closed with remote commit tx") { f =>
     import f._
 
     // We add 3 htlcs Alice -> Bob (one of them below dust) and 2 htlcs Bob -> Alice
@@ -128,7 +128,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     // In response to that, alice publishes her claim txs.
     alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main")
     val mainAmount = bobCommitTx.txOut(claimMain.input.index.toInt).amount
     val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo)
     assert(claimHtlcTxs.collect { case tx: ClaimHtlcSuccessTx => tx }.size == 1)
@@ -161,7 +161,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(balance4 == expected4)
   }
 
-  test("channel closed with next remote commit tx", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("channel closed with next remote commit tx") { f =>
     import f._
 
     // We add 3 htlcs Alice -> Bob (one of them below dust) and 2 htlcs Bob -> Alice.
@@ -185,7 +185,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     // In response to that, alice publishes her claim txs
     alice2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx]
-    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main-delayed")
+    val claimMain = alice2blockchain.expectFinalTxPublished("remote-main")
     val mainAmount = bobCommitTx.txOut(claimMain.input.index.toInt).amount
     (1 to 2).map(_ => alice2blockchain.expectReplaceableTxPublished[ClaimHtlcTimeoutTx])
     alice ! WatchTxConfirmedTriggered(BlockHeight(600_000), 5, bobCommitTx)

@@ -168,7 +168,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
   override def updateOutgoingPayment(paymentResult: PaymentSent): Unit = withMetrics("payments/update-outgoing-sent", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, payment_preimage, fees_msat, payment_route) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
       paymentResult.parts.foreach(p => {
-        statement.setLong(1, p.timestamp.toLong)
+        statement.setLong(1, p.settledAt.toLong)
         statement.setBytes(2, paymentResult.paymentPreimage.toArray)
         statement.setLong(3, p.feesPaid.toLong)
         statement.setBytes(4, encodeRoute(p.route.getOrElse(Nil).map(h => HopSummary(h)).toList))
@@ -181,7 +181,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
 
   override def updateOutgoingPayment(paymentResult: PaymentFailed): Unit = withMetrics("payments/update-outgoing-failed", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, failures) = (?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
-      statement.setLong(1, paymentResult.timestamp.toLong)
+      statement.setLong(1, paymentResult.settledAt.toLong)
       statement.setBytes(2, encodeFailures(paymentResult.failures.map(f => FailureSummary(f)).toList))
       statement.setString(3, paymentResult.id.toString)
       if (statement.executeUpdate() == 0) throw new IllegalArgumentException(s"Tried to mark an outgoing payment as failed but already in final status (id=${paymentResult.id})")

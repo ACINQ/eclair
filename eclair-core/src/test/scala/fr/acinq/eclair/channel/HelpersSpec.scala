@@ -32,7 +32,7 @@ import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestKitBaseClass, TimestampSecond, TimestampSecondLong, randomKey}
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuiteLike
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.HexStringSyntax
 
 import java.util.UUID
 import scala.concurrent.duration._
@@ -69,14 +69,14 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     awaitCond(bob.stateName == NORMAL)
     // We have two identical HTLCs (MPP):
     val (_, htlca1a) = addHtlc(15_000_000 msat, alice, bob, alice2bob, bob2alice)
-    val aliceMppCmd = CMD_ADD_HTLC(TestProbe().ref, 15_000_000 msat, htlca1a.paymentHash, htlca1a.cltvExpiry, htlca1a.onionRoutingPacket, None, Reputation.Score.max, None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
+    val aliceMppCmd = CMD_ADD_HTLC(TestProbe().ref, 15_000_000 msat, htlca1a.paymentHash, htlca1a.cltvExpiry, htlca1a.onionRoutingPacket, None, Reputation.Score.max(accountable = false), None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
     val htlca1b = addHtlc(aliceMppCmd, alice, bob, alice2bob, bob2alice)
     val (ra2, htlca2) = addHtlc(16_000_000 msat, alice, bob, alice2bob, bob2alice)
     addHtlc(500_000 msat, alice, bob, alice2bob, bob2alice) // below dust
     crossSign(alice, bob, alice2bob, bob2alice)
     // We have two identical HTLCs (MPP):
     val (_, htlcb1a) = addHtlc(17_000_000 msat, bob, alice, bob2alice, alice2bob)
-    val bobMppCmd = CMD_ADD_HTLC(TestProbe().ref, 17_000_000 msat, htlcb1a.paymentHash, htlcb1a.cltvExpiry, htlcb1a.onionRoutingPacket, None, Reputation.Score.max, None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
+    val bobMppCmd = CMD_ADD_HTLC(TestProbe().ref, 17_000_000 msat, htlcb1a.paymentHash, htlcb1a.cltvExpiry, htlcb1a.onionRoutingPacket, None, Reputation.Score.max(accountable = false), None, Origin.Hot(TestProbe().ref, Upstream.Local(UUID.randomUUID())))
     val htlcb1b = addHtlc(bobMppCmd, bob, alice, bob2alice, alice2bob)
     val (rb2, htlcb2) = addHtlc(18_000_000 msat, bob, alice, bob2alice, alice2bob)
     addHtlc(400_000 msat, bob, alice, bob2alice, alice2bob) // below dust
@@ -114,7 +114,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     val rcp = bob.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
     rcp.anchorOutput_opt.foreach(_ => bob2blockchain.expectReplaceableTxPublished[ClaimRemoteAnchorTx])
-    rcp.localOutput_opt.foreach(_ => bob2blockchain.expectFinalTxPublished("remote-main-delayed"))
+    rcp.localOutput_opt.foreach(_ => bob2blockchain.expectFinalTxPublished("remote-main"))
     // Bob is missing the preimage for 2 of the HTLCs she received.
     assert(rcp.htlcOutputs.size == 6)
     val claimHtlcTxs = (0 until 4).map(_ => bob2blockchain.expectMsgType[PublishReplaceableTx])
@@ -174,12 +174,12 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     bobClaimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(localKeys, localCommitment, localCommit, claimHtlcTimeout.sign()).isEmpty))
   }
 
-  test("find timed out htlcs (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) {
-    findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputs)))
+  test("find timed out htlcs") {
+    findTimedOutHtlcs(setupHtlcs())
   }
 
-  test("find timed out htlcs (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) {
-    findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)))
+  test("find timed out htlcs (anchor outputs phoenix)", Tag(ChannelStateTestsTags.AnchorOutputsPhoenix)) {
+    findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputsPhoenix)))
   }
 
   test("check closing tx amounts above dust") {

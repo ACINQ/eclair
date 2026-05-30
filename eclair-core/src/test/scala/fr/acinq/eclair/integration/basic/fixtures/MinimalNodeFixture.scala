@@ -28,7 +28,6 @@ import fr.acinq.eclair.payment.offer.{DefaultOfferHandler, OfferManager}
 import fr.acinq.eclair.payment.receive.{MultiPartHandler, PaymentHandler}
 import fr.acinq.eclair.payment.relay.{ChannelRelayer, PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.payment.send.PaymentInitiator
-import fr.acinq.eclair.reputation.ReputationRecorder
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IPAddress
 import fr.acinq.eclair.{BlockHeight, MilliSatoshi, MilliSatoshiLong, NodeParams, RealShortChannelId, SubscriptionsComplete, TestBitcoinCoreClient, TestDatabases}
@@ -38,6 +37,7 @@ import org.scalatest.{Assertions, EitherValues}
 import java.net.InetAddress
 import java.util.UUID
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
+import scala.collection.immutable.SortedMap
 import scala.concurrent.duration.DurationInt
 import scala.util.Random
 
@@ -60,8 +60,8 @@ case class MinimalNodeFixture private(nodeParams: NodeParams,
                                       watcher: TestProbe,
                                       wallet: SingleKeyOnChainWallet,
                                       bitcoinClient: TestBitcoinCoreClient) {
-  val nodeId = nodeParams.nodeId
-  val routeParams = nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
+  val nodeId: PublicKey = nodeParams.nodeId
+  val routeParams: Router.RouteParams = nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
 }
 
 object MinimalNodeFixture extends Assertions with Eventually with IntegrationPatience with EitherValues {
@@ -95,6 +95,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val watcherTyped = watcher.ref.toTyped[ZmqWatcher.Command]
     val register = system.actorOf(Register.props(), "register")
     val router = system.actorOf(Router.props(nodeParams, watcherTyped), "router")
+    router ! Router.Init(SortedMap.empty, Nil, None)
     val offerManager = system.spawn(OfferManager(nodeParams, 1 minute), "offer-manager")
     val defaultOfferHandler = system.spawn(DefaultOfferHandler(nodeParams, router), "default-offer-handler")
     val paymentHandler = system.actorOf(PaymentHandler.props(nodeParams, register, offerManager), "payment-handler")
@@ -106,7 +107,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     val switchboard = system.actorOf(Switchboard.props(nodeParams, peerFactory), "switchboard")
     val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
     val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams, paymentFactory), "payment-initiator")
-    val channels = nodeParams.db.channels.listLocalChannels()
+    val channels = nodeParams.db.channels.listLocalChannels().map(_.withChannelKeys(nodeParams))
     val postman = system.spawn(Behaviors.supervise(Postman(nodeParams, switchboard, router.toTyped, register, offerManager)).onFailure(typed.SupervisorStrategy.restart), name = "postman")
     switchboard ! Switchboard.Init(channels)
     relayer ! PostRestartHtlcCleaner.Init(channels)
@@ -183,7 +184,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
     sender.expectMsgType[ConnectionResult.Connected]
   }
 
-  def openChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, funding: Satoshi, channelType_opt: Option[SupportedChannelType] = None)(implicit system: ActorSystem): OpenChannelResponse.Created = {
+  def openChannel(node1: MinimalNodeFixture, node2: MinimalNodeFixture, funding: Satoshi, channelType_opt: Option[SupportedChannelType] = Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()))(implicit system: ActorSystem): OpenChannelResponse.Created = {
     val sender = TestProbe("sender")
     sender.send(node1.switchboard, Peer.OpenChannel(node2.nodeParams.nodeId, funding, channelType_opt, None, None, None, None, None, None))
     sender.expectMsgType[OpenChannelResponse.Created]
@@ -302,7 +303,7 @@ object MinimalNodeFixture extends Assertions with Eventually with IntegrationPat
             case watch: ZmqWatcher.WatchExternalChannelSpent =>
               knownFundingTxs().find(_.txIn.exists(_.outPoint == OutPoint(watch.txId, watch.outputIndex))) match {
                 case Some(nextFundingTx) =>
-                  watch.replyTo ! ZmqWatcher.WatchExternalChannelSpentTriggered(watch.shortChannelId, nextFundingTx)
+                  watch.replyTo ! ZmqWatcher.WatchExternalChannelSpentTriggered(watch.shortChannelId, Some(nextFundingTx))
                 case None => timers.startSingleTimer(watch, 10 millis)
               }
               Behaviors.same

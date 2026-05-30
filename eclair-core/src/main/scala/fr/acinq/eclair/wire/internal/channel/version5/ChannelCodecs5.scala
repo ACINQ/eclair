@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.wire.internal.channel.version5
 
+import fr.acinq.bitcoin.scalacompat.Crypto.PrivateKey
 import fr.acinq.bitcoin.scalacompat.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.scalacompat.{OutPoint, ScriptWitness, Transaction, TxOut}
+import fr.acinq.bitcoin.scalacompat.{ByteVector32, OutPoint, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.crypto.ShaChain
@@ -29,7 +30,7 @@ import fr.acinq.eclair.wire.protocol.{LiquidityAds, UpdateAddHtlc, UpdateMessage
 import fr.acinq.eclair.{FeatureSupport, Features, PermanentChannelFeature}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, Err}
 
 /**
  * Created by t-bast on 18/06/2025.
@@ -78,11 +79,19 @@ private[channel] object ChannelCodecs5 {
     )
 
     private val commitmentFormatCodec: Codec[Transactions.CommitmentFormat] = discriminated[Transactions.CommitmentFormat].by(uint8)
-      .typecase(0x00, provide(Transactions.DefaultCommitmentFormat))
       .typecase(0x01, provide(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
       .typecase(0x02, provide(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat))
       .typecase(0x03, provide(Transactions.PhoenixSimpleTaprootChannelCommitmentFormat))
       .typecase(0x04, provide(Transactions.ZeroFeeHtlcTxSimpleTaprootChannelCommitmentFormat))
+      .typecase(0x05, provide(Transactions.ZeroFeeCommitmentFormat))
+      // 0x00 was used for pre-anchor channels, which have been deprecated after eclair v0.13.1.
+      .typecase(0x00, fail[Transactions.CommitmentFormat](Err("some of your channels are not using anchor outputs: you must restart with your previous eclair version and close those channels before updating to this version of eclair (see the release notes for more details)")))
+
+    // The walletStaticPaymentBasepoint field was used for static_remotekey channels, which have been deprecated: we can
+    // thus safely ignore that field, and encode as if it wasn't provided.
+    // By keeping this codec, we can potentially re-introduce that field in the future if necessary for future channel
+    // types, without breaking backwards-compatibility.
+    private val ignoreWalletStaticPaymentBasepoint: Codec[Unit] = optional(bool8, publicKey).xmap[Unit](_ => (), _ => None)
 
     private val localChannelParamsCodec: Codec[LocalChannelParams] = (
       ("nodeId" | publicKey) ::
@@ -91,7 +100,7 @@ private[channel] object ChannelCodecs5 {
         // We pad to keep codecs byte-aligned.
         ("isChannelOpener" | bool) :: ("paysCommitTxFees" | bool) :: ignore(6) ::
         ("upfrontShutdownScript_opt" | optional(bool8, lengthDelimited(bytes))) ::
-        ("walletStaticPaymentBasepoint" | optional(bool8, publicKey)) ::
+        ("walletStaticPaymentBasepoint" | ignoreWalletStaticPaymentBasepoint) ::
         ("features" | combinedFeaturesCodec)).as[LocalChannelParams]
 
     val remoteChannelParamsCodec: Codec[RemoteChannelParams] = (
@@ -328,15 +337,24 @@ private[channel] object ChannelCodecs5 {
         ("localNextHtlcId" | uint64overflow) ::
         ("remoteNextHtlcId" | uint64overflow)).as[CommitmentChanges]
 
+    private val upstreamChannelCodecWithoutNodeId: Codec[Upstream.Cold.Channel] = (
+      ("originChannelId" | bytes32) ::
+        ("originNodeId" | provide(PrivateKey(ByteVector32.One).publicKey)) ::
+        ("originHtlcId" | int64) ::
+        ("amountIn" | millisatoshi)).as[Upstream.Cold.Channel]
+
     private val upstreamChannelCodec: Codec[Upstream.Cold.Channel] = (
       ("originChannelId" | bytes32) ::
+        ("originNodeId" | publicKey) ::
         ("originHtlcId" | int64) ::
         ("amountIn" | millisatoshi)).as[Upstream.Cold.Channel]
 
     private val coldUpstreamCodec: Codec[Upstream.Cold] = discriminated[Upstream.Cold].by(uint16)
       // NB: order matters!
-      .typecase(0x03, upstreamChannelCodec)
-      .typecase(0x02, listOfN(uint16, upstreamChannelCodec).as[Upstream.Cold.Trampoline])
+      .typecase(0x05, listOfN(uint16, upstreamChannelCodec).as[Upstream.Cold.Trampoline])
+      .typecase(0x04, upstreamChannelCodec)
+      .typecase(0x03, upstreamChannelCodecWithoutNodeId)
+      .typecase(0x02, listOfN(uint16, upstreamChannelCodecWithoutNodeId).as[Upstream.Cold.Trampoline])
       .typecase(0x01, ("id" | uuid).as[Upstream.Local])
 
     private val originCodec: Codec[Origin] = coldUpstreamCodec.xmap[Origin](

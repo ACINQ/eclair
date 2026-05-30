@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, SimpleTaprootChannelCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{SegwitV0CommitmentFormat, SimpleTaprootChannelCommitmentFormat}
 import fr.acinq.eclair.wire.protocol.{ClosingComplete, HtlcSettlementMessage, LightningMessage, Shutdown, UpdateMessage}
 import scodec.bits.ByteVector
 
@@ -142,7 +142,7 @@ trait CommonHandlers {
         val localCloseeNonce = NonceGenerator.signingNonce(localFundingPubKey, commitments.latest.remoteFundingPubKey, commitments.latest.fundingTxId)
         localCloseeNonce_opt = Some(localCloseeNonce)
         Shutdown(commitments.channelId, finalScriptPubKey, localCloseeNonce.publicNonce)
-      case _: AnchorOutputsCommitmentFormat | DefaultCommitmentFormat =>
+      case _: SegwitV0CommitmentFormat =>
         Shutdown(commitments.channelId, finalScriptPubKey)
     }
   }
@@ -156,9 +156,9 @@ trait CommonHandlers {
         log.warning("cannot create local closing txs, waiting for remote closing_complete: {}", f.getMessage)
         val d = DATA_NEGOTIATING_SIMPLE(commitments, closingFeerate, localScript, remoteScript, Nil, Nil)
         (d, None)
-      case Right((closingTxs, closingComplete, closerNonces)) =>
+      case Right((closingTxs, closingComplete)) =>
         log.debug("signing local mutual close transactions: {}", closingTxs)
-        localCloserNonces_opt = Some(closerNonces)
+        localClosingComplete_opt = Some(closingComplete)
         val d = DATA_NEGOTIATING_SIMPLE(commitments, closingFeerate, localScript, remoteScript, closingTxs :: Nil, Nil)
         (d, Some(closingComplete))
     }

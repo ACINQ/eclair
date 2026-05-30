@@ -23,6 +23,7 @@ import akka.actor.{ActorRef, typed}
 import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{BlockHash, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction, TxId, addressToPublicKeyScript}
 import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
@@ -34,7 +35,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{AddressType, D
 import fr.acinq.eclair.blockchain.fee.{ConfirmationTarget, FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
+import fr.acinq.eclair.db.AuditDb.RelayStats
 import fr.acinq.eclair.db.{IncomingPayment, OfferData, OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, OpenChannelResponse, PeerInfo}
 import fr.acinq.eclair.io._
@@ -45,6 +46,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceiveStandardPayment
 import fr.acinq.eclair.payment.relay.Relayer.{ChannelBalance, GetOutgoingChannels, InboundFees, OutgoingChannels, RelayFees}
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.{ClearRecipient, OfferPayment, PaymentIdentifier}
+import fr.acinq.eclair.profit.PeerScorer
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
@@ -69,7 +71,7 @@ case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
 case class SendOnionMessageResponsePayload(tlvs: TlvStream[OnionMessagePayloadTlv])
 case class SendOnionMessageResponse(sent: Boolean, failureMessage: Option[String], response: Option[SendOnionMessageResponsePayload])
 
-case class SpendFromChannelPrep(fundingTxIndex: Long, localFundingPubkey: PublicKey, inputAmount: Satoshi, unsignedTx: Transaction)
+case class SpendFromChannelPrep(fundingTxIndex: Long, localFundingPubkey: PublicKey, localNonce_opt: Option[IndividualNonce], inputAmount: Satoshi, unsignedTx: Transaction)
 case class SpendFromChannelResult(signedTx: Transaction)
 // @formatter:on
 
@@ -152,17 +154,17 @@ trait Eclair {
 
   def cpfpBumpFees(targetFeeratePerByte: FeeratePerByte, outpoints: Set[OutPoint]): Future[TxId]
 
-  def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse]
+  def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None, maxCltvExpiryDelta_opt: Option[CltvExpiryDelta] = None)(implicit timeout: Timeout): Future[RouteResponse]
 
-  def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse]
+  def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None, maxCltvExpiryDelta_opt: Option[CltvExpiryDelta] = None)(implicit timeout: Timeout): Future[RouteResponse]
 
   def sendToRoute(recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: Bolt11Invoice, route: PredefinedRoute)(implicit timeout: Timeout): Future[SendPaymentToRouteResponse]
 
   def audit(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[AuditResponse]
 
-  def networkFees(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[NetworkFee]]
+  def relayStats(remoteNodeId: PublicKey, from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[RelayStats]
 
-  def channelStats(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Stats]]
+  def relayStats(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[RelayStats]]
 
   def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[Invoice]]
 
@@ -206,7 +208,7 @@ trait Eclair {
 
   def getDescriptors(account: Long): Descriptors
 
-  def enableFromFutureHtlc(): Future[EnableFromFutureHtlcResponse]
+  def enableFromFutureHtlc(suspiciousNodes: Set[PublicKey]): Future[EnableFromFutureHtlcResponse]
 
   def stop(): Future[Unit]
 
@@ -214,7 +216,10 @@ trait Eclair {
 
   def spendFromChannelAddressPrep(outPoint: OutPoint, fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, address: String, feerate: FeeratePerKw): Future[SpendFromChannelPrep]
 
-  def spendFromChannelAddress(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, remoteSig: ByteVector64, unsignedTx: Transaction): Future[SpendFromChannelResult]
+  def spendFromChannelAddress(fundingKeyPath: DeterministicWallet.KeyPath, fundingTxIndex: Long, remoteFundingPubkey: PublicKey, localNonce_opt: Option[IndividualNonce], remoteSig: ChannelSpendSignature, unsignedTx: Transaction): Future[SpendFromChannelResult]
+
+  def configurePeerScorer(cfg: PeerScorer.ConfigOverrides)(implicit timeout: Timeout): Future[String]
+
 }
 
 class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChannelAddress {
@@ -469,8 +474,8 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     }
   }
 
-  override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse] =
-    findRouteBetween(appKit.nodeParams.nodeId, targetNodeId, amount, pathFindingExperimentName_opt, extraEdges, includeLocalChannelCost, ignoreNodeIds, ignoreShortChannelIds, maxFee_opt)
+  override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None, maxCltvExpiryDelta_opt: Option[CltvExpiryDelta] = None)(implicit timeout: Timeout): Future[RouteResponse] =
+    findRouteBetween(appKit.nodeParams.nodeId, targetNodeId, amount, pathFindingExperimentName_opt, extraEdges, includeLocalChannelCost, ignoreNodeIds, ignoreShortChannelIds, maxFee_opt, maxCltvExpiryDelta_opt)
 
   private def getRouteParams(pathFindingExperimentName_opt: Option[String]): Either[IllegalArgumentException, RouteParams] = {
     pathFindingExperimentName_opt match {
@@ -482,15 +487,16 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     }
   }
 
-  override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse] = {
+  override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], extraEdges: Seq[Invoice.ExtraEdge] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None, maxCltvExpiryDelta_opt: Option[CltvExpiryDelta] = None)(implicit timeout: Timeout): Future[RouteResponse] = {
     getRouteParams(pathFindingExperimentName_opt) match {
       case Right(routeParams) =>
-        val target = ClearRecipient(targetNodeId, Features.empty, amount, CltvExpiry(appKit.nodeParams.currentBlockHeight), ByteVector32.Zeroes, extraEdges)
+        val target = ClearRecipient(targetNodeId, Features.empty, amount, CltvExpiry(appKit.nodeParams.currentBlockHeight), ByteVector32.Zeroes, upgradeAccountability = true, extraEdges)
         val routeParams1 = routeParams.copy(
           includeLocalChannelCost = includeLocalChannelCost,
           boundaries = routeParams.boundaries.copy(
             maxFeeFlat = maxFee_opt.getOrElse(routeParams.boundaries.maxFeeFlat),
-            maxFeeProportional = maxFee_opt.map(_ => 0.0).getOrElse(routeParams.boundaries.maxFeeProportional)
+            maxFeeProportional = maxFee_opt.map(_ => 0.0).getOrElse(routeParams.boundaries.maxFeeProportional),
+            maxCltv = maxCltvExpiryDelta_opt.getOrElse(routeParams.boundaries.maxCltv),
           )
         )
         for {
@@ -606,12 +612,12 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     ))
   }
 
-  override def networkFees(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[NetworkFee]] = {
-    Future(appKit.nodeParams.db.audit.listNetworkFees(from.toTimestampMilli, to.toTimestampMilli))
+  override def relayStats(remoteNodeId: PublicKey, from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[RelayStats] = {
+    Future(appKit.nodeParams.db.audit.relayStats(remoteNodeId, from.toTimestampMilli, to.toTimestampMilli))
   }
 
-  override def channelStats(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Stats]] = {
-    Future(appKit.nodeParams.db.audit.stats(from.toTimestampMilli, to.toTimestampMilli, paginated_opt))
+  override def relayStats(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[RelayStats]] = {
+    Future(appKit.nodeParams.db.audit.relayStats(from.toTimestampMilli, to.toTimestampMilli, paginated_opt))
   }
 
   override def allInvoices(from: TimestampSecond, to: TimestampSecond, paginated_opt: Option[Paginated])(implicit timeout: Timeout): Future[Seq[Invoice]] = Future {
@@ -851,13 +857,20 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     case _ => throw new RuntimeException("on-chain seed is not configured")
   }
 
-  override def enableFromFutureHtlc(): Future[EnableFromFutureHtlcResponse] = {
+  override def enableFromFutureHtlc(suspiciousNodes: Set[PublicKey]): Future[EnableFromFutureHtlcResponse] = {
     appKit.nodeParams.liquidityAdsConfig.rates_opt match {
       case Some(willFundRates) if willFundRates.paymentTypes.contains(LiquidityAds.PaymentType.FromFutureHtlc) =>
-        appKit.nodeParams.onTheFlyFundingConfig.enableFromFutureHtlc()
-        Future.successful(EnableFromFutureHtlcResponse(appKit.nodeParams.onTheFlyFundingConfig.isFromFutureHtlcAllowed, None))
+        appKit.nodeParams.onTheFlyFundingConfig.enableFromFutureHtlc(suspiciousNodes)
+        Future.successful(EnableFromFutureHtlcResponse(enabled = true, None))
       case _ =>
         Future.successful(EnableFromFutureHtlcResponse(enabled = false, Some("could not enable from_future_htlc: you must add it to eclair.liquidity-ads.payment-types in your eclair.conf file first")))
+    }
+  }
+
+  override def configurePeerScorer(cfg: PeerScorer.ConfigOverrides)(implicit timeout: Timeout): Future[String] = {
+    appKit.peerScorer_opt match {
+      case Some(scorer) => scorer.ask((ref: typed.ActorRef[Boolean]) => PeerScorer.UpdateConfig(ref, cfg)).map(res => if (res) "ok" else "could not update config: please retry")
+      case None => Future.successful("peer scorer is disabled: you should enable it first")
     }
   }
 

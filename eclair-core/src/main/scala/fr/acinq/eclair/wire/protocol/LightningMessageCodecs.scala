@@ -244,6 +244,11 @@ object LightningMessageCodecs {
       ("lockTime" | uint32) ::
       ("tlvStream" | ClosingSigTlv.closingSigTlvCodec)).as[ClosingSig]
 
+  val startBatchCodec: Codec[StartBatch] = (
+    ("channelId" | bytes32) ::
+      ("batchSize" | uint16) ::
+      ("tlvStream" | StartBatchTlv.startBatchTlvCodec)).as[StartBatch]
+
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | bytes32) ::
       ("id" | uint64overflow) ::
@@ -277,6 +282,10 @@ object LightningMessageCodecs {
       ("signature" | bytes64.as[ChannelSpendSignature.IndividualSignature]) ::
       ("htlcSignatures" | listofsignatures) ::
       ("tlvStream" | CommitSigTlv.commitSigTlvCodec)).as[CommitSig]
+
+  // This isn't a "real" lightning codec, as we send each commit_sig individually to our peers.
+  // But it's necessary to send CommitSigBatch objects to front machines when the cluster mode is used.
+  val commitSigBatchCodec: Codec[CommitSigBatch] = listOfN(uint16, lengthDelimited(commitSigCodec)).xmap(sigs => CommitSigBatch(sigs.toSeq), batch => batch.messages.toList)
 
   val revokeAndAckCodec: Codec[RevokeAndAck] = (
     ("channelId" | bytes32) ::
@@ -361,15 +370,8 @@ object LightningMessageCodecs {
     ("signature" | bytes64) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
-  val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] =
-    discriminated[EncodedShortChannelIds].by(byte)
-      .\(0) {
-        case a@EncodedShortChannelIds(_, Nil) => a // empty list is always encoded with encoding type 'uncompressed' for compatibility with other implementations
-        case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a
-      }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(realshortchannelid)).as[EncodedShortChannelIds])
-      .\(1) {
-        case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a
-      }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(realshortchannelid))).as[EncodedShortChannelIds])
+  val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] = discriminated[EncodedShortChannelIds].by(byte)
+    .typecase(0, (provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(realshortchannelid)).as[EncodedShortChannelIds])
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (
     ("chainHash" | blockHash) ::
@@ -435,16 +437,35 @@ object LightningMessageCodecs {
       ("fundingPubkey" | publicKey) ::
       ("tlvStream" | SpliceInitTlv.spliceInitTlvCodec)).as[SpliceInit]
 
+  val experimentalSpliceInitCodec: Codec[ExperimentalSpliceInit] = (
+    ("channelId" | bytes32) ::
+      ("fundingContribution" | satoshiSigned) ::
+      ("feerate" | feeratePerKw) ::
+      ("lockTime" | uint32) ::
+      ("fundingPubkey" | publicKey) ::
+      ("tlvStream" | SpliceInitTlv.spliceInitTlvCodec)).as[ExperimentalSpliceInit]
+
   val spliceAckCodec: Codec[SpliceAck] = (
     ("channelId" | bytes32) ::
       ("fundingContribution" | satoshiSigned) ::
       ("fundingPubkey" | publicKey) ::
       ("tlvStream" | SpliceAckTlv.spliceAckTlvCodec)).as[SpliceAck]
 
+  val experimentalSpliceAckCodec: Codec[ExperimentalSpliceAck] = (
+    ("channelId" | bytes32) ::
+      ("fundingContribution" | satoshiSigned) ::
+      ("fundingPubkey" | publicKey) ::
+      ("tlvStream" | SpliceAckTlv.spliceAckTlvCodec)).as[ExperimentalSpliceAck]
+
   val spliceLockedCodec: Codec[SpliceLocked] = (
     ("channelId" | bytes32) ::
       ("fundingTxHash" | txIdAsHash) ::
       ("tlvStream" | SpliceLockedTlv.spliceLockedTlvCodec)).as[SpliceLocked]
+
+  val experimentalSpliceLockedCodec: Codec[ExperimentalSpliceLocked] = (
+    ("channelId" | bytes32) ::
+      ("fundingTxHash" | txIdAsHash) ::
+      ("tlvStream" | SpliceLockedTlv.spliceLockedTlvCodec)).as[ExperimentalSpliceLocked]
 
   val stfuCodec: Codec[Stfu] = (
     ("channelId" | bytes32) ::
@@ -528,6 +549,10 @@ object LightningMessageCodecs {
     .typecase(72, txInitRbfCodec)
     .typecase(73, txAckRbfCodec)
     .typecase(74, txAbortCodec)
+    .typecase(77, spliceLockedCodec)
+    .typecase(80, spliceInitCodec)
+    .typecase(81, spliceAckCodec)
+    .typecase(127, startBatchCodec)
     .typecase(128, updateAddHtlcCodec)
     .typecase(130, updateFulfillHtlcCodec)
     .typecase(131, updateFailHtlcCodec)
@@ -559,15 +584,15 @@ object LightningMessageCodecs {
     .typecase(41045, addFeeCreditCodec)
     .typecase(41046, currentFeeCreditCodec)
     //
-    .typecase(37000, spliceInitCodec)
-    .typecase(37002, spliceAckCodec)
-    .typecase(37004, spliceLockedCodec)
+    .typecase(37000, experimentalSpliceInitCodec)
+    .typecase(37002, experimentalSpliceAckCodec)
+    .typecase(37004, experimentalSpliceLockedCodec)
     //
 
     //
     .typecase(39409, recommendedFeeratesCodec)
   //
-
+    .typecase(53011, commitSigBatchCodec)
   //
 
   //

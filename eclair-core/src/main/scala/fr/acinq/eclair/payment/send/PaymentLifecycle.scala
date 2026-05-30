@@ -21,13 +21,12 @@ import akka.actor.{ActorRef, FSM, Props, typed}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.Upstream.Hot
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.Invoice.ExtraEdge
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.PaymentSent.PartialPayment
+import fr.acinq.eclair.payment.PaymentSent.PaymentPart
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
@@ -79,20 +78,15 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       reputationRecorder_opt match {
         case Some(reputationRecorder) =>
           val cltvExpiry = route.fullRoute.map(_.cltvExpiryDelta).foldLeft(request.recipient.expiry)(_ + _)
-          reputationRecorder ! GetConfidence(self, cfg.upstream, Some(route.hops.head.nextNodeId), route.hops.head.fee(request.amount), nodeParams.currentBlockHeight, cltvExpiry)
+          reputationRecorder ! GetConfidence(self, route.hops.head.nextNodeId, route.hops.head.fee(request.amount), nodeParams.currentBlockHeight, cltvExpiry, cfg.accountable)
         case None =>
-          val endorsement = cfg.upstream match {
-            case Hot.Channel(add, _, _, _) => add.endorsement
-            case Hot.Trampoline(received) => received.map(_.add.endorsement).min
-            case Upstream.Local(_) => Reputation.maxEndorsement
-          }
-          self ! Reputation.Score.fromEndorsement(endorsement)
+          self ! Reputation.Score.max(cfg.accountable)
       }
       goto(WAITING_FOR_CONFIDENCE) using WaitingForConfidence(request, failures, ignore, route)
 
     case Event(PaymentRouteNotFound(t), WaitingForRoute(request, failures, _)) =>
       Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(request.amount, Nil, t))).increment()
-      myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(request.amount, Nil, t))))
+      myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(request.amount, Nil, t), startedAt = start, settledAt = TimestampMilli.now())))
   }
 
   when(WAITING_FOR_CONFIDENCE) {
@@ -100,11 +94,11 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       OutgoingPaymentPacket.buildOutgoingPayment(Origin.Hot(self, cfg.upstream), paymentHash, route, request.recipient, score) match {
         case Right(payment) =>
           register ! Register.ForwardShortId(self.toTyped[Register.ForwardShortIdFailure[CMD_ADD_HTLC]], payment.outgoingChannel, payment.cmd)
-          goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(request, payment.cmd, failures, payment.sharedSecrets, ignore, route)
+          goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(request, payment.cmd, failures, payment.sharedSecrets, ignore, route, sentAt = TimestampMilli.now())
         case Left(error) =>
           log.warning("cannot send outgoing payment: {}", error.getMessage)
           Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(request.amount, route.fullRoute, error))).increment()
-          myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(request.amount, route.fullRoute, error))))
+          myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(request.amount, route.fullRoute, error), startedAt = start, settledAt = TimestampMilli.now())))
       }
   }
 
@@ -117,10 +111,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(_: Register.ForwardShortIdFailure[_], d: WaitingForComplete) =>
       handleLocalFail(d, DisconnectedException, isFatal = false)
 
-    case Event(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
+    case Event(RES_ADD_SETTLED(_, remoteNodeId, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
       router ! Router.RouteDidRelay(d.route)
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
-      val p = PartialPayment(id, d.request.amount, d.cmd.amount - d.request.amount, htlc.channelId, Some(d.route.fullRoute))
+      val p = PaymentPart(id, PaymentEvent.OutgoingPayment(htlc.channelId, remoteNodeId, d.cmd.amount, settledAt = TimestampMilli.now()), d.cmd.amount - d.request.amount, Some(d.route.fullRoute), startedAt = d.sentAt)
       val remainingAttribution_opt = fulfill match {
         case HtlcResult.RemoteFulfill(updateFulfill) =>
           updateFulfill.attribution_opt match {
@@ -134,9 +128,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           }
         case _: HtlcResult.OnChainFulfill => None
       }
-      myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, remainingAttribution_opt)))
+      myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, remainingAttribution_opt, start)))
 
-    case Event(RES_ADD_SETTLED(_, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
+    case Event(RES_ADD_SETTLED(_, _, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
       fail match {
         case HtlcResult.RemoteFail(fail) => handleRemoteFail(d, fail)
         case HtlcResult.RemoteFailMalformed(fail) =>
@@ -190,84 +184,82 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
       retry(localFailure, d)
     } else {
-      myStop(d.request, Left(PaymentFailed(id, paymentHash, d.failures :+ localFailure)))
+      myStop(d.request, Left(PaymentFailed(id, paymentHash, d.failures :+ localFailure, startedAt = start, settledAt = TimestampMilli.now())))
     }
   }
 
   private def handleRemoteFail(d: WaitingForComplete, fail: UpdateFailHtlc) = {
     import d._
+    val now = TimestampMilli.now()
     val htlcFailure = Sphinx.FailurePacket.decrypt(fail.reason, fail.attribution_opt, sharedSecrets)
     if (htlcFailure.holdTimes.nonEmpty) {
       context.system.eventStream.publish(Router.ReportedHoldTimes(htlcFailure.holdTimes))
     }
     ((htlcFailure.failure match {
       case success@Right(e) =>
-        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(RemoteFailure(request.amount, Nil, e))).increment()
+        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(RemoteFailure(request.amount, Nil, e, startedAt = d.sentAt, failedAt = now))).increment()
         success
       case failure@Left(e) =>
-        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(UnreadableRemoteFailure(request.amount, Nil, e, htlcFailure.holdTimes))).increment()
+        Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(UnreadableRemoteFailure(request.amount, Nil, e, startedAt = d.sentAt, failedAt = now, htlcFailure.holdTimes))).increment()
         failure
     }) match {
-      case res@Right(Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
+      case res@Right(Sphinx.DecryptedFailurePacket(_, index, failureMessage)) =>
         // We have discovered some liquidity information with this payment: we update the router accordingly.
-        val stoppedRoute = route.stopAt(nodeId)
+        val stoppedRoute = route.stopAt(index)
         if (stoppedRoute.hops.length > 1) {
           router ! Router.RouteCouldRelay(stoppedRoute)
         }
         failureMessage match {
           case TemporaryChannelFailure(update_opt, _) =>
-            route.hops.find(_.nodeId == nodeId) match {
-              case Some(failingHop) =>
-                val isLiquidityIssue = update_opt match {
-                  // If the relay parameters have changed, it's not necessarily a liquidity issue.
-                  case Some(update) => HopRelayParams.areSame(failingHop.params, HopRelayParams.FromAnnouncement(update), ignoreHtlcSize = true)
-                  case None => true
-                }
-                if (isLiquidityIssue) {
-                  router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
-                }
-              case _ => ()
+            val failingHop = route.hops(index)
+            val isLiquidityIssue = update_opt match {
+              // If the relay parameters have changed, it's not necessarily a liquidity issue.
+              case Some(update) => HopRelayParams.areSame(failingHop.params, HopRelayParams.FromAnnouncement(update), ignoreHtlcSize = true)
+              case None => true
+            }
+            if (isLiquidityIssue) {
+              router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
             }
           case _ => // other errors should not be used for liquidity issues
         }
         res
       case res => res
     }) match {
-      case Right(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if nodeId == recipient.nodeId =>
+      case Right(e@Sphinx.DecryptedFailurePacket(nodeId, _, failureMessage)) if nodeId == recipient.nodeId =>
         // if destination node returns an error, we fail the payment immediately
         log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
-        myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ RemoteFailure(request.amount, route.fullRoute, e))))
-      case Right(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if route.finalHop_opt.collect { case h: NodeHop if h.nodeId == nodeId => h }.nonEmpty =>
+        myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ RemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now), startedAt = start, settledAt = now)))
+      case Right(e@Sphinx.DecryptedFailurePacket(nodeId, _, failureMessage)) if route.finalHop_opt.collect { case h: NodeHop if h.nodeId == nodeId => h }.nonEmpty =>
         // if trampoline node returns an error, we fail the payment immediately
         log.warning(s"received an error message from trampoline nodeId=$nodeId, failing the payment (failure=$failureMessage)")
-        myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ RemoteFailure(request.amount, route.fullRoute, e))))
+        myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ RemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now), startedAt = start, settledAt = now)))
       case res if failures.size + 1 >= request.maxAttempts =>
         // otherwise we never try more than maxAttempts, no matter the kind of error returned
         val failure = res match {
-          case Right(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
+          case Right(e@Sphinx.DecryptedFailurePacket(nodeId, _, failureMessage)) =>
             log.info(s"received an error message from nodeId=$nodeId (failure=$failureMessage)")
             failureMessage match {
               case failureMessage: Update => handleUpdate(nodeId, failureMessage, d)
               case _ =>
             }
-            RemoteFailure(request.amount, route.fullRoute, e)
+            RemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now)
           case Left(e@Sphinx.CannotDecryptFailurePacket(unwrapped, _)) =>
             log.warning(s"cannot parse returned error ${fail.reason.toHex} with sharedSecrets=$sharedSecrets: unwrapped=$unwrapped")
-            UnreadableRemoteFailure(request.amount, route.fullRoute, e, htlcFailure.holdTimes)
+            UnreadableRemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now, htlcFailure.holdTimes)
         }
         log.warning(s"too many failed attempts, failing the payment")
-        myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ failure)))
+        myStop(request, Left(PaymentFailed(id, paymentHash, failures :+ failure, startedAt = start, settledAt = now)))
       case Left(e@Sphinx.CannotDecryptFailurePacket(unwrapped, _)) =>
         log.warning(s"cannot parse returned error: unwrapped=$unwrapped, route=${route.printNodes()}")
-        val failure = UnreadableRemoteFailure(request.amount, route.fullRoute, e, htlcFailure.holdTimes)
+        val failure = UnreadableRemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now, htlcFailure.holdTimes)
         retry(failure, d)
-      case Right(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Node)) =>
+      case Right(e@Sphinx.DecryptedFailurePacket(nodeId, _, failureMessage: Node)) =>
         log.info(s"received 'Node' type error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
-        val failure = RemoteFailure(request.amount, route.fullRoute, e)
+        val failure = RemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now)
         retry(failure, d)
-      case Right(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
+      case Right(e@Sphinx.DecryptedFailurePacket(nodeId, _, failureMessage: Update)) =>
         log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
-        val failure = RemoteFailure(request.amount, route.fullRoute, e)
+        val failure = RemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now)
         if (failureMessage.update_opt.forall(update => Announcements.checkSig(update, nodeId))) {
           val recipient1 = handleUpdate(nodeId, failureMessage, d)
           val ignore1 = PaymentFailure.updateIgnored(failure, ignore)
@@ -292,10 +284,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               goto(WAITING_FOR_ROUTE) using WaitingForRoute(request, failures :+ failure, ignore + nodeId)
           }
         }
-      case Right(e@Sphinx.DecryptedFailurePacket(nodeId, _: InvalidOnionBlinding)) =>
+      case Right(e@Sphinx.DecryptedFailurePacket(nodeId, _, _: InvalidOnionBlinding)) =>
         // there was a failure inside the blinded route we used: we cannot know why it failed, so let's ignore it.
         log.info(s"received an error coming from nodeId=$nodeId inside the blinded route, retrying with different blinded routes")
-        val failure = RemoteFailure(request.amount, route.fullRoute, e)
+        val failure = RemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now)
         val ignore1 = PaymentFailure.updateIgnored(failure, ignore)
         request match {
           case _: SendPaymentToRoute =>
@@ -305,9 +297,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             router ! RouteRequest(self, nodeParams.nodeId, recipient, request.routeParams, ignore1, paymentContext = Some(cfg.paymentContext), blip18InboundFees = nodeParams.routerConf.blip18InboundFees, excludePositiveInboundFees = nodeParams.routerConf.excludePositiveInboundFees)
             goto(WAITING_FOR_ROUTE) using WaitingForRoute(request, failures :+ failure, ignore1)
         }
-      case Right(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
+      case Right(e@Sphinx.DecryptedFailurePacket(nodeId, _, failureMessage)) =>
         log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
-        val failure = RemoteFailure(request.amount, route.fullRoute, e)
+        val failure = RemoteFailure(request.amount, route.fullRoute, e, startedAt = d.sentAt, failedAt = now)
         retry(failure, d)
     }
   }
@@ -426,7 +418,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               // in case of a relayed payment, we need to take into account the fee of the first channels
               paymentSent.parts.collect {
                 // NB: the route attribute will always be defined here
-                case p@PartialPayment(_, _, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
+                case p@PaymentPart(_, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
               }.sum
           }
           paymentSent.feesPaid + localFees
@@ -487,7 +479,7 @@ object PaymentLifecycle {
     require(route.fold(r => !r.isEmpty, r => r.hops.nonEmpty || r.finalHop_opt.nonEmpty), "payment route must not be empty")
 
     override val maxAttempts: Int = 1
-    override val amount = route.fold(_.amount, _.amount)
+    override val amount: MilliSatoshi = route.fold(_.amount, _.amount)
 
     def printRoute(): String = route match {
       case Left(PredefinedChannelRoute(_, _, channels, _)) => channels.mkString("->")
@@ -505,7 +497,7 @@ object PaymentLifecycle {
    */
   case class SendPaymentToNode(replyTo: ActorRef, recipient: Recipient, maxAttempts: Int, routeParams: RouteParams) extends SendPayment {
     require(recipient.totalAmount > 0.msat, "amount must be > 0")
-    override val amount = recipient.totalAmount
+    override val amount: MilliSatoshi = recipient.totalAmount
   }
 
   // @formatter:off
@@ -513,8 +505,8 @@ object PaymentLifecycle {
   case object WaitingForRequest extends Data
   case class WaitingForRoute(request: SendPayment, failures: Seq[PaymentFailure], ignore: Ignore) extends Data
   case class WaitingForConfidence(request: SendPayment, failures: Seq[PaymentFailure], ignore: Ignore, route: Route) extends Data
-  case class WaitingForComplete(request: SendPayment, cmd: CMD_ADD_HTLC, failures: Seq[PaymentFailure], sharedSecrets: Seq[Sphinx.SharedSecret], ignore: Ignore, route: Route) extends Data {
-    val recipient = request.recipient
+  case class WaitingForComplete(request: SendPayment, cmd: CMD_ADD_HTLC, failures: Seq[PaymentFailure], sharedSecrets: Seq[Sphinx.SharedSecret], ignore: Ignore, route: Route, sentAt: TimestampMilli) extends Data {
+    val recipient: Recipient = request.recipient
   }
 
   sealed trait State
@@ -524,9 +516,9 @@ object PaymentLifecycle {
   case object WAITING_FOR_PAYMENT_COMPLETE extends State
 
   /** custom exceptions to handle corner cases */
-  case object UpdateMalformedException extends RuntimeException("first hop returned an UpdateFailMalformedHtlc message")
-  case object ChannelFailureException extends RuntimeException("a channel failure occurred with the first hop")
-  case object DisconnectedException extends RuntimeException("a disconnection occurred with the first hop")
+  private case object UpdateMalformedException extends RuntimeException("first hop returned an UpdateFailMalformedHtlc message")
+  private case object ChannelFailureException extends RuntimeException("a channel failure occurred with the first hop")
+  private case object DisconnectedException extends RuntimeException("a disconnection occurred with the first hop")
   // @formatter:on
 
 }

@@ -35,6 +35,7 @@ trait Invoice {
   def features: Features[InvoiceFeature]
   def isExpired(now: TimestampSecond = TimestampSecond.now()): Boolean = createdAt + relativeExpiry.toSeconds <= now
   def toString: String
+  def accountable: Boolean
   // @formatter:on
 }
 

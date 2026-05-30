@@ -81,9 +81,9 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       aliceRegister ! alice
       bobRegister ! bob
       // no announcements
-      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.feeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, aliceChannelParams, commitParams, pipe, bobInit, channelFlags, ChannelConfig.standard, ChannelTypes.Standard(), replyTo = system.deadLetters)
+      alice ! INPUT_INIT_CHANNEL_INITIATOR(ByteVector32.Zeroes, TestConstants.fundingSatoshis, dualFunded = false, TestConstants.anchorOutputsFeeratePerKw, TestConstants.feeratePerKw, fundingTxFeeBudget_opt = None, Some(TestConstants.initiatorPushAmount), requireConfirmedInputs = false, requestFunding_opt = None, aliceChannelParams, commitParams, pipe, bobInit, channelFlags, ChannelConfig.standard, ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), replyTo = system.deadLetters)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobChannelParams, commitParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard())
+      bob ! INPUT_INIT_CHANNEL_NON_INITIATOR(ByteVector32.Zeroes, None, dualFunded = false, None, requireConfirmedInputs = false, bobChannelParams, commitParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
@@ -122,7 +122,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount.toLong.toInt).msat
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(currentBlockHeight = BlockHeight(400000))
-      val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(self), invoice.paymentHash, makeSingleHopRoute(amount, invoice.nodeId), ClearRecipient(invoice, amount, expiry, Set.empty), Reputation.Score.max)
+      val Right(payment) = OutgoingPaymentPacket.buildOutgoingPayment(localOrigin(self), invoice.paymentHash, makeSingleHopRoute(amount, invoice.nodeId), ClearRecipient(invoice, amount, expiry, Set.empty), Reputation.Score.max(accountable = false))
       payment.cmd
     }
 
@@ -134,10 +134,10 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
             sendChannel ! buildCmdAdd(invoice)
             context become {
               case RES_SUCCESS(_: CMD_ADD_HTLC, _) => ()
-              case RES_ADD_SETTLED(_, htlc, _: HtlcResult.Fulfill) =>
+              case RES_ADD_SETTLED(_, _, htlc, _: HtlcResult.Fulfill) =>
                 log.info(s"successfully sent htlc #${htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
-              case RES_ADD_SETTLED(_, htlc, _: HtlcResult.Fail) =>
+              case RES_ADD_SETTLED(_, _, htlc, _: HtlcResult.Fail) =>
                 log.warning(s"htlc failed: ${htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
               case RES_ADD_FAILED(_, t: Throwable, _) =>

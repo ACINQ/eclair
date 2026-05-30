@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, BtcDouble, ByteVector32, 
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{PaymentMetadata, PaymentSecret, _}
 import fr.acinq.eclair.payment.Bolt11Invoice._
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, UnknownFeature, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, EncodedFeatures, Feature, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, randomBytes32}
 import org.scalatest.TryValues.convertTryToSuccessOrFailure
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
@@ -306,33 +306,6 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(invoice.sign(priv).toString == ref)
   }
 
-  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 8, 14 and 99, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
-    val refs = Seq(
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqqsgq2a25dxl5hrntdtn6zvydt7d66hyzsyhqs4wdynavys42xgl6sgx9c4g7me86a27t07mdtfry458rtjr0v92cnmswpsjscgt2vcse3sgpz3uapa",
-      // All upper-case
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqqsgq2a25dxl5hrntdtn6zvydt7d66hyzsyhqs4wdynavys42xgl6sgx9c4g7me86a27t07mdtfry458rtjr0v92cnmswpsjscgt2vcse3sgpz3uapa".toUpperCase,
-      // With ignored fields
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqqsgq2qrqqqfppnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqppnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpp4qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhpnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhp4qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqspnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqsp4qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqnp5qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqnpkqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqz599y53s3ujmcfjp5xrdap68qxymkqphwsexhmhr8wdz5usdzkzrse33chw6dlp3jhuhge9ley7j2ayx36kawe7kmgg8sv5ugdyusdcqzn8z9x"
-    )
-
-    for (ref <- refs) {
-      val Success(invoice) = Bolt11Invoice.fromString(ref)
-      assert(invoice.prefix == "lnbc")
-      assert(invoice.amount_opt.contains(2500000000L msat))
-      assert(invoice.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-      assert(invoice.paymentSecret.bytes == hex"1111111111111111111111111111111111111111111111111111111111111111")
-      assert(invoice.createdAt == TimestampSecond(1496314658L))
-      assert(invoice.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
-      assert(invoice.description == Left("coffee beans"))
-      assert(features2bits(invoice.features) == bin"1000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
-      assert(!invoice.features.hasFeature(BasicMultiPartPayment))
-      assert(invoice.features.hasFeature(PaymentSecret, Some(Mandatory)))
-      assert(!invoice.features.hasFeature(TrampolinePaymentPrototype))
-      assert(TestConstants.Alice.nodeParams.features.invoiceFeatures().areSupported(invoice.features))
-      assert(invoice.sign(priv).toString == ref.toLowerCase)
-    }
-  }
-
   test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 8, 14, 99 and 100, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
     val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4psqqqqqqqqqqqqqqqqsgqtqyx5vggfcsll4wu246hz02kp85x4katwsk9639we5n5yngc3yhqkm35jnjw4len8vrnqnf5ejh0mzj9n3vz2px97evektfm2l6wqccp3y7372"
     val Success(invoice) = Bolt11Invoice.fromString(ref)
@@ -430,6 +403,8 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       "lnbc1p5q54jjpp5fe0dhqdt4m97psq0fv3wjlk95cclnatvuvq49xtnc8rzrp0dysusdqqcqzzsxqrrs0fppqy6uew5229e67r9xzzm9mjyfwseclstdgsp5rnanj9x5rnanj9xnq28hhgd6c7yxlmh6lta047h6lqqqqqqqqqqqrqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6qqqqqqqqqqqqqqqqqqq9kvnknh7ug5mttnqqqqqqqqq8849gwfhvnp9rqpe0cy97",
       // Invalid min_final_expiry_delta_blocks.
       "lnbc1p5q54jjpp5fe0dhqdt4m97psq0fv3wjlk95cclnatvuvq49xtnc8rzrp0d5susdqqcqg3vrywwwjsppqy6uew5229e67rzxzzm9mjyfwseclstdgsp5rnanj9xnq28hhgd6c7yxlmh6lta047h6lqqqqqqqqqqqrqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9kvnknh7ug5mttn2yu5ha6m98cpda2rtwu08849gwfhvnp9rqpqqqqqqqqqg58lts",
+      // Invalid fallback address.
+      "lnbc1qzupp9qsp5pvgsuqqpgczuppczc3pcz3syzy8q2xqqqqqqqqqqqqqqqqqygh9qpp5s7zxqqqqqqqqqqyqymqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhp5qs97qqqqqqqpqqyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqptfqptfqptfqptfqptfqptfqptfqptfq95xtfqptfqp3w9chzut3w9chj95xw7tfpp35qqqw9chzuqt3w9chzut3qptfqptfqptfqptfqptfqptfqpqw9cqqqqt28y39",
     )
     for (ref <- refs) {
       assert(Bolt11Invoice.fromString(ref).isFailure)
@@ -531,30 +506,29 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       Features(bin"               00010100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
       Features(bin"               00010100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
       Features(bin"               00100100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
-      Features(bin"               01000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"               00000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       Features(bin"          0000010000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      Features(bin"          0000011000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      Features(bin"          0000110000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      Features(bin"          0000100000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      Features(bin"          0010000000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      Features(bin"     000001000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"          0001010000110000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"          0001000000110000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"          0100000000110000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"     000010000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
-      Features(bin"     000100000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
-      Features(bin"00000010000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"     000010000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      Features(bin"00000010000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
+      Features(bin"00000100000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       Features(bin"00001000000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false)
     )
-
     for ((features, res) <- featureBits) {
       val invoice = createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features)
       assert(Result(invoice.features.hasFeature(BasicMultiPartPayment), invoice.features.hasFeature(PaymentSecret, Some(Mandatory)), nodeParams.features.invoiceFeatures().areSupported(invoice.features)) == res)
-      assert(Bolt11Invoice.fromString(invoice.toString).get == invoice)
+      assert(Bolt11Invoice.fromString(invoice.toString).get.toString == invoice.toString)
     }
   }
 
   test("feature bits to minimally-encoded feature bytes") {
     // Invoice features are encoded as 5-bits chunks, which we decode to bytes.
     val testCases = Seq(
-      (bin"   0010000100000101", hex"  2105"),
+      (bin"    010000100000101", hex"  2105"),
       (bin"   1010000100000101", hex"  a105"),
       (bin"  11000000000000110", hex"018006"),
       (bin"  01000000000000110", hex"  8006"),
@@ -563,7 +537,6 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       (bin"0101010000000000110", hex"02a006"),
       (bin"1000110000000000110", hex"046006")
     )
-
     for ((invoiceFeatureBits, featureBytes) <- testCases) {
       assert(Features(invoiceFeatureBits).toByteVector == featureBytes)
     }
@@ -679,12 +652,10 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       "lnbc100n1pw9qjdgsp5hxzeu9dtpxukstuadtlyhejc24h8q6hz7exmwhsdqg972a028nwspp5lmycszp7pzce0rl29s40fhkg02v7vgrxaznr6ys5cawg437h80nsdpstfshq5n9v9jzucm0d5s8vmm5v5s8qmmnwssyj3p6yqenwdejcqzysxqrrss47kl34flydtmu2wnszuddrd0nwa6rnu4d339jfzje6hzk6an0uax3kteee2lgx5r0629wehjeseksz0uuakzwy47lmvy2g7hja7mnpsqrhfnrc" -> PublicKey(hex"02e813a1f2f6e2066fa989d4daba5d48a88d02d6ab81f0e271d919691961550c0f"),
       "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqpqsq67gye39hfg3zd8rgc80k32tvy9xk2xunwm5lzexnvpx6fd77en8qaq424dxgt56cag2dpt359k3ssyhetktkpqh24jqnjyw6uqd08sgptq44qu" -> PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"),
       "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4psqqqqqqqqqqqqqqqpqsqq40wa3khl49yue3zsgm26jrepqr2eghqlx86rttutve3ugd05em86nsefzh4pfurpd9ek9w2vp95zxqnfe2u7ckudyahsa52q66tgzcp6t2dyk" -> PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"),
-      "lnbc100n1pslczttpp5refxwyd5qvvnxsmswhqtqd50hdcwhk5edp02u3xpy6whf6eua3lqdq8w35hg6gsp56nrnqjjjj2g3wuhdwhy7r3sfu0wae603w9zme8wcq2f3myu3hm6qcqzrm9qrjgq7md5lu2hhkz657rs2a40xm2elaqda4krv6vy44my49x02azsqwr35puvgzjltd6dfth2awxcq49cx3srkl3zl34xhw7ppv840yf74wqq88rwr5" -> PublicKey(hex"036dc96e30210083a18762be096f13500004fc8af5bcca40f4872e18771ad58b4c"),
-      "lnbc100n1pslczttpp5refxwyd5qvvnxsmswhqtqd50hdcwhk5edp02u3xpy6whf6eua3lqdq8w35hg6gsp56nrnqjjjj2g3wuhdwhy7r3sfu0wae603w9zme8wcq2f3myu3hm6qcqzrm9qr3gqjdynggx20rz4nh98uknmtp2wkwk95zru8lfmw0cz9s3t0xpevuzpzz4k34cprpg9jfc3yp8zc827psug69j4w4pkn70rrfddcqf9wnqqcm2nc4" -> PublicKey(hex"036dc96e30210083a18762be096f13500004fc8af5bcca40f4872e18771ad58b4c"),
       "lnbc100n1pslczttpp5refxwyd5qvvnxsmswhqtqd50hdcwhk5edp02u3xpy6whf6eua3lqdq8w35hg6gsp56nrnqjjjj2g3wuhdwhy7r3sfu0wae603w9zme8wcq2f3myu3hm6qcqzrm9q9sqsgqruuf6y6hd77533p6ufl3dapzzt55uj7t88mgty7hvfpy5lzvntpyn82j72fr3wqz985lh7l2f5pnju66nman5z09p24qvp2k8443skqqq38n4w" -> PublicKey(hex"036dc96e30210083a18762be096f13500004fc8af5bcca40f4872e18771ad58b4c"),
       "lnbc100n1pslczttpp5refxwyd5qvvnxsmswhqtqd50hdcwhk5edp02u3xpy6whf6eua3lqdq8w35hg6gsp56nrnqjjjj2g3wuhdwhy7r3sfu0wae603w9zme8wcq2f3myu3hm6qcqzrm9qxpqqsgqh88td9f8p8ls8r6devh9lhvppwqe6e0lkvehyu8ztu76m9s8nu2x0rfp5z9jmn2ta97mex2ne6yecvtz8r0qej62lvkngpaduhgytncqts4cxs" -> PublicKey(hex"036dc96e30210083a18762be096f13500004fc8af5bcca40f4872e18771ad58b4c"),
+      "lnbc600n1p547aawpp55m20ku0uua76kmjw0dn54sajhzv5czg357vu4v8sd6mtylsydn9qcqpjsp5yhq5n0qthcw35ngp65zgcv4qswg9j96tq74jahyqv0wm6g3qptaq9qrsgqlqqdqlv93kxmm4de6xzcnvv5sxjmnkda5kxeg939n82lq9kcjzpxjv3d8ull0u5fe8v389sjq9457yljmfuml33wruy0wcl78vp6hqtrvpl7kg2wsga2zdfwx29937hecvdnu7wzpnrgqre2xnf" -> PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"),
     )
-
     for ((req, nodeId) <- requests) {
       val Success(invoice) = Bolt11Invoice.fromString(req)
       assert(invoice.nodeId == nodeId)
@@ -693,26 +664,13 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
   }
 
   test("no unknown feature in invoice") {
-    val invoiceFeatures = TestConstants.Alice.nodeParams.features.bolt11Features()
-    assert(invoiceFeatures.unknown.nonEmpty)
+    val invoiceFeatures = TestConstants.Alice.nodeParams.features.bolt11Features().copy(encoded_opt = Some(EncodedFeatures.fromFeatureBits(Set(1105))))
     val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = invoiceFeatures)
     assert(invoice.features == Features(PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, VariableLengthOnion -> Mandatory))
     assert(Bolt11Invoice.fromString(invoice.toString).get == invoice)
   }
 
-  test("filter non-invoice features when parsing invoices") {
-    // The following invoice has feature bit 20 activated (option_anchor_outputs) without feature bit 12 (option_static_remotekey).
-    // This doesn't satisfy the feature dependency graph, but since those aren't invoice features, we should ignore it.
-    val features = Features(
-      Map(VariableLengthOnion -> FeatureSupport.Mandatory, PaymentSecret -> FeatureSupport.Mandatory, AnchorOutputs -> Mandatory),
-      Set(UnknownFeature(121), UnknownFeature(156))
-    )
-    val invoice = createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, None, randomBytes32(), priv, Left("non-invoice features"), CltvExpiryDelta(6), features = features.unscoped()).toString
-    val Success(pr) = Bolt11Invoice.fromString(invoice)
-    assert(pr.features == features.remove(AnchorOutputs))
-  }
-
   test("invoices can't have high features") {
-    assertThrows[Exception](createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features[Feature](Map[Feature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), Set(UnknownFeature(424242)))))
+    assertThrows[Exception](createInvoiceUnsafe(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = Features[Feature](Map[Feature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory), Some(EncodedFeatures.fromFeatureBits(Set(424242))))))
   }
 }

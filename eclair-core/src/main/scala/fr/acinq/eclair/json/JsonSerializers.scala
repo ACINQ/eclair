@@ -37,7 +37,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, FeatureSupport, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
+import fr.acinq.eclair.{Alias, BlockHeight, CltvExpiry, CltvExpiryDelta, EncodedNodeId, Feature, FeatureSupport, Features, MilliSatoshi, RealShortChannelId, ShortChannelId, TimestampMilli, TimestampSecond, UInt64}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -229,7 +229,10 @@ object FeatureKeySerializer extends MinimalKeySerializer({ case f: Feature => f.
 
 object FeatureSupportSerializer extends MinimalSerializer({ case s: FeatureSupport => JString(s.toString) })
 
-object UnknownFeatureSerializer extends MinimalSerializer({ case f: UnknownFeature => JInt(f.bitIndex) })
+// @formatter:off
+private case class FeaturesJson(activated: Map[Feature, FeatureSupport])
+object FeaturesSerializer extends ConvertClassSerializer[Features[Feature]](f => FeaturesJson(f.activated))
+// @formatter:on
 
 object ChannelConfigSerializer extends MinimalSerializer({
   case x: ChannelConfig => JArray(x.options.toList.map(o => JString(o.name)))
@@ -375,13 +378,20 @@ object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFail
     val route = f.route.map(_.nodeId) ++ f.route.lastOption.map(_.nextNodeId)
     val message = f match {
       case LocalFailure(_, _, t) => t.getMessage
-      case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, failureMessage)) => s"$origin returned: ${failureMessage.message}"
+      case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, _, failureMessage), _, _) => s"$origin returned: ${failureMessage.message}"
       case _: UnreadableRemoteFailure => "unreadable remote failure"
     }
     PaymentFailureSummaryJson(f.amount, route, message)
   })
 ))
 // @formatter:on
+
+private case class PaymentPartJson(id: UUID, channelId: ByteVector32, nextNodeId: PublicKey, amountWithFees: MilliSatoshi, fees: MilliSatoshi, route: Option[Seq[Hop]], startedAt: TimestampMilli, settledAt: TimestampMilli)
+private case class PaymentSentJson(id: UUID, paymentHash: ByteVector32, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentPartJson], fees: MilliSatoshi, startedAt: TimestampMilli, settledAt: TimestampMilli)
+object PaymentSentSerializer extends ConvertClassSerializer[PaymentSent](p => {
+  val parts = p.parts.map(pp => PaymentPartJson(pp.id, pp.channelId, pp.remoteNodeId, pp.amountWithFees, pp.feesPaid, pp.route, pp.startedAt, pp.settledAt))
+  PaymentSentJson(p.id, p.paymentHash, p.paymentPreimage, p.recipientAmount, p.recipientNodeId, parts, p.feesPaid, p.startedAt, p.settledAt)
+})
 
 object ThrowableSerializer extends MinimalSerializer({
   case t: Throwable if t.getMessage != null => JString(t.getMessage)
@@ -415,12 +425,7 @@ object InvoiceSerializer extends MinimalSerializer({
       .collectFirst { case cltvExpiry: Bolt11Invoice.MinFinalCltvExpiry => cltvExpiry.toCltvExpiryDelta } // NB: we look at fields directly because the value has a spec-defined default
       .map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
     val amount = p.amount_opt.map(msat => JField("amount", JLong(msat.toLong))).toSeq
-    val features = JField("features", Extraction.decompose(p.features)(
-      DefaultFormats +
-        FeatureKeySerializer +
-        FeatureSupportSerializer +
-        UnknownFeatureSerializer
-    ))
+    val features = JField("features", Extraction.decompose(p.features)(DefaultFormats + FeatureKeySerializer + FeatureSupportSerializer + FeaturesSerializer))
     val paymentMetadata = p.paymentMetadata.map(m => JField("paymentMetadata", JString(m.toHex))).toSeq
     val routingInfo = JField("routingInfo", Extraction.decompose(p.routingInfo)(
       DefaultFormats +
@@ -451,12 +456,7 @@ object InvoiceSerializer extends MinimalSerializer({
       Some(JField("nodeId", JString(p.nodeId.toString()))),
       Some(JField("paymentHash", JString(p.paymentHash.toString()))),
       p.description.map(string => JField("description", JString(string))),
-      Some(JField("features", Extraction.decompose(p.features)(
-        DefaultFormats +
-          FeatureKeySerializer +
-          FeatureSupportSerializer +
-          UnknownFeatureSerializer
-      ))),
+      Some(JField("features", Extraction.decompose(p.features)(DefaultFormats + FeatureKeySerializer + FeatureSupportSerializer + FeaturesSerializer))),
       Some(JField("blindedPaths", JArray(p.blindedPaths.map(path => {
         val introductionNode = path.route.firstNodeId.toString
         val blindedNodes = path.route.blindedHops
@@ -553,10 +553,27 @@ object ChannelEventSerializer extends MinimalSerializer({
     JField("commitTxFeeratePerKw", JLong(e.commitTxFeerate.toLong)),
     JField("fundingTxFeeratePerKw", e.fundingTxFeerate.map(f => JLong(f.toLong)).getOrElse(JNothing))
   )
-  case e: ChannelOpened => JObject(
-    JField("type", JString("channel-opened")),
+  case e: ChannelFundingCreated => JObject(
+    JField("type", JString("channel-funding-created")),
     JField("remoteNodeId", JString(e.remoteNodeId.toString())),
     JField("channelId", JString(e.channelId.toHex)),
+    JField("fundingTxId", JString(e.fundingTxId.value.toHex)),
+    JField("fundingTxIndex", JLong(e.fundingTxIndex)),
+  )
+  case e: ChannelFundingConfirmed => JObject(
+    JField("type", JString("channel-confirmed")),
+    JField("remoteNodeId", JString(e.remoteNodeId.toString())),
+    JField("channelId", JString(e.channelId.toHex)),
+    JField("fundingTxId", JString(e.fundingTxId.value.toHex)),
+    JField("fundingTxIndex", JLong(e.fundingTxIndex)),
+    JField("blockHeight", JLong(e.blockHeight.toLong)),
+  )
+  case e: ChannelReadyForPayments => JObject(
+    JField("type", JString("channel-ready")),
+    JField("remoteNodeId", JString(e.remoteNodeId.toString())),
+    JField("channelId", JString(e.channelId.toHex)),
+    JField("fundingTxId", JString(e.fundingTxId.value.toHex)),
+    JField("fundingTxIndex", JLong(e.fundingTxIndex)),
   )
   case e: ChannelStateChanged => JObject(
     JField("type", JString("channel-state-changed")),
@@ -568,7 +585,8 @@ object ChannelEventSerializer extends MinimalSerializer({
   case e: ChannelClosed => JObject(
     JField("type", JString("channel-closed")),
     JField("channelId", JString(e.channelId.toHex)),
-    JField("closingType", JString(e.closingType.getClass.getSimpleName))
+    JField("closingType", JString(e.closingType.getClass.getSimpleName)),
+    JField("closingTxId", JString(e.closingTxId.value.toHex)),
   )
 })
 
@@ -577,6 +595,7 @@ object OriginSerializer extends MinimalSerializer({
     case u: Upstream.Local => JObject(JField("paymentId", JString(u.id.toString)))
     case u: Upstream.Hot.Channel => JObject(
       JField("channelId", JString(u.add.channelId.toHex)),
+      JField("remoteNodeId", JString(u.receivedFrom.toHex)),
       JField("htlcId", JLong(u.add.id)),
       JField("amount", JLong(u.add.amountMsat.toLong)),
       JField("expiry", JLong(u.add.cltvExpiry.toLong)),
@@ -585,6 +604,7 @@ object OriginSerializer extends MinimalSerializer({
     case u: Upstream.Hot.Trampoline => JArray(u.received.map { htlc =>
       JObject(
         JField("channelId", JString(htlc.add.channelId.toHex)),
+        JField("remoteNodeId", JString(htlc.receivedFrom.toHex)),
         JField("htlcId", JLong(htlc.add.id)),
         JField("amount", JLong(htlc.add.amountMsat.toLong)),
         JField("expiry", JLong(htlc.add.cltvExpiry.toLong)),
@@ -593,12 +613,14 @@ object OriginSerializer extends MinimalSerializer({
     })
     case o: Upstream.Cold.Channel => JObject(
       JField("channelId", JString(o.originChannelId.toHex)),
+      JField("remoteNodeId", JString(o.originNodeId.toHex)),
       JField("htlcId", JLong(o.originHtlcId)),
       JField("amount", JLong(o.amountIn.toLong)),
     )
     case o: Upstream.Cold.Trampoline => JArray(o.originHtlcs.map { htlc =>
       JObject(
         JField("channelId", JString(htlc.originChannelId.toHex)),
+        JField("remoteNodeId", JString(htlc.originNodeId.toHex)),
         JField("htlcId", JLong(htlc.originHtlcId)),
         JField("amount", JLong(htlc.amountIn.toLong)),
       )
@@ -669,10 +691,11 @@ object CustomTypeHints {
 
   val paymentEvent: CustomTypeHints = CustomTypeHints(Map(
     classOf[PaymentSent] -> "payment-sent",
+    classOf[PaymentSentJson] -> "payment-sent",
     classOf[ChannelPaymentRelayed] -> "payment-relayed",
     classOf[TrampolinePaymentRelayed] -> "trampoline-payment-relayed",
+    classOf[OnTheFlyFundingPaymentRelayed] -> "on-the-fly-funding-payment-relayed",
     classOf[PaymentReceived] -> "payment-received",
-    classOf[PaymentSettlingOnChain] -> "payment-settling-onchain",
     classOf[PaymentFailed] -> "payment-failed",
   ))
 
@@ -761,7 +784,7 @@ object JsonSerializers {
     OutPointKeySerializer +
     FeatureKeySerializer +
     FeatureSupportSerializer +
-    UnknownFeatureSerializer +
+    FeaturesSerializer +
     ChannelConfigSerializer +
     ChannelFeaturesSerializer +
     OpenChannelResponseSerializer +
@@ -784,6 +807,7 @@ object JsonSerializers {
     GlobalBalanceSerializer +
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +
+    PaymentSentSerializer +
     OnionMessageReceivedSerializer +
     ShortIdAliasesSerializer +
     FundingTxStatusSerializer +

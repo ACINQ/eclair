@@ -82,7 +82,7 @@ object Databases extends Logging {
     def apply(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection, inboundFeesJdbc: Connection, jdbcUrlFile_opt: Option[File]): SqliteDatabases = {
       jdbcUrlFile_opt.foreach(checkIfDatabaseUrlIsUnchanged("sqlite", _))
       // We check whether the node operator needs to run an intermediate eclair version first.
-      using(eclairJdbc.createStatement(), inTransaction = true) { statement => checkChannelsDbVersion(statement, SqliteChannelsDb.DB_NAME, minimum = 7) }
+      using(eclairJdbc.createStatement(), inTransaction = true) { statement => checkChannelsDbVersion(statement, SqliteChannelsDb.DB_NAME, isSqlite = true) }
       SqliteDatabases(
         network = new SqliteNetworkDb(networkJdbc),
         liquidity = new SqliteLiquidityDb(eclairJdbc),
@@ -161,7 +161,7 @@ object Databases extends Logging {
 
       // We check whether the node operator needs to run an intermediate eclair version first.
       PgUtils.inTransaction { connection =>
-        using(connection.createStatement()) { statement => checkChannelsDbVersion(statement, PgChannelsDb.DB_NAME, minimum = 11) }
+        using(connection.createStatement()) { statement => checkChannelsDbVersion(statement, PgChannelsDb.DB_NAME, isSqlite = false) }
       }
 
       val databases = PostgresDatabases(
@@ -276,8 +276,9 @@ object Databases extends Logging {
 
     if (urlFile.exists()) {
       val oldUrl = readString(urlFile.toPath)
-      if (oldUrl != url)
+      if (url != null && oldUrl != null && oldUrl != url) {
         throw JdbcUrlChanged(oldUrl, url)
+      }
     } else {
       writeString(urlFile.toPath, url)
     }

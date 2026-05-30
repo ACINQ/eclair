@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.fund.InteractiveTxBuilder.{FullySignedSharedTrans
 import fr.acinq.eclair.channel.fund.{InteractiveTxBuilder, InteractiveTxSigningSession}
 import fr.acinq.eclair.channel.publish.TxPublisher.SetChannelId
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.io.Peer.{LiquidityPurchaseSigned, OpenChannelResponse}
+import fr.acinq.eclair.io.Peer.{LiquidityPurchaseAborted, LiquidityPurchaseSigned, OpenChannelResponse}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{ToMilliSatoshiConversion, randomBytes32}
@@ -127,7 +127,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
         lockTime = nodeParams.currentBlockHeight.toLong,
         fundingPubkey = fundingPubKey,
         revocationBasepoint = channelKeys.revocationBasePoint,
-        paymentBasepoint = input.localChannelParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
+        paymentBasepoint = channelKeys.paymentBasePoint,
         delayedPaymentBasepoint = channelKeys.delayedPaymentBasePoint,
         htlcBasepoint = channelKeys.htlcBasePoint,
         firstPerCommitmentPoint = channelKeys.commitmentPoint(0),
@@ -141,7 +141,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
     case Event(open: OpenDualFundedChannel, d: DATA_WAIT_FOR_OPEN_DUAL_FUNDED_CHANNEL) =>
       val localFundingPubkey = channelKeys.fundingKey(fundingTxIndex = 0).publicKey
       val fundingScript = Transactions.makeFundingScript(localFundingPubkey, open.fundingPubkey, d.init.channelType.commitmentFormat).pubkeyScript
-      Helpers.validateParamsDualFundedNonInitiator(nodeParams, d.init.channelType, open, fundingScript, remoteNodeId, d.init.localChannelParams.initFeatures, d.init.remoteInit.features, d.init.fundingContribution_opt) match {
+      Helpers.validateParamsDualFundedNonInitiator(nodeParams, open, fundingScript, remoteNodeId, d.init.localChannelParams.initFeatures, d.init.remoteInit.features, d.init.fundingContribution_opt) match {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript, willFund_opt)) =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isOpener = false, open.temporaryChannelId, open.commitmentFeerate, Some(open.fundingFeerate)))
@@ -179,7 +179,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             maxAcceptedHtlcs = localCommitParams.maxAcceptedHtlcs,
             fundingPubkey = localFundingPubkey,
             revocationBasepoint = channelKeys.revocationBasePoint,
-            paymentBasepoint = d.init.localChannelParams.walletStaticPaymentBasepoint.getOrElse(channelKeys.paymentBasePoint),
+            paymentBasepoint = channelKeys.paymentBasePoint,
             delayedPaymentBasepoint = channelKeys.delayedPaymentBasePoint,
             htlcBasepoint = channelKeys.htlcBasePoint,
             firstPerCommitmentPoint = channelKeys.commitmentPoint(0),
@@ -224,7 +224,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
 
   when(WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL)(handleExceptions {
     case Event(accept: AcceptDualFundedChannel, d: DATA_WAIT_FOR_ACCEPT_DUAL_FUNDED_CHANNEL) =>
-      Helpers.validateParamsDualFundedInitiator(nodeParams, remoteNodeId, d.init.channelType, d.init.localChannelParams.initFeatures, d.init.remoteInit.features, d.lastSent, accept) match {
+      Helpers.validateParamsDualFundedInitiator(nodeParams, remoteNodeId, d.init.localChannelParams.initFeatures, d.init.remoteInit.features, d.lastSent, accept) match {
         case Left(t) =>
           d.init.replyTo ! OpenChannelResponse.Rejected(t.getMessage)
           handleLocalError(t, d, Some(accept))
@@ -383,6 +383,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
               remotePerCommitmentSecrets = ShaChain.init,
               originChannels = Map.empty
             )
+            context.system.eventStream.publish(ChannelFundingCreated(self, d.channelId, remoteNodeId, Right(signingSession1.fundingTx.signedTx_opt.getOrElse(signingSession1.fundingTx.sharedTx.tx.buildUnsignedTx())), signingSession1.commitment.fundingTxIndex, commitments))
             val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, d.localPushAmount, d.remotePushAmount, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, DualFundingStatus.WaitingForConfirmations, None)
             goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending signingSession1.localSigs
         }
@@ -406,12 +407,16 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
                 remotePerCommitmentSecrets = ShaChain.init,
                 originChannels = Map.empty
               )
+              context.system.eventStream.publish(ChannelFundingCreated(self, d.channelId, remoteNodeId, Right(signingSession.fundingTx.signedTx_opt.getOrElse(signingSession.fundingTx.sharedTx.tx.buildUnsignedTx())), signingSession.commitment.fundingTxIndex, commitments))
               val d1 = DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED(commitments, d.localPushAmount, d.remotePushAmount, nodeParams.currentBlockHeight, nodeParams.currentBlockHeight, DualFundingStatus.WaitingForConfirmations, None)
               goto(WAIT_FOR_DUAL_FUNDING_CONFIRMED) using d1 storing() sending signingSession.localSigs calling publishFundingTx(signingSession.fundingTx)
           }
         case msg: TxAbort =>
           log.info("our peer aborted the dual funding flow: ascii='{}' bin={}", msg.toAscii, msg.data)
           rollbackFundingAttempt(d.signingSession.fundingTx.tx, Nil)
+          d.signingSession.liquidityPurchase_opt.collect {
+            case _ if !d.signingSession.fundingParams.isInitiator => peer ! LiquidityPurchaseAborted(d.channelId, d.signingSession.fundingTx.txId, d.signingSession.fundingTxIndex)
+          }
           goto(CLOSED) using IgnoreClosedData(d) sending TxAbort(d.channelId, DualFundingAborted(d.channelId).getMessage)
         case msg: InteractiveTxConstructionMessage =>
           log.info("received unexpected interactive-tx message: {}", msg.getClass.getSimpleName)

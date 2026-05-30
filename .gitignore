@@ -31,3 +31,13 @@ jdbcUrlFile_*.tmp
 .bloop/
 
 .DS_Store
+
+.claude*
+
+.bloop/
+.metals/
+.vscode/
+
+# fuzzing
+crash-*
+.cifuzz-*

@@ -273,9 +273,10 @@ object Sphinx extends Logging {
    * A properly decrypted failure from a node in the route.
    *
    * @param originNode     public key of the node that generated the failure.
+   * @param index          position in the route of the node that generated the failure.
    * @param failureMessage friendly failure message.
    */
-  case class DecryptedFailurePacket(originNode: PublicKey, failureMessage: FailureMessage)
+  case class DecryptedFailurePacket(originNode: PublicKey, index: Int, failureMessage: FailureMessage)
 
   /**
    * The downstream failure could not be decrypted.
@@ -335,7 +336,7 @@ object Sphinx extends Logging {
      * @return failure message if the origin of the packet could be identified and the packet decrypted, the unwrapped
      *         failure packet otherwise.
      */
-    def decrypt(packet: ByteVector, attribution_opt: Option[ByteVector], sharedSecrets: Seq[SharedSecret]): HtlcFailure = {
+    def decrypt(packet: ByteVector, attribution_opt: Option[ByteVector], sharedSecrets: Seq[SharedSecret], index: Int = 1): HtlcFailure = {
       sharedSecrets match {
         case Nil => HtlcFailure(Nil, Left(CannotDecryptFailurePacket(packet, attribution_opt)))
         case ss :: tail =>
@@ -343,8 +344,8 @@ object Sphinx extends Logging {
           val attribution1_opt = attribution_opt.flatMap(Attribution.unwrap(_, packet1, ss.secret, sharedSecrets.length))
           val um = generateKey("um", ss.secret)
           val HtlcFailure(downstreamHoldTimes, failure) = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).decode(packet1.toBitVector) match {
-            case Attempt.Successful(value) => HtlcFailure(Nil, Right(DecryptedFailurePacket(ss.remoteNodeId, value.value)))
-            case _ => decrypt(packet1, attribution1_opt.map(_._2), tail)
+            case Attempt.Successful(value) => HtlcFailure(Nil, Right(DecryptedFailurePacket(ss.remoteNodeId, index, value.value)))
+            case _ => decrypt(packet1, attribution1_opt.map(_._2), tail, index + 1)
           }
           HtlcFailure(attribution1_opt.map(n => HoldTime(n._1, ss.remoteNodeId) +: downstreamHoldTimes).getOrElse(Nil), failure)
       }

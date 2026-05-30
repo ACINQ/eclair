@@ -268,7 +268,7 @@ object Validation {
     } else d1
   }
 
-  def handleChannelSpent(d: Data, watcher: typed.ActorRef[ZmqWatcher.Command], db: NetworkDb, spendingTxId: TxId, shortChannelIds: Set[RealShortChannelId])(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleChannelSpent(d: Data, watcher: typed.ActorRef[ZmqWatcher.Command], db: NetworkDb, spendingTxId_opt: Option[TxId], shortChannelIds: Set[RealShortChannelId])(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val lostChannels = shortChannelIds.flatMap(shortChannelId => d.channels.get(shortChannelId).orElse(d.prunedChannels.get(shortChannelId)))
     log.info("funding tx for channelIds={} was spent", shortChannelIds.mkString(","))
@@ -277,7 +277,7 @@ object Validation {
     val prunedChannels1 = d.prunedChannels -- shortChannelIds
     val lostNodes = lostChannels.flatMap(lostChannel => Seq(lostChannel.nodeId1, lostChannel.nodeId2).filterNot(nodeId => hasChannels(nodeId, channels1.values)))
     // let's clean the db and send the events
-      log.info("pruning shortChannelIds={} (spent)", shortChannelIds.mkString(","))
+    log.info("pruning shortChannelIds={} (spent)", shortChannelIds.mkString(","))
     shortChannelIds.foreach(db.removeChannel(_)) // NB: this also removes channel updates
     // we also need to remove updates from the graph
     val graphWithBalances1 = lostChannels.foldLeft(d.graphWithBalances) { (graph, lostChannel) =>
@@ -298,13 +298,12 @@ object Validation {
         // we will re-add a spliced channel as a new channel later when we receive the announcement
         watcher ! UnwatchExternalChannelSpent(lostChannel.fundingTxId, outputIndex(lostChannel.ann.shortChannelId))
     }
-
     // We may have received RBF candidates for this splice: we can find them by looking at transactions that spend one
     // of the channels we're removing (note that they may spend a slightly different set of channels).
     // Those transactions cannot confirm anymore (they have been double-spent by the current one), so we should stop
     // watching them.
     val spendingTxs = d.spentChannels.filter(_._2.intersect(shortChannelIds).nonEmpty).keySet
-    (spendingTxs - spendingTxId).foreach(txId => watcher ! UnwatchTxConfirmed(txId))
+    (spendingTxs -- spendingTxId_opt.toSet).foreach(txId => watcher ! UnwatchTxConfirmed(txId))
     val spentChannels1 = d.spentChannels -- spendingTxs
     d.copy(nodes = d.nodes -- lostNodes, channels = channels1, prunedChannels = prunedChannels1, graphWithBalances = graphWithBalances1, spentChannels = spentChannels1)
   }

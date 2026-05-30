@@ -16,11 +16,11 @@
 
 package fr.acinq.eclair.payment.relay
 
-import akka.actor.{ActorRef, typed}
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.scalacompat.ByteVector32
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
@@ -30,7 +30,7 @@ import fr.acinq.eclair.io.Peer.ProposeOnTheFlyFundingResponse
 import fr.acinq.eclair.io.{Peer, PeerReadyNotifier}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.{OutgoingChannel, OutgoingChannelParams}
-import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentEvent, PaymentNotRelayed}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.reputation.ReputationRecorder.GetConfidence
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
@@ -79,11 +79,22 @@ object ChannelRelay {
         paymentHash_opt = Some(r.add.paymentHash),
         nodeAlias_opt = Some(nodeParams.alias))) {
         val upstream = Upstream.Hot.Channel(r.add.removeUnknownTlvs(), r.receivedAt, originNode, incomingChannelOccupancy)
-        reputationRecorder_opt match {
-          case Some(reputationRecorder) =>
-            reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), upstream, channels.values.headOption.map(_.nextNodeId), r.relayFeeMsat, nodeParams.currentBlockHeight, r.outgoingCltv)
-          case None =>
-            context.self ! WrappedReputationScore(Reputation.Score.fromEndorsement(r.add.endorsement))
+        val accountable0 = r.add.accountable || nodeParams.relayParams.incomingChannelCongested(upstream.incomingChannelOccupancy)
+        val accountable = if (accountable0 && !r.payload.upgradeAccountability) {
+          // We don't yet enforce channel jamming protections: we log and update metrics as if we had failed that payment,
+          // but we currently relay it anyway. This will let us analyze data before actually activating jamming protection.
+          Metrics.recordPaymentRelayFailed(Tags.FailureType.Jamming, Tags.RelayType.Channel)
+          context.log.info("payment would have been rejected if jamming protection was activated")
+          false
+        } else {
+          accountable0
+        }
+        val nextNodeId_opt = channels.values.headOption.map(_.nextNodeId)
+        (reputationRecorder_opt, nextNodeId_opt) match {
+          case (Some(reputationRecorder), Some(nextNodeId)) =>
+            reputationRecorder ! GetConfidence(context.messageAdapter(WrappedReputationScore(_)), nextNodeId, r.relayFeeMsat, nodeParams.currentBlockHeight, r.outgoingCltv, accountable)
+          case _ =>
+            context.self ! WrappedReputationScore(Reputation.Score.max(accountable))
         }
         Behaviors.receiveMessagePartial {
           case WrappedReputationScore(score) =>
@@ -206,6 +217,7 @@ class ChannelRelay private(nodeParams: NodeParams,
             case RelayFailure(cmdFail) =>
               Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
               context.log.info("rejecting htlc reason={}", cmdFail.reason)
+              channels.headOption.map(_._2.nextNodeId).foreach(nextNodeId => context.system.eventStream ! EventStream.Publish(PaymentNotRelayed(r.add.paymentHash, nextNodeId, fees = upstream.amountIn - r.amountToForward)))
               safeSendAndStop(r.add.channelId, cmdFail)
             case RelayNeedsFunding(nextNodeId, cmdFail) =>
               // Note that in the channel relay case, we don't have any outgoing onion shared secrets.
@@ -245,6 +257,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         context.log.warn(s"couldn't resolve downstream channel $channelId, failing htlc #${upstream.add.id}")
         val cmdFail = makeCmdFailHtlc(upstream.add.id, UnknownNextPeer())
         Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
+        channels.headOption.map(_._2.nextNodeId).foreach(nextNodeId => context.system.eventStream ! EventStream.Publish(PaymentNotRelayed(r.add.paymentHash, nextNodeId, fees = upstream.amountIn - r.amountToForward)))
         safeSendAndStop(upstream.add.channelId, cmdFail)
 
       case WrappedAddResponse(addFailed: RES_ADD_FAILED[_]) =>
@@ -259,22 +272,25 @@ class ChannelRelay private(nodeParams: NodeParams,
 
   private def waitForAddSettled(): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill)) =>
-        context.log.info("relaying fulfill to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.incomingConfidence, upstream.receivedFrom, htlc.channelId)
-        Metrics.relayFulfill(reputationScore.incomingConfidence)
+      case WrappedAddResponse(RES_ADD_SETTLED(_, remoteNodeId, htlc, fulfill: HtlcResult.Fulfill)) =>
+        val now = TimestampMilli.now()
+        context.log.info("relaying fulfill to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, now, reputationScore.outgoingConfidence, upstream.receivedFrom, htlc.channelId)
+        Metrics.relayFulfill(reputationScore.outgoingConfidence)
         val downstreamAttribution_opt = fulfill match {
           case HtlcResult.RemoteFulfill(fulfill) => fulfill.attribution_opt
           case HtlcResult.OnChainFulfill(_) => None
         }
         val attribution = FulfillAttributionData(htlcReceivedAt = upstream.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = downstreamAttribution_opt)
         val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, Some(attribution), commit = true)
-        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(upstream.amountIn, htlc.amountMsat, htlc.paymentHash, upstream.add.channelId, htlc.channelId, upstream.receivedAt, r.receivedAt))
+        val incoming = PaymentEvent.IncomingPayment(upstream.add.channelId, upstream.receivedFrom, upstream.amountIn, upstream.receivedAt)
+        val outgoing = PaymentEvent.OutgoingPayment(htlc.channelId, remoteNodeId, htlc.amountMsat, now)
+        context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(htlc.paymentHash, Seq(incoming), Seq(outgoing)))
         recordRelayDuration(isSuccess = true)
         safeSendAndStop(upstream.add.channelId, cmd)
-
-      case WrappedAddResponse(RES_ADD_SETTLED(_, htlc, fail: HtlcResult.Fail)) =>
-        context.log.info("relaying fail to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, r.receivedAt, reputationScore.incomingConfidence, upstream.receivedFrom, htlc.channelId)
-        Metrics.relayFail(reputationScore.incomingConfidence)
+      case WrappedAddResponse(RES_ADD_SETTLED(_, _, htlc, fail: HtlcResult.Fail)) =>
+        val now = TimestampMilli.now()
+        context.log.info("relaying fail to upstream, receivedAt={}, endedAt={}, confidence={}, originNode={}, outgoingChannel={}", upstream.receivedAt, now, reputationScore.outgoingConfidence, upstream.receivedFrom, htlc.channelId)
+        Metrics.relayFail(reputationScore.outgoingConfidence)
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
         val cmd = translateRelayFailure(upstream.add.id, fail, Some(upstream.receivedAt))
         recordRelayDuration(isSuccess = false)
@@ -392,24 +408,20 @@ class ChannelRelay private(nodeParams: NodeParams,
           })
         (channel, relayResult)
       }
-      .collect {
-        // we only keep channels that have enough balance to handle this payment
-        case (channel, _: RelaySuccess) if channel.commitments.availableBalanceForSend > r.amountToForward => channel
-      }
+      // we only keep channels that have enough balance to handle this payment
+      .collect { case (channel, _: RelaySuccess) if channel.commitments.availableBalanceForSend > r.amountToForward => channel }
       .toList // needed for ordering
-      // we want to use the channel with:
-      //  - the lowest available capacity to ensure we keep high-capacity channels for big payments
-      //  - the lowest available balance to increase our incoming liquidity
-      .sortBy { channel => (channel.commitments.latest.capacity, channel.commitments.availableBalanceForSend) }
-      .headOption match {
-      case Some(channel) =>
-        if (requestedChannelId_opt.contains(channel.channelId)) {
-          context.log.debug("requested short channel id is our preferred channel")
-          Some(channel)
-        } else {
-          context.log.debug("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId_opt, channel.channelUpdate.shortChannelId, channel.commitments.availableBalanceForSend)
-          Some(channel)
-        }
+      .sortWith {
+        // we always prioritize private channels to avoid exhausting our public channels and disabling them or lowering their htlc_maximum_msat
+        case (channel1, channel2) if channel1.commitments.announceChannel != channel2.commitments.announceChannel => !channel1.commitments.announceChannel
+        // otherwise, we use the channel with the smallest capacity to ensure we keep high-capacity channels enabled
+        // (if we ran out of liquidity in a large channels, we would send a channel_update to disable it, which would
+        // negatively impact our score in path-finding algorithms)
+        case (channel1, channel2) if channel1.commitments.capacity != channel2.commitments.capacity => channel1.commitments.capacity <= channel2.commitments.capacity
+        // otherwise, we use the channel with the smallest balance, to ensure we keep higher balances for larger payments
+        case (channel1, channel2) => channel1.commitments.availableBalanceForSend <= channel2.commitments.availableBalanceForSend
+      }.headOption match {
+      case Some(channel) => Some(channel)
       case None =>
         val requestedChannel_opt = requestedChannelId_opt.flatMap(channels.get)
         requestedChannel_opt match {

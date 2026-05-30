@@ -684,6 +684,13 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
     }
   }
 
+  def isMine(address: String)(implicit ec: ExecutionContext): Future[Boolean] = {
+    for {
+      addressInfo <- rpcClient.invoke("getaddressinfo", address)
+      JBool(isMine) = addressInfo \ "ismine"
+    } yield isMine
+  }
+  
   //------------------------- MEMPOOL  -------------------------//
 
   def getMempool()(implicit ec: ExecutionContext): Future[Seq[Transaction]] =

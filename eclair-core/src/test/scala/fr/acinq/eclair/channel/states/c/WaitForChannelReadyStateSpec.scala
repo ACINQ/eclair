@@ -27,6 +27,7 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsBase.PimpTestFSM
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -107,10 +108,10 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     assert(channelReady.alias_opt.contains(bobIds.localAlias))
     val listener = TestProbe()
-    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelOpened])
+    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelReadyForPayments])
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
-    listener.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
+    assert(listener.expectMsgType[ChannelReadyForPayments].channelId == channelId(alice))
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
     assert(initialChannelUpdate.feeBaseMsat == relayFees.feeBase)
@@ -147,7 +148,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     awaitCond(alice.stateName == NORMAL)
   }
 
-  test("recv ChannelReady (zero-conf)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("recv ChannelReady (zero-conf)", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
     // zero-conf channel: we don't have a real scid
     val aliceIds = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].aliases
@@ -155,9 +156,9 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     val channelReady = bob2alice.expectMsgType[ChannelReady]
     assert(channelReady.alias_opt.contains(bobIds.localAlias))
     val listener = TestProbe()
-    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelOpened])
+    alice.underlying.system.eventStream.subscribe(listener.ref, classOf[ChannelReadyForPayments])
     bob2alice.forward(alice)
-    listener.expectMsg(ChannelOpened(alice, bob.underlyingActor.nodeParams.nodeId, channelId(alice)))
+    assert(listener.expectMsgType[ChannelReadyForPayments].channelId == channelId(alice))
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.active.head.remoteFundingStatus == RemoteFundingStatus.Locked)
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.shortChannelId == aliceIds.localAlias)
@@ -172,7 +173,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     awaitCond(alice.stateName == NORMAL)
   }
 
-  test("recv ChannelReady (zero-conf, no alias)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("recv ChannelReady (zero-conf, no alias)", Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
     // zero-conf channel: we don't have a real scid
     val aliceIds = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].aliases
@@ -218,7 +219,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     awaitCond(alice.stateName == NORMAL)
   }
 
-  test("recv ChannelReady (public, zero-conf)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
+  test("recv ChannelReady (public, zero-conf)", Tag(ChannelStateTestsTags.ChannelsPublic), Tag(ChannelStateTestsTags.ZeroConf)) { f =>
     import f._
     // zero-conf channel: we don't have a real scid
     val aliceIds = alice.stateData.asInstanceOf[DATA_WAIT_FOR_CHANNEL_READY].aliases
@@ -240,7 +241,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     awaitCond(alice.stateName == NORMAL)
   }
 
-  test("recv WatchFundingSpentTriggered (remote commit)", Tag(ChannelStateTestsTags.StaticRemoteKey), Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+  test("recv WatchFundingSpentTriggered (remote commit)") { f =>
     import f._
     // bob publishes his commitment tx
     val tx = bob.signCommitTx()
@@ -265,9 +266,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     alice ! Error(ByteVector32.Zeroes, "oops")
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)
-    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
-    alice2blockchain.expectMsgType[TxPublisher.PublishTx]
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
+    alice2blockchain.expectFinalTxPublished(tx.txid)
   }
 
   test("recv Error (nothing at stake)", Tag(ChannelStateTestsTags.NoPushAmount)) { f =>
@@ -295,8 +294,7 @@ class WaitForChannelReadyStateSpec extends TestKitBaseClass with FixtureAnyFunSu
     alice ! CMD_FORCECLOSE(sender.ref)
     aliceListener.expectMsgType[ChannelAborted]
     awaitCond(alice.stateName == CLOSING)
-    assert(alice2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx.txid == tx.txid)
-    alice2blockchain.expectMsgType[TxPublisher.PublishTx]
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId == tx.txid)
+    alice2blockchain.expectFinalTxPublished(tx.txid)
   }
+
 }

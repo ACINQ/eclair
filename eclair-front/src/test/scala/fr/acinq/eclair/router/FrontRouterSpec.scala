@@ -33,6 +33,8 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol.Color
 import org.scalatest.funsuite.AnyFunSuiteLike
 
+import scala.collection.immutable.SortedMap
+
 class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike {
 
   import FrontRouterSpec._
@@ -42,6 +44,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
 
     val watcher = TestProbe()
     val router = system.actorOf(Router.props(nodeParams, watcher.ref))
+    router ! Router.Init(SortedMap.empty, Nil, None)
 
     val system1 = ActorSystem("front-system-1")
     val system2 = ActorSystem("front-system-2")
@@ -143,6 +146,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
 
     val watcher = TestProbe()
     val router = system.actorOf(Router.props(nodeParams, watcher.ref))
+    router ! Router.Init(SortedMap.empty, Nil, None)
 
     val system1 = ActorSystem("front-system-1")
     val system2 = ActorSystem("front-system-2")

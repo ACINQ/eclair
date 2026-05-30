@@ -25,7 +25,7 @@ import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedHop, BlindedRoute}
 import fr.acinq.eclair.wire.protocol.CommonCodecs.varintoverflow
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceRequestTlvCodec, offerTlvCodec}
 import fr.acinq.eclair.wire.protocol.OfferTypes._
-import fr.acinq.eclair.{BlockHeight, EncodedNodeId, Features, MilliSatoshiLong, RealShortChannelId, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, EncodedNodeId, FeatureSupport, Features, MilliSatoshiLong, RealShortChannelId, randomBytes32, randomKey}
 import org.json4s.DefaultFormats
 import org.json4s.jackson.JsonMethods
 import org.scalatest.funsuite.AnyFunSuite
@@ -36,8 +36,8 @@ import java.io.File
 import scala.io.Source
 
 class OfferTypesSpec extends AnyFunSuite {
-  val nodeKey = PrivateKey(hex"85d08273493e489b9330c85a3e54123874c8cd67c1bf531f4b926c9c555f8e1d")
-  val nodeId = nodeKey.publicKey
+  private val nodeKey = PrivateKey(hex"85d08273493e489b9330c85a3e54123874c8cd67c1bf531f4b926c9c555f8e1d")
+  private val nodeId = nodeKey.publicKey
 
   test("invoice request is signed") {
     val sellerKey = randomKey()
@@ -315,9 +315,11 @@ class OfferTypesSpec extends AnyFunSuite {
     val src = Source.fromFile(new File(getClass.getResource(s"/offers-test.json").getFile))
     val testVectors = JsonMethods.parse(src.mkString).extract[Seq[TestVector]]
     src.close()
+    val allFeatures = Features(Features.knownFeatures.map(f => f -> FeatureSupport.Optional).toMap).bolt12Features()
     for (vector <- testVectors) {
       val offer = Offer.decode(vector.bolt12)
-      assert((offer.isSuccess && offer.get.features.unknown.forall(_.bitIndex % 2 == 1)) == vector.valid, vector.description)
+      val featuresOk = offer.map(o => allFeatures.areSupported(o.features)).getOrElse(true)
+      assert((offer.isSuccess && featuresOk) == vector.valid, vector.description)
     }
   }
 

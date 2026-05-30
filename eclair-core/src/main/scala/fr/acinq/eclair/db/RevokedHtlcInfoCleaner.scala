@@ -43,13 +43,16 @@ object RevokedHtlcInfoCleaner {
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.self)
       Behaviors.withTimers { timers =>
-        timers.startTimerWithFixedDelay(DeleteBatch, config.interval)
+        timers.startSingleTimer(DeleteBatch, config.interval)
         Behaviors.receiveMessage {
           case ForgetHtlcInfos(channelId, beforeCommitIndex) =>
             db.markHtlcInfosForRemoval(channelId, beforeCommitIndex)
             Behaviors.same
           case DeleteBatch =>
             db.removeHtlcInfos(config.batchSize)
+            // We restart a new timer after each batch, instead of using a timer at fixed intervals.
+            // This ensures that we don't have DeleteBatch messages queuing up in the mailbox when the DB is busy.
+            timers.startSingleTimer(DeleteBatch, config.interval)
             Behaviors.same
         }
       }

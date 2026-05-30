@@ -43,7 +43,7 @@ trait SingleFundingHandlers extends CommonFundingHandlers {
   def publishFundingTx(channelId: ByteVector32, fundingTx: Transaction, fundingTxFee: Satoshi, replyTo: akka.actor.typed.ActorRef[OpenChannelResponse]): Unit = {
     wallet.commit(fundingTx).onComplete {
       case Success(true) =>
-        context.system.eventStream.publish(TransactionPublished(channelId, remoteNodeId, fundingTx, fundingTxFee, "funding"))
+        context.system.eventStream.publish(TransactionPublished(channelId, remoteNodeId, fundingTx, localMiningFee = fundingTxFee, remoteMiningFee = 0 sat, "funding", None))
         replyTo ! OpenChannelResponse.Created(channelId, fundingTxId = fundingTx.txid, fundingTxFee)
       case Success(false) =>
         replyTo ! OpenChannelResponse.Rejected("couldn't publish funding tx")

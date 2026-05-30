@@ -19,6 +19,7 @@ package fr.acinq.eclair.payment.receive
 import akka.actor.{ActorRef, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.scalacompat.ByteVector32
+import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{FailureMessage, IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
@@ -41,7 +42,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
 
   import MultiPartPaymentFSM._
 
-  val start = TimestampMilli.now()
+  val start: TimestampMilli = TimestampMilli.now()
 
   startSingleTimer(PaymentTimeout.toString, PaymentTimeout, nodeParams.multiPartPaymentExpiry)
 
@@ -134,7 +135,7 @@ object MultiPartPaymentFSM {
     def totalAmount: MilliSatoshi
   }
   /** An incoming HTLC. */
-  case class HtlcPart(totalAmount: MilliSatoshi, htlc: UpdateAddHtlc, receivedAt: TimestampMilli) extends PaymentPart {
+  case class HtlcPart(totalAmount: MilliSatoshi, htlc: UpdateAddHtlc, remoteNodeId: PublicKey, receivedAt: TimestampMilli) extends PaymentPart {
     override def paymentHash: ByteVector32  = htlc.paymentHash
     override def amount: MilliSatoshi  = htlc.amountMsat
   }
@@ -158,9 +159,9 @@ object MultiPartPaymentFSM {
   // @formatter:off
   sealed trait Data {
     def parts: Queue[PaymentPart]
-    lazy val paidAmount = parts.map(_.amount).sum
+    lazy val paidAmount: MilliSatoshi = parts.map(_.amount).sum
   }
-  case class WaitingForHtlc(parts: Queue[PaymentPart]) extends Data
+  private case class WaitingForHtlc(parts: Queue[PaymentPart]) extends Data
   case class PaymentSucceeded(parts: Queue[PaymentPart]) extends Data
   case class PaymentFailed(failure: FailureMessage, parts: Queue[PaymentPart]) extends Data
   // @formatter:on

@@ -43,7 +43,7 @@ class ZeroConfActivationSpec extends FixtureSpec with IntegrationPatience {
     fixture.cleanup()
   }
 
-  private def createChannel(f: FixtureParam, channelType_opt: Option[SupportedChannelType] = None): ByteVector32 = {
+  private def createChannel(f: FixtureParam, channelType_opt: Option[SupportedChannelType] = Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx())): ByteVector32 = {
     import f._
 
     alice.watcher.setAutoPilot(watcherAutopilot(knownFundingTxs(alice, bob), confirm = false))

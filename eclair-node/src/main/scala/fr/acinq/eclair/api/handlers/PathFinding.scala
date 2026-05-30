@@ -32,27 +32,27 @@ trait PathFinding {
   private implicit def ec: ExecutionContext = actorSystem.dispatcher
 
   val findRoute: Route = postRequest("findroute") { implicit t =>
-    formFields(invoiceFormParam, amountMsatFormParam.?, "pathFindingExperimentName".?, routeFormatFormParam.?, "includeLocalChannelCost".as[Boolean].?, ignoreNodeIdsFormParam.?, ignoreShortChannelIdsFormParam.?, maxFeeMsatFormParam.?) {
-      case (invoice, None, pathFindingExperimentName_opt, routeFormat_opt, includeLocalChannelCost_opt, ignoreNodeIds_opt, ignoreChannels_opt, maxFee_opt) if invoice.amount_opt.nonEmpty =>
-        complete(eclairApi.findRoute(invoice.nodeId, invoice.amount_opt.get, pathFindingExperimentName_opt, invoice.extraEdges, includeLocalChannelCost_opt.getOrElse(false), ignoreNodeIds = ignoreNodeIds_opt.getOrElse(Nil), ignoreShortChannelIds = ignoreChannels_opt.getOrElse(Nil), maxFee_opt = maxFee_opt).map(r => RouteFormat.format(r, routeFormat_opt)))
-      case (invoice, Some(overrideAmount), pathFindingExperimentName_opt, routeFormat_opt, includeLocalChannelCost_opt, ignoreNodeIds_opt, ignoreChannels_opt, maxFee_opt) =>
-        complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, pathFindingExperimentName_opt, invoice.extraEdges, includeLocalChannelCost_opt.getOrElse(false), ignoreNodeIds = ignoreNodeIds_opt.getOrElse(Nil), ignoreShortChannelIds = ignoreChannels_opt.getOrElse(Nil), maxFee_opt = maxFee_opt).map(r => RouteFormat.format(r, routeFormat_opt)))
-      case _ => reject(MalformedFormFieldRejection(
-        "invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"
-      ))
+    formFields(invoiceFormParam, amountMsatFormParam.?, "pathFindingExperimentName".?, routeFormatFormParam.?, "includeLocalChannelCost".as[Boolean].?, ignoreNodeIdsFormParam.?, ignoreShortChannelIdsFormParam.?, maxFeeMsatFormParam.?, maxCltvExpiryDeltaFormParam.?) {
+      case (invoice, None, pathFindingExperimentName_opt, routeFormat_opt, includeLocalChannelCost_opt, ignoreNodeIds_opt, ignoreChannels_opt, maxFee_opt, maxCltv_opt) if invoice.amount_opt.nonEmpty =>
+        complete(eclairApi.findRoute(invoice.nodeId, invoice.amount_opt.get, pathFindingExperimentName_opt, invoice.extraEdges, includeLocalChannelCost_opt.getOrElse(false), ignoreNodeIds = ignoreNodeIds_opt.getOrElse(Nil), ignoreShortChannelIds = ignoreChannels_opt.getOrElse(Nil), maxFee_opt = maxFee_opt, maxCltvExpiryDelta_opt = maxCltv_opt).map(r => RouteFormat.format(r, routeFormat_opt)))
+      case (invoice, Some(overrideAmount), pathFindingExperimentName_opt, routeFormat_opt, includeLocalChannelCost_opt, ignoreNodeIds_opt, ignoreChannels_opt, maxFee_opt, maxCltv_opt) =>
+        complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, pathFindingExperimentName_opt, invoice.extraEdges, includeLocalChannelCost_opt.getOrElse(false), ignoreNodeIds = ignoreNodeIds_opt.getOrElse(Nil), ignoreShortChannelIds = ignoreChannels_opt.getOrElse(Nil), maxFee_opt = maxFee_opt, maxCltvExpiryDelta_opt = maxCltv_opt).map(r => RouteFormat.format(r, routeFormat_opt)))
+      case _ =>
+        reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"))
     }
   }
 
   val findRouteToNode: Route = postRequest("findroutetonode") { implicit t =>
-    formFields(nodeIdFormParam, amountMsatFormParam, "pathFindingExperimentName".?, routeFormatFormParam.?, "includeLocalChannelCost".as[Boolean].?, ignoreNodeIdsFormParam.?, ignoreShortChannelIdsFormParam.?, maxFeeMsatFormParam.?) {
-      (nodeId, amount, pathFindingExperimentName_opt, routeFormat_opt, includeLocalChannelCost_opt, ignoreNodeIds_opt, ignoreChannels_opt, maxFee_opt) =>
-        complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt, includeLocalChannelCost = includeLocalChannelCost_opt.getOrElse(false), ignoreNodeIds = ignoreNodeIds_opt.getOrElse(Nil), ignoreShortChannelIds = ignoreChannels_opt.getOrElse(Nil), maxFee_opt = maxFee_opt).map(r => RouteFormat.format(r, routeFormat_opt)))
+    formFields(nodeIdFormParam, amountMsatFormParam, "pathFindingExperimentName".?, routeFormatFormParam.?, "includeLocalChannelCost".as[Boolean].?, ignoreNodeIdsFormParam.?, ignoreShortChannelIdsFormParam.?, maxFeeMsatFormParam.?, maxCltvExpiryDeltaFormParam.?) {
+      (nodeId, amount, pathFindingExperimentName_opt, routeFormat_opt, includeLocalChannelCost_opt, ignoreNodeIds_opt, ignoreChannels_opt, maxFee_opt, maxCltv_opt) =>
+        complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt, includeLocalChannelCost = includeLocalChannelCost_opt.getOrElse(false), ignoreNodeIds = ignoreNodeIds_opt.getOrElse(Nil), ignoreShortChannelIds = ignoreChannels_opt.getOrElse(Nil), maxFee_opt = maxFee_opt, maxCltvExpiryDelta_opt = maxCltv_opt).map(r => RouteFormat.format(r, routeFormat_opt)))
     }
   }
 
   val findRouteBetweenNodes: Route = postRequest("findroutebetweennodes") { implicit t =>
-    formFields("sourceNodeId".as[PublicKey], "targetNodeId".as[PublicKey], amountMsatFormParam, "pathFindingExperimentName".?, routeFormatFormParam.?, "includeLocalChannelCost".as[Boolean].?, ignoreNodeIdsFormParam.?, ignoreShortChannelIdsFormParam.?, maxFeeMsatFormParam.?) { (sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt, routeFormat_opt, includeLocalChannelCost_opt, ignoreNodeIds_opt, ignoreChannels_opt, maxFee_opt) =>
-      complete(eclairApi.findRouteBetween(sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt, includeLocalChannelCost = includeLocalChannelCost_opt.getOrElse(false), ignoreNodeIds = ignoreNodeIds_opt.getOrElse(Nil), ignoreShortChannelIds = ignoreChannels_opt.getOrElse(Nil), maxFee_opt = maxFee_opt).map(r => RouteFormat.format(r, routeFormat_opt)))
+    formFields("sourceNodeId".as[PublicKey], "targetNodeId".as[PublicKey], amountMsatFormParam, "pathFindingExperimentName".?, routeFormatFormParam.?, "includeLocalChannelCost".as[Boolean].?, ignoreNodeIdsFormParam.?, ignoreShortChannelIdsFormParam.?, maxFeeMsatFormParam.?, maxCltvExpiryDeltaFormParam.?) {
+      (sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt, routeFormat_opt, includeLocalChannelCost_opt, ignoreNodeIds_opt, ignoreChannels_opt, maxFee_opt, maxCltv_opt) =>
+        complete(eclairApi.findRouteBetween(sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt, includeLocalChannelCost = includeLocalChannelCost_opt.getOrElse(false), ignoreNodeIds = ignoreNodeIds_opt.getOrElse(Nil), ignoreShortChannelIds = ignoreChannels_opt.getOrElse(Nil), maxFee_opt = maxFee_opt, maxCltvExpiryDelta_opt = maxCltv_opt).map(r => RouteFormat.format(r, routeFormat_opt)))
     }
   }
 

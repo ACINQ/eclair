@@ -19,6 +19,7 @@ package fr.acinq.eclair.api.serde
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.Timeout
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
+import fr.acinq.bitcoin.scalacompat.Musig2.IndividualNonce
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, ByteVector64, OutPoint, Satoshi, TxId}
 import fr.acinq.eclair.api.directives.RouteFormat
 import fr.acinq.eclair.api.serde.JsonSupport._
@@ -28,7 +29,7 @@ import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.OfferCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol.OfferTypes.Offer
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, ShortChannelId, TimestampSecond}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -38,6 +39,8 @@ import scala.util.Try
 object FormParamExtractors {
 
   implicit val publicKeyUnmarshaller: Unmarshaller[String, PublicKey] = Unmarshaller.strict { rawPubKey => PublicKey(ByteVector.fromValidHex(rawPubKey)) }
+
+  implicit val individualNonceUnmarshaller: Unmarshaller[String, IndividualNonce] = Unmarshaller.strict { str => IndividualNonce(ByteVector.fromValidHex(str)) }
 
   implicit val bytesUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str => ByteVector.fromValidHex(str) }
 
@@ -64,6 +67,8 @@ object FormParamExtractors {
   implicit val satoshiUnmarshaller: Unmarshaller[String, Satoshi] = Unmarshaller.strict { str => Satoshi(str.toLong) }
 
   implicit val millisatoshiUnmarshaller: Unmarshaller[String, MilliSatoshi] = Unmarshaller.strict { str => MilliSatoshi(str.toLong) }
+
+  implicit val cltvExpiryDeltaUnmarshaller: Unmarshaller[String, CltvExpiryDelta] = Unmarshaller.strict { str => CltvExpiryDelta(str.toInt) }
 
   implicit val feeratePerByteUnmarshaller: Unmarshaller[String, FeeratePerByte] = Unmarshaller.strict { str => FeeratePerByte(Satoshi(str.toLong)) }
 

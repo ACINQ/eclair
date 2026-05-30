@@ -88,8 +88,8 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
     val result = sendPayment(alice, carol, 100_000 msat, hints = List(createBobToCarolTestHint(f, useHint, overrideHintScid_opt))) match {
       case Left(paymentFailed) =>
         Left(PaymentFailure.transformForUser(paymentFailed.failures).last match {
-          case LocalFailure(_, _, t) => Left(t)
-          case RemoteFailure(_, _, e) => Right(e.failureMessage)
+          case f: LocalFailure => Left(f.t)
+          case f: RemoteFailure => Right(f.e.failureMessage)
           case _: UnreadableRemoteFailure => fail("received unreadable remote failure")
         })
       case Right(_) => Right(Ok)
@@ -267,9 +267,12 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
       assert(getRouterData(bob).privateChannels.values.exists(_.nodeId2 == carol.nodeParams.nodeId))
     }
 
-    val Some(carolHint) = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
-    val bobAlias = getRouterData(bob).privateChannels.values.find(_.nodeId2 == carol.nodeParams.nodeId).value.aliases.localAlias
-    assert(carolHint.shortChannelId == bobAlias)
+    val (carolHint, bobAlias) = eventually {
+      val Some(carolHint) = getRouterData(carol).privateChannels.values.head.toIncomingExtraHop
+      val bobAlias = getRouterData(bob).privateChannels.values.find(_.nodeId2 == carol.nodeParams.nodeId).value.aliases.localAlias
+      assert(carolHint.shortChannelId == bobAlias)
+      (carolHint, bobAlias)
+    }
 
     // We make sure Bob won't have enough liquidity to relay another payment.
     sendSuccessfulPayment(bob, carol, 35_000_000 msat)
@@ -277,7 +280,7 @@ class ZeroConfAliasIntegrationSpec extends FixtureSpec with IntegrationPatience 
 
     // The channel update returned in failures doesn't leak the real scid.
     val failure = sendFailingPayment(alice, carol, 40_000_000 msat, hints = List(List(carolHint)))
-    val failureWithChannelUpdate = failure.failures.collect { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f: Update)) => f }
+    val failureWithChannelUpdate = failure.failures.collect { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, _, f: Update), _, _) => f }
     assert(failureWithChannelUpdate.length == 1)
     assert(failureWithChannelUpdate.head.update_opt.map(_.shortChannelId).contains(bobAlias))
   }

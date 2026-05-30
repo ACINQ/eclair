@@ -36,8 +36,8 @@ import fr.acinq.eclair.io.PeerSpec.{createOpenChannelMessage, createOpenDualFund
 import fr.acinq.eclair.io.PendingChannelsRateLimiter.AddOrRejectChannel
 import fr.acinq.eclair.transactions.Transactions.{ClosingTx, InputInfo}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.wire.protocol.{ChannelReestablish, ChannelTlv, Error, IPAddress, LiquidityAds, NodeAddress, OpenChannel, OpenChannelTlv, Shutdown, TlvStream}
-import fr.acinq.eclair.{AcceptOpenChannel, BlockHeight, FeatureSupport, Features, InitFeature, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, UInt64, UnknownFeature, randomBytes32, randomKey}
+import fr.acinq.eclair.wire.protocol.{ChannelReestablish, Error, IPAddress, LiquidityAds, NodeAddress, OpenChannel, Shutdown, TlvStream}
+import fr.acinq.eclair.{AcceptOpenChannel, BlockHeight, EncodedFeatures, FeatureSupport, Features, InitFeature, InterceptOpenChannelCommand, InterceptOpenChannelPlugin, InterceptOpenChannelReceived, MilliSatoshiLong, RejectOpenChannel, TestConstants, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -47,12 +47,10 @@ import scala.concurrent.duration.DurationInt
 
 class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
   val remoteNodeId: Crypto.PublicKey = randomKey().publicKey
-  val openChannel: OpenChannel = createOpenChannelMessage()
+  val openChannel: OpenChannel = createOpenChannelMessage(ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
   val remoteAddress: NodeAddress = IPAddress(InetAddress.getLoopbackAddress, 19735)
-  val defaultFeatures: Features[InitFeature] = Features(Map[InitFeature, FeatureSupport](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional))
-  val staticRemoteKeyFeatures: Features[InitFeature] = Features(Map[InitFeature, FeatureSupport](StaticRemoteKey -> Optional))
+  val defaultFeatures: Features[InitFeature] = Features(Map[InitFeature, FeatureSupport](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, ChannelType -> Optional))
 
-  val acceptStaticRemoteKeyChannelsTag = "accept static_remote_key channels"
   val noPlugin = "no plugin"
 
   override def withFixture(test: OneArgTest): Outcome = {
@@ -69,7 +67,6 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     }
     val nodeParams = TestConstants.Alice.nodeParams
       .modify(_.pluginParams).usingIf(!test.tags.contains(noPlugin))(_ :+ plugin)
-      .modify(_.channelConf).usingIf(test.tags.contains(acceptStaticRemoteKeyChannelsTag))(_.copy(acceptIncomingStaticRemoteKeyChannels = true))
 
     val eventListener = TestProbe[ChannelAborted]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
@@ -121,11 +118,12 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("add liquidity if on-the-fly funding is used", Tag(noPlugin)) { f =>
     import f._
 
-    val features = defaultFeatures.add(Features.SplicePrototype, FeatureSupport.Optional).add(Features.OnTheFlyFunding, FeatureSupport.Optional)
+    val features = defaultFeatures
+      .add(Features.Splicing, FeatureSupport.Optional)
+      .add(Features.OnTheFlyFunding, FeatureSupport.Optional)
     val requestFunding = LiquidityAds.RequestFunding(250_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(randomBytes32() :: Nil))
-    val open = createOpenDualFundedChannelMessage().copy(
+    val open = createOpenDualFundedChannelMessage(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Some(requestFunding)).copy(
       channelFlags = ChannelFlags(nonInitiatorPaysCommitFees = true, announceChannel = false),
-      tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(requestFunding))
     )
     val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Right(open), features, features, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
@@ -150,7 +148,7 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
 
     val probe = TestProbe[Any]()
     val requestFunding = LiquidityAds.RequestFunding(150_000 sat, LiquidityAds.FundingRate(0 sat, 200_000 sat, 400, 100, 0 sat, 0 sat), LiquidityAds.PaymentDetails.FromChannelBalance)
-    val openChannelInitiator = OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, 300_000 sat, None, None, None, None, Some(requestFunding), None, None), defaultFeatures, defaultFeatures)
+    val openChannelInitiator = OpenChannelInitiator(probe.ref, remoteNodeId, Peer.OpenChannel(remoteNodeId, 300_000 sat, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()), None, None, None, Some(requestFunding), None, None), defaultFeatures, defaultFeatures)
     openChannelInterceptor ! openChannelInitiator
     val result = peer.expectMessageType[SpawnChannelInitiator]
     assert(result.cmd == openChannelInitiator.open)
@@ -169,13 +167,31 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     assert(peer.expectMessageType[SpawnChannelNonInitiator].addFunding_opt.isEmpty)
   }
 
-  test("reject open channel request if channel type is obsolete") { f =>
+  test("reject open channel request for public taproot channels") { f =>
     import f._
 
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
+    // We reject remote public taproot channels.
+    val open = createOpenChannelMessage(ChannelTypes.SimpleTaprootChannel()).copy(channelFlags = ChannelFlags(announceChannel = true))
+    val taprootFeatures = defaultFeatures.add(Features.SimpleTaprootChannels, FeatureSupport.Optional)
+    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(open), taprootFeatures, taprootFeatures, peerConnection.ref, remoteAddress)
     openChannelInterceptor ! openChannelNonInitiator
-    assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("rejecting incoming channel: anchor outputs must be used for new channels"))
+    assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("public taproot channels aren't supported yet"))
     eventListener.expectMessageType[ChannelAborted]
+
+    // We make sure that we don't try to open public taproot channels.
+    val probe = TestProbe[Any]()
+    val openChannelInitiator = Peer.OpenChannel(remoteNodeId, 500_000 sat, Some(ChannelTypes.SimpleTaprootChannel()), None, None, None, None, Some(ChannelFlags(announceChannel = true)), None)
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, openChannelInitiator, taprootFeatures, taprootFeatures)
+    assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason.contains("public taproot channels aren't supported yet"))
+
+    // If we want to announce the channel, we fallback to anchor outputs.
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, openChannelInitiator.copy(channelType_opt = None), taprootFeatures, taprootFeatures)
+    assert(peer.expectMessageType[Peer.SpawnChannelInitiator].channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx())
+
+    // If we don't want to announce the channel, we can use taproot.
+    openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, openChannelInitiator.copy(channelFlags_opt = Some(ChannelFlags(announceChannel = false))), taprootFeatures, taprootFeatures)
+    assert(peer.expectMessageType[Peer.SpawnChannelInitiator].channelType == ChannelTypes.SimpleTaprootChannel())
+    probe.expectNoMessage(100 millis)
   }
 
   test("reject open channel request if rejected by the plugin") { f =>
@@ -220,33 +236,15 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
     eventListener.expectMessageType[ChannelAborted]
   }
 
-  test("reject static_remote_key open channel request") { f =>
-    import f._
-
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), staticRemoteKeyFeatures, staticRemoteKeyFeatures, peerConnection.ref, remoteAddress)
-    openChannelInterceptor ! openChannelNonInitiator
-    assert(peer.expectMessageType[OutgoingMessage].msg.asInstanceOf[Error].toAscii.contains("rejecting incoming static_remote_key channel: anchor outputs must be used for new channels"))
-    eventListener.expectMessageType[ChannelAborted]
-  }
-
-  test("accept static_remote_key open channel request if node is configured to accept them", Tag(acceptStaticRemoteKeyChannelsTag)) { f =>
-    import f._
-
-    val openChannelNonInitiator = OpenChannelNonInitiator(remoteNodeId, Left(openChannel), staticRemoteKeyFeatures, staticRemoteKeyFeatures, peerConnection.ref, remoteAddress)
-    openChannelInterceptor ! openChannelNonInitiator
-    pendingChannelsRateLimiter.expectMessageType[AddOrRejectChannel].replyTo ! PendingChannelsRateLimiter.AcceptOpenChannel
-    pluginInterceptor.expectMessageType[InterceptOpenChannelReceived].replyTo ! AcceptOpenChannel(randomBytes32(), Some(LiquidityAds.AddFunding(50_000 sat, None)))
-    peer.expectMessageType[SpawnChannelNonInitiator]
-  }
-
   test("reject on-the-fly channel if another channel exists", Tag(noPlugin)) { f =>
     import f._
 
-    val features = defaultFeatures.add(Features.SplicePrototype, FeatureSupport.Optional).add(Features.OnTheFlyFunding, FeatureSupport.Optional)
+    val features = defaultFeatures
+      .add(Features.Splicing, FeatureSupport.Optional)
+      .add(Features.OnTheFlyFunding, FeatureSupport.Optional)
     val requestFunding = LiquidityAds.RequestFunding(250_000 sat, TestConstants.defaultLiquidityRates.fundingRates.head, LiquidityAds.PaymentDetails.FromChannelBalanceForFutureHtlc(randomBytes32() :: Nil))
-    val open = createOpenDualFundedChannelMessage().copy(
+    val open = createOpenDualFundedChannelMessage(ChannelTypes.AnchorOutputsZeroFeeHtlcTx(), Some(requestFunding)).copy(
       channelFlags = ChannelFlags(nonInitiatorPaysCommitFees = true, announceChannel = false),
-      tlvStream = TlvStream(ChannelTlv.RequestFundingTlv(requestFunding))
     )
     val currentChannel = Seq(
       Peer.ChannelInfo(TestProbe().ref, NORMAL, ChannelCodecsSpec.normal),
@@ -283,43 +281,66 @@ class OpenChannelInterceptorSpec extends ScalaTestWithActorTestKit(ConfigFactory
   test("don't spawn a channel if we don't support their channel type") { f =>
     import f._
 
-    // They only support anchor outputs and we don't.
+    // We don't support non-anchor static_remotekey channels.
     {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs())))
-      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
-      peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=standard"), peerConnection.ref.toClassic))
+      val open = createOpenChannelMessage(ChannelTypes.UnsupportedChannelType(Features(StaticRemoteKey -> Mandatory)))
+      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), defaultFeatures, defaultFeatures, peerConnection.ref, remoteAddress)
+      peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=0x1000"), peerConnection.ref.toClassic))
       eventListener.expectMessageType[ChannelAborted]
     }
-    // They only support anchor outputs with zero fee htlc txs and we don't.
+    // They only support unsafe anchor outputs and we don't.
     {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx())))
-      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
-      peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs_zero_fee_htlc_tx, expected channel_type=standard"), peerConnection.ref.toClassic))
-      eventListener.expectMessageType[ChannelAborted]
-    }
-    // They want to use a channel type that doesn't exist in the spec.
-    {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(AnchorOutputs -> Optional)))))
-      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
-      peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=0x200000, expected channel_type=standard"), peerConnection.ref.toClassic))
+      val open = createOpenChannelMessage(ChannelTypes.AnchorOutputs())
+      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), defaultFeatures, defaultFeatures.add(AnchorOutputs, Optional), peerConnection.ref, remoteAddress)
+      peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs"), peerConnection.ref.toClassic))
       eventListener.expectMessageType[ChannelAborted]
     }
     // They want to use a channel type we don't support yet.
     {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(Map(StaticRemoteKey -> Mandatory), unknown = Set(UnknownFeature(22)))))))
-      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), Features.empty, Features.empty, peerConnection.ref, remoteAddress)
-      peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=0x401000, expected channel_type=standard"), peerConnection.ref.toClassic))
+      val open = createOpenChannelMessage(UnsupportedChannelType(Features(activated = Map.empty, encoded_opt = Some(EncodedFeatures.fromFeatureBits(Set(120))))))
+      openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), defaultFeatures, defaultFeatures, peerConnection.ref, remoteAddress)
+      peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "invalid channel_type=0x01000000000000000000000000000000"), peerConnection.ref.toClassic))
       eventListener.expectMessageType[ChannelAborted]
     }
   }
 
-  test("don't spawn a channel if channel type is missing with the feature bit set") { f =>
+  test("don't spawn a channel if channel type is missing") { f =>
     import f._
 
-    val open = createOpenChannelMessage()
-    openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), defaultFeatures.add(ChannelType, Optional), defaultFeatures.add(ChannelType, Optional), peerConnection.ref, remoteAddress)
+    val open = createOpenChannelMessage(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()).copy(tlvStream = TlvStream.empty)
+    openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), defaultFeatures, defaultFeatures, peerConnection.ref, remoteAddress)
     peer.expectMessage(OutgoingMessage(Error(open.temporaryChannelId, "option_channel_type was negotiated but channel_type is missing"), peerConnection.ref.toClassic))
     eventListener.expectMessageType[ChannelAborted]
+  }
+
+  test("don't spawn a channel if we cannot find a satisfying channel type") { f =>
+    import f._
+
+    val probe = TestProbe[Any]()
+
+    // If we both support anchor outputs, it is selected by default.
+    {
+      val features = Features[InitFeature](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, ChannelType -> Optional, ScidAlias -> Optional)
+      val open = Peer.OpenChannel(remoteNodeId, 500_000 sat, None, None, None, None, None, None, None)
+      openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, open, features, features)
+      assert(TestConstants.Alice.nodeParams.channelConf.channelFlags.announceChannel)
+      assert(peer.expectMessageType[Peer.SpawnChannelInitiator].channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = false))
+    }
+    // If we don't announce the channel, we can use scid_alias.
+    {
+      val features = Features[InitFeature](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, ChannelType -> Optional, ScidAlias -> Optional)
+      val open = Peer.OpenChannel(remoteNodeId, 500_000 sat, None, None, None, None, None, Some(ChannelFlags(announceChannel = false)), None)
+      openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, open, features, features)
+      assert(peer.expectMessageType[Peer.SpawnChannelInitiator].channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx(scidAlias = true))
+    }
+    // If our peer doesn't support anchor outputs, we can't find a satisfying channel type.
+    {
+      val localFeatures = Features[InitFeature](StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional, ChannelType -> Optional, ScidAlias -> Optional)
+      val remoteFeatures = Features[InitFeature](StaticRemoteKey -> Optional, ChannelType -> Optional, ScidAlias -> Optional)
+      val open = Peer.OpenChannel(remoteNodeId, 500_000 sat, None, None, None, None, None, None, None)
+      openChannelInterceptor ! OpenChannelInitiator(probe.ref, remoteNodeId, open, localFeatures, remoteFeatures)
+      assert(probe.expectMessageType[OpenChannelResponse.Rejected].reason == "channel_type must be provided and compatible with our peer's features")
+    }
   }
 
 }

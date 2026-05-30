@@ -26,14 +26,14 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.{NodePayload, buildOnion}
-import fr.acinq.eclair.payment.PaymentSent.PartialPayment
+import fr.acinq.eclair.payment.PaymentSent.PaymentPart
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.TrampolinePayment.{buildOutgoingPayment, computeFees}
 import fr.acinq.eclair.reputation.Reputation
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.wire.protocol.{PaymentOnion, PaymentOnionCodecs}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, Logs, MilliSatoshi, NodeParams, TimestampMilli, randomBytes32}
 
 import java.util.UUID
 
@@ -59,7 +59,7 @@ object TrampolinePaymentLifecycle {
   }
   private case class TrampolinePeerNotFound(trampolineNodeId: PublicKey) extends Command
   private case class CouldntAddHtlc(failure: Throwable) extends Command
-  private case class HtlcSettled(result: HtlcResult, part: PartialPayment, holdTimes: Seq[Sphinx.HoldTime]) extends Command
+  private case class HtlcSettled(result: HtlcResult, part: PaymentPart, holdTimes: Seq[Sphinx.HoldTime]) extends Command
   private case class WrappedPeerChannels(channels: Seq[Peer.ChannelInfo]) extends Command
   // @formatter:on
 
@@ -110,14 +110,15 @@ object TrampolinePaymentLifecycle {
     def start(amount: MilliSatoshi, channelInfo: Peer.ChannelInfo, expiry: CltvExpiry, trampolinePaymentSecret: ByteVector32, attemptNumber: Int): Behavior[PartHandler.Command] = {
       val origin = Origin.Hot(htlcSettledAdapter.toClassic, Upstream.Local(cmd.paymentId))
       val outgoing = buildOutgoingPayment(cmd.trampolineNodeId, cmd.invoice, amount, expiry, Some(trampolinePaymentSecret), attemptNumber)
-      val add = CMD_ADD_HTLC(addHtlcAdapter.toClassic, outgoing.trampolineAmount, paymentHash, outgoing.trampolineExpiry, outgoing.onion.packet, None, Reputation.Score.max, None, origin, commit = true)
+      val add = CMD_ADD_HTLC(addHtlcAdapter.toClassic, outgoing.trampolineAmount, paymentHash, outgoing.trampolineExpiry, outgoing.onion.packet, None, Reputation.Score.max(accountable = false), None, origin, commit = true)
       channelInfo.channel ! add
       val channelId = channelInfo.data.asInstanceOf[DATA_NORMAL].channelId
-      val part = PartialPayment(cmd.paymentId, amount, computeFees(amount, attemptNumber), channelId, None)
+      val trampolineFees = computeFees(amount, attemptNumber)
+      val part = PaymentPart(cmd.paymentId, PaymentEvent.OutgoingPayment(channelId, cmd.trampolineNodeId, amount + trampolineFees, settledAt = TimestampMilli.now()), trampolineFees, None, startedAt = TimestampMilli.now()) // we will update settledAt below
       waitForSettlement(part, outgoing.onion.sharedSecrets, outgoing.trampolineOnion.sharedSecrets)
     }
 
-    def waitForSettlement(part: PartialPayment, outerOnionSecrets: Seq[Sphinx.SharedSecret], trampolineOnionSecrets: Seq[Sphinx.SharedSecret]): Behavior[PartHandler.Command] = {
+    def waitForSettlement(part: PaymentPart, outerOnionSecrets: Seq[Sphinx.SharedSecret], trampolineOnionSecrets: Seq[Sphinx.SharedSecret]): Behavior[PartHandler.Command] = {
       Behaviors.receiveMessagePartial {
         case WrappedAddHtlcResponse(response) => response match {
           case _: CommandSuccess[_] =>
@@ -137,7 +138,7 @@ object TrampolinePaymentLifecycle {
                 }
               case _: HtlcResult.OnChainFulfill => Nil
             }
-            parent ! HtlcSettled(fulfill, part, holdTimes)
+            parent ! HtlcSettled(fulfill, part.copy(payment = part.payment.copy(settledAt = TimestampMilli.now())), holdTimes)
             Behaviors.stopped
           case fail: HtlcResult.Fail =>
             val holdTimes = fail match {
@@ -145,7 +146,7 @@ object TrampolinePaymentLifecycle {
                 Sphinx.FailurePacket.decrypt(updateFail.reason, updateFail.attribution_opt, outerOnionSecrets).holdTimes
               case _ => Nil
             }
-            parent ! HtlcSettled(fail, part, holdTimes)
+            parent ! HtlcSettled(fail, part.copy(payment = part.payment.copy(settledAt = TimestampMilli.now())), holdTimes)
             Behaviors.stopped
         }
       }
@@ -161,6 +162,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
   import TrampolinePayment._
   import TrampolinePaymentLifecycle._
 
+  private val startedAt = TimestampMilli.now()
   private val paymentHash = cmd.invoice.paymentHash
   private val totalAmount = cmd.invoice.amount_opt.get
 
@@ -174,7 +176,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case TrampolinePeerNotFound(nodeId) =>
         context.log.warn("could not send trampoline payment: we don't have channels with trampoline node {}", nodeId)
-        cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("no channels with trampoline node")) :: Nil)
+        cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("no channels with trampoline node")) :: Nil, startedAt, settledAt = TimestampMilli.now())
         Behaviors.stopped
       case WrappedPeerChannels(channels) =>
         sendPayment(channels, attemptNumber)
@@ -194,7 +196,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
     val expiry = CltvExpiry(nodeParams.currentBlockHeight) + CltvExpiryDelta(36)
     if (filtered.isEmpty) {
       context.log.warn("no usable channel with trampoline node {}", cmd.trampolineNodeId)
-      cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("no usable channel with trampoline node")) :: Nil)
+      cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("no usable channel with trampoline node")) :: Nil, startedAt, settledAt = TimestampMilli.now())
       Behaviors.stopped
     } else {
       val amount1 = totalAmount / 2
@@ -211,7 +213,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
     }
   }
 
-  private def waitForSettlement(remaining: Int, attemptNumber: Int, fulfilledParts: Seq[PartialPayment]): Behavior[Command] = {
+  private def waitForSettlement(remaining: Int, attemptNumber: Int, fulfilledParts: Seq[PaymentPart]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case CouldntAddHtlc(failure) =>
         context.log.warn("HTLC could not be sent: {}", failure.getMessage)
@@ -220,7 +222,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
           waitForSettlement(remaining - 1, attemptNumber, fulfilledParts)
         } else {
           context.log.warn("trampoline payment failed")
-          cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, failure) :: Nil)
+          cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, failure) :: Nil, startedAt, settledAt = TimestampMilli.now())
           Behaviors.stopped
         }
       case HtlcSettled(result: HtlcResult, part, holdTimes) =>
@@ -235,7 +237,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
               waitForSettlement(remaining - 1, attemptNumber, part +: fulfilledParts)
             } else {
               context.log.info("trampoline payment succeeded")
-              cmd.replyTo ! PaymentSent(cmd.paymentId, paymentHash, fulfill.paymentPreimage, totalAmount, cmd.invoice.nodeId, part +: fulfilledParts, None)
+              cmd.replyTo ! PaymentSent(cmd.paymentId, fulfill.paymentPreimage, totalAmount, cmd.invoice.nodeId, part +: fulfilledParts, None, startedAt)
               Behaviors.stopped
             }
           case fail: HtlcResult.Fail =>
@@ -254,11 +256,11 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
     val nextFees = computeFees(totalAmount, attemptNumber)
     if (attemptNumber > 3) {
       context.log.warn("cannot retry trampoline payment: retries exceeded")
-      cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("maximum trampoline retries exceeded")) :: Nil)
+      cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("maximum trampoline retries exceeded")) :: Nil, startedAt, settledAt = TimestampMilli.now())
       Behaviors.stopped
     } else if (cmd.routeParams.getMaxFee(totalAmount) < nextFees) {
       context.log.warn("cannot retry trampoline payment: maximum fees exceeded ({} > {})", nextFees, cmd.routeParams.getMaxFee(totalAmount))
-      cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("maximum trampoline fees exceeded")) :: Nil)
+      cmd.replyTo ! PaymentFailed(cmd.paymentId, paymentHash, LocalFailure(totalAmount, Nil, new RuntimeException("maximum trampoline fees exceeded")) :: Nil, startedAt, settledAt = TimestampMilli.now())
       Behaviors.stopped
     } else {
       context.log.info("retrying trampoline payment with fees={}", nextFees)
@@ -280,8 +282,8 @@ object TrampolinePayment {
     val totalAmount = invoice.amount_opt.get
     val trampolineOnion = invoice match {
       case invoice: Bolt11Invoice if invoice.features.hasFeature(Features.TrampolinePaymentPrototype) =>
-        val finalPayload = PaymentOnion.FinalPayload.Standard.createPayload(amount, totalAmount, expiry, invoice.paymentSecret, invoice.paymentMetadata)
-        val trampolinePayload = PaymentOnion.IntermediatePayload.NodeRelay.Standard(totalAmount, expiry, invoice.nodeId)
+        val finalPayload = PaymentOnion.FinalPayload.Standard.createPayload(amount, totalAmount, expiry, invoice.paymentSecret, invoice.paymentMetadata, upgradeAccountability = invoice.accountable)
+        val trampolinePayload = PaymentOnion.IntermediatePayload.NodeRelay.Standard(totalAmount, expiry, invoice.nodeId, upgradeAccountability = invoice.accountable)
         buildOnion(NodePayload(trampolineNodeId, trampolinePayload) :: NodePayload(invoice.nodeId, finalPayload) :: Nil, invoice.paymentHash, None).toOption.get
       case invoice: Bolt11Invoice =>
         val trampolinePayload = PaymentOnion.IntermediatePayload.NodeRelay.ToNonTrampoline(totalAmount, totalAmount, expiry, invoice.nodeId, invoice)
@@ -294,8 +296,8 @@ object TrampolinePayment {
     val trampolineTotalAmount = computeTrampolineAmount(totalAmount, attemptNumber)
     val trampolineExpiry = computeTrampolineExpiry(expiry, attemptNumber)
     val payload = trampolinePaymentSecret_opt match {
-      case Some(trampolinePaymentSecret) => PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolineAmount, trampolineTotalAmount, trampolineExpiry, trampolinePaymentSecret, trampolineOnion.packet)
-      case None => PaymentOnion.TrampolineWithoutMppPayload.create(trampolineAmount, trampolineExpiry, trampolineOnion.packet)
+      case Some(trampolinePaymentSecret) => PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolineAmount, trampolineTotalAmount, trampolineExpiry, trampolinePaymentSecret, trampolineOnion.packet, upgradeAccountability = invoice.accountable)
+      case None => PaymentOnion.TrampolineWithoutMppPayload.create(trampolineAmount, trampolineExpiry, trampolineOnion.packet, upgradeAccountability = invoice.accountable)
     }
     val paymentOnion = buildOnion(NodePayload(trampolineNodeId, payload) :: Nil, invoice.paymentHash, Some(PaymentOnionCodecs.paymentOnionPayloadLength)).toOption.get
     OutgoingPayment(trampolineAmount, trampolineExpiry, paymentOnion, trampolineOnion)

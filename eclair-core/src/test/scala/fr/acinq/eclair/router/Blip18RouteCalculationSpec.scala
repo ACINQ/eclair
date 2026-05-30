@@ -77,33 +77,33 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
 
     assert(route.channelFee(false) == 15_302.msat)
 
-    val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret)
-    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max)
+    val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret, upgradeAccountability = false)
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
 
     assert(payment.outgoingChannel == ShortChannelId(10L))
     assert(payment.cmd.amount == 115_302.msat)
 
     val packet_b = payment.cmd.onion
 
-    val add_b = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_b, None, 1, None)
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_b, None, accountable = false, None)
     val Right(relay_b@ChannelRelayPacket(_, payload_b, packet_c, _)) = decrypt(add_b, priv_b, Features.empty)
     assert(payload_b.outgoing.contains(ShortChannelId(11L)))
     assert(relay_b.amountToForward == 115_302.msat)
     assert(relay_b.relayFeeMsat == -15_302.msat)
 
-    val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, 1, None)
+    val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, accountable = false, None)
     val Right(relay_c@ChannelRelayPacket(_, payload_c, packet_d, _)) = decrypt(add_c, priv_c, Features.empty)
     assert(payload_c.outgoing.contains(ShortChannelId(12L)))
     assert(relay_c.amountToForward == 105_050.msat)
     assert(relay_c.relayFeeMsat == -5050.msat)
 
-    val add_d = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, 1, None)
+    val add_d = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, accountable = false, None)
     val Right(relay_d@ChannelRelayPacket(_, payload_d, packet_e, _)) = decrypt(add_d, priv_d, Features.empty)
     assert(payload_d.outgoing.contains(ShortChannelId(13L)))
     assert(relay_d.amountToForward == 100_000.msat)
     assert(relay_d.relayFeeMsat == 0.msat)
 
-    val add_e = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, 1, None)
+    val add_e = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, accountable = false, None)
     val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e, Features.empty)
     assert(payload_e.isInstanceOf[FinalPayload.Standard])
     assert(payload_e.amount == 100_000.msat)
@@ -130,33 +130,33 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
 
     assert(route.channelFee(false) == 32_197.msat)
 
-    val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret)
-    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max)
+    val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret, upgradeAccountability = false)
+    val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
 
     assert(payment.outgoingChannel == ShortChannelId(10L))
     assert(payment.cmd.amount == 132_197.msat)
 
     val packet_b = payment.cmd.onion
 
-    val add_b = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_b, None, 1, None)
+    val add_b = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_b, None, accountable = false, None)
     val Right(relay_b@ChannelRelayPacket(_, payload_b, packet_c, _)) = decrypt(add_b, priv_b, Features.empty)
     assert(payload_b.outgoing.contains(ShortChannelId(11L)))
     assert(relay_b.amountToForward == 124_950.msat)
     assert(relay_b.relayFeeMsat == -24_950.msat)
 
-    val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, 1, None)
+    val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, accountable = false, None)
     val Right(relay_c@ChannelRelayPacket(_, payload_c, packet_d, _)) = decrypt(add_c, priv_c, Features.empty)
     assert(payload_c.outgoing.contains(ShortChannelId(12L)))
     assert(relay_c.amountToForward == 119_000.msat)
     assert(relay_c.relayFeeMsat == -19000.msat)
 
-    val add_d = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, 1, None)
+    val add_d = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, accountable = false, None)
     val Right(relay_d@ChannelRelayPacket(_, payload_d, packet_e, _)) = decrypt(add_d, priv_d, Features.empty)
     assert(payload_d.outgoing.contains(ShortChannelId(13L)))
     assert(relay_d.amountToForward == 100_000.msat)
     assert(relay_d.relayFeeMsat == 0.msat)
 
-    val add_e = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, 1, None)
+    val add_e = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, accountable = false, None)
     val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e, Features.empty)
     assert(payload_e.isInstanceOf[FinalPayload.Standard])
     assert(payload_e.amount == 100_000.msat)
@@ -190,33 +190,33 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
        assert(route.hops.length == 4)
       assert(route.channelFee(false) == 15_302.msat)
 
-      val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret)
-      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max)
+      val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret, upgradeAccountability = false)
+      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
 
       assert(payment.outgoingChannel == ShortChannelId(10L))
       assert(payment.cmd.amount == 115_302.msat)
 
       val packet_b = payment.cmd.onion
 
-      val add_b = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_b, None, 1, None)
+      val add_b = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_b, None, accountable = false, None)
       val Right(relay_b@ChannelRelayPacket(_, payload_b, packet_c, _)) = decrypt(add_b, priv_b, Features.empty)
       assert(payload_b.outgoing.contains(ShortChannelId(11L)))
       assert(relay_b.amountToForward == 115_302.msat)
       assert(relay_b.relayFeeMsat == -15_302.msat)
 
-      val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, 1, None)
+      val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, accountable = false, None)
       val Right(relay_c@ChannelRelayPacket(_, payload_c, packet_d, _)) = decrypt(add_c, priv_c, Features.empty)
       assert(payload_c.outgoing.contains(ShortChannelId(12L)))
       assert(relay_c.amountToForward == 105_050.msat)
       assert(relay_c.relayFeeMsat == -5050.msat)
 
-      val add_d = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, 1, None)
+      val add_d = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, accountable = false, None)
       val Right(relay_d@ChannelRelayPacket(_, payload_d, packet_e, _)) = decrypt(add_d, priv_d, Features.empty)
       assert(payload_d.outgoing.contains(ShortChannelId(13L)))
       assert(relay_d.amountToForward == 100_000.msat)
       assert(relay_d.relayFeeMsat == 0.msat)
 
-      val add_e = UpdateAddHtlc(randomBytes32(), 3, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, 1, None)
+      val add_e = UpdateAddHtlc(randomBytes32(), 3, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, accountable = false, None)
       val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e, Features.empty)
       assert(payload_e.isInstanceOf[FinalPayload.Standard])
       assert(payload_e.amount == 100_000.msat)
@@ -248,21 +248,21 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       assert(route.hops.length == 2)
       assert(route.channelFee(false) == 25_000.msat)
 
-      val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret)
-      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max)
+      val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret, upgradeAccountability = false)
+      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
 
       assert(payment.outgoingChannel == ShortChannelId(30L))
       assert(payment.cmd.amount == 125_000.msat)
 
       val packet_f = payment.cmd.onion
 
-      val add_f = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_f, None, 1, None)
+      val add_f = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_f, None, accountable = false, None)
       val Right(relay_f@ChannelRelayPacket(_, payload_f, packet_e, _)) = decrypt(add_f, priv_f, Features.empty)
       assert(payload_f.outgoing.contains(ShortChannelId(31L)))
       assert(relay_f.amountToForward == 100_000.msat)
       assert(relay_f.relayFeeMsat == 0.msat)
 
-      val add_e = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, 1, None)
+      val add_e = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, accountable = false, None)
       val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e, Features.empty)
       assert(payload_e.isInstanceOf[FinalPayload.Standard])
       assert(payload_e.amount == 100_000.msat)
@@ -290,33 +290,33 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
 
       assert(route.channelFee(false) == 15_302.msat)
 
-      val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret)
-      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max)
+      val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret, upgradeAccountability = false)
+      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
 
       assert(payment.outgoingChannel == ShortChannelId(10L))
       assert(payment.cmd.amount == 115_302.msat)
 
       val packet_b = payment.cmd.onion
 
-      val add_b = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_b, None, 1, None)
+      val add_b = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_b, None, accountable = false, None)
       val Right(relay_b@ChannelRelayPacket(_, payload_b, packet_c, _)) = decrypt(add_b, priv_b, Features.empty)
       assert(payload_b.outgoing.contains(ShortChannelId(11L)))
       assert(relay_b.amountToForward == 115_302.msat)
       assert(relay_b.relayFeeMsat == -15_302.msat)
 
-      val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, 1, None)
+      val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, accountable = false, None)
       val Right(relay_c@ChannelRelayPacket(_, payload_c, packet_d, _)) = decrypt(add_c, priv_c, Features.empty)
       assert(payload_c.outgoing.contains(ShortChannelId(12L)))
       assert(relay_c.amountToForward == 105_050.msat)
       assert(relay_c.relayFeeMsat == -5050.msat)
 
-      val add_d = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, 1, None)
+      val add_d = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, accountable = false, None)
       val Right(relay_d@ChannelRelayPacket(_, payload_d, packet_e, _)) = decrypt(add_d, priv_d, Features.empty)
       assert(payload_d.outgoing.contains(ShortChannelId(13L)))
       assert(relay_d.amountToForward == 100_000.msat)
       assert(relay_d.relayFeeMsat == 0.msat)
 
-      val add_e = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, 1, None)
+      val add_e = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, accountable = false, None)
       val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e, Features.empty)
       assert(payload_e.isInstanceOf[FinalPayload.Standard])
       assert(payload_e.amount == 100_000.msat)
@@ -343,33 +343,33 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
 
       assert(route.channelFee(false) == 32_197.msat)
 
-      val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret)
-      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max)
+      val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret, upgradeAccountability = false)
+      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
 
       assert(payment.outgoingChannel == ShortChannelId(10L))
       assert(payment.cmd.amount == 132_197.msat)
 
       val packet_b = payment.cmd.onion
 
-      val add_b = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_b, None, 1, None)
+      val add_b = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_b, None, accountable = false, None)
       val Right(relay_b@ChannelRelayPacket(_, payload_b, packet_c, _)) = decrypt(add_b, priv_b, Features.empty)
       assert(payload_b.outgoing.contains(ShortChannelId(11L)))
       assert(relay_b.amountToForward == 124_950.msat)
       assert(relay_b.relayFeeMsat == -24_950.msat)
 
-      val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, 1, None)
+      val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, accountable = false, None)
       val Right(relay_c@ChannelRelayPacket(_, payload_c, packet_d, _)) = decrypt(add_c, priv_c, Features.empty)
       assert(payload_c.outgoing.contains(ShortChannelId(12L)))
       assert(relay_c.amountToForward == 119_000.msat)
       assert(relay_c.relayFeeMsat == -19000.msat)
 
-      val add_d = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, 1, None)
+      val add_d = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, accountable = false, None)
       val Right(relay_d@ChannelRelayPacket(_, payload_d, packet_e, _)) = decrypt(add_d, priv_d, Features.empty)
       assert(payload_d.outgoing.contains(ShortChannelId(13L)))
       assert(relay_d.amountToForward == 100_000.msat)
       assert(relay_d.relayFeeMsat == 0.msat)
 
-      val add_e = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, 1, None)
+      val add_e = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, accountable = false, None)
       val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e, Features.empty)
       assert(payload_e.isInstanceOf[FinalPayload.Standard])
       assert(payload_e.amount == 100_000.msat)
@@ -403,21 +403,21 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       assert(route.hops.length == 2)
       assert(route.channelFee(false) == 16_000.msat)
 
-      val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret)
-      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max)
+      val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret, upgradeAccountability = false)
+      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
 
       assert(payment.outgoingChannel == ShortChannelId(50L))
       assert(payment.cmd.amount == 116_000.msat)
 
       val packet_f = payment.cmd.onion
 
-      val add_f = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_f, None, 1, None)
+      val add_f = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_f, None, accountable = false, None)
       val Right(relay_f@ChannelRelayPacket(_, payload_f, packet_e, _)) = decrypt(add_f, priv_f, Features.empty)
       assert(payload_f.outgoing.contains(ShortChannelId(51L)))
       assert(relay_f.amountToForward == 100_000.msat)
       assert(relay_f.relayFeeMsat == 0.msat)
 
-      val add_e = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, 1, None)
+      val add_e = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, accountable = false, None)
       val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e, Features.empty)
       assert(payload_e.isInstanceOf[FinalPayload.Standard])
       assert(payload_e.amount == 100_000.msat)
@@ -449,33 +449,33 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       assert(route.hops.length == 4)
       assert(route.channelFee(false) == 10_221.msat)
 
-      val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret)
-      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max)
+      val recipient = ClearRecipient(e, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret, upgradeAccountability = false)
+      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
 
       assert(payment.outgoingChannel == ShortChannelId(40L))
       assert(payment.cmd.amount == 110_221.msat)
 
       val packet_b = payment.cmd.onion
 
-      val add_b = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_b, None, 1, None)
+      val add_b = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_b, None, accountable = false, None)
       val Right(relay_b@ChannelRelayPacket(_, payload_b, packet_c, _)) = decrypt(add_b, priv_b, Features.empty)
       assert(payload_b.outgoing.contains(ShortChannelId(41L)))
       assert(relay_b.amountToForward == 107_080.msat)
       assert(relay_b.relayFeeMsat == -7_080.msat)
 
-      val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, 1, None)
+      val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, accountable = false, None)
       val Right(relay_c@ChannelRelayPacket(_, payload_c, packet_d, _)) = decrypt(add_c, priv_c, Features.empty)
       assert(payload_c.outgoing.contains(ShortChannelId(42L)))
       assert(relay_c.amountToForward == 104_000.msat)
       assert(relay_c.relayFeeMsat == -4_000.msat)
 
-      val add_d = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, 1, None)
+      val add_d = UpdateAddHtlc(randomBytes32(), 2, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, accountable = false, None)
       val Right(relay_d@ChannelRelayPacket(_, payload_d, packet_e, _)) = decrypt(add_d, priv_d, Features.empty)
       assert(payload_d.outgoing.contains(ShortChannelId(43L)))
       assert(relay_d.amountToForward == 100_000.msat)
       assert(relay_d.relayFeeMsat == 0.msat)
 
-      val add_e = UpdateAddHtlc(randomBytes32(), 3, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, 1, None)
+      val add_e = UpdateAddHtlc(randomBytes32(), 3, 100_000 msat, paymentHash, CltvExpiry(400018), packet_e, None, accountable = false, None)
       val Right(FinalPacket(_, payload_e, _)) = decrypt(add_e, priv_e, Features.empty)
       assert(payload_e.isInstanceOf[FinalPayload.Standard])
       assert(payload_e.amount == 100_000.msat)
@@ -510,21 +510,21 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       assert(route.hops.length == 2)
       assert(route.channelFee(false) == 4999.msat)
 
-      val recipient = ClearRecipient(c, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret)
-      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max)
+      val recipient = ClearRecipient(c, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret, upgradeAccountability = false)
+      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
 
       assert(payment.outgoingChannel == ShortChannelId(20L))
       assert(payment.cmd.amount == 104_999.msat)
 
       val packet_d = payment.cmd.onion
 
-      val add_d = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, 1, None)
+      val add_d = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, accountable = false, None)
       val Right(relay_d@ChannelRelayPacket(_, payload_d, packet_c, _)) = decrypt(add_d, priv_d, Features.empty)
       assert(payload_d.outgoing.contains(ShortChannelId(21L)))
       assert(relay_d.amountToForward == 100_000.msat)
       assert(relay_d.relayFeeMsat == 0.msat)
 
-      val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, 1, None)
+      val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, accountable = false, None)
       val Right(FinalPacket(_, payload_c, _)) = decrypt(add_c, priv_c, Features.empty)
       assert(payload_c.isInstanceOf[FinalPayload.Standard])
       assert(payload_c.amount == 100_000.msat)
@@ -559,21 +559,21 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       assert(route.hops.length == 2)
       assert(route.channelFee(false) == 3999.msat)
 
-      val recipient = ClearRecipient(c, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret)
-      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max)
+      val recipient = ClearRecipient(c, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret, upgradeAccountability = false)
+      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
 
       assert(payment.outgoingChannel == ShortChannelId(20L))
       assert(payment.cmd.amount == 103_999.msat)
 
       val packet_d = payment.cmd.onion
 
-      val add_d = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, 1, None)
+      val add_d = UpdateAddHtlc(randomBytes32(), 0, 100_000 msat, paymentHash, CltvExpiry(400018), packet_d, None, accountable = false, None)
       val Right(relay_d@ChannelRelayPacket(_, payload_d, packet_c, _)) = decrypt(add_d, priv_d, Features.empty)
       assert(payload_d.outgoing.contains(ShortChannelId(21L)))
       assert(relay_d.amountToForward == 100_000.msat)
       assert(relay_d.relayFeeMsat == 0.msat)
 
-      val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, 1, None)
+      val add_c = UpdateAddHtlc(randomBytes32(), 1, 100_000 msat, paymentHash, CltvExpiry(400018), packet_c, None, accountable = false, None)
       val Right(FinalPacket(_, payload_c, _)) = decrypt(add_c, priv_c, Features.empty)
       assert(payload_c.isInstanceOf[FinalPayload.Standard])
       assert(payload_c.amount == 100_000.msat)
@@ -2530,7 +2530,7 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       val Success(route1 :: Nil) = findRoute(g, a, e, amount, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = hc, includeLocalChannelCost = true), currentBlockHeight = BlockHeight(400000), blip18InboundFees = true)
       assert(route2Ids(route1) == 1 :: 2 :: 3 :: Nil)
 
-      val h = g.routeCouldRelay(route1.stopAt(c)).channelCouldNotSend(route1.hops.last, amount)
+      val h = g.routeCouldRelay(route1.stopAt(2)).channelCouldNotSend(route1.hops.last, amount)
 
       val Success(route2 :: Nil) = findRoute(h, a, e, amount, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(heuristics = hc, includeLocalChannelCost = true), currentBlockHeight = BlockHeight(400000), blip18InboundFees = true)
       assert(route2Ids(route2) == 1 :: 4 :: 5 :: Nil)
