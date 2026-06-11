@@ -1482,46 +1482,15 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(w: WatchPublishedTriggered, d: DATA_NORMAL) =>
-      val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
-      d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, d.lastAnnouncedFundingTxId_opt) match {
-        case Right((commitments1, commitment)) =>
-          watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepth), delay_opt = None)
-          maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
-          maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
-          spliceLockedSent += (commitment.fundingTxId -> commitment.fundingTxIndex)
-          trimSpliceLockedSentIfNeeded()
-          stay() using d.copy(commitments = commitments1) storing() sending SpliceLocked(d.channelId, w.tx.txid)
-        case Left(_) => stay()
+      handleFundingPublishedWhileConnected(w, d) match {
+        case Some((commitments1, spliceLocked)) => stay() using d.copy(commitments = commitments1) storing() sending spliceLocked
+        case None => stay()
       }
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_NORMAL) =>
-      acceptFundingTxConfirmed(w, d) match {
-        case Right((commitments1, commitment)) =>
-          // We check if this commitment was already locked before receiving the event (which happens when using 0-conf
-          // or for the initial funding transaction). If it was previously not locked, we must send splice_locked now.
-          val previouslyNotLocked = d.commitments.all.exists(c => c.fundingTxId == commitment.fundingTxId && c.localFundingStatus.isInstanceOf[LocalFundingStatus.NotLocked])
-          val spliceLocked_opt = if (previouslyNotLocked) {
-            spliceLockedSent += (commitment.fundingTxId -> commitment.fundingTxIndex)
-            trimSpliceLockedSentIfNeeded()
-            Some(SpliceLocked(d.channelId, w.tx.txid))
-          } else None
-          // If the channel is public and we've received the remote splice_locked, we send our announcement_signatures
-          // in order to generate the channel_announcement.
-          val remoteLocked = commitment.fundingTxIndex == 0 || d.commitments.all.exists(c => c.fundingTxId == commitment.fundingTxId && c.remoteFundingStatus == RemoteFundingStatus.Locked)
-          val localAnnSigs_opt = if (d.commitments.announceChannel && remoteLocked) commitment.signAnnouncement(nodeParams, commitments1.channelParams, channelKeys.fundingKey(commitment.fundingTxIndex)) else None
-          localAnnSigs_opt match {
-            case Some(localAnnSigs) =>
-              announcementSigsSent += localAnnSigs.shortChannelId
-              // If we've already received the remote announcement_signatures, we're now ready to process them.
-              announcementSigsStash.get(localAnnSigs.shortChannelId).foreach(self ! _)
-            case None => // The channel is private or the commitment isn't locked on the remote side.
-          }
-          if (commitment.fundingTxIndex > 0) {
-            maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
-            maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
-          }
-          stay() using d.copy(commitments = commitments1) storing() sending spliceLocked_opt.toSeq ++ localAnnSigs_opt.toSeq
-        case Left(_) => stay()
+      handleFundingConfirmedWhileConnected(w, d) match {
+        case Some((commitments1, spliceLocked_opt, annSigs_opt)) => stay() using d.copy(commitments = commitments1) storing() sending spliceLocked_opt.toSeq ++ annSigs_opt.toSeq
+        case None => stay()
       }
 
     case Event(msg: SpliceLocked, d: DATA_NORMAL) =>
@@ -2890,9 +2859,21 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
       stay() sending Warning(d.channelId, "spec violation: you sent announcement_signatures before channel_reestablish")
 
+    case Event(w: WatchPublishedTriggered, d: DATA_NORMAL) =>
+      handleFundingPublishedWhileConnected(w, d) match {
+        case Some((commitments1, spliceLocked)) => stay() using d.copy(commitments = commitments1) storing() sending spliceLocked
+        case None => stay()
+      }
+
+    case Event(w: WatchFundingConfirmedTriggered, d: DATA_NORMAL) =>
+      handleFundingConfirmedWhileConnected(w, d) match {
+        case Some((commitments1, spliceLocked_opt, annSigs_opt)) => stay() using d.copy(commitments = commitments1) storing() sending spliceLocked_opt.toSeq ++ annSigs_opt.toSeq
+        case None => stay()
+      }
+
     case Event(ProcessCurrentBlockHeight(c), d: ChannelDataWithCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates.BitcoinCore, d: ChannelDataWithCommitments) => stay()
+    case Event(_: CurrentFeerates.BitcoinCore, _: ChannelDataWithCommitments) => stay()
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.latest.fundingTxId => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx_opt)
 
@@ -3032,9 +3013,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
           case d: DATA_NORMAL => d.lastAnnouncedFundingTxId_opt
           case _ => None
         }
+        log.info("zero-conf funding txid={} has been published", w.tx.txid)
         d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, lastAnnouncedFundingTxId_opt) match {
           case Right((commitments1, _)) =>
-            log.info("zero-conf funding txid={} has been published", w.tx.txid)
             // This is a zero-conf channel, the min-depth isn't critical: we use the default.
             watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepth), delay_opt = None)
             val d1 = d match {
@@ -3058,7 +3039,6 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     case Event(w: WatchFundingConfirmedTriggered, d: ChannelDataWithCommitments) =>
       acceptFundingTxConfirmed(w, d) match {
         case Right((commitments1, _)) =>
-          log.info("funding txid={} has been confirmed", w.tx.txid)
           val d1 = d match {
             // NB: we discard remote's stashed channel_ready, they will send it back at reconnection
             case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => DATA_WAIT_FOR_CHANNEL_READY(commitments1, aliases = createShortIdAliases(d.channelId))
@@ -3544,6 +3524,52 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       case None => d.spliceStatus
     }
     (spliceStatus1, sendQueue)
+  }
+
+  private def handleFundingPublishedWhileConnected(w: WatchPublishedTriggered, d: DATA_NORMAL): Option[(Commitments, SpliceLocked)] = {
+    log.info("zero-conf funding txid={} has been published", w.tx.txid)
+    val fundingStatus = LocalFundingStatus.ZeroconfPublishedFundingTx(w.tx, d.commitments.localFundingSigs(w.tx.txid), d.commitments.liquidityPurchase(w.tx.txid))
+    d.commitments.updateLocalFundingStatus(w.tx.txid, fundingStatus, d.lastAnnouncedFundingTxId_opt) match {
+      case Left(_) => None
+      case Right((commitments1, commitment)) =>
+        watchFundingConfirmed(w.tx.txid, Some(nodeParams.channelConf.minDepth), delay_opt = None)
+        maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
+        maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
+        spliceLockedSent += (commitment.fundingTxId -> commitment.fundingTxIndex)
+        trimSpliceLockedSentIfNeeded()
+        Some((commitments1, SpliceLocked(d.channelId, w.tx.txid)))
+    }
+  }
+
+  private def handleFundingConfirmedWhileConnected(w: WatchFundingConfirmedTriggered, d: DATA_NORMAL): Option[(Commitments, Option[SpliceLocked], Option[AnnouncementSignatures])] = {
+    acceptFundingTxConfirmed(w, d) match {
+      case Left(_) => None
+      case Right((commitments1, commitment)) =>
+        // We check if this commitment was already locked before receiving the event (which happens when using 0-conf
+        // or for the initial funding transaction). If it was previously not locked, we must send splice_locked now.
+        val previouslyNotLocked = d.commitments.all.exists(c => c.fundingTxId == commitment.fundingTxId && c.localFundingStatus.isInstanceOf[LocalFundingStatus.NotLocked])
+        val spliceLocked_opt = if (previouslyNotLocked) {
+          spliceLockedSent += (commitment.fundingTxId -> commitment.fundingTxIndex)
+          trimSpliceLockedSentIfNeeded()
+          Some(SpliceLocked(d.channelId, w.tx.txid))
+        } else None
+        // If the channel is public and we've received the remote splice_locked, we send our announcement_signatures
+        // in order to generate the channel_announcement.
+        val remoteLocked = commitment.fundingTxIndex == 0 || d.commitments.all.exists(c => c.fundingTxId == commitment.fundingTxId && c.remoteFundingStatus == RemoteFundingStatus.Locked)
+        val localAnnSigs_opt = if (d.commitments.announceChannel && remoteLocked) commitment.signAnnouncement(nodeParams, commitments1.channelParams, channelKeys.fundingKey(commitment.fundingTxIndex)) else None
+        localAnnSigs_opt match {
+          case Some(localAnnSigs) =>
+            announcementSigsSent += localAnnSigs.shortChannelId
+            // If we've already received the remote announcement_signatures, we're now ready to process them.
+            announcementSigsStash.get(localAnnSigs.shortChannelId).foreach(self ! _)
+          case None => // The channel is private or the commitment isn't locked on the remote side.
+        }
+        if (commitment.fundingTxIndex > 0) {
+          maybeEmitEventsPostSplice(d.aliases, d.commitments, commitments1, d.lastAnnouncement_opt)
+          maybeUpdateMaxHtlcAmount(d.channelUpdate.htlcMaximumMsat, commitments1)
+        }
+        Some(commitments1, spliceLocked_opt, localAnnSigs_opt)
+    }
   }
 
   private def resendSpliceLockedIfNeeded(commitments: Commitments): Option[SpliceLocked] = {
