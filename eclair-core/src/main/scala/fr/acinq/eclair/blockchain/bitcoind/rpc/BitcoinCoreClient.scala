@@ -709,10 +709,9 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
       val JDecimal(fees) = json \ "fees" \ "base"
       val JDecimal(ancestorFees) = json \ "fees" \ "ancestor"
       val JDecimal(descendantFees) = json \ "fees" \ "descendant"
-      val JBool(replaceable) = json \ "bip125-replaceable"
       val unconfirmedParents = (json \ "depends").extract[List[String]].map(TxId.fromValidHex).toSet
       // NB: bitcoind counts the transaction itself as its own ancestor and descendant, which is confusing: we fix that by decrementing these counters.
-      MempoolTx(txid, vsize.toLong, weight.toLong, replaceable, toSatoshi(fees), ancestorCount.toInt - 1, toSatoshi(ancestorFees), descendantCount.toInt - 1, toSatoshi(descendantFees), unconfirmedParents)
+      MempoolTx(txid, vsize.toLong, weight.toLong, toSatoshi(fees), ancestorCount.toInt - 1, toSatoshi(ancestorFees), descendantCount.toInt - 1, toSatoshi(descendantFees), unconfirmedParents)
     })
   }
 
@@ -816,7 +815,6 @@ object BitcoinCoreClient {
    * @param txid               transaction id.
    * @param vsize              virtual transaction size as defined in BIP 141.
    * @param weight             transaction weight as defined in BIP 141.
-   * @param replaceable        Whether this transaction could be replaced with RBF (BIP125).
    * @param fees               transaction fees.
    * @param ancestorCount      number of unconfirmed parent transactions.
    * @param ancestorFees       transactions fees for the package consisting of this transaction and its unconfirmed parents.
@@ -824,7 +822,7 @@ object BitcoinCoreClient {
    * @param descendantFees     transactions fees for the package consisting of this transaction and its unconfirmed children (without its unconfirmed parents).
    * @param unconfirmedParents unconfirmed transactions used as inputs for this transaction.
    */
-  case class MempoolTx(txid: TxId, vsize: Long, weight: Long, replaceable: Boolean, fees: Satoshi, ancestorCount: Int, ancestorFees: Satoshi, descendantCount: Int, descendantFees: Satoshi, unconfirmedParents: Set[TxId])
+  case class MempoolTx(txid: TxId, vsize: Long, weight: Long, fees: Satoshi, ancestorCount: Int, ancestorFees: Satoshi, descendantCount: Int, descendantFees: Satoshi, unconfirmedParents: Set[TxId])
 
   case class WalletTx(address: String, amount: Satoshi, fees: Satoshi, blockId_opt: Option[BlockId], confirmations: Long, txid: TxId, timestamp: Long)
 

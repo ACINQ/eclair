@@ -1396,7 +1396,6 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     assert(mempoolCpfpTx.ancestorFees == mempoolCpfpTx.fees + mempoolTx.fees)
     val expectedFees = Transactions.weight2fee(targetFeerate, tx.weight() + cpfpTx.weight())
     assert(expectedFees * 0.95 <= mempoolCpfpTx.ancestorFees && mempoolCpfpTx.ancestorFees <= expectedFees * 1.05)
-    assert(mempoolCpfpTx.replaceable)
 
     generateBlocks(1)
   }
@@ -1452,7 +1451,6 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val packageWeight = fundingTx.weight() + mutualCloseTx.weight() + cpfpTx.weight()
     val expectedFees = Transactions.weight2fee(targetFeerate, packageWeight)
     assert(expectedFees * 0.95 <= mempoolCpfpTx.ancestorFees && mempoolCpfpTx.ancestorFees <= expectedFees * 1.05)
-    assert(mempoolCpfpTx.replaceable)
 
     generateBlocks(1)
   }
@@ -1547,7 +1545,6 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val packageWeight = txA1.weight() + txA2.weight() + txA3.weight() + txA4.weight() + txA5.weight() + txA6.weight() + txB1.weight() + txB2.weight() + txB3.weight() + cpfpTx.weight()
     val expectedFees = Transactions.weight2fee(targetFeerate, packageWeight)
     assert(expectedFees * 0.95 <= mempoolCpfpTx.ancestorFees && mempoolCpfpTx.ancestorFees <= expectedFees * 1.05)
-    assert(mempoolCpfpTx.replaceable)
 
     generateBlocks(1)
   }
