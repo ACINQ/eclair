@@ -119,11 +119,11 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         case HtlcResult.RemoteFulfill(updateFulfill) =>
           updateFulfill.attribution_opt match {
             case Some(attribution) =>
-              val unwrapped = Sphinx.Attribution.unwrap(attribution, d.sharedSecrets)
-              if (unwrapped.holdTimes.nonEmpty) {
-                context.system.eventStream.publish(Router.ReportedHoldTimes(unwrapped.holdTimes))
+              val attributionDetails = Sphinx.SuccessPacket.decrypt(Some(attribution), d.sharedSecrets)
+              if (attributionDetails.holdTimes.nonEmpty) {
+                context.system.eventStream.publish(Router.ReportedHoldTimes(attributionDetails.holdTimes))
               }
-              unwrapped.remaining_opt
+              attributionDetails.remainingAttribution_opt
             case None => None
           }
         case _: HtlcResult.OnChainFulfill => None
