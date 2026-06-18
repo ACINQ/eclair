@@ -455,6 +455,7 @@
 5ca374eb4e6194ec0cd7004366decd39d4d048145a6380f99741a9414f38cebb  org/apache/maven/maven-model-builder/3.8.6/maven-model-builder-3.8.6.jar
 5cb1e9f9cf0be011487545694ff0a178237c6bfcbb21c97865cdc52c60b9347a  com/jcraft/jzlib/1.1.1/jzlib-1.1.1.jar
 5cecc8bcb58d45e2a57ccccaad5d520abf0e81dea2be56ec1ed38c182cff4bd0  io/kamon/kamon-apm-reporter_2.13/2.7.4/kamon-apm-reporter_2.13-2.7.4.pom
+5e0de676193687b752389bc65f8eb239669a13b1e8bb07c82eb103a6a4da1697  fr/acinq/bitcoin/bitcoin-kmp-jvm/0.31.0/bitcoin-kmp-jvm-0.31.0.pom
 5e583878df905b5f33a230ef690a52b8f19dab9cc892bedee069f3d8af4e960a  org/codehaus/plexus/plexus-utils/3.3.1/plexus-utils-3.3.1.pom
 5e93a63b3042023e558dcbeb19914ce82e6a6fbccdbd68797f80b135121a8bde  org/apache/maven/shared/file-management/3.1.0/file-management-3.1.0.pom
 5f32ecab9c8f6dff1f9e41b853e40d8f23a2508219154ef67cc00d4556f5f5dd  org/eclipse/sisu/sisu-inject/0.3.5/sisu-inject-0.3.5.pom
@@ -516,6 +517,7 @@
 6d80b060de7e395e07bf90f9a14add0f80425add4016c89d7df91c9062717a20  org/apache/maven/surefire/surefire-booter/3.1.2/surefire-booter-3.1.2.jar
 6da6d5e61be60d77a7eea6c7d0b8ac3cc35ca73cef3cbff97d5982006553786d  commons-collections/commons-collections/3.2/commons-collections-3.2.pom
 6df4b5b76d9062017664ad0ca285e57154ae803607cb89c970b39cc0e016abb0  org/bouncycastle/bcprov-jdk15on/1.70/bcprov-jdk15on-1.70.pom
+6e3b52b643baa4f23acf86cfe98363c902b723d62b3020a898e2d4e40aa6dfe8  fr/acinq/bitcoin/bitcoin-kmp-jvm/0.31.0/bitcoin-kmp-jvm-0.31.0.jar
 6eba0902efd899aec0d8d19ac3cbc53123cd41139fe0e1d29cc5c874a791b9de  org/eclipse/sisu/sisu-plexus/0.3.5/sisu-plexus-0.3.5.pom
 6ec96f889bc29250f90b167c14e547f1b05aa23565c63f9079595befbde816bb  org/codehaus/plexus/plexus/3.3.1/plexus-3.3.1.pom
 6f819947a2a773792dc91d17f906e22113bfb2fefb6b64dec836175715d7402a  org/apache/maven/plugins/maven-compiler-plugin/3.13.0/maven-compiler-plugin-3.13.0.jar
