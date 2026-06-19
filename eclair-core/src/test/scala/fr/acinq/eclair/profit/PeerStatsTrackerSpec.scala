@@ -365,7 +365,7 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
     db.add(PaymentSent(
       UUID.randomUUID(), randomBytes32(), sentAmount - sentFees, randomKey().publicKey,
       PaymentSent.PaymentPart(UUID.randomUUID(), OutgoingPayment(channelId1, remoteNodeId1, sentAmount, sentAt), sentFees, None, sentAt - 10.seconds) :: Nil,
-      None, sentAt - 10.seconds
+      None, None, sentAt - 10.seconds
     ))
 
     // PaymentReceived through remoteNodeId2, 2 days ago.
@@ -407,7 +407,7 @@ class PeerStatsTrackerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
     db.add(PaymentSent(
       UUID.randomUUID(), randomBytes32(), 500_000_000 msat, randomKey().publicKey,
       PaymentSent.PaymentPart(UUID.randomUUID(), OutgoingPayment(channelId1, remoteNodeId1, 500_000_000 msat, oldAt), 0 msat, None, oldAt) :: Nil,
-      None, oldAt
+      None, None, oldAt
     ))
 
     // Spawn tracker with channels for both peers.

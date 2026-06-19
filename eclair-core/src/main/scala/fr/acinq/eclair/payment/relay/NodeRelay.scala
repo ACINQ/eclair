@@ -389,11 +389,11 @@ class NodeRelay private(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         // this is the fulfill that arrives from downstream channels
-        case WrappedPreimageReceived(PreimageReceived(_, paymentPreimage, attribution_opt)) =>
+        case WrappedPreimageReceived(PreimageReceived(_, paymentPreimage, fulfillmentPayload_opt, attribution_opt)) =>
           if (!fulfilledUpstream) {
             // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
             context.log.debug("got preimage from downstream")
-            fulfillPayment(upstream, paymentPreimage, attribution_opt)
+            fulfillPayment(upstream, paymentPreimage, attribution_opt, fulfillmentPayload_opt)
             sending(upstream, recipient, walletNodeId_opt, recipientFeatures_opt, nextPayload, startedAt, fulfilledUpstream = true, accountable)
           } else {
             // we don't want to fulfill multiple times
@@ -508,16 +508,16 @@ class NodeRelay private(nodeParams: NodeParams,
     upstream.received.foreach(r => rejectHtlc(r.add.id, r.add.channelId, upstream.amountIn, r.receivedAt, Some(upstream.receivedAt), failure))
   }
 
-  private def fulfillPayment(upstream: Upstream.Hot.Trampoline, paymentPreimage: ByteVector32, downstreamAttribution_opt: Option[ByteVector]): Unit = upstream.received.foreach(r => {
+  private def fulfillPayment(upstream: Upstream.Hot.Trampoline, paymentPreimage: ByteVector32, downstreamAttribution_opt: Option[ByteVector], downstreamFulfillmentPayload_opt: Option[ByteVector]): Unit = upstream.received.foreach(r => {
     val attribution = FulfillAttributionData(r.receivedAt, Some(upstream.receivedAt), downstreamAttribution_opt)
-    val cmd = CMD_FULFILL_HTLC(r.add.id, paymentPreimage, Some(attribution), commit = true)
+    val cmd = CMD_FULFILL_HTLC(r.add.id, paymentPreimage, downstreamFulfillmentPayload_opt, Some(attribution), commit = true)
     PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, r.add.channelId, cmd)
   })
 
   private def success(upstream: Upstream.Hot.Trampoline, fulfilledUpstream: Boolean, paymentSent: PaymentSent): Unit = {
     // We may have already fulfilled upstream, but we can now emit an accurate relayed event and clean-up resources.
     if (!fulfilledUpstream) {
-      fulfillPayment(upstream, paymentSent.paymentPreimage, paymentSent.remainingAttribution_opt)
+      fulfillPayment(upstream, paymentSent.paymentPreimage, paymentSent.fulfillmentPayload_opt, paymentSent.remainingAttribution_opt)
     }
     val incoming = upstream.received.map(r => PaymentEvent.IncomingPayment(r.add.channelId, r.receivedFrom, r.add.amountMsat, r.receivedAt))
     val outgoing = paymentSent.parts.map(p => PaymentEvent.OutgoingPayment(p.channelId, p.remoteNodeId, p.amountWithFees, p.settledAt))

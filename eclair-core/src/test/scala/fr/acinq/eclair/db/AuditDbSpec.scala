@@ -130,16 +130,16 @@ class AuditDbSpec extends AnyFunSuite {
       val preimage2 = randomBytes32()
       val paymentHash2 = Crypto.sha256(preimage2)
 
-      val e1 = PaymentSent(ZERO_UUID, preimage1, 40000 msat, remoteNodeId2, PaymentSent.PaymentPart(ZERO_UUID, PaymentEvent.OutgoingPayment(channelId1, remoteNodeId1, 42000 msat, now - 75.seconds), 1000 msat, None, now - 100.seconds) :: Nil, None, now - 100.seconds)
+      val e1 = PaymentSent(ZERO_UUID, preimage1, 40000 msat, remoteNodeId2, PaymentSent.PaymentPart(ZERO_UUID, PaymentEvent.OutgoingPayment(channelId1, remoteNodeId1, 42000 msat, now - 75.seconds), 1000 msat, None, now - 100.seconds) :: Nil, None, None, now - 100.seconds)
       val pp2a = PaymentEvent.IncomingPayment(channelId1, remoteNodeId1, 42000 msat, now - 1.seconds)
       val pp2b = PaymentEvent.IncomingPayment(channelId2, remoteNodeId2, 42100 msat, now)
       val e2 = PaymentReceived(paymentHash1, pp2a :: pp2b :: Nil)
       val e3 = ChannelPaymentRelayed(paymentHash1, Seq(PaymentEvent.IncomingPayment(channelId1, remoteNodeId1, 42000 msat, now - 3.seconds)), Seq(PaymentEvent.OutgoingPayment(channelId2, remoteNodeId2, 1000 msat, now)))
       val pp4a = PaymentSent.PaymentPart(uuid1, PaymentEvent.OutgoingPayment(channelId1, remoteNodeId1, 42000 msat, now - 15.seconds), 1000 msat, None, startedAt = now - 30.seconds)
       val pp4b = PaymentSent.PaymentPart(uuid2, PaymentEvent.OutgoingPayment(channelId2, remoteNodeId2, 42100 msat, now - 10.seconds), 900 msat, None, startedAt = now - 25.seconds)
-      val e4 = PaymentSent(uuid3, preimage1, 84100 msat, remoteNodeId2, pp4a :: pp4b :: Nil, None, startedAt = now - 30.seconds)
+      val e4 = PaymentSent(uuid3, preimage1, 84100 msat, remoteNodeId2, pp4a :: pp4b :: Nil, None, None, startedAt = now - 30.seconds)
       val pp5 = PaymentSent.PaymentPart(uuid2, PaymentEvent.OutgoingPayment(channelId1, remoteNodeId1, 42000 msat, settledAt = now + 10.minutes), 1000 msat, None, startedAt = now + 9.minutes)
-      val e5 = PaymentSent(uuid2, preimage1, 42000 msat, remoteNodeId1, pp5 :: Nil, None, startedAt = now + 9.minutes)
+      val e5 = PaymentSent(uuid2, preimage1, 42000 msat, remoteNodeId1, pp5 :: Nil, None, None, startedAt = now + 9.minutes)
       val e6 = TrampolinePaymentRelayed(paymentHash1,
         Seq(
           PaymentEvent.IncomingPayment(channelId1, remoteNodeId1, 20000 msat, now - 7.seconds),
@@ -351,7 +351,7 @@ class AuditDbSpec extends AnyFunSuite {
     val channelCreated = ChannelEvent(channelId1, remoteNodeId1, fundingTx.txid, "anchor_outputs", 100_000 sat, isChannelOpener = true, isPrivate = false, "created", now)
     val txPublished = TransactionPublished(channelId1, remoteNodeId1, fundingTx, 200 sat, 100 sat, "funding", None)
     val txConfirmed = TransactionConfirmed(channelId1, remoteNodeId1, fundingTx)
-    val paymentSent = PaymentSent(UUID.randomUUID(), randomBytes32(), 25_000_000 msat, remoteNodeId2, Seq(PaymentSent.PaymentPart(UUID.randomUUID(), PaymentEvent.OutgoingPayment(channelId1, remoteNodeId1, 24_999_999 msat, now), 561 msat, None, now - 10.seconds)), None, now - 10.seconds)
+    val paymentSent = PaymentSent(UUID.randomUUID(), randomBytes32(), 25_000_000 msat, remoteNodeId2, Seq(PaymentSent.PaymentPart(UUID.randomUUID(), PaymentEvent.OutgoingPayment(channelId1, remoteNodeId1, 24_999_999 msat, now), 561 msat, None, now - 10.seconds)), None, None, now - 10.seconds)
     val paymentReceived = PaymentReceived(randomBytes32(), Seq(PaymentEvent.IncomingPayment(channelId1, remoteNodeId1, 15_350 msat, now - 1.seconds)))
     val paymentRelayed = ChannelPaymentRelayed(randomBytes32(), Seq(PaymentEvent.IncomingPayment(channelId1, remoteNodeId1, 1100 msat, now - 1.seconds)), Seq(PaymentEvent.OutgoingPayment(channelId2, remoteNodeId2, 1000 msat, now)))
     forAllDbs {

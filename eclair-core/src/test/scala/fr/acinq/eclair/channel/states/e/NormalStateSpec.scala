@@ -1676,7 +1676,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    bob ! CMD_FULFILL_HTLC(htlc.id, r, None)
+    bob ! CMD_FULFILL_HTLC(htlc.id, r, None, None)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
     awaitCond(bob.stateData == initialState.modify(_.commitments.changes.localChanges.proposed).using(_ :+ fulfill))
   }
@@ -1703,7 +1703,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val r = randomBytes32()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-    val c = CMD_FULFILL_HTLC(42, r, None, replyTo_opt = Some(sender.ref))
+    val c = CMD_FULFILL_HTLC(42, r, None, None, replyTo_opt = Some(sender.ref))
     bob ! c
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
@@ -1717,7 +1717,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val c = CMD_FULFILL_HTLC(htlc.id, ByteVector32.Zeroes, None, replyTo_opt = Some(sender.ref))
+    val c = CMD_FULFILL_HTLC(htlc.id, ByteVector32.Zeroes, None, None, replyTo_opt = Some(sender.ref))
     bob ! c
     sender.expectMsg(RES_FAILURE(c, InvalidHtlcPreimage(channelId(bob), 0)))
     assert(initialState == bob.stateData)
@@ -1731,7 +1731,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val c = CMD_FULFILL_HTLC(htlc.id, r, None, replyTo_opt = Some(sender.ref))
+    val c = CMD_FULFILL_HTLC(htlc.id, r, None, None, replyTo_opt = Some(sender.ref))
     // this would be done automatically when the relayer calls safeSend
     bob.underlyingActor.nodeParams.db.pendingCommands.addSettlementCommand(initialState.channelId, c)
     bob ! c
@@ -1746,7 +1746,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-    val c = CMD_FULFILL_HTLC(42, randomBytes32(), None, replyTo_opt = Some(sender.ref))
+    val c = CMD_FULFILL_HTLC(42, randomBytes32(), None, None, replyTo_opt = Some(sender.ref))
     sender.send(bob, c) // this will fail
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     awaitCond(bob.underlyingActor.nodeParams.db.pendingCommands.listSettlementCommands(initialState.channelId).isEmpty)
@@ -1760,7 +1760,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    bob ! CMD_FULFILL_HTLC(htlc.id, r, None)
+    bob ! CMD_FULFILL_HTLC(htlc.id, r, None, None)
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
 
     // actual test begins
@@ -1906,7 +1906,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // HTLC is fulfilled but alice doesn't send its revocation.
-    bob ! CMD_FULFILL_HTLC(htlc.id, r, None)
+    bob ! CMD_FULFILL_HTLC(htlc.id, r, None, None)
     bob ! CMD_SIGN()
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.expectMsgType[CommitSig]
@@ -2647,7 +2647,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlcSuccessTx = bob.htlcTxs().head
     assert(htlcSuccessTx.isInstanceOf[UnsignedHtlcSuccessTx])
 
-    bob ! CMD_FULFILL_HTLC(htlc.id, r, None, commit = true)
+    bob ! CMD_FULFILL_HTLC(htlc.id, r, None, None, commit = true)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.expectMsgType[CommitSig]
     bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
@@ -2682,7 +2682,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlcSuccessTx = bob.htlcTxs().head
     assert(htlcSuccessTx.isInstanceOf[UnsignedHtlcSuccessTx])
 
-    bob ! CMD_FULFILL_HTLC(htlc.id, r, None, commit = false)
+    bob ! CMD_FULFILL_HTLC(htlc.id, r, None, None, commit = false)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.expectNoMessage(100 millis)
     bob ! CurrentBlockHeight(htlc.cltvExpiry.blockHeight - Bob.nodeParams.channelConf.fulfillSafetyBeforeTimeout.toInt)
@@ -2717,7 +2717,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val htlcSuccessTx = bob.htlcTxs().head
     assert(htlcSuccessTx.isInstanceOf[UnsignedHtlcSuccessTx])
 
-    bob ! CMD_FULFILL_HTLC(htlc.id, r, None, commit = true)
+    bob ! CMD_FULFILL_HTLC(htlc.id, r, None, None, commit = true)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     bob2alice.expectMsgType[CommitSig]

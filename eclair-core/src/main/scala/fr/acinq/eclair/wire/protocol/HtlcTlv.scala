@@ -67,10 +67,16 @@ sealed trait UpdateFulfillHtlcTlv extends Tlv
 object UpdateFulfillHtlcTlv {
   case class AttributionData(data: ByteVector) extends UpdateFulfillHtlcTlv
 
+  /** The recipient may include an encrypted arbitrary payload that will be returned to the sender. */
+  case class FulfillmentPayload(data: ByteVector) extends UpdateFulfillHtlcTlv
+
   private val attributionData: Codec[AttributionData] = (("length" | constant(hex"fd0398")) :: ("data" | bytes(Sphinx.Attribution.totalLength))).as[AttributionData]
+
+  private val fulfillmentPayload: Codec[FulfillmentPayload] = tlvField(bytes.as[FulfillmentPayload])
 
   val updateFulfillHtlcTlvCodec: Codec[TlvStream[UpdateFulfillHtlcTlv]] = tlvStream(discriminated[UpdateFulfillHtlcTlv].by(varint)
     .typecase(UInt64(1), attributionData)
+    .typecase(UInt64(3), fulfillmentPayload)
   )
 }
 

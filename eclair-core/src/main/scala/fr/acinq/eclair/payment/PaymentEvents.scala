@@ -79,7 +79,7 @@ object PaymentEvent {
  * @param parts                    child payments (actual outgoing HTLCs).
  * @param remainingAttribution_opt for relayed trampoline payments, the attribution data that needs to be sent upstream
  */
-case class PaymentSent(id: UUID, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PaymentPart], remainingAttribution_opt: Option[ByteVector], startedAt: TimestampMilli) extends PaymentEvent {
+case class PaymentSent(id: UUID, paymentPreimage: ByteVector32, recipientAmount: MilliSatoshi, recipientNodeId: PublicKey, parts: Seq[PaymentSent.PaymentPart], fulfillmentPayload_opt: Option[ByteVector], remainingAttribution_opt: Option[ByteVector], startedAt: TimestampMilli) extends PaymentEvent {
   require(parts.nonEmpty, "must have at least one payment part")
   val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
   val amountWithFees: MilliSatoshi = parts.map(_.amountWithFees).sum

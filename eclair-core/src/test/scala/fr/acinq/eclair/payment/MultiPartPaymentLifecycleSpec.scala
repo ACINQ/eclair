@@ -580,8 +580,8 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(payFsm.stateName == PAYMENT_ABORTED)
 
     sender.watch(payFsm)
-    childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentPreimage, finalAmount, e, Seq(PaymentSent.PaymentPart(successId, PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, successRoute.amount, 250 unixms), successRoute.channelFee(false), Some(successRoute.fullRoute), 100 unixms)), None, 75 unixms))
-    sender.expectMsg(PreimageReceived(paymentHash, paymentPreimage, None))
+    childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentPreimage, finalAmount, e, Seq(PaymentSent.PaymentPart(successId, PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, successRoute.amount, 250 unixms), successRoute.channelFee(false), Some(successRoute.fullRoute), 100 unixms)), None, None, 75 unixms))
+    sender.expectMsg(PreimageReceived(paymentHash, paymentPreimage, None, None))
     val result = sender.expectMsgType[PaymentSent]
     assert(result.id == cfg.id)
     assert(result.paymentHash == paymentHash)
@@ -608,8 +608,8 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.expectMsgType[SendPaymentToRoute]
 
     val (childId, route) :: (failedId, failedRoute) :: Nil = payFsm.stateData.asInstanceOf[PaymentProgress].pending.toSeq
-    childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentPreimage, finalAmount, e, Seq(PaymentSent.PaymentPart(childId, PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, route.amount, 250 unixms), route.channelFee(false), Some(route.fullRoute), 100 unixms)), None, 75 unixms))
-    sender.expectMsg(PreimageReceived(paymentHash, paymentPreimage, None))
+    childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentPreimage, finalAmount, e, Seq(PaymentSent.PaymentPart(childId, PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, route.amount, 250 unixms), route.channelFee(false), Some(route.fullRoute), 100 unixms)), None, None, 75 unixms))
+    sender.expectMsg(PreimageReceived(paymentHash, paymentPreimage, None, None))
     awaitCond(payFsm.stateName == PAYMENT_SUCCEEDED)
 
     sender.watch(payFsm)
@@ -634,8 +634,8 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val partialPayments = pending.map {
       case (childId, route) => PaymentSent.PaymentPart(childId, PaymentEvent.OutgoingPayment(randomBytes32(), randomKey().publicKey, route.amount + route.channelFee(false) + route.blindedFee, 250 unixms), route.channelFee(false) + route.blindedFee, Some(route.fullRoute), 100 unixms)
     }
-    partialPayments.foreach(pp => childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentPreimage, finalAmount, e, Seq(pp), None, 100 unixms)))
-    sender.expectMsg(PreimageReceived(paymentHash, paymentPreimage, None))
+    partialPayments.foreach(pp => childPayFsm.send(payFsm, PaymentSent(cfg.id, paymentPreimage, finalAmount, e, Seq(pp), None, None, 100 unixms)))
+    sender.expectMsg(PreimageReceived(paymentHash, paymentPreimage, None, None))
     val result = sender.expectMsgType[PaymentSent]
     assert(result.id == cfg.id)
     assert(result.paymentHash == paymentHash)
