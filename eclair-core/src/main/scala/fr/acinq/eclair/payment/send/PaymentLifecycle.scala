@@ -115,20 +115,20 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       router ! Router.RouteDidRelay(d.route)
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
       val p = PaymentPart(id, PaymentEvent.OutgoingPayment(htlc.channelId, remoteNodeId, d.cmd.amount, settledAt = TimestampMilli.now()), d.cmd.amount - d.request.amount, Some(d.route.fullRoute), startedAt = d.sentAt)
-      val remainingAttribution_opt = fulfill match {
-        case HtlcResult.RemoteFulfill(updateFulfill) =>
-          updateFulfill.attribution_opt match {
-            case Some(attribution) =>
-              val attributionDetails = Sphinx.SuccessPacket.decrypt(Some(attribution), d.sharedSecrets)
-              if (attributionDetails.holdTimes.nonEmpty) {
-                context.system.eventStream.publish(Router.ReportedHoldTimes(attributionDetails.holdTimes))
-              }
-              attributionDetails.remainingAttribution_opt
-            case None => None
+      val success_opt = fulfill match {
+        case HtlcResult.RemoteFulfill(f) =>
+          // When we're relaying a payment, the last hop of our route isn't the node that created the fulfillment
+          // payload: it is an intermediate node that only wrapped it, and we must forward it to our upstream node.
+          val lastSecretIsRecipient = cfg.upstream match {
+            case _: Upstream.Local => true
+            case _: Upstream.Hot.Channel => false
+            case _: Upstream.Hot.Trampoline => false
           }
+          Some(Sphinx.SuccessPacket.decrypt(f.fulfillmentPayload_opt, f.attribution_opt, d.sharedSecrets, lastSecretIsRecipient))
         case _: HtlcResult.OnChainFulfill => None
       }
-      myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, remainingAttribution_opt, start)))
+      success_opt.foreach(s => if (s.holdTimes.nonEmpty) context.system.eventStream.publish(Router.ReportedHoldTimes(s.holdTimes)))
+      myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, success_opt.flatMap(_.fulfillmentPayload_opt), success_opt.flatMap(_.remainingAttribution_opt), start)))
 
     case Event(RES_ADD_SETTLED(_, _, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
       fail match {

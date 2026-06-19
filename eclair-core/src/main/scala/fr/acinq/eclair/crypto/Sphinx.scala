@@ -290,7 +290,7 @@ object Sphinx extends Logging {
 
   case class HtlcFailure(holdTimes: Seq[HoldTime], failure: Either[CannotDecryptFailurePacket, DecryptedFailurePacket])
 
-  case class HtlcSuccess(holdTimes: Seq[HoldTime], remainingAttribution_opt: Option[ByteVector])
+  case class HtlcSuccess(holdTimes: Seq[HoldTime], fulfillmentPayload_opt: Option[ByteVector], remainingAttribution_opt: Option[ByteVector])
 
   object FailurePacket {
     /**
@@ -347,7 +347,7 @@ object Sphinx extends Logging {
           val downstream = FailureMessageCodecs.failureOnionCodec(Hmac256(um)).decode(packet1.toBitVector) match {
             // We've identified the failing node: no need to continue decrypting.
             case Attempt.Successful(value) => HtlcFailure(Nil, Right(DecryptedFailurePacket(ss.remoteNodeId, index, value.value)))
-            // The failing node may be downstream: we keep decrypting.
+              // The failing node may be downstream: we keep decrypting.
             case _ => decrypt(packet1, attribution1_opt.map(_.downstreamAttribution), tail, index + 1)
           }
           HtlcFailure(attribution1_opt.map(_.holdTime).toSeq ++ downstream.holdTimes, downstream.failure)
@@ -357,26 +357,71 @@ object Sphinx extends Logging {
 
   object SuccessPacket {
     /**
-     * Decrypt the attribution data provided in the HTLC-success case.
+     * Create an encrypted fulfillment payload, that will be wrapped by each intermediate node before being returned to
+     * the sender. Note that the final node (which creates this payload) does *not* apply additional wrapping since this
+     * is encrypted (unlike what happens for failure messages).
+     *
+     * Note that malicious intermediate hops may drop the packet or alter it, but since each intermediate node includes
+     * the payload they received in their attribution data, the sender will be able to infer who dropped or altered the
+     * payload.
+     */
+    def create(sharedSecret: ByteVector32, payload: ByteVector): ByteVector = {
+      val key = generateKey("fulfillment", sharedSecret)
+      val (encryptedPayload, mac) = ChaCha20Poly1305.encrypt(key, zeroes(12), payload, ByteVector.empty)
+      encryptedPayload ++ mac
+    }
+
+    /**
+     * Wrap the fulfillment payload received from the downstream node in an additional layer of onion encryption.
+     * Each intermediate node wraps the fulfillment payload until it reaches the original sender.
+     * Each intermediate node also includes the received fulfillment payload in its attribution data.
+     */
+    def wrap(payload: ByteVector, sharedSecret: ByteVector32): ByteVector = {
+      val key = generateKey("ammag", sharedSecret)
+      val stream = generateStream(key, payload.length.toInt)
+      payload xor stream
+    }
+
+    /**
+     * Decrypt the fulfillment payload and attribution data provided in the HTLC-success case.
+     * Node shared secrets are applied until we reach the recipient's shared secret, where the decryption step differs.
      * Note that malicious nodes in the route may have altered the packet, triggering a decryption failure.
      *
+     * @param payload_opt     fulfillment payload.
      * @param attribution_opt attribution data for this success packet.
      * @param sharedSecrets   nodes shared secrets.
+     * @param fullRoute       must be set to false when decrypting a partial route (e.g. as an intermediate trampoline).
      */
-    def decrypt(attribution_opt: Option[ByteVector], sharedSecrets: Seq[SharedSecret], index: Int = 1): HtlcSuccess = {
+    def decrypt(payload_opt: Option[ByteVector], attribution_opt: Option[ByteVector], sharedSecrets: Seq[SharedSecret], fullRoute: Boolean = true): HtlcSuccess = {
       sharedSecrets match {
-        case Nil => HtlcSuccess(Nil, attribution_opt)
+        case Nil => HtlcSuccess(Nil, payload_opt, attribution_opt)
         case ss :: tail =>
-          attribution_opt match {
-            case None => HtlcSuccess(Nil, None)
-            case Some(attribution) =>
-              Attribution.decrypt(attribution, None, ss, sharedSecrets.length) match {
-                case Some(perHopAttribution) =>
-                  val downstream = decrypt(Some(perHopAttribution.downstreamAttribution), tail, index + 1)
-                  HtlcSuccess(perHopAttribution.holdTime +: downstream.holdTimes, downstream.remainingAttribution_opt)
-                case None => HtlcSuccess(Nil, Some(attribution))
-              }
+          // We start by unwrapping the fulfillment payload, if provided.
+          val isFinalNode = tail.isEmpty && fullRoute
+          val unwrappedPayload_opt = payload_opt match {
+            case Some(payload) if isFinalNode =>
+              // We decrypt the payload provided by the final node.
+              val key = generateKey("fulfillment", ss.secret)
+              Try(ChaCha20Poly1305.decrypt(key, zeroes(12), payload.dropRight(16), ByteVector.empty, payload.takeRight(16))).toOption
+            case Some(payload) =>
+              // We peel the wrapping added by the intermediate node.
+              Some(wrap(payload, ss.secret))
+            case None => None
           }
+          // We decrypt the attribution data provided by this node: its HMACs must cover the unwrapped fulfillment payload.
+          // The code below is quite subtle, because nodes inside a blinded path don't include attribution data, so when
+          // we reach that point in the recursion, attribution decryption will fail, which is expected.
+          // After that, attribution_opt will be set to None for recursive calls, because there is no point trying to
+          // decrypt attribution data that wasn't actually provided or that was tampered with.
+          // Note that if an intermediate node tampered with the attribution data, it will have the same effect: we will
+          // stop processing attribution after that node.
+          // The caller can look at the reported hold times to know which nodes provided valid attribution data: this
+          // allows identifying which nodes are acting maliciously, if any.
+          // We keep processing the fulfillment payload recursively though, because we need to use all shared secrets
+          // to decrypt it.
+          val attribution1_opt = attribution_opt.flatMap(attribution => Attribution.decrypt(attribution, if (!isFinalNode) unwrappedPayload_opt else None, ss, sharedSecrets.length))
+          val downstream = decrypt(unwrappedPayload_opt, attribution1_opt.map(_.downstreamAttribution), tail, fullRoute)
+          HtlcSuccess(attribution1_opt.map(_.holdTime).toSeq ++ downstream.holdTimes, downstream.fulfillmentPayload_opt, downstream.remainingAttribution_opt)
       }
     }
   }
