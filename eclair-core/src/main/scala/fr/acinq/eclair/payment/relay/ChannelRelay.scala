@@ -255,7 +255,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           case HtlcResult.OnChainFulfill(_) => None
         }
         val attribution = FulfillAttributionData(htlcReceivedAt = upstream.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = downstreamAttribution_opt)
-        val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, Some(attribution), commit = true)
+        val cmd = CMD_FULFILL_HTLC(upstream.add.id, fulfill.paymentPreimage, fulfill.fulfillmentPayload_opt, Some(attribution), commit = true)
         val incoming = PaymentEvent.IncomingPayment(upstream.add.channelId, upstream.receivedFrom, upstream.amountIn, upstream.receivedAt)
         val outgoing = PaymentEvent.OutgoingPayment(htlc.channelId, remoteNodeId, htlc.amountMsat, now)
         context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(htlc.paymentHash, Seq(incoming), Seq(outgoing)))

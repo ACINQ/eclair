@@ -112,16 +112,20 @@ object OnTheFlyFunding {
         val failure = failure_opt match {
           case Some(f) => f match {
             case f: FailureReason.EncryptedDownstreamFailure =>
-              // In the trampoline case, we currently ignore downstream failures: we should add dedicated failures to
-              // the BOLTs to better handle those cases.
               Sphinx.FailurePacket.decrypt(f.packet, f.attribution_opt, onionSharedSecrets).failure match {
-                case Left(Sphinx.CannotDecryptFailurePacket(_, _)) =>
-                  log.warning("couldn't decrypt downstream on-the-fly funding failure")
+                case Left(Sphinx.CannotDecryptFailurePacket(unwrapped, attribution_opt)) =>
+                  log.info("received encrypted on-the-fly funding failure")
+                  // If we cannot decrypt the error, it is encrypted for the payer using the trampoline onion secrets.
+                  // We unwrap the outer onion encryption and will relay the error upstream.
+                  FailureReason.EncryptedDownstreamFailure(unwrapped, attribution_opt)
                 case Right(f) =>
                   log.warning("downstream on-the-fly funding failure: {}", f.failureMessage.message)
+                  // Otherwise, there was an issue with the way we forwarded the payment to the recipient.
+                  // We ignore the specific downstream failure and return a temporary trampoline failure to the sender.
+                  FailureReason.LocalTrampolineFailure(TemporaryTrampolineFailure())
               }
-              FailureReason.LocalFailure(TemporaryNodeFailure())
             case _: FailureReason.LocalFailure => f
+            case _: FailureReason.LocalTrampolineFailure => f
           }
           case None => FailureReason.LocalFailure(UnknownNextPeer())
         }
@@ -134,10 +138,10 @@ object OnTheFlyFunding {
     /** Create commands to fulfill all upstream HTLCs. */
     def createFulfillCommands(preimage: ByteVector32): Seq[(ByteVector32, CMD_FULFILL_HTLC)] = upstream match {
       case _: Upstream.Local => Nil
-      case u: Upstream.Hot.Channel => Seq(u.add.channelId -> CMD_FULFILL_HTLC(u.add.id, preimage, Some(FulfillAttributionData(htlcReceivedAt = u.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = None)), commit = true))
+      case u: Upstream.Hot.Channel => Seq(u.add.channelId -> CMD_FULFILL_HTLC(u.add.id, preimage, None, Some(FulfillAttributionData(htlcReceivedAt = u.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = None)), commit = true))
       case u: Upstream.Hot.Trampoline => u.received.map(c => {
         val attribution = FulfillAttributionData(htlcReceivedAt = c.receivedAt, trampolineReceivedAt_opt = Some(u.receivedAt), downstreamAttribution_opt = None)
-        c.add.channelId -> CMD_FULFILL_HTLC(c.add.id, preimage, Some(attribution), commit = true)
+        c.add.channelId -> CMD_FULFILL_HTLC(c.add.id, preimage, None, Some(attribution), commit = true)
       })
     }
   }

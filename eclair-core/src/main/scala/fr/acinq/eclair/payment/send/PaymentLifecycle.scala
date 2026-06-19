@@ -115,20 +115,23 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       router ! Router.RouteDidRelay(d.route)
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
       val p = PaymentPart(id, PaymentEvent.OutgoingPayment(htlc.channelId, remoteNodeId, d.cmd.amount, settledAt = TimestampMilli.now()), d.cmd.amount - d.request.amount, Some(d.route.fullRoute), startedAt = d.sentAt)
-      val remainingAttribution_opt = fulfill match {
-        case HtlcResult.RemoteFulfill(updateFulfill) =>
-          updateFulfill.attribution_opt match {
-            case Some(attribution) =>
-              val unwrapped = Sphinx.Attribution.unwrap(attribution, d.sharedSecrets)
-              if (unwrapped.holdTimes.nonEmpty) {
-                context.system.eventStream.publish(Router.ReportedHoldTimes(unwrapped.holdTimes))
-              }
-              unwrapped.remaining_opt
-            case None => None
+      val attribution_opt = fulfill match {
+        case HtlcResult.RemoteFulfill(f) =>
+          val fullRoute = cfg.upstream match {
+            case _: Upstream.Local => true
+            case _: Upstream.Hot.Channel => false
+            // If we're relaying a trampoline payment to a non-trampoline recipient, we must unwrap the full route.
+            case _: Upstream.Hot.Trampoline => d.recipient match {
+              case r: ClearRecipient => r.nextTrampolineOnion_opt.isEmpty
+              case _: SpontaneousRecipient => true
+              case _: BlindedRecipient => true
+            }
           }
+          Some(Sphinx.SuccessPacket.decrypt(f.fulfillmentPayload_opt, f.attribution_opt, d.sharedSecrets, fullRoute))
         case _: HtlcResult.OnChainFulfill => None
       }
-      myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, remainingAttribution_opt, start)))
+      attribution_opt.foreach(a => if (a.holdTimes.nonEmpty) context.system.eventStream.publish(Router.ReportedHoldTimes(a.holdTimes, trampolineHoldTimes = Nil)))
+      myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, attribution_opt.flatMap(_.fulfillmentPayload_opt), attribution_opt.flatMap(_.remainingAttribution_opt), start)))
 
     case Event(RES_ADD_SETTLED(_, _, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
       fail match {
@@ -193,7 +196,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     val now = TimestampMilli.now()
     val htlcFailure = Sphinx.FailurePacket.decrypt(fail.reason, fail.attribution_opt, sharedSecrets)
     if (htlcFailure.holdTimes.nonEmpty) {
-      context.system.eventStream.publish(Router.ReportedHoldTimes(htlcFailure.holdTimes))
+      context.system.eventStream.publish(Router.ReportedHoldTimes(holdTimes = htlcFailure.holdTimes, trampolineHoldTimes = Nil))
     }
     ((htlcFailure.failure match {
       case success@Right(e) =>
