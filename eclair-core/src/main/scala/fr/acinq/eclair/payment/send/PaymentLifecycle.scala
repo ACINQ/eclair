@@ -115,20 +115,18 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       router ! Router.RouteDidRelay(d.route)
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
       val p = PaymentPart(id, PaymentEvent.OutgoingPayment(htlc.channelId, remoteNodeId, d.cmd.amount, settledAt = TimestampMilli.now()), d.cmd.amount - d.request.amount, Some(d.route.fullRoute), startedAt = d.sentAt)
-      val remainingAttribution_opt = fulfill match {
-        case HtlcResult.RemoteFulfill(updateFulfill) =>
-          updateFulfill.attribution_opt match {
-            case Some(attribution) =>
-              val attributionDetails = Sphinx.SuccessPacket.decrypt(Some(attribution), d.sharedSecrets)
-              if (attributionDetails.holdTimes.nonEmpty) {
-                context.system.eventStream.publish(Router.ReportedHoldTimes(attributionDetails.holdTimes))
-              }
-              attributionDetails.remainingAttribution_opt
-            case None => None
+      val attribution_opt = fulfill match {
+        case HtlcResult.RemoteFulfill(f) =>
+          val fullRoute = cfg.upstream match {
+            case _: Upstream.Local => true
+            case _: Upstream.Hot.Channel => false
+            case _: Upstream.Hot.Trampoline => false
           }
+          Some(Sphinx.SuccessPacket.decrypt(f.fulfillmentPayload_opt, f.attribution_opt, d.sharedSecrets, fullRoute))
         case _: HtlcResult.OnChainFulfill => None
       }
-      myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, remainingAttribution_opt, start)))
+      attribution_opt.foreach(a => if (a.holdTimes.nonEmpty) context.system.eventStream.publish(Router.ReportedHoldTimes(a.holdTimes)))
+      myStop(d.request, Right(cfg.createPaymentSent(d.recipient, fulfill.paymentPreimage, p :: Nil, attribution_opt.flatMap(_.fulfillmentPayload_opt), attribution_opt.flatMap(_.remainingAttribution_opt), start)))
 
     case Event(RES_ADD_SETTLED(_, _, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
       fail match {
