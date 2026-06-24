@@ -24,6 +24,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs._
 import fr.acinq.eclair.wire.protocol._
 import scodec.Codec
+import scodec.bits.ByteVector
 import scodec.codecs._
 import shapeless.{::, HNil}
 
@@ -59,12 +60,13 @@ object CommandCodecs {
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).map {
       case id :: r :: downstreamAttribution_opt :: htlcReceivedAt_opt :: commit :: replyTo_opt :: HNil =>
         val attribution_opt = htlcReceivedAt_opt.map(receivedAt => FulfillAttributionData(receivedAt, None, downstreamAttribution_opt))
-        CMD_FULFILL_HTLC(id, r, attribution_opt, commit, replyTo_opt)
+        CMD_FULFILL_HTLC(id, r, None, attribution_opt, commit, replyTo_opt)
     }.decodeOnly
 
   private val cmdFulfillWithoutAttributionCodec: Codec[CMD_FULFILL_HTLC] =
     (("id" | int64) ::
       ("r" | bytes32) ::
+      ("fulfillmentPayload_opt" | provide(Option.empty[ByteVector])) ::
       ("attribution_opt" | provide(Option.empty[FulfillAttributionData])) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
@@ -74,9 +76,18 @@ object CommandCodecs {
       ("trampolineReceivedAt_opt" | optional(bool8, uint64overflow.as[TimestampMilli])) ::
       ("downstreamAttribution_opt" | optional(bool8, bytes(Sphinx.Attribution.totalLength)))).as[FulfillAttributionData]
 
-  private val cmdFullfillCodec: Codec[CMD_FULFILL_HTLC] =
+  private val cmdFullfillWithoutFulfillmentPayloadCodec: Codec[CMD_FULFILL_HTLC] =
     (("id" | int64) ::
       ("r" | bytes32) ::
+      ("fulfillmentPayload_opt" | provide(Option.empty[ByteVector])) ::
+      ("attribution_opt" | optional(bool8, fulfillAttributionCodec)) ::
+      ("commit" | provide(false)) ::
+      ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
+
+  private val cmdFulfillCodec: Codec[CMD_FULFILL_HTLC] =
+    (("id" | int64) ::
+      ("r" | bytes32) ::
+      ("fulfillmentPayload_opt" | optional(bool8, variableSizeBytes(uint16, bytes))) ::
       ("attribution_opt" | optional(bool8, fulfillAttributionCodec)) ::
       ("commit" | provide(false)) ::
       ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
@@ -144,7 +155,8 @@ object CommandCodecs {
 
   val cmdCodec: Codec[HtlcSettlementCommand] = discriminated[HtlcSettlementCommand].by(uint16)
     // NB: order matters!
-    .typecase(8, cmdFullfillCodec)
+    .typecase(9, cmdFulfillCodec)
+    .typecase(8, cmdFullfillWithoutFulfillmentPayloadCodec)
     .typecase(7, cmdFailCodec)
     .typecase(6, cmdFulfillWithPartialAttributionCodec)
     .typecase(5, cmdFailWithPartialAttributionCodec)

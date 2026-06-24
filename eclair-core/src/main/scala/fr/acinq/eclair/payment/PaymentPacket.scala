@@ -327,7 +327,10 @@ object OutgoingPaymentPacket {
    * In that case, packetPayloadLength_opt must be greater than the actual onion's content.
    */
   def buildOnion(payloads: Seq[NodePayload], associatedData: ByteVector32, packetPayloadLength_opt: Option[Int]): Either[OutgoingPaymentError, Sphinx.PacketAndSecrets] = {
-    val sessionKey = randomKey()
+    buildOnion(randomKey(), payloads, associatedData, packetPayloadLength_opt)
+  }
+
+  def buildOnion(sessionKey: PrivateKey, payloads: Seq[NodePayload], associatedData: ByteVector32, packetPayloadLength_opt: Option[Int]): Either[OutgoingPaymentError, Sphinx.PacketAndSecrets] = {
     val nodeIds = payloads.map(_.nodeId)
     val payloadsBin = payloads
       .map(p => PaymentOnionCodecs.perHopPayloadCodec.encode(p.payload.records))
@@ -353,61 +356,119 @@ object OutgoingPaymentPacket {
     }
   }
 
-  private def buildHtlcFailure(nodeSecret: PrivateKey, useAttributableFailures: Boolean, reason: FailureReason, add: UpdateAddHtlc, holdTime: FiniteDuration): Either[CannotExtractSharedSecret, (ByteVector, TlvStream[UpdateFailHtlcTlv])] = {
-    extractSharedSecret(nodeSecret, add).map(sharedSecret => {
-      val (packet, attribution) = reason match {
-        case FailureReason.EncryptedDownstreamFailure(packet, attribution) => (packet, attribution)
-        case FailureReason.LocalFailure(failure) => (Sphinx.FailurePacket.create(sharedSecret, failure), None)
-      }
-      val tlvs: TlvStream[UpdateFailHtlcTlv] = if (useAttributableFailures) {
-        TlvStream(UpdateFailHtlcTlv.AttributionData(Sphinx.Attribution.create(attribution, Some(packet), holdTime, sharedSecret)))
-      } else {
-        TlvStream.empty
-      }
-      (Sphinx.FailurePacket.wrap(packet, sharedSecret), tlvs)
-    })
-  }
+  private case class HtlcSharedSecrets(outerOnionSecret: ByteVector32, trampolineOnionSecret_opt: Option[ByteVector32], blinded: Boolean, isFinalNode: Boolean)
 
   /**
-   * We decrypt the onion again to extract the shared secret used to encrypt onion failures.
-   * We could avoid this by storing the shared secret after the initial onion decryption, but we would have to store it
-   * in the database since we must be able to fail HTLCs after restarting our node.
+   * We decrypt the onion again to extract the shared secret(s) used to encrypt onion failures.
+   * We could avoid this by storing the shared secret(s) after the initial onion decryption, but we would have to store
+   * it in the database since we must be able to fail HTLCs after restarting our node.
    * It's simpler to extract it again from the encrypted onion.
    */
-  private def extractSharedSecret(nodeSecret: PrivateKey, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector32] = {
-    Sphinx.peel(nodeSecret, Some(add.paymentHash), add.onionRoutingPacket) match {
-      case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) => Right(sharedSecret)
+  private def extractSharedSecret(nodeSecret: PrivateKey, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, HtlcSharedSecrets] = {
+    val outerOnionDecryptionKey = add.pathKey_opt match {
+      case Some(blinding) => Sphinx.RouteBlinding.derivePrivateKey(nodeSecret, blinding)
+      case None => nodeSecret
+    }
+    Sphinx.peel(outerOnionDecryptionKey, Some(add.paymentHash), add.onionRoutingPacket) match {
+      case Right(packet@Sphinx.DecryptedPacket(payload, _, outerOnionSecret)) =>
+        // Let's look at the onion payload to see if it contains a trampoline onion.
+        PaymentOnionCodecs.perHopPayloadCodec.decode(payload.bits) match {
+          case Attempt.Successful(DecodeResult(perHopPayload, _)) =>
+            // We try to extract the trampoline shared secret, if we can find one.
+            val trampolinePacket_opt = perHopPayload.get[OnionPaymentPayloadTlv.TrampolineOnion].map(_.packet).flatMap(trampolinePacket => {
+              val trampolinePathKey_opt = perHopPayload.get[OnionPaymentPayloadTlv.PathKey].map(_.publicKey)
+              val trampolineOnionDecryptionKey = trampolinePathKey_opt.map(pathKey => Sphinx.RouteBlinding.derivePrivateKey(nodeSecret, pathKey)).getOrElse(nodeSecret)
+              Sphinx.peel(trampolineOnionDecryptionKey, Some(add.paymentHash), trampolinePacket).toOption
+            })
+            // We check if we are an intermediate node in a blinded (potentially trampoline) path.
+            val blinded = trampolinePacket_opt match {
+              case Some(_) => perHopPayload.get[OnionPaymentPayloadTlv.PathKey].nonEmpty
+              case None => add.pathKey_opt.nonEmpty
+            }
+            val isFinalNode = trampolinePacket_opt match {
+              case Some(trampolinePacket) => trampolinePacket.isLastPacket
+              case None => packet.isLastPacket
+            }
+            Right(HtlcSharedSecrets(outerOnionSecret, trampolinePacket_opt.map(_.sharedSecret), blinded, isFinalNode))
+          case Attempt.Failure(_) => Right(HtlcSharedSecrets(outerOnionSecret, None, blinded = add.pathKey_opt.nonEmpty, isFinalNode = packet.isLastPacket))
+        }
       case Left(_) => Left(CannotExtractSharedSecret(add.channelId, add))
     }
+  }
+
+  private case class AttributableHtlcFailure(encryptedReason: ByteVector, attribution_opt: Option[ByteVector])
+
+  private def buildHtlcFailure(nodeSecret: PrivateKey, reason: FailureReason, add: UpdateAddHtlc, holdTime: FiniteDuration): Either[CannotExtractSharedSecret, AttributableHtlcFailure] = {
+    extractSharedSecret(nodeSecret, add).map(ss => {
+      reason match {
+        case FailureReason.EncryptedDownstreamFailure(packet, downstreamAttribution_opt) =>
+          val attribution = Sphinx.Attribution.create(downstreamAttribution_opt, Some(packet), holdTime, ss.outerOnionSecret)
+          AttributableHtlcFailure(Sphinx.FailurePacket.wrap(packet, ss.outerOnionSecret), Some(attribution))
+        case FailureReason.LocalFailure(failure) =>
+          val packet = Sphinx.FailurePacket.create(ss.outerOnionSecret, failure)
+          val attribution = Sphinx.Attribution.create(downstreamAttribution_opt = None, Some(packet), holdTime, ss.outerOnionSecret)
+          AttributableHtlcFailure(Sphinx.FailurePacket.wrap(packet, ss.outerOnionSecret), Some(attribution))
+      }
+    })
   }
 
   def buildHtlcFailure(nodeSecret: PrivateKey, useAttributableFailures: Boolean, cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc, now: TimestampMilli = TimestampMilli.now()): Either[CannotExtractSharedSecret, HtlcFailureMessage] = {
     add.pathKey_opt match {
       case Some(_) =>
         // We are part of a blinded route and we're not the introduction node.
+        // We return a standard error that doesn't disclose any information without any attribution data.
         val failure = InvalidOnionBlinding(Sphinx.hash(add.onionRoutingPacket))
         Right(UpdateFailMalformedHtlc(add.channelId, add.id, failure.onionHash, failure.code))
       case None =>
-        // If the htlcReceivedAt was lost (because the node restarted), we use a hold time of 0 which should be ignored by the payer.
-        val holdTime = cmd.attribution_opt.map(now - _.htlcReceivedAt).getOrElse(0 millisecond)
-        buildHtlcFailure(nodeSecret, useAttributableFailures, cmd.reason, add, holdTime).map {
-          case (encryptedReason, tlvs) => UpdateFailHtlc(add.channelId, cmd.id, encryptedReason, tlvs)
+        // If the attribution was lost (because the node restarted), we use a hold time of 0 which should be ignored by the payer.
+        val holdTime = cmd.attribution_opt.map(a => now - a.htlcReceivedAt).getOrElse(0 millisecond)
+        buildHtlcFailure(nodeSecret, cmd.reason, add, holdTime).map { f =>
+          val tlvs: Set[UpdateFailHtlcTlv] = Set(
+            if (useAttributableFailures) f.attribution_opt.map(UpdateFailHtlcTlv.AttributionData(_)) else None
+          ).flatten
+          UpdateFailHtlc(add.channelId, cmd.id, f.encryptedReason, TlvStream(tlvs))
         }
     }
   }
 
-  def buildHtlcFulfill(nodeSecret: PrivateKey, useAttributionData: Boolean, cmd: CMD_FULFILL_HTLC, add: UpdateAddHtlc, now: TimestampMilli = TimestampMilli.now()): UpdateFulfillHtlc = {
-    // If we are part of a blinded route, we must not populate attribution data.
-    val tlvs: TlvStream[UpdateFulfillHtlcTlv] = if (useAttributionData && add.pathKey_opt.isEmpty) {
-      extractSharedSecret(nodeSecret, add) match {
-        case Left(_) => TlvStream.empty
-        case Right(sharedSecret) =>
-          val holdTime = cmd.attribution_opt.map(now - _.htlcReceivedAt).getOrElse(0 millisecond)
-          TlvStream(UpdateFulfillHtlcTlv.AttributionData(Sphinx.Attribution.create(cmd.attribution_opt.flatMap(_.downstreamAttribution_opt), None, holdTime, sharedSecret)))
-      }
+  private def wrapFulfillmentPayload(cmd: CMD_FULFILL_HTLC, sharedSecret: ByteVector32, isFinalNode: Boolean): Option[ByteVector] = {
+    if (isFinalNode) {
+      // The final node encrypts the fulfillment payload without applying the wrapping step.
+      cmd.fulfillmentPayload_opt.map(p => Sphinx.SuccessPacket.create(sharedSecret, p))
     } else {
-      TlvStream.empty
+      // Intermediate nodes wrap the downstream fulfillment payload with their shared secret.
+      cmd.fulfillmentPayload_opt.map(p => Sphinx.SuccessPacket.wrap(p, sharedSecret))
     }
-    UpdateFulfillHtlc(add.channelId, cmd.id, cmd.r, tlvs)
+  }
+
+  def buildHtlcFulfill(nodeSecret: PrivateKey, useAttributionData: Boolean, cmd: CMD_FULFILL_HTLC, add: UpdateAddHtlc, now: TimestampMilli = TimestampMilli.now()): UpdateFulfillHtlc = {
+    // Note that if we are part of a blinded route, we must not include any attribution data.
+    // But we must wrap the fulfillment payload in all cases to ensure that the sender receives it.
+    val downstreamAttribution_opt = cmd.attribution_opt.flatMap(_.downstreamAttribution_opt)
+    val trampolineHoldTime = cmd.attribution_opt.flatMap(_.trampolineReceivedAt_opt).map(receivedAt => now - receivedAt).getOrElse(0 millisecond)
+    val holdTime = cmd.attribution_opt.map(a => now - a.htlcReceivedAt).getOrElse(0 millisecond)
+    val (attributionData_opt, fulfillmentPayload_opt) = extractSharedSecret(nodeSecret, add) match {
+      case Right(HtlcSharedSecrets(outerOnionSecret, None, blinded, isFinalNode)) =>
+        // The final node doesn't include its fulfillment payload in the attribution HMACs: it already has its own MAC.
+        val attribution = Sphinx.Attribution.create(downstreamAttribution_opt, if (!isFinalNode) cmd.fulfillmentPayload_opt else None, holdTime, outerOnionSecret)
+        val attribution_opt = if (useAttributionData && !blinded) Some(attribution) else None
+        val fulfillmentPayload_opt = wrapFulfillmentPayload(cmd, outerOnionSecret, isFinalNode)
+        (attribution_opt, fulfillmentPayload_opt)
+      case Right(HtlcSharedSecrets(outerOnionSecret, Some(trampolineOnionSecret), blinded, isFinalNode)) =>
+        // We do a first pass with the trampoline shared secret.
+        val trampolineAttribution = Sphinx.Attribution.create(downstreamAttribution_opt, if (!isFinalNode) cmd.fulfillmentPayload_opt else None, trampolineHoldTime, trampolineOnionSecret)
+        val trampolineFulfillmentPayload_opt = wrapFulfillmentPayload(cmd, trampolineOnionSecret, isFinalNode)
+        // Then a second pass with the outer onion shared secret.
+        val attribution = Sphinx.Attribution.create(Some(trampolineAttribution), trampolineFulfillmentPayload_opt, holdTime, outerOnionSecret)
+        val attribution_opt = if (useAttributionData && !blinded) Some(attribution) else None
+        val fulfillmentPayload_opt = trampolineFulfillmentPayload_opt.map(p => Sphinx.SuccessPacket.wrap(p, outerOnionSecret))
+        (attribution_opt, fulfillmentPayload_opt)
+      case Left(_) => (None, None)
+    }
+    val tlvs: Set[UpdateFulfillHtlcTlv] = Set(
+      attributionData_opt.map(UpdateFulfillHtlcTlv.AttributionData(_)),
+      fulfillmentPayload_opt.map(UpdateFulfillHtlcTlv.FulfillmentPayload(_)),
+    ).flatten
+    UpdateFulfillHtlc(add.channelId, cmd.id, cmd.r, TlvStream(tlvs))
   }
 }

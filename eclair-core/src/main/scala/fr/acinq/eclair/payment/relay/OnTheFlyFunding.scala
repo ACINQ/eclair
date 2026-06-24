@@ -134,10 +134,10 @@ object OnTheFlyFunding {
     /** Create commands to fulfill all upstream HTLCs. */
     def createFulfillCommands(preimage: ByteVector32): Seq[(ByteVector32, CMD_FULFILL_HTLC)] = upstream match {
       case _: Upstream.Local => Nil
-      case u: Upstream.Hot.Channel => Seq(u.add.channelId -> CMD_FULFILL_HTLC(u.add.id, preimage, Some(FulfillAttributionData(htlcReceivedAt = u.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = None)), commit = true))
+      case u: Upstream.Hot.Channel => Seq(u.add.channelId -> CMD_FULFILL_HTLC(u.add.id, preimage, None, Some(FulfillAttributionData(htlcReceivedAt = u.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = None)), commit = true))
       case u: Upstream.Hot.Trampoline => u.received.map(c => {
         val attribution = FulfillAttributionData(htlcReceivedAt = c.receivedAt, trampolineReceivedAt_opt = Some(u.receivedAt), downstreamAttribution_opt = None)
-        c.add.channelId -> CMD_FULFILL_HTLC(c.add.id, preimage, Some(attribution), commit = true)
+        c.add.channelId -> CMD_FULFILL_HTLC(c.add.id, preimage, None, Some(attribution), commit = true)
       })
     }
   }

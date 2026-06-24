@@ -190,7 +190,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
 
     val (preimage, add) = addHtlc(50_000_000 msat, bob, alice, bob2alice, alice2bob)
     val cmd = c match {
-      case FulfillHtlc => CMD_FULFILL_HTLC(add.id, preimage, None)
+      case FulfillHtlc => CMD_FULFILL_HTLC(add.id, preimage, None, None)
       case FailHtlc => CMD_FAIL_HTLC(add.id, FailureReason.EncryptedDownstreamFailure(randomBytes(252), None), None)
     }
     crossSign(bob, alice, bob2alice, alice2bob)
@@ -482,7 +482,7 @@ class NormalQuiescentStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteL
     bob2blockchain.expectNoMessage(100 millis)
 
     // bob receives the fulfill for htlc, which is ignored because the channel is quiescent
-    val fulfillHtlc = CMD_FULFILL_HTLC(add.id, preimage, None)
+    val fulfillHtlc = CMD_FULFILL_HTLC(add.id, preimage, None, None)
     safeSend(bob, Seq(fulfillHtlc))
 
     // the HTLC timeout from alice is near, bob needs to close the channel to avoid an on-chain race condition

@@ -133,7 +133,7 @@ object TrampolinePaymentLifecycle {
             val holdTimes = fulfill match {
               case HtlcResult.RemoteFulfill(updateFulfill) =>
                 updateFulfill.attribution_opt match {
-                  case Some(attribution) => Sphinx.Attribution.unwrap(attribution, outerOnionSecrets).holdTimes
+                  case Some(attribution) => Sphinx.SuccessPacket.decrypt(updateFulfill.fulfillmentPayload_opt, Some(attribution), outerOnionSecrets).holdTimes
                   case None => Nil
                 }
               case _: HtlcResult.OnChainFulfill => Nil
@@ -237,7 +237,7 @@ class TrampolinePaymentLifecycle private(nodeParams: NodeParams,
               waitForSettlement(remaining - 1, attemptNumber, part +: fulfilledParts)
             } else {
               context.log.info("trampoline payment succeeded")
-              cmd.replyTo ! PaymentSent(cmd.paymentId, fulfill.paymentPreimage, totalAmount, cmd.invoice.nodeId, part +: fulfilledParts, None, startedAt)
+              cmd.replyTo ! PaymentSent(cmd.paymentId, fulfill.paymentPreimage, totalAmount, cmd.invoice.nodeId, part +: fulfilledParts, fulfill.fulfillmentPayload_opt, None, startedAt)
               Behaviors.stopped
             }
           case fail: HtlcResult.Fail =>
