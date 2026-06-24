@@ -439,8 +439,12 @@ object MultiPartHandler {
 
   private def validatePaymentCltv(nodeParams: NodeParams, add: UpdateAddHtlc, payload: FinalPayload)(implicit log: LoggingAdapter): Boolean = {
     val minExpiry = nodeParams.channelConf.minFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)
+    val maxExpiry = nodeParams.channelConf.maxExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight)
     if (add.cltvExpiry < minExpiry) {
-      log.warning("received payment with expiry too small for amount={} totalAmount={}", add.amountMsat, payload.totalAmount)
+      log.warning("received payment with expiry too small for amount={} totalAmount={} (expiry={})", add.amountMsat, payload.totalAmount, add.cltvExpiry)
+      false
+    } else if (add.cltvExpiry >= maxExpiry) {
+      log.warning("received payment with expiry too big for amount={} totalAmount={} (expiry={})", add.amountMsat, payload.totalAmount, add.cltvExpiry)
       false
     } else {
       true

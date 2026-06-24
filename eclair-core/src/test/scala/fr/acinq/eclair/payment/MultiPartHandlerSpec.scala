@@ -367,7 +367,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
   }
 
-  test("PaymentHandler should reject incoming multi-part payment with an invalid expiry") { f =>
+  test("PaymentHandler should reject incoming multi-part payment with an invalid expiry (expiry too small)") { f =>
     import f._
 
     sender.send(handlerWithMpp, ReceiveStandardPayment(sender.ref, Some(1000 msat), Left("multi-part invalid expiry")))
@@ -376,6 +376,21 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val lowCltvExpiry = nodeParams.channelConf.fulfillSafetyBeforeTimeout.toCltvExpiry(nodeParams.currentBlockHeight)
     val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, lowCltvExpiry, TestConstants.emptyOnionPacket, None, accountable = false, None)
+    sender.send(handlerWithMpp, ReceivePacket(IncomingPaymentPacket.FinalPacket(add, FinalPayload.Standard.createPayload(add.amountMsat, 1000 msat, add.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata, upgradeAccountability = false), TimestampMilli.now()), randomKey().publicKey))
+    val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
+    assert(cmd.reason == FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
+    assert(nodeParams.db.payments.getIncomingPayment(invoice.paymentHash).get.status == IncomingPaymentStatus.Pending)
+  }
+
+  test("PaymentHandler should reject incoming multi-part payment with an invalid expiry (expiry too big)") { f =>
+    import f._
+
+    sender.send(handlerWithMpp, ReceiveStandardPayment(sender.ref, Some(1000 msat), Left("multi-part invalid expiry")))
+    val invoice = sender.expectMsgType[Bolt11Invoice]
+    assert(invoice.features.hasFeature(BasicMultiPartPayment))
+
+    val highCltvExpiry = (nodeParams.channelConf.maxExpiryDelta + 1).toCltvExpiry(nodeParams.currentBlockHeight)
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 800 msat, invoice.paymentHash, highCltvExpiry, TestConstants.emptyOnionPacket, None, accountable = false, None)
     sender.send(handlerWithMpp, ReceivePacket(IncomingPaymentPacket.FinalPacket(add, FinalPayload.Standard.createPayload(add.amountMsat, 1000 msat, add.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata, upgradeAccountability = false), TimestampMilli.now()), randomKey().publicKey))
     val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(cmd.reason == FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)))
