@@ -2237,6 +2237,26 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2relayer.expectNoMessage(100 millis)
   }
 
+  test("recv CMD_UPDATE_RELAY_FEE (preserves inbound fees when omitted)") { f =>
+    import f._
+    val sender = TestProbe()
+    val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeBase * 2
+    val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths * 2
+    // We first set inbound fees along with the outbound fees.
+    sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, newFeeBaseMsat, newFeeProportionalMillionth, Some(-100 msat), Some(-50)))
+    sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
+    val localUpdate1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(localUpdate1.channelUpdate.blip18InboundFees_opt.contains(InboundFees(-100 msat, -50)))
+
+    // We then update only the outbound fees: the inbound fees must be preserved in the advertised channel_update.
+    sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, newFeeBaseMsat * 2, newFeeProportionalMillionth * 2))
+    sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
+    val localUpdate2 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(localUpdate2.channelUpdate.feeBaseMsat == newFeeBaseMsat * 2)
+    assert(localUpdate2.channelUpdate.blip18InboundFees_opt.contains(InboundFees(-100 msat, -50)))
+    alice2relayer.expectNoMessage(100 millis)
+  }
+
   def testCmdClose(f: FixtureParam, script_opt: Option[ByteVector]): Unit = {
     import f._
     val sender = TestProbe()

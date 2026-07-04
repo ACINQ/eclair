@@ -32,7 +32,6 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler
 import fr.acinq.eclair.reputation.{Reputation, ReputationRecorder}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair._
-import fr.acinq.eclair.{CltvExpiryDelta, Logs, MilliSatoshi, NodeParams, RealShortChannelId}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise

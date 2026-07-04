@@ -72,20 +72,27 @@ object Databases extends Logging {
                                      inboundFees: SqliteInboundFeesDb,
                                      private val backupConnection: Connection) extends Databases with FileBackup {
     override def backup(backupFile: File): Unit = {
-      // Inbound fees are stored in a separate database file, which we back up next to the main backup file. Our caller
-      // only handles the temporary file and atomic move for the main backup file, so we do it ourselves here.
-      val inboundFeesBackupFile = new File(backupFile.getAbsoluteFile.getParentFile, "inboundfees.sqlite.bak")
-      val inboundFeesTmpFile = new File(inboundFeesBackupFile.getAbsolutePath.concat(".tmp"))
-      SqliteUtils.using(inboundFees.sqlite.createStatement()) {
-        statement => {
-          statement.executeUpdate(s"backup to ${inboundFeesTmpFile.getAbsolutePath}")
-        }
-      }
-      Files.move(inboundFeesTmpFile.toPath, inboundFeesBackupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+      // We back up the main database first: it holds our channel state and is critical for funds safety, so its backup
+      // must not be prevented by a failure of the (much less important) inbound fees backup below.
       SqliteUtils.using(backupConnection.createStatement()) {
         statement => {
           statement.executeUpdate(s"backup to ${backupFile.getAbsolutePath}")
         }
+      }
+      // Inbound fees are stored in a separate database file, which we back up next to the main backup file. Our caller
+      // only handles the temporary file and atomic move for the main backup file, so we do it ourselves here. A failure
+      // here is logged but not propagated, so that it doesn't prevent the main backup above from being finalized.
+      try {
+        val inboundFeesBackupFile = new File(backupFile.getAbsoluteFile.getParentFile, "inboundfees.sqlite.bak")
+        val inboundFeesTmpFile = new File(inboundFeesBackupFile.getAbsolutePath.concat(".tmp"))
+        SqliteUtils.using(inboundFees.sqlite.createStatement()) {
+          statement => {
+            statement.executeUpdate(s"backup to ${inboundFeesTmpFile.getAbsolutePath}")
+          }
+        }
+        Files.move(inboundFeesTmpFile.toPath, inboundFeesBackupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+      } catch {
+        case t: Throwable => logger.warn(s"could not backup the inbound fees database: ${t.getMessage}")
       }
     }
   }

@@ -269,7 +269,9 @@ object Graph {
               // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
               dijkstraShortestPath(g, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, Features.empty, currentBlockHeight, wr, includeLocalChannelCost, excludePositiveInboundFees, blip18InboundFees) match {
                 case Some(spurPath) =>
-                  val completePath = spurPath ++ rootPathEdges
+                  // The root-path edges were enriched relative to their predecessor in the previous shortest path; after
+                  // concatenation with the spur path their actual predecessor changes, so we recompute inbound fees.
+                  val completePath = enrichPathWithInboundFees(spurPath ++ rootPathEdges, g.graph, blip18InboundFees)
                   val candidatePath = WeightedPath(completePath, pathWeight(g.balances, sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost, g.graph, blip18InboundFees))
                   candidates.enqueue(PathWithSpur(candidatePath, i))
                 case None => ()
@@ -390,17 +392,14 @@ object Graph {
     if (targetFound) {
       val edgePath = new mutable.ArrayBuffer[GraphEdge](RouteCalculation.ROUTE_MAX_LENGTH)
       var current = bestEdges.get(sourceNode)
-      var previousEdge: Option[GraphEdge] = None
       while (current.isDefined) {
-        val edge = enrichEdgeWithInboundFees(current.get, previousEdge, g.graph, enableInboundFees)
-        edgePath += edge
-        previousEdge = Some(edge)
-        current = bestEdges.get(edge.desc.b)
+        edgePath += current.get
+        current = bestEdges.get(current.get.desc.b)
         if (edgePath.length > RouteCalculation.ROUTE_MAX_LENGTH) {
           throw InfiniteLoop(edgePath.toSeq)
         }
       }
-      Some(edgePath.toSeq)
+      Some(enrichPathWithInboundFees(edgePath.toSeq, g.graph, enableInboundFees))
     } else {
       None
     }
@@ -432,7 +431,7 @@ object Graph {
                          currentBlockHeight: BlockHeight,
                          boundaries: PaymentPathWeight => Boolean,
                          excludePositiveInboundFees: Boolean,
-                         enableInboundFees: Boolean = false): Seq[WeightedPath[PaymentPathWeight]] = {
+                         enableInboundFees: Boolean): Seq[WeightedPath[PaymentPathWeight]] = {
     val paths = new mutable.ArrayBuffer[WeightedPath[PaymentPathWeight]](pathsToFind)
     val verticesToIgnore = new mutable.HashSet[PublicKey]()
     verticesToIgnore.addAll(ignoredVertices)
@@ -450,35 +449,22 @@ object Graph {
   }
 
   /**
-   * Enriches an edge with inbound fees from the previous edge's back-edge.
-   * This is used during path reconstruction to apply BLIP-18 inbound fees.
-   *
-   * @param edge                the current edge to potentially enrich
-   * @param previousEdge_opt    the previous edge in the path (None for the first edge)
-   * @param g                   the graph structure containing back-edges
-   * @param enableInboundFees   whether to enrich with inbound fees
-   * @return the edge, potentially enriched with inbound fees
+   * Set each edge's bLIP-18 inbound fees from its predecessor's back-edge (the channel_update the relaying node
+   * advertises for the channel it receives the payment on). The first edge has no predecessor and thus no inbound fees
+   * (the sender doesn't charge itself). Any fees already set are recomputed, which is required after concatenating
+   * sub-paths (e.g. in Yen's algorithm), where a root-path edge may carry fees computed for a different predecessor.
    */
-  private def enrichEdgeWithInboundFees(edge: GraphEdge, previousEdge_opt: Option[GraphEdge], g: GraphStructure.DirectedGraph, enableInboundFees: Boolean): GraphEdge = {
+  private[router] def enrichPathWithInboundFees(path: Seq[GraphEdge], g: GraphStructure.DirectedGraph, enableInboundFees: Boolean): Seq[GraphEdge] = {
     if (!enableInboundFees) {
-      edge
+      path
     } else {
-      previousEdge_opt match {
-        case Some(prevEdge) =>
-          edge.params match {
-            case params: HopRelayParams.FromAnnouncement if params.inboundFees_opt.isEmpty =>
-              // Look up the previous edge's back-edge and extract its BLIP18 fees
-              val inboundFees_opt = g.getBackEdge(prevEdge.desc)
-                .flatMap(_.getChannelUpdate)
-                .flatMap(_.blip18InboundFees_opt)
-              if (inboundFees_opt.isDefined) {
-                edge.copy(params = params.copy(inboundFees_opt = inboundFees_opt))
-              } else {
-                edge
-              }
-            case _ => edge
-          }
-        case None => edge  // First edge has no inbound fees
+      // We pair every edge with its predecessor (None for the first one). Enrichment only changes params, not desc, so
+      // pairing with the un-enriched predecessor yields the same back-edge lookup as threading the enriched one would.
+      path.zip(None +: path.map(Some(_))).map {
+        case (edge, previousEdge_opt) => edge.params match {
+          case params: HopRelayParams.FromAnnouncement => edge.copy(params = params.copy(inboundFees_opt = previousEdge_opt.flatMap(getInboundFees(g, _))))
+          case _ => edge
+        }
       }
     }
   }

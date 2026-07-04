@@ -395,7 +395,10 @@ object Helpers {
 
   def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): (RelayFees, Option[InboundFees]) = {
     val defaultFees = nodeParams.relayParams.defaultFees(announceChannel)
-    (nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees), nodeParams.db.inboundFees.getInboundFees(remoteNodeId))
+    val relayFees = nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees)
+    // We only query the inbound fees database when bLIP-18 support is enabled, to avoid a useless db lookup otherwise.
+    val inboundFees_opt = if (nodeParams.routerConf.blip18InboundFees) nodeParams.db.inboundFees.getInboundFees(remoteNodeId) else None
+    (relayFees, inboundFees_opt)
   }
 
   object Funding {

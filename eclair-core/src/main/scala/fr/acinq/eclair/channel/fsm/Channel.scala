@@ -934,7 +934,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
-      val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), enable = true, InboundFees.fromOptions(c.inboundFeeBase_opt, c.inboundFeeProportionalMillionths_opt))
+      // If inbound fees are omitted, we preserve the ones currently advertised in our channel_update.
+      val inboundFees_opt = InboundFees.fromOptions(c.inboundFeeBase_opt, c.inboundFeeProportionalMillionths_opt).orElse(d.channelUpdate.blip18InboundFees_opt)
+      val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), enable = true, inboundFees_opt)
       log.debug(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
       replyTo ! RES_SUCCESS(c, d.channelId)
@@ -3360,7 +3362,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   }
 
   private def handleUpdateRelayFeeDisconnected(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) = {
-    val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), enable = false, InboundFees.fromOptions(c.inboundFeeBase_opt, c.inboundFeeProportionalMillionths_opt))
+    // If inbound fees are omitted, we preserve the ones currently advertised in our channel_update.
+    val inboundFees_opt = InboundFees.fromOptions(c.inboundFeeBase_opt, c.inboundFeeProportionalMillionths_opt).orElse(d.channelUpdate.blip18InboundFees_opt)
+    val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), enable = false, inboundFees_opt)
     log.debug(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
     replyTo ! RES_SUCCESS(c, d.channelId)

@@ -23,7 +23,7 @@ The routing logic considers inbound fees during route selection if enabled. New 
 positive inbound fees from route finding when configured. The relay and route calculation logic now computes total fees 
 as the sum of the regular (outbound) and inbound fees when applicable.
 
-The wire protocol is updated to include the new TLV (0x55555) type for bLIP-18 inbound fees in ChannelUpdate messages.
+The wire protocol is updated to include the new TLV (type 55555) for bLIP-18 inbound fees in ChannelUpdate messages.
 Code that (de)serializes channel updates now handles these new fields.
 
 Inbound fees are stored per peer in a new database: a separate `inboundfees.sqlite` file when using sqlite, or a new
