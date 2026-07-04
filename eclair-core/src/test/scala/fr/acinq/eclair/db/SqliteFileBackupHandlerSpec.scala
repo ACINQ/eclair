@@ -21,9 +21,10 @@ import akka.testkit.TestProbe
 import fr.acinq.eclair.channel.ChannelPersisted
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.FileBackupHandler.{BackupCompleted, BackupEvent}
-import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
+import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteInboundFeesDb}
+import fr.acinq.eclair.payment.relay.Relayer.InboundFees
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.{TestConstants, TestDatabases, TestKitBaseClass, TestUtils, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestDatabases, TestKitBaseClass, TestUtils, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 import java.io.File
@@ -37,9 +38,17 @@ class SqliteFileBackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike 
     val db = TestDatabases.inMemoryDb()
     val dest = new File(TestUtils.BUILD_DIRECTORY, s"backup-${UUID.randomUUID()}")
     dest.deleteOnExit()
+    // inbound fees are backed up to a separate file, always named inboundfees.sqlite.bak, next to the main backup file
+    val inboundFeesDest = new File(TestUtils.BUILD_DIRECTORY, "inboundfees.sqlite.bak")
+    inboundFeesDest.delete()
+    inboundFeesDest.deleteOnExit()
     val channel = ChannelCodecsSpec.normal
     db.channels.addOrUpdateChannel(channel)
     assert(db.channels.listLocalChannels() == Seq(channel))
+    val nodeId = randomKey().publicKey
+    val inboundFees = InboundFees(1000 msat, 100)
+    db.inboundFees.addOrUpdateInboundFees(nodeId, inboundFees)
+    assert(db.inboundFees.getInboundFees(nodeId).contains(inboundFees))
 
     val params = FileBackupHandler.FileBackupParams(
       interval = 10 seconds,
@@ -60,5 +69,8 @@ class SqliteFileBackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike 
     val db1 = new SqliteChannelsDb(DriverManager.getConnection(s"jdbc:sqlite:$dest"))
     val check = db1.listLocalChannels()
     assert(check == Seq(channel))
+
+    val db2 = new SqliteInboundFeesDb(DriverManager.getConnection(s"jdbc:sqlite:$inboundFeesDest"))
+    assert(db2.getInboundFees(nodeId).contains(inboundFees))
   }
 }

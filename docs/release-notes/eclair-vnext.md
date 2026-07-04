@@ -14,10 +14,10 @@ more flexible fee policies and incentivizing desired incoming traffic.
 
 #### Configuration
 
-| Configuration Parameter                                                          | Default Value | Description                                                                                                                                              |
-|----------------------------------------------------------------------------------|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `eclair.router.path-finding.default.blip18-inbound-fees`                         | `false`       | enables support for bLIP-18 inbound routing fees                                                                                                         | 
-| `eclair.router.path-finding.default.exclude-channels-with-positive-inbound-fees` | `false`       | enables exclusion of channels with positive inbound fees from path finding, helping to prevent `FeeInsufficient` errors and ensure more reliable routing |
+| Configuration Parameter                                                  | Default Value | Description                                                                                                                                              |
+|--------------------------------------------------------------------------|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `eclair.router.path-finding.blip18-inbound-fees`                         | `false`       | enables support for bLIP-18 inbound routing fees                                                                                                         | 
+| `eclair.router.path-finding.exclude-channels-with-positive-inbound-fees` | `false`       | enables exclusion of channels with positive inbound fees from path finding, helping to prevent `FeeInsufficient` errors and ensure more reliable routing |
 
 The routing logic considers inbound fees during route selection if enabled. New logic is added to exclude channels with 
 positive inbound fees from route finding when configured. The relay and route calculation logic now computes total fees 
@@ -26,7 +26,9 @@ as the sum of the regular (outbound) and inbound fees when applicable.
 The wire protocol is updated to include the new TLV (0x55555) type for bLIP-18 inbound fees in ChannelUpdate messages.
 Code that (de)serializes channel updates now handles these new fields.
 
-New database tables and migration updates for storing inbound fee information per peer.
+Inbound fees are stored per peer in a new database: a separate `inboundfees.sqlite` file when using sqlite, or a new
+`inboundfees` schema when using postgres. When using sqlite, the built-in backup mechanism maintains a snapshot of it
+named `inboundfees.sqlite.bak`, next to `eclair.sqlite.bak`: if you set inbound fees, include that file in your backups.
 
 ### API changes
 

@@ -776,7 +776,7 @@ case class ChannelUpdate(signature: ByteVector64,
 
   def relayFees: Relayer.RelayFees = Relayer.RelayFees(feeBase = feeBaseMsat, feeProportionalMillionths = feeProportionalMillionths)
 
-  def blip18InboundFees_opt: Option[Relayer.InboundFees] =
+  val blip18InboundFees_opt: Option[Relayer.InboundFees] =
     tlvStream.get[ChannelUpdateTlv.Blip18InboundFee].map(blip18 => Relayer.InboundFees(blip18.feeBase, blip18.feeProportionalMillionths))
 }
 

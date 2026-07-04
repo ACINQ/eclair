@@ -59,6 +59,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   val wakeUpTimeout = "wake_up_timeout"
   val onTheFlyFunding = "on_the_fly_funding"
   val ignoreReputation = "ignore_reputation"
+  val blip18InboundFees = "blip18_inbound_fees"
 
   case class FixtureParam(nodeParams: NodeParams, channelRelayer: typed.ActorRef[ChannelRelayer.Command], register: TestProbe[Any], reputationRecorder: TestProbe[ReputationRecorder.Command]) {
     def createWakeUpActors(): (TestProbe[PeerReadyManager.Register], TestProbe[Switchboard.GetPeerInfo]) = {
@@ -86,6 +87,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       .modify(_.peerWakeUpConfig.enabled).setToIf(test.tags.contains(wakeUpEnabled))(true)
       .modify(_.peerWakeUpConfig.timeout).setToIf(test.tags.contains(wakeUpTimeout))(100 millis)
       .modify(_.features.activated).usingIf(test.tags.contains(onTheFlyFunding))(_ + (Features.OnTheFlyFunding -> FeatureSupport.Optional))
+      .modify(_.routerConf.blip18InboundFees).setToIf(test.tags.contains(blip18InboundFees))(true)
     val register = TestProbe[Any]("register")
     val reputationRecorder = TestProbe[ReputationRecorder.Command]("reputation-recorder")
     val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic, if (test.tags.contains(ignoreReputation)) None else Some(reputationRecorder.ref)))
@@ -538,17 +540,62 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(FeeInsufficient(r.add.amountMsat, Some(u3.channelUpdate))), None, commit = true))
   }
 
-  ignore("relay that would fail (fee insufficient) when inbound fees are set") { f =>
+  test("fail to relay when fee is insufficient because of inbound fees", Tag(blip18InboundFees)) { f =>
     import f._
 
+    // The HTLC comes in through channel 2, whose channel_update advertises positive inbound fees. We give that channel
+    // a low balance so that it isn't a candidate outgoing channel.
+    val u_in = createLocalUpdate(channelId2, balance = 1_000_000 msat, inboundFees_opt = Some(InboundFees(10_000 msat, 100_000)))
+    val u_out = createLocalUpdate(channelId1)
     val payload = ChannelRelay.Standard(realScid1, outgoingAmount, outgoingExpiry, upgradeAccountability = false)
-    val r = createValidIncomingPacket(payload)
-    val u = createLocalUpdate(channelId1, inboundFees_opt = Some(InboundFees(10000 msat, 100000)))
+    val r = createValidIncomingPacket(payload, incomingChannelId = channelId2)
 
-    channelRelayer ! WrappedLocalChannelUpdate(u)
-    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 1.0)
+    channelRelayer ! WrappedLocalChannelUpdate(u_in)
+    channelRelayer ! WrappedLocalChannelUpdate(u_out)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
+    receiveConfidence(Reputation.Score.max(accountable = false))
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(FeeInsufficient(r.add.amountMsat, Some(u.channelUpdate))), None, commit = true))
+    // The outbound fee alone (2 000 msat) is largely covered by what the sender paid (1 000 000 msat), but adding the
+    // inbound fee (1 010 200 msat) makes the relay unprofitable.
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(FeeInsufficient(r.add.amountMsat, Some(u_out.channelUpdate))), None, commit = true))
+  }
+
+  test("relay with an inbound fee discount", Tag(blip18InboundFees)) { f =>
+    import f._
+
+    // The HTLC comes in through channel 2, whose channel_update advertises an inbound fee discount. We give that
+    // channel a low balance so that it isn't a candidate outgoing channel.
+    val u_in = createLocalUpdate(channelId2, balance = 1_000_000 msat, inboundFees_opt = Some(InboundFees(-1_000 msat, -50)))
+    val u_out = createLocalUpdate(channelId1)
+    val payload = ChannelRelay.Standard(realScid1, outgoingAmount, outgoingExpiry, upgradeAccountability = false)
+    // The relay fee paid by the sender (1 000 msat) is below our outbound fee (2 000 msat), but the inbound discount
+    // (-1 500 msat) brings the total fee down to 500 msat, which makes the relay acceptable.
+    val r = createValidIncomingPacket(payload, amountIn = outgoingAmount + 1_000.msat, incomingChannelId = channelId2)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u_in)
+    channelRelayer ! WrappedLocalChannelUpdate(u_out)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
+    receiveConfidence(Reputation.Score.max(accountable = false))
+
+    expectFwdAdd(register, channelId1, outgoingAmount, outgoingExpiry, outAccountable = false)
+  }
+
+  test("relay ignoring inbound fees when bLIP-18 is disabled") { f =>
+    import f._
+
+    // The incoming channel advertises positive inbound fees, but bLIP-18 support is disabled: inbound fees must not
+    // be enforced on the relay.
+    val u_in = createLocalUpdate(channelId2, balance = 1_000_000 msat, inboundFees_opt = Some(InboundFees(10_000 msat, 100_000)))
+    val u_out = createLocalUpdate(channelId1)
+    val payload = ChannelRelay.Standard(realScid1, outgoingAmount, outgoingExpiry, upgradeAccountability = false)
+    val r = createValidIncomingPacket(payload, incomingChannelId = channelId2)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u_in)
+    channelRelayer ! WrappedLocalChannelUpdate(u_out)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
+    receiveConfidence(Reputation.Score.max(accountable = false))
+
+    expectFwdAdd(register, channelId1, outgoingAmount, outgoingExpiry, outAccountable = false)
   }
 
 
@@ -924,13 +971,13 @@ object ChannelRelayerSpec {
     ChannelRelay.Blinded(tlvs, PaymentRelayData(blindedTlvs), randomKey().publicKey)
   }
 
-  def createValidIncomingPacket(payload: IntermediatePayload.ChannelRelay, amountIn: MilliSatoshi = 11_000_000 msat, expiryIn: CltvExpiry = CltvExpiry(400_100), accountableIn: Boolean = false, receivedAt: TimestampMilli = TimestampMilli.now()): IncomingPaymentPacket.ChannelRelayPacket = {
+  def createValidIncomingPacket(payload: IntermediatePayload.ChannelRelay, amountIn: MilliSatoshi = 11_000_000 msat, expiryIn: CltvExpiry = CltvExpiry(400_100), accountableIn: Boolean = false, receivedAt: TimestampMilli = TimestampMilli.now(), incomingChannelId: ByteVector32 = randomBytes32()): IncomingPaymentPacket.ChannelRelayPacket = {
     val nextPathKey_opt = payload match {
       case p: ChannelRelay.Blinded => Some(UpdateAddHtlcTlv.PathKey(p.nextPathKey))
       case _: ChannelRelay.Standard => None
     }
     val tlvs = TlvStream(Set[Option[UpdateAddHtlcTlv]](nextPathKey_opt, if (accountableIn) Some(UpdateAddHtlcTlv.Accountable()) else None).flatten)
-    val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket, tlvs)
+    val add_ab = UpdateAddHtlc(channelId = incomingChannelId, id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket, tlvs)
     ChannelRelayPacket(add_ab, payload, emptyOnionPacket, receivedAt)
   }
 

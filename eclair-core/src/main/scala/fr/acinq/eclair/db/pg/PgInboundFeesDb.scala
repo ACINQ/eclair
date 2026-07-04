@@ -6,7 +6,6 @@ import fr.acinq.eclair.db.InboundFeesDb
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
-import fr.acinq.eclair.db.pg.PgUtils.PgLock.NoLock.withLock
 import fr.acinq.eclair.payment.relay.Relayer.InboundFees
 import grizzled.slf4j.Logging
 
@@ -22,6 +21,7 @@ class PgInboundFeesDb(implicit ds: DataSource, lock: PgLock) extends InboundFees
   import PgUtils._
   import ExtendedResultSet._
   import PgInboundFeesDb._
+  import lock._
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
@@ -36,7 +36,7 @@ class PgInboundFeesDb(implicit ds: DataSource, lock: PgLock) extends InboundFees
     }
   }
 
-  override def addOrUpdateInboundFees(nodeId: Crypto.PublicKey, fees: InboundFees): Unit = withMetrics("peers/add-or-update-relay-fees", DbBackends.Postgres) {
+  override def addOrUpdateInboundFees(nodeId: Crypto.PublicKey, fees: InboundFees): Unit = withMetrics("inbound-fees/add-or-update-inbound-fees", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement(
         """
@@ -53,7 +53,7 @@ class PgInboundFeesDb(implicit ds: DataSource, lock: PgLock) extends InboundFees
     }
   }
 
-  override def getInboundFees(nodeId: Crypto.PublicKey): Option[InboundFees] = withMetrics("peers/get-relay-fees", DbBackends.Postgres) {
+  override def getInboundFees(nodeId: Crypto.PublicKey): Option[InboundFees] = withMetrics("inbound-fees/get-inbound-fees", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("SELECT fee_base_msat, fee_proportional_millionths FROM inboundfees.inbound_fees WHERE node_id=?")) { statement =>
         statement.setString(1, nodeId.value.toHex)

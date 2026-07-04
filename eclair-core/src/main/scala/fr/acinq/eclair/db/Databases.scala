@@ -71,9 +71,21 @@ object Databases extends Logging {
                                      pendingCommands: SqlitePendingCommandsDb,
                                      inboundFees: SqliteInboundFeesDb,
                                      private val backupConnection: Connection) extends Databases with FileBackup {
-    override def backup(backupFile: File): Unit = SqliteUtils.using(backupConnection.createStatement()) {
-      statement => {
-        statement.executeUpdate(s"backup to ${backupFile.getAbsolutePath}")
+    override def backup(backupFile: File): Unit = {
+      // Inbound fees are stored in a separate database file, which we back up next to the main backup file. Our caller
+      // only handles the temporary file and atomic move for the main backup file, so we do it ourselves here.
+      val inboundFeesBackupFile = new File(backupFile.getAbsoluteFile.getParentFile, "inboundfees.sqlite.bak")
+      val inboundFeesTmpFile = new File(inboundFeesBackupFile.getAbsolutePath.concat(".tmp"))
+      SqliteUtils.using(inboundFees.sqlite.createStatement()) {
+        statement => {
+          statement.executeUpdate(s"backup to ${inboundFeesTmpFile.getAbsolutePath}")
+        }
+      }
+      Files.move(inboundFeesTmpFile.toPath, inboundFeesBackupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+      SqliteUtils.using(backupConnection.createStatement()) {
+        statement => {
+          statement.executeUpdate(s"backup to ${backupFile.getAbsolutePath}")
+        }
       }
     }
   }

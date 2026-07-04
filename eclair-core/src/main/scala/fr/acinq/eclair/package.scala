@@ -71,18 +71,20 @@ package object eclair {
 
   def nodeFee(relayFees: RelayFees, paymentAmount: MilliSatoshi): MilliSatoshi = nodeFee(relayFees.feeBase, relayFees.feeProportionalMillionths, paymentAmount)
 
-  def totalFee(amount: MilliSatoshi, baseFee: MilliSatoshi, proportionalFee: Long, inboundBaseFee_opt: Option[MilliSatoshi], inboundProportionalFee_opt: Option[Long]): MilliSatoshi = {
-    val outFee = nodeFee(baseFee, proportionalFee, amount)
-    val inFee = (for {
-      inboundBaseFee <- inboundBaseFee_opt
-      inboundProportionalFee <- inboundProportionalFee_opt
-    } yield nodeFee(inboundBaseFee, inboundProportionalFee, amount + outFee)).getOrElse(0 msat)
-    val totalFee = outFee + inFee
-    if (totalFee.toLong < 0) 0 msat else totalFee
+  /**
+   * @return the fee that a node should be paid to forward an HTLC of 'amount' millisatoshis, including its bLIP-18
+   *         inbound fees (if any). The inbound fee is computed on the amount entering the node (amount to forward +
+   *         outbound fee); an inbound discount larger than the outbound fee doesn't make the total fee negative:
+   *         nodes don't pay to relay payments.
+   */
+  def totalFee(amount: MilliSatoshi, relayFees: RelayFees, inboundFees_opt: Option[InboundFees]): MilliSatoshi = inboundFees_opt match {
+    case Some(inboundFees) =>
+      val outFee = nodeFee(relayFees, amount)
+      val inFee = nodeFee(inboundFees.feeBase, inboundFees.feeProportionalMillionths, amount + outFee)
+      val total = outFee + inFee
+      if (total.toLong < 0) 0 msat else total
+    case None => nodeFee(relayFees, amount)
   }
-
-  def totalFee(amount: MilliSatoshi, relayFees: RelayFees, inboundFees_opt: Option[InboundFees]): MilliSatoshi =
-    totalFee(amount, relayFees.feeBase, relayFees.feeProportionalMillionths, inboundFees_opt.map(_.feeBase), inboundFees_opt.map(_.feeProportionalMillionths))
 
   /**
    * @param baseFee         fixed fee

@@ -3,6 +3,8 @@ package fr.acinq.eclair.db.sqlite
 import fr.acinq.bitcoin.scalacompat.Crypto
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.db.InboundFeesDb
+import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
+import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, setVersion, using}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.relay.Relayer.{InboundFees, RelayFees}
@@ -30,7 +32,7 @@ class SqliteInboundFeesDb(val sqlite: Connection) extends InboundFeesDb with Log
     setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
-  override def addOrUpdateInboundFees(nodeId: Crypto.PublicKey, fees: Relayer.InboundFees): Unit = {
+  override def addOrUpdateInboundFees(nodeId: Crypto.PublicKey, fees: Relayer.InboundFees): Unit = withMetrics("inbound-fees/add-or-update-inbound-fees", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("UPDATE inbound_fees SET fee_base_msat=?, fee_proportional_millionths=? WHERE node_id=?")) { update =>
       update.setLong(1, fees.feeBase.toLong)
       update.setLong(2, fees.feeProportionalMillionths)
@@ -46,7 +48,7 @@ class SqliteInboundFeesDb(val sqlite: Connection) extends InboundFeesDb with Log
     }
   }
 
-  override def getInboundFees(nodeId: Crypto.PublicKey): Option[Relayer.InboundFees] = {
+  override def getInboundFees(nodeId: Crypto.PublicKey): Option[Relayer.InboundFees] = withMetrics("inbound-fees/get-inbound-fees", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT fee_base_msat, fee_proportional_millionths FROM inbound_fees WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeId.value.toArray)
       statement.executeQuery()

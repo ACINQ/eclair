@@ -645,6 +645,36 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       }
     }
 
+    test("calculate Blip18 route when the recipient has positive inbound fees") {
+      // Inbound fees never apply to the final hop: the recipient doesn't relay the payment, so its advertised
+      // (positive) inbound fees must not exclude the channels towards it from path finding.
+      val g = GraphWithBalanceEstimates(DirectedGraph(List(
+        makeEdge(1L, a, b, 1 msat, 10, cltvDelta = CltvExpiryDelta(1), balance_opt = Some(DEFAULT_AMOUNT_MSAT * 2)),
+        makeEdge(2L, b, c, 2 msat, 20, cltvDelta = CltvExpiryDelta(1)),
+        makeEdge(3L, c, d, 1 msat, 10, cltvDelta = CltvExpiryDelta(1)),
+        makeEdge(4L, d, e, 1 msat, 10, cltvDelta = CltvExpiryDelta(1)),
+        makeEdge(4L, e, d, 1 msat, 10, cltvDelta = CltvExpiryDelta(1), inboundFeeBase_opt = Some(1 msat), inboundFeeProportionalMillionth_opt = Some(10))
+      )), 1 day)
+
+      val Success(route :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18InboundFees = true, excludePositiveInboundFees = true)
+      assert(route2Ids(route) == 1 :: 2 :: 3 :: 4 :: Nil)
+    }
+
+    test("calculate simple route with a positive inbound fees channel and Blip18 disabled") {
+      // When bLIP-18 inbound fees are disabled, the path-finder doesn't account for inbound fees at all: it must not
+      // exclude channels with positive inbound fees either.
+      val g = GraphWithBalanceEstimates(DirectedGraph(List(
+        makeEdge(1L, a, b, 1 msat, 10, cltvDelta = CltvExpiryDelta(1), balance_opt = Some(DEFAULT_AMOUNT_MSAT * 2)),
+        makeEdge(2L, b, c, 2 msat, 20, cltvDelta = CltvExpiryDelta(1)),
+        makeEdge(2L, c, b, 2 msat, 20, cltvDelta = CltvExpiryDelta(1), inboundFeeBase_opt = Some(1 msat), inboundFeeProportionalMillionth_opt = Some(10)),
+        makeEdge(3L, c, d, 1 msat, 10, cltvDelta = CltvExpiryDelta(1)),
+        makeEdge(4L, d, e, 1 msat, 10, cltvDelta = CltvExpiryDelta(1))
+      )), 1 day)
+
+      val Success(route :: Nil) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18InboundFees = false, excludePositiveInboundFees = true)
+      assert(route2Ids(route) == 1 :: 2 :: 3 :: 4 :: Nil)
+    }
+
     // run tests from RouteCalculationSpec with inbound fees enabled
 
     test("calculate simple route") {
