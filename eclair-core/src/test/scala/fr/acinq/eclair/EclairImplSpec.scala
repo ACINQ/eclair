@@ -76,7 +76,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val defaultOfferHandler = TestProbe()
     val peerScorer = TestProbe()
     val kit = Kit(
-      TestConstants.Alice.nodeParams.copy(routerConf = TestConstants.Alice.nodeParams.routerConf.copy(blip18InboundFees = true)),
+      TestConstants.Alice.nodeParams.copy(routerConf = TestConstants.Alice.nodeParams.routerConf.copy(blip18 = Router.Blip18Params(enableInboundFees = true, excludePositiveInboundFees = false))),
       system,
       watcher.ref,
       paymentHandler.ref,

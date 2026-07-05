@@ -400,6 +400,19 @@ object Router {
     require(channelQueryChunkSize <= Sync.MAXIMUM_CHUNK_SIZE, "channel query chunk size exceeds the size of a lightning message")
   }
 
+  /**
+   * bLIP-18 inbound routing fees settings.
+   *
+   * @param enableInboundFees          include bLIP-18 inbound fees when computing routes and relay fees.
+   * @param excludePositiveInboundFees exclude channels advertising positive inbound fees from path-finding, which helps
+   *                                   avoid `FeeInsufficient` errors and makes routing more reliable.
+   */
+  case class Blip18Params(enableInboundFees: Boolean, excludePositiveInboundFees: Boolean = false)
+
+  object Blip18Params {
+    val disabled: Blip18Params = Blip18Params(enableInboundFees = false, excludePositiveInboundFees = false)
+  }
+
   case class RouterConf(watchSpentWindow: FiniteDuration,
                         channelSpentSpliceDelay: Int,
                         channelExcludeDuration: FiniteDuration,
@@ -408,8 +421,7 @@ object Router {
                         pathFindingExperimentConf: PathFindingExperimentConf,
                         messageRouteParams: MessageRouteParams,
                         balanceEstimateHalfLife: FiniteDuration,
-                        blip18InboundFees: Boolean,
-                        excludePositiveInboundFees: Boolean)
+                        blip18: Blip18Params)
 
   // @formatter:off
   case class ChannelDesc private(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey){
@@ -654,8 +666,7 @@ object Router {
                           allowMultiPart: Boolean = false,
                           pendingPayments: Seq[Route] = Nil,
                           paymentContext: Option[PaymentContext] = None,
-                          blip18InboundFees: Boolean = false,
-                          excludePositiveInboundFees: Boolean = false)
+                          blip18: Blip18Params = Blip18Params.disabled)
 
   case class BlindedRouteRequest(replyTo: typed.ActorRef[PaymentRouteResponse],
                                  source: PublicKey,
@@ -664,15 +675,13 @@ object Router {
                                  routeParams: RouteParams,
                                  pathsToFind: Int,
                                  ignore: Ignore = Ignore.empty,
-                                 blip18InboundFees: Boolean,
-                                 excludePositiveInboundFees: Boolean)
+                                 blip18: Blip18Params = Blip18Params.disabled)
 
   case class FinalizeRoute(replyTo: typed.ActorRef[PaymentRouteResponse],
                            route: PredefinedRoute,
                            extraEdges: Seq[ExtraEdge] = Nil,
                            paymentContext: Option[PaymentContext] = None,
-                           blip18InboundFees: Boolean = false,
-                           excludePositiveInboundFees: Boolean = false)
+                           blip18: Blip18Params = Blip18Params.disabled)
 
   sealed trait PostmanRequest
 
@@ -746,7 +755,7 @@ object Router {
     def amount: MilliSatoshi
     def targetNodeId: PublicKey
     def maxFee_opt: Option[MilliSatoshi]
-    }
+  }
   case class PredefinedNodeRoute(amount: MilliSatoshi, nodes: Seq[PublicKey], maxFee_opt: Option[MilliSatoshi] = None) extends PredefinedRoute {
     override def isEmpty = nodes.isEmpty
     override def targetNodeId: PublicKey = nodes.last

@@ -686,8 +686,10 @@ object NodeParams extends Logging {
         pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments")),
         messageRouteParams = getMessageRouteParams(config.getConfig("router.message-path-finding")),
         balanceEstimateHalfLife = FiniteDuration(config.getDuration("router.balance-estimate-half-life").getSeconds, TimeUnit.SECONDS),
-        blip18InboundFees = config.getBoolean("router.path-finding.blip18-inbound-fees"),
-        excludePositiveInboundFees = config.getBoolean("router.path-finding.exclude-channels-with-positive-inbound-fees"),
+        blip18 = Router.Blip18Params(
+          enableInboundFees = config.getBoolean("router.path-finding.blip18-inbound-fees"),
+          excludePositiveInboundFees = config.getBoolean("router.path-finding.exclude-channels-with-positive-inbound-fees"),
+        ),
     ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),

@@ -317,7 +317,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
     updateRelayFee(nodes, feeBaseMsat, feeProportionalMillionths, None, None)
 
   override def updateRelayFee(nodes: List[PublicKey], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, inboundFeeBase_opt: Option[MilliSatoshi], inboundFeeProportional_opt: Option[Long])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] = {
-    if ((inboundFeeBase_opt.isDefined || inboundFeeProportional_opt.isDefined) && !appKit.nodeParams.routerConf.blip18InboundFees) {
+    if ((inboundFeeBase_opt.isDefined || inboundFeeProportional_opt.isDefined) && !appKit.nodeParams.routerConf.blip18.enableInboundFees) {
       Future.failed(new IllegalArgumentException("Cannot specify inbound fees when bLIP-18 support is disabled"))
     } else {
       for (nodeId <- nodes) {
@@ -502,7 +502,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
         for {
           ignoredChannels <- getChannelDescs(ignoreShortChannelIds.toSet)
           ignore = Ignore(ignoreNodeIds.toSet, ignoredChannels)
-          response <- appKit.router.toTyped.ask[PaymentRouteResponse](replyTo => RouteRequest(replyTo, sourceNodeId, target, routeParams1, ignore, blip18InboundFees = appKit.nodeParams.routerConf.blip18InboundFees, excludePositiveInboundFees = appKit.nodeParams.routerConf.excludePositiveInboundFees)).flatMap {
+          response <- appKit.router.toTyped.ask[PaymentRouteResponse](replyTo => RouteRequest(replyTo, sourceNodeId, target, routeParams1, ignore, blip18 = appKit.nodeParams.routerConf.blip18)).flatMap {
             case r: RouteResponse => Future.successful(r)
             case PaymentRouteNotFound(error) => Future.failed(error)
           }

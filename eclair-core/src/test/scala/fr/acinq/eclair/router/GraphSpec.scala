@@ -23,7 +23,7 @@ import fr.acinq.eclair.router.Announcements.makeNodeAnnouncement
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, MessagePathWeight, MessageWeightRatios, dijkstraMessagePath, routeBlindingPaths, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
-import fr.acinq.eclair.router.Router.ChannelDesc
+import fr.acinq.eclair.router.Router.{Blip18Params, ChannelDesc}
 import fr.acinq.eclair.wire.protocol.Color
 import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features, MilliSatoshiLong, RealShortChannelId, ShortChannelId, randomKey}
 import org.scalactic.Tolerance.convertNumericToPlusOrMinusWrapper
@@ -524,13 +524,13 @@ class GraphSpec extends AnyFunSuite {
       .addOrUpdateVertex(makeNodeAnnouncement(priv_h, "H", Color(0, 0, 0), Nil, Features(Features.RouteBlinding -> FeatureSupport.Optional)))
 
     {
-      val paths = routeBlindingPaths(GraphWithBalanceEstimates(graph, 1 day), a, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false), BlockHeight(793397), _ => true, excludePositiveInboundFees = false, enableInboundFees = false)
+      val paths = routeBlindingPaths(GraphWithBalanceEstimates(graph, 1 day), a, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false), BlockHeight(793397), _ => true, blip18 = Blip18Params.disabled)
       assert(paths.length == 2)
       assert(paths(0).path.map(_.desc.a) == Seq(a, b))
       assert(paths(1).path.map(_.desc.a) == Seq(a, e, f))
     }
     {
-      val paths = routeBlindingPaths(GraphWithBalanceEstimates(graph, 1 day), c, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false), BlockHeight(793397), _ => true, excludePositiveInboundFees = false, enableInboundFees = false)
+      val paths = routeBlindingPaths(GraphWithBalanceEstimates(graph, 1 day), c, h, 20_000_000 msat, Set.empty, Set.empty, pathsToFind = 3, HeuristicsConstants(0, RelayFees(0 msat, 0), RelayFees(0 msat, 0), useLogProbability = false, usePastRelaysData = false), BlockHeight(793397), _ => true, blip18 = Blip18Params.disabled)
       assert(paths.length == 1)
       assert(paths(0).path.map(_.desc.a) == Seq(c, a, b))
     }

@@ -57,7 +57,8 @@ object RouteCalculation {
       }
     }
 
-    def validatePositiveInboundFees(route: Route, excludePositiveInboundFees: Boolean): Try[Route] = {
+    def validatePositiveInboundFees(route: Route, blip18: Blip18Params): Try[Route] = {
+      val excludePositiveInboundFees = blip18.enableInboundFees && blip18.excludePositiveInboundFees
       if (!excludePositiveInboundFees || route.hops.forall(hop => hop.params.inboundFees_opt.forall(i => i.feeBase <= 0.msat && i.feeProportionalMillionths <= 0))) {
         Success(route)
       } else {
@@ -76,8 +77,8 @@ object RouteCalculation {
       val g = extraEdges.foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
 
       def finalizeAndReply(amount: MilliSatoshi, edges: Seq[GraphEdge], maxFee_opt: Option[MilliSatoshi]): Unit = {
-        val hops = Graph.enrichPathWithInboundFees(edges, g, fr.blip18InboundFees).map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
-        val route = validatePositiveInboundFees(Route(amount, hops, None), fr.blip18InboundFees && fr.excludePositiveInboundFees).flatMap(validateMaxRouteFee(_, maxFee_opt))
+        val hops = Graph.enrichPathWithInboundFees(edges, g, fr.blip18).map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
+        val route = validatePositiveInboundFees(Route(amount, hops, None), fr.blip18).flatMap(validateMaxRouteFee(_, maxFee_opt))
         route match {
           case Success(r) => fr.replyTo ! RouteResponse(r :: Nil)
           case Failure(f) => fr.replyTo ! PaymentRouteNotFound(f)
@@ -208,9 +209,9 @@ object RouteCalculation {
       val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(amountToSend))
       KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
         val result = if (r.allowMultiPart) {
-          findMultiPartRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, r.routeParams, currentBlockHeight, r.blip18InboundFees, r.excludePositiveInboundFees)
+          findMultiPartRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, r.routeParams, currentBlockHeight, r.blip18)
         } else {
-          findRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, r.routeParams, currentBlockHeight, r.blip18InboundFees, r.excludePositiveInboundFees)
+          findRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, r.routeParams, currentBlockHeight, r.blip18)
         }
         result.map(routes => addFinalHop(r.target, routes)) match {
           case Success(routes) =>
@@ -246,7 +247,7 @@ object RouteCalculation {
         weight.length <= ROUTE_MAX_LENGTH &&
         weight.cltv <= r.routeParams.boundaries.maxCltv
     }
-    val routes = Graph.routeBlindingPaths(d.graphWithBalances, r.source, r.target, r.amount, r.ignore.channels, r.ignore.nodes, r.pathsToFind, r.routeParams.heuristics, currentBlockHeight, boundaries, r.excludePositiveInboundFees, r.blip18InboundFees)
+    val routes = Graph.routeBlindingPaths(d.graphWithBalances, r.source, r.target, r.amount, r.ignore.channels, r.ignore.nodes, r.pathsToFind, r.routeParams.heuristics, currentBlockHeight, boundaries, r.blip18)
     if (routes.isEmpty) {
       r.replyTo ! PaymentRouteNotFound(RouteNotFound)
     } else {
@@ -321,10 +322,9 @@ object RouteCalculation {
                 ignoredVertices: Set[PublicKey] = Set.empty,
                 routeParams: RouteParams,
                 currentBlockHeight: BlockHeight,
-                blip18InboundFees: Boolean = false,
-                excludePositiveInboundFees: Boolean = false,
+                blip18: Blip18Params = Blip18Params.disabled,
                ): Try[Seq[Route]] = Try {
-    findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight, excludePositiveInboundFees, blip18InboundFees) match {
+    findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight, blip18) match {
       case Right(routes) => routes.map { route =>
         Route(amount, route.path.map(graphEdgeToHop), None)
       }
@@ -344,8 +344,7 @@ object RouteCalculation {
                                 ignoredVertices: Set[PublicKey] = Set.empty,
                                 routeParams: RouteParams,
                                 currentBlockHeight: BlockHeight,
-                                excludePositiveInboundFees: Boolean,
-                                enableInboundFees: Boolean = false): Either[RouterException, Seq[WeightedPath[PaymentPathWeight]]] = {
+                                blip18: Blip18Params = Blip18Params.disabled): Either[RouterException, Seq[WeightedPath[PaymentPathWeight]]] = {
 
     require(amount > 0.msat, "route amount must be strictly positive")
 
@@ -359,7 +358,7 @@ object RouteCalculation {
 
     val boundaries: PaymentPathWeight => Boolean = { weight => feeOk(weight.amount - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
 
-    val foundRoutes: Seq[WeightedPath[PaymentPathWeight]] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost, excludePositiveInboundFees, enableInboundFees)
+    val foundRoutes: Seq[WeightedPath[PaymentPathWeight]] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.heuristics, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost, blip18)
     if (foundRoutes.nonEmpty) {
       val (directRoutes, indirectRoutes) = foundRoutes.partition(_.path.length == 1)
       val routes = if (routeParams.randomize) {
@@ -376,7 +375,7 @@ object RouteCalculation {
           maxCltv = DEFAULT_ROUTE_MAX_CLTV,
         )
       )
-      findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, relaxedRouteParams, currentBlockHeight, excludePositiveInboundFees, enableInboundFees)
+      findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, relaxedRouteParams, currentBlockHeight, blip18)
     } else {
       Left(RouteNotFound)
     }
@@ -408,9 +407,8 @@ object RouteCalculation {
                          pendingHtlcs: Seq[Route] = Nil,
                          routeParams: RouteParams,
                          currentBlockHeight: BlockHeight,
-                         blip18InboundFees: Boolean = false,
-                         excludePositiveInboundFees: Boolean = false): Try[Seq[Route]] = Try {
-    findMultiPartRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, extraEdges, ignoredEdges, ignoredVertices, pendingHtlcs, routeParams, currentBlockHeight, blip18InboundFees, excludePositiveInboundFees) match {
+                         blip18: Blip18Params = Blip18Params.disabled): Try[Seq[Route]] = Try {
+    findMultiPartRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, extraEdges, ignoredEdges, ignoredVertices, pendingHtlcs, routeParams, currentBlockHeight, blip18) match {
       case Right(routes) => routes
       case Left(ex) => return Failure(ex)
     }
@@ -427,8 +425,7 @@ object RouteCalculation {
                                          pendingHtlcs: Seq[Route] = Nil,
                                          routeParams: RouteParams,
                                          currentBlockHeight: BlockHeight,
-                                         blip18InboundFees: Boolean,
-                                         excludePositiveInboundFees: Boolean,
+                                         blip18: Blip18Params = Blip18Params.disabled,
                                          now: TimestampSecond = TimestampSecond.now()): Either[RouterException, Seq[Route]] = {
     // We use Yen's k-shortest paths to find many paths for chunks of the total amount.
     // When the recipient is a direct peer, we have complete visibility on our local channels so we can use more accurate MPP parameters.
@@ -447,7 +444,7 @@ object RouteCalculation {
       val minPartAmount = routeParams.mpp.minPartAmount.max(amount / numRoutes).min(amount)
       routeParams.copy(mpp = MultiPartParams(minPartAmount, numRoutes, routeParams.mpp.splittingStrategy))
     }
-    findRouteInternal(g, localNodeId, targetNodeId, routeParams1.mpp.minPartAmount, maxFee, routeParams1.mpp.maxParts, extraEdges, ignoredEdges, ignoredVertices, routeParams1, currentBlockHeight, excludePositiveInboundFees, blip18InboundFees) match {
+    findRouteInternal(g, localNodeId, targetNodeId, routeParams1.mpp.minPartAmount, maxFee, routeParams1.mpp.maxParts, extraEdges, ignoredEdges, ignoredVertices, routeParams1, currentBlockHeight, blip18) match {
       case Right(paths) =>
         // We use these shortest paths to find a set of non-conflicting HTLCs that send the total amount.
         split(amount, mutable.Queue(paths: _*), initializeUsedCapacity(pendingHtlcs), routeParams1, g.balances, now) match {

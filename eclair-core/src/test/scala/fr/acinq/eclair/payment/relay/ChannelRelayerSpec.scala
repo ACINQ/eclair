@@ -87,7 +87,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       .modify(_.peerWakeUpConfig.enabled).setToIf(test.tags.contains(wakeUpEnabled))(true)
       .modify(_.peerWakeUpConfig.timeout).setToIf(test.tags.contains(wakeUpTimeout))(100 millis)
       .modify(_.features.activated).usingIf(test.tags.contains(onTheFlyFunding))(_ + (Features.OnTheFlyFunding -> FeatureSupport.Optional))
-      .modify(_.routerConf.blip18InboundFees).setToIf(test.tags.contains(blip18InboundFees))(true)
+      .modify(_.routerConf.blip18.enableInboundFees).setToIf(test.tags.contains(blip18InboundFees))(true)
     val register = TestProbe[Any]("register")
     val reputationRecorder = TestProbe[ReputationRecorder.Command]("reputation-recorder")
     val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic, if (test.tags.contains(ignoreReputation)) None else Some(reputationRecorder.ref)))

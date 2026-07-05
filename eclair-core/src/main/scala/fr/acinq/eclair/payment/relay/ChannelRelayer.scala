@@ -84,7 +84,7 @@ object ChannelRelayer {
               case None => Map.empty
             }
             // bLIP-18 inbound fees advertised in our channel_update for the incoming channel apply to this relay.
-            val inboundFees_opt = if (nodeParams.routerConf.blip18InboundFees) {
+            val inboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees) {
               channels.get(channelRelayPacket.add.channelId).flatMap(_.channelUpdate.blip18InboundFees_opt)
             } else {
               None

@@ -372,7 +372,7 @@ object MultiPartPaymentLifecycle {
   case class PaymentSucceeded(request: SendMultiPartPayment, preimage: ByteVector32, parts: Seq[PaymentPart], pending: Set[UUID], remainingAttribution_opt: Option[ByteVector]) extends Data
 
   private def createRouteRequest(replyTo: ActorRef, nodeParams: NodeParams, routeParams: RouteParams, d: PaymentProgress, cfg: SendPaymentConfig): RouteRequest = {
-    RouteRequest(replyTo.toTyped, nodeParams.nodeId, d.request.recipient, routeParams, d.ignore, allowMultiPart = true, d.pending.values.toSeq, Some(cfg.paymentContext), blip18InboundFees = nodeParams.routerConf.blip18InboundFees, excludePositiveInboundFees = nodeParams.routerConf.excludePositiveInboundFees)
+    RouteRequest(replyTo.toTyped, nodeParams.nodeId, d.request.recipient, routeParams, d.ignore, allowMultiPart = true, d.pending.values.toSeq, Some(cfg.paymentContext), blip18 = nodeParams.routerConf.blip18)
   }
 
   private def createChildPayment(replyTo: ActorRef, route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {
