@@ -89,7 +89,7 @@ object DefaultOfferHandler {
                 maxRouteLength = nodeParams.offersConfig.paymentPathLength,
                 maxCltv = nodeParams.offersConfig.paymentPathCltvExpiryDelta
               ))
-              router ! BlindedRouteRequest(context.messageAdapter(WrappedRouteResponse), blindedPathFirstNodeId, nodeParams.nodeId, invoiceRequest.amount, routeParams, nodeParams.offersConfig.paymentPathCount, blip18 = nodeParams.routerConf.blip18)
+              router ! BlindedRouteRequest(context.messageAdapter(WrappedRouteResponse), blindedPathFirstNodeId, nodeParams.nodeId, invoiceRequest.amount, routeParams, nodeParams.offersConfig.paymentPathCount)
               waitForRoute(nodeParams, replyTo, invoiceRequest, blindedPathFirstNodeId, context)
           }
         }

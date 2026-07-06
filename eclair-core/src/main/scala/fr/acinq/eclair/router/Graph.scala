@@ -88,10 +88,9 @@ object Graph {
      * @param prev                    weight of the rest of the path
      * @param currentBlockHeight      the height of the chain tip (latest block).
      * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
-     * @param inbound_opt             inbound fees
-     * @param blip18                  bLIP-18 inbound fees settings
+     * @param inbound_opt             bLIP-18 inbound fees charged by the edge's target for relaying the payment
      */
-    def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: RichWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean, inbound_opt: Option[Relayer.InboundFees], blip18: Blip18Params): RichWeight
+    def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: RichWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean, inbound_opt: Option[Relayer.InboundFees]): RichWeight
   }
 
   /**
@@ -105,9 +104,9 @@ object Graph {
    * @param usePastRelaysData use data from past relays to estimate the balance of the channels
    */
   case class HeuristicsConstants(lockedFundsRisk: Double, failureFees: RelayFees, hopFees: RelayFees, useLogProbability: Boolean, usePastRelaysData: Boolean) extends WeightRatios[PaymentPathWeight] {
-    override def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: PaymentPathWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean, inbound_opt: Option[Relayer.InboundFees], blip18: Blip18Params): PaymentPathWeight = {
+    override def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: PaymentPathWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean, inbound_opt: Option[Relayer.InboundFees]): PaymentPathWeight = {
       val isSenderEdge = edge.desc.a == sender && !includeLocalChannelCost
-      val (totalAmount, edgeOutboundFee) = addEdgeFeesWithInbound(edge, prev, inbound_opt, blip18, isSenderEdge)
+      val (totalAmount, edgeOutboundFee) = addEdgeFeesWithInbound(edge, prev, inbound_opt, isSenderEdge)
       val fee = totalAmount - prev.amount
       val totalFees = prev.fees + fee
       val totalCltv = prev.cltv + edge.params.cltvExpiryDelta
@@ -155,7 +154,7 @@ object Graph {
     require(ageFactor >= 0.0, "ratio-channel-age must be nonnegative")
     require(capacityFactor >= 0.0, "ratio-channel-capacity must be nonnegative")
 
-    override def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: MessagePathWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean, inbound_opt: Option[Relayer.InboundFees], blip18: Blip18Params): MessagePathWeight = {
+    override def addEdgeWeight(sender: PublicKey, edge: GraphEdge, balance: BalanceEstimate, prev: MessagePathWeight, currentBlockHeight: BlockHeight, includeLocalChannelCost: Boolean, inbound_opt: Option[Relayer.InboundFees]): MessagePathWeight = {
       import RoutingHeuristics._
 
       // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
@@ -376,7 +375,7 @@ object Graph {
             if (!excludeEdge) {
               // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
               // will be relayed through that edge is the one in `currentWeight`.
-              val neighborWeight = wr.addEdgeWeight(sourceNode, edge, g.balances.get(edge), current.weight, currentBlockHeight, includeLocalChannelCost, inboundFees_opt, blip18)
+              val neighborWeight = wr.addEdgeWeight(sourceNode, edge, g.balances.get(edge), current.weight, currentBlockHeight, includeLocalChannelCost, inboundFees_opt)
               if (boundaries(neighborWeight)) {
                 val previousNeighborWeight = bestWeights.get(neighbor)
                 // if this path between neighbor and the target has a shorter distance than previously known, we select it
@@ -502,39 +501,30 @@ object Graph {
    *
    * @param edge              the edge we want to cross (A→B)
    * @param prev              weight of the rest of the path (from B toward target)
-   * @param inbound_opt       B's inbound fees for traffic from A
-   * @param blip18            bLIP-18 inbound fees settings
+   * @param inbound_opt       B's inbound fees for traffic from A (None when bLIP-18 is disabled, which reduces to the
+   *                          plain outbound fee computation)
    * @param isSenderEdge      true if A is the payment sender (no outbound fee charged)
    * @return (totalAmount, outboundFee) where totalAmount is what A needs to receive and
    *         outboundFee is A's outbound fee (stored for next iteration's inbound fee capping)
    */
-  private def addEdgeFeesWithInbound(edge: GraphEdge, prev: PaymentPathWeight, inbound_opt: Option[Relayer.InboundFees], blip18: Blip18Params, isSenderEdge: Boolean): (MilliSatoshi, MilliSatoshi) = {
-    if (!blip18.enableInboundFees) {
-      if (isSenderEdge) {
-        (prev.amount, 0 msat)
-      } else {
-        val outboundFee = nodeFee(edge.params.relayFees, prev.amount)
-        (prev.amount + outboundFee, outboundFee)
-      }
+  private def addEdgeFeesWithInbound(edge: GraphEdge, prev: PaymentPathWeight, inbound_opt: Option[Relayer.InboundFees], isSenderEdge: Boolean): (MilliSatoshi, MilliSatoshi) = {
+    val inboundFee = inbound_opt
+      .map(inbound => nodeFee(inbound.feeBase, inbound.feeProportionalMillionths, prev.amount))
+      .getOrElse(0 msat)
+
+    val cappedInboundFee = if (inboundFee.toLong < -prev.outboundFee.toLong) {
+      MilliSatoshi(-prev.outboundFee.toLong)
     } else {
-      val inboundFee = inbound_opt
-        .map(inbound => nodeFee(inbound.feeBase, inbound.feeProportionalMillionths, prev.amount))
-        .getOrElse(0 msat)
+      inboundFee
+    }
 
-      val cappedInboundFee = if (inboundFee.toLong < -prev.outboundFee.toLong) {
-        MilliSatoshi(-prev.outboundFee.toLong)
-      } else {
-        inboundFee
-      }
+    val amountToSend = prev.amount + cappedInboundFee
 
-      val amountToSend = prev.amount + cappedInboundFee
-
-      if (isSenderEdge) {
-        (amountToSend, 0 msat)
-      } else {
-        val outboundFee = nodeFee(edge.params.relayFees, amountToSend)
-        (amountToSend + outboundFee, outboundFee)
-      }
+    if (isSenderEdge) {
+      (amountToSend, 0 msat)
+    } else {
+      val outboundFee = nodeFee(edge.params.relayFees, amountToSend)
+      (amountToSend + outboundFee, outboundFee)
     }
   }
 
@@ -572,7 +562,7 @@ object Graph {
       // Inbound fees never apply to the last edge of the path: the recipient doesn't relay the payment, so it
       // cannot charge relay fees, regardless of what its channel_update advertises.
       val inboundFees_opt = if (blip18.enableInboundFees && edge.desc.b != targetNode) getInboundFees(graph, edge) else None
-      wr.addEdgeWeight(sender, edge, balances.get(edge), prev, currentBlockHeight, includeLocalChannelCost, inboundFees_opt, blip18)
+      wr.addEdgeWeight(sender, edge, balances.get(edge), prev, currentBlockHeight, includeLocalChannelCost, inboundFees_opt)
     }
   }
 
@@ -732,7 +722,7 @@ object Graph {
       def getEdge(desc: ChannelDesc): Option[GraphEdge] =
         vertices.get(desc.b).flatMap(_.incomingEdges.get(desc))
 
-      def getBackEdge(desc: ChannelDesc): Option[GraphEdge] = getEdge(desc.copy(a = desc.b, b = desc.a))
+      def getBackEdge(desc: ChannelDesc): Option[GraphEdge] = getEdge(desc.reversed)
 
       def getBackEdge(edge: GraphEdge): Option[GraphEdge] = getBackEdge(edge.desc)
 

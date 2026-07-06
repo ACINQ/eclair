@@ -598,6 +598,43 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     expectFwdAdd(register, channelId1, outgoingAmount, outgoingExpiry, outAccountable = false)
   }
 
+  test("relay with a stale inbound fee discount when bLIP-18 is disabled") { f =>
+    import f._
+
+    // The incoming channel still advertises an inbound fee discount from before bLIP-18 was disabled: senders paying
+    // the advertised discounted fee must not be rejected. We give that channel a low balance so that it isn't a
+    // candidate outgoing channel.
+    val u_in = createLocalUpdate(channelId2, balance = 1_000_000 msat, inboundFees_opt = Some(InboundFees(-1_000 msat, -50)))
+    val u_out = createLocalUpdate(channelId1)
+    val payload = ChannelRelay.Standard(realScid1, outgoingAmount, outgoingExpiry, upgradeAccountability = false)
+    // The relay fee paid by the sender (1 000 msat) is below our outbound fee (2 000 msat), but matches the total fee
+    // resulting from the advertised inbound discount (-1 500 msat).
+    val r = createValidIncomingPacket(payload, amountIn = outgoingAmount + 1_000.msat, incomingChannelId = channelId2)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u_in)
+    channelRelayer ! WrappedLocalChannelUpdate(u_out)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
+    receiveConfidence(Reputation.Score.max(accountable = false))
+
+    expectFwdAdd(register, channelId1, outgoingAmount, outgoingExpiry, outAccountable = false)
+  }
+
+  test("relay with an inbound fee discount when the incoming channel is unknown", Tag(blip18InboundFees)) { f =>
+    import f._
+
+    // The incoming channel is not in our map (transient, e.g. HTLCs replayed right after a restart before we processed
+    // the corresponding LocalChannelUpdate): we may have advertised an inbound fee discount that we cannot recover, so
+    // we accept the relay as long as we're not losing money.
+    val u_out = createLocalUpdate(channelId1)
+    val payload = ChannelRelay.Standard(realScid1, outgoingAmount, outgoingExpiry, upgradeAccountability = false)
+    val r = createValidIncomingPacket(payload, amountIn = outgoingAmount + 1_000.msat, incomingChannelId = channelId2)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u_out)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
+    receiveConfidence(Reputation.Score.max(accountable = false))
+
+    expectFwdAdd(register, channelId1, outgoingAmount, outgoingExpiry, outAccountable = false)
+  }
 
   test("fail to relay when there is a local error") { f =>
     import f._

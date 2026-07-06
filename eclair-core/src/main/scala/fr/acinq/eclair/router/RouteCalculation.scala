@@ -48,7 +48,7 @@ object RouteCalculation {
     }
   }
 
-  def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute, blip18: Blip18Params)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     def validateMaxRouteFee(route: Route, maxFee_opt: Option[MilliSatoshi]): Try[Route] = {
       val routeFee = route.channelFee(includeLocalChannelCost = false)
       maxFee_opt match {
@@ -77,8 +77,8 @@ object RouteCalculation {
       val g = extraEdges.foldLeft(d.graphWithBalances.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
 
       def finalizeAndReply(amount: MilliSatoshi, edges: Seq[GraphEdge], maxFee_opt: Option[MilliSatoshi]): Unit = {
-        val hops = Graph.enrichPathWithInboundFees(edges, g, fr.blip18).map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
-        val route = validatePositiveInboundFees(Route(amount, hops, None), fr.blip18).flatMap(validateMaxRouteFee(_, maxFee_opt))
+        val hops = Graph.enrichPathWithInboundFees(edges, g, blip18).map(e => ChannelHop(getEdgeRelayScid(d, localNodeId, e), e.desc.a, e.desc.b, e.params))
+        val route = validatePositiveInboundFees(Route(amount, hops, None), blip18).flatMap(validateMaxRouteFee(_, maxFee_opt))
         route match {
           case Success(r) => fr.replyTo ! RouteResponse(r :: Nil)
           case Failure(f) => fr.replyTo ! PaymentRouteNotFound(f)
@@ -191,7 +191,7 @@ object RouteCalculation {
     })
   }
 
-  def handleRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: RouteRequest)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  def handleRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: RouteRequest, blip18: Blip18Params)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     Logs.withMdc(log)(Logs.mdc(
       category_opt = Some(LogCategory.PAYMENT),
       parentPaymentId_opt = r.paymentContext.map(_.parentId),
@@ -209,9 +209,9 @@ object RouteCalculation {
       val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(amountToSend))
       KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
         val result = if (r.allowMultiPart) {
-          findMultiPartRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, r.routeParams, currentBlockHeight, r.blip18)
+          findMultiPartRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, r.routeParams, currentBlockHeight, blip18)
         } else {
-          findRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, r.routeParams, currentBlockHeight, r.blip18)
+          findRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, r.routeParams, currentBlockHeight, blip18)
         }
         result.map(routes => addFinalHop(r.target, routes)) match {
           case Success(routes) =>
@@ -239,7 +239,7 @@ object RouteCalculation {
     }
   }
 
-  def handleBlindedRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: BlindedRouteRequest): Data = {
+  def handleBlindedRouteRequest(d: Data, currentBlockHeight: BlockHeight, r: BlindedRouteRequest, blip18: Blip18Params): Data = {
     val maxFee = r.routeParams.getMaxFee(r.amount)
     val boundaries: PaymentPathWeight => Boolean = { weight =>
       weight.amount - r.amount <= maxFee &&
@@ -247,7 +247,7 @@ object RouteCalculation {
         weight.length <= ROUTE_MAX_LENGTH &&
         weight.cltv <= r.routeParams.boundaries.maxCltv
     }
-    val routes = Graph.routeBlindingPaths(d.graphWithBalances, r.source, r.target, r.amount, r.ignore.channels, r.ignore.nodes, r.pathsToFind, r.routeParams.heuristics, currentBlockHeight, boundaries, r.blip18)
+    val routes = Graph.routeBlindingPaths(d.graphWithBalances, r.source, r.target, r.amount, r.ignore.channels, r.ignore.nodes, r.pathsToFind, r.routeParams.heuristics, currentBlockHeight, boundaries, blip18)
     if (routes.isEmpty) {
       r.replyTo ! PaymentRouteNotFound(RouteNotFound)
     } else {

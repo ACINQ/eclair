@@ -241,13 +241,13 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       stay()
 
     case Event(fr: FinalizeRoute, d: Data) =>
-      stay() using RouteCalculation.finalizeRoute(d, nodeParams.nodeId, fr)
+      stay() using RouteCalculation.finalizeRoute(d, nodeParams.nodeId, fr, nodeParams.routerConf.blip18)
 
     case Event(r: RouteRequest, d: Data) =>
-      stay() using RouteCalculation.handleRouteRequest(d, nodeParams.currentBlockHeight, r)
+      stay() using RouteCalculation.handleRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.blip18)
 
     case Event(r: BlindedRouteRequest, d: Data) =>
-      stay() using RouteCalculation.handleBlindedRouteRequest(d, nodeParams.currentBlockHeight, r)
+      stay() using RouteCalculation.handleBlindedRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.blip18)
 
     case Event(r: MessageRouteRequest, d: Data) =>
       stay() using RouteCalculation.handleMessageRouteRequest(d, nodeParams.currentBlockHeight, r, nodeParams.routerConf.messageRouteParams)
@@ -665,8 +665,7 @@ object Router {
                           ignore: Ignore = Ignore.empty,
                           allowMultiPart: Boolean = false,
                           pendingPayments: Seq[Route] = Nil,
-                          paymentContext: Option[PaymentContext] = None,
-                          blip18: Blip18Params = Blip18Params.disabled)
+                          paymentContext: Option[PaymentContext] = None)
 
   case class BlindedRouteRequest(replyTo: typed.ActorRef[PaymentRouteResponse],
                                  source: PublicKey,
@@ -674,14 +673,12 @@ object Router {
                                  amount: MilliSatoshi,
                                  routeParams: RouteParams,
                                  pathsToFind: Int,
-                                 ignore: Ignore = Ignore.empty,
-                                 blip18: Blip18Params = Blip18Params.disabled)
+                                 ignore: Ignore = Ignore.empty)
 
   case class FinalizeRoute(replyTo: typed.ActorRef[PaymentRouteResponse],
                            route: PredefinedRoute,
                            extraEdges: Seq[ExtraEdge] = Nil,
-                           paymentContext: Option[PaymentContext] = None,
-                           blip18: Blip18Params = Blip18Params.disabled)
+                           paymentContext: Option[PaymentContext] = None)
 
   sealed trait PostmanRequest
 

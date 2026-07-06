@@ -508,7 +508,7 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
         for {
           ignoredChannels <- getChannelDescs(ignoreShortChannelIds.toSet)
           ignore = Ignore(ignoreNodeIds.toSet, ignoredChannels)
-          response <- appKit.router.toTyped.ask[PaymentRouteResponse](replyTo => RouteRequest(replyTo, sourceNodeId, target, routeParams1, ignore, blip18 = appKit.nodeParams.routerConf.blip18)).flatMap {
+          response <- appKit.router.toTyped.ask[PaymentRouteResponse](replyTo => RouteRequest(replyTo, sourceNodeId, target, routeParams1, ignore)).flatMap {
             case r: RouteResponse => Future.successful(r)
             case PaymentRouteNotFound(error) => Future.failed(error)
           }

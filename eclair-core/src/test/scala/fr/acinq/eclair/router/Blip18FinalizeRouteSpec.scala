@@ -97,10 +97,10 @@ class Blip18FinalizeRouteSpec extends TestKitBaseClass with AnyFunSuiteLike with
     val route = PredefinedNodeRoute(100_000 msat, Seq(a, b, c, d))
     val probe = TestProbe()
     val replyTo = probe.ref.toTyped[Router.PaymentRouteResponse]
-    val fr = Router.FinalizeRoute(replyTo, route, blip18 = Blip18Params(enableInboundFees = true))
+    val fr = Router.FinalizeRoute(replyTo, route)
 
 
-    RouteCalculation.finalizeRoute(data, a, fr)
+    RouteCalculation.finalizeRoute(data, a, fr, Blip18Params(enableInboundFees = true))
 
     probe.expectMsgType[Router.RouteResponse] match {
       case Router.RouteResponse(routes) =>
@@ -146,9 +146,9 @@ class Blip18FinalizeRouteSpec extends TestKitBaseClass with AnyFunSuiteLike with
     val route = PredefinedNodeRoute(100_000 msat, Seq(a, b, c, d))
     val probe = TestProbe()
     val replyTo = probe.ref.toTyped[Router.PaymentRouteResponse]
-    val fr = Router.FinalizeRoute(replyTo, route, blip18 = Blip18Params.disabled)
+    val fr = Router.FinalizeRoute(replyTo, route)
 
-    RouteCalculation.finalizeRoute(data, a, fr)
+    RouteCalculation.finalizeRoute(data, a, fr, Blip18Params.disabled)
 
     probe.expectMsgType[Router.RouteResponse] match {
       case Router.RouteResponse(routes) =>
@@ -195,9 +195,9 @@ class Blip18FinalizeRouteSpec extends TestKitBaseClass with AnyFunSuiteLike with
     val route = PredefinedChannelRoute(100_000 msat, e, Seq(ShortChannelId(10L), ShortChannelId(11L), ShortChannelId(12L), ShortChannelId(13L)))
     val probe = TestProbe()
     val replyTo = probe.ref.toTyped[Router.PaymentRouteResponse]
-    val fr = Router.FinalizeRoute(replyTo, route, blip18 = Blip18Params(enableInboundFees = true))
+    val fr = Router.FinalizeRoute(replyTo, route)
 
-    RouteCalculation.finalizeRoute(data, a, fr)
+    RouteCalculation.finalizeRoute(data, a, fr, Blip18Params(enableInboundFees = true))
 
     probe.expectMsgType[Router.RouteResponse] match {
       case Router.RouteResponse(routes) =>
@@ -253,9 +253,9 @@ class Blip18FinalizeRouteSpec extends TestKitBaseClass with AnyFunSuiteLike with
     val route = PredefinedChannelRoute(100_000 msat, e, Seq(ShortChannelId(10L), ShortChannelId(11L), ShortChannelId(12L), ShortChannelId(13L)))
     val probe = TestProbe()
     val replyTo = probe.ref.toTyped[Router.PaymentRouteResponse]
-    val fr = Router.FinalizeRoute(replyTo, route, blip18 = Blip18Params.disabled)
+    val fr = Router.FinalizeRoute(replyTo, route)
 
-    RouteCalculation.finalizeRoute(data, a, fr)
+    RouteCalculation.finalizeRoute(data, a, fr, Blip18Params.disabled)
 
     probe.expectMsgType[Router.RouteResponse] match {
       case Router.RouteResponse(routes) =>
@@ -298,9 +298,9 @@ class Blip18FinalizeRouteSpec extends TestKitBaseClass with AnyFunSuiteLike with
     val route = PredefinedNodeRoute(100_000 msat, Seq(a, b, c))
     val probe = TestProbe()
     val replyTo = probe.ref.toTyped[Router.PaymentRouteResponse]
-    val fr = Router.FinalizeRoute(replyTo, route, blip18 = Blip18Params(enableInboundFees = true, excludePositiveInboundFees = true))
+    val fr = Router.FinalizeRoute(replyTo, route)
 
-    RouteCalculation.finalizeRoute(data, a, fr)
+    RouteCalculation.finalizeRoute(data, a, fr, Blip18Params(enableInboundFees = true, excludePositiveInboundFees = true))
 
     probe.expectMsgType[Router.PaymentRouteNotFound] match {
       case Router.PaymentRouteNotFound(reason) =>

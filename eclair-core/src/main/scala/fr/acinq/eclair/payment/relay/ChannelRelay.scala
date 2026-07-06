@@ -36,7 +36,7 @@ import fr.acinq.eclair.reputation.ReputationRecorder.GetConfidence
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.createBadOnionFailure
 import fr.acinq.eclair.wire.protocol.PaymentOnion.IntermediatePayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{EncodedNodeId, Features, InitFeature, Logs, NodeParams, TimestampMilli, TimestampSecond, channel, totalFee}
+import fr.acinq.eclair.{EncodedNodeId, Features, InitFeature, Logs, MilliSatoshiLong, NodeParams, TimestampMilli, TimestampSecond, channel, totalFee}
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -70,8 +70,7 @@ object ChannelRelay {
             relayId: UUID,
             r: IncomingPaymentPacket.ChannelRelayPacket,
             incomingChannelOccupancy: Double,
-            inboundFees_opt: Option[InboundFees],
-            prevInboundFees_opt: Option[Option[InboundFees]]): Behavior[Command] =
+            incomingChannel_opt: Option[OutgoingChannel]): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
@@ -98,7 +97,7 @@ object ChannelRelay {
         }
         Behaviors.receiveMessagePartial {
           case WrappedReputationScore(score) =>
-            new ChannelRelay(nodeParams, register, channels, r, upstream, score, inboundFees_opt, prevInboundFees_opt, context).start()
+            new ChannelRelay(nodeParams, register, channels, r, upstream, score, incomingChannel_opt, context).start()
         }
       }
     }
@@ -145,11 +144,32 @@ class ChannelRelay private(nodeParams: NodeParams,
                            r: IncomingPaymentPacket.ChannelRelayPacket,
                            upstream: Upstream.Hot.Channel,
                            reputationScore: Reputation.Score,
-                           inboundFees_opt: Option[InboundFees],
-                           prevInboundFees_opt: Option[Option[InboundFees]],
+                           incomingChannel_opt: Option[OutgoingChannel],
                            context: ActorContext[ChannelRelay.Command]) {
 
   import ChannelRelay._
+
+  /**
+   * bLIP-18 inbound fees advertised in our channel_update for the incoming channel apply to this relay: senders take
+   * them into account when computing the fee they pay for our hop. We accept:
+   *  - the inbound fees advertised in our current channel_update for the incoming channel
+   *  - if that channel_update was created recently, the previously advertised inbound fees (senders may still be using
+   *    them): we tolerate them during the enforcement delay, just like we do for outbound fees
+   *  - when bLIP-18 is disabled, the plain outbound fee: our channel_update may still advertise inbound fees from
+   *    before the feature was disabled, but we shouldn't enforce a surcharge we're not configured to collect (and
+   *    since it's enough to match any accepted combination, still accepting the advertised inbound fees only makes
+   *    the check more permissive, closing the window where a stale discount would reject correctly-paying senders).
+   */
+  private val acceptableInboundFees: Seq[Option[InboundFees]] = incomingChannel_opt match {
+    case Some(incomingChannel) =>
+      val currentInboundFees_opt = incomingChannel.channelUpdate.blip18InboundFees_opt
+      val prevInboundFees_opt = incomingChannel.prevChannelUpdate
+        .filter(_ => TimestampSecond.now() - incomingChannel.channelUpdate.timestamp <= nodeParams.relayParams.enforcementDelay)
+        .map(_.blip18InboundFees_opt)
+      val noInboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees) None else Some(None)
+      (Seq(currentInboundFees_opt) ++ prevInboundFees_opt ++ noInboundFees_opt).distinct
+    case None => Seq(None)
+  }
 
   private val forwardFailureAdapter = context.messageAdapter[Register.ForwardFailure[CMD_ADD_HTLC]](WrappedForwardFailure)
   private val addResponseAdapter = context.messageAdapter[CommandResponse[CMD_ADD_HTLC]](WrappedAddResponse)
@@ -439,13 +459,15 @@ class ChannelRelay private(nodeParams: NodeParams,
     val htlcMinimumOk = update.htlcMinimumMsat <= r.amountToForward || prevUpdate_opt.exists(_.htlcMinimumMsat <= r.amountToForward)
     val expiryDeltaOk = update.cltvExpiryDelta <= r.expiryDelta || prevUpdate_opt.exists(_.cltvExpiryDelta <= r.expiryDelta)
     // The fee is sufficient if it covers any accepted combination of outbound relay fees (current or, within the
-    // enforcement delay, previous outgoing channel_update) and inbound fees (current or, within the enforcement delay,
-    // previously advertised inbound fees on the incoming channel).
-    val acceptableInboundFees: Seq[Option[InboundFees]] = (inboundFees_opt +: prevInboundFees_opt.toSeq).distinct
+    // enforcement delay, previous outgoing channel_update) and inbound fees (see acceptableInboundFees).
+    // If the incoming channel is unknown (transient, e.g. HTLCs replayed after a restart before we processed the
+    // corresponding LocalChannelUpdate) and bLIP-18 is enabled, we may have advertised an inbound fee discount that
+    // we cannot recover: rather than rejecting senders that correctly paid the advertised fee, we accept the relay
+    // as long as we're not losing money.
     val feesOk = acceptableInboundFees.exists { inbound =>
       totalFee(r.amountToForward, update.relayFees, inbound) <= r.relayFeeMsat ||
         prevUpdate_opt.exists(u => totalFee(r.amountToForward, u.relayFees, inbound) <= r.relayFeeMsat)
-    }
+    } || (incomingChannel_opt.isEmpty && nodeParams.routerConf.blip18.enableInboundFees && 0.msat <= r.relayFeeMsat)
     if (!htlcMinimumOk) {
       Some(makeCmdFailHtlc(r.add.id, AmountBelowMinimum(r.amountToForward, Some(update))))
     } else if (!expiryDeltaOk) {
