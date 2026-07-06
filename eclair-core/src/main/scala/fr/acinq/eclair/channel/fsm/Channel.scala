@@ -469,7 +469,9 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
               inboundFees_opt != normal.channelUpdate.blip18InboundFees_opt ||
               nodeParams.channelConf.expiryDelta != normal.channelUpdate.cltvExpiryDelta) {
               log.debug("refreshing channel_update due to configuration changes")
-              self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths, inboundFees_opt.map(_.feeBase), inboundFees_opt.map(_.feeProportionalMillionths))
+              // The database is the reference for inbound fees: if it doesn't contain any for that peer, we must stop
+              // advertising them, otherwise this refresh would preserve them and fire again at every restart.
+              self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths, inboundFees_opt.map(_.feeBase), inboundFees_opt.map(_.feeProportionalMillionths), unsetInboundFees = inboundFees_opt.isEmpty)
             }
           }
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
@@ -3362,16 +3364,11 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
   /**
    * Compute the bLIP-18 inbound fees to advertise for a relay fee update. When inbound fees are omitted from the command
-   * we preserve the ones currently advertised in our channel_update. When bLIP-18 support is disabled we never advertise
-   * inbound fees: this ensures a node that disables the feature actually stops advertising (and honouring) inbound fees,
-   * instead of keeping a stale discount forever (which would also make the restore-time refresh loop indefinitely).
+   * we preserve the ones currently advertised in our channel_update. Note that when bLIP-18 support is disabled, inbound
+   * fees are stripped from the resulting channel_update by [[Helpers.channelUpdate]].
    */
   private def updatedInboundFees(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL): Option[InboundFees] = {
-    if (nodeParams.routerConf.blip18.enableInboundFees) {
-      InboundFees.fromOptions(c.inboundFeeBase_opt, c.inboundFeeProportionalMillionths_opt).orElse(if (c.unsetInboundFees) None else d.channelUpdate.blip18InboundFees_opt)
-    } else {
-      None
-    }
+    InboundFees.fromOptions(c.inboundFeeBase_opt, c.inboundFeeProportionalMillionths_opt).orElse(if (c.unsetInboundFees) None else d.channelUpdate.blip18InboundFees_opt)
   }
 
   private def handleUpdateRelayFeeDisconnected(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) = {

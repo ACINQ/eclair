@@ -6,12 +6,13 @@ import akka.testkit.{TestActor, TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel.fsm.Channel
-import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase.FakeTxPublisherFactory
+import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
+import fr.acinq.eclair.payment.relay.Relayer.InboundFees
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.{ChannelReady, ChannelReestablish, ChannelUpdate, Init}
 import fr.acinq.eclair.{TestKitBaseClass, _}
-import org.scalatest.Outcome
+import org.scalatest.{Outcome, Tag}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 import scala.concurrent.duration._
@@ -160,6 +161,97 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       // and we terminate Alice
       newAlice.stop()
     }
+  }
+
+  test("restore channel with inbound fees removed from database", Tag(ChannelStateTestsTags.Blip18InboundFees)) { f =>
+    import f._
+    val sender = TestProbe()
+
+    // alice advertises an inbound fee discount for the channel (keeping the same outbound fees)
+    val fees = Alice.nodeParams.relayParams.privateChannelFees
+    sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths, Some(-100 msat), Some(-50)))
+    sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.blip18InboundFees_opt.contains(InboundFees(-100 msat, -50)))
+    val oldStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
+
+    val channelUpdateListener = {
+      val listener = TestProbe()
+      system.eventStream.subscribe(listener.ref, classOf[ChannelUpdateParametersChanged])
+      aliceChannelUpdateListener(listener)
+    }
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // and we terminate Alice
+    alice.stop()
+
+    // we restart Alice with bLIP-18 still enabled, but no inbound fees in the database for that peer: the database is
+    // the reference, so the restore-time refresh must stop advertising the previous inbound fees (instead of
+    // preserving them, which would fire the refresh again at every restart without ever converging)
+    val newConfig = Alice.nodeParams.modify(_.routerConf.blip18.enableInboundFees).setTo(true)
+    assert(newConfig.db.inboundFees.getInboundFees(Bob.nodeParams.nodeId).isEmpty)
+    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, Alice.channelKeys(), aliceWallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    newAlice ! INPUT_RESTORED(oldStateData)
+
+    val cup = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]
+    assert(cup.channelUpdate.blip18InboundFees_opt.isEmpty)
+    awaitCond(newAlice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.blip18InboundFees_opt.isEmpty)
+  }
+
+  test("restore channel with bLIP-18 disabled and stale inbound fees", Tag(ChannelStateTestsTags.Blip18InboundFees)) { f =>
+    import f._
+    val sender = TestProbe()
+
+    // alice advertises an inbound fee discount for the channel while bLIP-18 support is enabled
+    val fees = Alice.nodeParams.relayParams.privateChannelFees
+    sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths, Some(-100 msat), Some(-50)))
+    sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.blip18InboundFees_opt.contains(InboundFees(-100 msat, -50)))
+    // the channel is private, so the refreshed channel_update is sent directly to the peer
+    assert(alice2bob.expectMsgType[ChannelUpdate].blip18InboundFees_opt.contains(InboundFees(-100 msat, -50)))
+    val oldStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
+
+    val channelUpdateListener = {
+      val listener = TestProbe()
+      system.eventStream.subscribe(listener.ref, classOf[ChannelUpdateParametersChanged])
+      aliceChannelUpdateListener(listener)
+    }
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // and we terminate Alice
+    alice.stop()
+
+    // we restart Alice with bLIP-18 disabled and without the restore-time fee reset: even then, the first
+    // channel_update refresh must drop the previously advertised inbound fees, since the relay no longer honours them
+    val newConfig = Alice.nodeParams.modify(_.relayParams.resetExistingChannels).setTo(false)
+    assert(!newConfig.routerConf.blip18.enableInboundFees)
+    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, Alice.channelKeys(), aliceWallet, Bob.nodeParams.nodeId, alice2blockchain.ref, alice2relayer.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    newAlice ! INPUT_RESTORED(oldStateData)
+    channelUpdateListener.expectNoMessage(100 millis)
+
+    alice2bob.ignoreMsg { case _: ChannelReady => true }
+    bob2alice.ignoreMsg { case _: ChannelReady => true }
+
+    newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
+    bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    alice2bob.forward(bob)
+    bob2alice.forward(newAlice)
+    awaitCond(newAlice.stateName == NORMAL)
+
+    // on reconnection the channel_update is regenerated (private channels re-broadcast immediately): the stale
+    // inbound fees must be gone
+    awaitCond(newAlice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.blip18InboundFees_opt.isEmpty)
   }
 
 }

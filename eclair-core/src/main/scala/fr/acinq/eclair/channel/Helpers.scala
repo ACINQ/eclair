@@ -352,7 +352,10 @@ object Helpers {
       isPrivate = !commitments.announceChannel,
       enable = enable,
       timestamp = TimestampSecond.now(),
-      inboundFees_opt = inboundFees_opt
+      // We never advertise inbound fees when bLIP-18 support is disabled: the relay wouldn't honour them, so keeping
+      // them in our channel_update (e.g. from before the feature was disabled) would give senders a fee they cannot
+      // actually use. This gate applies to all channel_update paths (fee updates, periodic refresh, disable, etc.).
+      inboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees) inboundFees_opt else None
     )
   }
 
