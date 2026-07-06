@@ -36,7 +36,7 @@ trait Fees {
           reject(ValidationRejection("Inbound fee base is required"))
         } else if (inboundFeeBase_opt.isDefined && inboundFeeProportional_opt.isEmpty) {
           reject(ValidationRejection("Inbound fee proportional millionths is required"))
-        } else if (unsetInboundFees_opt.isDefined && (inboundFeeBase_opt.isDefined || inboundFeeProportional_opt.isDefined)) {
+        } else if (unsetInboundFees_opt.contains(true) && (inboundFeeBase_opt.isDefined || inboundFeeProportional_opt.isDefined)) {
           reject(ValidationRejection("--unsetInboundFees cannot be used with --inboundFeeBaseMsat and --inboundFeeProportionalMillionths"))
         } else {
           complete(eclairApi.updateRelayFee(nodes, feeBase, feeProportional, inboundFeeBase_opt, inboundFeeProportional_opt, unsetInboundFees_opt.getOrElse(false)))

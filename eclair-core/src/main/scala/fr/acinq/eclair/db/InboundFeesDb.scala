@@ -19,7 +19,7 @@ package fr.acinq.eclair.db
 import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.payment.relay.Relayer.InboundFees
 
-/** The PeersDb contains information about our direct peers, with whom we have or had channels. */
+/** The InboundFeesDb contains the bLIP-18 inbound fees we advertise per peer, with whom we have or had channels. */
 trait InboundFeesDb {
 
   def addOrUpdateInboundFees(nodeId: PublicKey, fees: InboundFees): Unit
