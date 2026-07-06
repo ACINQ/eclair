@@ -676,7 +676,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val b1 = randomBytes32()
     val map = Map(a1 -> a, a2 -> a, b1 -> b)
 
-    eclair.updateRelayFee(List(a, b), 999 msat, 1234, Some(1 msat), Some(2)).pipeTo(sender.ref)
+    eclair.updateRelayFee(List(a, b), 999 msat, 1234, Some(-1 msat), Some(-2), false).pipeTo(sender.ref)
 
     register.expectMsg(Register.GetChannelsTo)
     register.reply(map)
@@ -690,16 +690,16 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     register.expectNoMessage()
 
     assert(sender.expectMsgType[Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] == Map(
-      Left(a1) -> Right(RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234, Some(1 msat), Some(2)), a1)),
-      Left(a2) -> Right(RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234, Some(1 msat), Some(2)), CommandUnavailableInThisState(a2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))),
+      Left(a1) -> Right(RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234, Some(-1 msat), Some(-2)), a1)),
+      Left(a2) -> Right(RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234, Some(-1 msat), Some(-2)), CommandUnavailableInThisState(a2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))),
       Left(b1) -> Left(ChannelNotFound(Left(b1)))
     ))
 
     peersDb.addOrUpdateRelayFees(a, RelayFees(999 msat, 1234)).wasCalled(once)
     peersDb.addOrUpdateRelayFees(b, RelayFees(999 msat, 1234)).wasCalled(once)
 
-    inboundFeesDb.addOrUpdateInboundFees(a, InboundFees(1 msat, 2)).wasCalled(once)
-    inboundFeesDb.addOrUpdateInboundFees(b, InboundFees(1 msat, 2)).wasCalled(once)
+    inboundFeesDb.addOrUpdateInboundFees(a, InboundFees(-1 msat, -2)).wasCalled(once)
+    inboundFeesDb.addOrUpdateInboundFees(b, InboundFees(-1 msat, -2)).wasCalled(once)
   }
 
   test("channelBalances asks for all channels, usableBalances only for enabled ones") { f =>

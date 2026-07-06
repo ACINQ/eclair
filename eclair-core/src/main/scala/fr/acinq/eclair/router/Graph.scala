@@ -261,7 +261,10 @@ object Graph {
               // [...] --> B --+--> D --> E
               //               |
               // [...] --> C --+
-              val alreadyExploredEdges = shortestPaths.collect { case p if p.p.path.takeRight(i) == rootPathEdges => p.p.path(p.p.path.length - 1 - i).desc }.toSet
+              // We compare channel descriptors rather than full edges: bLIP-18 enrichment stamps predecessor-dependent
+              // inbound fees onto edge params, so two topologically identical suffixes reached from different
+              // predecessors would otherwise compare unequal and fail to exclude the already-explored edge.
+              val alreadyExploredEdges = shortestPaths.collect { case p if p.p.path.takeRight(i).map(_.desc) == rootPathEdges.map(_.desc) => p.p.path(p.p.path.length - 1 - i).desc }.toSet
               // we also want to ignore any vertex on the root path to prevent loops
               val alreadyExploredVertices = rootPathEdges.map(_.desc.b).toSet
               val rootPathWeight = pathWeight(g.balances, sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost, g.graph, blip18)
@@ -272,7 +275,12 @@ object Graph {
                   // concatenation with the spur path their actual predecessor changes, so we recompute inbound fees.
                   val completePath = enrichPathWithInboundFees(spurPath ++ rootPathEdges, g.graph, blip18)
                   val candidatePath = WeightedPath(completePath, pathWeight(g.balances, sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost, g.graph, blip18))
-                  candidates.enqueue(PathWithSpur(candidatePath, i))
+                  // The spur search treats the spur node as its target and therefore skips that node's inbound fees; the
+                  // recomputed weight above includes them, so we must re-check the boundaries (e.g. maxFee) before
+                  // accepting the candidate, otherwise we could return a route whose actual fee exceeds the budget.
+                  if (boundaries(candidatePath.weight)) {
+                    candidates.enqueue(PathWithSpur(candidatePath, i))
+                  }
                 case None => ()
               }
             }

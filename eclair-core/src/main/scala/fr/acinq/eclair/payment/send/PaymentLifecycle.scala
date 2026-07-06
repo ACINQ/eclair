@@ -213,8 +213,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           case TemporaryChannelFailure(update_opt, _) =>
             val failingHop = route.hops(index)
             val isLiquidityIssue = update_opt match {
-              // If the relay parameters have changed, it's not necessarily a liquidity issue.
-              case Some(update) => HopRelayParams.areSame(failingHop.params, HopRelayParams.FromAnnouncement(update), ignoreHtlcSize = true)
+              // If the relay parameters have changed, it's not necessarily a liquidity issue. We ignore inbound fees in
+              // this comparison: the failing hop's inbound fees were derived from its predecessor's channel_update during
+              // path-finding, whereas `update` is the failing hop's own channel_update, so the two aren't comparable.
+              case Some(update) => HopRelayParams.areSame(failingHop.params, HopRelayParams.FromAnnouncement(update), ignoreHtlcSize = true, ignoreInboundFees = true)
               case None => true
             }
             if (isLiquidityIssue) {

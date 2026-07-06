@@ -119,6 +119,7 @@ object Announcements {
   def areSameRelayParams(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
     u1.feeBaseMsat == u2.feeBaseMsat &&
       u1.feeProportionalMillionths == u2.feeProportionalMillionths &&
+      u1.blip18InboundFees_opt == u2.blip18InboundFees_opt &&
       u1.cltvExpiryDelta == u2.cltvExpiryDelta &&
       u1.htlcMinimumMsat == u2.htlcMinimumMsat &&
       u1.htlcMaximumMsat == u2.htlcMaximumMsat

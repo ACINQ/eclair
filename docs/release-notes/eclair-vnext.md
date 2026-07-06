@@ -34,7 +34,8 @@ named `inboundfees.sqlite.bak`, next to `eclair.sqlite.bak`: if you set inbound 
 
 <insert changes>
 
-- `updaterelayfee` now accepts optional `--inboundFeeBaseMsat` and `--inboundFeeProportionalMillionths` parameters. If omitted, existing inbound fees will be preserved.
+- `updaterelayfee` now accepts optional `--inboundFeeBaseMsat` and `--inboundFeeProportionalMillionths` parameters (both must be negative or zero, since only inbound discounts are supported). If omitted, existing inbound fees will be preserved.
+- `updaterelayfee` now accepts an optional `--unsetInboundFees` flag that removes any previously advertised inbound fees. It cannot be combined with `--inboundFeeBaseMsat` or `--inboundFeeProportionalMillionths`.
 
 ### Miscellaneous improvements and bug fixes
 

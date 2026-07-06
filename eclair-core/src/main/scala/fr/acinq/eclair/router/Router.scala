@@ -551,10 +551,10 @@ object Router {
       override val htlcMaximum_opt = extraHop.htlcMaximum_opt
     }
 
-    def areSame(a: HopRelayParams, b: HopRelayParams, ignoreHtlcSize: Boolean = false): Boolean =
+    def areSame(a: HopRelayParams, b: HopRelayParams, ignoreHtlcSize: Boolean = false, ignoreInboundFees: Boolean = false): Boolean =
       a.cltvExpiryDelta == b.cltvExpiryDelta &&
         a.relayFees == b.relayFees &&
-        a.inboundFees_opt == b.inboundFees_opt &&
+        (ignoreInboundFees || a.inboundFees_opt == b.inboundFees_opt) &&
         (ignoreHtlcSize || (a.htlcMinimum == b.htlcMinimum && a.htlcMaximum_opt == b.htlcMaximum_opt))
   }
 

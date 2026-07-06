@@ -36,7 +36,7 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsBase.{FakeTxPublisherFact
 import fr.acinq.eclair.payment.send.SpontaneousRecipient
 import fr.acinq.eclair.payment.{Invoice, OutgoingPaymentPacket}
 import fr.acinq.eclair.reputation.Reputation
-import fr.acinq.eclair.router.Router.{ChannelHop, HopRelayParams, Route}
+import fr.acinq.eclair.router.Router.{Blip18Params, ChannelHop, HopRelayParams, Route}
 import fr.acinq.eclair.testutils.PimpTestProbe.convert
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
@@ -100,6 +100,8 @@ object ChannelStateTestsTags {
   val OptionSimpleTaproot = "option_simple_taproot"
   /** If set, channel will use zero-fee commitments. */
   val ZeroFeeCommitments = "zero_fee_commitments"
+  /** If set, bLIP-18 inbound fees are enabled. */
+  val Blip18InboundFees = "blip18_inbound_fees"
 }
 
 trait ChannelStateTestsBase extends Assertions with Eventually {
@@ -231,6 +233,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.onChainFeeConf.defaultFeerateTolerance.ratioHigh).setToIf(tags.contains(ChannelStateTestsTags.HighFeerateMismatchTolerance))(1000000)
       .modify(_.onChainFeeConf.spendAnchorWithoutHtlcs).setToIf(tags.contains(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs))(false)
       .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(1_000 sat, 0 sat), Channel.BalanceThreshold(5_000 sat, 1_000 sat), Channel.BalanceThreshold(10_000 sat, 5_000 sat)))
+      .modify(_.routerConf.blip18.enableInboundFees).setToIf(tags.contains(ChannelStateTestsTags.Blip18InboundFees))(true)
     val finalNodeParamsB = nodeParamsB1
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
       .modify(_.channelConf.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
@@ -244,6 +247,7 @@ trait ChannelStateTestsBase extends Assertions with Eventually {
       .modify(_.onChainFeeConf.defaultFeerateTolerance.ratioHigh).setToIf(tags.contains(ChannelStateTestsTags.HighFeerateMismatchTolerance))(1000000)
       .modify(_.onChainFeeConf.spendAnchorWithoutHtlcs).setToIf(tags.contains(ChannelStateTestsTags.DontSpendAnchorWithoutHtlcs))(false)
       .modify(_.channelConf.balanceThresholds).setToIf(tags.contains(ChannelStateTestsTags.AdaptMaxHtlcAmount))(Seq(Channel.BalanceThreshold(1_000 sat, 0 sat), Channel.BalanceThreshold(5_000 sat, 1_000 sat), Channel.BalanceThreshold(10_000 sat, 5_000 sat)))
+      .modify(_.routerConf.blip18.enableInboundFees).setToIf(tags.contains(ChannelStateTestsTags.Blip18InboundFees))(true)
     val aliceWallet = walletA_opt.getOrElse(new SingleKeyOnChainWallet())
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = {
       implicit val system: ActorSystem = systemA

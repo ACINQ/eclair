@@ -2237,7 +2237,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2relayer.expectNoMessage(100 millis)
   }
 
-  test("recv CMD_UPDATE_RELAY_FEE (preserves inbound fees when omitted)") { f =>
+  test("recv CMD_UPDATE_RELAY_FEE (preserves inbound fees when omitted)", Tag(ChannelStateTestsTags.Blip18InboundFees)) { f =>
     import f._
     val sender = TestProbe()
     val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeBase * 2
@@ -2254,6 +2254,20 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val localUpdate2 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(localUpdate2.channelUpdate.feeBaseMsat == newFeeBaseMsat * 2)
     assert(localUpdate2.channelUpdate.blip18InboundFees_opt.contains(InboundFees(-100 msat, -50)))
+    alice2relayer.expectNoMessage(100 millis)
+  }
+
+  test("recv CMD_UPDATE_RELAY_FEE (does not advertise inbound fees when bLIP-18 is disabled)") { f =>
+    import f._
+    val sender = TestProbe()
+    val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeBase * 2
+    val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths * 2
+    // Even if inbound fees are provided in the command, we don't advertise them when the feature is disabled: otherwise
+    // we would advertise fees that the relay path doesn't honour, and could never clear them once the feature is off.
+    sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, newFeeBaseMsat, newFeeProportionalMillionth, Some(-100 msat), Some(-50)))
+    sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
+    val localUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(localUpdate.channelUpdate.blip18InboundFees_opt.isEmpty)
     alice2relayer.expectNoMessage(100 millis)
   }
 

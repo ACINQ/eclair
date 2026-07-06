@@ -934,8 +934,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       }
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
-      // If inbound fees are omitted, we preserve the ones currently advertised in our channel_update.
-      val inboundFees_opt = InboundFees.fromOptions(c.inboundFeeBase_opt, c.inboundFeeProportionalMillionths_opt).orElse(d.channelUpdate.blip18InboundFees_opt)
+      val inboundFees_opt = updatedInboundFees(c, d)
       val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), enable = true, inboundFees_opt)
       log.debug(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
@@ -3361,9 +3360,22 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     }
   }
 
+  /**
+   * Compute the bLIP-18 inbound fees to advertise for a relay fee update. When inbound fees are omitted from the command
+   * we preserve the ones currently advertised in our channel_update. When bLIP-18 support is disabled we never advertise
+   * inbound fees: this ensures a node that disables the feature actually stops advertising (and honouring) inbound fees,
+   * instead of keeping a stale discount forever (which would also make the restore-time refresh loop indefinitely).
+   */
+  private def updatedInboundFees(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL): Option[InboundFees] = {
+    if (nodeParams.routerConf.blip18.enableInboundFees) {
+      InboundFees.fromOptions(c.inboundFeeBase_opt, c.inboundFeeProportionalMillionths_opt).orElse(if (c.unsetInboundFees) None else d.channelUpdate.blip18InboundFees_opt)
+    } else {
+      None
+    }
+  }
+
   private def handleUpdateRelayFeeDisconnected(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) = {
-    // If inbound fees are omitted, we preserve the ones currently advertised in our channel_update.
-    val inboundFees_opt = InboundFees.fromOptions(c.inboundFeeBase_opt, c.inboundFeeProportionalMillionths_opt).orElse(d.channelUpdate.blip18InboundFees_opt)
+    val inboundFees_opt = updatedInboundFees(c, d)
     val channelUpdate1 = Helpers.channelUpdate(nodeParams, scidForChannelUpdate(d), d.commitments, Relayer.RelayFees(c.feeBase, c.feeProportionalMillionths), enable = false, inboundFees_opt)
     log.debug(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
     val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo

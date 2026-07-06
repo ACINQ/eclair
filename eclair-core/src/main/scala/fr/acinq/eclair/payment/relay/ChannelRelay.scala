@@ -70,7 +70,8 @@ object ChannelRelay {
             relayId: UUID,
             r: IncomingPaymentPacket.ChannelRelayPacket,
             incomingChannelOccupancy: Double,
-            inboundFees_opt: Option[InboundFees]): Behavior[Command] =
+            inboundFees_opt: Option[InboundFees],
+            prevInboundFees_opt: Option[Option[InboundFees]]): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
@@ -97,7 +98,7 @@ object ChannelRelay {
         }
         Behaviors.receiveMessagePartial {
           case WrappedReputationScore(score) =>
-            new ChannelRelay(nodeParams, register, channels, r, upstream, score, inboundFees_opt, context).start()
+            new ChannelRelay(nodeParams, register, channels, r, upstream, score, inboundFees_opt, prevInboundFees_opt, context).start()
         }
       }
     }
@@ -145,6 +146,7 @@ class ChannelRelay private(nodeParams: NodeParams,
                            upstream: Upstream.Hot.Channel,
                            reputationScore: Reputation.Score,
                            inboundFees_opt: Option[InboundFees],
+                           prevInboundFees_opt: Option[Option[InboundFees]],
                            context: ActorContext[ChannelRelay.Command]) {
 
   import ChannelRelay._
@@ -436,8 +438,14 @@ class ChannelRelay private(nodeParams: NodeParams,
     val prevUpdate_opt = if (allowPreviousUpdate) outgoingChannel.prevChannelUpdate else None
     val htlcMinimumOk = update.htlcMinimumMsat <= r.amountToForward || prevUpdate_opt.exists(_.htlcMinimumMsat <= r.amountToForward)
     val expiryDeltaOk = update.cltvExpiryDelta <= r.expiryDelta || prevUpdate_opt.exists(_.cltvExpiryDelta <= r.expiryDelta)
-    val feesOk = totalFee(r.amountToForward, update.relayFees, inboundFees_opt) <= r.relayFeeMsat ||
-      prevUpdate_opt.exists(u => totalFee(r.amountToForward, u.relayFees, inboundFees_opt) <= r.relayFeeMsat)
+    // The fee is sufficient if it covers any accepted combination of outbound relay fees (current or, within the
+    // enforcement delay, previous outgoing channel_update) and inbound fees (current or, within the enforcement delay,
+    // previously advertised inbound fees on the incoming channel).
+    val acceptableInboundFees: Seq[Option[InboundFees]] = (inboundFees_opt +: prevInboundFees_opt.toSeq).distinct
+    val feesOk = acceptableInboundFees.exists { inbound =>
+      totalFee(r.amountToForward, update.relayFees, inbound) <= r.relayFeeMsat ||
+        prevUpdate_opt.exists(u => totalFee(r.amountToForward, u.relayFees, inbound) <= r.relayFeeMsat)
+    }
     if (!htlcMinimumOk) {
       Some(makeCmdFailHtlc(r.add.id, AmountBelowMinimum(r.amountToForward, Some(update))))
     } else if (!expiryDeltaOk) {

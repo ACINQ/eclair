@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.IncomingPaymentPacket
 import fr.acinq.eclair.reputation.ReputationRecorder
-import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, SubscriptionsComplete}
+import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, SubscriptionsComplete, TimestampSecond}
 
 import java.util.UUID
 import scala.collection.mutable
@@ -84,13 +84,24 @@ object ChannelRelayer {
               case None => Map.empty
             }
             // bLIP-18 inbound fees advertised in our channel_update for the incoming channel apply to this relay.
+            val incomingChannel_opt = channels.get(channelRelayPacket.add.channelId)
             val inboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees) {
-              channels.get(channelRelayPacket.add.channelId).flatMap(_.channelUpdate.blip18InboundFees_opt)
+              incomingChannel_opt.flatMap(_.channelUpdate.blip18InboundFees_opt)
+            } else {
+              None
+            }
+            // If we recently updated the inbound fees of the incoming channel, senders may still be using the previously
+            // advertised inbound fees: we tolerate them during the enforcement delay, just like we do for outbound fees.
+            val prevInboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees) {
+              incomingChannel_opt
+                .filter(c => TimestampSecond.now() - c.channelUpdate.timestamp <= nodeParams.relayParams.enforcementDelay)
+                .flatMap(_.prevChannelUpdate)
+                .map(_.blip18InboundFees_opt)
             } else {
               None
             }
             context.log.debug(s"spawning a new handler with relayId=$relayId to nextNodeId={} with channels={}", nextNodeId_opt.getOrElse(""), nextChannels.keys.mkString(","))
-            context.spawn(ChannelRelay.apply(nodeParams, register, reputationRecorder_opt, nextChannels, originNode, relayId, channelRelayPacket, incomingChannelOccupancy, inboundFees_opt), name = relayId.toString)
+            context.spawn(ChannelRelay.apply(nodeParams, register, reputationRecorder_opt, nextChannels, originNode, relayId, channelRelayPacket, incomingChannelOccupancy, inboundFees_opt, prevInboundFees_opt), name = relayId.toString)
             Behaviors.same
 
           case GetOutgoingChannels(replyTo, Relayer.GetOutgoingChannels(enabledOnly)) =>
