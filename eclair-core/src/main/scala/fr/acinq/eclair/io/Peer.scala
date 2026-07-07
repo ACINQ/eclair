@@ -239,7 +239,7 @@ class Peer(val nodeParams: NodeParams,
         stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
       case Event(open: protocol.OpenChannel, d: ConnectedData) =>
-        d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
+        d.channels.get(TemporaryChannelId(open.temporaryChannelId)).orElse(d.channels.get(FinalChannelId(open.temporaryChannelId))) match {
           case None =>
             openChannelInterceptor ! OpenChannelNonInitiator(remoteNodeId, Left(open), d.localFeatures, d.remoteFeatures, d.peerConnection.toTyped, d.address)
             stay()
@@ -249,7 +249,7 @@ class Peer(val nodeParams: NodeParams,
         }
 
       case Event(open: protocol.OpenDualFundedChannel, d: ConnectedData) =>
-        d.channels.get(TemporaryChannelId(open.temporaryChannelId)) match {
+        d.channels.get(TemporaryChannelId(open.temporaryChannelId)).orElse(d.channels.get(FinalChannelId(open.temporaryChannelId))) match {
           case None if !Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.DualFunding) =>
             log.info("rejecting open_channel2: dual funding is not supported")
             self ! Peer.OutgoingMessage(Error(open.temporaryChannelId, "dual funding is not supported"), d.peerConnection)
