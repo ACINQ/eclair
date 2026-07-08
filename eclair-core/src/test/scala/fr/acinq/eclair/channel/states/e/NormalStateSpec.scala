@@ -49,6 +49,7 @@ import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
 
+import java.util.UUID
 import scala.concurrent.duration._
 
 /**
@@ -166,11 +167,25 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val maxAllowedExpiryDelta = alice.underlyingActor.nodeParams.channelConf.maxExpiryDelta
+    val validExpiry = CltvExpiryDelta(36).toCltvExpiry(currentBlockHeight)
     val expiryTooBig = (maxAllowedExpiryDelta + 1).toCltvExpiry(currentBlockHeight)
-    val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, randomBytes32(), expiryTooBig, TestConstants.emptyOnionPacket, None, Reputation.Score.max(accountable = false), None, localOrigin(sender.ref))
-    alice ! add
-    val error = ExpiryTooBig(channelId(alice), maximum = maxAllowedExpiryDelta.toCltvExpiry(currentBlockHeight), actual = expiryTooBig, blockHeight = currentBlockHeight)
-    sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
+    val incoming = UpdateAddHtlc(randomBytes32(), 7, 500_000_000 msat, randomBytes32(), validExpiry, TestConstants.emptyOnionPacket, None, accountable = true, None)
+    val cmd = CMD_ADD_HTLC(sender.ref, 500_000_000 msat, randomBytes32(), validExpiry, TestConstants.emptyOnionPacket, None, Reputation.Score.max(accountable = false), None, localOrigin(sender.ref))
+    val testCases = Seq(
+      // HTLC for which we're the sender.
+      cmd.copy(cltvExpiry = expiryTooBig, origin = Origin.Hot(sender.ref, Upstream.Local(UUID.randomUUID()))),
+      // HTLC relayed with a valid incoming HTLC expiry.
+      cmd.copy(cltvExpiry = expiryTooBig, origin = Origin.Hot(sender.ref, Upstream.Hot.Channel(incoming, 0 unixms, randomKey().publicKey, 0.5))),
+      // HTLC relayed with the incoming HTLC having a high expiry.
+      cmd.copy(cltvExpiry = validExpiry, origin = Origin.Hot(sender.ref, Upstream.Hot.Channel(incoming.copy(cltvExpiry = expiryTooBig), 0 unixms, randomKey().publicKey, 0.5))),
+      // HTLC relayed using trampoline, with one of the incoming HTLCs having a high expiry.
+      cmd.copy(cltvExpiry = validExpiry, origin = Origin.Hot(sender.ref, Upstream.Hot.Trampoline(Upstream.Hot.Channel(incoming, 0 unixms, randomKey().publicKey, 0.5) :: Upstream.Hot.Channel(incoming.copy(cltvExpiry = expiryTooBig), 0 unixms, randomKey().publicKey, 0.5) :: Nil))),
+    )
+    testCases.foreach(cmd => {
+      alice ! cmd
+      val error = ExpiryTooBig(channelId(alice), maximum = maxAllowedExpiryDelta.toCltvExpiry(currentBlockHeight), actual = expiryTooBig, blockHeight = currentBlockHeight)
+      sender.expectMsg(RES_ADD_FAILED(cmd, error, Some(initialState.channelUpdate)))
+    })
     alice2bob.expectNoMessage(100 millis)
   }
 
