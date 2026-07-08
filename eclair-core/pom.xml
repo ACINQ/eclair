@@ -87,8 +87,8 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-31.0/bitcoin-31.0-x86_64-linux-gnu.tar.gz</bitcoind.url>
-                <bitcoind.sha256>d3e4c58a35b1d0a97a457462c94f55501ad167c660c245cb1ffa565641c65074</bitcoind.sha256>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-31.1/bitcoin-31.1-x86_64-linux-gnu.tar.gz</bitcoind.url>
+                <bitcoind.sha256>b80d9c3e04da78fb6f0569685673418cf686fadba9042d926d13fb87ff503f9e</bitcoind.sha256>
             </properties>
         </profile>
         <profile>
@@ -99,8 +99,8 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-31.0/bitcoin-31.0-x86_64-apple-darwin.tar.gz</bitcoind.url>
-                <bitcoind.sha256>56824dd705bc2a3b22d42e8aa02ed53498d491ff7c2c8aa96831333871887ead</bitcoind.sha256>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-31.1/bitcoin-31.1-x86_64-apple-darwin.tar.gz</bitcoind.url>
+                <bitcoind.sha256>bc506958d0f387c1ea770bdc7c7192a505fa645ff62cabcc7761fa7eb89e867e</bitcoind.sha256>
             </properties>
         </profile>
         <profile>
@@ -111,8 +111,8 @@
                 </os>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-31.0/bitcoin-31.0-win64.zip</bitcoind.url>
-                <bitcoind.sha256>82fd2c504a0f20a31d4d13bd407783d6fc7bf17622d0ce85228a9b92694e03f0</bitcoind.sha256>
+                <bitcoind.url>https://bitcoincore.org/bin/bitcoin-core-31.1/bitcoin-31.1-win64.zip</bitcoind.url>
+                <bitcoind.sha256>c99ef173471c58e6766d9eebd12e6c35349082eeed3939bc99eed58ef57db587</bitcoind.sha256>
             </properties>
         </profile>
     </profiles>
