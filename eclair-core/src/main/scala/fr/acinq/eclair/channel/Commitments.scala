@@ -987,6 +987,10 @@ case class Commitments(channelParams: ChannelParams,
   def receiveFulfill(fulfill: UpdateFulfillHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] =
     getOutgoingHtlcCrossSigned(fulfill.id) match {
       case Some(htlc) if htlc.paymentHash == Crypto.sha256(fulfill.paymentPreimage) => originChannels.get(fulfill.id) match {
+        case Some(origin) if CommitmentChanges.alreadyProposed(changes.remoteChanges.proposed, htlc.id) =>
+          // We've already received a fail/fulfill for this HTLC, so we don't need to add it again to the remote changes.
+          // If it differs from the previous settlement message, our peer is buggy and we will force-close when exchanging commit_sig.
+          Right(this, origin, htlc)
         case Some(origin) =>
           payment.Monitoring.Metrics.recordOutgoingPaymentDistribution(remoteNodeId, htlc.amountMsat)
           Right(copy(changes = changes.addRemoteProposal(fulfill)), origin, htlc)
@@ -1027,6 +1031,7 @@ case class Commitments(channelParams: ChannelParams,
   def receiveFail(fail: UpdateFailHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] =
     getOutgoingHtlcCrossSigned(fail.id) match {
       case Some(htlc) => originChannels.get(fail.id) match {
+        case Some(origin) if CommitmentChanges.alreadyProposed(changes.remoteChanges.proposed, htlc.id) => Right(this, origin, htlc)
         case Some(origin) => Right(copy(changes = changes.addRemoteProposal(fail)), origin, htlc)
         case None => Left(UnknownHtlcId(channelId, fail.id))
       }
@@ -1040,6 +1045,7 @@ case class Commitments(channelParams: ChannelParams,
     } else {
       getOutgoingHtlcCrossSigned(fail.id) match {
         case Some(htlc) => originChannels.get(fail.id) match {
+          case Some(origin) if CommitmentChanges.alreadyProposed(changes.remoteChanges.proposed, htlc.id) => Right(this, origin, htlc)
           case Some(origin) => Right(copy(changes = changes.addRemoteProposal(fail)), origin, htlc)
           case None => Left(UnknownHtlcId(channelId, fail.id))
         }
