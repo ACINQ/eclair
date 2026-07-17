@@ -256,6 +256,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
   // we keep track of the splice_locked we sent after channel_reestablish and it's funding tx index to avoid sending it again
   // TODO: we can remove that once we stop supporting the legacy splicing protocol
   private var spliceLockedSent = Map.empty[TxId, Long]
+  // we keep track of invalid interactive-tx signatures we receive
+  var invalidTxSigsReceived = Map.empty[TxId, Int]
 
   private def trimAnnouncementSigsStashIfNeeded(): Unit = {
     if (announcementSigsStash.size >= 10) {
@@ -1438,22 +1440,31 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     case Event(msg: TxSignatures, d: DATA_NORMAL) =>
       d.commitments.latest.localFundingStatus match {
         case dfu@LocalFundingStatus.DualFundedUnconfirmedFundingTx(fundingTx: PartiallySignedSharedTransaction, _, _, _) if fundingTx.txId == msg.txId =>
-          // we already sent our tx_signatures
-          InteractiveTxSigningSession.addRemoteSigs(channelKeys, dfu.fundingParams, fundingTx, msg) match {
-            case Left(cause) =>
-              log.warning("received invalid tx_signatures for fundingTxId={}: {}", msg.txId, cause.getMessage)
-              // The funding transaction may still confirm (since our peer should be able to generate valid signatures),
-              // so we cannot close the channel yet.
-              stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(fundingTx.txId)).getMessage)
-            case Right(fundingTx) =>
-              val dfu1 = dfu.copy(sharedTx = fundingTx)
-              d.commitments.updateLocalFundingStatus(msg.txId, dfu1, d.lastAnnouncedFundingTxId_opt) match {
-                case Right((commitments1, _)) =>
-                  log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
-                  Metrics.recordSplice(dfu.fundingParams, fundingTx.tx)
-                  stay() using d.copy(commitments = commitments1) storing() calling publishFundingTx(dfu1)
-                case Left(_) =>
-                  stay()
+          // We already sent our tx_signatures: the transaction may be broadcast and may confirm in the next blocks.
+          invalidTxSigsReceived.get(msg.txId) match {
+            case Some(count) if count >= 3 =>
+              // Our peer already sent us 3 invalid tx_signatures for that splice: they're either buggy or malicious,
+              // so we stop processing their additional tx_signatures and simply wait for the transaction to confirm.
+              log.warning("received too many invalid tx_signatures for fundingTxId={}, ignoring this one", msg.txId)
+              stay()
+            case _ =>
+              InteractiveTxSigningSession.addRemoteSigs(channelKeys, dfu.fundingParams, fundingTx, msg) match {
+                case Left(cause) =>
+                  log.warning("received invalid tx_signatures for fundingTxId={}: {}", msg.txId, cause.getMessage)
+                  // The funding transaction may still confirm (since our peer should be able to generate valid signatures),
+                  // so we cannot close the channel yet. We record that they sent an invalid signature though.
+                  invalidTxSigsReceived += (msg.txId -> (invalidTxSigsReceived.getOrElse(msg.txId, 0) + 1))
+                  stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(fundingTx.txId)).getMessage)
+                case Right(fundingTx) =>
+                  val dfu1 = dfu.copy(sharedTx = fundingTx)
+                  d.commitments.updateLocalFundingStatus(msg.txId, dfu1, d.lastAnnouncedFundingTxId_opt) match {
+                    case Right((commitments1, _)) =>
+                      log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
+                      Metrics.recordSplice(dfu.fundingParams, fundingTx.tx)
+                      stay() using d.copy(commitments = commitments1) storing() calling publishFundingTx(dfu1)
+                    case Left(_) =>
+                      stay()
+                  }
               }
           }
         case _ =>
@@ -1489,7 +1500,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_NORMAL) =>
       handleFundingConfirmedWhileConnected(w, d) match {
-        case Some((commitments1, spliceLocked_opt, annSigs_opt)) => stay() using d.copy(commitments = commitments1) storing() sending spliceLocked_opt.toSeq ++ annSigs_opt.toSeq
+        case Some((commitments1, spliceLocked_opt, annSigs_opt)) =>
+          // We reset the counter for *all* invalid tx_signatures received for simplicity whenever a splice confirms.
+          invalidTxSigsReceived = Map.empty
+          stay() using d.copy(commitments = commitments1) storing() sending spliceLocked_opt.toSeq ++ annSigs_opt.toSeq
         case None => stay()
       }
 
@@ -2867,7 +2881,10 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(w: WatchFundingConfirmedTriggered, d: DATA_NORMAL) =>
       handleFundingConfirmedWhileConnected(w, d) match {
-        case Some((commitments1, spliceLocked_opt, annSigs_opt)) => stay() using d.copy(commitments = commitments1) storing() sending spliceLocked_opt.toSeq ++ annSigs_opt.toSeq
+        case Some((commitments1, spliceLocked_opt, annSigs_opt)) =>
+          // We reset the counter for *all* invalid tx_signatures received for simplicity whenever a splice confirms.
+          invalidTxSigsReceived = Map.empty
+          stay() using d.copy(commitments = commitments1) storing() sending spliceLocked_opt.toSeq ++ annSigs_opt.toSeq
         case None => stay()
       }
 
@@ -3052,6 +3069,8 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
             case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments1)
             case d: DATA_CLOSING => d // there is a dedicated handler in CLOSING state
           }
+          // We reset the counter for *all* invalid tx_signatures received for simplicity whenever a splice confirms.
+          invalidTxSigsReceived = Map.empty
           stay() using d1 storing()
         case Left(_) => stay()
       }
@@ -3248,7 +3267,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
     case _ -> OFFLINE =>
       announcementSigsStash = Map.empty
       announcementSigsSent = Set.empty
-      spliceLockedSent = Map.empty[TxId, Long]
+      spliceLockedSent = Map.empty
       remoteNextCommitNonces = Map.empty
       localCloseeNonce_opt = None
       remoteCloseeNonce_opt = None
