@@ -448,6 +448,23 @@ class PeerSpec extends FixtureSpec {
     assert(peer.stateData.channels.size == 1)
   }
 
+  test("don't spawn a channel that reuses an existing channel id") { f =>
+    import f._
+
+    val confirmedChannel = ChannelCodecsSpec.normal.withChannelKeys(nodeParams)
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(confirmedChannel))
+    channel.expectMsg(INPUT_RESTORED(confirmedChannel.channelData))
+    channel.expectMsgType[INPUT_RECONNECTED]
+
+    val open = createOpenChannelMessage(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()).copy(temporaryChannelId = confirmedChannel.channelId)
+    peerConnection.send(peer, open)
+    val open2 = createOpenDualFundedChannelMessage(ChannelTypes.AnchorOutputsZeroFeeHtlcTx()).copy(temporaryChannelId = confirmedChannel.channelId)
+    peerConnection.send(peer, open2)
+    channel.expectNoMessage(100 millis)
+    peerConnection.expectNoMessage(100 millis)
+    assert(peer.stateData.channels.size == 1)
+  }
+
   test("send error when receiving message for unknown channel") { f =>
     import f._
 
