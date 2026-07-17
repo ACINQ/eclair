@@ -873,7 +873,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
 
     case Event(ProcessCurrentBlockHeight(c), d: DATA_NORMAL) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates.BitcoinCore, d: DATA_NORMAL) => handleCurrentFeerate(d)
+    case Event(_: CurrentFeerates.BitcoinCore, d: DATA_NORMAL) => handleCurrentFeerate(d)
 
     case Event(_: ChannelReady, d: DATA_NORMAL) =>
       // After a reconnection, if the channel hasn't been used yet, our peer cannot be sure we received their channel_ready
@@ -1758,13 +1758,14 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
         log.debug("our peer updated their shutdown script (previous={}, current={})", d.remoteShutdown.scriptPubKey, shutdown.scriptPubKey)
       }
       remoteCloseeNonce_opt = shutdown.closeeNonce_opt
-      stay() using d.copy(remoteShutdown = shutdown) storing()
+      // No need to persist the change in the DB: they will re-send shutdown on reconnection.
+      stay() using d.copy(remoteShutdown = shutdown)
 
     case Event(r: RevocationTimeout, d: DATA_SHUTDOWN) => handleRevocationTimeout(r, d)
 
     case Event(ProcessCurrentBlockHeight(c), d: DATA_SHUTDOWN) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates.BitcoinCore, d: DATA_SHUTDOWN) => handleCurrentFeerate(d)
+    case Event(_: CurrentFeerates.BitcoinCore, d: DATA_SHUTDOWN) => handleCurrentFeerate(d)
 
     case Event(c: CMD_CLOSE, d: DATA_SHUTDOWN) =>
       val useSimpleClose = Features.canUseFeature(d.commitments.localChannelParams.initFeatures, d.commitments.remoteChannelParams.initFeatures, Features.SimpleClose)
@@ -1795,7 +1796,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       if (remoteShutdown.scriptPubKey != d.remoteShutdown.scriptPubKey) {
         // This may lead to a signature mismatch if our peer changed their script without using option_simple_close.
         log.warning("received shutdown changing remote script, this may lead to a signature mismatch: previous={}, current={}", d.remoteShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-        stay() using d.copy(remoteShutdown = remoteShutdown) storing()
+        stay() using d.copy(remoteShutdown = remoteShutdown)
       } else {
         stay()
       }
@@ -1904,7 +1905,7 @@ class Channel(val nodeParams: NodeParams, val channelKeys: ChannelKeys, val wall
       if (shutdown.scriptPubKey != d.remoteScriptPubKey) {
         // This may lead to a signature mismatch: peers must use closing_complete to update their closing script.
         log.warning("received shutdown changing remote script, this may lead to a signature mismatch: previous={}, current={}", d.remoteScriptPubKey, shutdown.scriptPubKey)
-        stay() using d.copy(remoteScriptPubKey = shutdown.scriptPubKey) storing()
+        stay() using d.copy(remoteScriptPubKey = shutdown.scriptPubKey)
       } else {
         stay()
       }
