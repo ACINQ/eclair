@@ -292,6 +292,9 @@ class Setup(val datadir: File,
         }
       }
       _ = if (bitcoinClient.useEclairSigner) logger.info("using eclair to sign bitcoin core transactions")
+      indexInfos <- bitcoinClient.getIndexInfo()
+      _ = if (!indexInfos.get("txindex").exists(_.synced)) throw new RuntimeException("txindex is disabled or not synchronized")
+      _ = if (!indexInfos.get("txospenderindex").exists(_.synced)) throw new RuntimeException("txospenderindex is disabled or not synchronized")
       // We use the default address type configured on the Bitcoin Core node.
       initialPubkeyScript <- bitcoinClient.getReceivePublicKeyScript(addressType_opt = None)
       _ = finalPubkeyScript.set(initialPubkeyScript)

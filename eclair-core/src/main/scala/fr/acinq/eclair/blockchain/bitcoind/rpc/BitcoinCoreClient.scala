@@ -116,17 +116,17 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
    * (not in the blockchain nor in the mempool) but could reappear later and be spendable at that point. If you want to
    * ensure that an output is not spendable anymore, you should use [[isTransactionOutputSpent]].
    */
-  def isTransactionOutputSpendable(txid: TxId, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
+  def isTransactionOutputSpendable(outPoint: OutPoint, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
-      json <- rpcClient.invoke("gettxout", txid, outputIndex, includeMempool)
+      json <- rpcClient.invoke("gettxout", outPoint.txid, outPoint.index, includeMempool)
     } yield json != JNull
 
   /**
    * Return true if this output has already been spent by a confirmed transaction.
    * Note that a reorg may invalidate the result of this function and make a spent output spendable again.
    */
-  def isTransactionOutputSpent(txid: TxId, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = {
-    getTxConfirmations(txid).flatMap {
+  def isTransactionOutputSpent(outPoint: OutPoint)(implicit ec: ExecutionContext): Future[Boolean] = {
+    getTxConfirmations(outPoint.txid).flatMap {
       case Some(confirmations) if confirmations > 0 =>
         // There is an important limitation when using isTransactionOutputSpendable: if it returns false, it can mean a
         // few different things:
@@ -137,7 +137,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         // The only way to make sure that our output has been spent is to verify that it is coming from a confirmed
         // transaction and that it has been spent by another confirmed transaction. We want to ignore the mempool to
         // only consider spending transactions that have been confirmed.
-        isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map(r => !r)
+        isTransactionOutputSpendable(outPoint, includeMempool = false).map(r => !r)
       case _ =>
         // If the output itself isn't in the blockchain, it cannot be spent by a confirmed transaction.
         Future.successful(false)
@@ -166,47 +166,37 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         // themselves been double-spent, we will never be able to consider our transaction double-spent. With the
         // information we have, these unknown inputs could eventually reappear and the transaction could be broadcast
         // again.
-        Future.sequence(tx.txIn.map(txIn => isTransactionOutputSpent(txIn.outPoint.txid, txIn.outPoint.index.toInt))).map(_.exists(_ == true))
+        Future.sequence(tx.txIn.map(txIn => isTransactionOutputSpent(txIn.outPoint))).map(_.exists(_ == true))
       }
     } yield doubleSpent
 
   /** Search for mempool transaction spending a given output. */
-  def lookForMempoolSpendingTx(txid: TxId, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] = {
-    rpcClient.invoke("gettxspendingprevout", Seq(OutpointArg(txid, outputIndex))).collect {
+  def lookForMempoolSpendingTx(outPoint: OutPoint)(implicit ec: ExecutionContext): Future[Transaction] = {
+    val options = JObject(List("return_spending_tx" -> JBool(true), "mempool_only" -> JBool(true)))
+    rpcClient.invoke("gettxspendingprevout", Seq(OutpointArg(outPoint.txid, outPoint.index)), options).collect {
       case JArray(results) => results.flatMap(result => (result \ "spendingtxid").extractOpt[String].map(TxId.fromValidHex))
     }.flatMap { spendingTxIds =>
       spendingTxIds.headOption match {
         case Some(spendingTxId) => getTransaction(spendingTxId)
-        case None => Future.failed(new RuntimeException(s"mempool doesn't contain any transaction spending $txid:$outputIndex"))
+        case None => Future.failed(new RuntimeException(s"mempool doesn't contain any transaction spending $outPoint"))
       }
     }
   }
 
   /**
-   * Iterate over blocks to find the transaction that has spent a given output.
-   * It isn't useful to look at the whole blockchain history: if the transaction was confirmed long ago, an attacker
-   * will have already claimed all possible outputs and there's nothing we can do about it.
+   * Find the transaction spending a given output. Requires `txospenderindex` on the bitcoin code node we're connecting to.
    *
-   * @param blockHash_opt hash of a block *after* the output has been spent. If not provided, we will use the blockchain tip.
-   * @param txid          id of the transaction output that has been spent.
-   * @param outputIndex   index of the transaction output that has been spent.
-   * @param limit         maximum number of previous blocks to scan.
-   * @return the transaction spending the given output.
+   * @param outPoint transaction output
+   * @return the transaction that spent this output along with the id of the block it was published in if any, or None if no spending transaction was found
    */
-  def lookForSpendingTx(blockHash_opt: Option[BlockHash], txid: TxId, outputIndex: Int, limit: Int)(implicit ec: ExecutionContext): Future[Transaction] = {
-    for {
-      blockId <- blockHash_opt match {
-        case Some(blockHash) => Future.successful(BlockId(blockHash))
-        // NB: bitcoind confusingly returns the blockId instead of the blockHash.
-        case None => rpcClient.invoke("getbestblockhash").collect { case JString(blockId) => BlockId(ByteVector32.fromValidHex(blockId)) }
-      }
-      block <- getBlock(blockId)
-      res <- block.tx.asScala.find(tx => tx.txIn.asScala.exists(i => i.outPoint.txid == KotlinUtils.scala2kmp(txid) && i.outPoint.index == outputIndex)) match {
-        case Some(tx) => Future.successful(KotlinUtils.kmp2scala(tx))
-        case None if limit > 0 => lookForSpendingTx(Some(KotlinUtils.kmp2scala(block.header.hashPreviousBlock)), txid, outputIndex, limit - 1)
-        case None => Future.failed(new RuntimeException(s"couldn't find tx spending $txid:$outputIndex in the blockchain"))
-      }
-    } yield res
+  def findSpendingTx(outPoint: OutPoint)(implicit ec: ExecutionContext): Future[Option[(Transaction, Option[BlockId])]] = {
+    val options = JObject(List("return_spending_tx" -> JBool(true)))
+    rpcClient.invoke("gettxspendingprevout", Seq(OutpointArg(outPoint.txid, outPoint.index)), options).collect {
+      case JArray(results) => results.flatMap(result => {
+        val tx_opt = (result \ "spendingtx").extractOpt[String].map(Transaction.read)
+        tx_opt.map(tx => tx -> (result \ "blockhash").extractOpt[String].map(s => BlockId(ByteVector32.fromValidHex(s))))
+      }).headOption
+    }
   }
 
   def listTransactions(count: Int, skip: Int)(implicit ec: ExecutionContext): Future[List[WalletTx]] = rpcClient.invoke("listtransactions", "*", count, skip).map {
@@ -754,12 +744,13 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
         TxId.fromValidHex(txs(txIndex).extract[String])
       }.getOrElse(TxId(ByteVector32.Zeroes)))
       tx <- getRawTransaction(txid)
-      unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
+      outPoint = OutPoint(txid, outputIndex)
+      unspent <- isTransactionOutputSpendable(outPoint, includeMempool = true)
       fundingTxStatus <- if (unspent) {
         Future.successful(UtxoStatus.Unspent)
       } else {
         // if this returns true, it means that the spending tx is *not* in the blockchain
-        isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map(res => UtxoStatus.Spent(spendingTxConfirmed = !res))
+        isTransactionOutputSpendable(outPoint, includeMempool = false).map(res => UtxoStatus.Spent(spendingTxConfirmed = !res))
       }
     } yield ValidateResult(c, Right((Transaction.read(tx), fundingTxStatus)))
   } recover {
@@ -793,6 +784,15 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient, val lockUtxos: Bool
     })
   }
 
+  //------------------------- MISC  -------------------------//
+
+  /**
+   *
+   * @return information about enabled bitcoin core indexes, in a map where the key is the index name
+   */
+  def getIndexInfo()(implicit ec: ExecutionContext): Future[Map[String, IndexInfo]] = rpcClient.invoke("getindexinfo").collect {
+    case JObject(results) => results.map { case (name, o) => name -> BitcoinCoreClient.IndexInfo((o \ "synced").extract[Boolean], (o \ "best_block_height").extract[Int]) }.toMap
+  }
 }
 
 object BitcoinCoreClient {
@@ -869,4 +869,11 @@ object BitcoinCoreClient {
     // @formatter:on
   }
 
+  /**
+   * Information about a bitcoin core inedx
+   *
+   * @param synced          true if the index is synced
+   * @param bestBlockHeight height of the last indexed block
+   */
+  case class IndexInfo(synced: Boolean, bestBlockHeight: Int)
 }
