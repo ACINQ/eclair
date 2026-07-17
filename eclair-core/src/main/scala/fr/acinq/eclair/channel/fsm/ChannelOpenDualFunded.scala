@@ -445,22 +445,34 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
   when(WAIT_FOR_DUAL_FUNDING_CONFIRMED)(handleExceptions {
     case Event(txSigs: TxSignatures, d: DATA_WAIT_FOR_DUAL_FUNDING_CONFIRMED) =>
       d.latestFundingTx.sharedTx match {
-        case fundingTx: PartiallySignedSharedTransaction => InteractiveTxSigningSession.addRemoteSigs(channelKeys, d.latestFundingTx.fundingParams, fundingTx, txSigs) match {
-          case Left(cause) =>
-            val unsignedFundingTx = fundingTx.tx.buildUnsignedTx()
-            log.warning("received invalid tx_signatures for txid={} (current funding txid={}): {}", txSigs.txId, unsignedFundingTx.txid, cause.getMessage)
-            // The funding transaction may still confirm (since our peer should be able to generate valid signatures),
-            // so we cannot close the channel yet.
-            stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(unsignedFundingTx.txid)).getMessage)
-          case Right(fundingTx) =>
-            log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
-            val dfu1 = d.latestFundingTx.copy(sharedTx = fundingTx)
-            val d1 = d.copy(commitments = d.commitments.updateLocalFundingStatus(fundingTx.txId, dfu1, None) match {
-              case Left(commitments) => commitments
-              case Right((commitments, _)) => commitments
-            })
-            stay() using d1 storing() calling publishFundingTx(dfu1)
-        }
+        case fundingTx: PartiallySignedSharedTransaction =>
+          invalidTxSigsReceived.get(txSigs.txId) match {
+            case Some(count) if count >= 3 =>
+              // Our peer already sent us 3 invalid tx_signatures for that channel: they're either buggy or malicious,
+              // so we stop processing their additional tx_signatures and simply wait for the transaction to confirm.
+              log.warning("received too many invalid tx_signatures for fundingTxId={}, ignoring this one", txSigs.txId)
+              stay()
+            case _ =>
+              InteractiveTxSigningSession.addRemoteSigs(channelKeys, d.latestFundingTx.fundingParams, fundingTx, txSigs) match {
+                case Left(cause) =>
+                  val unsignedFundingTx = fundingTx.tx.buildUnsignedTx()
+                  log.warning("received invalid tx_signatures for txid={} (current funding txid={}): {}", txSigs.txId, unsignedFundingTx.txid, cause.getMessage)
+                  // The funding transaction may still confirm (since our peer should be able to generate valid signatures),
+                  // so we cannot close the channel yet. We record that they sent an invalid signature though.
+                  if (txSigs.txId == fundingTx.txId) {
+                    invalidTxSigsReceived += (txSigs.txId -> (invalidTxSigsReceived.getOrElse(txSigs.txId, 0) + 1))
+                  }
+                  stay() sending Error(d.channelId, InvalidFundingSignature(d.channelId, Some(unsignedFundingTx.txid)).getMessage)
+                case Right(fundingTx) =>
+                  log.info("publishing funding tx for channelId={} fundingTxId={}", d.channelId, fundingTx.signedTx.txid)
+                  val dfu1 = d.latestFundingTx.copy(sharedTx = fundingTx)
+                  val d1 = d.copy(commitments = d.commitments.updateLocalFundingStatus(fundingTx.txId, dfu1, None) match {
+                    case Left(commitments) => commitments
+                    case Right((commitments, _)) => commitments
+                  })
+                  stay() using d1 storing() calling publishFundingTx(dfu1)
+              }
+          }
         case _: FullySignedSharedTransaction =>
           d.status match {
             case DualFundingStatus.RbfWaitingForSigs(signingSession) =>
@@ -729,6 +741,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
           val shortIds = createShortIdAliases(d.channelId)
           val channelReady = createChannelReady(shortIds, d.commitments)
           d.deferred.foreach(self ! _)
+          invalidTxSigsReceived = Map.empty
           goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds) storing() sending channelReady
         case Left(_) => stay()
       }
@@ -744,6 +757,7 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
             case _: DualFundingStatus.RbfRequested | _: DualFundingStatus.RbfInProgress | _: DualFundingStatus.RbfWaitingForSigs => Seq(TxAbort(d.channelId, InvalidRbfTxConfirmed(d.channelId).getMessage), channelReady)
           }
           d.deferred.foreach(self ! _)
+          invalidTxSigsReceived = Map.empty
           goto(WAIT_FOR_DUAL_FUNDING_READY) using DATA_WAIT_FOR_DUAL_FUNDING_READY(commitments1, shortIds) storing() sending toSend
         case Left(_) => stay()
       }
