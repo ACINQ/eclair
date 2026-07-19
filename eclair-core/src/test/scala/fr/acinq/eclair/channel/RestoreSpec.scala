@@ -163,12 +163,12 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     }
   }
 
-  test("restore channel with inbound fees removed from database", Tag(ChannelStateTestsTags.Blip18InboundFees)) { f =>
+  test("restore channel with inbound fees removed from database", Tag(ChannelStateTestsTags.Blip18InboundFees), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
     val sender = TestProbe()
 
     // alice advertises an inbound fee discount for the channel (keeping the same outbound fees)
-    val fees = Alice.nodeParams.relayParams.privateChannelFees
+    val fees = Alice.nodeParams.relayParams.publicChannelFees
     sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths, Some(-100 msat), Some(-50)))
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.blip18InboundFees_opt.contains(InboundFees(-100 msat, -50)))
@@ -202,16 +202,16 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     awaitCond(newAlice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.blip18InboundFees_opt.isEmpty)
   }
 
-  test("restore channel with bLIP-18 disabled and stale inbound fees", Tag(ChannelStateTestsTags.Blip18InboundFees)) { f =>
+  test("restore channel with bLIP-18 disabled and stale inbound fees", Tag(ChannelStateTestsTags.Blip18InboundFees), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
     val sender = TestProbe()
 
     // alice advertises an inbound fee discount for the channel while bLIP-18 support is enabled
-    val fees = Alice.nodeParams.relayParams.privateChannelFees
+    val fees = Alice.nodeParams.relayParams.publicChannelFees
     sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths, Some(-100 msat), Some(-50)))
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.blip18InboundFees_opt.contains(InboundFees(-100 msat, -50)))
-    // the channel is private, so the refreshed channel_update is sent directly to the peer
+    // the channel isn't announced yet, so the refreshed channel_update is sent directly to the peer
     assert(alice2bob.expectMsgType[ChannelUpdate].blip18InboundFees_opt.contains(InboundFees(-100 msat, -50)))
     val oldStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
 
@@ -249,8 +249,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     bob2alice.forward(newAlice)
     awaitCond(newAlice.stateName == NORMAL)
 
-    // on reconnection the channel_update is regenerated (private channels re-broadcast immediately): the stale
-    // inbound fees must be gone
+    // on reconnection the channel_update is regenerated: the stale inbound fees must be gone
     awaitCond(newAlice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.blip18InboundFees_opt.isEmpty)
   }
 

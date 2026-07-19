@@ -159,6 +159,10 @@ class ChannelRelay private(nodeParams: NodeParams,
    *    before the feature was disabled, but we shouldn't enforce a surcharge we're not configured to collect (and
    *    since it's enough to match any accepted combination, still accepting the advertised inbound fees only makes
    *    the check more permissive, closing the window where a stale discount would reject correctly-paying senders).
+   *  - if the incoming channel is unknown (transient, e.g. HTLCs replayed after a restart before we processed the
+   *    corresponding LocalChannelUpdate), the per-peer inbound fees from the database: that's the reference used by
+   *    all our channel_updates towards that peer, so senders that correctly paid an advertised discount aren't
+   *    rejected, without waiving the outbound fee entirely (which would open a free-relay griefing surface).
    */
   private val acceptableInboundFees: Seq[Option[InboundFees]] = incomingChannel_opt match {
     case Some(incomingChannel) =>
@@ -168,7 +172,10 @@ class ChannelRelay private(nodeParams: NodeParams,
         .map(_.blip18InboundFees_opt)
       val noInboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees) None else Some(None)
       (Seq(currentInboundFees_opt) ++ prevInboundFees_opt ++ noInboundFees_opt).distinct
-    case None => Seq(None)
+    case None =>
+      // We only query the database when bLIP-18 support is enabled: otherwise we don't advertise inbound fees.
+      val dbInboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees) nodeParams.db.inboundFees.getInboundFees(upstream.receivedFrom) else None
+      Seq(None) ++ dbInboundFees_opt.map(Some(_))
   }
 
   private val forwardFailureAdapter = context.messageAdapter[Register.ForwardFailure[CMD_ADD_HTLC]](WrappedForwardFailure)
@@ -460,14 +467,10 @@ class ChannelRelay private(nodeParams: NodeParams,
     val expiryDeltaOk = update.cltvExpiryDelta <= r.expiryDelta || prevUpdate_opt.exists(_.cltvExpiryDelta <= r.expiryDelta)
     // The fee is sufficient if it covers any accepted combination of outbound relay fees (current or, within the
     // enforcement delay, previous outgoing channel_update) and inbound fees (see acceptableInboundFees).
-    // If the incoming channel is unknown (transient, e.g. HTLCs replayed after a restart before we processed the
-    // corresponding LocalChannelUpdate) and bLIP-18 is enabled, we may have advertised an inbound fee discount that
-    // we cannot recover: rather than rejecting senders that correctly paid the advertised fee, we accept the relay
-    // as long as we're not losing money.
     val feesOk = acceptableInboundFees.exists { inbound =>
       totalFee(r.amountToForward, update.relayFees, inbound) <= r.relayFeeMsat ||
         prevUpdate_opt.exists(u => totalFee(r.amountToForward, u.relayFees, inbound) <= r.relayFeeMsat)
-    } || (incomingChannel_opt.isEmpty && nodeParams.routerConf.blip18.enableInboundFees && 0.msat <= r.relayFeeMsat)
+    }
     if (!htlcMinimumOk) {
       Some(makeCmdFailHtlc(r.add.id, AmountBelowMinimum(r.amountToForward, Some(update))))
     } else if (!expiryDeltaOk) {

@@ -29,6 +29,7 @@ import fr.acinq.eclair.channel.ChannelSpendSignature.{IndividualSignature, Parti
 import fr.acinq.eclair.channel.ChannelTypes.SimpleTaprootChannelsPhoenix
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelSpendSignature, ChannelTypes}
 import fr.acinq.eclair.json.JsonSerializers
+import fr.acinq.eclair.payment.relay.Relayer.InboundFees
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol.ChannelTlv._
@@ -784,6 +785,18 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     // {"signature":"12540b6a236e21932622d61432f52913d9442cc09a1057c386119a286153f8681c66d2a0f17d32505ba71bb37c8edcfa9c11e151b2b38dae98b825eff1c040b3","chainHash":"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000","shortChannelId":"558351x1422x1","timestamp":{"iso":"2020-03-12T17:58:06Z","unix":1584035886},"channelFlags":{"isEnabled":true,"isNode1":true},"cltvExpiryDelta":144,"htlcMinimumMsat":1000,"feeBaseMsat":1000,"feeProportionalMillionths":2}
     val bin = hex"12540b6a236e21932622d61432f52913d9442cc09a1057c386119a286153f8681c66d2a0f17d32505ba71bb37c8edcfa9c11e151b2b38dae98b825eff1c040b36fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008850f00058e00015e6a782e0000009000000000000003e8000003e800000002"
     assert(channelUpdateCodec.decode(bin.bits).isFailure)
+  }
+
+  test("encode/decode channel_update with bLIP-18 inbound fees (tlv 55555)") {
+    // Negative values (fee discounts) must round-trip through the signed int32 tlv encoding.
+    val update = ChannelUpdate(randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2 unixsec, ChannelUpdate.MessageFlags(dontForward = false), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(3), 4 msat, 5 msat, 6, 25_000_000 msat, TlvStream(ChannelUpdateTlv.Blip18InboundFee(-1000, -50_000)))
+    val encoded = channelUpdateCodec.encode(update).require.bytes
+    // tlv type 55555 (bigsize 0xfdd903), length 8, followed by the two int32 values in two's complement.
+    assert(encoded.takeRight(12) == hex"fdd90308fffffc18ffff3cb0")
+    val decoded = channelUpdateCodec.decode(encoded.bits).require
+    assert(decoded.value == update)
+    assert(decoded.remainder.isEmpty)
+    assert(decoded.value.blip18InboundFees_opt.contains(InboundFees(-1000 msat, -50_000)))
   }
 
   test("non-regression on channel_update") {

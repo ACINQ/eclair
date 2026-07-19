@@ -354,8 +354,9 @@ object Helpers {
       timestamp = TimestampSecond.now(),
       // We never advertise inbound fees when bLIP-18 support is disabled: the relay wouldn't honour them, so keeping
       // them in our channel_update (e.g. from before the feature was disabled) would give senders a fee they cannot
-      // actually use. This gate applies to all channel_update paths (fee updates, periodic refresh, disable, etc.).
-      inboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees) inboundFees_opt else None
+      // actually use. We also never advertise them on unannounced channels: bLIP-18 says we MUST NOT set inbound fees
+      // on private channels. This gate applies to all channel_update paths (fee updates, periodic refresh, disable, etc.).
+      inboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees && commitments.announceChannel) inboundFees_opt else None
     )
   }
 
@@ -399,8 +400,9 @@ object Helpers {
   def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, announceChannel: Boolean): (RelayFees, Option[InboundFees]) = {
     val defaultFees = nodeParams.relayParams.defaultFees(announceChannel)
     val relayFees = nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees)
-    // We only query the inbound fees database when bLIP-18 support is enabled, to avoid a useless db lookup otherwise.
-    val inboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees) nodeParams.db.inboundFees.getInboundFees(remoteNodeId) else None
+    // We only query the inbound fees database when bLIP-18 support is enabled and the channel is announced (bLIP-18
+    // says we MUST NOT set inbound fees on private channels), to avoid a useless db lookup otherwise.
+    val inboundFees_opt = if (nodeParams.routerConf.blip18.enableInboundFees && announceChannel) nodeParams.db.inboundFees.getInboundFees(remoteNodeId) else None
     (relayFees, inboundFees_opt)
   }
 

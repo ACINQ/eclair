@@ -623,16 +623,44 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     import f._
 
     // The incoming channel is not in our map (transient, e.g. HTLCs replayed right after a restart before we processed
-    // the corresponding LocalChannelUpdate): we may have advertised an inbound fee discount that we cannot recover, so
-    // we accept the relay as long as we're not losing money.
+    // the corresponding LocalChannelUpdate): we can't recover the inbound fees advertised in its channel_update, but
+    // the database has the per-peer inbound fees used by all our channel_updates towards that peer, so senders that
+    // correctly paid the advertised discount aren't rejected.
+    nodeParams.db.inboundFees.addOrUpdateInboundFees(TestConstants.Alice.nodeParams.nodeId, InboundFees(-1_000 msat, -50))
     val u_out = createLocalUpdate(channelId1)
     val payload = ChannelRelay.Standard(realScid1, outgoingAmount, outgoingExpiry, upgradeAccountability = false)
+    // The relay fee paid by the sender (1 000 msat) is below our outbound fee (2 000 msat), but matches the total fee
+    // resulting from the inbound discount stored in the database (-1 500 msat).
     val r = createValidIncomingPacket(payload, amountIn = outgoingAmount + 1_000.msat, incomingChannelId = channelId2)
 
     channelRelayer ! WrappedLocalChannelUpdate(u_out)
     channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
     receiveConfidence(Reputation.Score.max(accountable = false))
 
+    expectFwdAdd(register, channelId1, outgoingAmount, outgoingExpiry, outAccountable = false)
+  }
+
+  test("fail to relay an underpaying payment when the incoming channel is unknown", Tag(blip18InboundFees)) { f =>
+    import f._
+
+    // The incoming channel is not in our map, and the database contains no inbound fees for the peer: the outbound fee
+    // must still be enforced, otherwise HTLCs could be relayed for free during the window where the incoming channel
+    // isn't known yet (e.g. right after a restart).
+    val u_out = createLocalUpdate(channelId1)
+    val payload = ChannelRelay.Standard(realScid1, outgoingAmount, outgoingExpiry, upgradeAccountability = false)
+    // The relay fee paid by the sender (1 000 msat) is below our outbound fee (2 000 msat) and no discount justifies it.
+    val r = createValidIncomingPacket(payload, amountIn = outgoingAmount + 1_000.msat, incomingChannelId = channelId2)
+
+    channelRelayer ! WrappedLocalChannelUpdate(u_out)
+    channelRelayer ! Relay(r, TestConstants.Alice.nodeParams.nodeId, 0.1)
+    receiveConfidence(Reputation.Score.max(accountable = false))
+
+    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, FailureReason.LocalFailure(FeeInsufficient(r.add.amountMsat, Some(u_out.channelUpdate))), None, commit = true))
+
+    // A payment that pays the full outbound fee is relayed, even though the incoming channel is unknown.
+    val r2 = createValidIncomingPacket(payload, amountIn = outgoingAmount + 2_000.msat, incomingChannelId = channelId2)
+    channelRelayer ! Relay(r2, TestConstants.Alice.nodeParams.nodeId, 0.1)
+    receiveConfidence(Reputation.Score.max(accountable = false))
     expectFwdAdd(register, channelId1, outgoingAmount, outgoingExpiry, outAccountable = false)
   }
 

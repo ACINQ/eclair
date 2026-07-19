@@ -702,6 +702,26 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     inboundFeesDb.addOrUpdateInboundFees(b, InboundFees(-1 msat, -2)).wasCalled(once)
   }
 
+  test("reject out-of-range inbound fees") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+    val remoteNodeId = randomKey().publicKey
+
+    // Positive inbound fees are rejected: only discounts can be advertised.
+    assertThrows[IllegalArgumentException](Await.result(eclair.updateRelayFee(List(remoteNodeId), 999 msat, 1234, Some(1 msat), None, unsetInboundFees = false), 50 millis))
+    assertThrows[IllegalArgumentException](Await.result(eclair.updateRelayFee(List(remoteNodeId), 999 msat, 1234, None, Some(1), unsetInboundFees = false), 50 millis))
+    // A proportional discount below -100% has no additional effect (total fees are floored at 0) and could overflow
+    // the fee computation for large payment amounts.
+    assertThrows[IllegalArgumentException](Await.result(eclair.updateRelayFee(List(remoteNodeId), 999 msat, 1234, None, Some(-1_000_001), unsetInboundFees = false), 50 millis))
+    // The base discount is bounded by the int32 wire encoding.
+    assertThrows[IllegalArgumentException](Await.result(eclair.updateRelayFee(List(remoteNodeId), 999 msat, 1234, Some(MilliSatoshi(Int.MinValue.toLong - 1)), None, unsetInboundFees = false), 50 millis))
+
+    // A -100% proportional discount is the deepest accepted value: validation passes and the update is forwarded.
+    eclair.updateRelayFee(List(remoteNodeId), 999 msat, 1234, Some(-1 msat), Some(-1_000_000), unsetInboundFees = false).pipeTo(sender.ref)
+    register.expectMsg(Register.GetChannelsTo)
+  }
+
   test("channelBalances asks for all channels, usableBalances only for enabled ones") { f =>
     import f._
 

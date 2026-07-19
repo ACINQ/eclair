@@ -691,6 +691,134 @@ class Blip18RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution 
       assert(route2Ids(route) == 1 :: 2 :: 3 :: 4 :: Nil)
     }
 
+    test("bLIP-18 worked example: routing node fee with inbound and outbound fees") {
+      // Worked example from the bLIP-18 specification: the routing node b charges an inbound fee of 1 sat + 10% on its
+      // incoming channel and an outbound fee of 7 sat + 3% on its outgoing channel. For a payment of 100 sats, the
+      // outbound fee is 7 + 3% * 100 = 10 sats, the inbound fee is 1 + 10% * (100 + 10) = 12 sats, and the sender must
+      // send a total of 100 + 10 + 12 = 122 sats.
+      val g = GraphWithBalanceEstimates(DirectedGraph(Seq(
+        makeEdge(1L, a, b, minHtlc = 2 msat),
+        makeEdge(1L, b, a, minHtlc = 2 msat, inboundFeeBase_opt = Some(1_000 msat), inboundFeeProportionalMillionth_opt = Some(100_000)),
+        makeEdge(2L, b, c, feeBase = 7_000 msat, feeProportionalMillionth = 30_000, minHtlc = 2 msat),
+        makeEdge(2L, c, b, minHtlc = 2 msat),
+      )), 1 day)
+
+      val Success(route :: Nil) = findRoute(g, a, c, 100_000 msat, 100_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18 = Blip18Params(enableInboundFees = true))
+
+      assert(route2Ids(route) == 1 :: 2 :: Nil)
+      assert(route.channelFee(false) == 22_000.msat)
+
+      val recipient = ClearRecipient(c, Features.empty, 100_000 msat, CltvExpiry(400018), paymentSecret, upgradeAccountability = false)
+      val Right(payment) = buildOutgoingPayment(TestConstants.emptyOrigin, paymentHash, route, recipient, Reputation.Score.max(accountable = false))
+      assert(payment.outgoingChannel == ShortChannelId(1L))
+      assert(payment.cmd.amount == 122_000.msat)
+    }
+
+    test("inbound fee discount can bring a route under the fee budget") {
+      // The only path's outbound fees (3 sats at b + 4 sats at c = 7 sats) exceed maxFee (5 sats), but c's inbound
+      // discount (-2 sats) on the channel from b offsets part of c's own outbound fee, bringing the total fee (5 sats)
+      // within the budget: the route must only be found when bLIP-18 inbound fees are enabled.
+      // Note that the path-finder applies a node's inbound fee together with the previous node's outbound fee, so every
+      // intermediate weight also stays within the budget (a discount can never rescue a path whose downstream outbound
+      // fees alone already exceed maxFee).
+      val g = GraphWithBalanceEstimates(DirectedGraph(Seq(
+        makeEdge(1L, a, b, minHtlc = 2 msat),
+        makeEdge(1L, b, a, minHtlc = 2 msat),
+        makeEdge(2L, b, c, feeBase = 3_000 msat, minHtlc = 2 msat),
+        makeEdge(2L, c, b, minHtlc = 2 msat, inboundFeeBase_opt = Some(-2_000 msat), inboundFeeProportionalMillionth_opt = Some(0)),
+        makeEdge(3L, c, d, feeBase = 4_000 msat, minHtlc = 2 msat),
+        makeEdge(3L, d, c, minHtlc = 2 msat),
+      )), 1 day)
+
+      assert(findRoute(g, a, d, 100_000 msat, 5_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18 = Blip18Params.disabled) == Failure(RouteNotFound))
+
+      val Success(route :: Nil) = findRoute(g, a, d, 100_000 msat, 5_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18 = Blip18Params(enableInboundFees = true))
+      assert(route2Ids(route) == 1 :: 2 :: 3 :: Nil)
+      assert(route.channelFee(false) == 5_000.msat)
+    }
+
+    test("inbound fee surcharge can push a route over the fee budget") {
+      // The only path's outbound fee (4 sats) fits maxFee (5 sats), but b's inbound surcharge (+2 sats) pushes the
+      // total fee (6 sats) over the budget: the route must be rejected when bLIP-18 inbound fees are enabled (positive
+      // inbound fees are priced in, not excluded, since excludePositiveInboundFees is not set).
+      val g = GraphWithBalanceEstimates(DirectedGraph(Seq(
+        makeEdge(1L, a, b, minHtlc = 2 msat),
+        makeEdge(1L, b, a, minHtlc = 2 msat, inboundFeeBase_opt = Some(2_000 msat), inboundFeeProportionalMillionth_opt = Some(0)),
+        makeEdge(2L, b, c, feeBase = 4_000 msat, minHtlc = 2 msat),
+        makeEdge(2L, c, b, minHtlc = 2 msat),
+      )), 1 day)
+
+      assert(findRoute(g, a, c, 100_000 msat, 5_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18 = Blip18Params(enableInboundFees = true)) == Failure(RouteNotFound))
+
+      val Success(route :: Nil) = findRoute(g, a, c, 100_000 msat, 5_000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18 = Blip18Params.disabled)
+      assert(route2Ids(route) == 1 :: 2 :: Nil)
+      assert(route.channelFee(false) == 4_000.msat)
+    }
+
+    test("Yen's algorithm recomputes inbound fees when concatenating spur and root paths") {
+      // Both paths share the final hop d -> e, and d's advertised inbound fees differ per incoming channel: a discount
+      // (-500 msat) on the channel from b and a surcharge (+1500 msat) on the channel from c. When Yen's algorithm
+      // builds the second path by concatenating the spur path a -> c -> d with the root path d -> e, the root-path
+      // edge was enriched with the inbound fees for predecessor b -> d and must be recomputed for predecessor c -> d.
+      val g = GraphWithBalanceEstimates(DirectedGraph(Seq(
+        makeEdge(1L, a, b, minHtlc = 2 msat),
+        makeEdge(1L, b, a, minHtlc = 2 msat),
+        makeEdge(2L, b, d, feeBase = 1_000 msat, minHtlc = 2 msat),
+        makeEdge(2L, d, b, minHtlc = 2 msat, inboundFeeBase_opt = Some(-500 msat), inboundFeeProportionalMillionth_opt = Some(0)),
+        makeEdge(3L, a, c, minHtlc = 2 msat),
+        makeEdge(3L, c, a, minHtlc = 2 msat),
+        makeEdge(4L, c, d, feeBase = 2_000 msat, minHtlc = 2 msat),
+        makeEdge(4L, d, c, minHtlc = 2 msat, inboundFeeBase_opt = Some(1_500 msat), inboundFeeProportionalMillionth_opt = Some(0)),
+        makeEdge(5L, d, e, feeBase = 3_000 msat, minHtlc = 2 msat),
+        makeEdge(5L, e, d, minHtlc = 2 msat),
+      )), 1 day)
+
+      val Success(routes) = findRoute(g, a, e, 100_000 msat, 10_000 msat, numRoutes = 2, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18 = Blip18Params(enableInboundFees = true))
+      assert(routes2Ids(routes) == Set(Seq(1L, 2L, 5L), Seq(3L, 4L, 5L)))
+      // First path: d's discount for the channel from b applies: fee = 1000 + 3000 - 500.
+      assert(routes.find(route2Ids(_) == Seq(1L, 2L, 5L)).get.channelFee(false) == 3_500.msat)
+      // Second path: d's surcharge for the channel from c applies to the re-enriched d -> e edge: fee = 2000 + 3000 + 1500.
+      // If the root path kept the inbound fees computed for the first path's predecessor, the fee would be 4500 instead.
+      assert(routes.find(route2Ids(_) == Seq(3L, 4L, 5L)).get.channelFee(false) == 6_500.msat)
+
+      // The spur-path search stops at the spur node d and therefore misses d's inbound surcharge for the channel from
+      // c. With a lower fee budget the second path's recomputed fee (6.5 sats) exceeds maxFee (5 sats) and the
+      // candidate must be discarded, even though the truncated spur weight fits the budget.
+      val Success(withinBudget) = findRoute(g, a, e, 100_000 msat, 5_000 msat, numRoutes = 2, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18 = Blip18Params(enableInboundFees = true))
+      assert(routes2Ids(withinBudget) == Set(Seq(1L, 2L, 5L)))
+    }
+
+    test("calculate multipart route across channels with inbound fees") {
+      // The amount doesn't fit through a single node: it must be split between b (whose inbound discount applies) and
+      // c (whose inbound surcharge applies).
+      // A --- B --- E
+      // +---- C ----+
+      val (amount, maxFee) = (20_000 msat, 100 msat)
+      val g = GraphWithBalanceEstimates(DirectedGraph(List(
+        makeEdge(1L, a, b, 5 msat, 0, minHtlc = 1 msat, balance_opt = Some(12_000 msat)),
+        makeEdge(1L, b, a, 5 msat, 0, minHtlc = 1 msat, inboundFeeBase_opt = Some(-5 msat), inboundFeeProportionalMillionth_opt = Some(0)),
+        makeEdge(2L, a, c, 5 msat, 0, minHtlc = 1 msat, balance_opt = Some(12_000 msat)),
+        makeEdge(2L, c, a, 5 msat, 0, minHtlc = 1 msat, inboundFeeBase_opt = Some(5 msat), inboundFeeProportionalMillionth_opt = Some(0)),
+        makeEdge(3L, b, e, 10 msat, 0, minHtlc = 1 msat),
+        makeEdge(4L, c, e, 20 msat, 0, minHtlc = 1 msat),
+      )), 1 day)
+
+      val Success(routes) = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18 = Blip18Params(enableInboundFees = true))
+      checkRouteAmounts(routes, amount, maxFee)
+      assert(routes2Ids(routes) == Set(Seq(1L, 3L), Seq(2L, 4L)))
+      // Only base fees are used, so per-route fees don't depend on how the amount was split: b's inbound discount
+      // reduces the fee of the first route (10 - 5) while c's surcharge increases the fee of the second (20 + 5).
+      assert(routes.find(route2Ids(_) == Seq(1L, 3L)).get.channelFee(false) == 5.msat)
+      assert(routes.find(route2Ids(_) == Seq(2L, 4L)).get.channelFee(false) == 25.msat)
+
+      // Without bLIP-18 the inbound fees are ignored and only the outbound fees are charged.
+      val Success(routesDisabled) = findMultiPartRoute(g, a, e, amount, maxFee, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = BlockHeight(400000), blip18 = Blip18Params.disabled)
+      checkRouteAmounts(routesDisabled, amount, maxFee)
+      assert(routes2Ids(routesDisabled) == Set(Seq(1L, 3L), Seq(2L, 4L)))
+      assert(routesDisabled.find(route2Ids(_) == Seq(1L, 3L)).get.channelFee(false) == 10.msat)
+      assert(routesDisabled.find(route2Ids(_) == Seq(2L, 4L)).get.channelFee(false) == 20.msat)
+    }
+
     // run tests from RouteCalculationSpec with inbound fees enabled
 
     test("calculate simple route") {

@@ -321,8 +321,10 @@ class EclairImpl(val appKit: Kit) extends Eclair with Logging with SpendFromChan
       Future.failed(new IllegalArgumentException("Cannot specify inbound fees when bLIP-18 support is disabled"))
     } else if (!inboundFeeBase_opt.forall(value => value.toLong >= Int.MinValue && value.toLong <= 0)) {
       Future.failed(new IllegalArgumentException(s"Inbound fee base must be in the range from ${Int.MinValue} to 0"))
-    } else if (!inboundFeeProportional_opt.forall(value => value >= Int.MinValue && value <= 0)) {
-      Future.failed(new IllegalArgumentException(s"Inbound fee proportional millionths must be in the range from ${Int.MinValue} to 0"))
+    } else if (!inboundFeeProportional_opt.forall(value => value >= -1_000_000 && value <= 0)) {
+      // A proportional discount below -100% has no additional effect (total fees are floored at 0), and larger
+      // magnitudes could overflow the fee computation (amount * proportional) for large payment amounts.
+      Future.failed(new IllegalArgumentException("Inbound fee proportional millionths must be in the range from -1000000 to 0"))
     } else {
       val inboundFees_opt = InboundFees.fromOptions(inboundFeeBase_opt, inboundFeeProportional_opt)
       for (nodeId <- nodes) {

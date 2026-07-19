@@ -2237,7 +2237,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2relayer.expectNoMessage(100 millis)
   }
 
-  test("recv CMD_UPDATE_RELAY_FEE (preserves inbound fees when omitted)", Tag(ChannelStateTestsTags.Blip18InboundFees)) { f =>
+  test("recv CMD_UPDATE_RELAY_FEE (preserves inbound fees when omitted)", Tag(ChannelStateTestsTags.Blip18InboundFees), Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
     val sender = TestProbe()
     val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeBase * 2
@@ -2257,7 +2257,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2relayer.expectNoMessage(100 millis)
   }
 
-  test("recv CMD_UPDATE_RELAY_FEE (does not advertise inbound fees when bLIP-18 is disabled)") { f =>
+  test("recv CMD_UPDATE_RELAY_FEE (does not advertise inbound fees when bLIP-18 is disabled)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
     import f._
     val sender = TestProbe()
     val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeBase * 2
@@ -2267,6 +2267,21 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, newFeeBaseMsat, newFeeProportionalMillionth, Some(-100 msat), Some(-50)))
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
     val localUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(localUpdate.channelUpdate.blip18InboundFees_opt.isEmpty)
+    alice2relayer.expectNoMessage(100 millis)
+  }
+
+  test("recv CMD_UPDATE_RELAY_FEE (does not advertise inbound fees on private channels)", Tag(ChannelStateTestsTags.Blip18InboundFees)) { f =>
+    import f._
+    val sender = TestProbe()
+    val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.privateChannelFees.feeBase * 2
+    val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.relayParams.privateChannelFees.feeProportionalMillionths * 2
+    // The channel is unannounced: bLIP-18 says we MUST NOT set inbound fees on private channels, so even if inbound
+    // fees are provided in the command, we don't advertise them.
+    sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, newFeeBaseMsat, newFeeProportionalMillionth, Some(-100 msat), Some(-50)))
+    sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
+    val localUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(localUpdate.channelUpdate.feeBaseMsat == newFeeBaseMsat)
     assert(localUpdate.channelUpdate.blip18InboundFees_opt.isEmpty)
     alice2relayer.expectNoMessage(100 millis)
   }
