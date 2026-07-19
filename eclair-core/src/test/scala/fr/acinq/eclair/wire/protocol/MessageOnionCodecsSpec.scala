@@ -5,13 +5,13 @@ import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.payment.{Bolt12Invoice, PaymentBlindedRoute}
-import fr.acinq.eclair.wire.protocol.MessageOnion.{FinalPayload, IntermediatePayload, InvalidResponsePayload, InvoiceErrorPayload, InvoicePayload, InvoiceRequestPayload}
+import fr.acinq.eclair.wire.protocol.MessageOnion._
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs._
 import fr.acinq.eclair.wire.protocol.OfferTypes.PaymentInfo
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, InvalidTlvPayload, MissingRequiredTlv}
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataCodecs.blindedRouteDataCodec
-import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv.{AllowedFeatures, OutgoingNodeId, PathId, PaymentConstraints, PaymentRelay}
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, EncodedNodeId, Features, MilliSatoshiLong, UInt64, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -105,8 +105,6 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
       TlvStream(Set[OnionMessagePayloadTlv](EncryptedData(hex"")), Set(GenericTlv(UInt64(1), hex""))),
       // Invoice and unknown TLV.
       TlvStream(Set[OnionMessagePayloadTlv](EncryptedData(hex""), Invoice(invoice.records)), Set(GenericTlv(UInt64(1), hex""))),
-      // Invoice and ReplyPath.
-      TlvStream(EncryptedData(hex""), Invoice(invoice.records), ReplyPath(route.route)),
       // Invoice and InvoiceError.
       TlvStream(EncryptedData(hex""), Invoice(invoice.records), InvoiceError(TlvStream(OfferTypes.Error("")))),
       // InvoiceRequest without ReplyPath.
@@ -123,6 +121,9 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
 
     val Right(invoicePayload) = FinalPayload.validate(TlvStream(EncryptedData(hex""), Invoice(invoice.records)), TlvStream.empty)
     assert(invoicePayload.isInstanceOf[InvoicePayload])
+
+    val Right(invoiceWithReplyPathPayload) = FinalPayload.validate(TlvStream(EncryptedData(hex""), Invoice(invoice.records), ReplyPath(route.route)), TlvStream.empty)
+    assert(invoiceWithReplyPathPayload.isInstanceOf[InvoicePayload])
 
     val Right(invoiceErrorPayload) = FinalPayload.validate(TlvStream(EncryptedData(hex""), InvoiceError(TlvStream(OfferTypes.Error("")))), TlvStream.empty)
     assert(invoiceErrorPayload.isInstanceOf[InvoiceErrorPayload])
