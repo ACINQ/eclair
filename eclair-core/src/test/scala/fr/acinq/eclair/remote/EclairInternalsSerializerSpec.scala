@@ -27,6 +27,8 @@ class EclairInternalsSerializerSpec extends AnyFunSuite {
       case _: GossipDecision.Accepted => ()
       case _: GossipDecision.Duplicate => ()
       case _: GossipDecision.InvalidSignature => ()
+      case _: GossipDecision.InvalidFeatures => ()
+      case _: GossipDecision.InvalidAlias => ()
       case _: GossipDecision.NoKnownChannel => ()
       case _: GossipDecision.ValidationFailure => ()
       case _: GossipDecision.InvalidAnnouncement => ()
