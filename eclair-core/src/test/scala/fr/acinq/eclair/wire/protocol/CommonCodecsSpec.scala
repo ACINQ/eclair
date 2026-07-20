@@ -173,6 +173,32 @@ class CommonCodecsSpec extends AnyFunSuite {
     assert(channelflags.decode(bin"11111100").require == DecodeResult(ChannelFlags(nonInitiatorPaysCommitFees = false, announceChannel = false), BitVector.empty))
   }
 
+  test("validate utf8 strings (control characters are not allowed)") {
+    val valid = Seq(
+      "",
+      "alice",
+      "ACINQ",
+      "\u65e5\u672c\u8a9e", // japanese
+      "utf8 with an emoji \ud83d\ude80", // rocket (So)
+      "unicode symbols \u20bf \u2713 \u2605", // bitcoin sign (Sc), check mark and star (So)
+    )
+    valid.foreach(s => assert(isValidUtf8(s), s"[$s] should be valid"))
+    val invalid = Seq(
+      "\u0000", // NULL (Cc)
+      "with an embedded null \u0000 char", // embedded NULL (Cc)
+      "\u0007", // BEL (Cc)
+      "\u007f", // DEL (Cc)
+      "\u009f", // C1 control (Cc)
+      "\u200b", // zero-width space (Cf)
+      "\u200e", // left-to-right mark (Cf)
+      "\ufeff", // zero-width no-break space / BOM (Cf)
+      "\ue000", // private use (Co)
+      "\u0378", // unassigned (Cn)
+      "\ud800", // lone surrogate (Cs)
+    )
+    invalid.foreach(s => assert(!isValidUtf8(s), s"[$s] should be invalid"))
+  }
+
   test("encode/decode with rgb codec") {
     val color = Color(47.toByte, 255.toByte, 142.toByte)
     val bin = rgb.encode(color).require

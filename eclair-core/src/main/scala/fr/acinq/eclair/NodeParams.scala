@@ -380,6 +380,7 @@ object NodeParams extends Logging {
 
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
+    require(CommonCodecs.isValidUtf8(nodeAlias), "invalid alias, control characters are not allowed")
 
     def validateFeatures(features: Features[Feature]): Unit = {
       val featuresErr = Features.validateFeatureGraph(features)

@@ -19,6 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, BlockHash, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32}
+import fr.acinq.eclair.wire.protocol.CommonCodecs
 import fr.acinq.eclair.{Bolt11Feature, CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
@@ -46,6 +47,7 @@ case class Bolt11Invoice(prefix: String, amount_opt: Option[MilliSatoshi], creat
   amount_opt.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: Bolt11Invoice.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case Bolt11Invoice.Description(_) | Bolt11Invoice.DescriptionHash(_) => }.size == 1, "there must be exactly one description tag or one description hash tag")
+  require(tags.collect { case Bolt11Invoice.Description(d) => d }.forall(d => CommonCodecs.isValidUtf8(d)), "invoice description must be a valid UTF-8 string")
   require(tags.collect { case _: Bolt11Invoice.PaymentSecret => }.size == 1, "there must be exactly one payment secret tag")
   require(tags.collect { case f: Bolt11Invoice.FallbackAddress => Try(FallbackAddress(Bolt11Invoice.FallbackAddress.toAddress(f, prefix))) }.forall(_.isSuccess), "invalid fallback address")
   require(Features.validateFeatureGraph(features).isEmpty, Features.validateFeatureGraph(features).map(_.message))
