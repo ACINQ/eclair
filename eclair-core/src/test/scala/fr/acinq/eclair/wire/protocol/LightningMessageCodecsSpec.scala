@@ -210,6 +210,67 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     assert(bin == bin2)
   }
 
+  test("decode node_announcements with invalid alias or non-minimally-encoded features") {
+    // These messages decode successfully (so we don't disconnect the peer that relayed them), but they must be ignored
+    // by the router: the alias contains control characters and/or the features are not minimally-encoded.
+    // The 64-bytes signature is set to 0 as it is irrelevant here (it is not checked by the codec).
+
+    // features are 0x0080 (leading zero byte), alias is "ln-node".
+    val nonMinimalFeatures =
+      hex"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" ++ // signature
+        hex"00020080" ++ // features (0x0080 with length prefix)
+        hex"5acdf507" ++ // timestamp
+        hex"02d2eabbbacc7c25bbd73b39e65d28237705f7bde76f557e94fb41cb18a9ec0084" ++ // node_id
+        hex"112211" ++ // color
+        hex"6c6e2d6e6f646500000000000000000000000000000000000000000000000000" ++ // alias (ln-node)
+        hex"0000" // addrlen
+    val ann1 = nodeAnnouncementCodec.decode(nonMinimalFeatures.bits).require.value
+    assert(ann1.alias == "ln-node")
+    assert(CommonCodecs.isValidUtf8(ann1.alias))
+    assert(ann1.features.toByteVector == hex"80")
+    assert(!ann1.features.isMinimallyEncoded)
+
+    // features are 0x80 (minimally-encoded), alias is "alice" followed by a BEL control character (0x07).
+    val invalidAlias =
+      hex"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" ++ // signature
+        hex"000180" ++ // features (0x80 with length prefix)
+        hex"5acdf507" ++ // timestamp
+        hex"02d2eabbbacc7c25bbd73b39e65d28237705f7bde76f557e94fb41cb18a9ec0084" ++ // node_id
+        hex"112211" ++ // color
+        hex"616c696365070000000000000000000000000000000000000000000000000000" ++ // alias (ln-node)
+        hex"0000" // addrlen
+    val ann2 = nodeAnnouncementCodec.decode(invalidAlias.bits).require.value
+    assert(ann2.alias == "alice\u0007")
+    assert(ann2.features.isMinimallyEncoded)
+    assert(!CommonCodecs.isValidUtf8(ann2.alias))
+  }
+
+  test("node_announcement invalid alias (official test vectors)") {
+    // These test vectors are validly signed by the following fixed node key, but must be ignored by readers because
+    // they violate the encoding rules of https://github.com/lightning/bolts/pull/1341.
+    val nodeKey = PrivateKey(hex"1111111111111111111111111111111111111111111111111111111111111111")
+    val timestamp = TimestampSecond(1_740_000_000L)
+    val color = Color(1, 2, 3)
+    val invalidAliases = Map(
+      // NULL (Cc)
+      "lightning\u0000rocks" -> hex"01013a3f3d28c538ae96c5c032e534fedea3e452261ebaea82952456c2a9f7477e7151575ce7e36f2f5b38bb27210c8fbdc72dcd92a99b3df47536ad61d8699cbb1c000067b64b00034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa0102036c696768746e696e6700726f636b7300000000000000000000000000000000000000",
+      // DEL (Cc)
+      "lightning\u007frocks" -> hex"01011ac8fe92da793fe0b1472616b6cb4346e746fe72d68c1865f79a5bc6ad371e824ce9c91b83b23a5a65eb6c6e07cd4bd84bec6892958d969559b6059424ac2894000067b64b00034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa0102036c696768746e696e677f726f636b7300000000000000000000000000000000000000",
+      // zero-width space (Cf)
+      "lightning\u200brocks" -> hex"0101eb387795f9b453da150cd16b683595ecacc94f6b41d74e1908eef1b8782a6e606e8b9e073ba4fc7eccef5d450faa52e99582db9c620df3fa6f33598220a3b886000067b64b00034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa0102036c696768746e696e67e2808b726f636b730000000000000000000000000000000000",
+      // private use (Co)
+      "lightning\ue000rocks" -> hex"0101f3575e38f455655b2e54ea4df8b1745c13938db744d6607fc142cf5be2ce619326ffa6a3f48ac764c7d3d20055fc855f515b77b74c26451862732a8a1f39da1f000067b64b00034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa0102036c696768746e696e67ee8080726f636b730000000000000000000000000000000000",
+    )
+    invalidAliases.foreach { case (alias, encoded) =>
+      val annInvalidAlias = Announcements.makeNodeAnnouncement(nodeKey, alias, color, Nil, Features.empty, timestamp)
+      assert(Announcements.checkSig(annInvalidAlias)) // the signature is valid
+      assert(!CommonCodecs.isValidUtf8(annInvalidAlias.alias)) // but the alias contains a control character
+      assert(lightningMessageCodec.encode(annInvalidAlias).require.bytes == encoded)
+      val decoded = lightningMessageCodec.decode(encoded.bits).require.value.asInstanceOf[NodeAnnouncement]
+      assert(!Announcements.checkSig(decoded) || !CommonCodecs.isValidUtf8(decoded.alias))
+    }
+  }
+
   test("encode/decode interactive-tx messages") {
     val channelId1 = ByteVector32(hex"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     val channelId2 = ByteVector32(hex"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")

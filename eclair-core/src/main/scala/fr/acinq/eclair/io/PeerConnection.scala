@@ -492,6 +492,10 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           // other rejections are not considered punishable offenses
           // we are not using a catch-all on purpose, to make compiler warn us when a new error is added
           case _: GossipDecision.Duplicate => d.behavior
+          // The announcement may have been relayed by this peer on behalf of another node: we don't punish them for
+          // invalid content that was created by a third party.
+          case _: GossipDecision.InvalidFeatures => d.behavior
+          case _: GossipDecision.InvalidAlias => d.behavior
           case _: GossipDecision.NoKnownChannel => d.behavior
           case _: GossipDecision.ValidationFailure => d.behavior
           case _: GossipDecision.ChannelPruned => d.behavior

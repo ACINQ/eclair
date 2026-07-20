@@ -66,6 +66,11 @@ object Validation {
       log.debug("ignoring {} (was pruned)", c)
       sendDecision(origin.peerConnection, GossipDecision.ChannelPruned(c))
       d
+    } else if (!c.features.isMinimallyEncoded) {
+      origin.peerConnection ! TransportHandler.ReadAck(c)
+      log.debug("ignoring {} (features are not minimally-encoded)", c)
+      sendDecision(origin.peerConnection, GossipDecision.InvalidFeatures(c))
+      d
     } else if (!Announcements.checkSigs(c)) {
       origin.peerConnection ! TransportHandler.ReadAck(c)
       log.warning("bad signature for announcement {}", c)
@@ -339,6 +344,14 @@ object Validation {
     } else if (d.nodes.get(n.nodeId).exists(_.timestamp >= n.timestamp)) {
       log.debug("ignoring {} (duplicate)", n)
       remoteOrigins.foreach(sendDecision(_, GossipDecision.Duplicate(n)))
+      d
+    } else if (!n.features.isMinimallyEncoded) {
+      log.debug("ignoring {} (features are not minimally-encoded)", n)
+      remoteOrigins.foreach(sendDecision(_, GossipDecision.InvalidFeatures(n)))
+      d
+    } else if (!CommonCodecs.isValidUtf8(n.alias)) {
+      log.debug("ignoring {} (invalid alias)", n)
+      remoteOrigins.foreach(sendDecision(_, GossipDecision.InvalidAlias(n)))
       d
     } else if (!Announcements.checkSig(n)) {
       log.warning("bad signature for {}", n)

@@ -303,6 +303,20 @@ class FeaturesSpec extends AnyFunSuite {
     }
   }
 
+  test("features minimal encoding") {
+    // Features that we build ourselves are always minimally-encoded.
+    assert(Features.empty.isMinimallyEncoded)
+    assert(Features(VariableLengthOnion -> Mandatory).isMinimallyEncoded)
+    assert(Features(Map.empty[Feature, FeatureSupport], Some(EncodedFeatures.fromFeatureBits(Set(151, 160, 175)))).isMinimallyEncoded)
+    // Features decoded from the wire are minimally-encoded when they don't have a leading zero byte.
+    assert(Features(hex"").isMinimallyEncoded)
+    assert(Features(hex"80").isMinimallyEncoded)
+    assert(Features(hex"0100").isMinimallyEncoded)
+    assert(!Features(hex"00").isMinimallyEncoded)
+    assert(!Features(hex"0080").isMinimallyEncoded)
+    assert(!Features(hex"000100").isMinimallyEncoded)
+  }
+
   test("parse features from configuration") {
     {
       val conf = ConfigFactory.parseString(

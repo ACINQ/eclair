@@ -788,6 +788,8 @@ object Router {
     sealed trait Rejected extends GossipDecision
     case class Duplicate(ann: AnnouncementMessage) extends Rejected
     case class InvalidSignature(ann: AnnouncementMessage) extends Rejected
+    case class InvalidFeatures(ann: AnnouncementMessage) extends Rejected
+    case class InvalidAlias(ann: NodeAnnouncement) extends Rejected
     case class NoKnownChannel(ann: NodeAnnouncement) extends Rejected
     case class ValidationFailure(ann: ChannelAnnouncement) extends Rejected
     case class InvalidAnnouncement(ann: ChannelAnnouncement) extends Rejected

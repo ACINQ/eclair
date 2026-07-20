@@ -170,6 +170,18 @@ object CommonCodecs {
 
   val txCodec: Codec[Transaction] = bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d))
 
+  /**
+   * BOLT 1: a `utf8` field must not contain characters in the unicode "Other" (C*) General Category. This bans control
+   * characters (Cc), format characters (Cf), surrogates (Cs), private-use characters (Co) and unassigned code points
+   * (Cn), which have no valid use-case in lightning messages and are a source of interoperability issues.
+   * Note that the spec only mandates rejecting Cc/Cf/Cs/Co when reading, but we also reject Cn (unassigned) both when
+   * reading and writing.
+   */
+  def isValidUtf8(s: String): Boolean = {
+    val prohibited = Set(Character.CONTROL, Character.FORMAT, Character.SURROGATE, Character.PRIVATE_USE, Character.UNASSIGNED).map(_.toInt)
+    !s.codePoints().anyMatch(codePoint => prohibited.contains(Character.getType(codePoint)))
+  }
+
   def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(size, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
 
   /**

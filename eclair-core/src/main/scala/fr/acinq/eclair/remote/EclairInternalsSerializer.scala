@@ -227,5 +227,7 @@ object EclairInternalsSerializer {
     .typecase(51, lengthPrefixedChannelAnnouncementCodec.as[GossipDecision.ChannelClosed])
     .typecase(52, peerConnectionKillCodec)
     .typecase(53, peerConnectionDoSyncCodec)
+    .typecase(54, lengthPrefixedAnnouncementCodec.as[GossipDecision.InvalidFeatures])
+    .typecase(55, lengthPrefixedNodeAnnouncementCodec.as[GossipDecision.InvalidAlias])
 
 }
