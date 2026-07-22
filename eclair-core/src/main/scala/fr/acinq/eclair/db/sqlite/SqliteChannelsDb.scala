@@ -67,6 +67,22 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
+  override def addChannel(data: PersistentChannelData): Option[Throwable] = withMetrics("channels/add-channel", DbBackends.Sqlite) {
+    try {
+      val encoded = channelDataCodec.encode(data).require.toByteArray
+      using(sqlite.prepareStatement("INSERT INTO local_channels (channel_id, data, created_timestamp, last_connected_timestamp) VALUES (?, ?, ?, ?)")) { statement =>
+        statement.setBytes(1, data.channelId.toArray)
+        statement.setBytes(2, encoded)
+        statement.setLong(3, TimestampMilli.now().toLong)
+        statement.setLong(4, TimestampMilli.now().toLong)
+        statement.executeUpdate()
+      }
+      None
+    } catch {
+      case t: Throwable => Some(t)
+    }
+  }
+
   override def addOrUpdateChannel(data: PersistentChannelData): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Sqlite) {
     val encoded = channelDataCodec.encode(data).require.toByteArray
     using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>

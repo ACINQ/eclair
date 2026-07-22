@@ -324,13 +324,19 @@ trait ChannelOpenDualFunded extends DualFundingHandlers with ErrorHandlers {
       case InteractiveTxBuilder.SendMessage(_, msg) => stay() sending msg
       case InteractiveTxBuilder.Succeeded(status, commitSig, liquidityPurchase_opt, nextRemoteCommitNonce_opt) =>
         nextRemoteCommitNonce_opt.foreach { case (txId, nonce) => remoteNextCommitNonces = remoteNextCommitNonces + (txId -> nonce) }
-        d.deferred.foreach(self ! _)
-        d.replyTo_opt.foreach(_ ! OpenChannelResponse.Created(d.channelId, status.fundingTx.txId, status.fundingTx.tx.localFees.truncateToSatoshi))
-        liquidityPurchase_opt.collect {
-          case purchase if !status.fundingParams.isInitiator => peer ! LiquidityPurchaseSigned(d.channelId, status.fundingTx.txId, status.fundingTxIndex, d.remoteCommitParams.htlcMinimum, purchase)
-        }
         val d1 = DATA_WAIT_FOR_DUAL_FUNDING_SIGNED(d.channelParams, d.secondRemotePerCommitmentPoint, d.localPushAmount, d.remotePushAmount, status)
-        goto(WAIT_FOR_DUAL_FUNDING_SIGNED) using d1 storing() sending commitSig
+        nodeParams.db.channels.addChannel(d1) match {
+          case None =>
+            d.deferred.foreach(self ! _)
+            d.replyTo_opt.foreach(_ ! OpenChannelResponse.Created(d.channelId, status.fundingTx.txId, status.fundingTx.tx.localFees.truncateToSatoshi))
+            liquidityPurchase_opt.collect {
+              case purchase if !status.fundingParams.isInitiator => peer ! LiquidityPurchaseSigned(d.channelId, status.fundingTx.txId, status.fundingTxIndex, d.remoteCommitParams.htlcMinimum, purchase)
+            }
+            goto(WAIT_FOR_DUAL_FUNDING_SIGNED) using d1 sending commitSig
+          case Some(t) =>
+            d.replyTo_opt.foreach(_ ! OpenChannelResponse.Rejected(t.getMessage))
+            goto(CLOSED) using IgnoreClosedData(d) sending TxAbort(d.channelId, InvalidFundingTx(d.channelId).getMessage)
+        }
       case f: InteractiveTxBuilder.Failed =>
         d.replyTo_opt.foreach(_ ! OpenChannelResponse.Rejected(f.cause.getMessage))
         goto(CLOSED) using IgnoreClosedData(d) sending TxAbort(d.channelId, f.cause.getMessage)

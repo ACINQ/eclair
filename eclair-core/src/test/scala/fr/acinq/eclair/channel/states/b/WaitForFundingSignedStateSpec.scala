@@ -31,7 +31,7 @@ import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsT
 import fr.acinq.eclair.crypto.NonceGenerator
 import fr.acinq.eclair.io.Peer.OpenChannelResponse
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, Error, FundingCreated, FundingSigned, OpenChannel}
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{BlockHeight, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -150,6 +150,20 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! FundingSigned(ByteVector32.Zeroes, PartialSignatureWithNonce(randomBytes32(), NonceGenerator.signingNonce(randomKey().publicKey, randomKey().publicKey, randomTxId()).publicNonce))
     awaitCond(alice.stateName == CLOSED)
     alice2bob.expectMsgType[Error]
+    aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
+    listener.expectMsgType[ChannelAborted]
+  }
+
+  test("recv FundingSigned (channel already exists)") { f =>
+    import f._
+    val fundingSigned = bob2alice.expectMsgType[FundingSigned]
+    // We already have a channel with the same channel_id in our DB.
+    val commitments = CommitmentsSpec.makeCommitments(100_000_000 msat, 0 msat, channelId = fundingSigned.channelId)
+    alice.underlyingActor.nodeParams.db.channels.addOrUpdateChannel(DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, BlockHeight(0), None, Right(fundingSigned)))
+    bob2alice.forward(alice, fundingSigned)
+    awaitCond(alice.stateName == CLOSED)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error == Error(fundingSigned.channelId, InvalidFundingTx(fundingSigned.channelId).getMessage))
     aliceOpenReplyTo.expectMsgType[OpenChannelResponse.Rejected]
     listener.expectMsgType[ChannelAborted]
   }
