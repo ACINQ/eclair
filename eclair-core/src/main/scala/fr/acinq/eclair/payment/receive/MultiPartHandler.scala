@@ -190,7 +190,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               val received = PaymentReceived(paymentHash, PaymentEvent.IncomingPayment(p.htlc.channelId, p.remoteNodeId, p.amount, p.receivedAt) :: Nil)
               if (db.receiveIncomingPayment(paymentHash, p.amount, received.settledAt)) {
                 val attribution = FulfillAttributionData(htlcReceivedAt = p.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = None)
-                PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, Some(attribution), commit = true))
+                PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, None, Some(attribution), commit = true))
                 ctx.system.eventStream.publish(received)
               } else {
                 val attribution = FailureAttributionData(htlcReceivedAt = p.receivedAt, trampolineReceivedAt_opt = None)
@@ -223,7 +223,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
           parts.collect {
             case p: MultiPartPaymentFSM.HtlcPart =>
               val attribution = FulfillAttributionData(htlcReceivedAt = p.receivedAt, trampolineReceivedAt_opt = None, downstreamAttribution_opt = None)
-              PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, payment.paymentPreimage, Some(attribution), commit = true))
+              PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, payment.paymentPreimage, None, Some(attribution), commit = true))
           }
           postFulfill(received)
           ctx.system.eventStream.publish(received)

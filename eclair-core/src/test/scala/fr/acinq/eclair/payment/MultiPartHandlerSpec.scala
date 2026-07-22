@@ -623,8 +623,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     f.register.expectMsgAllOf(
       Register.Forward(null, add2.channelId, CMD_FAIL_HTLC(add2.id, FailureReason.LocalFailure(IncorrectOrUnknownPaymentDetails(1000 msat, nodeParams.currentBlockHeight)), Some(FailureAttributionData(receivedAt2, None)), commit = true)),
-      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, Some(FulfillAttributionData(receivedAt1, None, None)), commit = true)),
-      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(add3.id, preimage, Some(FulfillAttributionData(receivedAt3, None, None)), commit = true))
+      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, None, Some(FulfillAttributionData(receivedAt1, None, None)), commit = true)),
+      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(add3.id, preimage, None, Some(FulfillAttributionData(receivedAt3, None, None)), commit = true))
     )
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
@@ -641,7 +641,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val receivedAt4 = receivedAt1 + 3.millis
     val receivedFrom4 = randomKey().publicKey
     f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(invoice.paymentHash, HtlcPart(1000 msat, UpdateAddHtlc(ByteVector32.One, 44, 200 msat, invoice.paymentHash, add1.cltvExpiry, add1.onionRoutingPacket, None, accountable = false, None), receivedFrom4, receivedAt4), None))
-    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FULFILL_HTLC(44, preimage, Some(FulfillAttributionData(receivedAt4, None, None)), commit = true)))
+    f.register.expectMsg(Register.Forward(null, ByteVector32.One, CMD_FULFILL_HTLC(44, preimage, None, Some(FulfillAttributionData(receivedAt4, None, None)), commit = true)))
     assert(f.eventListener.expectMsgType[PaymentReceived].amount == 200.msat)
     val received2 = nodeParams.db.payments.getIncomingPayment(invoice.paymentHash)
     assert(received2.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount == 1200.msat)
@@ -668,8 +668,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     f.sender.send(handler, ReceivePacket(IncomingPaymentPacket.FinalPacket(add2, FinalPayload.Standard.createPayload(add2.amountMsat, 1500 msat, add2.cltvExpiry, invoice.paymentSecret, invoice.paymentMetadata, upgradeAccountability = false), receivedAt2), receivedFrom2))
 
     f.register.expectMsgAllOf(
-      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, Some(FulfillAttributionData(receivedAt1, None, None)), commit = true)),
-      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(add2.id, preimage, Some(FulfillAttributionData(receivedAt2, None, None)), commit = true))
+      Register.Forward(null, add1.channelId, CMD_FULFILL_HTLC(add1.id, preimage, None, Some(FulfillAttributionData(receivedAt1, None, None)), commit = true)),
+      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(add2.id, preimage, None, Some(FulfillAttributionData(receivedAt2, None, None)), commit = true))
     )
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
@@ -710,8 +710,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     // the fulfill are not necessarily in the same order as the commands
     f.register.expectMsgAllOf(
-      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(2, preimage, Some(FulfillAttributionData(receivedAt2, None, None)), commit = true)),
-      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(5, preimage, Some(FulfillAttributionData(receivedAt3, None, None)), commit = true))
+      Register.Forward(null, add2.channelId, CMD_FULFILL_HTLC(2, preimage, None, Some(FulfillAttributionData(receivedAt2, None, None)), commit = true)),
+      Register.Forward(null, add3.channelId, CMD_FULFILL_HTLC(5, preimage, None, Some(FulfillAttributionData(receivedAt3, None, None)), commit = true))
     )
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
